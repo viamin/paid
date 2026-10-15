@@ -64,7 +64,8 @@ configuration content, resolves an active worker profile compatible with
 every declared platform, Xcode version constraint, and simulator constraint,
 and creates or updates the project's current draft revision with the file's
 content digest and the required/advisory checks derived from the
-configuration. `AppleVerificationWorkers::VersionRequirement` parses Xcode
+configuration, including the exact configuration content needed to derive the
+closed guest operation manifest. `AppleVerificationWorkers::VersionRequirement` parses Xcode
 constraints such as ">= 26.0, < 27.0" and "~> 26.0"; a profile binds only
 when its advertised Xcode range falls within every declared `worker.xcode`
 constraint and each declared `worker.simulator` appears in the profile's

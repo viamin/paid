@@ -24,6 +24,22 @@ RSpec.describe AppleVerificationAttempts::GuestResult do
   end
 
   # @spec APPLE-ATTEMPT-009
+  it "accepts required build, test, and capture work once the derived operations report success" do
+    revision = build_stubbed(:apple_verification_workflow_revision, required_checks: [ "ios-app.tests", "ios-app.initial-screen" ])
+    manifest = {
+      "operations" => [
+        { "type" => "build", "payload" => { "scheme" => "App" } },
+        { "type" => "test", "payload" => { "scheme" => "App" } },
+        { "type" => "capture", "payload" => { "platform" => "ios", "target" => "simulator_screen", "name" => "initial-screen" } }
+      ]
+    }
+
+    result = described_class.call(revision:, manifest:, operations: manifest.fetch("operations").map { |operation| { "type" => operation.fetch("type"), "status" => "succeeded" } })
+
+    expect(result).to have_attributes(status: "succeeded", failure_classification: nil)
+  end
+
+  # @spec APPLE-ATTEMPT-009
   it "fails when the guest omits a dispatched operation result" do
     revision = build_stubbed(:apple_verification_workflow_revision, required_checks: [])
     manifest = { "operations" => [ { "type" => "materialize_source", "payload" => {} } ] }

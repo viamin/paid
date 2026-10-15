@@ -29,9 +29,13 @@ module AppleVerification
       "type" => %w[accessibility_id text],
       "select" => %w[accessibility_id value],
       "wait_for_accessibility_id" => %w[accessibility_id],
+      "wait_for_process" => %w[process],
+      "wait_for_window" => %w[window],
+      "wait" => %w[seconds],
       "rotate_simulator" => %w[orientation],
       "resize_window" => %w[width height]
     }.freeze
+    UI_ACTION_OPTIONAL_FIELDS = %w[timeout_seconds].freeze
 
     UnsupportedVersionError = Class.new(ArgumentError)
     UnsupportedOperationError = Class.new(ArgumentError)
@@ -81,8 +85,8 @@ module AppleVerification
         validate_fields!(payload, PAYLOAD_FIELDS.fetch(type), "#{type} payload")
       end
 
-      def validate_fields!(value, allowed_fields, name)
-        unexpected_fields = value.keys.map(&:to_s) - allowed_fields
+      def validate_fields!(value, allowed_fields, name, optional_fields: [])
+        unexpected_fields = value.keys.map(&:to_s) - allowed_fields - optional_fields
         missing_fields = allowed_fields - value.keys.map(&:to_s)
         return if unexpected_fields.empty? && missing_fields.empty?
 
@@ -108,7 +112,7 @@ module AppleVerification
         action = payload["action"]
         raise InvalidManifestError, "unsupported declarative UI action" unless UI_ACTION_FIELDS.key?(action)
 
-        validate_fields!(payload, %w[action] + UI_ACTION_FIELDS.fetch(action), "ui_action payload for #{action}")
+        validate_fields!(payload, %w[action] + UI_ACTION_FIELDS.fetch(action), "ui_action payload for #{action}", optional_fields: UI_ACTION_OPTIONAL_FIELDS)
       end
 
       def validate_capture_payload!(payload)

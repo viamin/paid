@@ -33,6 +33,7 @@ RSpec.describe AppleVerificationWorkflowRevisions::SyncFromConfiguration do
 
     expect(revision).to be_draft
     expect(revision.content_digest).to eq("sha256:#{Digest::SHA256.hexdigest(yaml)}")
+    expect(revision.configuration_content).to eq(yaml)
     expect(revision.verification_files).to eq([ { "path" => ".paid/apple-verification.yml", "digest" => revision.content_digest } ])
     expect(revision.required_checks).to contain_exactly("ios-app.tests", "ios-app.initial-screen")
     expect(revision.lifecycle_gate).to eq("agent_iteration")

@@ -82,6 +82,30 @@ RSpec.describe AppleVerificationAttempts::Provision do
     expect(attempt.reload.status).to eq("running")
   end
 
+  # @spec APPLE-WORKER-013
+  # @spec APPLE-ATTEMPT-009
+  it "derives approved build, test, and capture operations from the bound configuration" do
+    attempt = provisioning_attempt
+    bind_configuration(attempt.apple_verification_workflow_revision, capture_workflow_yaml)
+    lifecycle = instance_double(AppleVerification::Lifecycle, provision: provisioned_handle)
+    guest_job = class_double(AppleVerification::ExecuteGuestJob)
+    completion = class_double(AppleVerificationAttempts::Complete)
+    dispatched_manifest = nil
+    allow(completion).to receive(:call)
+    allow(guest_job).to receive(:call) do |manifest:, **|
+      dispatched_manifest = manifest
+      guest_result_for(manifest)
+    end
+
+    described_class.new(lifecycle:, guest_job:, completion:, host_mount_check:).call(attempt)
+
+    expect(dispatched_manifest.fetch("operations").map { |operation| operation.fetch("type") }).to eq(
+      %w[materialize_source resolve_swift_packages build test launch_app ui_action capture export_artifacts]
+    )
+    expect(dispatched_manifest.dig("operations", 6, "payload")).to include("platform" => "ios", "target" => "simulator_screen")
+    expect(completion).to have_received(:call).with(attempt:, outcome: "succeeded", failure_classification: nil, lifecycle:)
+  end
+
   # @spec APPLE-ATTEMPT-004
   it "falls back to the image's guest executor url instead of a readiness-only host connection payload" do
     attempt = provisioning_attempt
@@ -247,14 +271,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
   end
 
   def guest_manifest_for(attempt)
-    {
-      "version" => AppleVerification::GuestProtocol::VERSION,
-      "source_lanes" => { git: [], credentials: [], object_storage: [], control_plane_api: [] },
-      "operations" => [
-        { "type" => "materialize_source", "payload" => { "digest" => attempt.source_digest } },
-        { "type" => "export_artifacts", "payload" => {} }
-      ]
-    }
+    { "operations" => AppleVerification::GuestManifest::Build.call(attempt:) }
   end
 
   def stub_transport_guest(guest_job, attempt)
@@ -291,5 +308,28 @@ RSpec.describe AppleVerificationAttempts::Provision do
       image: nil,
       operations: manifest.fetch("operations").map { |operation| { "type" => operation.fetch("type"), "status" => "succeeded" } }
     )
+  end
+
+  def bind_configuration(revision, content)
+    revision.update_columns(configuration_content: content, content_digest: "sha256:#{Digest::SHA256.hexdigest(content)}")
+  end
+
+  def capture_workflow_yaml
+    <<~YAML
+      version: 1
+      profiles:
+        ios-app:
+          platform: ios
+          xcode:
+            project: App.xcodeproj
+            scheme: App
+          bootstrap: spm
+          tests:
+            required: true
+          captures:
+            - id: initial-screen
+              required: true
+              flow: [ { launch_app: {} }, { wait_for_accessibility_id: { id: main-screen } }, { capture: { name: initial-screen } } ]
+    YAML
   end
 end

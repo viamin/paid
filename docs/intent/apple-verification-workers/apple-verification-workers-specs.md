@@ -66,9 +66,10 @@
   project, the system SHALL bind a draft workflow revision to the exact file
   content digest, an active worker profile compatible with every declared
   platform, Xcode version constraint, and simulator constraint, and
-  required/advisory checks derived from the configuration, and SHALL never
+  required/advisory checks derived from the configuration, retain that exact
+  configuration content for digest-bound guest operation derivation, and SHALL never
   mutate an approved revision's binding.
-  *Tests:* `spec/services/apple_verification_workflow_revisions/sync_from_configuration_spec.rb`,
+  *Tests:* `spec/services/apple_verification_workflow_revisions/sync_from_configuration_spec.rb`, `spec/services/apple_verification/guest_manifest/build_spec.rb`,
   `spec/services/apple_verification_workers/version_requirement_spec.rb`
   *Code:* `AppleVerificationWorkflowRevisions::SyncFromConfiguration`,
   `AppleVerificationWorkers::VersionRequirement`

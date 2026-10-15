@@ -218,18 +218,10 @@ module AppleVerificationAttempts
     end
 
     def guest_manifest(attempt, source_lanes:)
-      # An approved revision currently persists the required check identifiers,
-      # not the protocol payloads (scheme, bundle ID, and declared UI flow)
-      # needed to execute them. Do not invent those values here: GuestResult
-      # fails this manifest closed whenever the revision requires test or
-      # capture work, so a 2xx response can never satisfy that verification.
       {
         "version" => AppleVerification::GuestProtocol::VERSION,
         "source_lanes" => source_lanes,
-        "operations" => [
-          { "type" => "materialize_source", "payload" => { "digest" => attempt.source_digest } },
-          { "type" => "export_artifacts", "payload" => {} }
-        ]
+        "operations" => AppleVerification::GuestManifest::Build.call(attempt:)
       }
     end
   end
