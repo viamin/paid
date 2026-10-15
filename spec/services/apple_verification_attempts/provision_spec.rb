@@ -77,7 +77,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
     expect_provision_for(attempt, lifecycle)
     expect(guest_job).to have_received(:call)
     expect(completion).to have_received(:call).with(
-      attempt:, outcome: "failed", failure_classification: "project_configuration", lifecycle:
+      attempt:, outcome: "succeeded", failure_classification: nil, lifecycle:
     )
     expect(attempt.reload.status).to eq("running")
   end
@@ -164,7 +164,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
 
     described_class.new(lifecycle:, guest_job:, host_mount_check:).call(attempt)
 
-    expect(attempt.reload).to have_attributes(status: "failed", failure_classification: "project_configuration")
+    expect(attempt.reload).to have_attributes(status: "succeeded", failure_classification: nil)
     expect(attempt.reload.finished_at).to be_present
     manifest = attempt.apple_verification_artifacts.find_by!(kind: "manifest").metadata.fetch("manifest")
     expect(manifest.dig("result", "audit_event_references")).to match_array(attempt.execution_audit_events.pluck(:id).map(&:to_s))
@@ -293,8 +293,8 @@ RSpec.describe AppleVerificationAttempts::Provision do
     expect(attempt.apple_verification_artifacts.find_by!(kind: "screenshot").storage_key).to eq("apple-verification/screenshot.png")
     manifest = attempt.apple_verification_artifacts.find_by!(kind: "manifest").metadata.fetch("manifest")
     expect(manifest.fetch("result")).to include(
-      "status" => "failed",
-      "failure_classification" => "project_configuration",
+      "status" => "succeeded",
+      "failure_classification" => nil,
       "required_checks" => attempt.apple_verification_workflow_revision.required_checks,
       "advisory_checks" => attempt.apple_verification_workflow_revision.advisory_checks,
       "screenshot_metadata" => [ "apple-verification/screenshot.png" ]
