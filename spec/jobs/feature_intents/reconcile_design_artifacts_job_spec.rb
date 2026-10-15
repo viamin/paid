@@ -47,12 +47,24 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
   end
 
   it "uses explicit linked issue references to clear the finding" do
-    create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "Implements #101")
+    create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "**Implements:** #101")
     create(:issue, project:, github_number: 101)
 
     described_class.perform_now(project.id, design_pr.pull_request_number)
 
     expect(DesignArtifactFinding.count).to eq(0)
+  end
+
+  it "does not treat an incidental issue mention as an issue-tree relationship" do
+    create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number,
+      body: "The prior discussion in #101 explains why this was deferred.")
+    create(:issue, project:, github_number: 101)
+
+    described_class.perform_now(project.id, design_pr.pull_request_number)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(
+      artifact_path: "pull/100", revision: design_pr.head_sha, state: "missing_tree", status: "open"
+    )
   end
 
   it "treats an unmirrored cross-repository reference as unverifiable" do

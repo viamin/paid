@@ -9,6 +9,7 @@ module FeatureIntents
     include GoodJob::ActiveJobExtensions::Concurrency
 
     RDR_STATUS_PATTERN = /^\s*(?:\*\*)?status(?:\*\*)?\s*:\s*(?:\*\*)?(.+?)(?:\*\*)?\s*$/i
+    RELATIONSHIP_LINE_PATTERN = /^\s*(?:[-*]\s+)?(?:\*\*)?(?:implements|closes|fixes|resolves|tracks|depends on|blocked by|related issues?)(?:\s*:)?(?:\*\*)?\s*:?\s+(.+)$/i
 
     queue_as :maintenance
 
@@ -56,17 +57,20 @@ module FeatureIntents
     def reconcile_rdr_artifacts
       artifacts = DiscoverRdrArtifacts.call(project:)
       artifacts.each do |artifact|
-        reconcile(rdr_artifact(artifact), revision: artifact.revision, coverage_complete: artifact.body.present?)
+        reconcile(rdr_artifact(artifact), revision: artifact.revision, coverage_complete: !artifact.body.nil?)
       end
       resolve_removed_rdr_findings(artifacts) if rdr_directory_discovered?(artifacts)
     end
 
     def resolve_removed_rdr_findings(artifacts)
-      PersistDesignArtifactFindings.resolve_removed_rdr_findings(project:, paths: artifacts.map(&:path))
+      convention = DiscoverRdrArtifacts.convention_for(project)
+      PersistDesignArtifactFindings.resolve_removed_rdr_findings(
+        project:, paths: artifacts.map(&:path), directory: convention.directory, file_pattern: convention.file_pattern
+      )
     end
 
     def rdr_directory_discovered?(artifacts)
-      artifacts.none? { |artifact| artifact.path == DiscoverRdrArtifacts::RDRS_PATH && artifact.body.nil? }
+      artifacts.none? { |artifact| artifact.path == DiscoverRdrArtifacts.convention_for(project).directory && artifact.body.nil? }
     end
 
     def reconcile_project_artifacts
@@ -126,9 +130,13 @@ module FeatureIntents
     end
 
     def explicit_references(body)
-      body.to_s.scan(%r{(?<![\w/-])(?:([\w.-]+/[\w.-]+))?#(\d+)})
+      relationship_text(body).scan(%r{(?<![\w/-])(?:([\w.-]+/[\w.-]+))?#(\d+)})
         .map { |repository, number| "#{repository || project.full_name}##{number}" }
         .uniq
+    end
+
+    def relationship_text(body)
+      body.to_s.each_line.filter_map { |line| line[RELATIONSHIP_LINE_PATTERN, 1] }.join("\n")
     end
 
     def identity_for(issue)

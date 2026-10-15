@@ -7,11 +7,16 @@ module FeatureIntents
   class PersistDesignArtifactFindings
     def self.call(...) = new(...).call
 
-    def self.resolve_removed_rdr_findings(project:, paths:)
+    def self.resolve_removed_rdr_findings(project:, paths:, directory:, file_pattern:)
       project.design_artifact_findings.open_findings
-        .where("artifact_path LIKE ?", "docs/rdrs/RDR-%.md")
-        .where.not(artifact_path: paths)
-        .find_each(&:resolve!)
+        .where("artifact_path LIKE ?", "#{ActiveRecord::Base.sanitize_sql_like(directory)}/%")
+        .find_each do |finding|
+          next unless File.dirname(finding.artifact_path) == directory
+          next unless File.fnmatch?(file_pattern, File.basename(finding.artifact_path))
+          next if finding.artifact_path.in?(paths)
+
+          finding.resolve!
+        end
     end
 
     def initialize(project:, revision:, artifacts:, issues:, coverage_complete: true)

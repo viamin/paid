@@ -59,15 +59,18 @@ intents, with each intent's receipt making its own membership explicit.
 Run-local receipts do not cover an RDR authored outside Paid, a partially
 completed planning run, or repository metadata that drifted after a merge.
 `FeatureIntents::ReconcileDesignArtifacts` is the bounded, deterministic
-backstop for those cases. At a pinned repository revision it discovers
-conventional `docs/rdrs/RDR-*.md` artifacts and open design PRs, then compares
-explicit qualified issue references, persisted issue identities, and body/native-tree
+backstop for those cases. At a pinned repository revision it discovers RDR
+artifacts according to the project's `rdr_convention` repository profile
+(`docs/rdrs` and `RDR-*.md` are defaults), and open design PRs, then compares
+declared qualified issue relationships, persisted issue identities, and body/native-tree
 relationships. It produces one deduplicated finding per artifact/revision and
 reports evidence, coverage time, and an explicit state: `missing_tree`,
 `partial_tree`, `stale_metadata`, `deferred`, or `unverifiable`.
 
-Only structural existence and linkage checks happen in Rails. A weak semantic
-candidate is not linked until an `agent_harness` assessment confirms it.
+Only structural existence and linkage checks happen in Rails. An issue number
+in prose is not a relationship: a line must declare a relationship keyword or
+field before it establishes coverage. A weak semantic candidate is not linked
+until an `agent_harness` assessment confirms it.
 Failures or partial GitHub reads produce `unverifiable`, never an absence
 finding. Repository-specific draft, deferred, and superseded statuses are
 reported rather than treated as missing work. The reconciliation is read-only:

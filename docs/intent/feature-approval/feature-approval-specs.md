@@ -178,9 +178,10 @@
 ## Create-feature and LID-planning attachment (#3863)
 
 - [x] **DESIGN-RECONCILIATION-001** — When a bounded repository reconciliation
-  examines conventional `docs/rdrs/RDR-*.md` artifacts or open design PRs at
+  examines RDR artifacts using the project's configured `rdr_convention`
+  directory and filename pattern (defaulting to `docs/rdrs/RDR-*.md`) or open design PRs at
   a pinned revision,
-  the system SHALL classify explicit issue-tree evidence as missing, partial,
+  the system SHALL classify declared issue-tree evidence as missing, partial,
   stale/unlinked, deliberately deferred, or unverifiable. Failed or partial
   GitHub reads SHALL yield `unverifiable`, not an absence finding; draft and
   superseded/deferred artifacts SHALL not be treated as missing merely from

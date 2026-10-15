@@ -78,6 +78,9 @@ RSpec.describe Projects::DetectRepoProfile, :no_db do
           test:
             - elixir
         framework: phoenix
+        rdr_convention:
+          directory: architecture/decisions
+          file_pattern: ADR-*.md
       YAML
 
       profile = described_class.call(project:, repo_path:)
@@ -85,6 +88,9 @@ RSpec.describe Projects::DetectRepoProfile, :no_db do
       expect(profile["languages"]).to eq(%w[elixir javascript])
       expect(profile["test_languages"]).to eq(%w[elixir])
       expect(profile["framework"]).to eq("phoenix")
+      expect(profile["rdr_convention"]).to eq(
+        "directory" => "architecture/decisions", "file_pattern" => "ADR-*.md"
+      )
       expect(profile["manifest_path"]).to eq(".paid.yml")
     end
   end

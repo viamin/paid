@@ -26,6 +26,7 @@ module Projects
           "languages" => manifest["languages"].presence || detected["languages"],
           "test_languages" => manifest["test_languages"].presence || detected["test_languages"],
           "framework" => manifest["framework"].presence || detected["framework"],
+          "rdr_convention" => manifest["rdr_convention"],
           "manifest_path" => manifest["manifest_path"]
         ),
         primary_language: project.primary_language,
