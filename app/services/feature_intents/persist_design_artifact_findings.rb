@@ -48,7 +48,7 @@ module FeatureIntents
       record = project.design_artifact_findings.find_or_initialize_by(fingerprint: finding.fingerprint)
       record.assign_attributes(
         account: project.account, artifact_path: finding.path, revision: finding.revision,
-        state: finding.state, evidence: finding.evidence, covered_at: covered_at || Time.current,
+        state: finding.state, evidence: finding.evidence, covered_at: covered_at || record.covered_at || Time.current,
         status: "open", resolved_at: nil
       )
       record.save!

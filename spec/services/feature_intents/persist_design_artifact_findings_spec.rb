@@ -32,6 +32,20 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
     expect(DesignArtifactFinding.sole).to have_attributes(status: "resolved", resolved_at: be_present)
   end
 
+  it "keeps an existing finding's coverage timestamp when a later scan is unverifiable" do
+    travel_to(Time.zone.parse("2026-10-15 08:00:00 UTC")) do
+      described_class.call(project:, revision:, artifacts: [ artifact ], issues: [], coverage_complete: false)
+    end
+
+    covered_at = DesignArtifactFinding.sole.covered_at
+
+    travel_to(Time.zone.parse("2026-10-15 09:00:00 UTC")) do
+      described_class.call(project:, revision:, artifacts: [ artifact ], issues: [], coverage_complete: false)
+    end
+
+    expect(DesignArtifactFinding.sole.covered_at).to eq(covered_at)
+  end
+
   it "resolves an open RDR finding when its path was removed after a successful discovery" do
     described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
 
