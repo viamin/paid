@@ -11,6 +11,18 @@
 # that never moves its run out of the in-flight set fails its
 # convergence assertions here instead of leaking the VM live.
 module AppleLiveValidationFakes
+  # @spec TEST-SUITE-014
+  # Select real matrix entries for focused provisioning/recovery/diagnostics
+  # checks. Retain network, capacity and reporting evidence scaffolding.
+  SelectedSuite = Data.define(:ids) do
+    def group(name)
+      scenarios = AppleVerification::LiveValidation::Suite.group(name)
+      return scenarios unless %i[functional recovery isolation].include?(name)
+
+      scenarios.select { |scenario| ids.include?(scenario.id) }
+    end
+  end
+
   class FakeLifecycle
     attr_reader :destroyed
 

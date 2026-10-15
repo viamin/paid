@@ -5,7 +5,8 @@ require "test_prof/recipes/rspec/let_it_be"
 
 # @spec TEST-SUITE-011
 RSpec.describe TestProf::LetItBe do
-  [ "with stable agent execution project", "with stable provisioning project", "with stable PR scanner project" ].each do |name|
+  [ "with stable agent execution project", "with stable provisioning project", "with stable PR scanner project",
+    "with stable agent run request project" ].each do |name|
     context name do
       include_context name
 
@@ -18,6 +19,29 @@ RSpec.describe TestProf::LetItBe do
           project.update!(name: "changed in an example")
           project.created_by.update!(name: "changed in an example")
         end
+      end
+    end
+  end
+
+  # @spec TEST-SUITE-017
+  context "with stable agent run request project" do
+    include_context "with stable agent run request project"
+
+    2.times do |index|
+      it "isolates request configuration and scenario records for example #{index + 1}" do
+        expect(project.account).to equal(account)
+        expect(project.created_by).to equal(user)
+        expect(project.github_token).to equal(github_token)
+        expect(github_token.created_by).to equal(user)
+        expect(github_token.validation_status).to eq("validated")
+        expect(account.users).to contain_exactly(user)
+        expect(project.issues).to be_empty
+        expect(project.agent_runs).to be_empty
+        expect(user.name).not_to eq("changed in an example")
+
+        user.update!(name: "changed in an example")
+        create(:agent_run, project: project)
+        github_token.update!(validation_status: "validation_failed")
       end
     end
   end

@@ -82,3 +82,24 @@ using fresh records per example instead of replaying a FixtureKit SQL snapshot.
 Keep scenario-specific issues, runs, projects and configuration changes local
 to each example. FactoryBot remains the record builder; no global seed dataset
 or new data framework is required for these optimizations.
+
+Focused Apple live-validation examples inject a subset of the actual scenario
+matrix through the existing suite port, retaining network, capacity and reporting
+evidence scaffolding. Keep a full default-suite integration
+example to verify all scenario IDs and repeat counts. Capacity checks retain
+the functional work that collects their samples; recovery checks retain their
+real persistence and cleanup choreography.
+
+Shell availability checks need only persisted authorization and clone-manifest
+metadata. Create filesystem workspaces only for execution and path-validation
+checks, with cleanup that never evaluates unused lazy setup.
+
+HTTP retry tests record delays by replacing the external Faraday retry
+middleware's timer. Keep real middleware, HTTP response sequences, retry counts,
+backoff configuration and exhaustion behavior. Production timing is unchanged.
+
+Profile model, queue and request factory cascades before selecting further shared
+graphs. Reuse stable request account/user/credential/project configuration only
+where overrides preserve its dependencies. Keep scenario records and roles per
+example, and verify graph mutation isolation. Do not disable callbacks or alter
+global factory defaults to reduce counts.
