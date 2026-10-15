@@ -52,7 +52,9 @@ incompatible selected key is an actionable configuration error. A selected key
 cannot be deleted while it is bound, so an owner must choose a replacement or
 platform fallback first. API-key selection is API-billed; unconfigured host
 drafting retains its explicitly configured CLI/subscription authentication and
-is never silently converted to HTTP API billing.
+is never silently converted to HTTP API billing. Conversely, a selected API-key
+binding on a runner without a supported API transport fails with an actionable
+configuration error; it never falls through to ambient CLI credentials.
 
 ### Dashboard runner readiness
 

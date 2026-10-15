@@ -439,11 +439,16 @@ module Knowledge
         DEFAULT_MODEL if provider == DEFAULT_PROVIDER
       end
 
+      # @spec KNOWLEDGE-CREDENTIAL-001
       def llm_request_options(provider)
         credential = credential_selection_for(provider)
         if credential.status == :invalid_credential
           raise AgentHarness::AuthenticationError,
             "Knowledge decision drafting needs a selected #{credential.service_type || provider} API key"
+        end
+        if unsupported_selected_credential?(credential)
+          raise AgentHarness::AuthenticationError,
+            "Knowledge decision drafting cannot use a selected API key with #{provider}: no supported API transport"
         end
 
         options = {
@@ -466,6 +471,10 @@ module Knowledge
           operation: :chat,
           runner: provider
         )
+      end
+
+      def unsupported_selected_credential?(credential)
+        credential.status == :unsupported_transport && effective_user_setting&.kb_chat_provider_api_key_id.present?
       end
 
       def parse_text_output(output)

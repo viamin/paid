@@ -28,9 +28,11 @@
   credential for embeddings or decision drafting, Paid SHALL persist a binding
   to that existing credential, resolve it ahead of platform fallback in direct
   embedding, container drafting, and host drafting, and expose only safe
-  owner/service/source/status metadata. An incompatible binding SHALL fail with
-  actionable configuration status; adding another key SHALL not change a bound
-  operation, and a bound key SHALL not be deletable until replaced or unbound.
+  owner/service/source/status metadata. An incompatible binding, including one
+  configured on a runner without a supported API transport, SHALL fail with
+  actionable configuration status rather than fall through to ambient CLI
+  credentials; adding another key SHALL not change a bound operation, and a
+  bound key SHALL not be deletable until replaced or unbound.
   *Code:* `app/services/knowledge/credential_selection.rb`,
   `app/services/knowledge/runner_configuration.rb`,
   `app/services/knowledge/analysis_runner.rb`,

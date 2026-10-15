@@ -126,6 +126,20 @@ RSpec.describe Knowledge::Decisions::Draft do
       end
     end
 
+    # @spec KNOWLEDGE-CREDENTIAL-001
+    it "fails instead of falling back to CLI credentials when a selected key has no supported API transport" do
+      selected = create(:provider_api_key, user: project.created_by, api_service_type: "anthropic", api_key: "sk-selected")
+      project.created_by.settings.update!(
+        kb_chat_provider_api_key: selected,
+        kb_chat_runner: "opencode",
+        kb_chat_fallback_runners: []
+      )
+
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::DraftFailedError)
+      expect(AgentHarness).not_to have_received(:send_message)
+    end
+
     it "routes the Claude provider through agent-harness text mode when an API key is configured" do
       allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
 
