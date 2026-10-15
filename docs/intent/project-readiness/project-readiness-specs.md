@@ -88,3 +88,17 @@ prefix: PROJECT-READINESS
   `Activities::CreatePullRequestActivity`.
   *Test:* `spec/services/projects/readiness/bootstrap_write_guard_spec.rb`,
   `spec/temporal/activities/create_pull_request_activity_spec.rb`.
+
+- [x] **PROJECT-READINESS-009** — When a strict Godot/GDScript project moves
+  from missing harness prerequisites through an explicitly started
+  `bootstrap_readiness` run and GitHub-confirmed bootstrap merge, the system
+  SHALL replace its pending readiness snapshot with target-branch evidence and
+  remove its `project_setup_pending` Inbox entry. The bootstrap diff SHALL
+  remain within its harness boundary; the following `test_writing` draft MAY
+  change only tests and SHALL be able to report the intentionally red gdUnit4
+  command result.
+  *Code:* `Projects::Readiness::Record`, `Inbox::Queue`,
+  `Projects::AgentRunsController`, `Issues::UpsertFromGithub`,
+  `Projects::Readiness::BootstrapWriteGuard`, `Tdd::WriteGuard`.
+  *Test:* `spec/requests/godot_gdunit4_readiness_lifecycle_spec.rb`,
+  `bin/validate-godot-gdunit4-readiness`.
