@@ -17,7 +17,7 @@ module AppleVerificationAttempts
       artifact_ingestion: AppleVerification::ArtifactIngestion::Ingest,
       result_manifest: AppleVerification::ResultManifest::Build,
       artifact_storage: AppleVerification::ArtifactIngestion::Storage.new,
-      host_mount_check: ->(_agent_run) { false })
+      host_mount_check:)
       @lifecycle = lifecycle
       @guest_job = guest_job
       @completion = completion
@@ -31,10 +31,10 @@ module AppleVerificationAttempts
     def call(attempt)
       raise ArgumentError, "an Apple verification attempt requires an agent run" unless attempt.agent_run
 
+      source_lanes = validated_source_lanes(attempt)
       handle = provision_active_attempt(attempt)
       return unless handle
 
-      source_lanes = validated_source_lanes(attempt)
       result = dispatch_guest_job(attempt, handle:, source_lanes:)
       return unless mark_running(attempt)
 

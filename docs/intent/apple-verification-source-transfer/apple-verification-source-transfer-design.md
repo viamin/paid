@@ -82,13 +82,11 @@ The builder rejects the bundle when:
   symlink chain via `File.realpath`, sits outside the workspace root
   (`WorkspaceInvalidError`).
 
-[ ] **Gap:** A host-mount guard at the source-lane level
-(`AppleVerification::SourceLane::Build#ensure_no_host_mounts!`) rejects
-attempts whose originating paid-agent container has a write host mount bound
-into its workspace; the executor that drives the source lane is the only
-party that can resolve the container's bind/mount table, so the guard takes
-a required `host_mount_check:` callable and refuses to run without it. The
-bundle builder itself does not inspect container mounts.
+`AppleVerification::SourceLane::HostMountCheck` inspects the originating
+paid-agent container's Docker mount table before the dispatcher invokes the
+source lane. A writable host bind at `/workspace` rejects the attempt; a
+missing container or unreadable mount table also rejects it. The bundle
+builder itself does not inspect container mounts.
 
 ## Credential lane
 

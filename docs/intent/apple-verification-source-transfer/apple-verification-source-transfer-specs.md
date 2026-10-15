@@ -3,10 +3,9 @@
 > Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 > Each ID is a grep target across specs, tests, and code.
 >
-> The listed source-lane, manifest, and artifact-ingestion components have
-> focused unit coverage, but no production attempt-dispatch path composes them
-> into a guest job or persists the returned result/artifact records. They remain
-> active gaps until that end-to-end integration is shipped.
+> The production attempt-dispatch path composes the source lane into the guest
+> job and persists returned result/artifact records. Remaining gaps are called
+> out in their individual EARS claims.
 
 - [x] **APPLE-TRANSFER-001** — When a verification attempt runs against
   committed source, the input manifest's git lane SHALL carry the exact
@@ -33,7 +32,7 @@
   *Tests:* `spec/services/apple_verification/source_lane/bundle_builder_spec.rb`
   *Code:* `AppleVerification::SourceLane::BundleBuilder`
 
-- [ ] **APPLE-TRANSFER-003** — The source lane SHALL reject manifests that
+- [x] **APPLE-TRANSFER-003** — The source lane SHALL reject manifests that
   reference a host path, a bind mount, or a writable cross-project cache, and
   the source lane builder SHALL refuse to build any lane when the originating
   paid-agent container has a write-host mount bound into its workspace (the
@@ -42,9 +41,13 @@
   builder SHALL refuse to build a bundle when the workspace contains a
   symlink whose target escapes the workspace root.
   *Tests:* `spec/services/apple_verification/source_lane/bundle_builder_spec.rb`,
-  `spec/services/apple_verification/source_lane/build_spec.rb`
+  `spec/services/apple_verification/source_lane/build_spec.rb`,
+  `spec/services/apple_verification/source_lane/host_mount_check_spec.rb`,
+  `spec/services/apple_verification_attempts/dispatcher_spec.rb`
   *Code:* `AppleVerification::SourceLane::Build`,
-  `AppleVerification::SourceLane::BundleBuilder`
+  `AppleVerification::SourceLane::BundleBuilder`,
+  `AppleVerification::SourceLane::HostMountCheck`,
+  `AppleVerificationAttempts::Dispatcher`
 
 - [x] **APPLE-TRANSFER-004** — The output manifest produced for an attempt
   SHALL include the attempt identity, source/lineage, workflow revision and

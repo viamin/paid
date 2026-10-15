@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe AppleVerificationAttempts::Provision do
+  let(:host_mount_check) { ->(_agent_run) { false } }
+
   around do |example|
     FeatureFlags.enable!(:apple_verification_workers, project: example.metadata[:project]) if example.metadata[:project]
     example.run
@@ -29,7 +31,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
     stub_transport_guest(guest_job, attempt)
     stub_transport_completion(completion, attempt)
 
-    described_class.new(lifecycle:, guest_job:, completion:, artifact_storage: storage).call(attempt)
+    described_class.new(lifecycle:, guest_job:, completion:, artifact_storage: storage, host_mount_check:).call(attempt)
 
     expect_persisted_transport(attempt, storage)
   ensure
@@ -50,7 +52,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
     )
     allow(completion).to receive(:call)
 
-    expect { described_class.new(lifecycle:, guest_job:, completion:).call(attempt) }
+    expect { described_class.new(lifecycle:, guest_job:, completion:, host_mount_check:).call(attempt) }
       .to raise_error(AppleVerification::ArtifactIngestion::Ingest::UnsupportedKindError)
 
     expect(completion).not_to have_received(:call)
@@ -69,7 +71,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
     stub_guest_dispatch(guest_job, attempt)
     allow(completion).to receive(:call)
 
-    described_class.new(lifecycle:, guest_job:, completion:).call(attempt)
+    described_class.new(lifecycle:, guest_job:, completion:, host_mount_check:).call(attempt)
 
     expect_provision_for(attempt, lifecycle)
     expect(guest_job).to have_received(:call)
@@ -92,7 +94,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
     allow(guest_job).to receive(:call).and_return(guest_result_for(guest_manifest_for(attempt)))
     allow(AppleVerification::GuestConnection).to receive(:new).and_call_original
 
-    described_class.new(lifecycle:, guest_job:, completion:).call(attempt)
+    described_class.new(lifecycle:, guest_job:, completion:, host_mount_check:).call(attempt)
 
     # A `connection:` of nil (rather than the url-less `{ "ready" => true }` the host
     # returned) is what lets AppleVerification::GuestConnection fall back to the
@@ -114,7 +116,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
     allow(guest_job).to receive(:call).and_return(guest_result_for(guest_manifest_for(attempt)))
     allow(AppleVerification::GuestConnection).to receive(:new).and_call_original
 
-    described_class.new(lifecycle:, guest_job:, completion:).call(attempt)
+    described_class.new(lifecycle:, guest_job:, completion:, host_mount_check:).call(attempt)
 
     expect(AppleVerification::GuestConnection).to have_received(:new).with(connection: nil, read_timeout: anything)
   end
@@ -127,7 +129,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
     allow(lifecycle).to receive_messages(provision: provisioned_handle, destroy: :destroyed, stop: :stopped)
     allow(guest_job).to receive(:call).and_return(guest_result_for(guest_manifest_for(attempt)))
 
-    described_class.new(lifecycle:, guest_job:).call(attempt)
+    described_class.new(lifecycle:, guest_job:, host_mount_check:).call(attempt)
 
     expect(attempt.reload).to have_attributes(status: "failed", failure_classification: "project_configuration")
     expect(attempt.reload.finished_at).to be_present
@@ -142,7 +144,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
     allow(guest_job).to receive(:call).and_raise(AppleVerification::GuestConnection::DispatchError, "executor unreachable")
     allow(completion).to receive(:call)
 
-    expect { described_class.new(lifecycle:, guest_job:, completion:).call(attempt) }
+    expect { described_class.new(lifecycle:, guest_job:, completion:, host_mount_check:).call(attempt) }
       .to raise_error(AppleVerification::GuestConnection::DispatchError)
 
     expect(completion).not_to have_received(:call)
@@ -167,7 +169,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
     )
     allow(completion).to receive(:call)
 
-    described_class.new(lifecycle:, guest_job:, completion:).call(attempt)
+    described_class.new(lifecycle:, guest_job:, completion:, host_mount_check:).call(attempt)
 
     expect(completion).to have_received(:call).with(
       attempt:, outcome: "failed", failure_classification: "test_assertion", lifecycle:
@@ -187,7 +189,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
     end
     allow(completion).to receive(:call)
 
-    described_class.new(lifecycle:, guest_job:, completion:).call(attempt)
+    described_class.new(lifecycle:, guest_job:, completion:, host_mount_check:).call(attempt)
 
     expect(completion).not_to have_received(:call)
     expect(attempt.reload.status).to eq("timed_out")
