@@ -118,6 +118,13 @@ RSpec.describe "UserSettings" do
         expect(user.reload.settings.default_poll_interval_seconds).to eq(120)
       end
 
+      # @spec KNOWLEDGE-CREDENTIAL-001
+      it "does not present an unrepresentable platform-fallback credential selection" do
+        get edit_user_settings_path
+
+        expect(response.body).not_to include("Platform fallback (if configured)")
+      end
+
       it "updates agent execution settings" do
         allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor])
         cursor = user.runners.create!(runner_key: "cursor", enabled_for_agent_runs: true)

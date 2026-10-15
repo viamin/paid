@@ -36,6 +36,8 @@
                 <%= RunnerSupport.api_service_type_label(readiness.credential_service) %> — <%= readiness.credential_name %> (<%= readiness.credential_source.humanize %>)
               <% elsif readiness.status == "missing_credential" %>
                 Missing <%= RunnerSupport.api_service_type_label(readiness.credential_service) %> API key — <%= link_to "add one", new_provider_api_key_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+              <% elsif readiness.status == "invalid_credential" %>
+                The selected API key is incompatible with this runner. Choose a matching API key or Automatic credential selection.
               <% else %>
                 Unsupported runner/transport for this operation.
               <% end %>

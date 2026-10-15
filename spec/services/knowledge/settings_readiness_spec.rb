@@ -26,5 +26,35 @@ RSpec.describe Knowledge::SettingsReadiness do
       expect(fallback.readiness.status).to eq("missing_credential")
       expect(fallback.readiness.credential_service).to eq("openrouter")
     end
+
+    it "reports an explicitly selected key instead of a newer matching key" do
+      owner = create(:user)
+      selected_key = create(:provider_api_key, user: owner, name: "Selected OpenAI", api_service_type: "openai")
+      create(:provider_api_key, user: owner, name: "Newer OpenAI", api_service_type: "openai")
+      owner.settings.update!(kb_embedding_provider_api_key: selected_key)
+
+      readiness = described_class.call(owner: owner).fetch(:embedding).first.readiness
+
+      expect(readiness).to have_attributes(
+        status: "ready",
+        credential_source: "saved_key",
+        credential_service: "openai",
+        credential_name: selected_key.name
+      )
+    end
+
+    it "reports an incompatible selected key as invalid" do
+      owner = create(:user)
+      owner.settings.update!(kb_embedding_provider_api_key: create(:provider_api_key, user: owner, api_service_type: "anthropic"))
+
+      readiness = described_class.call(owner: owner).fetch(:embedding).first.readiness
+
+      expect(readiness).to have_attributes(
+        status: "invalid_credential",
+        credential_source: "saved_key",
+        credential_service: "openai",
+        credential_name: nil
+      )
+    end
   end
 end
