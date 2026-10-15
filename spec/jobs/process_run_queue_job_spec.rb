@@ -113,10 +113,14 @@ RSpec.describe ProcessRunQueueJob do
   def create_host_saturation_runs(host_counts)
     other_account = create(:account)
     other_user = create(:user, account: other_account)
+    other_project = nil
 
+    # @spec TEST-SUITE-017
+    # Host occupancy needs distinct runs/issues, not a new project per host slot.
     host_counts.each do |host, count|
       count.times do
-        create(:agent_run, :running, project: create(:project, account: other_account, created_by: other_user), container_host: host)
+        other_project ||= create(:project, account: other_account, created_by: other_user)
+        create(:agent_run, :running, project: other_project, container_host: host)
       end
     end
   end

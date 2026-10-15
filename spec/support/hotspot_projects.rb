@@ -37,3 +37,28 @@ RSpec.shared_context "with stable PR scanner project" do
     end
   end
 end
+
+# @spec TEST-SUITE-011, TEST-SUITE-017
+RSpec.shared_context "with stable agent run request project" do
+  let_it_be(:account, refind: true) do
+    TenantContext.with_system_access { create(:account) }
+  end
+  let_it_be(:user, refind: true) do
+    TenantContext.with_system_access { create(:user, account: account) }
+  end
+  let_it_be(:github_token, refind: true) do
+    TenantContext.with_system_access { create(:github_token, account: account, created_by: user) }
+  end
+  let_it_be(:project, refind: true) do
+    TenantContext.with_system_access { create(:project, account: account, github_token: github_token, created_by: user) }
+  end
+
+  before do
+    user.account = account
+    github_token.account = account
+    github_token.created_by = user
+    project.account = account
+    project.github_token = github_token
+    project.created_by = user
+  end
+end

@@ -7,26 +7,36 @@ RSpec.describe Tools::RunShell do
   let(:user) { create(:user, :member, account:) }
   let(:project) { create(:project, account:) }
   let(:session) do
-    create(:chat_session, :workspace, account:, created_by: user, project:, clone_manifest: [
-      { project_id: project.id, path: repo.fetch(:repo_path) }
-    ])
+    create(:chat_session, :workspace, account:, created_by: user, project:, clone_manifest:)
   end
   let(:tool) { described_class.new(user:, session:) }
   let(:workspace_root) { make_workspace_root }
   let(:repo) do
-    clone_repo_into_workspace(
-      workspace_root:,
-      repo_name: "repo-one",
-      files: { "README.md" => "# Repo One\n", "script.sh" => "#!/bin/sh\necho hello" }
-    )
+    clone_shell_repo("repo-one", { "README.md" => "# Repo One\n", "script.sh" => "#!/bin/sh\necho hello" })
   end
 
-  around do |example|
+  def clone_manifest
+    [ { project_id: project.id, path: "/workspace/repo-one" } ]
+  end
+
+  def repo_sources
+    @repo_sources ||= []
+  end
+
+  def clone_shell_repo(name, files)
+    clone_repo_into_workspace(workspace_root:, repo_name: name, files:).tap do |cloned|
+      repo_sources << cloned.fetch(:source_path)
+    end
+  end
+
+  # @spec TEST-SUITE-015
+  around(:each, :workspace_files) do |example|
+    repo
+    repo_two if respond_to?(:repo_two)
     with_fake_workspace_backend(workspace_root:, container_id: session.container_id) { example.run }
   ensure
     FileUtils.rm_rf(workspace_root)
-    FileUtils.rm_rf(repo[:source_path]) if repo
-    FileUtils.rm_rf(repo_two[:source_path]) if defined?(repo_two) && repo_two
+    repo_sources.each { |path| FileUtils.rm_rf(path) }
   end
 
   before do
@@ -77,7 +87,7 @@ RSpec.describe Tools::RunShell do
     end
   end
 
-  describe "#perform" do
+  describe "#perform", :workspace_files do
     it "executes a shell command and returns stdout, stderr, and exit code" do
       result = tool.call(
         command: "echo hello",
@@ -119,6 +129,15 @@ RSpec.describe Tools::RunShell do
       expect {
         tool.call(command: "echo hi", working_dir: "/workspace/not-a-repo", confirmed: true)
       }.to raise_error(ArgumentError, /must be under a cloned repo path/)
+    end
+
+    # @spec TEST-SUITE-015
+    it "rejects a symlink that escapes the workspace" do
+      File.symlink(Dir.tmpdir, File.join(repo.fetch(:host_path), "outside"))
+
+      expect {
+        tool.call(command: "echo escaped", working_dir: "#{repo.fetch(:repo_path)}/outside", confirmed: true)
+      }.to raise_error(ArgumentError, /Path escapes the workspace/)
     end
 
     it "accepts working directory under a cloned repo" do
@@ -167,17 +186,18 @@ RSpec.describe Tools::RunShell do
 
   context "when the session clones multiple repos" do
     let(:project_two) { create(:project, account:) }
-    let!(:repo_two) do
-      clone_repo_into_workspace(workspace_root:, repo_name: "repo-two", files: { "README.md" => "# Repo Two\n" })
+    let(:repo_two) do
+      clone_shell_repo("repo-two", { "README.md" => "# Repo Two\n" })
     end
     # A viewer has no account-level run_agent?, so access is granted only where a
     # project membership exists (project, not project_two).
     let(:member) { create(:user, :viewer, account:) }
     let(:session) do
-      create(:chat_session, :workspace, account:, created_by: member, project:, clone_manifest: [
-        { project_id: project.id, path: repo.fetch(:repo_path) },
-        { project_id: project_two.id, path: repo_two.fetch(:repo_path) }
-      ])
+      create(:chat_session, :workspace, account:, created_by: member, project:, clone_manifest:)
+    end
+
+    def clone_manifest
+      super + [ { project_id: project_two.id, path: "/workspace/repo-two" } ]
     end
 
     before do
@@ -188,7 +208,7 @@ RSpec.describe Tools::RunShell do
     # can `cd` anywhere in the container), so run_shell grants workspace-scoped
     # access: it requires run_agent? on every cloned repo in the session, not
     # just the one named in working_dir.
-    it "denies shell for any working directory when any cloned repo is not run_agent?-authorized for the user" do
+    it "denies shell for any working directory when any cloned repo is not run_agent?-authorized for the user", :workspace_files do
       expect {
         described_class.new(user: member, session:).call(
           command: "pwd",
@@ -207,7 +227,7 @@ RSpec.describe Tools::RunShell do
         create(:project_membership, :member, user: member, project: project_two)
       end
 
-      it "runs shell against the requested working directory" do
+      it "runs shell against the requested working directory", :workspace_files do
         result = described_class.new(user: member, session:).call(
           command: "pwd",
           working_dir: repo.fetch(:repo_path),
@@ -217,7 +237,7 @@ RSpec.describe Tools::RunShell do
         expect(result[:exit_code]).to eq(0)
       end
 
-      it "attributes the audit event to the repo the command actually ran in" do
+      it "attributes the audit event to the repo the command actually ran in", :workspace_files do
         described_class.new(user: member, session:).call(
           command: "echo multi",
           working_dir: repo_two.fetch(:repo_path),
@@ -229,7 +249,7 @@ RSpec.describe Tools::RunShell do
     end
   end
 
-  describe "timeout handling" do
+  describe "timeout handling", :workspace_files do
     def exec_call_options_for(command_fragment)
       backend = Rails.application.config.x.container_backend
       backend.exec_calls.find { |call| call[:command].last.include?(command_fragment) }.fetch(:options)
@@ -254,7 +274,7 @@ RSpec.describe Tools::RunShell do
     end
   end
 
-  describe "oversize output" do
+  describe "oversize output", :workspace_files do
     it "truncates stdout exceeding MAX_OUTPUT_BYTES and flags it" do
       result = tool.call(
         command: "head -c 150000 /dev/zero | tr '\\0' 'a'",
@@ -302,7 +322,7 @@ RSpec.describe Tools::RunShell do
     end
   end
 
-  describe "output encoding" do
+  describe "output encoding", :workspace_files do
     it "normalizes non-UTF-8 command output so the result serializes to JSON" do
       result = tool.call(
         command: "printf '\\xff\\xfehello'",

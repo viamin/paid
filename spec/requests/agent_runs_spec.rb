@@ -3,10 +3,8 @@
 require "rails_helper"
 
 RSpec.describe "AgentRuns" do
-  let(:account) { create(:account) }
-  let(:user) { create(:user, account: account) }
-  let(:github_token) { create(:github_token, account: account, created_by: user) }
-  let(:project) { create(:project, account: account, github_token: github_token, created_by: user) }
+  # @spec TEST-SUITE-017
+  include_context "with stable agent run request project"
 
   describe "GET /agent_runs" do
     context "when not authenticated" do
