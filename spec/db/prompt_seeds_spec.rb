@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "test_prof/recipes/rspec/before_all"
 
 # Loads db/seeds/prompts.rb and verifies that every seeded prompt:
 #   1. Creates a Prompt + current PromptVersion row
@@ -38,8 +39,32 @@ module SeedsPromptsSpec
 end
 
 RSpec.describe Prompt, type: :model do
-  before do
+  # @spec TEST-SUITE-012
+  before_all do
+    TenantContext.with_system_access do
+      load Rails.root.join("db/seeds/prompts.rb").to_s
+    end
+  end
+
+  # @spec TEST-SUITE-012
+  it "preserves prompt and version identities when seeds run again" do
+    prompts = described_class.global.order(:id).pluck(:id, :slug, :current_version_id)
+    versions = PromptVersion.order(:id).pluck(:id, :prompt_id, :template, :variables)
+
     load Rails.root.join("db/seeds/prompts.rb").to_s
+
+    expect(described_class.global.order(:id).pluck(:id, :slug, :current_version_id)).to eq(prompts)
+    expect(PromptVersion.order(:id).pluck(:id, :prompt_id, :template, :variables)).to eq(versions)
+  end
+
+  # @spec TEST-SUITE-012
+  2.times do |index|
+    it "starts seed example #{index + 1} with unmodified defaults" do
+      prompt = described_class.global.find_by!(slug: "lid.planning")
+      expect(prompt.current_version.template).to eq(Prompts::BuildForLidPlanning::FALLBACK_PROMPT)
+
+      prompt.create_version!(template: "changed in an example", variables: [], created_by: "test")
+    end
   end
 
   SeedsPromptsSpec::EXPECTED_SLUGS.each do |slug|

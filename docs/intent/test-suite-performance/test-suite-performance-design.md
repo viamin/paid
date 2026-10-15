@@ -73,3 +73,12 @@ access context during group initialization. Keep issues, agent runs and
 scenario-specific records/settings per example, including creation overrides
 under active-run uniqueness constraints. Preserve association identity within
 each example. Do not share mutable model objects or disable callbacks/validations.
+
+Prompt seed specs load the actual application default seed script once in a
+test-prof group transaction. Per-example transactions isolate mutations; a
+repeated synchronization check verifies stable prompt/version identities. The
+PR scanner shares only its baseline project graph with its existing settings,
+using fresh records per example instead of replaying a FixtureKit SQL snapshot.
+Keep scenario-specific issues, runs, projects and configuration changes local
+to each example. FactoryBot remains the record builder; no global seed dataset
+or new data framework is required for these optimizations.
