@@ -35,6 +35,7 @@ module Issues
       ReconcilePullRequestSource.call(pull_request: issue) if issue.is_pull_request?
       establish_local_tdd_gate(issue, project: project)
       reconcile_design_pull_request(project, github_issue, github_pull_request, design_pull_request) if issue.is_pull_request? && github_pull_request
+      enqueue_design_artifact_reconciliation(project) if issue.is_pull_request?
       enqueue_readiness_evaluation_after_bootstrap_merge(project, issue, github_pull_request)
 
       deliver_completion_notifications(issue, github_issue: github_issue, was_open: was_open)
@@ -100,6 +101,14 @@ module Issues
       FeatureIntents::ReconcileDesignPullRequest.call(**arguments)
     end
     private_class_method :reconcile_design_pull_request
+
+    def self.enqueue_design_artifact_reconciliation(project)
+      # A merged RDR PR changes the default-branch documents even before it is
+      # attached to a FeatureIntent, so every PR sync refreshes repository RDR
+      # discovery and tracked design PRs.
+      FeatureIntents::ReconcileDesignArtifactsJob.perform_later(project.id)
+    end
+    private_class_method :enqueue_design_artifact_reconciliation
 
     # The readiness snapshot is repository evidence, not a durable latch.
     # Refresh only after GitHub confirms the bootstrap PR merged, so the

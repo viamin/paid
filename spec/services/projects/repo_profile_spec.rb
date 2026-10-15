@@ -28,5 +28,15 @@ RSpec.describe Projects::RepoProfile do
       expect(profile["languages"]).to eq(%w[elixir])
       expect(profile["test_languages"]).to eq(%w[elixir])
     end
+
+    it "retains a configured RDR discovery convention" do
+      profile = described_class.normalize({
+        "rdr_convention" => { "directory" => "architecture/decisions", "file_pattern" => "ADR-*.md" }
+      })
+
+      expect(profile["rdr_convention"]).to eq(
+        "directory" => "architecture/decisions", "file_pattern" => "ADR-*.md"
+      )
+    end
   end
 end

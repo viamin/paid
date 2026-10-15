@@ -261,7 +261,7 @@ components:
         type: string
         maxLength: 40
         format: inbox-entry-id
-        pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending):[1-9][0-9]{0,18}$'
+        pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}$'
         description: Opaque `kind:id` queue identifier.
         example: clarifying_questions:4241
     InboxKind:
@@ -269,7 +269,7 @@ components:
       in: query
       schema:
         type: string
-        enum: [clarifying_questions, plan_review, merge_approval, action_required, escalated_pr, manual_review, intent_conformance, feature_decision, retry_limited, change_intent_draft, partial_closeout, test_review_pending, project_setup_pending]
+        enum: [clarifying_questions, plan_review, merge_approval, action_required, escalated_pr, manual_review, intent_conformance, feature_decision, retry_limited, change_intent_draft, partial_closeout, test_review_pending, project_setup_pending, traceability_gap]
     InboxSort:
       name: sort
       in: query
@@ -294,7 +294,7 @@ components:
         type: string
         maxLength: 40
         format: inbox-entry-id
-        pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending):[1-9][0-9]{0,18}$'
+        pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}$'
   schemas:
     ErrorEnvelope:
       type: object
@@ -375,6 +375,7 @@ components:
         - $ref: '#/components/schemas/PartialCloseoutEntry'
         - $ref: '#/components/schemas/TestReviewPendingEntry'
         - $ref: '#/components/schemas/ProjectSetupPendingEntry'
+        - $ref: '#/components/schemas/TraceabilityGapEntry'
       discriminator:
         propertyName: kind
         mapping:
@@ -391,6 +392,7 @@ components:
           partial_closeout: '#/components/schemas/PartialCloseoutEntry'
           test_review_pending: '#/components/schemas/TestReviewPendingEntry'
           project_setup_pending: '#/components/schemas/ProjectSetupPendingEntry'
+          traceability_gap: '#/components/schemas/TraceabilityGapEntry'
     InboxEntry:
       oneOf:
         - $ref: '#/components/schemas/ClarifyingQuestionsEntry'
@@ -406,6 +408,7 @@ components:
         - $ref: '#/components/schemas/PartialCloseoutEntry'
         - $ref: '#/components/schemas/TestReviewPendingEntry'
         - $ref: '#/components/schemas/ProjectSetupPendingEntry'
+        - $ref: '#/components/schemas/TraceabilityGapEntry'
       discriminator:
         propertyName: kind
         mapping:
@@ -422,6 +425,7 @@ components:
           partial_closeout: '#/components/schemas/PartialCloseoutEntry'
           test_review_pending: '#/components/schemas/TestReviewPendingEntry'
           project_setup_pending: '#/components/schemas/ProjectSetupPendingEntry'
+          traceability_gap: '#/components/schemas/TraceabilityGapEntry'
     InboxEntryBase:
       type: object
       required: [id, kind]
@@ -546,6 +550,17 @@ components:
           properties:
             kind: {type: string, enum: [project_setup_pending]}
             tasks: {type: array, items: {type: string}}
+    TraceabilityGapEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          required: [artifact_path, revision, state, evidence]
+          properties:
+            kind: {type: string, enum: [traceability_gap]}
+            artifact_path: {type: string}
+            revision: {type: string}
+            state: {type: string, enum: [missing_tree, partial_tree, stale_metadata, deferred, unverifiable]}
+            evidence: {type: array, items: {type: string}}
   headers:
     ETag:
       description: Strong validator for polling. Send this value as If-None-Match on the next poll.

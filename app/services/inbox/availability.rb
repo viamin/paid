@@ -128,6 +128,7 @@ module Inbox
       when Inbox::Queue::PARTIAL_CLOSEOUT_KIND then partial_closeout_by_project
       when Inbox::Queue::TEST_REVIEW_PENDING_KIND then test_review_pending_by_project
       when Inbox::Queue::PROJECT_SETUP_PENDING_KIND then project_setup_pending_by_project
+      when Inbox::Queue::TRACEABILITY_GAP_KIND then traceability_gap_by_project
       end
     end
 
@@ -226,6 +227,13 @@ module Inbox
     # @spec PROJECT-READINESS-005
     def project_setup_pending_by_project
       Project.where(id: visible_project_ids).select(&:tdd_readiness_blocked?).to_h { |project| [ project.id, 1 ] }
+    end
+
+    # @spec DESIGN-RECONCILIATION-001
+    def traceability_gap_by_project
+      return {} if visible_project_ids.empty?
+
+      DesignArtifactFinding.open_findings.where(project_id: visible_project_ids).group(:project_id).count
     end
 
     def preload_runner_users(notifications)
