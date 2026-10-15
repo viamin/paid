@@ -62,6 +62,25 @@ RSpec.describe "UserSettings" do
         expect(response.body).to include("Automatic (use my chat runners)")
       end
 
+      # @spec KNOWLEDGE-SETTINGS-001
+      it "renders knowledge runner configuration, credential readiness, and ordered fallbacks" do
+        user.settings.update!(
+          kb_embedding_runner: "openai",
+          kb_embedding_fallback_runners: [ "openrouter" ],
+          kb_chat_runner: "claude",
+          kb_chat_fallback_runners: [ "codex" ]
+        )
+        create(:provider_api_key, user: user, name: "Knowledge OpenAI", api_service_type: "openai")
+        create(:provider_api_key, user: user, name: "Knowledge Anthropic", api_service_type: "anthropic")
+
+        get edit_user_settings_path
+
+        expect(response.body).to include("Embedding Configuration", "Decision Drafting Configuration", "Knowledge OpenAI", "Knowledge Anthropic")
+        expect(response.body).to include("Fallback runners are tried in the listed order", "effective owner", "Manage API keys")
+        expect(response.body).to include('name="user_setting[kb_embedding_runner]"', 'name="user_setting[kb_embedding_fallback_runners_csv]"')
+        expect(response.body).to include('name="user_setting[kb_chat_runner]"', 'name="user_setting[kb_chat_fallback_runners_csv]"')
+      end
+
       it "does not render the deprecated auto-pick PR limit setting" do
         get edit_user_settings_path
 
@@ -388,6 +407,26 @@ RSpec.describe "UserSettings" do
         expect(settings.kb_embedding_fallback_runners).to eq(%w[openai deepseek])
         expect(settings.kb_chat_runner).to eq("claude")
         expect(settings.kb_chat_fallback_runners).to eq([ "cursor" ])
+      end
+
+      # @spec KNOWLEDGE-SETTINGS-001
+      it "saves ordered fallback runners from the knowledge settings form" do
+        patch user_settings_path, params: {
+          user_setting: {
+            kb_embedding_runner: "openrouter",
+            kb_embedding_fallback_runners_csv: "openai, deepseek",
+            kb_chat_runner: "claude",
+            kb_chat_fallback_runners_csv: "codex, cursor"
+          }
+        }
+
+        expect(response).to redirect_to(edit_user_settings_path)
+        expect(user.reload.settings).to have_attributes(
+          kb_embedding_runner: "openrouter",
+          kb_embedding_fallback_runners: %w[openai deepseek],
+          kb_chat_runner: "claude",
+          kb_chat_fallback_runners: %w[codex cursor]
+        )
       end
 
       it "updates the issue analysis runner selection" do
