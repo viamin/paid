@@ -303,12 +303,15 @@
   *Tests:* `spec/views/chat_messages/tool_call_partial_spec.rb`.
   *Code:* `app/views/chat_messages/_tool_call.html.erb`.
 
-- [x] **CHAT-API-021** — When a user opens the global chat popup, Paid SHALL
-  persist its open state and active chat-session ID in account-scoped browser
-  local storage. On a subsequent full-page navigation, Paid SHALL restore an
-  open popup and reload that same session so its persisted conversation remains
-  available. When the user explicitly dismisses the popup, Paid SHALL persist
-  the closed state so later navigations leave it closed.
+- [x] **CHAT-API-021** — The global chat popup SHALL offer a "Keep Chat Open"
+  control that toggles an account-scoped browser-local preference alongside its
+  open state and active chat-session ID. When the preference is enabled and
+  the popup is open, a subsequent full-page navigation SHALL restore the open
+  popup and reload that same session so its persisted conversation remains
+  available. When the preference is disabled, a subsequent full-page
+  navigation SHALL leave the popup closed. When the user explicitly dismisses
+  the popup, Paid SHALL persist the closed state without discarding its active
+  session ID.
   *Tests:* `spec/lib/chat_popup_controller_node_harness_spec.rb`.
   *Code:* `app/javascript/controllers/chat_popup_controller.js`.
 
