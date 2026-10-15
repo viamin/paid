@@ -12,7 +12,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
   # @spec APPLE-TRANSFER-001
   # @spec APPLE-TRANSFER-004
   # @spec APPLE-TRANSFER-005
-  it "transports committed source, ingests guest artifacts, and persists the terminal manifest" do
+  it "transports committed source, ingests guest artifacts, and persists the terminal manifest before completion" do
     project = create(:project, :with_github_installation)
     attempt = create(:apple_verification_attempt, :committed, status: "provisioning", project:, account: project.account,
       agent_run: create(:agent_run, project:))
@@ -21,20 +21,41 @@ RSpec.describe AppleVerificationAttempts::Provision do
     guest_job = class_double(AppleVerification::ExecuteGuestJob)
     completion = class_double(AppleVerificationAttempts::Complete)
     storage = instance_double(AppleVerification::ArtifactIngestion::Storage)
-    allow(storage).to receive(:upload_bytes).and_return("apple-verification/screenshot.png")
-    allow(storage).to receive(:signed_url).and_return("https://storage.example.test/screenshot.png")
+    allow(storage).to receive_messages(
+      upload_bytes: "apple-verification/screenshot.png",
+      signed_url: "https://storage.example.test/screenshot.png"
+    )
 
     stub_transport_guest(guest_job, attempt)
     stub_transport_completion(completion, attempt)
 
     described_class.new(lifecycle:, guest_job:, completion:, artifact_storage: storage).call(attempt)
 
-    expect(storage).to have_received(:upload_bytes).with(hash_including(attempt_id: attempt.id, kind: "screenshot", name: "screen.png"))
-    expect(attempt.apple_verification_artifacts.find_by!(kind: "screenshot").storage_key).to eq("apple-verification/screenshot.png")
-    manifest = attempt.apple_verification_artifacts.find_by!(kind: "manifest").metadata.fetch("manifest")
-    expect(manifest.dig("result", "failure_classification")).to eq("test_assertion")
+    expect_persisted_transport(attempt, storage)
   ensure
     FeatureFlags.disable!(:apple_verification_workers, project:) if project
+  end
+
+  # @spec APPLE-ATTEMPT-006
+  # @spec APPLE-TRANSFER-005
+  it "leaves a result with invalid artifacts recoverable instead of completing the attempt" do
+    attempt = provisioning_attempt
+    lifecycle = instance_double(AppleVerification::Lifecycle, provision: provisioned_handle)
+    guest_job = class_double(AppleVerification::ExecuteGuestJob)
+    completion = class_double(AppleVerificationAttempts::Complete)
+    allow(guest_job).to receive(:call).and_return(
+      guest_result_for(guest_manifest_for(attempt)).tap do |result|
+        result.operations.last["artifacts"] = [ { "kind" => "unknown", "name" => "result", "bytes" => "payload" } ]
+      end
+    )
+    allow(completion).to receive(:call)
+
+    expect { described_class.new(lifecycle:, guest_job:, completion:).call(attempt) }
+      .to raise_error(AppleVerification::ArtifactIngestion::Ingest::UnsupportedKindError)
+
+    expect(completion).not_to have_received(:call)
+    expect(attempt.reload.status).to eq("running")
+    expect(attempt.apple_verification_artifacts).to be_empty
   end
 
   # @spec APPLE-ATTEMPT-004
@@ -231,7 +252,16 @@ RSpec.describe AppleVerificationAttempts::Provision do
   end
 
   def stub_transport_completion(completion, attempt)
-    allow(completion).to receive(:call) { attempt.update!(status: "failed", failure_classification: "test_assertion", finished_at: Time.current) }
+    allow(completion).to receive(:call) do
+      expect(attempt.apple_verification_artifacts.find_by(kind: "manifest")).to be_present
+    end
+  end
+
+  def expect_persisted_transport(attempt, storage)
+    expect(storage).to have_received(:upload_bytes).with(hash_including(attempt_id: attempt.id, kind: "screenshot", name: "screen.png"))
+    expect(attempt.apple_verification_artifacts.find_by!(kind: "screenshot").storage_key).to eq("apple-verification/screenshot.png")
+    manifest = attempt.apple_verification_artifacts.find_by!(kind: "manifest").metadata.fetch("manifest")
+    expect(manifest.fetch("result")).to include("status" => "failed", "failure_classification" => "project_configuration")
   end
 
   def guest_result_for(manifest)

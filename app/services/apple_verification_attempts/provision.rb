@@ -127,15 +127,15 @@ module AppleVerificationAttempts
           manifest: guest_manifest(attempt, source_lanes:),
           operations: result.operations
         )
+        persist_transport_result(attempt, result:, outcome:)
         completion.call(attempt:, outcome: outcome.status, failure_classification: outcome.failure_classification, lifecycle:)
-        persist_transport_result(attempt, result:)
       end
     end
 
-    def persist_transport_result(attempt, result:)
+    def persist_transport_result(attempt, result:, outcome:)
       references = artifact_ingestion.call(attempt:, descriptors: artifact_descriptors(result), storage: artifact_storage).references
       persist_artifacts(attempt, references)
-      persist_result_manifest(attempt, references)
+      persist_result_manifest(attempt, references, outcome:)
     end
 
     def artifact_descriptors(result)
@@ -154,8 +154,14 @@ module AppleVerificationAttempts
       end
     end
 
-    def persist_result_manifest(attempt, references)
-      manifest = result_manifest.call(attempt:, artifact_references: references, timings: timings(attempt)).manifest.as_json
+    def persist_result_manifest(attempt, references, outcome:)
+      manifest = result_manifest.call(
+        attempt:,
+        artifact_references: references,
+        status: outcome.status,
+        failure_classification: outcome.failure_classification,
+        timings: timings(attempt)
+      ).manifest.as_json
       AppleVerificationArtifact.create!(
         apple_verification_attempt: attempt,
         kind: "manifest",
