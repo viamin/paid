@@ -40,7 +40,7 @@ module FeatureIntents
     def persist(result)
       DesignArtifactFinding.transaction do
         result.findings.each { |finding| upsert(finding, result.last_successful_coverage_at) }
-        resolve_absent_findings(result.findings)
+        resolve_absent_findings(result.findings) if result.last_successful_coverage_at
       end
     end
 

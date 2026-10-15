@@ -46,6 +46,14 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
     expect(DesignArtifactFinding.sole.covered_at).to eq(covered_at)
   end
 
+  it "keeps an earlier actionable finding open when a later scan is unverifiable" do
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
+
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [], coverage_complete: false)
+
+    expect(project.design_artifact_findings.open_findings.pluck(:state)).to contain_exactly("missing_tree", "unverifiable")
+  end
+
   it "resolves an open RDR finding when its path was removed after a successful discovery" do
     described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
 

@@ -10,6 +10,8 @@ module FeatureIntents
 
     RDR_STATUS_PATTERN = /^\s*(?:\*\*)?status(?:\*\*)?\s*:\s*(?:\*\*)?(.+?)(?:\*\*)?\s*$/i
     RELATIONSHIP_LINE_PATTERN = /^\s*(?:[-*]\s+)?(?:\*\*)?(?:implements|closes|fixes|resolves|tracks|depends on|blocked by|related issues?)(?:\s*:)?(?:\*\*)?\s*:?\s+(.+)$/i
+    RELATIONSHIP_HEADING_PATTERN = /^\s{0,3}\#{1,6}\s+(?:\*\*)?(?:implements|closes|fixes|resolves|tracks|depends on|blocked by|related issues?)(?:\*\*)?\s*#*\s*$/i
+    MARKDOWN_HEADING_PATTERN = /^\s{0,3}\#{1,6}\s+/
 
     queue_as :maintenance
 
@@ -138,7 +140,17 @@ module FeatureIntents
     end
 
     def relationship_text(body)
-      body.to_s.each_line.filter_map { |line| line[RELATIONSHIP_LINE_PATTERN, 1] }.join("\n")
+      in_relationship_section = false
+      body.to_s.each_line.filter_map do |line|
+        if line.match?(RELATIONSHIP_HEADING_PATTERN)
+          in_relationship_section = true
+          next
+        end
+
+        in_relationship_section = false if line.match?(MARKDOWN_HEADING_PATTERN)
+
+        in_relationship_section ? line : line[RELATIONSHIP_LINE_PATTERN, 1]
+      end.join("\n")
     end
 
     def identity_for(issue)

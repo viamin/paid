@@ -74,6 +74,20 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     expect(DesignArtifactFinding.count).to eq(0)
   end
 
+  it "uses issue links listed under an RDR relationship heading" do
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-020-service-container-architecture.md",
+      revision: "a" * 40,
+      body: "### Related Issues\n\n- #216\n"
+    )
+    create(:issue, project:, github_number: 216)
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ artifact ])
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+  end
+
   it "does not treat an incidental issue mention as an issue-tree relationship" do
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number,
       body: "The prior discussion in #101 explains why this was deferred.")
