@@ -1,4 +1,10 @@
 <%# @spec DESIGN-RECONCILIATION-001 %>
+<% artifact_path = entry.record.artifact_path %>
+<% artifact_url = if artifact_path.match?(%r{\Apull/\d+\z})
+                    "#{entry.project.github_url}/#{artifact_path}"
+                  else
+                    "#{entry.project.github_url}/blob/#{entry.record.revision}/#{artifact_path}"
+                  end %>
 <p class="text-sm text-gray-700">
   Reconciliation found a <strong><%= entry.record.state.humanize.downcase %></strong> traceability gap at the recorded revision.
 </p>
@@ -6,7 +12,7 @@
 <dl class="mt-4 space-y-3 text-sm">
   <div>
     <dt class="font-medium text-gray-900">Artifact</dt>
-    <dd class="mt-1"><%= link_to entry.record.artifact_path, "#{entry.project.github_url}/blob/#{entry.record.revision}/#{entry.record.artifact_path}", class: "text-indigo-600 hover:text-indigo-500", target: "_blank", rel: "noopener" %></dd>
+    <dd class="mt-1"><%= link_to artifact_path, artifact_url, class: "text-indigo-600 hover:text-indigo-500", target: "_blank", rel: "noopener" %></dd>
   </div>
   <div>
     <dt class="font-medium text-gray-900">Revision</dt>

@@ -45,7 +45,8 @@ module FeatureIntents
         path: "pull/#{design_pr.pull_request_number}",
         status: design_pr.draft? ? "draft" : nil,
         related_issues: explicit_references(issue&.body),
-        stored_identities: design_pr.feature_intent.issues.map { |linked| identity_for(linked) }
+        stored_identities: design_pr.feature_intent.issues.map { |linked| identity_for(linked) },
+        coverage_complete: issue.present? && design_pr.draft.in?([ true, false ])
       }
     end
 
@@ -89,7 +90,8 @@ module FeatureIntents
     def reconcile(artifact, revision:, coverage_complete: true)
       issues, complete = issue_coverage(artifact)
       PersistDesignArtifactFindings.call(
-        project:, revision:, artifacts: [ artifact ], issues:, coverage_complete: coverage_complete && complete
+        project:, revision:, artifacts: [ artifact ], issues:,
+        coverage_complete: coverage_complete && artifact.fetch(:coverage_complete, true) && complete
       )
     end
 

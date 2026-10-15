@@ -6,7 +6,7 @@ require "rails_helper"
 RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
   let(:project) { create(:project, owner: "acme", repo: "widget") }
   let(:feature_intent) { create(:feature_intent, project:) }
-  let(:design_pr) { create(:feature_intent_design_pr, feature_intent:, pull_request_number: 100) }
+  let(:design_pr) { create(:feature_intent_design_pr, feature_intent:, pull_request_number: 100, draft: false) }
 
   it "persists an actionable finding from a synced design pull request" do
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
@@ -26,6 +26,25 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
 
     expect(DesignArtifactFinding.sole).to have_attributes(
       artifact_path: "pull/100", revision: design_pr.head_sha, state: "deferred", status: "open"
+    )
+  end
+
+  it "treats an unknown draft state as unverifiable until synchronization" do
+    design_pr.update!(draft: nil)
+    create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
+
+    described_class.perform_now(project.id, design_pr.pull_request_number)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(
+      artifact_path: "pull/100", revision: design_pr.head_sha, state: "unverifiable", status: "open"
+    )
+  end
+
+  it "treats a design pull request missing from the local issue mirror as unverifiable" do
+    described_class.perform_now(project.id, design_pr.pull_request_number)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(
+      artifact_path: "pull/100", revision: design_pr.head_sha, state: "unverifiable", status: "open"
     )
   end
 

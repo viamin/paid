@@ -1199,6 +1199,18 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("No explicit qualified issue links were found")
   end
 
+  # @spec DESIGN-RECONCILIATION-001
+  it "links traceability-gap pull request artifacts to GitHub pull requests" do
+    finding = create(:design_artifact_finding, project: project, account: project.account,
+      artifact_path: "pull/100")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::TRACEABILITY_GAP_KIND, finding), kind: Inbox::Queue::TRACEABILITY_GAP_KIND)
+
+    document = Nokogiri::HTML(response.body)
+
+    expect(document.at_css(%(a[href="#{project.github_url}/pull/100"]))).to be_present
+  end
+
   # @spec OPERATOR-INBOX-002J
   it "links the test_review_pending detail pane to the pull request" do
     pr = create_tdd_test_review_pr(title: "Red-phase tests for CSV export", github_number: 518)
