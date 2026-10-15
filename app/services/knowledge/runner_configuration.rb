@@ -56,9 +56,8 @@ module Knowledge
     def for_embedding_candidate_runners
       configured_embedding_runners.filter_map do |runner|
         next log_unsupported_runner(runner) unless UserSetting::KB_EMBEDDING_RUNNERS.include?(runner)
-        config = Runner::DIRECT_OUTBOUND_API_PROVIDERS[runner]
-        next log_unsupported_runner(runner) unless config
-        next unless embedding_credentials_available?(runner, config)
+        next log_unsupported_runner(runner) unless Runner::DIRECT_OUTBOUND_API_PROVIDERS[runner]
+        next unless embedding_readiness_for(runner).status == "ready"
 
         Result.new(runner: runner)
       end
@@ -125,17 +124,9 @@ module Knowledge
         &.first
     end
 
-    def embedding_credentials_available?(runner, config)
-      return true if runner == "openai" && platform_openai_api_key_available?
-
-      owner
-        &.provider_api_keys
-        &.for_api_service_type(config.fetch(:service_type))
-        &.exists? || false
-    end
-
-    def platform_openai_api_key_available?
-      platform_openai_api_key.present?
+    # @spec KNOWLEDGE-DASHBOARD-001
+    def embedding_readiness_for(runner)
+      RunnerReadiness.call(owner:, operation: :embedding, runner:)
     end
 
     def platform_openai_api_key

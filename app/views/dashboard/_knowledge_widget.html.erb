@@ -50,7 +50,7 @@
       <div class="flex items-center justify-between gap-3">
         <div>
           <h3 class="text-sm font-medium text-gray-500">Runner Health</h3>
-          <p class="mt-1 text-sm text-gray-700">Current availability for knowledge chat and embedding runners.</p>
+          <p class="mt-1 text-sm text-gray-700">Configuration readiness and operational health across each project's effective owner.</p>
         </div>
         <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ring-inset <%= status_classes %>">
           <%= operational_status.humanize %>
@@ -63,9 +63,15 @@
         </p>
       <% elsif operational_status == "unavailable" %>
         <p class="mt-3 text-sm text-red-700">
-          Knowledge capabilities are unavailable because both runner groups are down.
+          Knowledge capabilities are unavailable because no configured runner is both ready and operational.
         </p>
       <% end %>
+
+      <p class="mt-3 text-xs text-gray-500">
+        Scope: <%= knowledge_stats[:provider_health][:project_count] || 0 %> projects across <%= knowledge_stats[:provider_health][:owner_count] || 0 %> effective owners. Credential readiness is local configuration only; it does not validate authentication with an upstream provider.
+        <%= link_to "Settings", edit_user_settings_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+        · <%= link_to "API Keys", provider_api_keys_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+      </p>
 
       <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <% { "Embedding" => knowledge_stats[:provider_health][:embedding], "Decision Drafting" => knowledge_stats[:provider_health][:chat] }.each do |label, runners| %>
@@ -81,11 +87,20 @@
                   <div class="rounded-md bg-gray-50 px-3 py-2">
                     <div class="flex items-center justify-between gap-3">
                       <span class="font-medium text-gray-900"><%= runner[:runner] %></span>
-                      <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= runner[:available] ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700" %>">
-                        <%= runner[:available] ? "Available" : "Unavailable" %>
+                      <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium <%= runner[:configuration_status] == "ready" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700" %>">
+                        <%= (runner[:configuration_status] || "unknown").humanize %>
                       </span>
                     </div>
-                    <dl class="mt-2 grid grid-cols-3 gap-2 text-xs text-gray-600">
+                    <p class="mt-1 text-xs text-gray-500">Effective owner #<%= runner[:owner_id] || "unknown" %> · <%= pluralize(runner[:project_count] || 0, "project") %></p>
+                    <dl class="mt-2 grid grid-cols-4 gap-2 text-xs text-gray-600">
+                      <div>
+                        <dt class="font-medium text-gray-500">Credential</dt>
+                        <dd><%= runner[:credential_source]&.humanize || "Missing" %></dd>
+                      </div>
+                      <div>
+                        <dt class="font-medium text-gray-500">Service</dt>
+                        <dd><%= runner[:credential_service]&.humanize || "--" %></dd>
+                      </div>
                       <div>
                         <dt class="font-medium text-gray-500">Circuit</dt>
                         <dd><%= runner[:circuit_state].humanize %></dd>
