@@ -1,6 +1,7 @@
 import { marked } from "marked"
 
 const SAFE_URL_SCHEMES = /^(https?|mailto):/i
+const PAID_PATH = /^\/(?![\\/])/
 
 function escapeAttribute(value) {
   return value
@@ -23,6 +24,9 @@ function createSafeRenderer() {
   renderer.link = function ({ href, tokens, text }) {
     const label = tokens ? this.parser.parseInline(tokens) : text
     if (!href) return label
+    if (PAID_PATH.test(href)) {
+      return `<a href="${escapeAttribute(href)}" data-chat-navigation="true">${label}</a>`
+    }
     if (!SAFE_URL_SCHEMES.test(href)) return label
     return `<a href="${escapeAttribute(href)}" rel="noopener noreferrer">${label}</a>`
   }

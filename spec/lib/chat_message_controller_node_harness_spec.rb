@@ -270,7 +270,7 @@ class ChatMessageControllerNodeHarness
 
     function testMarkdownRendersSafeHtml() {
       const { controller, content } = makeController(
-        "**safe** [ok](https://example.com) [bad](javascript:alert(1)) ![hidden](https://example.com/image.png)"
+        "**safe** [ok](https://example.com) [settings](/provider_api_keys/new#api-key-form) [bad](javascript:alert(1)) [external](//example.com) [backslash](/\\\\example.com) ![hidden](https://example.com/image.png)"
       );
 
       controller.render();
@@ -281,8 +281,17 @@ class ChatMessageControllerNodeHarness
       if (!content.innerHTML.includes('href="https://example.com"')) {
         throw new Error(`Expected safe link to render, got: ${content.innerHTML}`);
       }
+      if (!content.innerHTML.includes('href="/provider_api_keys/new#api-key-form"') || !content.innerHTML.includes('data-chat-navigation="true"')) {
+        throw new Error(`Expected an internal Paid navigation link, got: ${content.innerHTML}`);
+      }
       if (content.innerHTML.includes("javascript:")) {
         throw new Error(`Expected unsafe link href to be stripped, got: ${content.innerHTML}`);
+      }
+      if (content.innerHTML.includes('href="//example.com"')) {
+        throw new Error(`Expected protocol-relative link to be stripped, got: ${content.innerHTML}`);
+      }
+      if (content.innerHTML.includes('href="/\\\\example.com"')) {
+        throw new Error(`Expected backslash-prefixed link to be stripped, got: ${content.innerHTML}`);
       }
       if (content.innerHTML.includes("<img")) {
         throw new Error(`Expected images to be suppressed, got: ${content.innerHTML}`);

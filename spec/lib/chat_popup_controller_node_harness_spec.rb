@@ -124,6 +124,22 @@ class ChatPopupControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-025
+    function runChatNavigationCase() {
+      const localStorage = localStorageWith();
+      const controller = Object.create(ChatPopupController.prototype);
+      controller.accountIdValue = 7;
+      controller.state = { open: true, sessionId: 42, keepOpen: false };
+
+      global.window = { localStorage };
+      controller.navigate({ button: 0, defaultPrevented: false, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false });
+
+      const persisted = JSON.parse(localStorage.getItem("paid:chat-popup:7"));
+      if (persisted.open !== true || persisted.keepOpen !== true || persisted.sessionId !== 42) {
+        throw new Error(`Expected chat navigation to preserve the open session, saw ${JSON.stringify(persisted)}`);
+      }
+    }
+
     async function runNewChatSuccessCase() {
       const writes = [];
       const fetchCalls = [];
@@ -299,6 +315,7 @@ class ChatPopupControllerNodeHarness
 
       if (process.argv[1] === "navigation") {
         runNavigationPersistenceCase();
+    runChatNavigationCase();
         return;
       }
 

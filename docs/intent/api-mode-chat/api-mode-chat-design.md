@@ -111,6 +111,12 @@ What ships today:
   A full-page navigation restores the same persisted conversation only while
   that preference is enabled; otherwise the popup starts closed. Explicit
   dismissal persists closed without discarding the selected session.
+- Assistant markdown may render root-relative Paid links, but never
+  protocol-relative or arbitrary schemes. A popup navigation link explicitly
+  preserves the active session and open state before the browser transitions,
+  so the destination can be used without losing the conversation. Destinations
+  may include a fragment identifier for a relevant section of the destination
+  page.
 - API sessions default to inline-only (`container_capability: none`); a
   capability request is a handoff to the RDR-037 workspace lifecycle, not
   behavior shipped by this RDR-028 coverage

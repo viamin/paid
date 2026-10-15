@@ -36,6 +36,18 @@ export default class extends Controller {
     this.renderState()
   }
 
+  // @spec CHAT-API-025
+  // Internal assistant links need continuity even if the user did not opt in
+  // to persistence beforehand: following one is an explicit request to carry
+  // this conversation to the destination page.
+  navigate(event) {
+    if (event.defaultPrevented || event.button !== 0 || this.modifiedClick(event)) return
+
+    this.state.open = true
+    this.state.keepOpen = true
+    this.writeState()
+  }
+
   toggleKeepOpen() {
     // @spec CHAT-API-021
     this.state.keepOpen = !this.state.keepOpen
@@ -204,6 +216,10 @@ export default class extends Controller {
 
   storageKey() {
     return `paid:chat-popup:${this.accountIdValue}`
+  }
+
+  modifiedClick(event) {
+    return event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
   }
 
   readState() {

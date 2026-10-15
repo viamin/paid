@@ -315,6 +315,20 @@
   *Tests:* `spec/lib/chat_popup_controller_node_harness_spec.rb`.
   *Code:* `app/javascript/controllers/chat_popup_controller.js`.
 
+- [x] **CHAT-API-025** — When an assistant message contains a root-relative
+  Paid navigation link, the chat renderer SHALL retain it while rejecting
+  protocol-relative and unsafe-scheme URLs. When the user follows that link
+  from the global chat popup, Paid SHALL persist the active session with the
+  popup open and its keep-open preference enabled before navigation, so the
+  same conversation reloads on the destination page. The link MAY include a
+  fragment identifier to position the destination at its relevant section.
+  *Tests:* `spec/lib/chat_message_controller_node_harness_spec.rb`,
+  `spec/lib/chat_popup_controller_node_harness_spec.rb`,
+  `spec/services/chat_sessions/build_system_prompt_spec.rb`.
+  *Code:* `app/javascript/lib/safe_markdown.js`,
+  `app/javascript/controllers/chat_popup_controller.js`,
+  `app/services/chat_sessions/build_system_prompt.rb`.
+
 - [x] **CHAT-API-010** — When a chat repo-read tool (`grep_repo`,
   `read_repo_file`, `list_repo_tree`, `search_issues`) resolves a GitHub
   client for a project, the system SHALL prefer the project's own credential
