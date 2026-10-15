@@ -1,16 +1,16 @@
-# RDR-075 General Maintenance Runs — Closeout Audit — 2026-10-15
+# RDR-075 General Maintenance Runs — Blocked Readiness Audit — 2026-10-15
 
 - **Draft design:** [PR #4308](https://github.com/viamin/paid/pull/4308)
-- **Closeout:** [#4334](https://github.com/viamin/paid/issues/4334)
+- **Readiness audit:** [#4334](https://github.com/viamin/paid/issues/4334)
 - **Tracks:** [#4326](https://github.com/viamin/paid/issues/4326) (the
   umbrella's own final audit is the only authorized closer)
-- **Decision:** **Partially Implemented — planning only.** No RDR-075 runtime
-  behavior is shipped. The design remains Draft and is not repository
-  authority, so this closeout cannot promote the RDR or remove its rollout
-  guard.
+- **Decision:** **Do not close #4334.** No RDR-075 runtime behavior is shipped.
+  The design remains Draft and is not repository authority, so this blocked
+  readiness audit cannot promote the RDR, reconcile a closeout status, or
+  remove its rollout guard.
 
 This is an evidence audit, not an inference from child-issue state. It
-supersedes the 2026-10-14 readiness snapshot for C75's current closeout
+supersedes the 2026-10-14 readiness snapshot for C75's current readiness
 evidence. The audit uses the draft RDR in PR #4308 as the proposed contract;
 it does not treat that unmerged document as permission to implement it.
 
@@ -94,13 +94,15 @@ mutation-sweep tests must not be relabelled as maintenance-run proof.
   `spec/migrations/create_marketplace_entries_spec.rb` passed: **2 examples,
   0 failures**. Neither result is presented as maintenance behavior evidence.
 
-## Status, gaps, and rollout decision
+## Blocked readiness, gaps, and rollout decision
 
-**Status: Partially Implemented — planning only.** The focused gaps were
+**Readiness: Blocked; no closeout status is assigned.** The focused gaps were
 already separately filed rather than being re-filed as a catch-all: #4327
 through #4333 cover the seven implementation phases, and #4340 covers the
 required report-only intent-traceability recipe. Their open state matches the
-direct source inspection above; no duplicate issue is warranted.
+direct source inspection above; no duplicate issue is warranted. A closeout
+status is premature until the RDR, LLD, and EARS are repository authority and
+some shipped scope exists to reconcile against them.
 
 Keep `maintenance_runs` as a default-off per-tenant guard when Phase 1 creates
 it. There is no shipped evidence that could support removal, and recurring
