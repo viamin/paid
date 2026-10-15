@@ -14,7 +14,7 @@
         <%= form.label primary_attribute, "Primary Runner", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
         <div class="mt-2">
           <%= form.select primary_attribute,
-            options_for_select(@user_setting.knowledge_runner_options(operation: operation), @user_setting.public_send(primary_attribute)),
+            options_for_select(user_setting.knowledge_runner_options(operation: operation), user_setting.public_send(primary_attribute)),
             {},
             class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
         </div>
@@ -27,7 +27,7 @@
         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Comma-separated. Fallback runners are tried in the listed order after the primary runner.</p>
       </div>
       <dl class="space-y-2 rounded bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-700 dark:text-gray-200">
-        <% @knowledge_readiness.fetch(operation).each do |entry| %>
+        <% knowledge_readiness.fetch(operation).each do |entry| %>
           <% readiness = entry.readiness %>
           <div>
             <dt class="font-medium"><%= entry.role %>: <%= Runner.display_name_for(entry.runner) %></dt>
