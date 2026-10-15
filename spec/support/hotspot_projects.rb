@@ -24,3 +24,16 @@ RSpec.shared_context "with stable provisioning project" do
     TenantContext.with_system_access { create(:project) }
   end
 end
+
+# @spec TEST-SUITE-011, TEST-SUITE-013
+RSpec.shared_context "with stable PR scanner project" do
+  let_it_be(:project, refind: true) do
+    TenantContext.with_system_access do
+      create(:project,
+        auto_scan_prs: true,
+        max_pr_followup_runs: 3,
+        pr_action_labels: [],
+        auto_fix_merge_conflicts: false)
+    end
+  end
+end
