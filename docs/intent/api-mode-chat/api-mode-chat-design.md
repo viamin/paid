@@ -106,9 +106,11 @@ entry points.
 
 What ships today:
 
-- The global chat popup stores its open/closed state and active session ID in
-  account-scoped local storage. A full-page navigation restores an open popup
-  with the same persisted conversation; explicit dismissal persists closed.
+- The global chat popup stores its open/closed state, active session ID, and
+  an explicit "Keep Chat Open" preference in account-scoped local storage.
+  A full-page navigation restores the same persisted conversation only while
+  that preference is enabled; otherwise the popup starts closed. Explicit
+  dismissal persists closed without discarding the selected session.
 - API sessions default to inline-only (`container_capability: none`); a
   capability request is a handoff to the RDR-037 workspace lifecycle, not
   behavior shipped by this RDR-028 coverage
