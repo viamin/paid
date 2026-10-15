@@ -39,6 +39,7 @@ module Projects
         "languages" => normalize_languages(languages["all"] || languages["detected"] || hash["languages"]),
         "test_languages" => normalize_languages(languages["test"] || hash["test_languages"]),
         "framework" => Projects::FrameworkProfile.normalize(hash["framework"]),
+        "rdr_convention" => hash["rdr_convention"],
         "manifest_path" => path
       }.compact
     end
