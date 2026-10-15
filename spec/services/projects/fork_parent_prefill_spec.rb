@@ -3,6 +3,7 @@
 require "rails_helper"
 
 RSpec.describe Projects::ForkParentPrefill do
+  include_context "with recorded HTTP retry delays"
   let(:account) { create(:account) }
   let(:github_token) { create(:github_token, account: account) }
   let(:project) { create(:project, account: account, github_token: github_token, owner: "stenoai", repo: "stenoai") }
@@ -62,12 +63,17 @@ RSpec.describe Projects::ForkParentPrefill do
     end
 
     it "returns :unavailable when the GitHub request fails" do # @spec PR-TARGET-009
-      stub_request(:get, "https://api.github.com/repos/stenoai/stenoai").to_return(status: 500, body: "boom")
+      request = stub_request(:get, "https://api.github.com/repos/stenoai/stenoai").to_return(status: 500, body: "boom")
 
       result = described_class.call(project)
 
       expect(result.detected?).to be(false)
       expect(result.reason).to eq("github_request_failed")
+      expect(request).to have_been_requested.times(4)
+      expect(http_retry_delays.size).to eq(3)
+      http_retry_delays.zip([ 0.5, 1.0, 2.0 ]).each do |delay, base|
+        expect(delay).to be_between(base, base + 0.25)
+      end
     end
 
     it "returns :unavailable and logs when the credential is unauthorized" do # @spec PR-TARGET-009

@@ -22,8 +22,10 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     )
   end
   let(:config) do
+    ids = RSpec.current_example.metadata[:scenario_ids]
     AppleVerification::LiveValidation::Config.new(
-      ports: ports, agent_run: agent_run, repeats: 2, image_id: "paid-macos", profile_id: "ios-standard", run_key: "t1"
+      ports: ports, agent_run: agent_run, repeats: 2, image_id: "paid-macos", profile_id: "ios-standard", run_key: "t1",
+      suite: ids ? AppleLiveValidationFakes::SelectedSuite.new(ids) : AppleVerification::LiveValidation::Suite
     )
   end
 
@@ -33,7 +35,7 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     result.evidence.select { |row| row.scenario_id == scenario_id }
   end
 
-  it "runs functional scenarios as repeated clean clones with per-repeat evidence" do
+  it "runs functional scenarios as repeated clean clones with per-repeat evidence", scenario_ids: %w[functional-smoke-ios-app] do
     result = described_class.new(config).run
 
     rows = evidence_for(result, "functional-smoke-ios-app")
@@ -42,9 +44,11 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(rows.map(&:detail)).to all(match(/vm-a\d/))
     expect(lifecycle.provisioned_identifiers("functional-smoke-ios-app")).to eq(%w[vm-a1 vm-a2])
     expect(lifecycle.destroyed).to include("vm-a1", "vm-a2")
+    expect(lifecycle.provisioned_identifiers("functional-colormatching-ios")).to be_empty
+    expect(project.agent_runs.count).to eq(1)
   end
 
-  it "fails the repeat when a dispatched operation reports failure" do
+  it "fails the repeat when a dispatched operation reports failure", scenario_ids: %w[functional-colormatching-ios] do
     dispatcher.fail_operation_for("functional-colormatching-ios", "test")
 
     result = described_class.new(config).run
@@ -53,7 +57,7 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(rows).to contain_exactly(have_attributes(status: :passed), have_attributes(status: :failed, detail: /test/))
   end
 
-  it "fails the repeat when a VM survives teardown" do
+  it "fails the repeat when a VM survives teardown", scenario_ids: %w[functional-smoke-ios-app] do
     lifecycle.leak_vm("vm-a1")
 
     result = described_class.new(config).run
@@ -61,7 +65,7 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(evidence_for(result, "functional-smoke-ios-app").first).to have_attributes(status: :failed, detail: /inventory/)
   end
 
-  it "fails the repeat when the provider reuses a VM across repeats" do
+  it "fails the repeat when the provider reuses a VM across repeats", scenario_ids: %w[functional-smoke-ios-app] do
     ports.lifecycle = AppleLiveValidationFakes::FakeLifecycle.new(%w[vm-same vm-same])
 
     result = described_class.new(config).run
@@ -70,14 +74,14 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(rows.last).to have_attributes(status: :failed, detail: /clean clone/)
   end
 
-  it "records a gap for isolation scenarios without a diagnostics provider" do
+  it "records a gap for isolation scenarios without a diagnostics provider", scenario_ids: %w[isolation-keychain] do
     result = described_class.new(config).run
 
     rows = evidence_for(result, "isolation-keychain")
     expect(rows).to contain_exactly(have_attributes(status: :gap, detail: /diagnostics provider/))
   end
 
-  it "records isolation evidence through the diagnostics provider" do
+  it "records isolation evidence through the diagnostics provider", scenario_ids: %w[isolation-keychain isolation-host-ssh isolation-devices] do
     ports.diagnostics = AppleLiveValidationFakes::FakeDiagnostics.new(
       "isolation-keychain" => { "status" => "denied", "detail" => "keychain empty" },
       "isolation-host-ssh" => { "status" => "exposed" }
@@ -90,7 +94,7 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(evidence_for(result, "isolation-devices")).to contain_exactly(have_attributes(status: :gap))
   end
 
-  it "converges cancellation through the cleanup lane and asserts the ledger" do
+  it "converges cancellation through the cleanup lane and asserts the ledger", scenario_ids: %w[recovery-cancellation] do
     result = described_class.new(config).run
 
     row = evidence_for(result, "recovery-cancellation").sole
@@ -99,13 +103,13 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(row.references).to include(hash_including("kind" => "execution_resource_ledger_entry"))
   end
 
-  it "records a gap for the timeout scenario when no timeout policy is configured" do
+  it "records a gap for the timeout scenario when no timeout policy is configured", scenario_ids: %w[recovery-timeout] do
     result = described_class.new(config).run
 
     expect(evidence_for(result, "recovery-timeout").sole).to have_attributes(status: :gap, detail: /timeout/)
   end
 
-  it "converges partial provisioning failures before any VM exists" do
+  it "converges partial provisioning failures before any VM exists", scenario_ids: %w[recovery-partial-provisioning] do
     result = described_class.new(config).run
 
     row = evidence_for(result, "recovery-partial-provisioning").sole
@@ -113,7 +117,7 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(row.detail).to include("no VM left")
   end
 
-  it "converges a control-plane restart by re-linking the same VM for the same request" do
+  it "converges a control-plane restart by re-linking the same VM for the same request", scenario_ids: %w[recovery-control-plane-restart] do
     result = described_class.new(config).run
 
     row = evidence_for(result, "recovery-control-plane-restart").sole
@@ -121,7 +125,7 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(row.detail).to include("re-linked")
   end
 
-  it "tears down the re-linked control-plane-restart VM so it cannot leak" do
+  it "tears down the re-linked control-plane-restart VM so it cannot leak", scenario_ids: %w[recovery-control-plane-restart] do
     result = described_class.new(config).run
 
     row = evidence_for(result, "recovery-control-plane-restart").sole
@@ -130,7 +134,7 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(project.agent_runs.reload.map { |run| lifecycle.inventory(agent_run: run) }).to all(be_empty)
   end
 
-  it "converges a host restart by cleaning the stopped VM through reconciliation" do
+  it "converges a host restart by cleaning the stopped VM through reconciliation", scenario_ids: %w[recovery-host-restart] do
     result = described_class.new(config).run
 
     row = evidence_for(result, "recovery-host-restart").sole
@@ -138,7 +142,7 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(row.detail).to include("ledger entries deleted")
   end
 
-  it "converges orphan discovery after the owning run stops being in flight" do
+  it "converges orphan discovery after the owning run stops being in flight", scenario_ids: %w[recovery-orphan-discovery] do
     result = described_class.new(config).run
 
     row = evidence_for(result, "recovery-orphan-discovery").sole
@@ -146,7 +150,7 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(row.detail).to include("ledger entries deleted")
   end
 
-  it "records capacity evidence with the measured figure" do
+  it "records capacity evidence with the measured figure", scenario_ids: %w[functional-smoke-ios-app] do
     ports.capacity_sampler = AppleLiveValidationFakes::FakeCapacitySampler.new([
       { "disk_free_gib" => 72.5, "memory_free_percent" => 31.0, "active_apple_vms" => 1, "agent_containers" => 3 },
       { "disk_free_gib" => 68.0, "memory_free_percent" => 26.5, "active_apple_vms" => 1, "agent_containers" => 4 }
@@ -160,7 +164,7 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(row.detail).to include("disk free: 68.0-72.5 GiB")
   end
 
-  it "fails capacity when a sample crosses an admission threshold" do
+  it "fails capacity when a sample crosses an admission threshold", scenario_ids: %w[functional-smoke-ios-app] do
     ports.capacity_sampler = AppleLiveValidationFakes::FakeCapacitySampler.new([
       { "disk_free_gib" => 72.5, "memory_free_percent" => 31.0, "active_apple_vms" => 1, "agent_containers" => 3 },
       { "disk_free_gib" => 55.0, "memory_free_percent" => 31.0, "active_apple_vms" => 1, "agent_containers" => 3 }
@@ -171,7 +175,7 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(evidence_for(result, "capacity-alongside-three-agent-containers").sole).to have_attributes(status: :failed, detail: /60/)
   end
 
-  it "fails capacity when fewer than three agent containers are active" do
+  it "fails capacity when fewer than three agent containers are active", scenario_ids: %w[functional-smoke-ios-app] do
     ports.capacity_sampler = AppleLiveValidationFakes::FakeCapacitySampler.new([
       { "disk_free_gib" => 72.5, "memory_free_percent" => 31.0, "active_apple_vms" => 1, "agent_containers" => 2 }
     ])
@@ -181,7 +185,7 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     expect(evidence_for(result, "capacity-alongside-three-agent-containers").sole).to have_attributes(status: :failed, detail: /three/)
   end
 
-  it "records a gap instead of raising when every capacity sample is degraded" do
+  it "records a gap instead of raising when every capacity sample is degraded", scenario_ids: %w[functional-smoke-ios-app] do
     ports.capacity_sampler = AppleLiveValidationFakes::FakeCapacitySampler.new([
       { "disk_free_gib" => 72.5 },
       {}
@@ -193,7 +197,7 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
       .to have_attributes(status: :gap, detail: /degraded/)
   end
 
-  it "evaluates capacity against complete samples only when some samples are degraded" do
+  it "evaluates capacity against complete samples only when some samples are degraded", scenario_ids: %w[functional-smoke-ios-app] do
     ports.capacity_sampler = AppleLiveValidationFakes::FakeCapacitySampler.new([
       { "disk_free_gib" => 55.0, "memory_free_percent" => 31.0, "active_apple_vms" => 1, "agent_containers" => 3 },
       { "disk_free_gib" => 72.5 }
@@ -209,5 +213,15 @@ RSpec.describe AppleVerification::LiveValidation::Runner do
     result = described_class.new(config).run
 
     expect(evidence_for(result, "report-archived-under-docs-rdrs").sole).to have_attributes(status: :gap)
+    # @spec TEST-SUITE-014
+    AppleVerification::LiveValidation::Suite::SCENARIOS.each do |scenario|
+      expected_count = scenario.group == :functional ? config.repeats : 1
+      rows = evidence_for(result, scenario.id)
+      expect(rows.size).to eq(expected_count), scenario.id
+      if scenario.group == :functional || (scenario.group == :recovery && scenario.id != "recovery-timeout")
+        expect(rows).to all(have_attributes(status: :passed)), scenario.id
+      end
+    end
+    expect(project.agent_runs.reload.map { |run| lifecycle.inventory(agent_run: run) }).to all(be_empty)
   end
 end
