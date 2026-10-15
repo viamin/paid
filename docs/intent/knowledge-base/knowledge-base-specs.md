@@ -24,6 +24,21 @@
   `spec/services/knowledge/artifact_store_spec.rb`,
   `spec/jobs/run_collectors_job_spec.rb`.
 
+- [x] **KNOWLEDGE-CREDENTIAL-001** — When a knowledge owner selects a saved
+  credential for embeddings or decision drafting, Paid SHALL persist a binding
+  to that existing credential, resolve it ahead of platform fallback in direct
+  embedding, container drafting, and host drafting, and expose only safe
+  owner/service/source/status metadata. An incompatible binding SHALL fail with
+  actionable configuration status; adding another key SHALL not change a bound
+  operation, and a bound key SHALL not be deletable until replaced or unbound.
+  *Code:* `app/services/knowledge/credential_selection.rb`,
+  `app/services/knowledge/runner_configuration.rb`,
+  `app/controllers/api/secrets_proxy_controller.rb`,
+  `app/services/knowledge/decisions/draft.rb`.
+  *Test:* `spec/services/knowledge/runner_configuration_spec.rb`,
+  `spec/services/knowledge/decisions/draft_spec.rb`,
+  `spec/requests/api/secrets_proxy_spec.rb`.
+
 - [x] **KNOWLEDGE-002** — When active chunks need embeddings, the system SHALL
   redact them before embedding, SHALL skip fully redacted chunks, and SHALL
   sync derived vectors into Qdrant without storing chunk content in the Qdrant

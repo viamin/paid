@@ -40,23 +40,18 @@ module Knowledge
     def credential
       return embedding_credential if operation == :embedding
 
-      service_type = RunnerSupport.api_service_type_for(runner)
-      return unless service_type
-
-      owner_api_key_credential(service_type) || platform_credential(service_type)
+      selected_credential
     end
 
     def embedding_credential
-      config = Runner::DIRECT_OUTBOUND_API_PROVIDERS[runner]
-      return unless config
-
-      owner_api_key_credential(config.fetch(:service_type)) || platform_openai_credential
+      selected_credential
     end
 
-    def owner_api_key_credential(service_type)
-      return unless provider_api_keys.any? { |api_key| api_key.api_service_type == service_type }
+    def selected_credential
+      selection = CredentialSelection.call(owner:, operation:, runner:, credentials: provider_api_keys)
+      return unless selection.status == :ready
 
-      ready(source: "owner_api_key", service: service_type)
+      ready(source: selection.source.to_s, service: selection.service_type)
     end
 
     def provider_api_keys
@@ -66,32 +61,6 @@ module Knowledge
     end
 
     attr_reader :credential_availability
-
-    def platform_credential(service_type)
-      return platform_openai_credential if service_type == "openai"
-
-      platform_anthropic_credential if service_type == "anthropic"
-    end
-
-    def platform_openai_credential
-      return unless (operation == :chat || runner == "openai") && platform_openai_api_key.present?
-
-      ready(source: "platform_fallback", service: "openai")
-    end
-
-    def platform_anthropic_credential
-      return unless platform_anthropic_api_key.present?
-
-      ready(source: "platform_fallback", service: "anthropic")
-    end
-
-    def platform_openai_api_key
-      Rails.application.credentials.dig(:llm, :openai_api_key).presence || ENV["OPENAI_API_KEY"].presence
-    end
-
-    def platform_anthropic_api_key
-      Rails.application.credentials.dig(:llm, :anthropic_api_key).presence || ENV["ANTHROPIC_API_KEY"].presence
-    end
 
     def ready(source:, service:)
       Result.new(status: "ready", credential_source: source, credential_service: service, validated_with_provider: false)

@@ -212,6 +212,8 @@ module Api
       return unless @knowledge_run
 
       runner_key = resolved_knowledge_run_runner_key
+      return if performed?
+
       return knowledge_run_provider_api_key(provider.to_s) unless runner_key
 
       config = Runner::DIRECT_OUTBOUND_API_PROVIDERS[runner_key]
@@ -227,7 +229,7 @@ module Api
         return nil
       end
 
-      key = knowledge_run_provider_api_key(config.fetch(:service_type))
+      key = knowledge_run_provider_api_key(config.fetch(:service_type), runner: runner_key)
       return key if key.present?
 
       return nil if runner_key == "openai"
@@ -276,13 +278,19 @@ module Api
       end
     end
 
-    def knowledge_run_provider_api_key(service_type)
-      @knowledge_run.project.effective_owner
-        &.provider_api_keys
-        &.for_api_service_type(service_type)
-        &.order(created_at: :desc, id: :desc)
-        &.first
-        &.api_key
+    def knowledge_run_provider_api_key(service_type, runner: nil)
+      selected_runner = runner || @knowledge_run.final_runner
+      selection = Knowledge::CredentialSelection.call(
+        owner: @knowledge_run.project.effective_owner,
+        operation: @knowledge_run.operation_type == "embedding" ? :embedding : :chat,
+        runner: selected_runner
+      )
+      return selection.api_key if selection.status == :ready && selection.service_type == service_type
+      return unless selection.status == :invalid_credential
+
+      log_error("secrets_proxy.missing_knowledge_credential", "No selected API key configured for #{service_type}")
+      render json: { error: "Select a #{service_type} API key for this knowledge operation" }, status: :service_unavailable
+      nil
     end
 
     # @spec RUNNER-USAGE-005 — the fallback flag never unlocks agent-run key
