@@ -109,7 +109,8 @@ module AppleVerificationAttempts
       nil
     rescue AppleVerification::ConfigurationParser::ConfigurationError,
       AppleVerification::GuestProtocol::InvalidManifestError,
-      AppleVerification::GuestProtocol::UnsupportedOperationError => error
+      AppleVerification::GuestProtocol::UnsupportedOperationError,
+      AppleVerification::GuestProtocol::ArbitraryShellError => error
       error.message
     end
 
