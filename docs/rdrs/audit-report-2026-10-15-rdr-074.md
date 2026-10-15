@@ -32,3 +32,13 @@ transitions:
 This is acceptance evidence for `PROJECT-READINESS-009`; it supplements,
 rather than replaces, the structural coverage for `PROJECT-READINESS-001`
 through `008`.
+
+## Authorized non-UI bootstrap evidence
+
+Issue [#4464](https://github.com/viamin/paid/issues/4464) closes the non-UI
+product-acceptance gap. `trigger_readiness_bootstrap` is a confirmation-gated
+tool action authorized with `ProjectPolicy#run_agent?` and delegates to the
+same readiness-bootstrap admission service as the Inbox UI. Its permanent
+coverage verifies authorization, current-readiness admission, active-run
+deduplication, gap/prompt and token-accounting parity, and explicit retrigger
+after a visible terminal failure.
