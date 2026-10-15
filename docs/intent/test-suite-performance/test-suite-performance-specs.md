@@ -17,3 +17,5 @@ prefix: TEST-SUITE
 
 - [x] **TEST-SUITE-010** — When CLI commands only list providers, show usage, or reject invalid smoke arguments, they SHALL finish without booting Rails, preserve documented output and exit codes, and use the same provider catalog as application runner configuration.
 - [x] **TEST-SUITE-011** — When hotspot specs reuse a persisted fixture graph, each example SHALL receive fresh model instances and transactional isolation; mutations SHALL NOT leak between examples and normal callbacks, validations and tenant constraints SHALL remain enabled.
+- [x] **TEST-SUITE-012** — When prompt seed specs run, they SHALL load the actual default seed script once per group, isolate per-example mutations, and verify repeated synchronization preserves prompt and version identities.
+- [x] **TEST-SUITE-013** — When PR scanner specs reuse their baseline project, they SHALL create its graph once per group with the existing scanner settings, refetch model instances per example, and roll back scenario-specific changes without SQL snapshot replay.
