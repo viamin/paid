@@ -56,6 +56,7 @@ module MarketplaceEntries
 
     def inferred_attachment_strategy
       return "mcp_server" if entry.entry_type == "mcp_server"
+      return "tool_sidecar" if entry.entry_type == "tool"
       return "runtime_config" if entry.entry_type.in?(%w[plugin provider_config])
 
       "prompt_append"

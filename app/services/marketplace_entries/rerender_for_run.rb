@@ -19,6 +19,7 @@ module MarketplaceEntries
       # Keep attach-time rendered_payload snapshots immutable so
       # configuration bundle identity remains reproducible across retries.
       synchronize_mcp_snapshot!(provider_key: provider_key)
+      synchronize_tool_sidecar_snapshot!(provider_key: provider_key)
       attachments
     end
 

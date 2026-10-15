@@ -70,6 +70,7 @@ module Containers
     # @return [Hash] with :stdio_servers and :url_servers arrays
     def provision(agent_run, network: NetworkPolicy::NETWORK_NAME)
       snapshot = agent_run.mcp_server_snapshot
+      tool_snapshot = agent_run.tool_sidecar_snapshot
       sidecar_ids = []
       tool_ids = []
       preserved_sidecar_ids = []
@@ -82,7 +83,7 @@ module Containers
       stale_tool_ids = Array(agent_run.tool_sidecar_container_ids)
       cleanup_containers(stale_tool_ids) if stale_tool_ids.present?
 
-      if snapshot.blank?
+      if snapshot.blank? && tool_snapshot.blank?
         agent_run.update!(
           mcp_provisioned_servers: { "stdio_servers" => [], "url_servers" => [] },
           mcp_sidecar_container_ids: preserved_sidecar_ids,
@@ -103,10 +104,12 @@ module Containers
           result = provision_docker_sidecar(agent_run, definition)
           url_servers << result[:server]
           sidecar_ids << result[:container_id]
-        when "tool"
-          result = provision_tool_sidecar(agent_run, definition)
-          tool_ids << result[:container_id] if result
         end
+      end
+
+      tool_snapshot.each do |definition|
+        result = provision_tool_sidecar(agent_run, definition)
+        tool_ids << result[:container_id] if result
       end
 
       agent_run.update!(
@@ -299,6 +302,7 @@ module Containers
     # Returns true when the rollout guard flag enables the tool arm for the
     # run's project. When the flag is off, the `"tool"` arm in #provision
     # returns nil and never creates a container.
+    # @spec TOOL-SIDECAR-002
     def tool_sidecars_enabled?(agent_run)
       FeatureFlags.enabled?(:marketplace_tool_sidecars, project: agent_run.project)
     end
