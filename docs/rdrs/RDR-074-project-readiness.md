@@ -104,8 +104,10 @@ Forager-iOS or equivalent isolated lifecycle proof showing a merged bootstrap
 PR, target-branch re-evaluation, cleared Inbox lane, and the subsequent
 test-writing draft PR with intentionally red CI. It also found no equivalent
 authorized API/tool action for the UI's bootstrap trigger. Those are required
-product-acceptance gaps; #4255 remains open and must explicitly depend on the
-focused follow-ups recorded in the closeout audit before its own final audit.
+product-acceptance gaps; #4255 remains open with explicit dependency lines for
+the focused follow-ups recorded in the closeout audit. The focused issues must
+not reciprocally depend on #4255, so Paid can block the umbrella without
+forming a dependency cycle before its final audit.
 
 ## 2026-10-15 Closeout
 
