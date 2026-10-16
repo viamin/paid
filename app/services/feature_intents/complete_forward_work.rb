@@ -86,7 +86,7 @@ module FeatureIntents
 
     def suitable_unstarted_issue?(issue)
       issue && issue != completion_issue && issue.github_state == "open" &&
-        !issue.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
+        !issue.agent_runs.where(status: AgentRun::DEDUP_BLOCKING_STATUSES).exists?
     end
 
     def update_unstarted_issue!(item)
