@@ -43,6 +43,15 @@ RSpec.describe FeatureIntents::ScopedReadiness do
     expect(result.blockers.map(&:code)).to contain_exactly("intent_below_threshold", "technical_below_threshold")
   end
 
+  it "fails assessments with scores outside the bounded finite 0-100 range" do
+    result = described_class.call(project:, mapping: mapping(prerequisites: [
+      { id: "out-of-range", assessment: assessment(intent: 101, technical: Float::INFINITY) }
+    ]))
+
+    expect(result).not_to be_ready
+    expect(result.blockers.map(&:code)).to contain_exactly("intent_invalid", "technical_invalid")
+  end
+
   it "uses independently configured project thresholds" do
     project.update!(intent_threshold: 70, technical_threshold: 90)
 
@@ -76,6 +85,16 @@ RSpec.describe FeatureIntents::ScopedReadiness do
 
     expect(unmerged.blockers.map(&:code)).to include("design_artifact_unmerged")
     expect(contradictory.blockers.map(&:code)).to include("design_artifact_scope_mismatch")
+  end
+
+  it "fails when the issue or required design artifact lacks a scope revision" do
+    missing_issue_scope = described_class.call(project:, mapping: mapping(scope_revision: nil))
+    missing_artifact_scope = described_class.call(project:, mapping: mapping(design_artifacts: [
+      { path: "docs/intent/example.md", required: true, merged: true, revision: "a" * 40 }
+    ]))
+
+    expect(missing_issue_scope.blockers.map(&:code)).to include("scope_revision_unknown")
+    expect(missing_artifact_scope.blockers.map(&:code)).to include("design_artifact_scope_unknown")
   end
 
   it "assesses a research issue only through its mapped investigation prerequisites" do

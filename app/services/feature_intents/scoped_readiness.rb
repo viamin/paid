@@ -27,7 +27,7 @@ module FeatureIntents
     end
 
     def call
-      blockers = coverage_blockers + prerequisite_blockers + design_artifact_blockers
+      blockers = coverage_blockers + prerequisite_blockers + scope_blockers + design_artifact_blockers
       Result.new(ready: blockers.empty?, blockers:, snapshot: readiness_snapshot)
     end
 
@@ -65,6 +65,7 @@ module FeatureIntents
 
     def score_blocker(axis, score, threshold, prerequisite)
       return prerequisite_blocker("#{axis}_unknown", prerequisite, "#{axis} score is unknown.") unless score.is_a?(Numeric)
+      return prerequisite_blocker("#{axis}_invalid", prerequisite, "#{axis} score must be a finite value from 0 to 100.") unless valid_score?(score)
       return if score >= threshold
 
       prerequisite_blocker("#{axis}_below_threshold", prerequisite, "#{axis} score #{score} is below threshold #{threshold}.")
@@ -74,9 +75,16 @@ module FeatureIntents
       required_design_artifacts.flat_map { |artifact| blockers_for_artifact(artifact) }
     end
 
+    def scope_blockers
+      return [] if scope_revision.present?
+
+      [ blocker("scope_revision_unknown", "The current issue scope revision has not been established.") ]
+    end
+
     def blockers_for_artifact(artifact)
       return [ artifact_blocker("design_artifact_unmerged", artifact, "has not merged.") ] unless artifact["merged"] == true
       return [ artifact_blocker("design_artifact_revision_unknown", artifact, "has no merged revision.") ] if artifact["revision"].blank?
+      return [ artifact_blocker("design_artifact_scope_unknown", artifact, "does not identify an issue scope revision.") ] if artifact["scope_revision"].blank?
       return [] if artifact["scope_revision"] == scope_revision
 
       [ artifact_blocker("design_artifact_scope_mismatch", artifact, "does not express the current issue scope.") ]
@@ -87,6 +95,7 @@ module FeatureIntents
     def required_design_artifacts = Array(mapping["design_artifacts"]).select { |artifact| artifact["required"] == true }
     def assessment_complete?(assessment) = COMPLETE_ASSESSMENT_STATUSES.include?(assessment["status"])
     def current_evidence?(assessment) = assessment["evidence_revision"].present? && assessment["current_evidence_revision"].in?([ nil, assessment["evidence_revision"] ])
+    def valid_score?(score) = score.finite? && score >= 0 && score <= 100
     def scope_revision = mapping["scope_revision"]
     def intent_threshold = project.intent_threshold
     def technical_threshold = project.technical_threshold
