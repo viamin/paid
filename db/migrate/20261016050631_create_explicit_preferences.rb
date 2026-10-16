@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class CreateExplicitPreferences < ActiveRecord::Migration[8.1]
   def change
     create_table :explicit_preferences,
