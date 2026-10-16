@@ -27,33 +27,41 @@ module FeatureIntents
 
     def record_finding
       item = persist_finding
-      reopen_completed_cycle! if completion.reload.status == "complete"
+      reopen_remote_completion_issue! if reopening_pending?
       route_finding!(item) unless item.reload.status == "applied"
-      reconcile
+      reconciliation = reconcile
+      return Result.new(completion:, item: item.reload, code: reconciliation.code) unless reconciliation.success?
+
       Result.new(completion:, item: item.reload, code: nil)
     end
 
     def reconcile
-      required_issues.each { |issue| ensure_dependency!(issue) }
+      required_issues.each do |issue|
+        return failure(:dependency_cycle) if ensure_dependency!(issue) == :cycle
+      end
+
       Result.new(completion:, item: nil, code: nil)
     end
 
     def complete(acceptance_verified:, isolation:, release_authorized:)
-      reconcile
-      completion.reload
-      return failure(:pending_writes) if completion.pending_operations.present?
-      return failure(:open_forward_work) if completion.forward_work_items.where(status: "pending").exists?
-      return failure(:open_dependencies) if required_issues.where(github_state: "open").exists?
-      return failure(:acceptance_unverified) unless acceptance_verified
-      return failure(:isolation_unverified) if isolation.to_h.fetch("actual", isolation.to_h[:actual]).blank?
-      return failure(:release_unauthorized) unless release_authorized
+      reconciliation = reconcile
+      return reconciliation unless reconciliation.success?
 
-      completion.update!(
-        status: "complete", completed_at: Time.current,
-        release_readiness: { "acceptance_verified" => true, "isolation" => isolation, "release_authorized" => true,
-                             "findings_generation" => completion.findings_generation }
-      )
-      Result.new(completion:, item: nil, code: nil)
+      completion.with_lock do
+        return failure(:pending_writes) if completion.pending_operations.present?
+        return failure(:open_forward_work) if completion.forward_work_items.where(status: "pending").exists?
+        return failure(:open_dependencies) if required_issues.where(github_state: "open").exists?
+        return failure(:acceptance_unverified) unless acceptance_verified
+        return failure(:isolation_unverified) if isolation.to_h.fetch("actual", isolation.to_h[:actual]).blank?
+        return failure(:release_unauthorized) unless release_authorized
+
+        completion.update!(
+          status: "complete", completed_at: Time.current,
+          release_readiness: { "acceptance_verified" => true, "isolation" => isolation, "release_authorized" => true,
+                               "findings_generation" => completion.findings_generation }
+        )
+        Result.new(completion:, item: nil, code: nil)
+      end
     end
 
     private
@@ -70,11 +78,16 @@ module FeatureIntents
       raise ArgumentError, "finding fingerprint is required" if fingerprint.blank?
 
       completion.with_lock do
-        completion.forward_work_items.find_or_create_by!(fingerprint:) do |item|
+        item = completion.forward_work_items.find_by(fingerprint:)
+        return item if item
+
+        item = completion.forward_work_items.create!(fingerprint:) do |item|
           item.finding = finding
           item.affected_issue = affected_issue
-          completion.increment!(:findings_generation)
         end
+        completion.increment!(:findings_generation)
+        reserve_reopened_cycle!
+        item
       end
     end
 
@@ -92,7 +105,13 @@ module FeatureIntents
     def update_unstarted_issue!(item)
       issue = item.affected_issue
       marker = marker_for(item)
-      write_issue_body!(issue, append_finding(issue.body, marker))
+      remote_body = client.issue(feature_intent.project.full_name, issue.github_number).body.to_s
+      # A prior attempt may have written remotely before the item was marked applied.
+      if remote_body.include?(marker)
+        issue.update!(body: remote_body)
+      else
+        write_issue_body!(issue, append_finding(remote_body, marker), marker:)
+      end
       item.update!(status: "applied")
     end
 
@@ -127,19 +146,17 @@ module FeatureIntents
       issue
     end
 
-    def reopen_completed_cycle!
-      mark_pending!("reopen:#{completion.id}")
+    def reopen_remote_completion_issue!
       client.update_issue(feature_intent.project.full_name, completion_issue.github_number, state: "open")
       verified = client.issue(feature_intent.project.full_name, completion_issue.github_number)
       raise GithubClient::Error, "completion issue was not reopened" unless verified.state == "open"
 
-      completion.update!(status: "pending", completed_at: nil, cycle: completion.cycle + 1)
-      clear_pending!("reopen:#{completion.id}")
+      clear_pending!(reopen_key)
     end
 
     def ensure_dependency!(issue)
       return if issue == completion_issue
-      return if Issues::DetectCycle.call(from_issue: issue, target_issue_id: completion_issue.id)
+      return :cycle if Issues::DetectCycle.call(from_issue: issue, target_issue_id: completion_issue.id)
 
       key = "dependency:#{issue.id}"
       mark_pending!(key)
@@ -168,23 +185,36 @@ module FeatureIntents
     def marker_for(item) = "<!-- paid:confidence-forward-work:#{completion.id}:#{item.fingerprint} -->"
 
     def mark_pending!(key)
-      completion.update!(pending_operations: completion.pending_operations.merge(key => Time.current.iso8601))
+      completion.with_lock do
+        completion.update!(pending_operations: completion.pending_operations.merge(key => Time.current.iso8601))
+      end
     end
 
     def clear_pending!(key)
-      completion.update!(pending_operations: completion.pending_operations.except(key))
+      completion.with_lock do
+        completion.update!(pending_operations: completion.pending_operations.except(key))
+      end
     end
 
-    def write_issue_body!(issue, body)
+    def reserve_reopened_cycle!
+      return unless completion.status == "complete"
+
+      completion.update!(
+        status: "pending", completed_at: nil, cycle: completion.cycle + 1,
+        pending_operations: completion.pending_operations.merge(reopen_key => Time.current.iso8601)
+      )
+    end
+
+    def reopening_pending? = completion.pending_operations.key?(reopen_key)
+
+    def reopen_key = "reopen:#{completion.id}"
+
+    def write_issue_body!(issue, body, marker:)
       client.update_issue(feature_intent.project.full_name, issue.github_number, body: body)
       verified = client.issue(feature_intent.project.full_name, issue.github_number).body.to_s
-      raise GithubClient::Error, "unstarted issue update was not read back" unless verified.include?(marker_for_item_body)
+      raise GithubClient::Error, "unstarted issue update was not read back" unless verified.include?(marker)
 
       issue.update!(body: verified)
-    end
-
-    def marker_for_item_body
-      "<!-- paid:confidence-forward-work:#{completion.id}:#{fingerprint} -->"
     end
 
     def failure(code) = Result.new(completion:, item: nil, code:)

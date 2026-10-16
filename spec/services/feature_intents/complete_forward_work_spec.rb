@@ -37,6 +37,35 @@ RSpec.describe FeatureIntents::CompleteForwardWork do
     expect(completion_issue.reload.dependencies).to include(implementation_issue)
   end
 
+  it "preserves a human edit made after the affected issue was last synced" do
+    remote_bodies[implementation_issue.github_number] = "Human release control"
+
+    described_class.record_finding(
+      feature_intent:, completion_issue:, client:, affected_issue: implementation_issue,
+      fingerprint: "c" * 64, finding: { summary: "Retain the human control." }
+    )
+
+    expect(remote_bodies.fetch(implementation_issue.github_number)).to include("Human release control")
+    expect(implementation_issue.reload.body).to include("Human release control")
+  end
+
+  it "does not duplicate forward work when re-routing an interrupted write" do
+    first = described_class.record_finding(
+      feature_intent:, completion_issue:, client:, affected_issue: implementation_issue,
+      fingerprint: "e" * 64, finding: { summary: "Interrupted write." }
+    )
+    first.item.update!(status: "pending")
+
+    described_class.record_finding(
+      feature_intent:, completion_issue:, client:, affected_issue: implementation_issue,
+      fingerprint: "e" * 64, finding: { summary: "Interrupted write." }
+    )
+
+    body = remote_bodies.fetch(implementation_issue.github_number)
+    expect(body.scan("## Forward work").count).to eq(1)
+    expect(body.scan("Interrupted write.").count).to eq(1)
+  end
+
   it "creates forward work instead of changing an issue with a rate-limited run" do
     create(:agent_run, :rate_limited, project:, issue: implementation_issue)
     allow(client).to receive_messages(
@@ -81,5 +110,35 @@ RSpec.describe FeatureIntents::CompleteForwardWork do
     )
 
     expect(result.code).to eq(:release_unauthorized)
+  end
+
+  it "reopens a completed cycle when a new finding is persisted" do
+    completion = FeatureIntentCompletion.create!(
+      feature_intent:, completion_issue:, status: "complete", completed_at: Time.current
+    )
+    prior_cycle = completion.cycle
+
+    result = described_class.record_finding(
+      feature_intent:, completion_issue:, client:, affected_issue: implementation_issue,
+      fingerprint: "d" * 64, finding: { summary: "A late finding requires work." }
+    )
+
+    expect(result).to be_success
+    expect(completion.reload).to have_attributes(status: "pending", cycle: prior_cycle + 1, completed_at: nil)
+    expect(completion.pending_operations).to be_empty
+    expect(remote_bodies.fetch(completion_issue.github_number)).to include("Depends on #701")
+  end
+
+  it "reports a dependency cycle instead of treating it as reconciled" do
+    IssueDependency.create!(issue: implementation_issue, depends_on_issue: completion_issue)
+    implementation_issue.update!(github_state: "closed")
+
+    result = described_class.complete(
+      feature_intent:, completion_issue:, client:, acceptance_verified: true,
+      isolation: { actual: "isolated" }, release_authorized: true
+    )
+
+    expect(result.code).to eq(:dependency_cycle)
+    expect(completion_issue.reload.dependencies).not_to include(implementation_issue)
   end
 end
