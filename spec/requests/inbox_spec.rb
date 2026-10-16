@@ -479,15 +479,21 @@ RSpec.describe "Inbox" do
     expect(master_detail["data-inbox-master-detail-detail-open-value"]).to eq("false")
   end
 
-  it "opens the current user's canonical interactive chat for an inbox entry" do
+  it "opens the current user's canonical interactive chat with one targeted queue lookup" do
     # @spec QUESTION-EXPLORATION-001 @spec QUESTION-EXPLORATION-014
     issue = create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body)
+    queries = []
+    subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
 
-    post inbox_interactive_chat_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
-      as: :json
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      post inbox_interactive_chat_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
+        as: :json
+    end
 
     expect(response).to have_http_status(:created)
     expect(ChatSession.last).to have_attributes(created_by: user, inbox_item_key: "clarifying_questions:#{issue.id}")
+    targeted_queue_queries = queries.grep(/FROM "issues" INNER JOIN "projects"/)
+    expect(targeted_queue_queries.count).to eq(1)
   end
 
   # @spec OPERATOR-INBOX-002F
