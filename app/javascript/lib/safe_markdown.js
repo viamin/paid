@@ -1,6 +1,7 @@
 import { marked } from "marked"
 
 const SAFE_URL_SCHEMES = /^(https?|mailto):/i
+const PAID_PATH = /^\/(?![\\/])/
 
 function escapeAttribute(value) {
   return value
@@ -23,6 +24,9 @@ function createSafeRenderer() {
   renderer.link = function ({ href, tokens, text }) {
     const label = tokens ? this.parser.parseInline(tokens) : text
     if (!href) return label
+    if (PAID_PATH.test(href)) {
+      return `<a href="${escapeAttribute(href)}">${label}</a>`
+    }
     if (!SAFE_URL_SCHEMES.test(href)) return label
     return `<a href="${escapeAttribute(href)}" rel="noopener noreferrer">${label}</a>`
   }
@@ -35,7 +39,8 @@ function createSafeRenderer() {
 const safeRenderer = createSafeRenderer()
 
 // Escapes raw HTML and parses the result as markdown using a renderer that
-// restricts links to SAFE_URL_SCHEMES and strips images. Pass `inline: true`
+// restricts links to SAFE_URL_SCHEMES or root-relative Paid paths and strips
+// images. Pass `inline: true`
 // to render a single line of markdown (no block-level elements) - useful for
 // headings or other contexts where wrapping the output in a <p> or other
 // block element would be invalid or visually incorrect.
