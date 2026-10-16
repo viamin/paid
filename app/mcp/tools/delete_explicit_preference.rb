@@ -26,8 +26,17 @@ module Tools
     def perform(preference_id:, confirmed: false)
       raise ArgumentError, "Confirmation required: set confirmed=true to delete an explicit preference" unless confirmed
 
-      ExplicitPreferences::Delete.call(preference: user.explicit_preferences.find(preference_id))
+      preference = user.explicit_preferences.find(preference_id)
+      authorize_preference_target(preference)
+      ExplicitPreferences::Delete.call(preference:)
       { deleted: true, preference_id: }
+    end
+
+    private
+
+    def authorize_preference_target(preference)
+      project = preference.project || preference.feature_intent&.project
+      authorize project, :update?, policy_class: ProjectPolicy if project
     end
   end
 end

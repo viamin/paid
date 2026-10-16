@@ -34,4 +34,56 @@ RSpec.describe Tools::SaveExplicitPreference do
       tool.call(statement: "I prefer concise responses.", scope: "user", confirmed: false)
     }.to raise_error(ArgumentError, /Confirmation required/)
   end
+
+  # @spec FACET-CONFIDENCE-007
+  it "lists every preference owned by the user, including preferences outside the current work context" do
+    project = create(:project, account:, created_by: user)
+    feature_intent = create(:feature_intent, project:)
+    preferences = [
+      create(:explicit_preference, account:, user:, recorded_by: user),
+      create(:explicit_preference, account:, user:, recorded_by: user, scope: "project", project:),
+      create(:explicit_preference, account:, user:, recorded_by: user, scope: "feature", project:, feature_intent:)
+    ]
+
+    listed = Tools::ListExplicitPreferences.new(user:, session:).call
+
+    expect(listed.pluck("id")).to match_array(preferences.pluck(:id))
+  end
+
+  # @spec FACET-CONFIDENCE-007
+  it "replaces a corrected preference's confirmed scope and target" do
+    project = create(:project, account:, created_by: user)
+    preference = create(:explicit_preference, account:, user:, recorded_by: user)
+
+    corrected = described_class.new(user:, session:).call(
+      preference_id: preference.id,
+      statement: "Use detailed responses for this project.",
+      scope: "project",
+      project_id: project.id,
+      confirmed: true
+    )
+
+    expect(corrected).to include("scope" => "project", "project_id" => project.id, "feature_intent_id" => nil)
+
+    reverted = described_class.new(user:, session:).call(
+      preference_id: preference.id,
+      statement: "Use detailed responses everywhere.",
+      scope: "user",
+      confirmed: true
+    )
+
+    expect(reverted).to include("scope" => "user", "project_id" => nil, "feature_intent_id" => nil)
+  end
+
+  # @spec FACET-CONFIDENCE-007
+  it "requires project authorization before deleting a project-scoped preference" do
+    member = create(:user, :member, account:)
+    project = create(:project, account:, created_by: user)
+    preference = create(:explicit_preference, account:, user: member, recorded_by: member, scope: "project", project:)
+    member_session = create(:chat_session, account:, created_by: member)
+
+    expect {
+      Tools::DeleteExplicitPreference.new(user: member, session: member_session).call(preference_id: preference.id, confirmed: true)
+    }.to raise_error(Pundit::NotAuthorizedError)
+  end
 end

@@ -48,11 +48,13 @@ module ExplicitPreferences
     end
 
     def scoped_project
-      project || feature_intent&.project
+      return project unless scope == "feature" && project.blank?
+
+      feature_intent&.project
     end
 
     def scoped_feature_intent
-      feature_intent if scope == "feature"
+      feature_intent
     end
   end
 end

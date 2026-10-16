@@ -30,7 +30,8 @@ module Tools
     def perform(statement:, scope:, confirmed: false, project_id: nil, feature_intent_id: nil, preference_id: nil)
       raise ArgumentError, "Confirmation required: set confirmed=true to save an explicit preference" unless confirmed
 
-      return update_preference(preference_id:, statement:) if preference_id.present?
+      targets = scope_targets(project_id:, feature_intent_id:)
+      return update_preference(preference_id:, statement:, scope:, **targets) if preference_id.present?
 
       ExplicitPreferences::Persist.call(
         account: user.account,
@@ -40,18 +41,36 @@ module Tools
         scope:,
         explicit: true,
         scope_confirmed: true,
-        project: project_for(project_id),
-        feature_intent: feature_intent_for(feature_intent_id),
+        **targets,
         chat_session: session
       ).slice("id", "statement", "scope", "project_id", "feature_intent_id")
     end
 
     private
 
-    def update_preference(preference_id:, statement:)
+    def update_preference(preference_id:, statement:, scope:, project:, feature_intent:)
       preference = user.explicit_preferences.find(preference_id)
-      ExplicitPreferences::Update.call(preference:, actor: user, statement:, explicit: true, scope_confirmed: true)
+      authorize_preference_target(preference)
+      ExplicitPreferences::Update.call(
+        preference:,
+        actor: user,
+        statement:,
+        scope:,
+        project:,
+        feature_intent:,
+        explicit: true,
+        scope_confirmed: true
+      )
         .slice("id", "statement", "scope", "project_id", "feature_intent_id")
+    end
+
+    def scope_targets(project_id:, feature_intent_id:)
+      { project: project_for(project_id), feature_intent: feature_intent_for(feature_intent_id) }
+    end
+
+    def authorize_preference_target(preference)
+      project = preference.project || preference.feature_intent&.project
+      authorize project, :update?, policy_class: ProjectPolicy if project
     end
 
     def project_for(project_id)

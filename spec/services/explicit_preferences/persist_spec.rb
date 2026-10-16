@@ -47,16 +47,21 @@ RSpec.describe ExplicitPreferences::Persist do
   end
 
   # @spec FACET-CONFIDENCE-007
-  it "allows a confirmed correction and deletion without rewriting prior chat evidence" do
+  it "allows a confirmed correction, including its scope, and deletion without rewriting prior chat evidence" do
     preference = create(:explicit_preference, account:, user:, recorded_by: user)
 
     ExplicitPreferences::Update.call(
       preference:,
       actor: user,
       statement: "I prefer detailed technical explanations.",
+      scope: "project",
+      project:,
       explicit: true,
       scope_confirmed: true
     )
+
+    expect(preference).to have_attributes(scope: "project", project:, feature_intent: nil)
+
     ExplicitPreferences::Delete.call(preference:)
 
     expect(ExplicitPreference).not_to exist(preference.id)

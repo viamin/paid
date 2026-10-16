@@ -25,6 +25,13 @@ RSpec.describe ExplicitPreference do
     expect(preference.errors[:feature_intent]).to include("must be present for feature scope")
   end
 
+  it "requires scope targets to match the confirmed scope" do
+    preference.project = build(:project, account: preference.account, created_by: preference.user)
+
+    expect(preference).to be_invalid
+    expect(preference.errors[:project]).to include("must be blank for user scope")
+  end
+
   it "rejects a scope target from another account" do
     preference.project = create(:project)
 

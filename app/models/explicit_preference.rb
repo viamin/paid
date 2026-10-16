@@ -26,8 +26,24 @@ class ExplicitPreference < ApplicationRecord
   private
 
   def scope_target_present
-    errors.add(:project, "must be present for project scope") if scope == "project" && project.blank?
-    errors.add(:feature_intent, "must be present for feature scope") if scope == "feature" && feature_intent.blank?
+    validate_user_scope if scope == "user"
+    validate_project_scope if scope == "project"
+    validate_feature_scope if scope == "feature"
+  end
+
+  def validate_user_scope
+    errors.add(:project, "must be blank for user scope") if project.present?
+    errors.add(:feature_intent, "must be blank for user scope") if feature_intent.present?
+  end
+
+  def validate_project_scope
+    errors.add(:project, "must be present for project scope") if project.blank?
+    errors.add(:feature_intent, "must be blank for project scope") if feature_intent.present?
+  end
+
+  def validate_feature_scope
+    errors.add(:feature_intent, "must be present for feature scope") if feature_intent.blank?
+    errors.add(:project, "must match the feature intent's project") if feature_intent.present? && project != feature_intent.project
   end
 
   def targets_belong_to_account

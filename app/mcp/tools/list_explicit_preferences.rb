@@ -12,7 +12,7 @@ module Tools
     end
 
     def perform
-      ExplicitPreferences::Context.call(owner: user).map do |preference|
+      ExplicitPreference.for_owner(user).order(:created_at).map do |preference|
         preference.slice("id", "statement", "scope", "project_id", "feature_intent_id", "chat_session_id", "created_at", "updated_at")
       end
     end
