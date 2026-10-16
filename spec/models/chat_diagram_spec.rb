@@ -30,4 +30,15 @@ RSpec.describe ChatDiagram do
     expect { diagram.valid? }.not_to raise_error
     expect(diagram.errors[:description]).to include("contains an unsafe link")
   end
+
+  # @spec QUESTION-EXPLORATION-005 QUESTION-EXPLORATION-012
+  it "broadcasts its question key so clients can replace a superseded diagram" do
+    diagram.chat_session.save!
+
+    expect(ActionCable.server).to receive(:broadcast).with(
+      "chat_session:#{diagram.chat_session.id}", hash_including(type: "diagram_created", question_key: diagram.question_key)
+    )
+
+    diagram.save!
+  end
 end

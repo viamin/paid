@@ -24,7 +24,7 @@ module ChatDiagrams
     attr_reader :chat_session
 
     def retire_current_diagram
-      chat_session.chat_diagrams.current.lock.each do |diagram|
+      chat_session.chat_diagrams.current.where(question_key: @attributes[:question_key]).lock.each do |diagram|
         diagram.update!(current: false, description: {})
       end
     end

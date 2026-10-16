@@ -395,8 +395,17 @@ export default class extends Controller {
     if (!data.html || !this.hasMessagesTarget) return
     if (this.messagesTarget.querySelector(`[data-chat-diagram-id="${data.diagram_id}"]`)) return
 
+    this.removeDiagramForQuestion(data.question_key)
     this.messagesTarget.insertAdjacentHTML("beforeend", data.html)
     this.scrollToBottom()
+  }
+
+  removeDiagramForQuestion(questionKey) {
+    if (typeof questionKey !== "string") return
+
+    this.messagesTarget.querySelectorAll("[data-diagram-question-key]").forEach((diagram) => {
+      if (diagram.dataset.diagramQuestionKey === questionKey) diagram.remove()
+    })
   }
 
   // Updates the workspace-capability badge in place when the background

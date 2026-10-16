@@ -71,6 +71,7 @@ class ChatDiagram < ApplicationRecord
     ActionCable.server.broadcast("chat_session:#{chat_session_id}", {
       type: "diagram_created",
       diagram_id: id,
+      question_key: question_key,
       html: ApplicationController.render(partial: "chat_diagrams/diagram", locals: { diagram: self, chat_session: })
     })
   end
