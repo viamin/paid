@@ -133,8 +133,18 @@ module FeatureIntents
       Issue.joins(:project).where(projects: { account_id: project.account_id }).where(
         "issues.body LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(artifact[:path])}%"
       ).filter_map do |issue|
+        next unless explicit_artifact_backlink?(issue, artifact)
+
         association_for(issue, "exact artifact backlink")
       end
+    end
+
+    def explicit_artifact_backlink?(issue, artifact)
+      relationship_text(issue.body).match?(artifact_path_pattern(artifact.fetch(:path)))
+    end
+
+    def artifact_path_pattern(path)
+      /(?<![\w.\/-])#{Regexp.escape(path)}(?![\w.\/-])/
     end
 
     def manifest_associations(artifact)
