@@ -9,6 +9,11 @@ module Tools
 
     def self.tool_name = "present_chat_diagram"
 
+    # Persists ChatDiagram rows and broadcasts rendered HTML into the live chat.
+    # Declaring this mutation keeps the RDR-028 confirmation gate and excludes
+    # it from MCP's read-only-by-default surface.
+    def self.write_operation? = true
+
     def self.description
       "Present a validated, temporary diagram for a question. Use only when a diagram helps explain the question."
     end

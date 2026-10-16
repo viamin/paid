@@ -4,6 +4,11 @@ class ChatDiagramCommentsController < ApplicationController
   before_action :set_chat_session
   before_action :set_diagram
 
+  rate_limit to: ChatMessages::RateLimit::MAX_REQUESTS, within: ChatMessages::RateLimit::PERIOD,
+    by: -> { ChatMessages::RateLimit.identifier(user_id: current_user&.id, chat_session_id: params[:chat_session_id]) },
+    with: -> { redirect_to chat_session_path(params[:chat_session_id]), alert: "Rate limit exceeded" },
+    only: :create
+
   # @spec QUESTION-EXPLORATION-004 QUESTION-EXPLORATION-006 QUESTION-EXPLORATION-012
   def create
     authorize ChatMessage.new(chat_session: @chat_session), :create?, policy_class: ChatMessagePolicy

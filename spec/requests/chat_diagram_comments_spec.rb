@@ -33,4 +33,15 @@ RSpec.describe "Chat diagram comments" do
     expect(flash[:alert]).to include("no longer available")
     expect(ChatDiagramComment).not_to exist
   end
+
+  # @spec QUESTION-EXPLORATION-004
+  it "limits comment creation per user and chat session" do
+    allow(Rails.cache).to receive(:increment).and_return(ChatMessages::RateLimit::MAX_REQUESTS + 1)
+
+    expect {
+      post chat_session_chat_diagram_comments_path(chat_session, diagram), params: { body: "Can this retry?" }
+    }.not_to change { diagram.comments.count }
+
+    expect(response).to redirect_to(chat_session_path(chat_session))
+  end
 end

@@ -356,6 +356,21 @@ components:
         role: {type: string}
         content: {type: string, nullable: true}
         tool_status: {type: string, nullable: true}
+        diagram:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ChatDiagram'
+    ChatDiagram:
+      type: object
+      required: [id, question_key, question_title, summary, text_equivalent, description, current]
+      properties:
+        id: {type: integer}
+        question_key: {type: string}
+        question_title: {type: string}
+        summary: {type: string}
+        text_equivalent: {type: string}
+        description: {type: object, additionalProperties: true}
+        current: {type: boolean}
     ChatDiagramComment:
       type: object
       required: [id, actor_id, question_key, body, created_at]

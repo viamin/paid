@@ -10,8 +10,8 @@ diagram and durable-progress work remains planned.
   *Tests:* `spec/services/clarifying_questions/save_progress_spec.rb`, `spec/mcp/tools/save_clarifying_answer_spec.rb`, `spec/mcp/tools/submit_clarifying_answers_spec.rb`, `spec/requests/projects/clarifying_questions_spec.rb`.
   *Code:* `app/services/clarifying_questions/save_progress.rb`, `app/mcp/tools/save_clarifying_answer.rb`, `app/mcp/tools/submit_clarifying_answers.rb`, `app/services/clarifying_questions/submit_answers.rb`.
 - [x] **QUESTION-EXPLORATION-003** — When Paid presents a diagram in chat, it SHALL identify the question, provide a text equivalent, allow expansion/collapse and keyboard interaction, and include a text input for comments on that diagram.
-  *Tests:* `spec/models/chat_diagram_spec.rb`, `spec/system/chat_diagrams_spec.rb`.
-  *Code:* `app/models/chat_diagram.rb`, `app/views/chat_diagrams/_diagram.html.erb`, `app/javascript/controllers/diagram_controller.js`.
+  *Tests:* `spec/models/chat_diagram_spec.rb`, `spec/services/chat_sessions/resolve_tool_call_spec.rb`, `spec/system/chat_diagrams_spec.rb`.
+  *Code:* `app/mcp/tools/present_chat_diagram.rb`, `app/models/chat_diagram.rb`, `app/services/chat_diagrams/attach_to_message.rb`, `app/views/chat_diagrams/_diagram.html.erb`, `app/javascript/controllers/diagram_controller.js`.
 - [x] **QUESTION-EXPLORATION-004** — When a user comments on a diagram or selected element, Paid SHALL attribute the comment to the user and retain question identity and sufficient textual context for the comment to remain understandable after the diagram is removed.
   *Tests:* `spec/models/chat_diagram_comment_spec.rb`, `spec/services/chat_diagrams/comment_spec.rb`.
   *Code:* `app/models/chat_diagram_comment.rb`, `app/services/chat_diagrams/comment.rb`.
@@ -33,8 +33,8 @@ diagram and durable-progress work remains planned.
   *Tests:* `spec/system/chat_diagrams_spec.rb`.
   *Code:* `app/javascript/controllers/diagram_controller.js`.
 - [x] **QUESTION-EXPLORATION-012** — When an exploration action is available through the UI, Paid SHALL expose an equivalent authorized API/tool action and consistent message context through HTML, Cable and SSE transports.
-  *Tests:* `spec/services/chat_diagrams/comment_spec.rb`, `spec/requests/chat_diagram_comments_spec.rb`, `spec/requests/api/v1/chat_diagram_comments_spec.rb`, `spec/system/chat_diagrams_spec.rb`.
-  *Code:* `app/controllers/chat_diagram_comments_controller.rb`, `app/controllers/api/v1/chat_diagram_comments_controller.rb`, `app/services/chat_diagrams/serializer.rb`.
+  *Tests:* `spec/services/chat_diagrams/comment_spec.rb`, `spec/requests/chat_diagram_comments_spec.rb`, `spec/requests/api/v1/chat_diagram_comments_spec.rb`, `spec/services/chat_sessions/resolve_tool_call_spec.rb`, `spec/system/chat_diagrams_spec.rb`.
+  *Code:* `app/controllers/chat_diagram_comments_controller.rb`, `app/controllers/api/v1/chat_diagram_comments_controller.rb`, `app/services/chat_diagrams/attach_to_message.rb`, `app/services/chat_diagrams/serializer.rb`.
 - [x] **QUESTION-EXPLORATION-013** — When a conversation is archived, Paid SHALL preserve the related human answers and textual evidence context; reopening SHALL restore current question progress without requiring discarded diagrams. Any future investigation cancellation SHALL preserve the same records.
   *Tests:* `spec/services/clarifying_questions/save_progress_spec.rb`, `spec/services/chat_sessions/build_system_prompt_spec.rb`.
   *Code:* `app/models/clarifying_question_progress.rb`, `app/services/clarifying_questions/save_progress.rb`, `app/services/chat_sessions/build_system_prompt.rb`.
