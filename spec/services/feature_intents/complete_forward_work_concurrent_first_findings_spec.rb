@@ -13,11 +13,16 @@ RSpec.describe FeatureIntents::CompleteForwardWork do
   let(:client) { instance_double(GithubClient) }
   let(:remote_bodies) { { 700 => "Completion", 701 => "Implementation" } }
   let(:remote_issue) { Data.define(:body, :state) }
+  let(:created_issue) do
+    Data.define(:id, :number, :title, :body, :state, :labels, :user, :created_at, :updated_at, :html_url)
+      .new(702, 702, "Follow up", "Concurrent finding.", "open", [], nil, Time.current, Time.current, nil)
+  end
 
   before do
     [ completion_issue, implementation_issue ].each { |issue| FeatureIntentIssue.create!(feature_intent: feature_intent, issue: issue) }
     allow(client).to receive(:issue) { |_repo, number| remote_issue.new(body: remote_bodies.fetch(number), state: "open") }
     allow(client).to receive(:update_issue) { |_repo, number, body: nil, **_options| remote_bodies[number] = body if body }
+    allow(client).to receive_messages(search_issues: Data.define(:items).new([]), create_issue: created_issue)
   end
 
   after do
@@ -26,10 +31,13 @@ RSpec.describe FeatureIntents::CompleteForwardWork do
   end
 
   it "keeps concurrent first writers on one completion and routes the finding once" do
+    create(:agent_run, :rate_limited, project: project, issue: implementation_issue)
+
     concurrent_findings
 
     completion = FeatureIntentCompletion.where(feature_intent: feature_intent).sole
     expect(completion.forward_work_items.where(fingerprint: "a" * 64).count).to eq(1)
+    expect(client).to have_received(:create_issue).once
   end
 
   private

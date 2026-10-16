@@ -8,6 +8,10 @@ module FeatureIntents
   class CompleteForwardWork
     class MissingCompletionIssueError < StandardError; end
 
+    ADVISORY_LOCK_SQL = "SELECT pg_advisory_lock($1, $2)".freeze
+    ADVISORY_UNLOCK_SQL = "SELECT pg_advisory_unlock($1, $2)".freeze
+    LOCK_NAMESPACE = 1_357_180_007
+
     Result = Data.define(:completion, :item, :code) do
       def success? = code.nil?
     end
@@ -30,7 +34,7 @@ module FeatureIntents
     def record_finding
       item = persist_finding
       reopen_remote_completion_issue! if reopening_pending?
-      route_finding!(item) unless item.reload.status == "applied"
+      with_routing_lock(item) { route_finding!(item) unless item.reload.status == "applied" }
       reconciliation = reconcile
       return Result.new(completion:, item: item.reload, code: reconciliation.code) unless reconciliation.success?
 
@@ -98,6 +102,16 @@ module FeatureIntents
       return update_unstarted_issue!(item) if suitable_unstarted_issue?(item.affected_issue)
 
       create_follow_up!(item)
+    end
+
+    def with_routing_lock(item)
+      raw_connection = ActiveRecord::Base.connection.raw_connection
+      lock_key = item.id % 2_147_483_647
+      raw_connection.exec_params(ADVISORY_LOCK_SQL, [ LOCK_NAMESPACE, lock_key ])
+      locked = true
+      yield
+    ensure
+      raw_connection&.exec_params(ADVISORY_UNLOCK_SQL, [ LOCK_NAMESPACE, lock_key ]) if locked
     end
 
     def suitable_unstarted_issue?(issue)
