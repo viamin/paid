@@ -1137,6 +1137,31 @@ RSpec.describe Activities::FetchIssuesActivity do
         expect(reloaded.paid_state).to eq("in_progress")
         expect(github_client).not_to have_received(:add_comment)
       end
+
+      it "parks an issue held by an inherited skip label without resetting its enhancement budget or requesting a recheck" do # @spec ISSUE-ENHANCEMENT-018 LABEL-CONTROL-008
+        project.update!(auto_pick_skip_labels: nil)
+        project.created_by.settings.update!(auto_pick_skip_labels: [ "operator-hold" ])
+        issue.update!(labels: [ project.enhance_issue_needs_input_label_name, "operator-hold", "paid-build" ],
+          enhance_issue_rounds: 2, needs_input_questions: [ "Which behavior should Paid implement?" ])
+        github_issue.labels = [ OpenStruct.new(name: "operator-hold"), OpenStruct.new(name: "paid-build") ]
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:enhance_issue_rechecks]).to be_empty
+        expect(issue.reload).to have_attributes(paid_state: "new", enhance_issue_rounds: 2)
+        expect(issue.needs_input_questions).to eq([ "Which behavior should Paid implement?" ])
+      end
+
+      it "does not treat labels as holds when label integration is ignored" do # @spec ISSUE-ENHANCEMENT-018 LABEL-CONTROL-008
+        project.update!(label_integration_mode: "ignored", auto_pick_skip_labels: [ "planning" ])
+        issue.update!(labels: [ project.enhance_issue_needs_input_label_name, "planning", "paid-build" ])
+        github_issue.labels = [ OpenStruct.new(name: "planning"), OpenStruct.new(name: "paid-build") ]
+
+        result = activity.execute(project_id: project.id)
+
+        expect(result[:enhance_issue_rechecks]).to contain_exactly(hash_including(issue_id: issue.id))
+        expect(issue.reload.paid_state).to eq("in_progress")
+      end
     end
 
     context "when the enhance_issue needs-input label is still present" do
