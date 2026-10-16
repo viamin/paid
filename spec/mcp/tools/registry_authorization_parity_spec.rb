@@ -810,6 +810,24 @@ RSpec.describe Tools::Registry do
         denied_user: -> { create(:user, :viewer, account: account) },
         arguments: -> { { step: "account_profile", confirmed: true } },
         ui_call: ->(user) { authorize_record!(user, user.account, :create?, policy_class: ApplicationPolicy) }
+      },
+      {
+        tool_name: "list_explicit_preferences",
+        denied_user: -> { nil },
+        arguments: -> { {} },
+        ui_call: ->(user) { authorize_settings_edit!(user) }
+      },
+      {
+        tool_name: "save_explicit_preference",
+        denied_user: -> { nil },
+        arguments: -> { { statement: "I prefer concise responses.", scope: "user", confirmed: true } },
+        ui_call: ->(user) { authorize_settings_edit!(user) }
+      },
+      {
+        tool_name: "delete_explicit_preference",
+        denied_user: -> { nil },
+        arguments: -> { { preference_id: 0, confirmed: true } },
+        ui_call: ->(user) { authorize_settings_edit!(user) }
       }
     ] + operator_tool_scenarios
   end
@@ -847,6 +865,12 @@ RSpec.describe Tools::Registry do
   end
 
   private
+
+  def authorize_settings_edit!(user)
+    raise Tools::UnauthorizedError, "Tool calls require an authenticated user" if user.blank?
+
+    authorize_record!(user, user.settings, :edit?)
+  end
 
   def operator_tool_scenarios
     [
