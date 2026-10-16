@@ -5,8 +5,12 @@
   SHALL use the same curated Low/Medium/High resolver. It SHALL default new and
   legacy Automatic sessions to Low, retain an explicit existing model, record
   the effective tier and concrete model, and reject an unavailable Low tier
-  with actionable feedback rather than escalating cost. Free-policy runners
-  remain unpinned at creation so CHAT-API-018 remains authoritative. OpenAI
+  with actionable feedback rather than escalating cost. Fallback candidate
+  selection SHALL skip a non-free runner whose Low tier cannot resolve
+  (catalog gap, fresh unavailability evidence, or policy exclusion) so later
+  usable fallbacks remain reachable, mirroring the CHAT-API-019 free-pool
+  skip. Free-policy runners remain unpinned at creation so CHAT-API-018
+  remains authoritative. OpenAI
   Low, Medium, and High SHALL resolve to GPT-5.6 Luna, Terra, and Sol
   respectively.
   *Tests:* `spec/services/chat_sessions/create_spec.rb`,

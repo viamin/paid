@@ -38,7 +38,8 @@ module ChatSessions
       end
 
       (current_candidates + configured_candidates + automatic_candidates).uniq.select do |runner|
-        free_pool_available?(runner, chat_session: chat_session)
+        free_pool_available?(runner, chat_session: chat_session) &&
+          curated_low_available?(runner, chat_session: chat_session)
       end
     end
 
@@ -62,6 +63,18 @@ module ChatSessions
       true
     rescue LlmClientConfigurationError
       false
+    end
+
+    # Non-free fallbacks switch to the curated Low tier, and switch! raises
+    # LlmClientConfigurationError when none resolves. That error is not an
+    # AgentHarness::Error, so FallbackLoop would abort instead of trying the
+    # next configured fallback — skip such runners up front, mirroring the
+    # free-pool skip above.
+    # @spec CHAT-API-026
+    def curated_low_available?(runner, chat_session:)
+      return true if runner.free_model_policy?
+
+      CuratedModelOptions.resolve(runner:, projects: chat_session.llm_policy_projects).present?
     end
 
     def notice_for(error:, runner:)

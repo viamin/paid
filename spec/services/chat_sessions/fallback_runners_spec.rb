@@ -21,6 +21,20 @@ RSpec.describe ChatSessions::FallbackRunners do
       expect(chat_session.reload.runner).to eq(primary_runner)
     end
 
+    # @spec CHAT-API-026
+    it "skips a non-free fallback whose curated Low tier is unavailable and retains a later healthy fallback" do
+      claude_low = ChatFallbackCatalog.seed_low_tier_model(model_id: "claude-haiku-4-5")
+      unavailable = create(:runner, :api_key, user: user, runner_key: "claude",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+      healthy = create_openrouter_runner(name: "Healthy")
+      create(:model_availability_check, llm_model: claude_low, runner_key: "claude",
+        auth_type: "api_key", status: "unavailable")
+      user.settings.update_columns(kb_chat_fallback_runners: [ unavailable.routing_key, healthy.routing_key ])
+
+      expect(described_class.for(chat_session: chat_session, excluding: [ primary_runner ])).to eq([ healthy ])
+      expect(chat_session.reload.runner).to eq(primary_runner)
+    end
+
 
     it "allows fallback to another API-key runner with the same runner key" do
       fallback_runner = create_openrouter_runner(name: "Fallback")
@@ -162,6 +176,7 @@ RSpec.describe ChatSessions::FallbackRunners do
   end
 
   def create_openrouter_runner(name:)
+    ChatFallbackCatalog.seed_low_tier_models
     create(:runner, :api_key, user: user, runner_key: "opencode", name: name,
       provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
       config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })

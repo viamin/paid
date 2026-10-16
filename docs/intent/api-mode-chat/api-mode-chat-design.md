@@ -97,8 +97,9 @@ options: managed free API chat therefore rejects confidential and restricted
 context before transmission with an actionable configuration error. The shared
 selector applies the same rejection to free `pi` and `omp` runners regardless
 of transport, because they cannot enforce that routing. Empty or
-privacy-incompatible free pools are excluded from fallback candidates so a
-later configured runner remains reachable. Broader container lifecycle and
+privacy-incompatible free pools and non-free runners without a resolvable Low
+tier are excluded from fallback candidates so a later configured runner
+remains reachable. Broader container lifecycle and
 mutation behavior are owned by the RDR-037 chat segments.
 
 The API-mode chat surface is implemented and exposed across both HTML and API
