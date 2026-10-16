@@ -432,11 +432,11 @@ ships behind a feature flag:
 
 ## Implementation Status
 
-**Partially Implemented — 2026-10-14.** Hardened provisioning, image gating,
-flag-off behavior, per-run tracking, retry adoption, cleanup, and capacity
-inventory have shipped. The marketplace attachment contract, rule-scoping
-predicates, and agent-facing endpoint exposure remain gaps. The rollout guard
-remains because no incident-free pilot evidence exists. See
+**Partially Implemented — 2026-10-15.** Hardened provisioning, image gating,
+flag-off behavior, per-run tracking, retry adoption, cleanup, capacity
+inventory, and the agent-facing non-MCP endpoint runtime contract have
+shipped. The marketplace attachment contract and rule-scoping predicates remain
+gaps. The rollout guard remains because no incident-free pilot evidence exists. See
 [the closeout audit](audit-report-2026-10-14-rdr-073.md) and the follow-up
 issues #4445, #4446, and #4447.
 
