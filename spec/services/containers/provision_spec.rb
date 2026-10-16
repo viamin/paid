@@ -1205,6 +1205,27 @@ RSpec.describe Containers::Provision do
         service.provision
       end
 
+      # @spec TOOL-SIDECAR-007
+      it "passes the provisioned tool endpoint manifest through the run environment" do
+        agent_run.update!(tool_sidecar_endpoints: [
+          {
+            "name" => "code-search",
+            "hostname" => "paid-tool-code-search-run#{agent_run.id}",
+            "port" => 8080,
+            "url" => "http://paid-tool-code-search-run#{agent_run.id}:8080"
+          }
+        ])
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["Env"]).to include(
+            "PAID_TOOL_SIDECAR_ENDPOINTS=[{\"name\":\"code-search\",\"hostname\":\"paid-tool-code-search-run#{agent_run.id}\",\"port\":8080,\"url\":\"http://paid-tool-code-search-run#{agent_run.id}:8080\"}]"
+          )
+          mock_container
+        end
+
+        service.provision
+      end
+
       it "sets writable Bundler and Yarn cache paths for all agent containers" do
         expect(Docker::Container).to receive(:create) do |config|
           env = config["Env"]
