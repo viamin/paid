@@ -42,6 +42,16 @@ Project provider restrictions, model allowlists and exclusions, and tier
 limits filter the choices for linked project context through the same policy
 path used by agent runs.
 
+The new-chat dialog applies the same filtering for the project selected inside
+the dialog. The runner-and-model choices are rendered unfiltered while no
+project is chosen; when the user picks or changes the project, the dialog
+re-fetches the curated choices from `ChatSessionsController#runner_model_options`
+for that project and rebuilds the selector, resetting any selection the new
+policy no longer permits. The create path resolves the submitted option against
+the same policy projects, so the offered choices and the accepted choices
+cannot drift apart. A failed or stale refresh never widens what the server
+accepts: resolution on create remains the authority.
+
 The submitted option is resolved against the current user's available chat
 runners before it is saved, so a stale or crafted selection cannot pair a
 runner with an unrelated model. Legacy Automatic sessions (`model: nil`)

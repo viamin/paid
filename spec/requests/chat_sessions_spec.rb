@@ -124,6 +124,79 @@ RSpec.describe "ChatSessions" do
     end
   end
 
+  describe "GET /chat/runner_model_options" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        get runner_model_options_chat_sessions_path
+
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "offers every curated tier when no project is selected" do
+        runner = create_openai_chat_runner
+
+        get runner_model_options_chat_sessions_path
+
+        expect(response).to have_http_status(:ok)
+        expect(option_labels).to eq([
+          "#{runner.display_name} — Low: gpt-5.6-luna",
+          "#{runner.display_name} — Medium: gpt-5.6-terra",
+          "#{runner.display_name} — High: gpt-5.6-sol"
+        ])
+      end
+
+      # @spec CHAT-SESSION-PREFERENCES-003
+      it "offers only the tiers the selected project's policy permits" do
+        runner = create_openai_chat_runner
+        project = create(:project, account: account, model_preferences: { "max_tier" => "low" })
+
+        get runner_model_options_chat_sessions_path, params: { project_id: project.id }
+
+        expect(response).to have_http_status(:ok)
+        expect(option_labels).to eq([ "#{runner.display_name} — Low: gpt-5.6-luna" ])
+      end
+
+      it "ignores projects outside the account" do
+        runner = create_openai_chat_runner
+        other_project = create(:project, model_preferences: { "max_tier" => "low" })
+
+        get runner_model_options_chat_sessions_path, params: { project_id: other_project.id }
+
+        expect(response).to have_http_status(:ok)
+        expect(option_labels.length).to eq(3)
+      end
+
+      it "keeps unfiltered choices for an unknown project id" do
+        create_openai_chat_runner
+
+        get runner_model_options_chat_sessions_path, params: { project_id: 999_999_999 }
+
+        expect(response).to have_http_status(:ok)
+        expect(option_labels.length).to eq(3)
+      end
+
+      context "when authenticated as a viewer" do
+        let(:viewer) { create(:user, :viewer, account: account) }
+
+        before { sign_in viewer }
+
+        it "is not authorized" do
+          get runner_model_options_chat_sessions_path
+
+          expect(response).to redirect_to(root_path)
+        end
+      end
+
+      def option_labels
+        response.parsed_body.fetch("options").map { |option| option.fetch("label") }
+      end
+    end
+  end
+
   describe "POST /chat" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
@@ -990,6 +1063,23 @@ RSpec.describe "ChatSessions" do
 
         expect(chat_root["data-action"]).to include("click->chat#navigate")
         expect(chat_root["data-chat-account-id-value"]).to eq(account.id.to_s)
+      end
+
+      # @spec CHAT-SESSION-PREFERENCES-003
+      it "wires the new-chat dialog to refresh runner and model choices for the selected project" do
+        create_openai_chat_runner
+
+        get chat_session_path(chat_session)
+
+        doc = Nokogiri::HTML(response.body)
+        dialog_form = doc.at_css("dialog form[data-controller='chat-runner-model-options']")
+        expect(dialog_form).to be_present
+        expect(dialog_form["data-chat-runner-model-options-url-value"]).to eq(runner_model_options_chat_sessions_path)
+
+        project_select = dialog_form.at_css("select[name='chat_session[project_id]']")
+        expect(project_select["data-chat-runner-model-options-target"]).to eq("projectSelect")
+        expect(project_select["data-action"]).to include("chat-runner-model-options#projectChanged")
+        expect(dialog_form.at_css("select[name='chat_session[runner_model]'][data-chat-runner-model-options-target='runnerModelSelect']")).to be_present
       end
 
       it "only offers API-key-backed runners in the combined chat selector" do

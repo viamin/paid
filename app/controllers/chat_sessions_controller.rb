@@ -79,6 +79,20 @@ class ChatSessionsController < ApplicationController
     render json: { messages: messages.map { |m| recent_message_payload(m) }, has_more: has_more }
   end
 
+  # @spec CHAT-SESSION-PREFERENCES-003
+  # Serves the new-chat dialog's runner/model choices for the currently
+  # selected project so the dialog never offers a tier the project's policy
+  # rejects at create time. A blank or unknown project_id yields the same
+  # unfiltered choices the dialog renders initially, mirroring how
+  # runner_model_policy_projects resolves policy projects on create.
+  def runner_model_options
+    authorize ChatSession.new(account: current_account), :create?
+    projects = current_account.projects.where(id: params[:project_id])
+    options = ChatSessions::RunnerModelOptions.options_for(available_chat_runners, projects:)
+
+    render json: { options: options.map { |option| { label: option.label, value: option.value } } }
+  end
+
   def sidebar_page
     archived = archived_param?
     sidebar = sidebar_batch(
