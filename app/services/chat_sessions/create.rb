@@ -173,16 +173,20 @@ module ChatSessions
     end
 
     def resolved_model
+      # @spec CHAT-API-018
+      # @spec CHAT-API-026
       return model if model.present?
 
       runner = resolved_runner
       return nil unless runner
+      return nil if runner.free_model_policy?
 
       curated_model_for(runner).model_id
     end
 
     def session_metadata
       return metadata.presence || {} if model.present? || resolved_runner.nil?
+      return metadata.presence || {} if resolved_runner.free_model_policy?
 
       (metadata.presence || {}).merge("model_tier" => curated_model_for(resolved_runner).tier)
     end

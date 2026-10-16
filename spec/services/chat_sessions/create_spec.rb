@@ -94,6 +94,18 @@ RSpec.describe ChatSessions::Create do
       expect(session.metadata).to include("model_tier" => "low")
     end
 
+    # @spec CHAT-API-018
+    it "leaves a new free-policy chat unpinned for per-request model selection" do
+      runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+        config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } })
+
+      session = described_class.call(account: account, user: user, runner_id: runner.id)
+
+      expect(session.model).to be_nil
+      expect(session.metadata).not_to have_key("model_tier")
+    end
+
     it "prefers a configured API-key runner when one is available" do
       default_runner = user.runners.find_by!(runner_key: "claude")
       api_key_record = create(:provider_api_key, user: user, api_key: "sk-openrouter-test", api_service_type: "openrouter")

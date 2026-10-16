@@ -1,12 +1,14 @@
 # EARS Specs: API-Mode Interactive Chat
 
-- [x] **CHAT-API-026** — When API-key chat creates a session, executes a
-  legacy Automatic session, or switches to a fallback runner, Paid SHALL use
-  the same curated Low/Medium/High resolver. It SHALL default new and legacy
-  Automatic sessions to Low, retain an explicit existing model, record the
-  effective tier and concrete model, and reject an unavailable Low tier with
-  actionable feedback rather than escalating cost. OpenAI Low, Medium, and
-  High SHALL resolve to GPT-5.6 Luna, Terra, and Sol respectively.
+- [x] **CHAT-API-026** — When non-free-policy API-key chat creates a session,
+  executes a legacy Automatic session, or switches to a fallback runner, Paid
+  SHALL use the same curated Low/Medium/High resolver. It SHALL default new and
+  legacy Automatic sessions to Low, retain an explicit existing model, record
+  the effective tier and concrete model, and reject an unavailable Low tier
+  with actionable feedback rather than escalating cost. Free-policy runners
+  remain unpinned at creation so CHAT-API-018 remains authoritative. OpenAI
+  Low, Medium, and High SHALL resolve to GPT-5.6 Luna, Terra, and Sol
+  respectively.
   *Tests:* `spec/services/chat_sessions/create_spec.rb`,
   `spec/services/chat_sessions/build_llm_client_spec.rb`,
   `spec/services/chat_sessions/fallback_runners_spec.rb`.
