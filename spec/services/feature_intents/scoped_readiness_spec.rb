@@ -104,6 +104,13 @@ RSpec.describe FeatureIntents::ScopedReadiness do
     expect(malformed_assessment.blockers.map(&:code)).to include("assessment_invalid")
   end
 
+  it "fails closed for a malformed mapping payload" do
+    result = described_class.call(project:, mapping: "not a mapping")
+
+    expect(result).not_to be_ready
+    expect(result.blockers.map(&:code)).to include("prerequisite_coverage_unknown", "scope_revision_unknown")
+  end
+
   it "fails an unmerged or scope-contradicting relevant design artifact" do
     unmerged = described_class.call(project:, mapping: mapping(design_artifacts: [
       { path: "docs/intent/example.md", required: true, merged: false, scope_revision: "scope-v1" }

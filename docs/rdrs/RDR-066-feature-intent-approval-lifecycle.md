@@ -5,6 +5,12 @@
 This document defines the **approval-gated** feature policy. Its whole-feature
 approval, amendment holds and latest-approved-revision rules do not govern
 features explicitly enrolled in the planned [confidence-driven policy](RDR-071-confidence-driven-issue-delivery.md).
+
+P01/#4310 owns the explicit `FeatureIntent` policy snapshot and enrollment
+boundary described in the [human-centered delivery plan](human-centered-inbox-implementation.md).
+It reuses this RDR's shipped attachment and admission contracts rather than
+duplicating them; confidence-driven admission remains fail-closed until its
+later P10–P12 integrations are present.
 Those features use issue-level readiness and completion-blocking follow-ups;
 existing features retain their policy until deliberately migrated. Shared
 record types and ordinary CI/security/quality checks remain reusable.

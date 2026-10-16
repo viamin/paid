@@ -9,6 +9,10 @@ FactoryBot.define do
     approved_design_revision { "abc123superseded" }
     approved_revision_recorded_at { 1.day.ago }
 
+    trait :confidence_driven do
+      delivery_policy { "confidence_driven" }
+    end
+
     trait :ready_for_approval do
       status { "design_open" }
       criteria_clarity_state { "clear" }

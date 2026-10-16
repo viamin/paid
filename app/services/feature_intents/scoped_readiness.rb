@@ -23,7 +23,7 @@ module FeatureIntents
 
     def initialize(project:, mapping:)
       @project = project
-      @mapping = mapping.to_h.deep_stringify_keys
+      @mapping = mapping.is_a?(Hash) ? mapping.deep_stringify_keys : {}
     end
 
     def call

@@ -998,6 +998,21 @@
             </div>
 
             <div>
+              <%= form.label :new_feature_delivery_policy, "New Feature Delivery Policy", class: "block text-sm font-medium leading-6 text-gray-900" %>
+              <div class="mt-2 max-w-xs">
+                <%= form.select :new_feature_delivery_policy,
+                  Project::FEATURE_DELIVERY_POLICIES.map { |policy| [ policy.humanize, policy ] },
+                  {},
+                  class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
+              </div>
+              <label class="mt-3 flex items-center gap-2 text-sm font-medium leading-6 text-gray-900">
+                <%= form.check_box :confidence_delivery_enrollment_enabled, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+                Enroll new features in confidence-driven delivery
+              </label>
+              <p class="mt-1 text-xs text-gray-500">Enrollment snapshots this policy only for new features. Confidence-driven work remains held until readiness, review, and completion delivery is installed.</p>
+            </div>
+
+            <div>
               <%= form.label :tdd_mode, "TDD Mode", class: "block text-sm font-medium leading-6 text-gray-900" %>
               <div class="mt-2 max-w-xs">
                 <%= form.select :tdd_mode,

@@ -15,6 +15,16 @@ approved-intent segments. Policy selection is explicit, not inferred from
 which score or approval happens to pass. Enrollment is disabled until the
 admission, review and completion integrations are complete.
 
+P01 implements this boundary with `projects.new_feature_delivery_policy`,
+`projects.confidence_delivery_enrollment_enabled`, and immutable
+`feature_intents.delivery_policy`. Both project fields default to the existing
+approval-gated posture, and `FeatureIntents::AttachFromAgentRun` snapshots
+`approval_gated` whenever enrollment is disabled. Project settings updates are
+authorized by `ProjectPolicy#update?` and recorded as account activity.
+`FeatureIntents::RunAdmission` explicitly denies a confidence-driven feature
+until P10–P12 replace that denial with unified readiness, review, and
+completion enforcement; selection or enrollment alone never releases work.
+
 ## State and transitions
 
 | Work state | Meaning | Next step |
@@ -99,7 +109,9 @@ fact and continue forward work without pausing active runs.
 
 ## Validation
 
-Test 79/80 and unknown results, design merge relevance, external label edits,
+Test policy snapshots, disabling enrollment with active/held work, and mixed
+approval-gated/confidence-driven features before testing 79/80 and unknown
+results, design merge relevance, external label edits,
 independent holds, GitHub failure/retry, scope-edit/admission races, mixed
 policies and loss of access. Exercise findings before start, during a run and
 after completion; ensure in-flight work is not paused with or without flags.

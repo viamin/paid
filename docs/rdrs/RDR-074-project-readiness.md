@@ -5,10 +5,10 @@
 ## Metadata
 
 - **Date**: 2026-10-11
-- **Status**: Accepted
+- **Status**: Implemented
 - **Type**: Architecture
 - **Related RDRs**: [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-056](RDR-056-strict-test-driven-development-mode.md)
-- **Related Issues**: #4255, #4256
+- **Related Issues**: #4255, #4256, #4257, #4258, #4325, #4338, #4463, #4464
 
 ## Decision
 
@@ -88,3 +88,29 @@ matches Phase 1's structural scope and prevents duplicate command policy.
 - TDD-off reports no TDD gaps and remains open to independent future rules.
 - The result serializes gaps and an ISO-8601 evaluation timestamp without
   persistence.
+
+## Implementation Status
+
+**Implemented (2026-10-15).** The deterministic evaluator and its
+persisted Inbox/bootstrap consumers are shipped. The implementation covers
+the structural contract in this RDR: strict/non-strict and TDD-off evaluation,
+registered language and Godot detectors, persisted snapshots, an authorized
+Inbox lane, a manual deduplicated bootstrap admission path, and a harness-only
+write guard.
+
+The closeout audit now supplies the broader #4255 consumer evidence: an
+isolated Godot/gdUnit4 lifecycle runner proves the merged-bootstrap,
+target-branch-re-evaluation, cleared-Inbox, and intentionally-red-CI sequence,
+and the confirmation-gated `trigger_readiness_bootstrap` action provides the
+authorized non-UI bootstrap path. The audit tracks #4255 without closing that
+umbrella; this RDR leaves no outstanding product-acceptance gap.
+
+## 2026-10-15 Closeout
+
+The [RDR-074 audit report](audit-report-2026-10-15-rdr-074.md) records
+criterion-by-criterion code, test, and command evidence. It reconciles the
+RDR's narrower evaluator formalization with the broader #4255 greenfield
+consumer outcome and uses non-closing `Tracks #4255` language. No rollout
+guard change is warranted: this closeout changes documentation only, and the
+shipped behavior remains governed by the existing TDD setting and explicit
+human bootstrap trigger.

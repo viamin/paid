@@ -22,7 +22,7 @@ module AppleVerification
     VALID_TOP_LEVEL_KEYS = %w[version profiles].freeze
     VALID_PROFILE_KEYS = %w[platform worker xcode bootstrap tests captures].freeze
     VALID_WORKER_KEYS = %w[xcode simulator].freeze
-    VALID_XCODE_KEYS = %w[project workspace scheme test_plan].freeze
+    VALID_XCODE_KEYS = %w[project workspace scheme bundle_id test_plan].freeze
     VALID_TESTS_KEYS = %w[required].freeze
     VALID_CAPTURE_KEYS = %w[id required flow].freeze
 
@@ -83,14 +83,20 @@ module AppleVerification
 
       validate_unknown_keys!("profile #{name}", attributes, VALID_PROFILE_KEYS)
 
+      platform = validate_platform!(name, attributes["platform"])
+      worker = build_worker(name, attributes["worker"])
+      xcode = build_xcode(name, attributes["xcode"])
+      captures = build_captures(name, attributes["captures"])
+      validate_capture_setup!(name, platform, worker, xcode, captures)
+
       Configuration::Profile.new(
         name: name.to_s,
-        platform: validate_platform!(name, attributes["platform"]),
-        worker: build_worker(name, attributes["worker"]),
-        xcode: build_xcode(name, attributes["xcode"]),
+        platform:,
+        worker:,
+        xcode:,
         bootstrap: validate_bootstrap!(name, attributes["bootstrap"]),
         tests_required: validate_tests!(name, attributes["tests"]),
-        captures: build_captures(name, attributes["captures"])
+        captures:
       )
     end
 
@@ -154,8 +160,20 @@ module AppleVerification
         project:,
         workspace:,
         scheme:,
+        bundle_id: validate_optional_string!("profile #{name} xcode.bundle_id", value["bundle_id"]),
         test_plan: validate_optional_string!("profile #{name} xcode.test_plan", value["test_plan"])
       )
+    end
+
+    def validate_capture_setup!(name, platform, worker, xcode, captures)
+      return if captures.empty?
+
+      unless xcode.bundle_id
+        raise ConfigurationError, "profile #{name} xcode.bundle_id is required when captures are configured"
+      end
+      return unless platform.in?(%w[ios ipados]) && worker.simulator.nil?
+
+      raise ConfigurationError, "profile #{name} worker.simulator is required for iOS or iPadOS captures"
     end
 
     def validate_optional_string!(context, value)

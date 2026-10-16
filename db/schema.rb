@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_035037) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -570,6 +570,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_035037) do
     t.bigint "apple_worker_profile_id", null: false
     t.datetime "approved_at"
     t.bigint "approved_by_id", comment: "Project administrator that approved this revision."
+    t.text "configuration_content", comment: "Committed Apple verification configuration bound to the workflow digest."
     t.string "content_digest", null: false, comment: "SHA-256 digest of committed workflow content."
     t.datetime "created_at", null: false
     t.string "lifecycle_gate", null: false
@@ -818,6 +819,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_035037) do
     t.index ["rate_limited_until"], name: "index_chat_sessions_on_rate_limited_until"
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
+  end
+
+  create_table "clarifying_question_progresses", comment: "Durable per-question exploration progress and attributable answer evidence.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.text "answer", comment: "Latest draft or final human answer; nil means unresolved."
+    t.datetime "answered_at", comment: "When the latest answer was explicitly recorded."
+    t.bigint "answered_by_id"
+    t.bigint "chat_session_id", null: false
+    t.datetime "created_at", null: false
+    t.string "design_claim", comment: "Optional canonical design claim identifier supported by this answer."
+    t.text "evidence_context", comment: "Human-readable context retained when temporary exploration material is removed."
+    t.bigint "issue_id", null: false
+    t.integer "position", null: false, comment: "One-based question position within the digested question set."
+    t.bigint "project_id", null: false
+    t.text "question", null: false, comment: "The exact pending-question text this progress addresses."
+    t.string "question_digest", null: false, comment: "Digest of the ordered question set that produced this record."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_clarifying_question_progresses_on_account_id"
+    t.index ["answered_by_id"], name: "index_clarifying_question_progresses_on_answered_by_id"
+    t.index ["chat_session_id"], name: "index_clarifying_question_progresses_on_chat_session_id"
+    t.index ["issue_id", "question_digest", "position"], name: "index_clarifying_question_progresses_identity", unique: true
+    t.index ["issue_id"], name: "index_clarifying_question_progresses_on_issue_id"
+    t.index ["project_id"], name: "index_clarifying_question_progresses_on_project_id"
   end
 
   create_table "code_scanning_remediation_attempts", comment: "Durable scanner-verification evidence for merged code-scanning remediation PRs.", force: :cascade do |t|
@@ -1652,6 +1676,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_035037) do
     t.check_constraint "termination_reason::text = ANY (ARRAY['completed'::character varying::text, 'cancelled'::character varying::text, 'timed_out'::character varying::text, 'failed'::character varying::text, 'evicted'::character varying::text])", name: "chk_execution_usages_termination_reason_valid"
   end
 
+  create_table "explicit_preferences", comment: "Explicit user statements retained for their confirmed scope; never inferred from interaction data.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Tenant that owns this preference."
+    t.bigint "chat_session_id", comment: "Exploration conversation that supplied the statement, when applicable."
+    t.datetime "created_at", null: false
+    t.bigint "feature_intent_id", comment: "Feature target when the user explicitly chose feature scope."
+    t.bigint "project_id", comment: "Project target when the user explicitly chose project or feature scope."
+    t.bigint "recorded_by_id", null: false, comment: "Collaborator who confirmed the statement and scope."
+    t.string "scope", limit: 20, null: false, comment: "Confirmed scope: user, project, or feature."
+    t.text "statement", null: false, comment: "Verbatim explicit preference statement supplied by the user."
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false, comment: "User whose explicit preference this is."
+    t.index ["account_id", "user_id", "scope"], name: "index_explicit_preferences_on_account_id_and_user_id_and_scope"
+    t.index ["account_id"], name: "index_explicit_preferences_on_account_id"
+    t.index ["chat_session_id"], name: "index_explicit_preferences_on_chat_session_id"
+    t.index ["feature_intent_id"], name: "index_explicit_preferences_on_feature_intent_id"
+    t.index ["project_id", "scope"], name: "index_explicit_preferences_on_project_id_and_scope"
+    t.index ["project_id"], name: "index_explicit_preferences_on_project_id"
+    t.index ["recorded_by_id"], name: "index_explicit_preferences_on_recorded_by_id"
+    t.index ["user_id"], name: "index_explicit_preferences_on_user_id"
+    t.check_constraint "scope::text = ANY (ARRAY['user'::character varying, 'project'::character varying, 'feature'::character varying]::text[])", name: "explicit_preferences_scope"
+  end
+
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Account this connector event belongs to."
     t.string "connector_key", null: false, comment: "Connector source key from Interop::Catalog (e.g. jira, linear, slack)."
@@ -1765,6 +1811,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_035037) do
     t.datetime "criteria_clarity_evaluated_at", comment: "When criteria_clarity_state was last computed."
     t.text "criteria_clarity_explanation", comment: "Human-facing explanation of the criteria_clarity_state verdict."
     t.string "criteria_clarity_state", default: "pending", null: false, comment: "Cached AI clarity judgment for acceptance criteria: pending, clear, or vague. Computed by FeatureIntents::EvaluateCriteriaClarity, not on Inbox render, so listing entries never makes a live LLM call per feature."
+    t.string "delivery_policy", default: "approval_gated", null: false, comment: "Immutable delivery-policy snapshot selected when the feature was enrolled."
     t.jsonb "design_document_paths", default: [], null: false, comment: "Repository paths (RDR plus required LID artifacts) that constitute this feature's approved design, read at approved_design_revision by the intent-conformance reviewer."
     t.jsonb "issue_tree_manifest", default: {}, null: false, comment: "Planned issue-tree receipt keyed by stable task identity, including expected relationships and qualified remote identities."
     t.jsonb "issue_tree_verification", default: {}, null: false, comment: "Latest structural issue-tree verification result, revision, time, filing progress, and unresolved work."
@@ -2998,6 +3045,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_035037) do
     t.string "code_scanning_scan_error_kind", comment: "Current code-scanning coverage failure classification: not_configured, permission, rate_limited, or transient."
     t.string "code_scanning_scan_error_reason", comment: "Sanitized explanation of the current code-scanning coverage failure."
     t.integer "completed_agent_runs_count", default: 0, null: false, comment: "Counter cache for completed agent runs"
+    t.boolean "confidence_delivery_enrollment_enabled", default: false, null: false, comment: "Permits newly created features to snapshot the selected confidence-driven policy; does not release work."
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "creation_origin", default: "connected", null: false, comment: "How the project came to be: connected (existing repo) or blank (repo created by Paid)."
@@ -3045,6 +3093,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_035037) do
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
+    t.string "new_feature_delivery_policy", default: "approval_gated", null: false, comment: "Selected delivery policy for newly enrolled features; existing feature snapshots are unaffected."
     t.datetime "next_code_scanning_scan_at", comment: "Earliest time a failed code-scanning fetch may be retried."
     t.string "operating_mode", default: "standard", null: false, comment: "Feature operating mode (RDR-066): standard | human_led_feature_factory"
     t.string "owner", null: false
@@ -4091,6 +4140,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_035037) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "clarifying_question_progresses", "accounts"
+  add_foreign_key "clarifying_question_progresses", "chat_sessions"
+  add_foreign_key "clarifying_question_progresses", "issues"
+  add_foreign_key "clarifying_question_progresses", "projects"
+  add_foreign_key "clarifying_question_progresses", "users", column: "answered_by_id"
   add_foreign_key "code_scanning_remediation_attempts", "agent_runs"
   add_foreign_key "code_scanning_remediation_attempts", "issues"
   add_foreign_key "collector_runs", "project_versions"
@@ -4177,6 +4231,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_035037) do
   add_foreign_key "execution_resources", "agent_runs", on_delete: :nullify
   add_foreign_key "execution_resources", "projects", on_delete: :nullify
   add_foreign_key "execution_usages", "agent_runs", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "accounts", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "chat_sessions", on_delete: :nullify
+  add_foreign_key "explicit_preferences", "feature_intents", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "projects", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "users", column: "recorded_by_id", on_delete: :restrict
+  add_foreign_key "explicit_preferences", "users", on_delete: :cascade
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade

@@ -5,7 +5,10 @@ module AppleVerificationAttempts
   # outcome. Transport acceptance is deliberately not a verification result:
   # every operation required by the approved revision must have been dispatched
   # and must report success before an attempt can satisfy a completion gate.
+  # Advisory operations still run and remain in the guest's result, but their
+  # failure cannot turn a successful required verification into a gate failure.
   # @spec APPLE-ATTEMPT-009
+  # @spec APPLE-ATTEMPT-012
   class GuestResult
     Outcome = Data.define(:status, :failure_classification)
 
@@ -25,10 +28,10 @@ module AppleVerificationAttempts
     end
 
     def call
-      operation_with_failure = failed_operation
+      operation_with_failure = failed_required_operation
       return failed(classification_for(operation_with_failure)) if operation_with_failure
 
-      return failed("worker_infrastructure") unless manifest_operations_reported?
+      return failed("worker_infrastructure") unless required_operations_reported?
       return failed("project_configuration") unless required_operations_dispatched?
 
       succeeded
@@ -37,12 +40,12 @@ module AppleVerificationAttempts
     private
 
     def required_operations_dispatched?
-      required_operation_types.all? { |type| manifest_operation_types.include?(type) }
+      required_operation_types.all? { |type| required_manifest_operation_types.include?(type) }
     end
 
-    def manifest_operations_reported?
-      manifest_operation_types.tally.all? do |type, count|
-        reported_operation_types.count(type) >= count
+    def required_operations_reported?
+      required_operation_results.all? do |manifest_operation, result_operation|
+        result_operation.is_a?(Hash) && result_operation["type"] == manifest_operation["type"]
       end
     end
 
@@ -56,16 +59,28 @@ module AppleVerificationAttempts
       check.to_s.end_with?(".tests") ? "test" : "capture"
     end
 
-    def manifest_operation_types
-      Array(@manifest["operations"]).filter_map { |operation| operation["type"] if operation.is_a?(Hash) }
+    def required_manifest_operation_types
+      required_manifest_operations.filter_map { |operation| operation["type"] if operation.is_a?(Hash) }
     end
 
-    def reported_operation_types
-      Array(@operations).filter_map { |operation| operation["type"] if operation.is_a?(Hash) }
+    def manifest_operations
+      Array(@manifest["operations"])
     end
 
-    def failed_operation
-      Array(@operations).find { |operation| operation_failed?(operation) }
+    def required_operation_results
+      manifest_operations.zip(Array(@operations)).select { |operation, _| required?(operation) }
+    end
+
+    def required_manifest_operations
+      manifest_operations.select { |operation| required?(operation) }
+    end
+
+    def failed_required_operation
+      required_operation_results.map(&:last).find { |operation| operation_failed?(operation) }
+    end
+
+    def required?(operation)
+      operation.is_a?(Hash) && operation.fetch("required", true)
     end
 
     def operation_failed?(operation)
