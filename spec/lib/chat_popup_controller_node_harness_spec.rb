@@ -125,18 +125,37 @@ class ChatPopupControllerNodeHarness
     }
 
     // @spec CHAT-API-025
-    function runChatNavigationCase() {
-      const localStorage = localStorageWith();
+    function runExplicitNavigationHandoffCase() {
+      const localStorage = localStorageWith({
+        "paid:chat-popup:7": JSON.stringify({ open: false, sessionId: 11, keepOpen: false })
+      });
       const controller = Object.create(ChatPopupController.prototype);
+
+      global.window = { console: { error() {} }, localStorage };
       controller.accountIdValue = 7;
-      controller.state = { open: true, sessionId: 42, keepOpen: false };
+      controller.state = controller.readState();
+      controller.followNavigation({ detail: { sessionId: 42 } });
 
-      global.window = { localStorage };
-      controller.navigate({ button: 0, defaultPrevented: false, metaKey: false, ctrlKey: false, shiftKey: false, altKey: false });
+      const pending = JSON.parse(localStorage.getItem("paid:chat-popup:7"));
+      if (!pending.open || !pending.followNavigation || pending.sessionId !== 42 || pending.keepOpen) {
+        throw new Error(`Expected an explicit navigation to stage session 42 without changing keep-open, saw ${JSON.stringify(pending)}`);
+      }
 
-      const persisted = JSON.parse(localStorage.getItem("paid:chat-popup:7"));
-      if (persisted.open !== true || persisted.keepOpen !== true || persisted.sessionId !== 42) {
-        throw new Error(`Expected chat navigation to preserve the open session, saw ${JSON.stringify(persisted)}`);
+      const targets = renderTargets();
+      const destination = Object.create(ChatPopupController.prototype);
+      let loaded = false;
+      destination.accountIdValue = 7;
+      destination.buttonTarget = targets.button;
+      destination.panelTarget = targets.panel;
+      destination.loadPanel = () => { loaded = true; };
+      destination.connect();
+
+      const consumed = JSON.parse(localStorage.getItem("paid:chat-popup:7"));
+      if (!loaded || !destination.state.open || destination.state.sessionId !== 42 || targets.panel.classList.contains("hidden")) {
+        throw new Error("Expected the destination to open the handed-off chat session");
+      }
+      if (consumed.followNavigation || consumed.keepOpen || !consumed.open || consumed.sessionId !== 42) {
+        throw new Error(`Expected the one-navigation handoff to be consumed without enabling keep-open, saw ${JSON.stringify(consumed)}`);
       }
     }
 
@@ -315,7 +334,7 @@ class ChatPopupControllerNodeHarness
 
       if (process.argv[1] === "navigation") {
         runNavigationPersistenceCase();
-    runChatNavigationCase();
+        runExplicitNavigationHandoffCase();
         return;
       }
 

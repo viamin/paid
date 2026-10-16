@@ -281,7 +281,7 @@ class ChatMessageControllerNodeHarness
       if (!content.innerHTML.includes('href="https://example.com"')) {
         throw new Error(`Expected safe link to render, got: ${content.innerHTML}`);
       }
-      if (!content.innerHTML.includes('href="/provider_api_keys/new#api-key-form"') || !content.innerHTML.includes('data-chat-navigation="true"')) {
+      if (!content.innerHTML.includes('href="/provider_api_keys/new#api-key-form"')) {
         throw new Error(`Expected an internal Paid navigation link, got: ${content.innerHTML}`);
       }
       if (content.innerHTML.includes("javascript:")) {

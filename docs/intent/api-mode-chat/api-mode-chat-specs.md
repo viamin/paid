@@ -315,18 +315,22 @@
   *Tests:* `spec/lib/chat_popup_controller_node_harness_spec.rb`.
   *Code:* `app/javascript/controllers/chat_popup_controller.js`.
 
-- [x] **CHAT-API-025** — When an assistant message contains a root-relative
-  Paid navigation link, the chat renderer SHALL retain it while rejecting
-  protocol-relative and unsafe-scheme URLs. When the user follows that link
-  from the global chat popup, Paid SHALL persist the active session with the
-  popup open and its keep-open preference enabled before navigation, so the
-  same conversation reloads on the destination page. The link MAY include a
-  fragment identifier to position the destination at its relevant section.
-  *Tests:* `spec/lib/chat_message_controller_node_harness_spec.rb`,
+- [x] **CHAT-API-025** — When a user follows a same-origin navigation from a
+  popup or full-page chat, Paid SHALL hand that chat session to the global
+  popup and open it on the destination page, without changing the user's
+  persistent "Keep Chat Open" preference. The navigation SHALL accept a
+  normal link `href` or a `data-chat-navigate-url` value and SHALL preserve a
+  URL fragment so the browser scrolls to the specified destination section.
+  Assistant markdown SHALL retain root-relative Paid links and reject
+  protocol-relative and unsafe-scheme URLs.
+  *Tests:* `spec/lib/chat_controller_node_harness_spec.rb`,
   `spec/lib/chat_popup_controller_node_harness_spec.rb`,
+  `spec/lib/chat_message_controller_node_harness_spec.rb`,
   `spec/services/chat_sessions/build_system_prompt_spec.rb`.
-  *Code:* `app/javascript/lib/safe_markdown.js`,
+  *Code:* `app/javascript/controllers/chat_controller.js`,
   `app/javascript/controllers/chat_popup_controller.js`,
+  `app/views/layouts/application.html.erb`,
+  `app/javascript/lib/safe_markdown.js`,
   `app/services/chat_sessions/build_system_prompt.rb`.
 
 - [x] **CHAT-API-010** — When a chat repo-read tool (`grep_repo`,

@@ -45,6 +45,8 @@
 <% chat_panel_bottom_space = local_assigns[:chat_panel_bottom_space] %>
 <div class="flex flex-col overflow-x-hidden"
      data-controller="chat"
+     data-action="click->chat#navigate"
+     data-chat-account-id-value="<%= current_account.id %>"
      data-chat-session-id-value="<%= chat_session.id %>"
      style="<%= "--chat-panel-bottom-space: #{chat_panel_bottom_space};" if chat_panel_bottom_space %>height: var(--chat-panel-height, calc(100dvh - var(--chat-panel-offset-top, 0px) - var(--chat-panel-bottom-space, 2rem)));">
   <%# The chat page is chat-first: the only always-visible chrome is a

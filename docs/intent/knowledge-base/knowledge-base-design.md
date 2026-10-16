@@ -27,6 +27,35 @@ the system that actually shipped.
 
 ## Shipped Behavior
 
+### Knowledge credential selection
+
+Each knowledge operation resolves credentials for the project's effective owner.
+`user_settings.kb_embedding_provider_api_key_id` and
+`user_settings.kb_chat_provider_api_key_id` bind embeddings and decision
+drafting respectively to an existing `ProviderApiKey`; no secret is copied.
+The selected key must match the selected runner's API service type. That binding
+has precedence in direct embeddings, container drafting via the secrets proxy,
+and host drafting via Agent Harness `ProviderRuntime`. A new same-service key
+cannot alter a bound operation.
+
+Container drafting supplies its attempted runner to the secrets proxy before
+the run records a final runner, so the proxy can apply the same selected chat
+credential on the first attempt as it does after completion.
+
+When no binding exists, legacy installations retain their former newest-key
+behavior until the owner explicitly selects a key. If no saved key resolves,
+the platform API key (Rails credentials before environment) is the only API
+fallback for supported OpenAI/Anthropic routes. The readiness surface exposes
+only owner, service, source (`owner_api_key`, `saved_key`, or
+`platform_fallback`), and status; it never exposes secret material. An
+incompatible selected key is an actionable configuration error. A selected key
+cannot be deleted while it is bound, so an owner must choose a replacement or
+platform fallback first. API-key selection is API-billed; unconfigured host
+drafting retains its explicitly configured CLI/subscription authentication and
+is never silently converted to HTTP API billing. Conversely, a selected API-key
+binding on a runner without a supported API transport fails with an actionable
+configuration error; it never falls through to ambient CLI credentials.
+
 ### Dashboard runner readiness
 
 The account dashboard retains Embedding and Decision Drafting runner health, but

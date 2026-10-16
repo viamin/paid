@@ -8,7 +8,6 @@ export default class extends Controller {
 
   connect() {
     this.render()
-    this.enablePopupNavigation()
   }
 
   appendContent(chunk) {
@@ -27,21 +26,12 @@ export default class extends Controller {
     try {
       this.disablePlainTextFallback()
       this.contentTarget.innerHTML = renderMarkdown(rawContent)
-      this.enablePopupNavigation()
 
       this.decorateCodeBlocks()
     } catch {
       this.enablePlainTextFallback()
       this.contentTarget.textContent = rawContent
     }
-  }
-
-  enablePopupNavigation() {
-    if (!this.hasContentTarget) return
-
-    this.contentTarget.querySelectorAll("a[data-chat-navigation]").forEach((link) => {
-      link.dataset.action = "click->chat-popup#navigate"
-    })
   }
 
   visibleContent(rawContent) {

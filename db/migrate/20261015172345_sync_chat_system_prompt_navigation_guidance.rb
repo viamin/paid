@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 # @spec CHAT-API-025
 class SyncChatSystemPromptNavigationGuidance < ActiveRecord::Migration[8.1]
   CHANGE_NOTES = "Add in-chat navigation guidance for Paid pages"

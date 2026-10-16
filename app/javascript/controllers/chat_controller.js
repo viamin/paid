@@ -3,7 +3,7 @@ import consumer from "../channels/consumer"
 
 export default class extends Controller {
   static targets = ["backToTop", "stickyJumpToLatest", "container", "messages", "input", "status", "typingIndicator", "tokenUsage", "capabilityBadge", "capabilityPanel", "capabilityLabel", "capabilityIcon", "capabilityRepos"]
-  static values = { sessionId: Number }
+  static values = { accountId: Number, sessionId: Number }
 
   connect() {
     this.autoScroll = true
@@ -165,6 +165,52 @@ export default class extends Controller {
     this.pendingContent = content
     this.setBusy(true)
     this.subscription.perform("send_message", { content })
+  }
+
+  // @spec CHAT-API-025
+  navigate(event) {
+    const url = this.navigationUrl(event)
+    if (!url) return
+
+    event.preventDefault()
+    this.persistPopupNavigation()
+    window.dispatchEvent(new window.CustomEvent("chat:navigate", { detail: { sessionId: this.sessionIdValue } }))
+    window.location.assign(url.href)
+  }
+
+  persistPopupNavigation() {
+    if (!this.hasAccountIdValue) return
+
+    const key = `paid:chat-popup:${this.accountIdValue}`
+    const state = this.readPopupState(key)
+    window.localStorage.setItem(key, JSON.stringify({ ...state, open: true, sessionId: this.sessionIdValue, followNavigation: true }))
+  }
+
+  readPopupState(key) {
+    try {
+      return JSON.parse(window.localStorage.getItem(key)) || {}
+    } catch {
+      return {}
+    }
+  }
+
+  navigationUrl(event) {
+    if (event.defaultPrevented || !this.isPrimaryNavigation(event)) return null
+
+    const element = event.target.closest("[data-chat-navigate-url], a[href]")
+    if (!element || element.target === "_blank") return null
+
+    const href = element.dataset.chatNavigateUrl || element.getAttribute("href")
+    try {
+      const url = new URL(href, window.location.href)
+      return url.origin === window.location.origin ? url : null
+    } catch {
+      return null
+    }
+  }
+
+  isPrimaryNavigation(event) {
+    return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey
   }
 
   submitForm(event) {

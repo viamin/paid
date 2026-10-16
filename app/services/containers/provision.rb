@@ -3127,6 +3127,8 @@ module Containers
         env.concat(agent_run.service_environment.map { |k, v| "#{k}=#{v}" })
       end
 
+      env << "PAID_TOOL_SIDECAR_ENDPOINTS=#{agent_run.tool_sidecar_endpoints.to_json}" if agent_run&.tool_sidecar_endpoints.present?
+
       # Set git committer identity globally via environment variables.
       # This ensures git operations (rebase, commit, cherry-pick) never fail
       # with "Committer identity unknown" regardless of local .git/config state.
