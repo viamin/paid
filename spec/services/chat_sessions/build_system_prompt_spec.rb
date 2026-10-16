@@ -44,6 +44,12 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("Be concise and technical")
       end
 
+      # @spec CHAT-API-025
+      it "instructs the assistant how to link users to Paid pages" do
+        expect(prompt).to include("root-relative Paid link")
+        expect(prompt).to include("/provider_api_keys/new#api-key-form")
+      end
+
       # @spec FEATURE-CREATION-007
       it "includes feature-creation guidance and problem-framing handoff" do
         expect(prompt).to include("gather intent through adaptive questions")

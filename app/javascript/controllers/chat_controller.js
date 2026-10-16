@@ -201,8 +201,12 @@ export default class extends Controller {
     if (!element || element.target === "_blank") return null
 
     const href = element.dataset.chatNavigateUrl || element.getAttribute("href")
-    const url = new URL(href, window.location.href)
-    return url.origin === window.location.origin ? url : null
+    try {
+      const url = new URL(href, window.location.href)
+      return url.origin === window.location.origin ? url : null
+    } catch {
+      return null
+    }
   }
 
   isPrimaryNavigation(event) {
