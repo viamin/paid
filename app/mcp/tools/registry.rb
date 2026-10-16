@@ -20,6 +20,7 @@ module Tools
       "Tools::GetAgentRun",
       "Tools::ListAgentRuns",
       "Tools::CancelAgentRun",
+      "Tools::ManageFeatureIntent",
       "Tools::CloneProject",
       "Tools::RecordChangeIntent",
       "Tools::GetInboxChatContext",

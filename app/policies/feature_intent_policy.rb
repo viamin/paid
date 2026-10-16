@@ -16,6 +16,14 @@ class FeatureIntentPolicy < ApplicationPolicy
     ProjectPolicy.new(user, record.project).manage_issues?
   end
 
+  def cancel?
+    approve?
+  end
+
+  def reopen?
+    approve?
+  end
+
   class Scope < ApplicationPolicy::Scope
     def resolve
       raise Pundit::NotAuthorizedError, "must be logged in" unless user

@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-# @spec FEATURE-APPROVAL-012 @spec FEATURE-APPROVAL-013
+# @spec FEATURE-APPROVAL-012 @spec FEATURE-APPROVAL-013 @spec FEATURE-APPROVAL-020
 class FeatureIntentsController < ApplicationController
-  before_action :set_feature_intent, only: :approve
+  before_action :set_feature_intent, only: %i[approve cancel reopen]
 
   def approve
     authorize @feature_intent, :approve?, policy_class: FeatureIntentPolicy
@@ -24,6 +24,28 @@ class FeatureIntentsController < ApplicationController
       alert: "Not ready to approve: feature is in '#{@feature_intent.status}' state and cannot be approved yet."
   end
 
+  def cancel
+    authorize @feature_intent, :cancel?, policy_class: FeatureIntentPolicy
+
+    FeatureIntents::Cancel.call(feature_intent: @feature_intent, actor: current_user, **cancellation_attributes)
+    redirect_to inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND), notice: "Feature proposal declined and removed from the Inbox."
+  rescue FeatureIntents::Cancel::NotAuthorizedError
+    user_not_authorized
+  rescue FeatureIntents::Cancel::InvalidCancellationError, FeatureIntent::InvalidTransitionError => e
+    redirect_to inbox_entry_path(feature_decision_entry_id), alert: e.message
+  end
+
+  def reopen
+    authorize @feature_intent, :reopen?, policy_class: FeatureIntentPolicy
+
+    FeatureIntents::Reopen.call(feature_intent: @feature_intent, actor: current_user)
+    redirect_to inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND), notice: "Feature proposal reopened for discovery."
+  rescue FeatureIntents::Reopen::NotAuthorizedError
+    user_not_authorized
+  rescue FeatureIntent::InvalidTransitionError => e
+    redirect_to inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND), alert: e.message
+  end
+
   private
 
   def set_feature_intent
@@ -32,5 +54,9 @@ class FeatureIntentsController < ApplicationController
 
   def feature_decision_entry_id
     "#{Inbox::Queue::FEATURE_DECISION_KIND}:#{@feature_intent.id}"
+  end
+
+  def cancellation_attributes
+    params.permit(:cancellation_reason, :replacement_reference).to_h.symbolize_keys
   end
 end

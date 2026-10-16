@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec FEATURE-APPROVAL-012
+# @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec FEATURE-APPROVAL-012 @spec FEATURE-APPROVAL-020
 RSpec.describe "Feature intents" do
   let(:owner) { create(:user, :owner) }
   let(:project) { create(:project, account: owner.account) }
@@ -88,6 +88,38 @@ RSpec.describe "Feature intents" do
 
       expect(response).to redirect_to(inbox_entry_path("#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"))
       expect(flash[:alert]).to include("Not ready to approve", "released")
+    end
+  end
+
+  describe "POST /feature_intents/:id/cancel" do
+    it "declines a discovering duplicate without requiring approval readiness" do
+      feature_intent = create(:feature_intent, project: project, status: "discovering", criteria_clarity_state: "pending")
+
+      post cancel_feature_intent_path(feature_intent), params: {
+        cancellation_reason: "already_handled",
+        replacement_reference: "https://github.com/viamin/paid/pull/4430"
+      }
+
+      expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND))
+      expect(flash[:notice]).to eq("Feature proposal declined and removed from the Inbox.")
+      expect(feature_intent.reload).to have_attributes(
+        status: "cancelled",
+        cancelled_by: owner,
+        cancellation_reason: "already_handled",
+        replacement_reference: "https://github.com/viamin/paid/pull/4430"
+      )
+    end
+  end
+
+  describe "POST /feature_intents/:id/reopen" do
+    it "reopens a declined feature for discovery without releasing held work" do
+      feature_intent = create(:feature_intent, project: project, status: "cancelled", cancelled_by: owner,
+        cancelled_at: 1.hour.ago, cancellation_reason: "superseded")
+
+      post reopen_feature_intent_path(feature_intent)
+
+      expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND))
+      expect(feature_intent.reload.status).to eq("discovering")
     end
   end
 end
