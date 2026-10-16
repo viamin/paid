@@ -7,7 +7,7 @@ spec/models/runner_auth_attempt_spec.rb:github-pat:115
 spec/models/runner_auth_attempt_spec.rb:github-pat:201
 spec/models/runner_auth_attempt_spec.rb:github-pat:213
 spec/middleware/previews_proxy_spec.rb:generic-api-key:397
-spec/requests/provider_api_keys_spec.rb:generic-api-key:124
+spec/requests/provider_api_keys_spec.rb:generic-api-key:125
 spec/requests/integration_credentials_spec.rb:generic-api-key:151
 spec/services/agent_runs/diagnose_error_spec.rb:generic-api-key:175
 spec/services/agent_runs/diagnose_error_spec.rb:generic-api-key:204

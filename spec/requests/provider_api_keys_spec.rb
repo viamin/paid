@@ -93,6 +93,7 @@ RSpec.describe "ProviderApiKeys" do
         get new_provider_api_key_path
         expect(response).to have_http_status(:ok)
         expect(response.body).to include("Add LLM API Key")
+        expect(response.body).to include('id="api-key-form"')
       end
 
       it "renders API service type options as a select" do

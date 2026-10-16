@@ -117,6 +117,10 @@ What ships today:
   performs a full-page navigation so a URL fragment scrolls to the requested
   destination element. This one-navigation handoff does not silently enable
   the user's persistent "Keep Chat Open" preference.
+- Assistant markdown may render root-relative Paid links, but never
+  protocol-relative or arbitrary schemes. These links use the same navigation
+  handoff, and may include a fragment identifier for a relevant destination
+  section.
 - API sessions default to inline-only (`container_capability: none`); a
   capability request is a handoff to the RDR-037 workspace lifecycle, not
   behavior shipped by this RDR-028 coverage

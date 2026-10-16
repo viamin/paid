@@ -2283,6 +2283,18 @@ class ChatControllerNodeHarness
 
       try {
         controller.navigate(event);
+
+        const malformedEvent = {
+          button: 0,
+          target: {
+            closest() {
+              return { dataset: { chatNavigateUrl: "http://[" } };
+            }
+          }
+        };
+        if (controller.navigationUrl(malformedEvent) !== null) {
+          throw new Error("Expected malformed navigation URLs to be ignored");
+        }
       } finally {
         globalThis.window = originalWindow;
       }
@@ -2298,6 +2310,7 @@ class ChatControllerNodeHarness
       if (navigations.join(",") !== "https://paid.test/settings/api_keys#provider-api-keys") {
         throw new Error(`Expected fragment-preserving full-page navigation, saw ${JSON.stringify(navigations)}`);
       }
+
     }
 
     function run() {
