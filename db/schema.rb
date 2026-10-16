@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_012555) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_031051) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -818,6 +818,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_012555) do
     t.index ["rate_limited_until"], name: "index_chat_sessions_on_rate_limited_until"
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
+  end
+
+  create_table "clarifying_question_progresses", comment: "Durable per-question exploration progress and attributable answer evidence.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.text "answer", comment: "Latest draft or final human answer; nil means unresolved."
+    t.datetime "answered_at", comment: "When the latest answer was explicitly recorded."
+    t.bigint "answered_by_id"
+    t.bigint "chat_session_id", null: false
+    t.datetime "created_at", null: false
+    t.string "design_claim", comment: "Optional canonical design claim identifier supported by this answer."
+    t.text "evidence_context", comment: "Human-readable context retained when temporary exploration material is removed."
+    t.bigint "issue_id", null: false
+    t.integer "position", null: false, comment: "One-based question position within the digested question set."
+    t.bigint "project_id", null: false
+    t.text "question", null: false, comment: "The exact pending-question text this progress addresses."
+    t.string "question_digest", null: false, comment: "Digest of the ordered question set that produced this record."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_clarifying_question_progresses_on_account_id"
+    t.index ["answered_by_id"], name: "index_clarifying_question_progresses_on_answered_by_id"
+    t.index ["chat_session_id"], name: "index_clarifying_question_progresses_on_chat_session_id"
+    t.index ["issue_id", "question_digest", "position"], name: "index_clarifying_question_progresses_identity", unique: true
+    t.index ["issue_id"], name: "index_clarifying_question_progresses_on_issue_id"
+    t.index ["project_id"], name: "index_clarifying_question_progresses_on_project_id"
   end
 
   create_table "code_scanning_remediation_attempts", comment: "Durable scanner-verification evidence for merged code-scanning remediation PRs.", force: :cascade do |t|
@@ -4090,6 +4113,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_012555) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "clarifying_question_progresses", "accounts"
+  add_foreign_key "clarifying_question_progresses", "chat_sessions"
+  add_foreign_key "clarifying_question_progresses", "issues"
+  add_foreign_key "clarifying_question_progresses", "projects"
+  add_foreign_key "clarifying_question_progresses", "users", column: "answered_by_id"
   add_foreign_key "code_scanning_remediation_attempts", "agent_runs"
   add_foreign_key "code_scanning_remediation_attempts", "issues"
   add_foreign_key "collector_runs", "project_versions"

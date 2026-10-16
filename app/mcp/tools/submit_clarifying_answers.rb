@@ -43,6 +43,7 @@ module Tools
       questions = ClarifyingQuestions::Load.call(project: issue.project, issue: issue)
       raise ArgumentError, "Answer every pending question before posting" unless answers.size == questions.size
       validate_choice_answers!(questions:, answers:)
+      save_progress!(questions:, answers:)
 
       ClarifyingQuestions::SubmitAnswers.call(
         project: issue.project,
@@ -58,6 +59,21 @@ module Tools
       questions.zip(answers).each_with_index do |(question, answer), index|
         error = ClarifyingQuestions::ChoiceAnswers.error_for(question:, answer:, position: index + 1)
         raise ArgumentError, error if error
+      end
+    end
+
+    # Keep the durable chat record in sync before projecting the explicitly
+    # confirmed final answer to GitHub. If GitHub rejects the submission, the
+    # human's answers remain available for a later retry.
+    # @spec QUESTION-EXPLORATION-002 @spec QUESTION-EXPLORATION-013
+    def save_progress!(questions:, answers:)
+      questions.zip(answers).each_with_index do |(_question, answer), index|
+        ClarifyingQuestions::SaveProgress.call(
+          chat_session: session,
+          position: index + 1,
+          answer:,
+          actor: user
+        )
       end
     end
 
