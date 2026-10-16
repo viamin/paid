@@ -30,7 +30,7 @@
       <%= form_with url: chat_session_chat_diagram_comments_path(chat_session, diagram), class: "space-y-2" do |form| %>
         <%= form.hidden_field :element_id, data: { diagram_target: "elementId" } %>
         <%= form.label :body, "Comment on this diagram", class: "block text-sm font-medium" %>
-        <%= form.text_area :body, rows: 2, required: true, class: "block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500", data: { diagram_target: "comment" } %>
+        <%= form.text_area :body, rows: 2, required: true, maxlength: 12_000, class: "block w-full rounded-md border-gray-300 text-sm focus:border-indigo-500 focus:ring-indigo-500", data: { diagram_target: "comment" } %>
         <%= form.submit "Add comment", class: "rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-indigo-500" %>
       <% end %>
     </div>

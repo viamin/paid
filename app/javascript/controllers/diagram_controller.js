@@ -7,7 +7,7 @@ export default class extends Controller {
   static targets = ["comment", "element", "elementId"]
 
   toggle(event) {
-    if (this.hasCommentTarget && this.commentTarget === document.activeElement) {
+    if (this.hasCommentTarget && this.commentTarget.value.trim() !== "") {
       event.preventDefault()
       this.commentTarget.focus()
     }

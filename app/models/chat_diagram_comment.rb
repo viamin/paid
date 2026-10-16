@@ -5,7 +5,8 @@ class ChatDiagramComment < ApplicationRecord
   belongs_to :chat_diagram
   belongs_to :actor, class_name: "User"
 
-  validates :question_key, :body, presence: true
+  validates :question_key, presence: true
+  validates :body, presence: true, length: { maximum: 12_000 }
   validate :selected_element_has_context
 
   private
