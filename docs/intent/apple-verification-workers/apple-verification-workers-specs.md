@@ -48,8 +48,10 @@
   `AppleVerification::TartRunner`, `ExecutionRunners::ResourceReconciler`
 - [x] **APPLE-WORKER-011** — When Paid parses `.paid/apple-verification.yml`,
   the system SHALL accept only typed fields describing Xcode projects or
-  workspaces, shared schemes, test plans, Swift Package Manager dependency
-  resolution, iOS/iPadOS Simulator destinations, and native macOS profiles,
+  workspaces, shared schemes, application bundle identifiers, test plans, Swift
+  Package Manager dependency resolution, iOS/iPadOS Simulator destinations,
+  and native macOS profiles; capture profiles SHALL declare a bundle identifier
+  and iOS/iPadOS capture profiles SHALL declare a Simulator destination,
   and SHALL reject an unknown declarative flow operation or an unsupported
   dependency bootstrap system with a deterministic diagnostic before any
   worker is provisioned.
@@ -66,9 +68,13 @@
   project, the system SHALL bind a draft workflow revision to the exact file
   content digest, an active worker profile compatible with every declared
   platform, Xcode version constraint, and simulator constraint, and
-  required/advisory checks derived from the configuration, and SHALL never
+  required/advisory checks derived from the configuration, retain that exact
+  configuration content for digest-bound guest operation derivation, carrying
+  each declared Xcode project or workspace into its build and test operations
+  and optional test plan into its test operation, and SHALL never
   mutate an approved revision's binding.
-  *Tests:* `spec/services/apple_verification_workflow_revisions/sync_from_configuration_spec.rb`,
+  *Tests:* `spec/services/apple_verification_workflow_revisions/sync_from_configuration_spec.rb`, `spec/services/apple_verification/guest_manifest/build_spec.rb`,
   `spec/services/apple_verification_workers/version_requirement_spec.rb`
   *Code:* `AppleVerificationWorkflowRevisions::SyncFromConfiguration`,
-  `AppleVerificationWorkers::VersionRequirement`
+  `AppleVerificationWorkers::VersionRequirement`,
+  `AppleVerification::GuestManifest::Build`

@@ -34,7 +34,9 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
 
   before do
     FeatureFlags.enable!(:apple_verification_workers, project:)
-    allow(AppleVerification::ExecuteGuestJob).to receive(:call).and_return(guest_result)
+    allow(AppleVerification::ExecuteGuestJob).to receive(:call) do |manifest:, **|
+      guest_result(manifest)
+    end
   end
 
   def queued_attempt(project: self.project, agent_run: self.agent_run, revision: self.revision)
@@ -55,9 +57,9 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
 
   it "dispatches and completes the fair queue head after admission" do
     attempt = queued_attempt
-    allow(AppleVerification::ExecuteGuestJob).to receive(:call) do
+    allow(AppleVerification::ExecuteGuestJob).to receive(:call) do |manifest:, **|
       expect(attempt.reload).to have_attributes(status: "provisioning", started_at: be_present)
-      guest_result
+      guest_result(manifest)
     end
 
     result = dispatch
@@ -187,16 +189,15 @@ RSpec.describe AppleVerificationAttempts::Dispatcher do
     )
   end
 
-  # Matches the fixed manifest Provision#guest_manifest builds (materialize_source
-  # and export_artifacts) so GuestResult resolves to "succeeded" for a revision
-  # with no required checks.
-  def guest_result
+  # Mirror every dispatched operation so the dispatcher test exercises the
+  # approved workflow rather than an obsolete fixed manifest.
+  # @spec APPLE-WORKER-013
+  def guest_result(manifest)
     AppleVerification::ExecuteGuestJob::Result.new(
       image: nil,
-      operations: [
-        { "type" => "materialize_source", "status" => "succeeded" },
-        { "type" => "export_artifacts", "status" => "succeeded" }
-      ]
+      operations: manifest.fetch("operations").map do |operation|
+        { "type" => operation.fetch("type"), "status" => "succeeded" }
+      end
     )
   end
 end

@@ -27,6 +27,28 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
       expect(feature_intent.issues).to include(brief_issue)
     end
 
+    it "snapshots the selected policy only while confidence delivery enrollment is enabled" do # @spec CONFIDENCE-DELIVERY-001
+      project.update!(
+        new_feature_delivery_policy: "confidence_driven",
+        confidence_delivery_enrollment_enabled: true
+      )
+
+      result = described_class.call(agent_run: agent_run, goal: "create_feature", brief: { "title" => "Add dark mode" })
+
+      expect(result.feature_intent.delivery_policy).to eq("confidence_driven")
+    end
+
+    it "uses approval-gated policy for features created after enrollment is disabled" do # @spec CONFIDENCE-DELIVERY-015
+      project.update!(
+        new_feature_delivery_policy: "confidence_driven",
+        confidence_delivery_enrollment_enabled: false
+      )
+
+      result = described_class.call(agent_run: agent_run, goal: "create_feature", brief: { "title" => "Add dark mode" })
+
+      expect(result.feature_intent.delivery_policy).to eq("approval_gated")
+    end
+
     it "returns the existing FeatureIntent when called twice on the same run/brief" do
       first = described_class.call(agent_run: agent_run, goal: "create_feature", brief: { "title" => "X" })
 

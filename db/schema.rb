@@ -570,6 +570,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
     t.bigint "apple_worker_profile_id", null: false
     t.datetime "approved_at"
     t.bigint "approved_by_id", comment: "Project administrator that approved this revision."
+    t.text "configuration_content", comment: "Committed Apple verification configuration bound to the workflow digest."
     t.string "content_digest", null: false, comment: "SHA-256 digest of committed workflow content."
     t.datetime "created_at", null: false
     t.string "lifecycle_gate", null: false
@@ -1810,6 +1811,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
     t.datetime "criteria_clarity_evaluated_at", comment: "When criteria_clarity_state was last computed."
     t.text "criteria_clarity_explanation", comment: "Human-facing explanation of the criteria_clarity_state verdict."
     t.string "criteria_clarity_state", default: "pending", null: false, comment: "Cached AI clarity judgment for acceptance criteria: pending, clear, or vague. Computed by FeatureIntents::EvaluateCriteriaClarity, not on Inbox render, so listing entries never makes a live LLM call per feature."
+    t.string "delivery_policy", default: "approval_gated", null: false, comment: "Immutable delivery-policy snapshot selected when the feature was enrolled."
     t.jsonb "design_document_paths", default: [], null: false, comment: "Repository paths (RDR plus required LID artifacts) that constitute this feature's approved design, read at approved_design_revision by the intent-conformance reviewer."
     t.jsonb "issue_tree_manifest", default: {}, null: false, comment: "Planned issue-tree receipt keyed by stable task identity, including expected relationships and qualified remote identities."
     t.jsonb "issue_tree_verification", default: {}, null: false, comment: "Latest structural issue-tree verification result, revision, time, filing progress, and unresolved work."
@@ -3043,6 +3045,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
     t.string "code_scanning_scan_error_kind", comment: "Current code-scanning coverage failure classification: not_configured, permission, rate_limited, or transient."
     t.string "code_scanning_scan_error_reason", comment: "Sanitized explanation of the current code-scanning coverage failure."
     t.integer "completed_agent_runs_count", default: 0, null: false, comment: "Counter cache for completed agent runs"
+    t.boolean "confidence_delivery_enrollment_enabled", default: false, null: false, comment: "Permits newly created features to snapshot the selected confidence-driven policy; does not release work."
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "creation_origin", default: "connected", null: false, comment: "How the project came to be: connected (existing repo) or blank (repo created by Paid)."
@@ -3089,6 +3092,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
+    t.string "new_feature_delivery_policy", default: "approval_gated", null: false, comment: "Selected delivery policy for newly enrolled features; existing feature snapshots are unaffected."
     t.datetime "next_code_scanning_scan_at", comment: "Earliest time a failed code-scanning fetch may be retried."
     t.string "operating_mode", default: "standard", null: false, comment: "Feature operating mode (RDR-066): standard | human_led_feature_factory"
     t.string "owner", null: false

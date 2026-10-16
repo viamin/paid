@@ -2114,6 +2114,19 @@ RSpec.describe "Projects" do
         expect(response.body).to include('name="project[auto_scan_security]"')
       end
 
+      it "shows the confidence-driven policy selection and enrollment guard" do # @spec CONFIDENCE-DELIVERY-001 @spec CONFIDENCE-DELIVERY-014
+        project = create(:project, account: account, github_token: github_token,
+          new_feature_delivery_policy: "confidence_driven",
+          confidence_delivery_enrollment_enabled: true)
+
+        get edit_project_path(project)
+
+        expect(response.body).to include("New Feature Delivery Policy")
+        expect(response.body).to include('name="project[new_feature_delivery_policy]"')
+        expect(response.body).to include('name="project[confidence_delivery_enrollment_enabled]"')
+        expect(response.body).to include("Confidence-driven work remains held")
+      end
+
       # @spec GITHUB-SYNC-020
       it "explains unavailable code scanning and offers a refresh in settings" do
         project = create(:project, account: account, github_token: github_token,
@@ -2384,6 +2397,20 @@ RSpec.describe "Projects" do
         project = create(:project, account: account, github_token: github_token, active: true)
         patch project_path(project), params: { project: { active: false } }
         expect(project.reload.active).to be false
+      end
+
+      it "updates the confidence-driven enrollment policy" do # @spec CONFIDENCE-DELIVERY-001
+        project = create(:project, account: account, github_token: github_token)
+
+        patch project_path(project), params: { project: {
+          new_feature_delivery_policy: "confidence_driven",
+          confidence_delivery_enrollment_enabled: true
+        } }
+
+        expect(project.reload).to have_attributes(
+          new_feature_delivery_policy: "confidence_driven",
+          confidence_delivery_enrollment_enabled: true
+        )
       end
 
       it "allows updating auto_fix_merge_conflicts" do

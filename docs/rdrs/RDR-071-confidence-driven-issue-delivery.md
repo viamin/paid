@@ -7,7 +7,7 @@
 - **Type**: Product workflow and orchestration
 - **Priority**: P1
 - **Related RDRs**: [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-067](RDR-067-approved-intent-conformance.md), [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-070](RDR-070-facet-confidence-and-clarification.md)
-- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open; P01, P09, P10, P11, P12, C71 unimplemented)
+- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open; P09, P10, P11, P12, C71 unimplemented)
 - **Intent**: [Confidence-driven delivery](../intent/confidence-driven-delivery/confidence-driven-delivery-design.md)
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
 - **Related Issues**: Epic [#4309](https://github.com/viamin/paid/issues/4309); closeout [#4324](https://github.com/viamin/paid/issues/4324); gaps [#4310](https://github.com/viamin/paid/issues/4310), [#4314](https://github.com/viamin/paid/issues/4314), [#4315](https://github.com/viamin/paid/issues/4315), [#4318](https://github.com/viamin/paid/issues/4318), [#4319](https://github.com/viamin/paid/issues/4319), [#4320](https://github.com/viamin/paid/issues/4320), [#4321](https://github.com/viamin/paid/issues/4321), [#4323](https://github.com/viamin/paid/issues/4323)
@@ -18,20 +18,20 @@ Partially Implemented as of 2026-10-12 (see
 [2026-10-12 Closeout](#2026-10-12-closeout)). The approval-gated
 feature lifecycle, admission recheck, and amendment/conformance guards
 that this RDR deliberately reuses are shipped with passing tests; the
-new confidence-driven policy itself is not — every
-`CONFIDENCE-DELIVERY-*` EARS claim remains planned. `db/schema.rb`
-carries no policy-snapshot, release-audit, completion, or follow-up
-tables; `app/services/` and `app/jobs/` carry no confidence-driven
-release, completion, or follow-up services; `spec/` carries no
-confidence-driven spec. The existing approval-gated policy and its
-review guards (`IntentConformance::VerifyAtMerge`,
-`DesignAmendments::EvaluateImpact`, `FeatureIntents::Release`,
-`FeatureIntents::RunAdmission`) remain unchanged and continue to gate
-their own policy. The rollout guard's no-enrollment-without-integration
-requirement is satisfied automatically: no enrollment switch exists and
-no confidence-driven integration is wired. The umbrella children that
-will deliver RDR-071 are P01 (policy foundation and existing-work
-reconciliation), P09 (scoped readiness with 80/80 thresholds), P10
+new confidence-driven policy is only partially implemented:
+`CONFIDENCE-DELIVERY-001`, `014`, and `015` now have the P01 policy and
+enrollment foundation. `db/schema.rb` carries the project selection and
+immutable feature-policy snapshot; `FeatureIntents::RunAdmission` fails
+closed for that policy until the complete delivery path is installed.
+Release-audit, completion, and follow-up records remain unimplemented.
+The existing approval-gated policy and its review guards
+(`IntentConformance::VerifyAtMerge`, `DesignAmendments::EvaluateImpact`,
+`FeatureIntents::Release`, `FeatureIntents::RunAdmission`) remain the
+authority for approval-gated features. The rollout guard remains in force:
+enrollment does not enable execution because confidence-driven admission is
+explicitly denied pending the later integrations. The umbrella children that
+will deliver the remaining RDR-071 behavior are P09 (scoped readiness with
+80/80 thresholds), P10
 (publish held issues and one automatic release contract), P11 (carry
 admitted intent to builders and dispatch conformance by policy), P12
 (forward-work follow-ups and completion), and C71 (final closeout

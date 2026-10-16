@@ -545,6 +545,11 @@ module Activities
 
         handled_issue_ids << issue.id
         changed = true
+        if effective_skip_label_hold?(project, issue)
+          park_held_enhancement_issue(project, issue)
+          next
+        end
+
         enqueue_enhance_issue_recheck(project, issue)
       end
 
@@ -555,7 +560,28 @@ module Activities
       Array(issue_data[:labels]).include?(project.enhance_issue_needs_input_label_name)
     end
 
-    # @spec ISSUE-ENHANCEMENT-014
+    def effective_skip_label_hold?(project, issue)
+      Automation::Strategies::AutoPick::DefaultCandidateSource
+        .effective_skip_label_hold?(project, issue.id)
+    end
+
+    # Removing a clarification label is not authorization to override an
+    # effective execution hold. Move the stale Inbox item out of needs_input
+    # without consuming the next enhancement round; the normal eligibility
+    # triggers will reconsider it after the hold is released.
+    # @spec ISSUE-ENHANCEMENT-018 LABEL-CONTROL-008
+    def park_held_enhancement_issue(project, issue)
+      issue.with_lock { issue.update!(paid_state: "new") if issue.paid_state == "needs_input" }
+
+      logger.info(
+        message: "github_sync.enhance_issue_recheck_held",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number
+      )
+    end
+
+    # @spec ISSUE-ENHANCEMENT-014 ISSUE-ENHANCEMENT-018
     # A recheck is only ever triggered by the needs-input label being
     # removed, which is itself the meaningful human signal that resets the
     # enhancement round budget (#3842). Reset the counter while enqueueing

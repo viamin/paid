@@ -30,6 +30,7 @@ module AppleVerificationWorkflowRevisions
         account: @project.account,
         apple_worker_profile: compatible_worker_profile(configuration),
         content_digest: digest,
+        configuration_content: @content,
         verification_files: [ { "path" => AppleVerification::ConfigurationParser::CONFIG_PATH, "digest" => digest } ],
         lifecycle_gate: @lifecycle_gate,
         required_checks: configuration.required_checks,

@@ -28,9 +28,10 @@ module AgentRuns
 
     # Returns true when the run was cancelled because its issue is no
     # longer eligible; false when the run should proceed normally.
-    def call # @spec EAGER-QUEUE-005
+    def call # @spec EAGER-QUEUE-005 ISSUE-ENHANCEMENT-018
       return cancel_feature_held_run if feature_held?
       return recheck_continuation if continuation_run?
+      return recheck_automatic_enhancement_hold if automatic_enhancement_recheck?
       return false unless recheck_applicable?
       return false if issue_still_eligible?
 
@@ -45,10 +46,20 @@ module AgentRuns
       agent_run.continuation_request_id.present? && agent_run.issue_id.present?
     end
 
-    def recheck_applicable? # @spec EAGER-QUEUE-006
-      agent_run.auto_pick? &&
-        agent_run.issue_id.present? &&
+    def recheck_applicable? # @spec EAGER-QUEUE-006 ISSUE-ENHANCEMENT-018
+      agent_run.auto_pick? && agent_run.issue_id.present? &&
         !agent_run.review_goal?
+    end
+
+    def automatic_enhancement_recheck?
+      agent_run.automatic? && agent_run.enhance_issue_goal? && agent_run.issue_id.present?
+    end
+
+    def recheck_automatic_enhancement_hold
+      return false unless Automation::Strategies::AutoPick::DefaultCandidateSource
+        .effective_skip_label_hold?(agent_run.project, agent_run.issue_id)
+
+      cancel_run(reason: "Automatic enhancement is held by an effective automatic-execution control at dequeue.")
     end
 
     def feature_held?
