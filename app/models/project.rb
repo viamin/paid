@@ -374,6 +374,8 @@ class Project < ApplicationRecord
   validates :repo, presence: true
   validates :github_id, presence: true, uniqueness: { scope: :account_id }
   validates :poll_interval_seconds, numericality: { greater_than_or_equal_to: 60 }
+  validates :intent_threshold, :technical_threshold,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
   validates :max_pr_followup_runs, numericality: { greater_than_or_equal_to: 0 }
   validates :merge_method, inclusion: { in: MERGE_METHODS }
   validates :auto_merge_mode, inclusion: { in: %w[off dependabot_only all] }

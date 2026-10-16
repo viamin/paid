@@ -3064,6 +3064,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
     t.bigint "github_installation_id", comment: "GitHub App installation for repo auth; mutually exclusive with github_token_id"
     t.bigint "github_token_id"
     t.boolean "inherit_priority_labels", default: true, null: false
+    t.integer "intent_threshold", default: 80, null: false, comment: "Minimum intent certainty (0-100) for each mapped facet prerequisite."
     t.jsonb "interop_settings", default: {}, null: false, comment: "Project-level coexistence settings for gradual adoption, imports, connectors, and external execution sources."
     t.boolean "knowledge_evolution_enabled", default: false, null: false
     t.string "knowledge_status", limit: 50, default: "pending", null: false
@@ -3123,6 +3124,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
     t.jsonb "security_alert_types", default: ["dependabot", "code_scanning"], null: false
     t.string "setup_status", comment: "Blank-project bootstrap state: pending, in_progress, or completed. Null when setup is not required."
     t.string "tdd_mode", default: "off", null: false, comment: "Project-level TDD mode from RDR-056: off | non_strict | strict"
+    t.integer "technical_threshold", default: 80, null: false, comment: "Minimum technical confidence (0-100) for each mapped facet prerequisite."
     t.integer "token_budget_max_input_tokens", comment: "Per-run input token budget; runs exceeding it without output are terminated early (nil = defer to provider/global default)"
     t.integer "token_limit_warning_threshold", default: 80, null: false
     t.bigint "total_cost_cents", default: 0, null: false
@@ -3147,6 +3149,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
     t.index ["setup_status"], name: "index_projects_on_setup_status", where: "(setup_status IS NOT NULL)"
     t.check_constraint "apple_verification_mode::text = ANY (ARRAY['off'::character varying::text, 'on_demand'::character varying::text, 'automatic'::character varying::text])", name: "chk_projects_apple_verification_mode"
     t.check_constraint "github_token_id IS NOT NULL AND github_installation_id IS NULL OR github_token_id IS NULL AND github_installation_id IS NOT NULL", name: "chk_projects_exactly_one_github_credential"
+    t.check_constraint "intent_threshold >= 0 AND intent_threshold <= 100", name: "projects_intent_threshold_bounds"
+    t.check_constraint "technical_threshold >= 0 AND technical_threshold <= 100", name: "projects_technical_threshold_bounds"
   end
 
   create_table "prompt_versions", force: :cascade do |t|
