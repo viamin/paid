@@ -96,7 +96,8 @@ module FeatureIntents
       [ artifact_blocker("design_artifact_scope_mismatch", artifact, "does not express the current issue scope.") ]
     end
 
-    def coverage_complete? = mapping["coverage"] == "complete" || mapping["coverage_complete"] == true
+    def coverage_complete? = coverage_assessment == "complete"
+    def coverage_assessment = (mapping["coverage"] == "complete" || mapping["coverage_complete"] == true) ? "complete" : "unknown"
     def prerequisites = Array(mapping["prerequisites"])
     def design_artifacts = Array(mapping["design_artifacts"])
     def required_design_artifacts = design_artifacts.select { |artifact| artifact.is_a?(Hash) && artifact["required"] == true }
@@ -127,6 +128,7 @@ module FeatureIntents
 
     def readiness_snapshot
       {
+        "coverage" => coverage_assessment,
         "scope_revision" => scope_revision,
         "thresholds" => { "intent" => intent_threshold, "technical" => technical_threshold },
         "prerequisites" => prerequisites.map { |prerequisite| snapshot_prerequisite(prerequisite) },

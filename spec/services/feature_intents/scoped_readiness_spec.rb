@@ -33,6 +33,16 @@ RSpec.describe FeatureIntents::ScopedReadiness do
     expect(result.snapshot.fetch("prerequisites").first).to include("evidence_revision" => "evidence-v1")
   end
 
+  it "retains the normalized coverage assessment used to evaluate readiness" do
+    explicit_coverage = described_class.call(project:, mapping: mapping)
+    legacy_coverage = described_class.call(project:, mapping: mapping.merge(coverage: nil, coverage_complete: true))
+    unknown_coverage = described_class.call(project:, mapping: mapping(coverage: "unknown"))
+
+    expect(explicit_coverage.snapshot.fetch("coverage")).to eq("complete")
+    expect(legacy_coverage.snapshot.fetch("coverage")).to eq("complete")
+    expect(unknown_coverage.snapshot.fetch("coverage")).to eq("unknown")
+  end
+
   it "fails each independent 79/80 boundary without averaging scores" do
     result = described_class.call(project:, mapping: mapping(prerequisites: [
       { id: "intent", assessment: assessment(intent: 79, technical: 100) },
