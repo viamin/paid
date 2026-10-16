@@ -288,6 +288,9 @@ export default class extends Controller {
     case "message_created":
       this.handleMessageCreated(data)
       break
+      case "diagram_created":
+        this.handleDiagramCreated(data)
+        break
     case "message_deleted":
       this.handleMessageDeleted(data)
       break
@@ -384,6 +387,15 @@ export default class extends Controller {
     this.toggleTyping(false)
     this.setStatus("Ready")
     this.incrementTokenUsage(data.tokens)
+    this.scrollToBottom()
+  }
+
+  // @spec QUESTION-EXPLORATION-012
+  handleDiagramCreated(data) {
+    if (!data.html || !this.hasMessagesTarget) return
+    if (this.messagesTarget.querySelector(`[data-chat-diagram-id="${data.diagram_id}"]`)) return
+
+    this.messagesTarget.insertAdjacentHTML("beforeend", data.html)
     this.scrollToBottom()
   }
 
