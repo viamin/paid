@@ -104,6 +104,18 @@ mutation behavior are owned by the RDR-037 chat segments.
 The API-mode chat surface is implemented and exposed across both HTML and API
 entry points.
 
+### Curated paid chat tiers
+
+API-key chat presents and resolves a bounded Low, Medium, and High policy,
+rather than exposing every catalog row or relying on a hard-coded provider
+fallback. The shared resolver applies catalog activity, operator state,
+agent-harness compatibility, and fresh runner/account availability evidence.
+OpenAI resolves Low/Medium/High to GPT-5.6 Luna/Terra/Sol. A missing Low tier
+is actionable and does not escalate to a higher tier. The selected concrete
+model and tier are recorded on the chat session so request and usage records
+can be explained after catalog refresh. Existing explicit session models are
+retained; legacy Automatic sessions resolve to Low when first executed.
+
 What ships today:
 
 - The global chat popup stores its open/closed state, active session ID, and

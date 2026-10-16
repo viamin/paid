@@ -328,6 +328,7 @@ class ChatSessionsController < ApplicationController
 
     permitted[:runner_id] = selection.runner_id
     permitted[:model] = selection.model_id
+    permitted[:metadata] = (@chat_session&.metadata || {}).merge("model_tier" => selection.tier)
   end
 
   def normalize_legacy_create_params!(permitted)

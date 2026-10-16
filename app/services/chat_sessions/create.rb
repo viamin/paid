@@ -83,7 +83,7 @@ module ChatSessions
         title: title,
         status: "active",
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now,
-        metadata: metadata.presence || {},
+        metadata: session_metadata,
         auto_approve: auto_approve || false,
         inbox_item_key: inbox_item_key,
         inbox_item_metadata: inbox_item_metadata.presence || {},
@@ -178,7 +178,19 @@ module ChatSessions
       runner = resolved_runner
       return nil unless runner
 
-      LlmModel.active.by_provider(runner.runner_key).by_capability.first&.model_id
+      curated_model_for(runner).model_id
+    end
+
+    def session_metadata
+      return metadata.presence || {} if model.present? || resolved_runner.nil?
+
+      (metadata.presence || {}).merge("model_tier" => curated_model_for(resolved_runner).tier)
+    end
+
+    def curated_model_for(runner)
+      # @spec CHAT-API-026
+      CuratedModelOptions.resolve(runner:) ||
+        raise(ArgumentError, "No compatible Low chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy.")
     end
 
     def default_runner_for_user

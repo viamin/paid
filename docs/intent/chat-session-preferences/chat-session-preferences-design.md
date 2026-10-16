@@ -27,12 +27,21 @@ non-Turbo HTML callers keep the redirect flow.
 ## Runner and model controls
 
 The session configuration UI presents one runner-and-model selection rather
-than independent runner and model fields. Its options are derived from each
-chat-capable runner's configured model policy: every runner has an Automatic
-option, and explicit options only use that runner's configured direct-outbound
-or tier models. The submitted option is resolved against the current user's
-available chat runners before it is saved, so a stale or crafted selection
-cannot pair a runner with an unrelated model.
+than independent runner and model fields. It offers only the curated Low,
+Medium, and High choices that are compatible with each chat-capable runner;
+the label includes both the user-facing tier and the concrete model ID. Low
+is the default for a new session. The selector is deliberately not a catalog
+browser: catalog refreshes may replace a compatible concrete model within its
+existing tier but cannot add choices or promote a chat to a more expensive
+tier. API-key availability evidence, operator disables, and agent-harness
+compatibility filter these choices. An unavailable tier has actionable
+feedback rather than silently selecting a higher tier.
+
+The submitted option is resolved against the current user's available chat
+runners before it is saved, so a stale or crafted selection cannot pair a
+runner with an unrelated model. Legacy Automatic sessions (`model: nil`)
+resolve to Low on their next execution and record that effective choice;
+explicit stored models are preserved.
 
 Changing the selection in either chat header saves through Turbo. A status
 beside the control shows when saving is in progress and whether it succeeded

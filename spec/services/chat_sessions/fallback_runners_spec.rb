@@ -139,6 +139,28 @@ RSpec.describe ChatSessions::FallbackRunners do
     end
   end
 
+  describe ".switch!" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+
+    # @spec CHAT-API-026
+    it "uses the same curated Low model and records its tier" do
+      runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"),
+        config: { "opencode" => { "api_provider" => "openai", "model" => "gpt-5.6-luna" } })
+      model = LlmModel.find_or_initialize_by(model_id: "gpt-5.6-luna")
+      model.assign_attributes(display_name: "GPT-5.6 Luna", provider: "openai", category: "coding",
+        tier: "low", capability_score: 9.0, pricing_tier: "paid", catalog_source: "seeded", active: true)
+      model.save!
+      session = create(:chat_session, account: account, created_by: user)
+
+      described_class.switch!(chat_session: session, runner: runner)
+
+      expect(session.reload).to have_attributes(runner: runner, model: "gpt-5.6-luna")
+      expect(session.metadata).to include("model_tier" => "low")
+    end
+  end
+
   def create_openrouter_runner(name:)
     create(:runner, :api_key, user: user, runner_key: "opencode", name: name,
       provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),

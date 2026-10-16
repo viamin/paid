@@ -27,9 +27,15 @@
   `app/javascript/controllers/chat_controller.js`.
 
 - [x] **CHAT-SESSION-PREFERENCES-003** - When a user configures a chat session,
-  the system SHALL present a single choice for each valid runner/model pair,
-  including an Automatic choice for every available runner, and SHALL reject
-  selections that do not belong to an available runner's configured models.
-  *Test:* `spec/requests/chat_sessions_spec.rb`.
+  the system SHALL present only one compatible curated choice per Low, Medium,
+  and High tier for each available runner, with a label containing the tier and
+  concrete model ID, and SHALL reject selections that do not belong to an
+  available runner's curated choices. Low SHALL be the default for new chats;
+  legacy Automatic sessions SHALL resolve to Low on execution while explicit
+  stored selections remain unchanged.
+  *Tests:* `spec/services/chat_sessions/runner_model_options_spec.rb`,
+  `spec/services/chat_sessions/create_spec.rb`,
+  `spec/services/chat_sessions/build_llm_client_spec.rb`.
   *Code:* `ChatSessions::RunnerModelOptions`,
-  `ChatSessionsController`, `app/views/chat_sessions/_session_details.html.erb`.
+  `ChatSessions::CuratedModelOptions`, `ChatSessionsController`,
+  `app/views/chat_sessions/_session_details.html.erb`.

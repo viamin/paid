@@ -43,12 +43,15 @@ module ChatSessions
     end
 
     def switch!(chat_session:, runner:)
+      # @spec CHAT-API-026
+      option = CuratedModelOptions.resolve(runner:) unless runner.free_model_policy?
       model = if runner.free_model_policy?
         FreeModels::SelectChatModel.for_session(runner: runner, chat_session: chat_session).model_id
       else
-        model_for(runner)
+        option&.model_id ||
+          raise(LlmClientConfigurationError, "No compatible Low chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy.")
       end
-      chat_session.update!(runner: runner, model: model)
+      chat_session.update!(runner: runner, model: model, metadata: chat_session.metadata.merge("model_tier" => option&.tier).compact)
     end
 
     # @spec CHAT-API-019
@@ -59,13 +62,6 @@ module ChatSessions
       true
     rescue LlmClientConfigurationError
       false
-    end
-
-    # @spec CHAT-API-018
-    def model_for(runner, project: nil)
-      return FreeModels::SelectChatModel.call(runner: runner, project: project).model_id if runner.free_model_policy?
-
-      runner.direct_outbound_model_id.presence || default_model_for_service_type(service_type_for(runner))
     end
 
     def notice_for(error:, runner:)
@@ -106,14 +102,6 @@ module ChatSessions
 
         ids << runner.id
       end
-    end
-
-    def service_type_for(runner)
-      runner.provider_api_key&.api_service_type || runner.required_api_service_type
-    end
-
-    def default_model_for_service_type(service_type)
-      BuildLlmClient.default_model_for_service_type(service_type)
     end
   end
 end
