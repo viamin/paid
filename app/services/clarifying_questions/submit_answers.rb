@@ -105,9 +105,26 @@ module ClarifyingQuestions
     # Comment-channel submission. The exact byte shape of the emitted body
     # is preserved across the quiet-mode switch so existing comments
     # remain byte-identical on parse.
+    #
+    # GitHub's comment endpoint has no request idempotency key. Before a
+    # retry, identify an already-posted matching answer block so a timeout
+    # after GitHub accepted the first request cannot duplicate human intent.
+    # Any lookup failure intentionally propagates to the caller: guessing and
+    # posting again would make synchronization non-idempotent.
+    # @spec QUESTION-EXPLORATION-002
     def submit_via_comment!
-      result = github_client.add_comment(project.full_name, issue.github_number, formatted_comment)
-      result
+      matching_answer_comment || github_client.add_comment(project.full_name, issue.github_number, formatted_comment)
+    end
+
+    def matching_answer_comment
+      github_client.issue_comments(project.full_name, issue.github_number).reverse.find do |comment|
+        comment.body.to_s.include?(ANSWER_MARKER) && answers_match?(comment.body)
+      end
+    end
+
+    def answers_match?(body)
+      expected = questions_and_answers.map { |qa| { question: AnswerPairs.normalize_question(qa[:question]), answer: qa[:answer].to_s.strip } }
+      AnswerPairs.parse(body) == expected
     end
 
     def formatted_comment
