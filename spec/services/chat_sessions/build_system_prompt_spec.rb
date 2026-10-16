@@ -444,6 +444,16 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("submit_clarifying_answers")
       end
 
+      # @spec QUESTION-EXPLORATION-013
+      it "restores a saved partial answer without treating it as a final submission" do
+        ClarifyingQuestions::SaveProgress.call(
+          chat_session: chat_session, position: 1, answer: "Show the error inline.", actor: user
+        )
+
+        expect(prompt).to include("Saved draft answer: Show the error inline.")
+        expect(prompt).to include("does not post to GitHub or resolve the inbox item")
+      end
+
       it "labels a linked pull request as a PR" do
         pull_request = create(:issue, :needs_input, :pull_request, project: project, github_number: 9,
           title: "Ship it", needs_input_questions: [ "What should happen after approval?" ])

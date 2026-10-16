@@ -42,7 +42,12 @@ actions.
   whenever it is created or reopened.
 - Extend `ChatMessage` with actor and question/facet context and typed diagram
   references. Keep domain records for answers separate from transcript text;
-  archiving a conversation must not destroy the feature's intent.
+  archiving a conversation must not destroy the feature's intent. A
+  `ClarifyingQuestionProgress` record identifies a question set digest and
+  one-based position, retains the latest confirmed draft answer, actor, time,
+  optional canonical design-claim identifier and textual evidence context.
+  Saving a draft never posts to GitHub or changes needs-input state; only the
+  existing explicit final-submission action performs that projection.
 - Reuse the existing chat renderer, Cable/SSE delivery, and agent tool loop.
   When a clarifying-question detail pane opens its linked chat, render the
   existing chat panel inside that Inbox Turbo Frame rather than navigating to
@@ -64,6 +69,9 @@ actions.
   accepted answer forms. The offered-option invariant of the OPERATOR-INBOX-012
   tamper guard and single/multi selection counting are unchanged.
 - Persist extracted answer/evidence context for the facet-confidence segment.
+  The saved textual context remains after an archive, reconnect, cancellation,
+  or removal of temporary visual material; diagram source is not required to
+  restore a question's draft answer.
   Update canonical RDR/LLD/EARS through normal design PRs when intent changes.
 
 ## Access and transport contract
