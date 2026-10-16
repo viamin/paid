@@ -8,6 +8,11 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
   let(:feature_intent) { create(:feature_intent, project:) }
   let(:design_pr) { create(:feature_intent_design_pr, feature_intent:, pull_request_number: 100, draft: false) }
 
+  before do
+    response = instance_double(AgentHarness::Response, success?: false, output: nil)
+    allow(AgentHarness).to receive(:send_message).and_return(response)
+  end
+
   it "persists an actionable finding from a synced design pull request" do
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
 
@@ -83,6 +88,20 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
 
     expect(DesignArtifactFinding.count).to eq(0)
     expect(DesignArtifactAssociation.sole.provenance).to eq("Paid feature intent linkage")
+  end
+
+  it "assesses synchronized open issue candidates before creating a missing-tree finding" do
+    allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
+    response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"issue_identity":"acme/widget#101","explanation":"It implements this design."}')
+    allow(AgentHarness).to receive(:send_message).and_return(response)
+    create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
+    create(:issue, project:, github_number: 101, title: "Implement design", body: "Implementation work")
+
+    described_class.perform_now(project.id, design_pr.pull_request_number)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.sole).to have_attributes(issue_identity: "acme/widget#101")
   end
 
   it "uses issue links listed under an RDR relationship heading" do

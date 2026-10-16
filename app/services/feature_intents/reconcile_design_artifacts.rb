@@ -47,7 +47,9 @@ module FeatureIntents
     end
 
     def associations_for(artifact)
-      normalize(artifact).fetch(:associated_issues).filter_map do |association|
+      normalized = normalize(artifact)
+      semantic_association = semantic_association_for(artifact)
+      (normalized.fetch(:associated_issues) + (semantic_association ? [ semantic_association ] : [])).filter_map do |association|
         identity = qualified_reference(association)
         next unless identity && issue_identities.include?(identity)
 
@@ -65,7 +67,7 @@ module FeatureIntents
 
       references = artifact[:references] | artifact[:associated_identities]
       return stale_metadata(artifact) if references.empty? && artifact[:stored_identities].any?
-      return [ "missing_tree", [ "No explicit qualified issue links were found" ] ] if references.empty?
+      return missing_tree(artifact) if references.empty?
 
       missing = references.reject { |reference| issue_identities.include?(reference) }
       return if missing.empty?
@@ -79,7 +81,8 @@ module FeatureIntents
         references: qualified_references(artifact[:related_issues]),
         stored_identities: qualified_references(artifact[:stored_identities]),
         associated_issues: Array(artifact[:associated_issues]),
-        associated_identities: qualified_references(Array(artifact[:associated_issues]))
+        associated_identities: qualified_references(Array(artifact[:associated_issues])),
+        body: artifact[:body], path: artifact[:path], revision: artifact[:revision] || revision
       }
     end
 
@@ -115,6 +118,31 @@ module FeatureIntents
 
     def issue_identities
       @issue_identities ||= issues.filter_map { |issue| qualified_reference(issue) }.to_set
+    end
+
+    def missing_tree(artifact)
+      assessment = semantic_assessment_for(artifact)
+      return if assessment.covered?
+
+      [ "missing_tree", [ "No explicit qualified issue links were found", assessment.evidence ] ]
+    end
+
+    def semantic_assessment_for(artifact)
+      @semantic_assessments ||= {}
+      @semantic_assessments[artifact[:path]] ||= AssessDesignArtifactCandidates.call(project:, artifact:, issues:)
+    end
+
+    def semantic_association_for(artifact)
+      normalized = normalize(artifact)
+      return unless coverage_complete?
+      return if deferred?(normalized) || normalized[:stored_identities].any?
+      return if (normalized[:references] | normalized[:associated_identities]).any?
+
+      assessment = semantic_assessment_for(normalized)
+      return unless assessment.covered?
+
+      repository, number = assessment.identity.split("#", 2)
+      { repository:, number:, provenance: "semantic candidate assessment: #{assessment.evidence}" }
     end
 
     def fingerprint(artifact, state)

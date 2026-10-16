@@ -45,6 +45,7 @@ module FeatureIntents
       issue = project_issue(design_pr.pull_request_number)
       {
         path: "pull/#{design_pr.pull_request_number}",
+        body: issue&.body,
         status: design_pr.draft? ? "draft" : nil,
         related_issues: explicit_references(issue&.body),
         stored_identities: design_pr.feature_intent.issues.map { |linked| identity_for(linked) },
@@ -103,6 +104,7 @@ module FeatureIntents
     def rdr_artifact(artifact)
       {
         path: artifact.path,
+        body: artifact.body,
         status: rdr_status(artifact.body),
         related_issues: explicit_references(artifact.body),
         stored_identities: []
@@ -174,9 +176,14 @@ module FeatureIntents
     end
 
     def issue_facts(projects)
-      Issue.joins(:project).where(project_id: projects.map(&:id)).where.not(github_number: nil)
-        .pluck("projects.owner", "projects.repo", "issues.github_number")
-        .map { |owner, repo, number| { repository: "#{owner}/#{repo}", number: } }
+      Issue.joins(:project).includes(:project).where(project_id: projects.map(&:id)).where.not(github_number: nil).filter_map do |issue|
+        next if issue.is_pull_request? || !issue.trusted?
+
+        {
+          repository: issue.project.full_name, number: issue.github_number, state: issue.github_state,
+          title: issue.title, body: issue.body, revision: issue.github_updated_at&.iso8601
+        }
+      end
     end
 
     def repository_for(reference)
