@@ -293,6 +293,7 @@ class Project < ApplicationRecord
   has_many :project_memberships, dependent: :destroy
   has_many :members, through: :project_memberships, source: :user
   has_many :issues, dependent: :destroy
+  has_many :design_artifact_findings, dependent: :destroy
   has_many :auto_merge_attempts, dependent: :destroy
   has_many :agent_runs, dependent: :destroy
   has_many :apple_verification_waivers, dependent: :destroy

@@ -61,6 +61,20 @@ RSpec.describe AppleVerification::ResultManifest::Build do
     expect(manifest.dig("artifacts", "xcresult").length).to eq(1)
   end
 
+  it "uses the pending terminal outcome while persisting a manifest before completion" do
+    attempt.update!(status: "running")
+
+    result = described_class.call(
+      attempt: attempt,
+      status: "failed",
+      failure_classification: "test_assertion"
+    )
+
+    manifest = result.manifest.as_json
+    expect(manifest.dig("result", "status")).to eq("failed")
+    expect(manifest.dig("result", "failure_classification")).to eq("test_assertion")
+  end
+
   it "omits retry lineage entries from other projects or unrelated attempts" do
     other_project = create(:project, account: account)
     other_workflow = create(:apple_verification_workflow_revision, project: other_project, account: account)

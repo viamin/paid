@@ -3,15 +3,15 @@
 **RDR:** [RDR-074: Settings-Aware Project Readiness](RDR-074-project-readiness.md)  
 **Closeout issue:** #4325  
 **Umbrella:** Tracks #4255 (this audit does not close it)  
-**Conclusion:** **Partially Implemented**
+**Conclusion:** **Implemented**
 
 ## Scope and method
 
 This audit compared shipped code and executable focused specs with the
 RDR-074 validation criteria and the broader #4255 acceptance outcome. A
-closed implementation issue was not used as evidence. The current evaluator
-scope is deterministic structural readiness; it must not be represented as
-proof that a real consumer bootstrap lifecycle ran successfully.
+closed implementation issue was not used as evidence. The deterministic
+structural evaluator is supplemented by the focused Godot/gdUnit4 lifecycle
+and authorized non-UI bootstrap evidence recorded below.
 
 ## Executed focused-spec evidence
 
@@ -48,39 +48,51 @@ real Godot/gdUnit4 lifecycle command ran.
 | Human-only, deduplicated bootstrap and merge-only re-evaluation | `app/controllers/projects/agent_runs_controller.rb:259-282`; `app/services/issues/upsert_from_github.rb:107-112`; `db/migrate/20261013103406_add_unique_active_bootstrap_readiness_index_to_agent_runs.rb:13-29` | `spec/requests/agent_runs_spec.rb`; `spec/services/issues/upsert_from_github_spec.rb`; retry/failure specs named in `PROJECT-READINESS-007` | Met for UI admission path |
 | Harness-only bootstrap writes while preserving ordinary TDD phases | `app/services/projects/readiness/bootstrap_write_guard.rb:9-64`; `app/temporal/activities/create_pull_request_activity.rb:58-68,1161-1186` | `spec/services/projects/readiness/bootstrap_write_guard_spec.rb`; `spec/temporal/activities/create_pull_request_activity_spec.rb` | Met |
 
-## #4255 product-acceptance gaps
+## Godot/gdUnit4 product-acceptance evidence
 
-The repository includes only the deliberately empty structural fixture at
-`spec/fixtures/projects/forager-ios/`; it is not a merged-bootstrap lifecycle
-fixture and does not execute a Godot command. No checked-in evidence proves
-the sequence from merged bootstrap artifacts through target-branch
-re-evaluation to a deliberately red next test-writing draft PR. The UI exposes
-`POST /projects/:project_id/agent_runs/bootstrap_readiness`, but the audited
-API Inbox controller only exposes list/detail/chat operations and no
-equivalent bootstrap action; no corresponding tool surface was found.
+Issue [#4463](https://github.com/viamin/paid/issues/4463) closes the consumer
+lifecycle evidence gap. The historical Forager-iOS fixture remains the
+missing-prerequisites state; the isolated Godot fixture supplies the merged
+target-branch state without modifying that historical evidence.
 
-Required focused follow-ups:
+Run the evidence locally or in an isolated CI worker with:
 
-1. [#4463](https://github.com/viamin/paid/issues/4463) — Godot/gdUnit4
-   bootstrap-to-red-draft lifecycle validation, preserving Forager historical
-   evidence when available or using an isolated fixture.
-2. [#4464](https://github.com/viamin/paid/issues/4464) — an authorized
-   API/tool bootstrap action with parity to the existing UI action, including
-   authorization, deduplication, failures, and accounting.
+```bash
+bin/validate-godot-gdunit4-readiness
+```
 
-Both focused issues were created on 2026-10-15. #4255's final
-`## Dependencies` section contains `Depends on #4325`, `Depends on #4463`,
-and `Depends on #4464`. The intended direction is that the umbrella depends
-on its remaining acceptance gates. The reverse `Depends on #4255` lines were
-removed from #4463 and #4464, resolving the dependency cycle while retaining
-#4255's dependency lines. The focused issues remain open acceptance work; this
-closeout continues to track the umbrella issue without closing it.
+The runner downloads Godot 4.4.1 and checks out gdUnit4 v5.1.1 at
+`c924c7a01129b346453dd65f8d59e46613658832` into a temporary directory. It
+runs Godot headlessly with
+`res://addons/gdUnit4/bin/GdUnitCmdTool.gd --ignoreHeadlessMode -a tests`
+against the intentionally failing draft test and requires its nonzero outcome.
+It also runs the focused lifecycle spec, which records these transitions:
+
+1. strict GDScript prerequisites missing → `project_setup_pending` Inbox;
+2. authorized operator explicitly queues one manual `bootstrap_readiness` run;
+3. the bootstrap diff is accepted only inside the harness boundary;
+4. a GitHub-confirmed bootstrap merge enqueues target-branch reevaluation and
+   the satisfied snapshot clears the Inbox entry; and
+5. the next `test_writing` draft accepts only `tests/` changes and has a real,
+   intentionally red gdUnit4 command result.
+
+This is acceptance evidence for `PROJECT-READINESS-009`; it supplements the
+structural coverage for `PROJECT-READINESS-001` through `008`.
+
+## Authorized non-UI bootstrap evidence
+
+Issue [#4464](https://github.com/viamin/paid/issues/4464) closes the non-UI
+product-acceptance gap. `trigger_readiness_bootstrap` is a confirmation-gated
+tool action authorized with `ProjectPolicy#run_agent?` and delegates to the
+same readiness-bootstrap admission service as the Inbox UI. Its permanent
+coverage verifies authorization, current-readiness admission, active-run
+deduplication, gap/prompt and token-accounting parity, and explicit retrigger
+after a visible terminal failure.
 
 ## Rollout-guard disposition
 
-No new rollout guard is required for this documentation-only closeout. The
-existing behavior is already bounded by the project TDD setting, persisted
-readiness evidence, an explicit authorized click, a single-active-run database
-constraint, and the bootstrap write guard. The broader product outcome must
-not be enabled through an automatic bootstrap loop or a durable readiness
-latch.
+No new rollout guard is required. The existing behavior is bounded by the
+project TDD setting, persisted readiness evidence, an explicit authorized
+trigger, a single-active-run database constraint, and the bootstrap write
+guard. The product outcome must not be enabled through an automatic bootstrap
+loop or a durable readiness latch.

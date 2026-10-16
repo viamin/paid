@@ -40,6 +40,37 @@ RSpec.describe Inbox::Queue do
   # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-004 @spec INBOX-FOUNDATION-009
   # @spec INBOX-FOUNDATION-005 @spec INBOX-FOUNDATION-006
   describe ".call" do
+    # @spec DESIGN-RECONCILIATION-001
+    it "returns open design artifact findings as traceability-gap entries" do
+      finding = create(:design_artifact_finding, project:, account: account, artifact_path: "docs/rdrs/RDR-063-example.md",
+        evidence: [ "No explicit qualified issue links were found" ], covered_at: 2.hours.ago)
+
+      entry = described_class.call(user: user, kind: described_class::TRACEABILITY_GAP_KIND).sole
+
+      expect(entry).to have_attributes(
+        id: "#{described_class::TRACEABILITY_GAP_KIND}:#{finding.id}",
+        kind: described_class::TRACEABILITY_GAP_KIND,
+        project: project,
+        issue: nil,
+        record: finding,
+        waiting_since: finding.created_at,
+        tasks: finding.evidence,
+        title: "Traceability gap: docs/rdrs/RDR-063-example.md"
+      )
+    end
+
+    # @spec DESIGN-RECONCILIATION-001 @spec INBOX-FOUNDATION-006
+    it "excludes resolved and unauthorized traceability gaps" do
+      resolved = create(:design_artifact_finding, project:, account: account, status: "resolved", resolved_at: Time.current)
+      other_user = create(:user, account: create(:account))
+      hidden = create(:project, account: other_user.account, created_by: other_user)
+      hidden_finding = create(:design_artifact_finding, project: hidden, account: hidden.account)
+
+      entries = described_class.call(user: user, kind: described_class::TRACEABILITY_GAP_KIND)
+
+      expect(entries.map(&:record)).not_to include(resolved, hidden_finding)
+    end
+
     # @spec OPERATOR-INBOX-015
     it "restricts a lane lookup to the requested record while enforcing membership" do
       selected = create_needs_input(body: questions_body)

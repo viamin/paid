@@ -53,9 +53,11 @@ run that produced a result commit. A snapshot update bumps the Inbox cache
 version only when the gap set changes, so queue, filters, and nav badge refresh
 together without re-evaluating a checkout on every poll. Surfacing a gap never
 queues a bootstrap run. Phase 3 lets an authorized operator explicitly start
-one `bootstrap_readiness` run from this Inbox entry. Only one unfinished
-bootstrap attempt may exist for a project; after it reaches a terminal state,
-another attempt requires another explicit click. A failed attempt leaves the
+one `bootstrap_readiness` run from this Inbox entry. The same authorized,
+confirmation-gated `trigger_readiness_bootstrap` tool uses that admission path
+for non-UI operator flows. Only one unfinished bootstrap attempt may exist for
+a project; after it reaches a terminal state, another attempt requires another
+explicit trigger. A failed attempt leaves the
 readiness entry and its run failure visible. Successful bootstrap PRs use the
 ordinary draft/ready review flow and are separate from the later TDD
 test-review PR.

@@ -73,6 +73,7 @@ module Containers
       tool_snapshot = agent_run.tool_sidecar_snapshot
       sidecar_ids = []
       tool_ids = []
+      tool_endpoints = []
       preserved_sidecar_ids = []
 
       # Clean up stale sidecars from a prior failed attempt to avoid leaks.
@@ -82,12 +83,14 @@ module Containers
 
       stale_tool_ids = Array(agent_run.tool_sidecar_container_ids)
       cleanup_containers(stale_tool_ids) if stale_tool_ids.present?
+      agent_run.update_columns(tool_sidecar_container_ids: [], tool_sidecar_endpoints: []) if stale_tool_ids.present? || agent_run.tool_sidecar_endpoints.present?
 
       if snapshot.blank? && tool_snapshot.blank?
         agent_run.update!(
           mcp_provisioned_servers: { "stdio_servers" => [], "url_servers" => [] },
           mcp_sidecar_container_ids: preserved_sidecar_ids,
-          tool_sidecar_container_ids: []
+          tool_sidecar_container_ids: [],
+          tool_sidecar_endpoints: []
         )
         return { stdio_servers: [], url_servers: [] }
       end
@@ -109,13 +112,17 @@ module Containers
 
       tool_snapshot.each do |definition|
         result = provision_tool_sidecar(agent_run, definition)
-        tool_ids << result[:container_id] if result
+        next unless result
+
+        tool_ids << result[:container_id]
+        tool_endpoints << result[:endpoint]
       end
 
       agent_run.update!(
         mcp_provisioned_servers: { "stdio_servers" => stdio_servers, "url_servers" => url_servers },
         mcp_sidecar_container_ids: preserved_sidecar_ids + sidecar_ids,
-        tool_sidecar_container_ids: tool_ids
+        tool_sidecar_container_ids: tool_ids,
+        tool_sidecar_endpoints: tool_endpoints
       )
 
       log_info("mcp_provisioner.provisioned",
@@ -128,14 +135,17 @@ module Containers
     rescue Error
       cleanup_containers(sidecar_ids)
       cleanup_containers(tool_ids)
+      agent_run.update_columns(tool_sidecar_container_ids: [], tool_sidecar_endpoints: [])
       raise
     rescue Containers::ServiceProvisioner::Error => e
       cleanup_containers(sidecar_ids)
       cleanup_containers(tool_ids)
+      agent_run.update_columns(tool_sidecar_container_ids: [], tool_sidecar_endpoints: [])
       raise Error, "MCP provisioning failed: #{e.message}"
     rescue => e
       cleanup_containers(sidecar_ids)
       cleanup_containers(tool_ids)
+      agent_run.update_columns(tool_sidecar_container_ids: [], tool_sidecar_endpoints: [])
       raise Error, "MCP provisioning failed: #{e.message}"
     end
 
@@ -160,16 +170,18 @@ module Containers
     #
     # @param agent_run [AgentRun] the run to clean up
     # @spec TOOL-SIDECAR-005
+    # @spec TOOL-SIDECAR-007
     def cleanup_tool_sidecars(agent_run)
       container_ids = agent_run.tool_sidecar_container_ids
-      return if container_ids.blank?
+      endpoints = agent_run.tool_sidecar_endpoints
+      return if container_ids.blank? && endpoints.blank?
 
-      cleanup_containers(container_ids)
-      agent_run.update_columns(tool_sidecar_container_ids: [])
+      cleanup_containers(container_ids) if container_ids.present?
+      agent_run.update_columns(tool_sidecar_container_ids: [], tool_sidecar_endpoints: [])
 
       log_info("mcp_provisioner.tool_sidecars_cleaned_up",
         agent_run_id: agent_run.id,
-        container_count: container_ids.size)
+        container_count: Array(container_ids).size)
     end
 
     private
@@ -245,9 +257,10 @@ module Containers
     # definitions still resolve into the snapshot but never provision or
     # persist container IDs while the flag is disabled.
     #
-    # @return [Hash, nil] with :container_id, or nil when the flag is off
+    # @return [Hash, nil] with :container_id and :endpoint, or nil when the flag is off
     # @spec TOOL-SIDECAR-005
     # @spec TOOL-SIDECAR-006
+    # @spec TOOL-SIDECAR-007
     def provision_tool_sidecar(agent_run, definition)
       unless tool_sidecars_enabled?(agent_run)
         log_info("mcp_provisioner.tool_sidecar_skipped_flag_off",
@@ -296,7 +309,7 @@ module Containers
         hostname: hostname,
         port: port)
 
-      { container_id: container.id }
+      { container_id: container.id, endpoint: tool_sidecar_endpoint(name, hostname, port) }
     end
 
     # Returns true when the rollout guard flag enables the tool arm for the
@@ -522,6 +535,18 @@ module Containers
       budget = [ MAX_NAME_LENGTH - TOOL_CONTAINER_NAME_PREFIX.length - suffix.length - 2, 1 ].max
       segment = sanitize_name(name, fallback: "tool").first(budget).delete_suffix("-").presence || "tool"
       [ TOOL_CONTAINER_NAME_PREFIX, segment, suffix ].join("-")
+    end
+
+    # The manifest is intentionally separate from mcp_provisioned_servers:
+    # marketplace tools are plain TCP/HTTP endpoints, not MCP url servers.
+    # @spec TOOL-SIDECAR-007
+    def tool_sidecar_endpoint(name, hostname, port)
+      {
+        "name" => name,
+        "hostname" => hostname,
+        "port" => port,
+        "url" => "http://#{hostname}:#{port}"
+      }
     end
 
     def sanitize_name(name, fallback: "mcp")

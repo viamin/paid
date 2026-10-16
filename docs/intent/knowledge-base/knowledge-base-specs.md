@@ -24,6 +24,25 @@
   `spec/services/knowledge/artifact_store_spec.rb`,
   `spec/jobs/run_collectors_job_spec.rb`.
 
+- [x] **KNOWLEDGE-CREDENTIAL-001** — When a knowledge owner selects a saved
+  credential for embeddings or decision drafting, Paid SHALL persist a binding
+  to that existing credential, resolve it ahead of platform fallback in direct
+  embedding, container drafting, and host drafting, and expose only safe
+  owner/service/source/status metadata. An incompatible binding, including one
+  configured on a runner without a supported API transport, SHALL fail with
+  actionable configuration status rather than fall through to ambient CLI
+  credentials; adding another key SHALL not change a bound operation, and a
+  bound key SHALL not be deletable until replaced or unbound.
+  *Code:* `app/services/knowledge/credential_selection.rb`,
+  `app/services/knowledge/runner_configuration.rb`,
+  `app/services/knowledge/analysis_runner.rb`,
+  `app/controllers/api/secrets_proxy_controller.rb`,
+  `app/services/knowledge/decisions/draft.rb`.
+  *Test:* `spec/services/knowledge/runner_configuration_spec.rb`,
+  `spec/services/knowledge/analysis_runner_spec.rb`,
+  `spec/services/knowledge/decisions/draft_spec.rb`,
+  `spec/requests/api/secrets_proxy_spec.rb`.
+
 - [x] **KNOWLEDGE-002** — When active chunks need embeddings, the system SHALL
   redact them before embedding, SHALL skip fully redacted chunks, and SHALL
   sync derived vectors into Qdrant without storing chunk content in the Qdrant
@@ -463,6 +482,24 @@
   `app/views/dashboard/_knowledge_widget.html.erb`.
   *Test:* `spec/services/knowledge/dashboard_stats_spec.rb`,
   `spec/views/dashboard/knowledge_widget_partial_spec.rb`.
+
+- [x] **KNOWLEDGE-SETTINGS-001** — When a user edits knowledge settings, the
+  system SHALL expose primary and ordered fallback runners for embedding and
+  decision drafting, display each configured runner's local safe readiness
+  metadata (API service, selected key name/source, missing credential, or
+  unsupported transport), and link to API-key management without exposing a
+  secret or contacting a provider. The selected owner key SHALL match runtime
+  resolution, project settings SHALL apply through each project's effective
+  owner including fallback ownership, and the form SHALL explain platform and
+  CLI subscription billing/authentication boundaries. Embedding fallbacks SHALL
+  be documented as requiring a compatible configured model and dimensions;
+  changing either for populated knowledge requires re-embedding.
+  *Code:* `app/controllers/user_settings_controller.rb`,
+  `app/models/user_setting.rb`, `app/services/knowledge/settings_readiness.rb`,
+  `app/services/knowledge/runner_readiness.rb`,
+  `app/views/user_settings/edit.html.erb`.
+  *Test:* `spec/requests/user_settings_spec.rb`,
+  `spec/services/knowledge/settings_readiness_spec.rb`.
 
 - [x] **KNOWLEDGE-DASHBOARD-002** — When account-level Knowledge Runner
   Health is computed, it SHALL aggregate configured runners by every

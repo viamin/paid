@@ -87,25 +87,16 @@ module Knowledge
       config = Runner::DIRECT_OUTBOUND_API_PROVIDERS[runner]
       return log_unsupported_runner(runner) unless config
 
-      api_key_record = provider_api_key_record(config.fetch(:service_type))
+      credential = CredentialSelection.call(owner:, operation: :embedding, runner: runner)
 
-      if api_key_record
+      if credential.status == :ready
         Result.new(
           runner: runner,
           runner_label: config.fetch(:label, runner.to_s.titleize),
-          api_key: api_key_record.api_key,
+          api_key: credential.api_key,
           api_base_url: api_base_url_for(runner, config),
-          api_key_record: api_key_record,
-          source: :user_key
-        )
-      elsif runner == "openai" && platform_openai_api_key.present?
-        Result.new(
-          runner: runner,
-          runner_label: config.fetch(:label, runner.to_s.titleize),
-          api_key: platform_openai_api_key,
-          api_base_url: api_base_url_for(runner, config),
-          api_key_record: nil,
-          source: :platform_env
+          api_key_record: credential.api_key_record,
+          source: credential.source == :platform_fallback ? :platform_env : :user_key
         )
       end
     end
@@ -116,21 +107,9 @@ module Knowledge
       config.fetch(:base_url)
     end
 
-    def provider_api_key_record(service_type)
-      owner
-        &.provider_api_keys
-        &.for_api_service_type(service_type)
-        &.order(created_at: :desc, id: :desc)
-        &.first
-    end
-
     # @spec KNOWLEDGE-DASHBOARD-001
     def embedding_readiness_for(runner)
       RunnerReadiness.call(owner:, operation: :embedding, runner:)
-    end
-
-    def platform_openai_api_key
-      Rails.application.credentials.dig(:llm, :openai_api_key).presence || ENV["OPENAI_API_KEY"].presence
     end
 
     def log_unsupported_runner(runner)

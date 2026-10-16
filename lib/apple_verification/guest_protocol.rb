@@ -8,7 +8,7 @@ module AppleVerification
     OPERATION_TYPES = %w[materialize_source resolve_swift_packages inspect_xcode build test boot_simulator install_app launch_app ui_action capture collect_diagnostics export_artifacts].freeze
     SHELL_FIELDS = %w[command shell script executable].freeze
     CAPTURE_STAGES = %w[launch readiness action selection export].freeze
-    ROOT_FIELDS = %w[version operations].freeze
+    ROOT_FIELDS = %w[version source_lanes operations].freeze
     OPERATION_FIELDS = %w[type payload].freeze
     PAYLOAD_FIELDS = {
       "materialize_source" => %w[digest],
@@ -54,9 +54,12 @@ module AppleVerification
 
       def validate_root!(manifest)
         raise InvalidManifestError, "manifest must be an object" unless manifest.is_a?(Hash)
-        validate_fields!(manifest, ROOT_FIELDS, "manifest")
+        unexpected_fields = manifest.keys.map(&:to_s) - ROOT_FIELDS
+        raise InvalidManifestError, "manifest contains unsupported fields: #{unexpected_fields.join(', ')}" if unexpected_fields.any?
+        raise InvalidManifestError, "manifest is missing required fields: version, operations" unless manifest.key?("version") && manifest.key?("operations")
         raise UnsupportedVersionError, "unsupported guest protocol version" unless manifest["version"] == VERSION
         raise InvalidManifestError, "operations must be an array" unless manifest["operations"].is_a?(Array)
+        AppleVerificationWorkers.validate_lanes!(manifest.fetch("source_lanes")) if manifest.key?("source_lanes")
       end
 
       def validate_operation!(operation)

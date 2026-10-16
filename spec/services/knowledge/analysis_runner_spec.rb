@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Knowledge::AnalysisRunner, :no_db do
+RSpec.describe Knowledge::AnalysisRunner, :no_db do # @spec KNOWLEDGE-CREDENTIAL-001
   let(:project) { Struct.new(:id).new(42) }
   let(:knowledge_run) do
     Struct.new(:id, :proxy_token, :persisted?, :active?, :status) do
@@ -183,6 +183,7 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
         expect(cmd[0]).to eq("ruby")
         expect(cmd[1]).to eq("-e")
         expect(cmd[2]).to include("anthropic")
+        expect(cmd[2]).to include('req["X-Paid-Knowledge-Provider"] = provider')
         env_hash = opts[:Env].to_h { |e| e.split("=", 2) }
         expect(env_hash["API_SERVICE_TYPE"]).to eq("anthropic")
         expect(env_hash["LLM_MODEL"]).to eq("claude-sonnet-4-6")
@@ -199,6 +200,7 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
       expect(result).to eq('{"title":"Test"}')
       expect(backend).to have_received(:exec_in_container) do |_container, cmd, **_opts|
         expect(cmd[2]).to include("openai")
+        expect(cmd[2]).to include('req["X-Paid-Knowledge-Provider"] = provider')
       end
     end
 
@@ -210,6 +212,7 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do
       expect(backend).to have_received(:exec_in_container) do |_container, _cmd, **opts|
         env_hash = opts[:Env].to_h { |e| e.split("=", 2) }
         expect(env_hash["LLM_MODEL"]).to eq("claude-sonnet-4-6")
+        expect(env_hash["KNOWLEDGE_PROVIDER"]).to eq("claude")
       end
     end
 

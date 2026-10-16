@@ -89,6 +89,8 @@
           entry: entry %>
   <% elsif entry.project_setup_pending? %>
     <%= render "dashboard/inbox_detail_project_setup_pending", entry: entry %>
+  <% elsif entry.traceability_gap? %>
+    <%= render "dashboard/inbox_detail_traceability_gap", entry: entry %>
   <% else %>
     <%= render "dashboard/inbox_detail_plan_review",
           entry: entry,

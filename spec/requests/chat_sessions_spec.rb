@@ -930,7 +930,7 @@ RSpec.describe "ChatSessions" do
       end
 
       it "renders the popup variant for embedded requests" do
-        # @spec CHAT-API-021
+        # @spec CHAT-API-021 CHAT-API-025
         chat_session.update!(
           metadata: {
             "page_context" => {
@@ -953,6 +953,16 @@ RSpec.describe "ChatSessions" do
         expect(response.body).not_to include("turbo-frame")
       end
 
+      # @spec CHAT-API-025
+      it "marks the popup chat surface as a navigation source" do
+        get chat_session_path(chat_session), params: { display: "popup" }, headers: { "Accept" => "text/html" }
+
+        chat_root = Nokogiri::HTML(response.body).at_css("section[data-controller='chat']")
+
+        expect(chat_root["data-action"]).to include("click->chat#navigate")
+        expect(chat_root["data-chat-account-id-value"]).to eq(account.id.to_s)
+      end
+
       it "wraps the popup capability panel inside the chat controller scope" do
         get chat_session_path(chat_session), params: { display: "popup" }, headers: { "Accept" => "text/html" }
 
@@ -965,6 +975,17 @@ RSpec.describe "ChatSessions" do
         expect(chat_root).to be_present
         expect(capability_panel).to be_present
         expect(chat_root.at_css("[data-chat-target='capabilityPanel']")).to eq(capability_panel)
+      end
+
+      # @spec CHAT-API-025
+      it "marks the full-page chat surface as a popup-navigation source" do
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        chat_root = Nokogiri::HTML(response.body).at_css("div[data-controller='chat'][data-chat-session-id-value]")
+
+        expect(chat_root["data-action"]).to include("click->chat#navigate")
+        expect(chat_root["data-chat-account-id-value"]).to eq(account.id.to_s)
       end
 
       it "only offers API-key-backed runners in the combined chat selector" do

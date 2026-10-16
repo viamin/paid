@@ -44,7 +44,8 @@ module Projects
           "source" => stored["source"],
           "manifest_path" => stored["manifest_path"],
           "marker_files" => normalize_strings(stored["marker_files"]),
-          "feature_flags_pattern" => stored["feature_flags_pattern"] == true
+          "feature_flags_pattern" => stored["feature_flags_pattern"] == true,
+          "rdr_convention" => normalize_rdr_convention(stored["rdr_convention"])
         )
       end
 
@@ -61,6 +62,16 @@ module Projects
         SUPPORTED_LANGUAGES.include?(normalized) ? normalized : nil
       end
 
+      def normalize_rdr_convention(value)
+        convention = value.is_a?(Hash) ? value.deep_stringify_keys : {}
+        directory = convention["directory"].to_s.strip
+        file_pattern = convention["file_pattern"].to_s.strip
+
+        return if invalid_rdr_directory?(directory) || file_pattern.blank? || file_pattern.include?("/")
+
+        { "directory" => directory, "file_pattern" => file_pattern }
+      end
+
       def default_test_languages(languages)
         normalize_languages(languages).select { |language| DEFAULT_TEST_LANGUAGES.include?(language) }
       end
@@ -74,6 +85,10 @@ module Projects
 
       def normalize_strings(values)
         Array(values).map(&:to_s).map(&:strip).reject(&:blank?).uniq
+      end
+
+      def invalid_rdr_directory?(directory)
+        directory.blank? || Pathname.new(directory).absolute? || directory.split("/").any? { |part| part.in?([ ".", ".." ]) }
       end
 
       def compact_hash(hash)

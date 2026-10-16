@@ -293,6 +293,7 @@
     <% if chat_popup_available? %>
       <div class="pointer-events-none fixed inset-x-4 bottom-4 z-40 sm:inset-x-auto sm:right-6 sm:w-[26rem]"
            data-controller="chat-popup"
+           data-action="chat:navigate@window->chat-popup#followNavigation"
            data-chat-popup-account-id-value="<%= current_account.id %>"
            data-chat-popup-create-url-value="<%= chat_sessions_path %>"
            data-chat-popup-panel-url-template-value="<%= chat_session_path("__SESSION_ID__") %>?display=popup"
