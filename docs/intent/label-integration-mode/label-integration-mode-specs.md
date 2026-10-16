@@ -75,3 +75,9 @@
   SHALL be safe. On return to `read_write`, standard-label provisioning SHALL
   restore the catalog; local state imported while ignored takes precedence over
   stale labels rather than being re-imported.
+
+- [x] **LABEL-CONTROL-008** — In `read_write` and `read_only` modes, effective
+  inherited or project-configured skip labels SHALL hold automatic issue
+  enhancement as well as implementation. In `ignored` mode, GitHub labels
+  SHALL not hold automatic enhancement; only the existing local controls may
+  do so.
