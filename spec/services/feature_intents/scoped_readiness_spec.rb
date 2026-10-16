@@ -43,6 +43,13 @@ RSpec.describe FeatureIntents::ScopedReadiness do
     expect(unknown_coverage.snapshot.fetch("coverage")).to eq("unknown")
   end
 
+  it "does not treat a completed empty prerequisite mapping as ready" do
+    result = described_class.call(project:, mapping: mapping(prerequisites: []))
+
+    expect(result).not_to be_ready
+    expect(result.blockers.map(&:code)).to include("prerequisite_mapping_empty")
+  end
+
   it "fails each independent 79/80 boundary without averaging scores" do
     result = described_class.call(project:, mapping: mapping(prerequisites: [
       { id: "intent", assessment: assessment(intent: 79, technical: 100) },

@@ -43,6 +43,7 @@ module FeatureIntents
 
     def prerequisite_blockers
       return [] unless coverage_complete?
+      return [ blocker("prerequisite_mapping_empty", "A completed prerequisite mapping must assess at least one material prerequisite.") ] if prerequisites.empty?
 
       prerequisites.flat_map { |prerequisite| blockers_for(prerequisite) }
     end
