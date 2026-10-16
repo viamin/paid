@@ -339,7 +339,8 @@ module ChatSessions
 
       @explicit_preferences ||= ExplicitPreferences::Context.call(
         owner: chat_session.created_by,
-        project: primary_project
+        project: primary_project,
+        feature_intent: clarifying_question_issue&.feature_intent
       )
     end
 

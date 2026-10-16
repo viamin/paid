@@ -228,6 +228,26 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include(matching_preference.statement)
         expect(prompt).not_to include("Do not include this preference.")
       end
+
+      # @spec FACET-CONFIDENCE-007
+      it "includes a feature-scoped preference for a linked clarifying issue" do
+        project = create(:project, account: account)
+        feature_intent = create(:feature_intent, project: project)
+        issue = create(:issue, :needs_input, project: project)
+        create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+        preference = create(:explicit_preference, account: account, user: user, recorded_by: user,
+          scope: "feature", project: project, feature_intent: feature_intent,
+          statement: "Use the approved delivery path.")
+        session = create(:chat_session, account: account, created_by: user, project: project,
+          clarifying_question_issue: issue, metadata: {
+            "clarifying_question_issue_id" => issue.id,
+            "clarifying_questions" => issue.needs_input_questions
+          })
+
+        prompt = described_class.call(chat_session: session)
+
+        expect(prompt).to include(preference.statement)
+      end
     end
 
     describe "tool definitions" do
