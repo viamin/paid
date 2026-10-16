@@ -43,6 +43,14 @@ RSpec.describe Tools::UpdateProjectSettings do
       expect(project.reload).to have_attributes(paused: true, auto_pick_enabled: true)
     end
 
+    # @spec FACET-CONFIDENCE-010
+    it "updates and returns independently configured confidence thresholds" do
+      result = call(settings: { "intent_threshold" => 70, "technical_threshold" => 90 })
+
+      expect(result).to include(intent_threshold: 70, technical_threshold: 90)
+      expect(project.reload).to have_attributes(intent_threshold: 70, technical_threshold: 90)
+    end
+
     it "updates the upstream PR target settings" do # @spec PR-TARGET-012
       result = call(settings: {
         "pr_target" => "upstream",

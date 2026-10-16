@@ -63,16 +63,28 @@ RSpec.describe FeatureIntents::ScopedReadiness do
     expect(result.snapshot.fetch("thresholds")).to eq("intent" => 70, "technical" => 90)
   end
 
-  it "fails visibly for missing coverage, pending assessments, and superseded evidence" do
+  it "fails visibly for missing coverage, assessments, and superseded evidence" do
     missing_coverage = described_class.call(project:, mapping: mapping(coverage: "unknown", prerequisites: []))
+    missing_assessment = described_class.call(project:, mapping: mapping(prerequisites: [ { id: "scope" } ]))
     pending = described_class.call(project:, mapping: mapping(prerequisites: [ { id: "scope", assessment: assessment(status: "pending") } ]))
     stale = described_class.call(project:, mapping: mapping(prerequisites: [
       { id: "scope", assessment: assessment.merge(current_evidence_revision: "evidence-v2") }
     ]))
 
     expect(missing_coverage.blockers.map(&:code)).to include("prerequisite_coverage_unknown")
+    expect(missing_assessment.blockers.map(&:code)).to include("assessment_missing")
     expect(pending.blockers.map(&:code)).to include("assessment_pending")
     expect(stale.blockers.map(&:code)).to include("assessment_superseded")
+  end
+
+  it "fails visibly instead of raising for malformed prerequisite entries" do
+    null_entry = described_class.call(project:, mapping: mapping(prerequisites: [ nil ]))
+    scalar_entry = described_class.call(project:, mapping: mapping(prerequisites: [ "scope" ]))
+    malformed_assessment = described_class.call(project:, mapping: mapping(prerequisites: [ { id: "scope", assessment: "completed" } ]))
+
+    expect(null_entry.blockers.map(&:code)).to include("prerequisite_invalid")
+    expect(scalar_entry.blockers.map(&:code)).to include("prerequisite_invalid")
+    expect(malformed_assessment.blockers.map(&:code)).to include("assessment_invalid")
   end
 
   it "fails an unmerged or scope-contradicting relevant design artifact" do
@@ -85,6 +97,12 @@ RSpec.describe FeatureIntents::ScopedReadiness do
 
     expect(unmerged.blockers.map(&:code)).to include("design_artifact_unmerged")
     expect(contradictory.blockers.map(&:code)).to include("design_artifact_scope_mismatch")
+  end
+
+  it "fails visibly for malformed design artifact entries" do
+    result = described_class.call(project:, mapping: mapping(design_artifacts: [ nil, "docs/intent/example.md" ]))
+
+    expect(result.blockers.map(&:code)).to include("design_artifact_invalid")
   end
 
   it "fails when the issue or required design artifact lacks a scope revision" do

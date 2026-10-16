@@ -46,6 +46,8 @@ module Tools
       max_pr_auto_continue_tokens
       token_limit_warning_threshold
       poll_interval_seconds
+      intent_threshold
+      technical_threshold
       pr_target
       upstream_full_name
     ].freeze

@@ -48,8 +48,11 @@ module FeatureIntents
     end
 
     def blockers_for(prerequisite)
-      assessment = prerequisite.fetch("assessment", {}).to_h
-      return [ prerequisite_blocker("assessment_missing", prerequisite, "has no current assessment.") ] if assessment.empty?
+      return [ invalid_prerequisite_blocker ] unless prerequisite.is_a?(Hash)
+
+      assessment = prerequisite["assessment"]
+      return [ prerequisite_blocker("assessment_missing", prerequisite, "has no current assessment.") ] if assessment.nil? || assessment == {}
+      return [ prerequisite_blocker("assessment_invalid", prerequisite, "assessment must be an object.") ] unless assessment.is_a?(Hash)
       return [ prerequisite_blocker("assessment_#{assessment.fetch("status", "unknown")}", prerequisite, "assessment is not complete.") ] unless assessment_complete?(assessment)
       return [ prerequisite_blocker("assessment_superseded", prerequisite, "assessment targets superseded evidence.") ] unless current_evidence?(assessment)
 
@@ -72,7 +75,7 @@ module FeatureIntents
     end
 
     def design_artifact_blockers
-      required_design_artifacts.flat_map { |artifact| blockers_for_artifact(artifact) }
+      design_artifacts.flat_map { |artifact| blockers_for_artifact(artifact) }
     end
 
     def scope_blockers
@@ -82,6 +85,9 @@ module FeatureIntents
     end
 
     def blockers_for_artifact(artifact)
+      return [ blocker("design_artifact_invalid", "A design artifact entry must be an object.") ] unless artifact.is_a?(Hash)
+      return [] unless artifact["required"] == true
+
       return [ artifact_blocker("design_artifact_unmerged", artifact, "has not merged.") ] unless artifact["merged"] == true
       return [ artifact_blocker("design_artifact_revision_unknown", artifact, "has no merged revision.") ] if artifact["revision"].blank?
       return [ artifact_blocker("design_artifact_scope_unknown", artifact, "does not identify an issue scope revision.") ] if artifact["scope_revision"].blank?
@@ -92,7 +98,8 @@ module FeatureIntents
 
     def coverage_complete? = mapping["coverage"] == "complete" || mapping["coverage_complete"] == true
     def prerequisites = Array(mapping["prerequisites"])
-    def required_design_artifacts = Array(mapping["design_artifacts"]).select { |artifact| artifact["required"] == true }
+    def design_artifacts = Array(mapping["design_artifacts"])
+    def required_design_artifacts = design_artifacts.select { |artifact| artifact.is_a?(Hash) && artifact["required"] == true }
     def assessment_complete?(assessment) = COMPLETE_ASSESSMENT_STATUSES.include?(assessment["status"])
     def current_evidence?(assessment) = assessment["evidence_revision"].present? && assessment["current_evidence_revision"].in?([ nil, assessment["evidence_revision"] ])
     def valid_score?(score) = score.finite? && score >= 0 && score <= 100
@@ -107,6 +114,10 @@ module FeatureIntents
     def prerequisite_blocker(code, prerequisite, detail)
       id = prerequisite["id"].presence || "unnamed prerequisite"
       blocker(code, "Prerequisite #{id} #{detail}", prerequisite_id: prerequisite["id"])
+    end
+
+    def invalid_prerequisite_blocker
+      blocker("prerequisite_invalid", "A prerequisite entry must be an object.")
     end
 
     def artifact_blocker(code, artifact, detail)
@@ -124,7 +135,9 @@ module FeatureIntents
     end
 
     def snapshot_prerequisite(prerequisite)
-      assessment = prerequisite.fetch("assessment", {}).to_h
+      return { "invalid" => true } unless prerequisite.is_a?(Hash)
+
+      assessment = prerequisite["assessment"].is_a?(Hash) ? prerequisite["assessment"] : {}
       prerequisite.slice("id", "rationale").merge(
         "assessment_status" => assessment["status"],
         "evidence_revision" => assessment["evidence_revision"],
