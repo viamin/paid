@@ -64,18 +64,19 @@ module Activities
       # queued/active runs for the same issue or PR under concurrency.
       # Falls back to DB unique indexes (RecordNotUnique) as a safety net
       # for races between concurrent activity executions.
-      agent_run, duplicate, enhancement_limit_reached = AgentRun.transaction do
+      agent_run, duplicate, enhancement_limit_reached, enhancement_held = AgentRun.transaction do
         issue.lock! if automatic_enhancement?(goal, trigger_type, issue)
-        existing = find_existing_run(project, issue, source_pull_request_number)
-        if existing
+        if automatic_enhancement_held?(project, issue, goal, trigger_type)
+          [ nil, false, false, true ]
+        elsif (existing = find_existing_run(project, issue, source_pull_request_number))
           if existing.goal == goal
             merge_draft_review_round_tracking!(existing,
               count_toward_draft_review_round: count_toward_draft_review_round,
               expected_draft_review_count: expected_draft_review_count)
           end
-          [ existing, true, false ]
+          [ existing, true, false, false ]
         elsif enhancement_round_limit_reached?(project, issue, goal, trigger_type)
-          [ nil, false, true ]
+          [ nil, false, true, false ]
         else
           consume_enhancement_round!(issue) if automatic_enhancement?(goal, trigger_type, issue)
           run = AgentRun.create!(
@@ -101,7 +102,7 @@ module Activities
           )
           snapshot_page_load_evidence!(run, input[:focus_evidence])
           snapshot_tdd_review_feedback!(run, input[:tdd_review_feedback])
-          [ run, false, false ]
+          [ run, false, false, false ]
         end
       rescue ActiveRecord::RecordNotUnique
         existing = find_existing_run(project, issue, source_pull_request_number)
@@ -118,7 +119,17 @@ module Activities
             expected_draft_review_count: expected_draft_review_count)
         end
 
-        [ existing, true, false ]
+        [ existing, true, false, false ]
+      end
+
+      if enhancement_held
+        logger.info(
+          message: "queue_agent_run.automatic_enhancement_held",
+          project_id: project.id,
+          issue_id: issue.id,
+          issue_number: issue.github_number
+        )
+        return { queued: false, skipped: true, reason: "effective_skip_label_hold" }
       end
 
       if enhancement_limit_reached
@@ -168,6 +179,14 @@ module Activities
 
     def automatic_enhancement?(goal, trigger_type, issue)
       issue.present? && goal == "enhance_issue" && trigger_type == "automatic"
+    end
+
+    # @spec ISSUE-ENHANCEMENT-018 LABEL-CONTROL-008
+    def automatic_enhancement_held?(project, issue, goal, trigger_type)
+      return false unless automatic_enhancement?(goal, trigger_type, issue)
+
+      Automation::Strategies::AutoPick::DefaultCandidateSource
+        .effective_skip_label_hold?(project, issue.id)
     end
 
     def enhancement_round_limit_reached?(project, issue, goal, trigger_type)

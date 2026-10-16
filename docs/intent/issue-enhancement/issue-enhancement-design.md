@@ -194,6 +194,24 @@ run is queued (see `fetch_issues_activity#detect_enhance_issue_rechecks`). The
 re-evaluation LLM must see the prior clarifying questions and answers to decide
 whether the issue is now actionable.
 
+An automatic re-evaluation never overrides an effective execution hold. In
+label-enabled modes, `DefaultCandidateSource` resolves the project's inherited
+or custom skip labels and is the shared authority for this check. If an
+operator adds a hold before clearing `needs_input`, sync deliberately moves the
+issue out of the stale clarification Inbox lane to `new`, preserves its stored
+questions and enhancement-round budget, and does not create a run. A later
+hold release is reconsidered by the normal eager eligibility triggers. In
+`ignored` mode GitHub labels are not a control channel, so this label hold does
+not apply. Explicit manual enhancement remains an operator authorization.
+
+Automatic enhancement admission performs the same hold check under the issue
+row lock, and dequeue rechecks every automatic `enhance_issue` run even when
+it was not marked `auto_pick`. A newly held, unclaimed queued run is cancelled
+under that lock and releases its active-run slot; a claimed or running run is
+left to normal Temporal lifecycle cleanup. This narrow reconciliation covers
+already-queued automatic enhancement runs on the next queue pass without
+touching manual or unrelated active work.
+
 Both the questions and the captured-answers comments are posted by the
 project's GitHub App bot (`paid-agents[bot]`). The human-only comment trust
 filter (`Project#trusted_github_user?`) deliberately excludes the bot — Paid

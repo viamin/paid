@@ -91,6 +91,16 @@ module Automation
               .exists?
           end
 
+          # Label holds are shared by automatic enhancement admission and the
+          # normal auto-pick candidate scope. Ignored-mode projects deliberately
+          # use their local control state instead of upstream labels.
+          # @spec ISSUE-ENHANCEMENT-018 LABEL-CONTROL-008
+          def effective_skip_label_hold?(project, issue_id)
+            return false if project.label_integration_mode == "ignored"
+
+            exclude_effective_skip_labels(Issue.where(id: issue_id), project).none?
+          end
+
           def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: [], issue_ids: nil) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 AUTO-PICK-QUEUE-013 @spec PARTIAL-CLOSEOUT-004
             epic_ids = epic_issue_ids(project)
             base = without_open_non_pr_subissues(
@@ -303,9 +313,13 @@ module Automation
                 scope.where.not("labels @> ?::jsonb", [ label ].to_json)
               end
 
-              project.effective_auto_pick_skip_labels.reduce(needs_input_excluded) do |scope, label|
-                scope.where.not("labels @> ?::jsonb", [ label ].to_json)
-              end
+              exclude_effective_skip_labels(needs_input_excluded, project)
+            end
+          end
+
+          def exclude_effective_skip_labels(scope, project)
+            project.effective_auto_pick_skip_labels.reduce(scope) do |candidate_scope, label|
+              candidate_scope.where.not("labels @> ?::jsonb", [ label ].to_json)
             end
           end
 
