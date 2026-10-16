@@ -394,9 +394,11 @@ RSpec.describe "Api::SecretsProxy" do # @spec SECRETS-PROXY-001 # @spec SECRETS-
       expect(TokenUsage.last.knowledge_run).to eq(knowledge_run)
     end
 
-    it "uses the knowledge run owner's configured runner key when a knowledge runner header is present" do
-      create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter-old")
-      latest_api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter-new")
+    # @spec KNOWLEDGE-CREDENTIAL-001
+    it "uses the selected embedding key when another matching key is newer" do
+      selected_api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter-old")
+      create(:provider_api_key, user: project.effective_owner, api_service_type: "openrouter", api_key: "sk-openrouter-new")
+      project.effective_owner.settings.update!(kb_embedding_provider_api_key: selected_api_key)
       knowledge_run.update!(provider_attempts: [ { "provider" => "openrouter", "attempted_at" => Time.current.iso8601 } ])
 
       openrouter_url = "https://openrouter.ai/api/v1/chat/completions"
@@ -409,7 +411,26 @@ RSpec.describe "Api::SecretsProxy" do # @spec SECRETS-PROXY-001 # @spec SECRETS-
 
       expect(response).to have_http_status(:ok)
       expect(WebMock).to have_requested(:post, openrouter_url)
-        .with(headers: { "Authorization" => "Bearer #{latest_api_key.api_key}" })
+        .with(headers: { "Authorization" => "Bearer #{selected_api_key.api_key}" })
+    end
+
+    # @spec KNOWLEDGE-CREDENTIAL-001
+    it "uses the selected drafting key before a final runner has been recorded" do
+      selected_api_key = create(:provider_api_key, user: project.effective_owner, api_service_type: "openai", api_key: "sk-drafting-selected")
+      create(:provider_api_key, user: project.effective_owner, api_service_type: "openai", api_key: "sk-drafting-newer")
+      project.effective_owner.settings.update!(kb_chat_provider_api_key: selected_api_key)
+      knowledge_run.update!(
+        operation_type: "decision_drafting",
+        provider_attempts: [ { "provider" => "codex", "attempted_at" => Time.current.iso8601 } ]
+      )
+
+      post "/api/proxy/openai/v1/chat/completions",
+        params: {}.to_json,
+        headers: knowledge_headers.merge("X-Paid-Knowledge-Provider" => "codex")
+
+      expect(response).to have_http_status(:ok)
+      expect(WebMock).to have_requested(:post, target_url)
+        .with(headers: { "Authorization" => "Bearer #{selected_api_key.api_key}" })
     end
 
     it "preserves runner-specific versioned paths for OpenAI-compatible providers" do

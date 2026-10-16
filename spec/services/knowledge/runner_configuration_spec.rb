@@ -37,6 +37,27 @@ RSpec.describe Knowledge::RunnerConfiguration do
       expect(config.api_key).to eq(api_key.api_key)
     end
 
+    # @spec KNOWLEDGE-CREDENTIAL-001
+    it "uses the explicitly selected key even when a newer matching key exists" do
+      owner.settings.update!(kb_embedding_runner: "openai", kb_embedding_fallback_runners: [])
+      selected = create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-selected")
+      create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-newer")
+      owner.settings.update!(kb_embedding_provider_api_key: selected)
+
+      config = described_class.for_embedding(project: project)
+
+      expect(config.api_key_record).to eq(selected)
+      expect(config.api_key).to eq("sk-selected")
+    end
+
+    # @spec KNOWLEDGE-CREDENTIAL-001
+    it "rejects a selected key for the wrong service" do
+      owner.settings.update!(kb_embedding_runner: "openai", kb_embedding_fallback_runners: [])
+      owner.settings.update!(kb_embedding_provider_api_key: create(:provider_api_key, user: owner, api_service_type: "anthropic"))
+
+      expect(described_class.for_embedding(project: project)).to be_nil
+    end
+
     it "uses the platform OpenAI key when OpenAI is selected and no user key exists" do
       owner.settings.update!(kb_embedding_runner: "openai", kb_embedding_fallback_runners: [])
       allow(ENV).to receive(:[]).and_call_original

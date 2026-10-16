@@ -297,11 +297,11 @@ RSpec.describe AppleVerificationAttempts::Provision do
     manifest = attempt.apple_verification_artifacts.find_by!(kind: "manifest").metadata.fetch("manifest")
     expect(manifest.fetch("result")).to include(
       "status" => "succeeded",
-      "failure_classification" => nil,
       "required_checks" => attempt.apple_verification_workflow_revision.required_checks,
       "advisory_checks" => attempt.apple_verification_workflow_revision.advisory_checks,
       "screenshot_metadata" => [ "apple-verification/screenshot.png" ]
     )
+    expect(manifest.fetch("result")).not_to have_key("failure_classification")
     expect(manifest.dig("result", "timings", "provisioning_ms")).to be > 0
     expect(manifest.dig("result", "timings", "running_ms")).to be < manifest.dig("result", "timings", "provisioning_ms")
   end

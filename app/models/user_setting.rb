@@ -55,6 +55,8 @@ class UserSetting < ApplicationRecord
   THEME_PREFERENCES = %w[light dark system].freeze
 
   belongs_to :user
+  belongs_to :kb_embedding_provider_api_key, class_name: "ProviderApiKey", optional: true
+  belongs_to :kb_chat_provider_api_key, class_name: "ProviderApiKey", optional: true
   has_many :runner_states, through: :user
 
   def update_columns(attributes)
@@ -144,6 +146,12 @@ class UserSetting < ApplicationRecord
     Integer(raw)
   end
 
+  def validate_knowledge_credential_owners
+    [ kb_embedding_provider_api_key, kb_chat_provider_api_key ].compact.each do |credential|
+      errors.add(:base, "Knowledge credentials must belong to this user") unless credential.user_id == user_id
+    end
+  end
+
   # Polling & Timing
   validates :default_poll_interval_seconds,
     numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: PG_INT_MAX }
@@ -156,6 +164,7 @@ class UserSetting < ApplicationRecord
   validates :agent_timeout_seconds,
     numericality: { only_integer: true, greater_than_or_equal_to: 60, less_than_or_equal_to: PG_INT_MAX }
   validate :validate_default_agent_runner
+  validate :validate_knowledge_credential_owners
   validate :validate_default_agent_runners_by_goal
 
   # Container Resources

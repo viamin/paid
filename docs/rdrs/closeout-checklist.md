@@ -50,6 +50,7 @@ Pick exactly one based on what step 1 found, not on issue-closed state:
 | **Partially Implemented** | Core scope shipped but some acceptance criteria are still missing; child issues filed for each gap (step 3). |
 | **Superseded** | Replaced by a later RDR; record which RDR supersedes it. |
 | **Abandoned** | Never implemented and no longer planned; record why. |
+| **Blocked** | The RDR is not yet repository authority, or a required external prerequisite prevents validation. Record the blocker and the evidence-based rerun condition; do not present this as implementation completion. |
 
 ### 3. File child issues for any remaining gaps
 
@@ -60,6 +61,11 @@ Pick exactly one based on what step 1 found, not on issue-closed state:
 - [ ] If no gaps remain, state that explicitly and file nothing.
 
 ### 4. Update the RDR
+
+For a **Blocked** conclusion where the RDR has not yet merged, retain its
+existing draft status instead of inventing an implementation status. Record
+the blocker and rerun condition in the audit artifact and index entry; complete
+the following updates when an authoritative RDR exists.
 
 - [ ] Update the `## Implementation Status` section so it describes **what
       actually shipped** today, with the new status and date.
@@ -127,8 +133,9 @@ an override during reconciliation.
 - [ ] Only the final umbrella audit may visibly close the umbrella with GitHub
       closing language such as `Closes #1234`, and only when its evidence
       confirms no required gaps remain.
-- [ ] If the closeout status is **Partially Implemented**, **Superseded**, or
-      **Abandoned** and the umbrella should remain open for follow-up work, use
+- [ ] If the closeout status is **Blocked**, **Partially Implemented**,
+      **Superseded**, or **Abandoned** and the umbrella should remain open for
+      follow-up work, use
       non-closing language such as `Tracks #1234` and explain in the RDR why no
       closure is claimed.
 - [ ] Do not rely on Paid's local `paid_state` as the source of truth for
