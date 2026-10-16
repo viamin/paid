@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec INTENT-AMENDMENT-003 @spec INTENT-CONFORMANCE-REVIEW-001 @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010
+# @spec INTENT-AMENDMENT-003 @spec INTENT-CONFORMANCE-REVIEW-001 @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec CONFIDENCE-DELIVERY-001
 # RDR-066 feature intent: links a feature's brief, discovery decisions,
 # design PRs, issue tree, and approval record. The RDR-067 amendment flow
 # (`released`/`revising` transitions) and the intent-conformance reviewer
@@ -28,6 +28,7 @@ class FeatureIntent < ApplicationRecord
   APPROVABLE_STATUSES = %w[design_open needs_decision ready_for_approval approved_waiting_for_merge].freeze
 
   CRITERIA_CLARITY_STATES = %w[pending clear vague].freeze
+  DELIVERY_POLICIES = Project::FEATURE_DELIVERY_POLICIES
 
   belongs_to :project
   belongs_to :approved_by, class_name: "User", optional: true
@@ -42,6 +43,9 @@ class FeatureIntent < ApplicationRecord
   validates :title, presence: true
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :criteria_clarity_state, presence: true, inclusion: { in: CRITERIA_CLARITY_STATES }
+  validates :delivery_policy, presence: true, inclusion: { in: DELIVERY_POLICIES }
+
+  attr_readonly :delivery_policy
 
   scope :released, -> { where(status: "released") }
   scope :awaiting_approval, -> { where(status: APPROVABLE_STATUSES) }
@@ -62,6 +66,8 @@ class FeatureIntent < ApplicationRecord
   def revising? = status == "revising"
   def approved_waiting_for_merge? = status == "approved_waiting_for_merge"
   def criteria_clarity_clear? = criteria_clarity_state == "clear"
+  def approval_gated? = delivery_policy == "approval_gated"
+  def confidence_driven? = delivery_policy == "confidence_driven"
 
   # Persists the CriteriaClarityReview verdict (or the fail-closed "pending"
   # default) so Inbox rendering never makes a live LLM call per entry
