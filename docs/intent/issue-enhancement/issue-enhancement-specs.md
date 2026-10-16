@@ -555,8 +555,9 @@
   move the stale clarification Inbox item to `new` while preserving questions
   and audit evidence; removal of the hold SHALL return the issue to normal
   eager eligibility without another needs-input-label toggle. The shared
-  `DefaultCandidateSource` label policy SHALL honor `ignored` mode, where
-  upstream labels are not control state. At dequeue, every unclaimed automatic
+  `DefaultCandidateSource` hold policy SHALL honor `ignored` mode, where
+  upstream labels are not control state and an existing local auto-pick
+  exclusion remains authoritative. At dequeue, every unclaimed automatic
   enhancement run, including a sync recheck with `auto_pick: false`, SHALL be
   rechecked and cancelled safely if it is held; claimed/running and explicit
   manual work SHALL remain under their normal lifecycle.

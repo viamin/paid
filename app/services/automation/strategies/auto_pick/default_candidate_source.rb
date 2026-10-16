@@ -96,9 +96,12 @@ module Automation
           # use their local control state instead of upstream labels.
           # @spec ISSUE-ENHANCEMENT-018 LABEL-CONTROL-008
           def effective_skip_label_hold?(project, issue_id)
-            return false if project.label_integration_mode == "ignored"
+            issue_scope = project.issues.where(id: issue_id)
+            if project.label_integration_mode == "ignored"
+              return issue_scope.where.not(auto_pick_excluded_reason: [ nil, "" ]).exists?
+            end
 
-            exclude_effective_skip_labels(Issue.where(id: issue_id), project).none?
+            exclude_effective_skip_labels(issue_scope, project).none?
           end
 
           def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: [], issue_ids: nil) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 AUTO-PICK-QUEUE-013 @spec PARTIAL-CLOSEOUT-004

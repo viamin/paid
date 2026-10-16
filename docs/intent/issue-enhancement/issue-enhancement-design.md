@@ -201,8 +201,9 @@ operator adds a hold before clearing `needs_input`, sync deliberately moves the
 issue out of the stale clarification Inbox lane to `new`, preserves its stored
 questions and enhancement-round budget, and does not create a run. A later
 hold release is reconsidered by the normal eager eligibility triggers. In
-`ignored` mode GitHub labels are not a control channel, so this label hold does
-not apply. Explicit manual enhancement remains an operator authorization.
+`ignored` mode GitHub labels are not a control channel, so upstream label holds
+do not apply; an existing local auto-pick exclusion remains authoritative.
+Explicit manual enhancement remains an operator authorization.
 
 Automatic enhancement admission performs the same hold check under the issue
 row lock, and dequeue rechecks every automatic `enhance_issue` run even when

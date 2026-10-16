@@ -59,7 +59,7 @@ module AgentRuns
       return false unless Automation::Strategies::AutoPick::DefaultCandidateSource
         .effective_skip_label_hold?(agent_run.project, agent_run.issue_id)
 
-      cancel_run(reason: "Automatic enhancement is held by an effective skip label at dequeue.")
+      cancel_run(reason: "Automatic enhancement is held by an effective automatic-execution control at dequeue.")
     end
 
     def feature_held?

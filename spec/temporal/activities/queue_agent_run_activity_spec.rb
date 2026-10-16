@@ -200,6 +200,16 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(AgentRun.where(project: project, issue: issue, goal: "enhance_issue")).to be_empty
     end
 
+    it "does not enqueue an automatic enhancement run for an ignored-mode local exclusion" do # @spec ISSUE-ENHANCEMENT-018 LABEL-CONTROL-008
+      project.update!(label_integration_mode: "ignored")
+      issue.update!(auto_pick_excluded_reason: "Operator hold")
+
+      result = activity.execute(project_id: project.id, issue_id: issue.id, goal: "enhance_issue")
+
+      expect(result).to include(queued: false, skipped: true, reason: "effective_skip_label_hold")
+      expect(AgentRun.where(project: project, issue: issue, goal: "enhance_issue")).to be_empty
+    end
+
     it "allows a manual enhancement run despite an effective skip-label hold" do # @spec ISSUE-ENHANCEMENT-018
       project.update!(auto_pick_skip_labels: [ "operator-hold" ])
       issue.update!(labels: [ "operator-hold" ])

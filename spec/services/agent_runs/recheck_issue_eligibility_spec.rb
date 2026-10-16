@@ -113,6 +113,16 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
     expect(run.reload.status).to eq("cancelled")
   end
 
+  it "cancels an ignored-mode automatic enhancement recheck for a local exclusion" do # @spec ISSUE-ENHANCEMENT-018 LABEL-CONTROL-008
+    project.update!(label_integration_mode: "ignored")
+    issue = create(:issue, project: project, github_state: "open", auto_pick_excluded_reason: "Operator hold")
+    run = create(:agent_run, :queued, project: project, issue: issue,
+      goal: "enhance_issue", trigger_type: "automatic", auto_pick: false)
+
+    expect(described_class.call(run)).to be true
+    expect(run.reload.status).to eq("cancelled")
+  end
+
   it "does not cancel a claimed automatic enhancement recheck" do # @spec ISSUE-ENHANCEMENT-018
     issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])
     run = create(:agent_run, :queued, project: project, issue: issue,
