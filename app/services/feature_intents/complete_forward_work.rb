@@ -6,6 +6,8 @@ module FeatureIntents
   # completion blocker, never an assumed success.
   # @spec CONFIDENCE-DELIVERY-008 @spec CONFIDENCE-DELIVERY-009 @spec CONFIDENCE-DELIVERY-011 @spec CONFIDENCE-DELIVERY-012
   class CompleteForwardWork
+    class MissingCompletionIssueError < StandardError; end
+
     Result = Data.define(:completion, :item, :code) do
       def success? = code.nil?
     end
@@ -69,9 +71,10 @@ module FeatureIntents
     attr_reader :affected_issue, :client, :completion_issue, :feature_intent, :finding, :fingerprint
 
     def completion
-      @completion ||= feature_intent.feature_intent_completion || FeatureIntentCompletion.create!(
-        feature_intent:, completion_issue:, status: "pending"
-      )
+      @completion ||= FeatureIntentCompletion.create_or_find_by!(feature_intent:) do |record|
+        record.completion_issue = completion_issue
+        record.status = "pending"
+      end
     end
 
     def persist_finding
@@ -170,8 +173,20 @@ module FeatureIntents
       raise GithubClient::Error, "completion dependency was not read back" unless verified.include?(line)
 
       completion_issue.update!(body: verified)
-      IssueDependency.find_or_create_by!(issue: completion_issue, depends_on_issue: issue)
+      persist_dependency!(issue)
       clear_pending!(key)
+    end
+
+    def persist_dependency!(issue)
+      IssueDependency.create_or_find_by!(issue: completion_issue, depends_on_issue: issue)
+    rescue ActiveRecord::RecordInvalid => error
+      raise unless duplicate_dependency?(error)
+
+      IssueDependency.find_by!(issue: completion_issue, depends_on_issue: issue)
+    end
+
+    def duplicate_dependency?(error)
+      error.record.errors.of_kind?(:depends_on_issue_id, :taken)
     end
 
     def required_issues

@@ -27,6 +27,28 @@ RSpec.describe DesignAmendments::EvaluateImpact do
     create(:feature_intent_issue, feature_intent: feature, issue: issue)
   end
 
+  def confidence_delivery_setup
+    feature = create(:feature_intent, :confidence_driven, project: project)
+    amendment = create(:design_amendment, feature_intent: feature, project: project,
+      status: "merged", amended_revision: "newrev", merged_at: Time.current,
+      drift_evidence: { "changed_claims" => [ "Claim A: verdicts bind to PR head" ] })
+    completion_issue = create(:issue, project: project, github_number: 700, body: "Completion")
+    affected_issue = create(:issue, project: project, github_number: 701, body: "Implementation")
+    [ completion_issue, affected_issue ].each { |issue| create(:feature_intent_issue, feature_intent: feature, issue: issue) }
+    FeatureIntentCompletion.create!(feature_intent: feature, completion_issue: completion_issue)
+    [ amendment, completion_issue, affected_issue ]
+  end
+
+  def stub_confidence_client(completion_issue, affected_issue)
+    client = instance_double(GithubClient)
+    remote_bodies = { completion_issue.github_number => completion_issue.body, affected_issue.github_number => affected_issue.body }
+    remote_issue = Data.define(:body, :state)
+    allow(project).to receive(:client).and_return(client)
+    allow(client).to receive(:issue) { |_repo, number| remote_issue.new(body: remote_bodies.fetch(number), state: "open") }
+    allow(client).to receive(:update_issue) { |_repo, number, body: nil, **_options| remote_bodies[number] = body if body }
+    remote_bodies
+  end
+
   it "pauses affected branches and their dependency closure while independent work continues" do
     affected_pr = create(:issue, :pull_request, project: project)
     dependent = create(:issue, project: project, paid_state: "planning")
@@ -147,5 +169,19 @@ RSpec.describe DesignAmendments::EvaluateImpact do
 
     expect(result.paused).to eq(in_progress.id => "affected")
     expect(DesignAmendmentPause.where(issue: in_progress)).to exist
+  end
+
+  it "routes confidence-driven assessment findings into completion-blocking forward work" do # @spec CONFIDENCE-DELIVERY-007 @spec CONFIDENCE-DELIVERY-008
+    confidence_amendment, completion_issue, affected_issue = confidence_delivery_setup
+    remote_bodies = stub_confidence_client(completion_issue, affected_issue)
+    stub_review(mapping_for({ affected_issue => "affected" }))
+
+    result = described_class.call(amendment: confidence_amendment)
+
+    expect(result.paused).to eq({})
+    expect(result.follow_ups).to eq([ affected_issue.id ])
+    expect(FeatureIntentForwardWorkItem.find_by!(affected_issue: affected_issue).status).to eq("applied")
+    expect(remote_bodies.fetch(700)).to include("Depends on #701")
+    expect(DesignAmendmentPause.where(issue: affected_issue)).not_to exist
   end
 end

@@ -57,6 +57,8 @@ module DesignAmendments
       review_result = review.equal?(REVIEW_NOT_COMPUTED) ? ImpactReview.call(amendment: amendment, branches: branch_candidates) : review
       mapping = review_result ? review_result.mapping : fail_closed_mapping
 
+      return route_confidence_findings(mapping, review_result, started_at) if amendment.feature_intent.confidence_driven?
+
       paused = apply_pause_set(mapping)
       follow_ups = record_merged_follow_ups(mapping)
 
@@ -81,6 +83,64 @@ module DesignAmendments
     def empty_result
       amendment.update!(impact: {}, evaluated_at: Time.current)
       Result.new(paused: {}, follow_ups: [], review_failed: false)
+    end
+
+    # @spec CONFIDENCE-DELIVERY-007 @spec CONFIDENCE-DELIVERY-008
+    # A confidence-driven feature retains the admitted scope of work already
+    # running. The same AI impact assessment that would hold an approval-gated
+    # branch is therefore a forward-work finding for this policy.
+    def route_confidence_findings(mapping, review_result, started_at)
+      routed = confidence_findings(mapping).map do |issue, assessment|
+        FeatureIntents::CompleteForwardWork.record_finding(
+          feature_intent: amendment.feature_intent,
+          completion_issue: confidence_completion_issue!,
+          affected_issue: issue,
+          fingerprint: fingerprint_for(issue, assessment),
+          finding: finding_for(issue, assessment)
+        )
+        issue.id
+      end
+      amendment.update!(impact: confidence_impact_snapshot(mapping, routed), evaluated_at: Time.current)
+      log_completion({}, routed, review_result, started_at)
+      Result.new(paused: {}, follow_ups: routed, review_failed: review_result.nil?)
+    end
+
+    def confidence_findings(mapping)
+      runnable_branches.concat(merged_issues).filter_map do |issue|
+        assessment = mapping[issue.id] || {}
+        [ issue, assessment ] if assessment[:impact].in?(%w[affected uncertain])
+      end
+    end
+
+    def confidence_completion_issue!
+      completion = amendment.feature_intent.feature_intent_completion
+      return completion.completion_issue if completion&.completion_issue
+
+      closeout_task = amendment.feature_intent.issue_tree_manifest.to_h.fetch("tasks", []).find { |task| task["closeout"] }
+      number = closeout_task&.dig("issue", "number")
+      Issue.find_by!(project: amendment.project, github_number: number)
+    rescue ActiveRecord::RecordNotFound
+      raise FeatureIntents::CompleteForwardWork::MissingCompletionIssueError,
+        "confidence-driven feature requires a linked completion issue before findings can be routed"
+    end
+
+    def fingerprint_for(issue, assessment)
+      Digest::SHA256.hexdigest([ amendment.id, amendment.amended_revision, issue.id, assessment[:impact], assessment[:explanation] ].join("\u0000"))
+    end
+
+    def finding_for(issue, assessment)
+      {
+        title: "Follow up: #{issue.title}",
+        summary: assessment[:explanation],
+        evidence: { amendment_id: amendment.id, impact: assessment[:impact], cited_claims: assessment[:cited_claims] }
+      }
+    end
+
+    def confidence_impact_snapshot(mapping, routed)
+      mapping.to_h do |issue_id, assessment|
+        action = routed.include?(issue_id) ? "forward_work" : "none"
+        [ issue_id.to_s, assessment.merge("action" => action) ]
+      end
     end
 
     def linked_issues
