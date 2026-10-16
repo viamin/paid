@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_031051) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1350,8 +1350,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_031051) do
     t.index ["project_id", "fingerprint"], name: "index_design_artifact_findings_on_project_id_and_fingerprint", unique: true
     t.index ["project_id", "status"], name: "index_design_artifact_findings_on_project_id_and_status"
     t.index ["project_id"], name: "index_design_artifact_findings_on_project_id"
-    t.check_constraint "state::text = ANY (ARRAY['missing_tree'::character varying, 'partial_tree'::character varying, 'stale_metadata'::character varying, 'deferred'::character varying, 'unverifiable'::character varying]::text[])", name: "chk_design_artifact_findings_state"
-    t.check_constraint "status::text = ANY (ARRAY['open'::character varying, 'resolved'::character varying]::text[])", name: "chk_design_artifact_findings_status"
+    t.check_constraint "state::text = ANY (ARRAY['missing_tree'::character varying::text, 'partial_tree'::character varying::text, 'stale_metadata'::character varying::text, 'deferred'::character varying::text, 'unverifiable'::character varying::text])", name: "chk_design_artifact_findings_state"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'resolved'::character varying::text])", name: "chk_design_artifact_findings_status"
   end
 
   create_table "dispatch_circuit_breakers", comment: "Account-level dispatch circuit breaker that halts scheduling when all providers fail simultaneously", force: :cascade do |t|
@@ -1673,6 +1673,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_031051) do
     t.check_constraint "infra_cost_cents >= 0", name: "chk_execution_usages_infra_cost_nonneg"
     t.check_constraint "rate_cents_per_hour >= 0", name: "chk_execution_usages_rate_nonneg"
     t.check_constraint "termination_reason::text = ANY (ARRAY['completed'::character varying::text, 'cancelled'::character varying::text, 'timed_out'::character varying::text, 'failed'::character varying::text, 'evicted'::character varying::text])", name: "chk_execution_usages_termination_reason_valid"
+  end
+
+  create_table "explicit_preferences", comment: "Explicit user statements retained for their confirmed scope; never inferred from interaction data.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Tenant that owns this preference."
+    t.bigint "chat_session_id", comment: "Exploration conversation that supplied the statement, when applicable."
+    t.datetime "created_at", null: false
+    t.bigint "feature_intent_id", comment: "Feature target when the user explicitly chose feature scope."
+    t.bigint "project_id", comment: "Project target when the user explicitly chose project or feature scope."
+    t.bigint "recorded_by_id", null: false, comment: "Collaborator who confirmed the statement and scope."
+    t.string "scope", limit: 20, null: false, comment: "Confirmed scope: user, project, or feature."
+    t.text "statement", null: false, comment: "Verbatim explicit preference statement supplied by the user."
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false, comment: "User whose explicit preference this is."
+    t.index ["account_id", "user_id", "scope"], name: "index_explicit_preferences_on_account_id_and_user_id_and_scope"
+    t.index ["account_id"], name: "index_explicit_preferences_on_account_id"
+    t.index ["chat_session_id"], name: "index_explicit_preferences_on_chat_session_id"
+    t.index ["feature_intent_id"], name: "index_explicit_preferences_on_feature_intent_id"
+    t.index ["project_id", "scope"], name: "index_explicit_preferences_on_project_id_and_scope"
+    t.index ["project_id"], name: "index_explicit_preferences_on_project_id"
+    t.index ["recorded_by_id"], name: "index_explicit_preferences_on_recorded_by_id"
+    t.index ["user_id"], name: "index_explicit_preferences_on_user_id"
+    t.check_constraint "scope::text = ANY (ARRAY['user'::character varying, 'project'::character varying, 'feature'::character varying]::text[])", name: "explicit_preferences_scope"
   end
 
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
@@ -4201,6 +4223,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_031051) do
   add_foreign_key "execution_resources", "agent_runs", on_delete: :nullify
   add_foreign_key "execution_resources", "projects", on_delete: :nullify
   add_foreign_key "execution_usages", "agent_runs", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "accounts", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "chat_sessions", on_delete: :nullify
+  add_foreign_key "explicit_preferences", "feature_intents", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "projects", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "users", column: "recorded_by_id", on_delete: :restrict
+  add_foreign_key "explicit_preferences", "users", on_delete: :cascade
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade

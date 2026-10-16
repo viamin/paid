@@ -444,6 +444,14 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("submit_clarifying_answers")
       end
 
+      # @spec QUESTION-EXPLORATION-008 QUESTION-EXPLORATION-011 FACET-CONFIDENCE-006 FACET-CONFIDENCE-007
+      it "grounds adaptive clarification and keeps exploration separate from durable preferences" do
+        expect(prompt).to include("Before asking for facts, inspect available repository and Inbox context")
+        expect(prompt).to include("both, neither, conditions, and free-text alternatives")
+        expect(prompt).to include("Do not treat a diagram click, selection, collapse, trial edit, or an assessment inference as a durable preference")
+        expect(prompt).to include("explicitly states a preference and explicitly chooses or clarifies its scope")
+      end
+
       # @spec QUESTION-EXPLORATION-013
       it "restores a saved partial answer without treating it as a final submission" do
         ClarifyingQuestions::SaveProgress.call(
@@ -499,7 +507,9 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
           "clarifying_questions" => [ question ]
         })
 
-        rendered_lines = prompt.lines.map(&:chomp).select { |line| line.match?(/\A\s*-\s+/) && line.include?("(") }
+        rendered_lines = prompt.lines.map(&:chomp).select do |line|
+          line.match?(/\A\s*-\s+/) && line.match?(/SQLite|Postgres/)
+        end
 
         aggregate_failures do
           rendered_lines.each do |line|
