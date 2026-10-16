@@ -98,7 +98,8 @@ module FeatureIntents
           title: feature_title,
           brief: formatted_brief,
           status: "discovering",
-          criteria_clarity_state: "pending"
+          criteria_clarity_state: "pending",
+          delivery_policy: project.feature_delivery_policy_for_new_features
         )
         FeatureIntentIssue.create!(feature_intent: feature_intent, issue: issue) if issue
         Result.new(feature_intent: feature_intent)

@@ -697,6 +697,7 @@ class ProjectsController < ApplicationController
       :pr_approval_escalation_hours,
       :allow_bot_authored_pr_auto_merge, :auto_fix_merge_conflicts, :auto_scan_security,
       :lid_mode, :tdd_mode,
+      :new_feature_delivery_policy, :confidence_delivery_enrollment_enabled,
       :generated_label_name, :automation_label_name,
       :label_integration_mode,
         :enhance_issue_needs_input_label_name, :enhance_issue_enhanced_label_name,

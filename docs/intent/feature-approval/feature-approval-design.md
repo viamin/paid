@@ -14,6 +14,14 @@ Those features use issue-level readiness and completion-blocking follow-ups;
 existing features retain their policy until deliberately migrated. Shared
 record types and ordinary CI/security/quality checks remain reusable.
 
+`FeatureIntent#delivery_policy` is the explicit immutable boundary between
+these policies. The policy/enrollment foundation is tracked by P01/#4310 in
+the [human-centered delivery plan](../../rdrs/human-centered-inbox-implementation.md):
+it defaults all existing records to `approval_gated`, snapshots only new
+enrollments, and fails closed for `confidence_driven` admission until P10–P12
+ship the complete readiness, review, and completion wiring. This segment does
+not own a second record model or a competing admission gate.
+
 > Companion to the high-level design (`docs/high-level-design.md`). This
 > segment covers the human-led feature operating mode from
 > [RDR-066](../../rdrs/RDR-066-feature-intent-approval-lifecycle.md) in two
