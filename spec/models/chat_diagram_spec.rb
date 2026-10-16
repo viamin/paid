@@ -7,7 +7,7 @@ RSpec.describe ChatDiagram do
 
   it { is_expected.to belong_to(:chat_session) }
   it { is_expected.to belong_to(:chat_message).optional }
-  it { is_expected.to have_many(:comments).class_name("ChatDiagramComment").dependent(:restrict_with_exception) }
+  it { is_expected.to have_many(:comments).class_name("ChatDiagramComment").dependent(:destroy) }
 
   # @spec QUESTION-EXPLORATION-003 QUESTION-EXPLORATION-009
   it "accepts a constrained, relationship-aware description" do
@@ -21,5 +21,13 @@ RSpec.describe ChatDiagram do
 
     expect(diagram).not_to be_valid
     expect(diagram.errors[:description]).to include("contains an unsafe link", "references an unknown element")
+  end
+
+  # @spec QUESTION-EXPLORATION-009
+  it "rejects non-string links without raising" do
+    diagram.description["elements"].first["href"] = 5
+
+    expect { diagram.valid? }.not_to raise_error
+    expect(diagram.errors[:description]).to include("contains an unsafe link")
   end
 end

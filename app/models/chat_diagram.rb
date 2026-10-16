@@ -9,7 +9,7 @@ class ChatDiagram < ApplicationRecord
 
   belongs_to :chat_session
   belongs_to :chat_message, optional: true
-  has_many :comments, class_name: "ChatDiagramComment", dependent: :restrict_with_exception
+  has_many :comments, class_name: "ChatDiagramComment", dependent: :destroy
 
   validates :question_key, :question_title, :summary, :text_equivalent, presence: true
   validate :description_is_typed
@@ -52,9 +52,10 @@ class ChatDiagram < ApplicationRecord
     return errors.add(:description, "contains an invalid element") unless element.is_a?(Hash)
     return errors.add(:description, "contains an invalid element id") unless element["id"].is_a?(String) && ELEMENT_ID.match?(element["id"])
     return errors.add(:description, "contains an incomplete element") unless %w[label description].all? { |key| element[key].is_a?(String) && element[key].present? }
-    return unless element["href"].present? && !SAFE_LINK.match?(element["href"])
+    href = element["href"]
+    return if href.nil? || (href.is_a?(String) && href.blank?)
 
-    errors.add(:description, "contains an unsafe link")
+    errors.add(:description, "contains an unsafe link") unless href.is_a?(String) && SAFE_LINK.match?(href)
   end
 
   def validate_relationships
