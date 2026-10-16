@@ -26,6 +26,7 @@ module Tools
       "Tools::GetIssueDetails",
       "Tools::GetPullRequestDetails",
       "Tools::SubmitClarifyingAnswers",
+      "Tools::SaveClarifyingAnswer",
       "Tools::CreateIssue",
       "Tools::EditIssue",
       "Tools::SetLabels",

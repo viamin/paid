@@ -1,0 +1,50 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe ClarifyingQuestions::SaveProgress do
+  let(:account) { create(:account) }
+  let(:project) { create(:project, account:) }
+  let(:user) { create(:user, :admin, account:) }
+  let(:questions) { [ "Which behavior is expected?", "Should this use a flag?" ] }
+  let(:issue) { create(:issue, :needs_input, project:, needs_input_questions: questions) }
+  let(:chat_session) { create(:chat_session, account:, project:, created_by: user, clarifying_question_issue: issue) }
+
+  # @spec QUESTION-EXPLORATION-002 @spec QUESTION-EXPLORATION-013
+  it "persists one answer while leaving other questions unresolved" do
+    progress = described_class.call(
+      chat_session:,
+      position: 1,
+      answer: "Return the validation error inline.",
+      evidence_context: "The operator rejected a redirect after reviewing the current form.",
+      design_claim: "QUESTION-EXPLORATION-002",
+      actor: user
+    )
+
+    expect(progress).to have_attributes(
+      issue:,
+      question: questions.first,
+      answer: "Return the validation error inline.",
+      evidence_context: "The operator rejected a redirect after reviewing the current form.",
+      design_claim: "QUESTION-EXPLORATION-002",
+      answered_by: user
+    )
+    expect(issue.clarifying_question_progresses.where(answer: nil)).to contain_exactly(
+      have_attributes(position: 2, question: questions.second)
+    )
+  end
+
+  # @spec QUESTION-EXPLORATION-013
+  it "updates the same durable record when an answer is revised after the chat is archived" do
+    described_class.call(chat_session:, position: 1, answer: "First answer", actor: user)
+    ChatSessions::Archive.call(chat_session:)
+
+    expect {
+      described_class.call(chat_session:, position: 1, answer: "Revised answer", actor: user)
+    }.not_to change(ClarifyingQuestionProgress, :count)
+
+    expect(issue.clarifying_question_progresses.find_by(position: 1)).to have_attributes(
+      answer: "Revised answer", answered_by: user
+    )
+  end
+end
