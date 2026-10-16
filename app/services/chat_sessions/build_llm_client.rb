@@ -120,7 +120,7 @@ module ChatSessions
 
     def persist_curated_model!(runner)
       # @spec CHAT-API-026
-      option = CuratedModelOptions.resolve(runner:)
+      option = CuratedModelOptions.resolve(runner:, projects: chat_session.llm_policy_projects)
       unless option
         raise LlmClientConfigurationError,
           "No compatible Low chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy."

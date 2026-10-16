@@ -7,16 +7,17 @@ module ChatSessions
   class RunnerModelOptions
     Option = Data.define(:label, :value, :runner_id, :model_id, :tier)
 
-    def self.options_for(runners)
-      new(runners).options
+    def self.options_for(runners, projects: [])
+      new(runners, projects: projects).options
     end
 
-    def self.resolve(runners:, value:)
-      options_for(runners).find { |option| option.value == value }
+    def self.resolve(runners:, value:, projects: [])
+      options_for(runners, projects: projects).find { |option| option.value == value }
     end
 
-    def initialize(runners)
+    def initialize(runners, projects: [])
       @runners = runners
+      @projects = projects
     end
 
     def options
@@ -25,11 +26,11 @@ module ChatSessions
 
     private
 
-    attr_reader :runners
+    attr_reader :runners, :projects
 
     def options_for_runner(runner)
       # @spec CHAT-SESSION-PREFERENCES-003
-      CuratedModelOptions.for_runner(runner).map do |curated|
+      CuratedModelOptions.for_runner(runner, projects: projects).map do |curated|
         option(runner, curated.model_id, "#{runner.display_name} — #{curated.label}", curated.tier)
       end
     end

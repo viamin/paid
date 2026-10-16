@@ -39,4 +39,32 @@ RSpec.describe ChatSessions::RunnerModelOptions do
 
     expect(described_class.options_for([ runner ]).map(&:model_id)).to eq(%w[gpt-5.6-terra gpt-5.6-sol])
   end
+
+  # @spec CHAT-SESSION-PREFERENCES-003
+  it "excludes choices above the linked project's model tier limit" do
+    project = create(:project, account: account, model_preferences: { "max_tier" => "low" })
+
+    options = described_class.options_for([ runner ], projects: [ project ])
+
+    expect(options.map(&:model_id)).to eq([ "gpt-5.6-luna" ])
+  end
+
+  # @spec CHAT-SESSION-PREFERENCES-003
+  it "excludes models disabled by an operator" do
+    LlmModel.find_by!(model_id: "gpt-5.6-terra").update!(operator_active_override: false)
+
+    expect(described_class.options_for([ runner ]).map(&:model_id)).to eq(%w[gpt-5.6-luna gpt-5.6-sol])
+  end
+
+  # @spec CHAT-SESSION-PREFERENCES-003
+  it "excludes choices above the linked project's execution policy tier limit" do
+    project = create(:project, account: account)
+    policy = create(:coordination_policy, :active, account: account, project: project,
+      policy_type: "execution", policy_key: "agent_execution")
+    policy.current_version.update!(rules: { "controls" => { "max_model_tier" => "low" } })
+
+    options = described_class.options_for([ runner ], projects: [ project ])
+
+    expect(options.map(&:model_id)).to eq([ "gpt-5.6-luna" ])
+  end
 end

@@ -36,6 +36,9 @@ existing tier but cannot add choices or promote a chat to a more expensive
 tier. API-key availability evidence, operator disables, and agent-harness
 compatibility filter these choices. An unavailable tier has actionable
 feedback rather than silently selecting a higher tier.
+Project provider restrictions, model allowlists and exclusions, and tier
+limits filter the choices for linked project context through the same policy
+path used by agent runs.
 
 The submitted option is resolved against the current user's available chat
 runners before it is saved, so a stale or crafted selection cannot pair a

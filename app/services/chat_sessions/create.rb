@@ -189,8 +189,12 @@ module ChatSessions
 
     def curated_model_for(runner)
       # @spec CHAT-API-026
-      CuratedModelOptions.resolve(runner:) ||
+      CuratedModelOptions.resolve(runner:, projects: policy_projects) ||
         raise(ArgumentError, "No compatible Low chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy.")
+    end
+
+    def policy_projects
+      @policy_projects ||= account.projects.where(id: project_id).to_a
     end
 
     def default_runner_for_user

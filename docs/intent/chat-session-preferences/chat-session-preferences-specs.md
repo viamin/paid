@@ -32,7 +32,9 @@
   concrete model ID, and SHALL reject selections that do not belong to an
   available runner's curated choices. Low SHALL be the default for new chats;
   legacy Automatic sessions SHALL resolve to Low on execution while explicit
-  stored selections remain unchanged.
+  stored selections remain unchanged. The choices and defaults SHALL satisfy
+  operator controls and every linked project's provider, model, and tier
+  policies.
   *Tests:* `spec/services/chat_sessions/runner_model_options_spec.rb`,
   `spec/services/chat_sessions/create_spec.rb`,
   `spec/services/chat_sessions/build_llm_client_spec.rb`.

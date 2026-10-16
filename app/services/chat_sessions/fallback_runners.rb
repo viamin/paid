@@ -44,7 +44,7 @@ module ChatSessions
 
     def switch!(chat_session:, runner:)
       # @spec CHAT-API-026
-      option = CuratedModelOptions.resolve(runner:) unless runner.free_model_policy?
+      option = CuratedModelOptions.resolve(runner:, projects: chat_session.llm_policy_projects) unless runner.free_model_policy?
       model = if runner.free_model_policy?
         FreeModels::SelectChatModel.for_session(runner: runner, chat_session: chat_session).model_id
       else

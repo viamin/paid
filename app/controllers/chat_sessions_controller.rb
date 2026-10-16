@@ -322,13 +322,20 @@ class ChatSessionsController < ApplicationController
 
     selection = ChatSessions::RunnerModelOptions.resolve(
       runners: available_chat_runners,
-      value: value
+      value: value,
+      projects: runner_model_policy_projects(permitted)
     )
     raise ArgumentError, "Choose a valid runner and model combination." unless selection
 
     permitted[:runner_id] = selection.runner_id
     permitted[:model] = selection.model_id
-    permitted[:metadata] = (@chat_session&.metadata || {}).merge("model_tier" => selection.tier)
+    permitted[:metadata] = (@chat_session&.metadata || {}).merge(permitted[:metadata] || {}).merge("model_tier" => selection.tier)
+  end
+
+  def runner_model_policy_projects(permitted)
+    project_id = permitted.key?(:project_id) ? permitted[:project_id] : @chat_session&.project_id
+    linked_ids = @chat_session&.chat_session_projects&.pluck(:project_id) || []
+    current_account.projects.where(id: linked_ids << project_id).to_a
   end
 
   def normalize_legacy_create_params!(permitted)

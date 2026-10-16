@@ -15,16 +15,17 @@ module ChatSessions
       "high" => "gpt-5.6-sol"
     }.freeze
 
-    def self.for_runner(runner)
-      new(runner).options
+    def self.for_runner(runner, projects: [])
+      new(runner, projects: projects).options
     end
 
-    def self.resolve(runner:, tier: "low")
-      for_runner(runner).find { |option| option.tier == tier.to_s }
+    def self.resolve(runner:, tier: "low", projects: [])
+      for_runner(runner, projects: projects).find { |option| option.tier == tier.to_s }
     end
 
-    def initialize(runner)
+    def initialize(runner, projects: [])
       @runner = runner
+      @projects = projects
     end
 
     def options
@@ -38,7 +39,7 @@ module ChatSessions
 
     private
 
-    attr_reader :runner
+    attr_reader :runner, :projects
 
     Option = Data.define(:tier, :model_id, :label)
 
@@ -47,7 +48,7 @@ module ChatSessions
         runner_key: runner.runner_key,
         api_provider: model_provider,
         auth_type: runner.auth_type
-      ).select(&:model?).map(&:model).reject { |model| unavailable?(model) }
+      ).select(&:model?).map(&:model).reject { |model| unavailable?(model) }.select { |model| permitted?(model) }
     end
 
     def preferred_model(tier, models)
@@ -66,6 +67,19 @@ module ChatSessions
 
     def unavailable?(model)
       availability_checks(model).any? { |check| check.status == "unavailable" && !check.stale? }
+    end
+
+    def permitted?(model)
+      return false unless verified_models.permitted?(model.model_id)
+
+      projects.all? do |project|
+        verified_models.permitted?(model.model_id, project: project) &&
+          PolicyControls::Evaluate.call(project: project, runner: runner, model: model).violations.empty?
+      end
+    end
+
+    def verified_models
+      @verified_models ||= Runners::VerifiedModels.new(runner)
     end
 
     def availability_checks(model)

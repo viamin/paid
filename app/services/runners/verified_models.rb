@@ -26,7 +26,8 @@ module Runners
       model = LlmModel.find_by(model_id: model_id)
       return false if model&.operator_active_override == false
 
-      provider = DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key]
+      provider = DefaultTierModelIds::RUNNER_KEY_TO_MODEL_PROVIDER[runner.runner_key] ||
+        runner.direct_outbound_llm_model_provider
       return false if provider.blank? || (model && model.provider != provider)
       return true unless project
 
