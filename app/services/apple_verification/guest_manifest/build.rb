@@ -5,6 +5,7 @@ module AppleVerification
     # Builds the closed guest protocol from workflow content bound to its
     # approved digest; callers cannot provide ad-hoc operations.
     # @spec APPLE-WORKER-013
+    # @spec APPLE-RESULT-006
     class Build
       def self.call(attempt:)
         new(attempt:).call
@@ -29,7 +30,7 @@ module AppleVerification
       end
 
       def profile_operations
-        configuration.profiles.flat_map { |profile| operations_for(profile) }
+        selected_profiles.flat_map { |profile| operations_for(profile) }
       end
 
       def configuration
@@ -38,6 +39,15 @@ module AppleVerification
 
       def operations_for(profile)
         [ *package_operations(profile), build_operation(profile), *test_operations(profile), *simulator_operations(profile), *capture_operations(profile) ]
+      end
+
+      def selected_profiles
+        return configuration.profiles unless requested_capture
+
+        profiles = configuration.profiles.select { |profile| selected_captures(profile).any? }
+        raise ConfigurationParser::ConfigurationError, "requested capture #{requested_capture.inspect} is not declared" if profiles.empty?
+
+        profiles
       end
 
       def package_operations(profile)
@@ -55,12 +65,22 @@ module AppleVerification
       def simulator_operations(profile)
         return [] unless profile.platform.in?(%w[ios ipados]) && profile.captures.any?
 
-        required = profile.captures.any?(&:required)
+        required = selected_captures(profile).any?(&:required)
         [ operation("boot_simulator", { "destination" => profile.worker.simulator }, required:), operation("install_app", { "bundle_id" => profile.xcode.bundle_id }, required:) ]
       end
 
       def capture_operations(profile)
-        profile.captures.flat_map { |capture| capture.flow.map { |step| flow_operation(profile, capture, step) } }
+        selected_captures(profile).flat_map { |capture| capture.flow.map { |step| flow_operation(profile, capture, step) } }
+      end
+
+      def selected_captures(profile)
+        return profile.captures unless requested_capture
+
+        profile.captures.select { |capture| "#{profile.name}.#{capture.id}" == requested_capture }
+      end
+
+      def requested_capture
+        @requested_capture ||= @attempt.requested_capture.presence
       end
 
       def flow_operation(profile, capture, step)

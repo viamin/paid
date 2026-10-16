@@ -85,8 +85,22 @@ RSpec.describe AppleVerification::GuestManifest::Build do
     expect(operations.filter { |operation| %w[test boot_simulator install_app launch_app capture].include?(operation.fetch("type")) }).to all(include("required" => false))
   end
 
-  def attempt_for(content)
-    attempt = create(:apple_verification_attempt)
+  # @spec APPLE-RESULT-006
+  # @spec APPLE-WORKER-013
+  it "dispatches only a requested capture with its profile setup" do
+    attempt = attempt_for(mixed_profiles_with_multiple_captures_yaml, requested_capture: "ios-app.second-screen")
+
+    operations = described_class.call(attempt:)
+
+    expect(operations.map { |operation| operation.fetch("type") }).to eq(
+      %w[materialize_source build boot_simulator install_app launch_app capture export_artifacts]
+    )
+    expect(operations.last(3).map { |operation| operation.dig("payload", "name") }).to eq([ nil, "second-screen", nil ])
+    expect(operations.filter { |operation| %w[boot_simulator install_app launch_app capture].include?(operation.fetch("type")) }).to all(include("required" => false))
+  end
+
+  def attempt_for(content, requested_capture: nil)
+    attempt = create(:apple_verification_attempt, requested_capture:)
     revision = attempt.apple_verification_workflow_revision
     revision.update_columns(configuration_content: content, content_digest: "sha256:#{Digest::SHA256.hexdigest(content)}")
     attempt
@@ -111,6 +125,38 @@ RSpec.describe AppleVerification::GuestManifest::Build do
           captures:
             - id: ios-screen
               required: true
+              flow: [ { launch_app: {} }, { capture: {} } ]
+        mac-app:
+          platform: macos
+          xcode:
+            project: Mac.xcodeproj
+            scheme: Mac
+            bundle_id: dev.paid.mac
+          captures:
+            - id: mac-screen
+              required: true
+              flow: [ { launch_app: {} }, { capture: {} } ]
+    YAML
+  end
+
+  def mixed_profiles_with_multiple_captures_yaml
+    <<~YAML
+      version: 1
+      profiles:
+        ios-app:
+          platform: ios
+          worker:
+            simulator: iPhone 17
+          xcode:
+            project: iOS.xcodeproj
+            scheme: IOS
+            bundle_id: dev.paid.ios
+          captures:
+            - id: first-screen
+              required: true
+              flow: [ { launch_app: {} }, { capture: {} } ]
+            - id: second-screen
+              required: false
               flow: [ { launch_app: {} }, { capture: {} } ]
         mac-app:
           platform: macos

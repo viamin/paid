@@ -110,6 +110,29 @@ RSpec.describe AppleVerificationAttempts::Provision do
   end
 
   # @spec APPLE-ATTEMPT-004
+  # @spec APPLE-WORKER-005
+  it "uses the dispatched manifest when a draft revision changes before the guest returns" do
+    attempt = provisioning_attempt
+    revision = attempt.apple_verification_workflow_revision
+    bind_configuration(revision, capture_workflow_yaml)
+    lifecycle = instance_double(AppleVerification::Lifecycle, provision: provisioned_handle)
+    guest_job = class_double(AppleVerification::ExecuteGuestJob)
+    completion = class_double(AppleVerificationAttempts::Complete)
+    dispatched_manifest = nil
+    allow(completion).to receive(:call)
+    allow(guest_job).to receive(:call) do |manifest:, **|
+      dispatched_manifest = manifest
+      bind_configuration(revision, changed_capture_workflow_yaml)
+      guest_result_for(manifest)
+    end
+
+    described_class.new(lifecycle:, guest_job:, completion:, host_mount_check:).call(attempt)
+
+    expect(dispatched_manifest.dig("operations").map { |operation| operation.fetch("type") }).to include("capture")
+    expect(completion).to have_received(:call).with(attempt:, outcome: "succeeded", failure_classification: nil, lifecycle:)
+  end
+
+  # @spec APPLE-ATTEMPT-004
   it "falls back to the image's guest executor url instead of a readiness-only host connection payload" do
     attempt = provisioning_attempt
     lifecycle = instance_double(AppleVerification::Lifecycle)
@@ -336,6 +359,23 @@ RSpec.describe AppleVerificationAttempts::Provision do
             - id: initial-screen
               required: true
               flow: [ { launch_app: {} }, { wait_for_accessibility_id: { id: main-screen } }, { capture: { name: initial-screen } } ]
+    YAML
+  end
+
+  def changed_capture_workflow_yaml
+    <<~YAML
+      version: 1
+      profiles:
+        mac-app:
+          platform: macos
+          xcode:
+            project: App.xcodeproj
+            scheme: App
+            bundle_id: dev.paid.app
+          captures:
+            - id: changed-screen
+              required: true
+              flow: [ { launch_app: {} }, { capture: { name: changed-screen } } ]
     YAML
   end
 end
