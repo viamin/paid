@@ -10,7 +10,7 @@ module FeatureIntents
   # @spec DESIGN-RECONCILIATION-001
   class ReconcileDesignArtifacts
     Finding = Data.define(:fingerprint, :path, :revision, :state, :evidence)
-    Result = Data.define(:findings, :last_successful_coverage_at) do
+    Result = Data.define(:findings, :associations, :last_successful_coverage_at) do
       def actionable_findings = findings.reject { |finding| finding.state == "deferred" }
     end
 
@@ -26,7 +26,11 @@ module FeatureIntents
 
     def call
       findings = artifacts.filter_map { |artifact| finding_for(artifact) }.uniq(&:fingerprint)
-      Result.new(findings:, last_successful_coverage_at: coverage_complete? ? Time.current : nil)
+      Result.new(
+        findings:,
+        associations: artifacts.flat_map { |artifact| associations_for(artifact) },
+        last_successful_coverage_at: coverage_complete? ? Time.current : nil
+      )
     end
 
     private
@@ -42,11 +46,24 @@ module FeatureIntents
       Finding.new(fingerprint: fingerprint(artifact, state), path: artifact[:path], revision:, state:, evidence:)
     end
 
+    def associations_for(artifact)
+      normalize(artifact).fetch(:associated_issues).filter_map do |association|
+        identity = qualified_reference(association)
+        next unless identity && issue_identities.include?(identity)
+
+        {
+          path: artifact[:path], revision:, identity:,
+          issue_revision: association[:revision] || association["revision"],
+          provenance: association[:provenance] || association["provenance"]
+        }.compact
+      end
+    end
+
     def state_for(artifact)
       return [ "unverifiable", [ "GitHub coverage was incomplete" ] ] unless coverage_complete?
       return [ "deferred", [ "Artifact status is #{artifact[:status]}" ] ] if deferred?(artifact)
 
-      references = artifact[:references]
+      references = artifact[:references] | artifact[:associated_identities]
       return stale_metadata(artifact) if references.empty? && artifact[:stored_identities].any?
       return [ "missing_tree", [ "No explicit qualified issue links were found" ] ] if references.empty?
 
@@ -60,12 +77,14 @@ module FeatureIntents
       {
         status: artifact[:status].to_s,
         references: qualified_references(artifact[:related_issues]),
-        stored_identities: qualified_references(artifact[:stored_identities])
+        stored_identities: qualified_references(artifact[:stored_identities]),
+        associated_issues: Array(artifact[:associated_issues]),
+        associated_identities: qualified_references(Array(artifact[:associated_issues]))
       }
     end
 
     def deferred?(artifact)
-      artifact[:status].casecmp?("draft") || artifact[:status].casecmp?("deferred") || artifact[:status].casecmp?("superseded")
+      %w[draft deferred superseded historical].any? { |status| artifact[:status].casecmp?(status) }
     end
 
     def stale_metadata(artifact)

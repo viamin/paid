@@ -74,6 +74,17 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     expect(DesignArtifactFinding.count).to eq(0)
   end
 
+  it "uses a stored Paid feature-intent link without requiring a document repair" do
+    create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
+    linked_issue = create(:issue, project:, github_number: 101)
+    create(:feature_intent_issue, feature_intent:, issue: linked_issue)
+
+    described_class.perform_now(project.id, design_pr.pull_request_number)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.sole.provenance).to eq("Paid feature intent linkage")
+  end
+
   it "uses issue links listed under an RDR relationship heading" do
     artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
       path: "docs/rdrs/RDR-020-service-container-architecture.md",
@@ -86,6 +97,25 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     described_class.perform_now(project.id)
 
     expect(DesignArtifactFinding.count).to eq(0)
+  end
+
+  it "uses an exact issue backlink to reconcile an RDR without repairing the document" do
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-020-service-container-architecture.md",
+      revision: "a" * 40,
+      body: "Status: Accepted"
+    )
+    create(:issue, project:, github_number: 216,
+      body: "Implements docs/rdrs/RDR-020-service-container-architecture.md")
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ artifact ])
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.sole).to have_attributes(
+      artifact_path: artifact.path, artifact_revision: artifact.revision,
+      issue_identity: "acme/widget#216", provenance: "exact artifact backlink"
+    )
   end
 
   it "does not treat an incidental issue mention as an issue-tree relationship" do

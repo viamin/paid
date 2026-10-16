@@ -48,6 +48,9 @@ module FeatureIntents
         status: design_pr.draft? ? "draft" : nil,
         related_issues: explicit_references(issue&.body),
         stored_identities: design_pr.feature_intent.issues.map { |linked| identity_for(linked) },
+        associated_issues: design_pr.feature_intent.issues.filter_map do |linked|
+          association_for(linked, "Paid feature intent linkage")
+        end,
         coverage_complete: issue.present? && design_pr.draft.in?([ true, false ])
       }
     end
@@ -90,9 +93,9 @@ module FeatureIntents
     end
 
     def reconcile(artifact, revision:, coverage_complete: true)
-      issues, complete = issue_coverage(artifact)
+      issues, complete, associated_issues = issue_coverage(artifact)
       PersistDesignArtifactFindings.call(
-        project:, revision:, artifacts: [ artifact ], issues:,
+        project:, revision:, artifacts: [ artifact.merge(associated_issues:) ], issues:,
         coverage_complete: coverage_complete && artifact.fetch(:coverage_complete, true) && complete
       )
     end
@@ -113,7 +116,44 @@ module FeatureIntents
     def issue_coverage(artifact)
       references = artifact.fetch(:related_issues)
       projects = projects_for(references)
-      [ issue_facts(projects.values), references.all? { |reference| projects.key?(repository_for(reference)) } ]
+      associations = Array(artifact[:associated_issues]) + structural_associations(artifact)
+      association_projects = associations.filter_map { |association| association[:project] }.uniq
+      [
+        issue_facts((projects.values + association_projects).uniq),
+        references.all? { |reference| projects.key?(repository_for(reference)) },
+        associations
+      ]
+    end
+
+    def structural_associations(artifact)
+      exact_backlinks(artifact) + manifest_associations(artifact)
+    end
+
+    def exact_backlinks(artifact)
+      Issue.joins(:project).where(projects: { account_id: project.account_id }).where(
+        "issues.body LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(artifact[:path])}%"
+      ).filter_map do |issue|
+        association_for(issue, "exact artifact backlink")
+      end
+    end
+
+    def manifest_associations(artifact)
+      FeatureIntent.where(project:).includes(:issues).filter_map do |feature_intent|
+        next unless artifact[:path].in?(feature_intent.design_document_paths)
+
+        feature_intent.issues.filter_map { |issue| association_for(issue, "canonical issue-tree manifest") }
+      end.flatten
+    end
+
+    def association_for(issue, provenance)
+      return unless issue.github_number
+
+      {
+        repository: issue.project.full_name,
+        number: issue.github_number,
+        revision: issue.github_updated_at&.iso8601,
+        provenance:, project: issue.project
+      }
     end
 
     def projects_for(references)

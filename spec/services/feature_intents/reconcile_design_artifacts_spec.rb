@@ -24,6 +24,35 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifacts do
     expect(result.last_successful_coverage_at).to be_present
   end
 
+  it "resolves an unambiguous local association while retaining its provenance" do
+    result = described_class.call(
+      project:,
+      revision: "a" * 40,
+      artifacts: [ {
+        path: "docs/rdrs/RDR-100.md",
+        related_issues: [],
+        associated_issues: [ { repository: "acme/widget", number: 10, provenance: "explicit artifact backlink" } ]
+      } ],
+      issues:
+    )
+
+    expect(result.findings).to be_empty
+    expect(result.associations).to contain_exactly(
+      include(path: "docs/rdrs/RDR-100.md", identity: "acme/widget#10", provenance: "explicit artifact backlink")
+    )
+  end
+
+  it "treats an explicitly historical decision as deliberately deferred" do
+    result = described_class.call(
+      project:,
+      revision: "a" * 40,
+      artifacts: [ { path: "docs/rdrs/RDR-099.md", status: "Historical" } ],
+      issues:
+    )
+
+    expect(result.findings.sole).to have_attributes(state: "deferred")
+  end
+
   it "does not convert failed GitHub coverage into a missing-tree finding" do
     result = described_class.call(
       project:,
