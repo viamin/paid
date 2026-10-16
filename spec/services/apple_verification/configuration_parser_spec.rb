@@ -15,6 +15,7 @@ RSpec.describe AppleVerification::ConfigurationParser do
           xcode:
             project: iOS/ColorMatchingLPS.xcodeproj
             scheme: ColorMatchingLPS
+            bundle_id: dev.viamin.ColorMatchingLPS
           tests:
             required: true
           captures:
@@ -56,6 +57,7 @@ RSpec.describe AppleVerification::ConfigurationParser do
     expect(profile.platform).to eq("ios")
     expect(profile.xcode.project).to eq("iOS/ColorMatchingLPS.xcodeproj")
     expect(profile.xcode.scheme).to eq("ColorMatchingLPS")
+    expect(profile.xcode.bundle_id).to eq("dev.viamin.ColorMatchingLPS")
     expect(profile.tests_required).to be(true)
     expect(profile.captures.first.id).to eq("initial-screen")
     expect(profile.captures.first.flow.map(&:operation)).to eq(%w[launch_app wait_for_accessibility_id capture])
@@ -275,6 +277,16 @@ RSpec.describe AppleVerification::ConfigurationParser do
 
     expect(configuration.profiles.first.captures).to eq([])
     expect(configuration.required_checks).to eq([ "cli-tool.tests" ])
+  end
+
+  it "rejects a capture profile without its application bundle identifier" do # @spec APPLE-WORKER-011
+    expect { described_class.call(content: ios_yaml.sub(/^\s+bundle_id:.*\n/, "")) }
+      .to raise_error(described_class::ConfigurationError, /xcode\.bundle_id is required when captures are configured/)
+  end
+
+  it "rejects an iOS capture profile without a simulator destination" do # @spec APPLE-WORKER-011
+    expect { described_class.call(content: ios_yaml.sub(/^\s+simulator:.*\n/, "")) }
+      .to raise_error(described_class::ConfigurationError, /worker\.simulator is required for iOS or iPadOS captures/)
   end
 
   it "rejects duplicate capture ids within a profile" do # @spec APPLE-WORKER-011

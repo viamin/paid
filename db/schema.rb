@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_031051) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_034134) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -570,6 +570,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_031051) do
     t.bigint "apple_worker_profile_id", null: false
     t.datetime "approved_at"
     t.bigint "approved_by_id", comment: "Project administrator that approved this revision."
+    t.text "configuration_content", comment: "Committed Apple verification configuration bound to the workflow digest."
     t.string "content_digest", null: false, comment: "SHA-256 digest of committed workflow content."
     t.datetime "created_at", null: false
     t.string "lifecycle_gate", null: false

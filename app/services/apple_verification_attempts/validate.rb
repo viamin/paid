@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 module AppleVerificationAttempts
   # Validates preconditions on a queued Apple verification attempt before it is
   # allocated a guest. When a precondition fails, the attempt is marked failed
@@ -44,6 +46,7 @@ module AppleVerificationAttempts
       return [ "project_configuration", "source digest is blank" ] if source_digest_blank?
       return [ "project_configuration", "source digest is invalid" ] unless source_digest_valid?
       return [ "project_configuration", "commit sha is invalid" ] if commit_sha_invalid?
+      return [ "project_configuration", configuration_error ] if configuration_error
 
       quota_failure
     end
@@ -91,6 +94,28 @@ module AppleVerificationAttempts
 
     def run_attempts
       AppleVerificationAttempt.where(agent_run_id: @attempt.agent_run_id).where.not(id: @attempt.id)
+    end
+
+    def configuration_error
+      content = @attempt.apple_verification_workflow_revision.configuration_content
+      return "workflow configuration is missing" if content.blank?
+      return "workflow configuration digest does not match approved revision" unless workflow_digest_matches?(content)
+
+      AppleVerification::ConfigurationParser.call(content:)
+      AppleVerification::GuestProtocol.validate!(
+        "version" => AppleVerification::GuestProtocol::VERSION,
+        "operations" => AppleVerification::GuestManifest::Build.call(attempt: @attempt)
+      )
+      nil
+    rescue AppleVerification::ConfigurationParser::ConfigurationError,
+      AppleVerification::GuestProtocol::InvalidManifestError,
+      AppleVerification::GuestProtocol::UnsupportedOperationError,
+      AppleVerification::GuestProtocol::ArbitraryShellError => error
+      error.message
+    end
+
+    def workflow_digest_matches?(content)
+      "sha256:#{Digest::SHA256.hexdigest(content)}" == @attempt.apple_verification_workflow_revision.content_digest
     end
   end
 end

@@ -68,9 +68,10 @@ project-bound MCP operations — `verify_apple_project`,
 `apple_verification_workers` rollout flag and the project mode permit. An
 assigned paid-agent may submit its source, run draft or approved workflows on
 demand, inspect results, and cancel its own active attempts. A capture request
-persists the declared `requested_capture` on its attempt, carries it to the
-worker, and returns it through verification state so the selected capture
-cannot be confused with a general verification request. An agent cannot approve
+persists the declared `requested_capture` on its attempt, dispatches only that
+capture and its profile setup to the worker, and returns it through verification
+state so the selected capture cannot be confused with a general verification
+request. An agent cannot approve
 workflows, enable automatic mode, alter network policy, select privileged
 images, create waivers, or exceed project quotas.
 

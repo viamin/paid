@@ -43,6 +43,8 @@ RSpec.describe AppleVerification::Setup::SmokeAttemptFactory do
       expect(result.revision.approved_at).to be_nil
       expect(result.revision.approved_by_id).to be_nil
       expect(result.revision.lifecycle_gate).to eq("agent_iteration")
+      expect(result.revision.configuration_content).to eq(described_class::SYNTHETIC_CONFIGURATION_CONTENT)
+      expect(result.revision.content_digest).to eq("sha256:#{Digest::SHA256.hexdigest(result.revision.configuration_content)}")
     end
 
     it "creates a fresh attempt bound to the supplied agent_run" do

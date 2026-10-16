@@ -77,9 +77,59 @@ RSpec.describe AppleVerificationAttempts::Provision do
     expect_provision_for(attempt, lifecycle)
     expect(guest_job).to have_received(:call)
     expect(completion).to have_received(:call).with(
-      attempt:, outcome: "failed", failure_classification: "project_configuration", lifecycle:
+      attempt:, outcome: "succeeded", failure_classification: nil, lifecycle:
     )
     expect(attempt.reload.status).to eq("running")
+  end
+
+  # @spec APPLE-WORKER-013
+  # @spec APPLE-ATTEMPT-009
+  it "derives approved build, test, and capture operations from the bound configuration" do
+    attempt = provisioning_attempt
+    bind_configuration(attempt.apple_verification_workflow_revision, capture_workflow_yaml)
+    lifecycle = instance_double(AppleVerification::Lifecycle, provision: provisioned_handle)
+    guest_job = class_double(AppleVerification::ExecuteGuestJob)
+    completion = class_double(AppleVerificationAttempts::Complete)
+    dispatched_manifest = nil
+    allow(completion).to receive(:call)
+    allow(guest_job).to receive(:call) do |manifest:, **|
+      dispatched_manifest = manifest
+      guest_result_for(manifest)
+    end
+
+    described_class.new(lifecycle:, guest_job:, completion:, host_mount_check:).call(attempt)
+
+    expect(dispatched_manifest.fetch("operations").map { |operation| operation.fetch("type") }).to eq(
+      %w[materialize_source resolve_swift_packages build test boot_simulator install_app launch_app ui_action capture export_artifacts]
+    )
+    expect(dispatched_manifest.dig("operations", 4, "payload")).to eq("destination" => "iPhone 17")
+    expect(dispatched_manifest.dig("operations", 5, "payload")).to eq("bundle_id" => "dev.paid.app")
+    expect(dispatched_manifest.dig("operations", 6, "payload")).to eq("bundle_id" => "dev.paid.app")
+    expect(dispatched_manifest.dig("operations", 8, "payload")).to include("platform" => "ios", "target" => "simulator_screen")
+    expect(completion).to have_received(:call).with(attempt:, outcome: "succeeded", failure_classification: nil, lifecycle:)
+  end
+
+  # @spec APPLE-ATTEMPT-004
+  # @spec APPLE-WORKER-005
+  it "uses the dispatched manifest when a draft revision changes before the guest returns" do
+    attempt = provisioning_attempt
+    revision = attempt.apple_verification_workflow_revision
+    bind_configuration(revision, capture_workflow_yaml)
+    lifecycle = instance_double(AppleVerification::Lifecycle, provision: provisioned_handle)
+    guest_job = class_double(AppleVerification::ExecuteGuestJob)
+    completion = class_double(AppleVerificationAttempts::Complete)
+    dispatched_manifest = nil
+    allow(completion).to receive(:call)
+    allow(guest_job).to receive(:call) do |manifest:, **|
+      dispatched_manifest = manifest
+      bind_configuration(revision, changed_capture_workflow_yaml)
+      guest_result_for(manifest)
+    end
+
+    described_class.new(lifecycle:, guest_job:, completion:, host_mount_check:).call(attempt)
+
+    expect(dispatched_manifest.dig("operations").map { |operation| operation.fetch("type") }).to include("capture")
+    expect(completion).to have_received(:call).with(attempt:, outcome: "succeeded", failure_classification: nil, lifecycle:)
   end
 
   # @spec APPLE-ATTEMPT-004
@@ -140,7 +190,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
 
     described_class.new(lifecycle:, guest_job:, host_mount_check:).call(attempt)
 
-    expect(attempt.reload).to have_attributes(status: "failed", failure_classification: "project_configuration")
+    expect(attempt.reload).to have_attributes(status: "succeeded", failure_classification: nil)
     expect(attempt.reload.finished_at).to be_present
     manifest = attempt.apple_verification_artifacts.find_by!(kind: "manifest").metadata.fetch("manifest")
     expect(manifest.dig("result", "audit_event_references")).to match_array(attempt.execution_audit_events.pluck(:id).map(&:to_s))
@@ -247,14 +297,7 @@ RSpec.describe AppleVerificationAttempts::Provision do
   end
 
   def guest_manifest_for(attempt)
-    {
-      "version" => AppleVerification::GuestProtocol::VERSION,
-      "source_lanes" => { git: [], credentials: [], object_storage: [], control_plane_api: [] },
-      "operations" => [
-        { "type" => "materialize_source", "payload" => { "digest" => attempt.source_digest } },
-        { "type" => "export_artifacts", "payload" => {} }
-      ]
-    }
+    { "operations" => AppleVerification::GuestManifest::Build.call(attempt:) }
   end
 
   def stub_transport_guest(guest_job, attempt)
@@ -276,12 +319,12 @@ RSpec.describe AppleVerificationAttempts::Provision do
     expect(attempt.apple_verification_artifacts.find_by!(kind: "screenshot").storage_key).to eq("apple-verification/screenshot.png")
     manifest = attempt.apple_verification_artifacts.find_by!(kind: "manifest").metadata.fetch("manifest")
     expect(manifest.fetch("result")).to include(
-      "status" => "failed",
-      "failure_classification" => "project_configuration",
+      "status" => "succeeded",
       "required_checks" => attempt.apple_verification_workflow_revision.required_checks,
       "advisory_checks" => attempt.apple_verification_workflow_revision.advisory_checks,
       "screenshot_metadata" => [ "apple-verification/screenshot.png" ]
     )
+    expect(manifest.fetch("result")).not_to have_key("failure_classification")
     expect(manifest.dig("result", "timings", "provisioning_ms")).to be > 0
     expect(manifest.dig("result", "timings", "running_ms")).to be < manifest.dig("result", "timings", "provisioning_ms")
   end
@@ -291,5 +334,48 @@ RSpec.describe AppleVerificationAttempts::Provision do
       image: nil,
       operations: manifest.fetch("operations").map { |operation| { "type" => operation.fetch("type"), "status" => "succeeded" } }
     )
+  end
+
+  def bind_configuration(revision, content)
+    revision.update_columns(configuration_content: content, content_digest: "sha256:#{Digest::SHA256.hexdigest(content)}")
+  end
+
+  def capture_workflow_yaml
+    <<~YAML
+      version: 1
+      profiles:
+        ios-app:
+          platform: ios
+          worker:
+            simulator: iPhone 17
+          xcode:
+            project: App.xcodeproj
+            scheme: App
+            bundle_id: dev.paid.app
+          bootstrap: spm
+          tests:
+            required: true
+          captures:
+            - id: initial-screen
+              required: true
+              flow: [ { launch_app: {} }, { wait_for_accessibility_id: { id: main-screen } }, { capture: { name: initial-screen } } ]
+    YAML
+  end
+
+  def changed_capture_workflow_yaml
+    <<~YAML
+      version: 1
+      profiles:
+        mac-app:
+          platform: macos
+          xcode:
+            project: App.xcodeproj
+            scheme: App
+            bundle_id: dev.paid.app
+          captures:
+            - id: changed-screen
+              required: true
+              flow: [ { launch_app: {} }, { capture: { name: changed-screen } } ]
+    YAML
   end
 end

@@ -1,8 +1,8 @@
 # RDR-074 Closeout Audit — 2026-10-15
 
-**RDR:** [RDR-074: Settings-Aware Project Readiness](RDR-074-project-readiness.md)  
-**Closeout issue:** #4325  
-**Umbrella:** Tracks #4255 (this audit does not close it)  
+**RDR:** [RDR-074: Settings-Aware Project Readiness](RDR-074-project-readiness.md)
+**Closeout issue:** #4325
+**Umbrella:** Tracks #4255 (this audit does not close it)
 **Conclusion:** **Implemented**
 
 ## Scope and method
