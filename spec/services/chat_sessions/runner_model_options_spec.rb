@@ -76,4 +76,16 @@ RSpec.describe ChatSessions::RunnerModelOptions do
 
     expect(options.map(&:model_id)).to eq([ "gpt-5.6-luna" ])
   end
+
+  # @spec CHAT-SESSION-PREFERENCES-003
+  it "loads catalog and availability evidence once for all curated choices" do
+    20.times do |index|
+      create(:llm_model, :openai, model_id: "gpt-5.6-catalog-#{index}", tier: "high", capability_score: 1.0)
+    end
+
+    queries = capture_queries { described_class.options_for([ runner ]) }
+
+    expect(queries.grep(/FROM "model_availability_checks"/i).size).to eq(1)
+    expect(queries.grep(/FROM "llm_models".*gpt-5.6-catalog-/i)).to be_empty
+  end
 end

@@ -44,11 +44,15 @@ module ChatSessions
     Option = Data.define(:tier, :model_id, :label)
 
     def compatible_models
-      Runners::ModelOptions.call(
+      candidate_models.reject { |model| unavailable?(model) }.select { |model| permitted?(model) }
+    end
+
+    def candidate_models
+      @candidate_models ||= Runners::ModelOptions.call(
         runner_key: runner.runner_key,
         api_provider: model_provider,
         auth_type: runner.auth_type
-      ).select(&:model?).map(&:model).reject { |model| unavailable?(model) }.select { |model| permitted?(model) }
+      ).select(&:model?).map(&:model)
     end
 
     def preferred_model(tier, models)
@@ -66,14 +70,14 @@ module ChatSessions
     end
 
     def unavailable?(model)
-      availability_checks(model).any? { |check| check.status == "unavailable" && !check.stale? }
+      availability_checks_by_model_id.fetch(model.id, []).any? { |check| check.status == "unavailable" && !check.stale? }
     end
 
     def permitted?(model)
-      return false unless verified_models.permitted?(model.model_id)
+      return false unless verified_models.permitted?(model.model_id, model: model)
 
       projects.all? do |project|
-        verified_models.permitted?(model.model_id, project: project) &&
+        verified_models.permitted?(model.model_id, model: model, project: project) &&
           PolicyControls::Evaluate.call(project: project, runner: runner, model: model).violations.empty?
       end
     end
@@ -82,13 +86,17 @@ module ChatSessions
       @verified_models ||= Runners::VerifiedModels.new(runner)
     end
 
-    def availability_checks(model)
-      ModelAvailabilityCheck.where(
-        llm_model: model,
+    def availability_checks_by_model_id
+      @availability_checks_by_model_id ||= ModelAvailabilityCheck.where(
+        llm_model_id: compatible_model_ids,
         runner_key: runner.runner_key,
         auth_type: runner.auth_type,
         account: [ runner.user.account, nil ]
-      )
+      ).group_by(&:llm_model_id)
+    end
+
+    def compatible_model_ids
+      candidate_models.map(&:id)
     end
   end
 end
