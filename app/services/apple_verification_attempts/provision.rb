@@ -7,6 +7,7 @@ module AppleVerificationAttempts
   # @spec APPLE-ATTEMPT-006
   # @spec APPLE-ATTEMPT-004
   # @spec APPLE-TRANSFER-004
+  # @spec APPLE-WORKER-005
   class Provision
     # The timeout monitor runs every five minutes. Keep the request alive for
     # one full sweep after the attempt deadline so the monitor can destroy the
@@ -36,11 +37,12 @@ module AppleVerificationAttempts
       handle = provision_active_attempt(attempt)
       return unless handle
 
-      result = dispatch_guest_job(attempt, handle:, source_lanes:)
+      manifest = guest_manifest(attempt, source_lanes:)
+      result = dispatch_guest_job(attempt, handle:, manifest:)
       running_at = mark_running(attempt)
       return unless running_at
 
-      complete_guest_result(attempt, result:, source_lanes:, running_at:)
+      complete_guest_result(attempt, result:, manifest:, running_at:)
     end
 
     private
@@ -91,11 +93,11 @@ module AppleVerificationAttempts
     # destroy the VM and interrupt the request. `export_artifacts` gives the
     # executor an explicit result handoff rather than leaving a provisioned VM
     # without a result path.
-    def dispatch_guest_job(attempt, handle:, source_lanes:)
+    def dispatch_guest_job(attempt, handle:, manifest:)
       guest_job.call(
         agent_run: attempt.agent_run,
         image_digest: attempt.apple_worker_profile.image_digest,
-        manifest: guest_manifest(attempt, source_lanes:),
+        manifest:,
         guest_connection: AppleVerification::GuestConnection.new(
           connection: usable_connection(handle),
           read_timeout: Config.attempt_timeout_minutes.minutes + GUEST_DISPATCH_CANCELLATION_GRACE
@@ -120,13 +122,13 @@ module AppleVerificationAttempts
     # a missing or failed required check cannot unblock a completion gate.
     # A dispatch raise leaves the attempt non-terminal for TimeoutMonitor and
     # Recovery.
-    def complete_guest_result(attempt, result:, source_lanes:, running_at:)
+    def complete_guest_result(attempt, result:, manifest:, running_at:)
       attempt.with_lock do
         return if attempt.reload.terminal?
 
         outcome = GuestResult.call(
           revision: attempt.apple_verification_workflow_revision,
-          manifest: guest_manifest(attempt, source_lanes:),
+          manifest:,
           operations: result.operations
         )
         references, manifest_artifact = persist_transport_result(attempt, result:, outcome:, running_at:)
@@ -218,18 +220,10 @@ module AppleVerificationAttempts
     end
 
     def guest_manifest(attempt, source_lanes:)
-      # An approved revision currently persists the required check identifiers,
-      # not the protocol payloads (scheme, bundle ID, and declared UI flow)
-      # needed to execute them. Do not invent those values here: GuestResult
-      # fails this manifest closed whenever the revision requires test or
-      # capture work, so a 2xx response can never satisfy that verification.
       {
         "version" => AppleVerification::GuestProtocol::VERSION,
         "source_lanes" => source_lanes,
-        "operations" => [
-          { "type" => "materialize_source", "payload" => { "digest" => attempt.source_digest } },
-          { "type" => "export_artifacts", "payload" => {} }
-        ]
+        "operations" => AppleVerification::GuestManifest::Build.call(attempt:)
       }
     end
   end

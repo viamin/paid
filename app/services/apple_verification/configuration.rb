@@ -7,7 +7,7 @@ module AppleVerification
   class Configuration < ::Data.define(:version, :profiles)
     Profile = ::Data.define(:name, :platform, :worker, :xcode, :bootstrap, :tests_required, :captures)
     WorkerConstraint = ::Data.define(:xcode, :simulator)
-    XcodeTarget = ::Data.define(:project, :workspace, :scheme, :test_plan)
+    XcodeTarget = ::Data.define(:project, :workspace, :scheme, :bundle_id, :test_plan)
     Capture = ::Data.define(:id, :required, :flow)
     FlowStep = ::Data.define(:operation, :arguments)
 

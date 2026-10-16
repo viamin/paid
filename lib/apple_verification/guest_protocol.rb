@@ -10,6 +10,8 @@ module AppleVerification
     CAPTURE_STAGES = %w[launch readiness action selection export].freeze
     ROOT_FIELDS = %w[version source_lanes operations].freeze
     OPERATION_FIELDS = %w[type payload].freeze
+    OPERATION_OPTIONAL_FIELDS = %w[required].freeze
+    XCODE_CONTAINER_FIELDS = %w[project workspace].freeze
     PAYLOAD_FIELDS = {
       "materialize_source" => %w[digest],
       "resolve_swift_packages" => [],
@@ -29,9 +31,13 @@ module AppleVerification
       "type" => %w[accessibility_id text],
       "select" => %w[accessibility_id value],
       "wait_for_accessibility_id" => %w[accessibility_id],
+      "wait_for_process" => %w[process],
+      "wait_for_window" => %w[window],
+      "wait" => %w[seconds],
       "rotate_simulator" => %w[orientation],
       "resize_window" => %w[width height]
     }.freeze
+    UI_ACTION_OPTIONAL_FIELDS = %w[timeout_seconds].freeze
 
     UnsupportedVersionError = Class.new(ArgumentError)
     UnsupportedOperationError = Class.new(ArgumentError)
@@ -67,7 +73,8 @@ module AppleVerification
 
         type = operation["type"]
         raise UnsupportedOperationError, "unsupported guest operation #{type.inspect}" unless OPERATION_TYPES.include?(type)
-        validate_fields!(operation, OPERATION_FIELDS, "operation")
+        validate_fields!(operation, OPERATION_FIELDS, "operation", optional_fields: OPERATION_OPTIONAL_FIELDS)
+        validate_required!(operation)
         validate_payload!(type, operation["payload"])
         validate_capture_payload!(operation.fetch("payload")) if type == "capture"
       end
@@ -78,11 +85,37 @@ module AppleVerification
 
         return validate_ui_action_payload!(payload) if type == "ui_action"
 
+        return validate_xcode_payload!(type, payload) if xcode_operation?(type)
+
         validate_fields!(payload, PAYLOAD_FIELDS.fetch(type), "#{type} payload")
       end
 
-      def validate_fields!(value, allowed_fields, name)
-        unexpected_fields = value.keys.map(&:to_s) - allowed_fields
+      def validate_required!(operation)
+        return unless operation.key?("required")
+        return if [ true, false ].include?(operation["required"])
+
+        raise InvalidManifestError, "operation required must be true or false"
+      end
+
+      def xcode_operation?(type)
+        type.in?(%w[build test])
+      end
+
+      def validate_xcode_payload!(type, payload)
+        optional_fields = XCODE_CONTAINER_FIELDS
+        optional_fields += [ "test_plan" ] if type == "test"
+        validate_fields!(payload, PAYLOAD_FIELDS.fetch(type), "#{type} payload", optional_fields:)
+        validate_xcode_target!(payload)
+      end
+
+      def validate_xcode_target!(payload)
+        return unless payload.key?("project") && payload.key?("workspace")
+
+        raise InvalidManifestError, "Xcode operation must not contain both project and workspace"
+      end
+
+      def validate_fields!(value, allowed_fields, name, optional_fields: [])
+        unexpected_fields = value.keys.map(&:to_s) - allowed_fields - optional_fields
         missing_fields = allowed_fields - value.keys.map(&:to_s)
         return if unexpected_fields.empty? && missing_fields.empty?
 
@@ -108,7 +141,7 @@ module AppleVerification
         action = payload["action"]
         raise InvalidManifestError, "unsupported declarative UI action" unless UI_ACTION_FIELDS.key?(action)
 
-        validate_fields!(payload, %w[action] + UI_ACTION_FIELDS.fetch(action), "ui_action payload for #{action}")
+        validate_fields!(payload, %w[action] + UI_ACTION_FIELDS.fetch(action), "ui_action payload for #{action}", optional_fields: UI_ACTION_OPTIONAL_FIELDS)
       end
 
       def validate_capture_payload!(payload)

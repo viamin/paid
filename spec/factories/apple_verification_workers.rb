@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 FactoryBot.define do
   factory :apple_worker_profile do
     account
@@ -15,8 +17,21 @@ FactoryBot.define do
     account { project.account }
     apple_worker_profile { association :apple_worker_profile, account: account }
     sequence(:revision)
-    content_digest { "sha256:#{'b' * 64}" }
-    verification_files { [ { "path" => ".paid/apple-verification.yml", "digest" => "sha256:#{'c' * 64}" } ] }
+    configuration_content do
+      <<~YAML
+        version: 1
+        profiles:
+          ios-app:
+            platform: ios
+            xcode:
+              project: App.xcodeproj
+              scheme: App
+            tests:
+              required: true
+      YAML
+    end
+    content_digest { "sha256:#{Digest::SHA256.hexdigest(configuration_content)}" }
+    verification_files { [ { "path" => ".paid/apple-verification.yml", "digest" => content_digest } ] }
     lifecycle_gate { "agent_iteration" }
     required_checks { [ "test" ] }
     advisory_checks { [ "screenshot" ] }

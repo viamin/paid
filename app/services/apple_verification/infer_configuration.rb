@@ -60,8 +60,7 @@ module AppleVerification
         "platform" => "ios",
         "worker" => {},
         "xcode" => xcode_section(target),
-        "tests" => { "required" => has_tests?(target) },
-        "captures" => [ default_capture ]
+        "tests" => { "required" => has_tests?(target) }
       }
       attributes["bootstrap"] = "spm" if paths.include?(PACKAGE_MANIFEST)
       attributes
@@ -85,14 +84,6 @@ module AppleVerification
       prefix = File.dirname(target[:target_path])
       scope = prefix == "." ? "" : "#{prefix}/"
       paths.any? { |path| path.start_with?(scope) && path.match?(/Tests?\//i) }
-    end
-
-    def default_capture
-      {
-        "id" => "initial-screen",
-        "required" => true,
-        "flow" => [ { "launch_app" => {} }, { "capture" => { "name" => "initial-screen" } } ]
-      }
     end
 
     def unsupported_bootstrap?
