@@ -44,10 +44,12 @@ module ChatSessions
     # Lower-priority sections are dropped first when the prompt exceeds the budget.
     def build_sections
       sections = []
+      explicit_preferences_content = explicit_preferences_section
       sections << { priority: 0, content: base_identity }
       sections << { priority: 1, content: page_context } if page_context.present?
       sections << { priority: 1, content: project_context } if primary_project
       sections << { priority: 1, content: clarifying_questions_context } if clarifying_question_issue
+      sections << { priority: 1, content: explicit_preferences_content } if explicit_preferences_content.present?
       # @spec PROJECT-CREATION-010 — a fresh (blank) project needs its setup
       # interview surfaced in every chat started against it, so setup can also
       # happen from a plain new chat session.
@@ -244,6 +246,12 @@ module ChatSessions
       PROMPT
     end
 
+    # @spec FACET-CONFIDENCE-007
+    def explicit_preferences_section
+      statements = explicit_preferences.map { |preference| "- #{preference.statement}" }
+      "## Explicit Preferences\n\n#{statements.join("\n")}".strip
+    end
+
     # --- Section helpers ---
 
     def readme_section(project)
@@ -324,6 +332,15 @@ module ChatSessions
 
     def primary_project
       @primary_project ||= chat_session.project
+    end
+
+    def explicit_preferences
+      return ExplicitPreference.none unless chat_session.created_by
+
+      @explicit_preferences ||= ExplicitPreferences::Context.call(
+        owner: chat_session.created_by,
+        project: primary_project
+      )
     end
 
     def clarifying_question_issue

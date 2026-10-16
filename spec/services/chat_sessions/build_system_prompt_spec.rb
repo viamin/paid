@@ -212,6 +212,22 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("Preferences")
         expect(prompt).to include("concise, technical responses")
       end
+
+      # @spec FACET-CONFIDENCE-007
+      it "includes the owner's matching explicit preferences" do
+        project = create(:project, account: account)
+        matching_preference = create(:explicit_preference, account: account, user: user, recorded_by: user,
+          scope: "project", project: project, statement: "Use PostgreSQL for this project.")
+        create(:explicit_preference, account: account, user: user, recorded_by: user,
+          scope: "project", project: create(:project, account: account), statement: "Do not include this preference.")
+        scoped_session = create(:chat_session, account: account, created_by: user, project: project)
+
+        prompt = described_class.call(chat_session: scoped_session)
+
+        expect(prompt).to include("Explicit Preferences")
+        expect(prompt).to include(matching_preference.statement)
+        expect(prompt).not_to include("Do not include this preference.")
+      end
     end
 
     describe "tool definitions" do
