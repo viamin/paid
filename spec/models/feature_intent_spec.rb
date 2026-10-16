@@ -2,8 +2,37 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec FEATURE-APPROVAL-020
+# @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec FEATURE-APPROVAL-020 @spec CONFIDENCE-DELIVERY-001 @spec CONFIDENCE-DELIVERY-015
 RSpec.describe FeatureIntent do
+  describe "delivery policy" do
+    it "defaults existing and newly created records to the approval-gated policy" do
+      expect(described_class.new.delivery_policy).to eq("approval_gated")
+    end
+
+    it "keeps a confidence-driven policy snapshot after project enrollment is disabled" do
+      feature_intent = create(:feature_intent, :confidence_driven)
+
+      feature_intent.project.update!(confidence_delivery_enrollment_enabled: false)
+
+      expect(feature_intent.reload.delivery_policy).to eq("confidence_driven")
+    end
+
+    it "does not mutate held work or active runs when enrollment is disabled" do
+      project = create(:project, confidence_delivery_enrollment_enabled: true)
+      held_issue = create(:issue, :needs_input, project: project)
+      active_run = create(:agent_run, project: project, status: "running")
+      feature_intent = create(:feature_intent, :confidence_driven, project: project)
+
+      expect {
+        project.update!(confidence_delivery_enrollment_enabled: false)
+      }.not_to change(AgentRun, :count)
+
+      expect(held_issue.reload.paid_state).to eq("needs_input")
+      expect(active_run.reload.status).to eq("running")
+      expect(feature_intent.reload).to be_confidence_driven
+    end
+  end
+
   describe "#record_approval!" do
     it "transitions design_open to approved_waiting_for_merge and stamps the approval" do
       feature_intent = create(:feature_intent, :ready_for_approval)

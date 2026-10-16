@@ -48,6 +48,8 @@ module Tools
       poll_interval_seconds
       pr_target
       upstream_full_name
+      new_feature_delivery_policy
+      confidence_delivery_enrollment_enabled
     ].freeze
 
     def self.tool_name = "update_project_settings"

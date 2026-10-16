@@ -50,6 +50,7 @@ class Project < ApplicationRecord
   # human-led feature factory workflow is strictly opt-in, and the column is
   # the RDR's rollout-guard config gate (never silently flipped by migration).
   OPERATING_MODES = %w[standard human_led_feature_factory].freeze
+  FEATURE_DELIVERY_POLICIES = %w[approval_gated confidence_driven].freeze
   APPLE_VERIFICATION_MODES = %w[off on_demand automatic].freeze
   TDD_MODE_LABELS = {
     "off" => "Off",
@@ -385,6 +386,7 @@ class Project < ApplicationRecord
   validates :tdd_mode, inclusion: { in: TDD_MODES }
   # @spec FEATURE-APPROVAL-001
   validates :operating_mode, inclusion: { in: OPERATING_MODES }
+  validates :new_feature_delivery_policy, inclusion: { in: FEATURE_DELIVERY_POLICIES }
   validates :max_draft_review_rounds, numericality: { greater_than_or_equal_to: 0 }
   validates :generated_label_name, presence: true
   validates :automation_label_name, presence: true
@@ -1253,6 +1255,15 @@ class Project < ApplicationRecord
   # never run it.
   def human_led_feature_factory?
     operating_mode == "human_led_feature_factory"
+  end
+
+  # @spec CONFIDENCE-DELIVERY-001 @spec CONFIDENCE-DELIVERY-015
+  # Enrollment is deliberately separate from selection. Turning it off affects
+  # only features created later; a FeatureIntent owns its immutable snapshot.
+  def feature_delivery_policy_for_new_features
+    return "approval_gated" unless confidence_delivery_enrollment_enabled?
+
+    new_feature_delivery_policy
   end
 
   def effective_quality_gate_settings
