@@ -7,9 +7,9 @@ module Inbox
       new(...).call
     end
 
-    def initialize(user:, entry:)
+    def initialize(user:, entry_id:)
       @user = user
-      @entry = entry
+      @entry_id = entry_id.to_s
     end
 
     def call
@@ -19,15 +19,14 @@ module Inbox
 
     private
 
-    attr_reader :entry, :user
+    attr_reader :entry_id, :user
 
     def authorize!
-      raise Pundit::NotAuthorizedError unless authoritative_entry
       raise Pundit::NotAuthorizedError unless InteractiveChatAccess.allowed?(user:, project:)
     end
 
     def authoritative_entry
-      @authoritative_entry ||= Inbox::Queue.find_entry(user: user, entry_id: entry.id)
+      @authoritative_entry ||= Inbox::Queue.find_entry(user: user, entry_id:) || raise(ActiveRecord::RecordNotFound)
     end
 
     def active_chat

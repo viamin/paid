@@ -46,12 +46,9 @@ module Api
       # @spec MOBILE-API-009
       def chat
         authorize :inbox, policy_class: InboxPolicy
-        entry = Inbox::FindEntry.call(user: current_user, entry_id: params[:entry_id])
-        return render_entry_not_found unless entry
-
         chat_session = Inbox::OpenInteractiveChat.call(
           user: current_user,
-          entry:
+          entry_id: params[:entry_id]
         )
         render json: { chat_session_id: chat_session.id }, status: :created
       end
