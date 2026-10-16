@@ -273,6 +273,23 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "save_clarifying_answer",
+        denied_user: -> {
+          project
+          issue
+          create(:user, :member, account: account)
+        },
+        arguments: -> { { position: 1, answer: "Denied", confirmed: true } },
+        session: ->(user) {
+          build(:chat_session, account: user.account, created_by: user, project: project,
+            clarifying_question_issue: issue)
+        },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :update?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "get_inbox_chat_context",
         denied_user: -> {
           project

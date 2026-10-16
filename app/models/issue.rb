@@ -92,6 +92,7 @@ class Issue < ApplicationRecord
   has_many :issue_merge_subscriptions, dependent: :destroy
   has_many :intent_conformance_verdicts, dependent: :destroy
   has_many :intent_conformance_decisions, dependent: :destroy
+  has_many :clarifying_question_progresses, dependent: :destroy
 
   # @spec INTENT-AMENDMENT-003 — feature intent linkage; an
   # issue belongs to at most one feature tree (unique index on the join).

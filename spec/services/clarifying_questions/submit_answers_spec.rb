@@ -20,7 +20,10 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
   end
 
   before do
-    allow(github_client).to receive(:add_comment).and_return(double(html_url: "https://github.com/test"))
+    allow(github_client).to receive_messages(
+      add_comment: double(html_url: "https://github.com/test"),
+      issue_comments: []
+    )
   end
 
   def remote_body(content, questions = [ "Q1?" ])
@@ -91,6 +94,30 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
           a_string_matching(/\*\*Q1: What is X\?\*\*/)
             .and(a_string_matching(/\*\*A1:\*\* X is Y/))
         )
+      end
+
+      # @spec QUESTION-EXPLORATION-002
+      it "does not post a duplicate comment when a matching answer was already accepted" do
+        answer = "Return a 404 error"
+        existing_comment = Struct.new(:body).new(
+          [
+            ClarifyingQuestions::Load::ANSWER_MARKER,
+            "",
+            "## Clarifying question answers",
+            "",
+            "**Q1: What is the expected behavior?**",
+            "**A1:** #{answer}"
+          ].join("\n")
+        )
+        allow(github_client).to receive(:issue_comments).and_return([ existing_comment ])
+
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: [ { question: "What is the expected behavior?", answer: answer } ]
+        )
+
+        expect(github_client).not_to have_received(:add_comment)
       end
     end
 
