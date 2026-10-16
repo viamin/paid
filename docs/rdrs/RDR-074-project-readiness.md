@@ -5,7 +5,7 @@
 ## Metadata
 
 - **Date**: 2026-10-11
-- **Status**: Partially Implemented
+- **Status**: Implemented
 - **Type**: Architecture
 - **Related RDRs**: [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-056](RDR-056-strict-test-driven-development-mode.md)
 - **Related Issues**: #4255, #4256, #4257, #4258, #4325, #4338, #4463, #4464
@@ -91,23 +91,19 @@ matches Phase 1's structural scope and prevents duplicate command policy.
 
 ## Implementation Status
 
-**Partially Implemented (2026-10-15).** The deterministic evaluator and its
+**Implemented (2026-10-15).** The deterministic evaluator and its
 persisted Inbox/bootstrap consumers are shipped. The implementation covers
 the structural contract in this RDR: strict/non-strict and TDD-off evaluation,
 registered language and Godot detectors, persisted snapshots, an authorized
 Inbox lane, a manual deduplicated bootstrap admission path, and a harness-only
 write guard.
 
-That narrow structural implementation is not evidence of the broader #4255
-consumer outcome. In particular, this closeout did not find a runnable
-Forager-iOS or equivalent isolated lifecycle proof showing a merged bootstrap
-PR, target-branch re-evaluation, cleared Inbox lane, and the subsequent
-test-writing draft PR with intentionally red CI. It also found no equivalent
-authorized API/tool action for the UI's bootstrap trigger. Those are required
-product-acceptance gaps; #4255 remains open with explicit dependency lines for
-the focused follow-ups recorded in the closeout audit. The focused issues must
-not reciprocally depend on #4255, so Paid can block the umbrella without
-forming a dependency cycle before its final audit.
+The closeout audit now supplies the broader #4255 consumer evidence: an
+isolated Godot/gdUnit4 lifecycle runner proves the merged-bootstrap,
+target-branch-re-evaluation, cleared-Inbox, and intentionally-red-CI sequence,
+and the confirmation-gated `trigger_readiness_bootstrap` action provides the
+authorized non-UI bootstrap path. The audit tracks #4255 without closing that
+umbrella; this RDR leaves no outstanding product-acceptance gap.
 
 ## 2026-10-15 Closeout
 

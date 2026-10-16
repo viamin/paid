@@ -84,12 +84,11 @@ ready latch exists.
 
 ## Product-acceptance boundary
 
-RDR-074 formalizes the evaluator and the implementation above. It does not,
-by itself, prove the broader #4255 consumer outcome. That outcome additionally
-requires runnable Godot/gdUnit4 evidence through the full lifecycle: an
-authorized operator sees a missing-project Inbox entry, explicitly bootstraps
-only allowed files, GitHub confirms the bootstrap PR merge, target-branch
-re-evaluation clears the entry, and the next test-writing draft PR reaches
-intentionally red CI. The closeout records this lifecycle proof and
-equivalent authorized API/tool action as open acceptance work; no ready flag
-or automatic bootstrap retry may stand in for checkout re-evaluation.
+RDR-074 formalizes the evaluator and the implementation above. The closeout
+audit supplies the broader #4255 consumer evidence: runnable Godot/gdUnit4
+coverage follows an authorized operator from a missing-project Inbox entry,
+through a harness-bounded bootstrap and GitHub-confirmed merge, to
+target-branch re-evaluation, Inbox clearance, and an intentionally red
+test-writing draft. The confirmation-gated `trigger_readiness_bootstrap` tool
+provides the equivalent authorized non-UI action. No ready flag or automatic
+bootstrap retry may stand in for checkout re-evaluation.
