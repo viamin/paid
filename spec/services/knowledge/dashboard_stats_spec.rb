@@ -170,7 +170,7 @@ RSpec.describe Knowledge::DashboardStats do
         expect(chat).to include(
           configuration_status: "missing_credential",
           credential_source: nil,
-          credential_service: nil,
+          credential_service: "openai",
           available: false
         )
       end

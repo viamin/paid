@@ -12,7 +12,10 @@ export default class extends Controller {
   connect() {
     // @spec CHAT-API-021
     this.state = this.readState()
-    if (!this.state.keepOpen) this.state.open = false
+    const followsNavigation = this.state.followNavigation === true
+    if (!this.state.keepOpen && !followsNavigation) this.state.open = false
+    this.state.followNavigation = false
+    if (followsNavigation) this.writeState()
 
     this.loading = false
     this.renderState()
@@ -41,6 +44,15 @@ export default class extends Controller {
     this.state.keepOpen = !this.state.keepOpen
     this.writeState()
     this.renderState()
+  }
+
+  // @spec CHAT-API-025
+  followNavigation(event) {
+    const sessionId = event.detail?.sessionId
+    if (!sessionId) return
+
+    this.state = { ...this.state, open: true, sessionId, followNavigation: true }
+    this.writeState()
   }
 
   async loadPanel() {
@@ -215,7 +227,8 @@ export default class extends Controller {
       return {
         keepOpen: parsed.keepOpen === true,
         open: parsed.open === true,
-        sessionId: parsed.sessionId || null
+        sessionId: parsed.sessionId || null,
+        followNavigation: parsed.followNavigation === true
       }
     } catch {
       return { keepOpen: false, open: false, sessionId: null }

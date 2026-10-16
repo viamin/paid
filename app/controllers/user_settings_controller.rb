@@ -6,6 +6,7 @@ class UserSettingsController < ApplicationController
 
   def edit
     authorize @user_setting
+    load_knowledge_readiness
   end
 
   def update
@@ -18,6 +19,7 @@ class UserSettingsController < ApplicationController
         format.json { head :ok }
       end
     else
+      load_knowledge_readiness
       respond_to do |format|
         format.html { render :edit, status: :unprocessable_content }
         format.turbo_stream { render :edit, formats: :html, status: :unprocessable_content }
@@ -30,6 +32,10 @@ class UserSettingsController < ApplicationController
 
   def set_user_setting
     @user_setting = current_user.settings
+  end
+
+  def load_knowledge_readiness
+    @knowledge_readiness = Knowledge::SettingsReadiness.call(owner: current_user)
   end
 
   def user_setting_params
@@ -78,9 +84,13 @@ class UserSettingsController < ApplicationController
       :fallback_enabled,
       :fallback_runners,
       :kb_embedding_runner,
+      :kb_embedding_provider_api_key_id,
+      :kb_embedding_fallback_runners_csv,
       :kb_embedding_model,
       :kb_embedding_dimensions,
       :kb_chat_runner,
+      :kb_chat_provider_api_key_id,
+      :kb_chat_fallback_runners_csv,
       :issue_analysis_runner,
       :issue_analysis_fallback_runners_csv,
       auto_pick_skip_labels: []

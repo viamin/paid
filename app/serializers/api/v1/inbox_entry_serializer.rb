@@ -70,6 +70,7 @@ module Api
         when Inbox::Queue::PARTIAL_CLOSEOUT_KIND then { unresolved_prerequisites: entry.tasks }
         when Inbox::Queue::TEST_REVIEW_PENDING_KIND then {}
         when Inbox::Queue::PROJECT_SETUP_PENDING_KIND then { tasks: entry.tasks }
+        when Inbox::Queue::TRACEABILITY_GAP_KIND then traceability_gap_payload
         else
           raise ArgumentError, "Unknown inbox entry kind: #{entry.kind}"
         end
@@ -168,6 +169,17 @@ module Api
           constraints: change_intent.constraints,
           decisions_made: change_intent.decisions_made,
           requested_changes_reason: change_intent.requested_changes_reason
+        }
+      end
+
+      # @spec DESIGN-RECONCILIATION-001
+      def traceability_gap_payload
+        finding = entry.record
+        {
+          artifact_path: finding.artifact_path,
+          revision: finding.revision,
+          state: finding.state,
+          evidence: finding.evidence
         }
       end
     end

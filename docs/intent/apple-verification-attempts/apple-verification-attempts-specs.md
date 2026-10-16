@@ -5,11 +5,10 @@
 > Phase 0); the `Tests:` and `Code:` surfaces below are the ones those issues
 > will add.
 >
-> The source-lane components cited by APPLE-ATTEMPT-007 and
-> APPLE-ATTEMPT-008 have focused unit coverage, but are not yet invoked by the
-> attempt dispatch path. Those claims remain active gaps until that integration
-> transfers the validated committed credential lane or uncommitted bundle into
-> a guest job.
+> The attempt dispatch path invokes the source lane and transfers its validated
+> references into the guest job. APPLE-ATTEMPT-007 and APPLE-ATTEMPT-008 remain
+> active gaps for their still-unimplemented credential delivery and workspace
+> bundle-construction requirements.
 
 - [x] **APPLE-ATTEMPT-001** — When an Apple verification attempt is submitted,
   the system SHALL admit it only when the active-VM limit and the host disk,

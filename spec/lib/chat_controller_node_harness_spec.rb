@@ -2240,6 +2240,66 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-025
+    function testSameOriginNavigationHandsTheSessionToThePopup() {
+      const { controller } = makeController();
+      const events = [];
+      const navigations = [];
+      const localStorage = new Map();
+      const originalWindow = globalThis.window;
+
+      globalThis.window = {
+        location: {
+          href: "https://paid.test/chat/42",
+          origin: "https://paid.test",
+          assign(url) { navigations.push(url); }
+        },
+        CustomEvent: class {
+          constructor(type, options) {
+            this.type = type;
+            this.detail = options.detail;
+          }
+        },
+        dispatchEvent(event) { events.push(event); },
+        localStorage: {
+          getItem(key) { return localStorage.get(key) || null; },
+          setItem(key, value) { localStorage.set(key, value); }
+        }
+      };
+
+      controller.accountIdValue = 7;
+      controller.hasAccountIdValue = true;
+      controller.sessionIdValue = 42;
+      const event = {
+        button: 0,
+        target: {
+          closest(selector) {
+            if (selector !== "[data-chat-navigate-url], a[href]") throw new Error(`Unexpected selector: ${selector}`);
+            return { dataset: { chatNavigateUrl: "/settings/api_keys#provider-api-keys" } };
+          }
+        },
+        preventDefault() { this.prevented = true; }
+      };
+
+      try {
+        controller.navigate(event);
+      } finally {
+        globalThis.window = originalWindow;
+      }
+
+      if (!event.prevented) throw new Error("Expected chat navigation to prevent Turbo from replacing the chat surface");
+      if (events.length !== 1 || events[0].type !== "chat:navigate" || events[0].detail.sessionId !== 42) {
+        throw new Error(`Expected chat navigation to hand session 42 to the popup, saw ${JSON.stringify(events)}`);
+      }
+      const handoff = JSON.parse(localStorage.get("paid:chat-popup:7"));
+      if (!handoff.open || !handoff.followNavigation || handoff.sessionId !== 42) {
+        throw new Error(`Expected chat navigation to persist a one-page popup handoff, saw ${JSON.stringify(handoff)}`);
+      }
+      if (navigations.join(",") !== "https://paid.test/settings/api_keys#provider-api-keys") {
+        throw new Error(`Expected fragment-preserving full-page navigation, saw ${JSON.stringify(navigations)}`);
+      }
+    }
+
     function run() {
       testChatSettingsAutosaveReportsResult();
       testToolCallAppendsCardAndUpdatesStatus();
@@ -2312,6 +2372,7 @@ class ChatControllerNodeHarness
       testMessageChunkForTheTrackedStreamLeavesTrackingUnchanged();
       testLateStreamEventsDoNotReplaceOrTerminateTheActiveStream();
       testLastRenderedMessageIdReturnsHighestId();
+      testSameOriginNavigationHandsTheSessionToThePopup();
     }
 
     try {

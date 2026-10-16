@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_15_044524) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_15_135221) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1310,6 +1310,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_044524) do
     t.index ["status"], name: "index_design_amendments_on_status"
   end
 
+  create_table "design_artifact_findings", comment: "Durable issue-tree traceability gaps found while reconciling repository design artifacts.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "artifact_path", limit: 2048, null: false
+    t.datetime "covered_at", null: false, comment: "When the GitHub issue coverage used for this finding was read."
+    t.datetime "created_at", null: false
+    t.jsonb "evidence", default: [], null: false
+    t.string "fingerprint", limit: 64, null: false, comment: "Stable reconciliation finding identity for one artifact, revision, and state."
+    t.bigint "project_id", null: false
+    t.datetime "resolved_at"
+    t.string "revision", limit: 255, null: false
+    t.string "state", limit: 32, null: false, comment: "missing_tree, partial_tree, stale_metadata, deferred, or unverifiable."
+    t.string "status", limit: 16, default: "open", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_design_artifact_findings_on_account_id"
+    t.index ["project_id", "fingerprint"], name: "index_design_artifact_findings_on_project_id_and_fingerprint", unique: true
+    t.index ["project_id", "status"], name: "index_design_artifact_findings_on_project_id_and_status"
+    t.index ["project_id"], name: "index_design_artifact_findings_on_project_id"
+    t.check_constraint "state::text = ANY (ARRAY['missing_tree'::character varying, 'partial_tree'::character varying, 'stale_metadata'::character varying, 'deferred'::character varying, 'unverifiable'::character varying]::text[])", name: "chk_design_artifact_findings_state"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying, 'resolved'::character varying]::text[])", name: "chk_design_artifact_findings_status"
+  end
+
   create_table "dispatch_circuit_breakers", comment: "Account-level dispatch circuit breaker that halts scheduling when all providers fail simultaneously", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Account this circuit breaker belongs to"
     t.datetime "circuit_opened_at", comment: "When the circuit was last opened"
@@ -1711,6 +1732,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_044524) do
   create_table "feature_intent_design_prs", comment: "RDR-066 design PRs (RDR and/or LID Planning) linked to a feature intent, tracked for staleness and required-artifact checks.", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "design_pr_kind", null: false, comment: "rdr or lid_planning."
+    t.boolean "draft", comment: "GitHub pull request draft state from the most recent synchronization."
     t.bigint "feature_intent_id", null: false
     t.string "head_sha", null: false, comment: "Most recently synced PR head SHA."
     t.datetime "merged_at"
@@ -3887,10 +3909,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_044524) do
     t.integer "issue_goal_idle_timeout_seconds", default: 120, null: false
     t.integer "issue_goal_timeout_seconds", default: 600, null: false
     t.jsonb "kb_chat_fallback_runners", default: [], null: false
+    t.bigint "kb_chat_provider_api_key_id"
     t.string "kb_chat_runner", default: "claude", null: false
     t.integer "kb_embedding_dimensions", default: 3072, null: false, comment: "Vector dimensions to request from the embedding model. Must match what the chosen kb_embedding_model emits; changing this on a populated knowledge base requires re-embedding."
     t.jsonb "kb_embedding_fallback_runners", default: [], null: false
     t.string "kb_embedding_model", default: "text-embedding-3-large", null: false, comment: "User-configurable embedding model id. Defaults to text-embedding-3-large; users may pick any model from the provider catalog the configured embedding runner serves."
+    t.bigint "kb_embedding_provider_api_key_id"
     t.string "kb_embedding_runner", default: "openai", null: false
     t.jsonb "log_data"
     t.boolean "marketplace_auto_attach_enabled", default: false, null: false, comment: "Whether this user opts their own agent runs into automatic and team-default marketplace attachments."
@@ -3917,6 +3941,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_044524) do
     t.integer "token_validation_stale_minutes", default: 2, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
+    t.index ["kb_chat_provider_api_key_id"], name: "index_user_settings_on_kb_chat_provider_api_key_id"
+    t.index ["kb_embedding_provider_api_key_id"], name: "index_user_settings_on_kb_embedding_provider_api_key_id"
     t.index ["user_id"], name: "index_user_settings_on_user_id", unique: true
     t.check_constraint "max_issues_per_page >= 5 AND max_issues_per_page <= 200", name: "chk_max_issues_per_page_bounds"
     t.check_constraint "max_prs_per_page >= 5 AND max_prs_per_page <= 200", name: "chk_max_prs_per_page_bounds"
@@ -4113,6 +4139,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_044524) do
   add_foreign_key "design_amendments", "feature_intents"
   add_foreign_key "design_amendments", "projects"
   add_foreign_key "design_amendments", "users", column: "approved_by_id"
+  add_foreign_key "design_artifact_findings", "accounts", on_delete: :cascade
+  add_foreign_key "design_artifact_findings", "projects", on_delete: :cascade
   add_foreign_key "dispatch_circuit_breakers", "accounts"
   add_foreign_key "dispatch_circuit_breakers", "agent_runs", column: "last_probe_run_id", on_delete: :nullify, validate: false
   add_foreign_key "docker_hosts", "accounts"
@@ -4346,6 +4374,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_15_044524) do
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "tracker_configurations", "integration_credentials"
   add_foreign_key "tracker_configurations", "users", column: "created_by_id"
+  add_foreign_key "user_settings", "provider_api_keys", column: "kb_chat_provider_api_key_id", on_delete: :restrict
+  add_foreign_key "user_settings", "provider_api_keys", column: "kb_embedding_provider_api_key_id", on_delete: :restrict
   add_foreign_key "user_settings", "users"
   add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"

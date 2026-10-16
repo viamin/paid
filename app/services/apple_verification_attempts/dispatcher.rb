@@ -11,14 +11,16 @@ module AppleVerificationAttempts
   class Dispatcher
     Result = Data.define(:started, :rejected, :skipped)
 
-    def self.call(capacity_sampler: HostCapacity.from_environment, lifecycle: AppleVerification::Lifecycle.from_environment, complete: Complete)
-      new(capacity_sampler:, lifecycle:, complete:).call
+    def self.call(capacity_sampler: HostCapacity.from_environment, lifecycle: AppleVerification::Lifecycle.from_environment, complete: Complete,
+      host_mount_check: AppleVerification::SourceLane::HostMountCheck)
+      new(capacity_sampler:, lifecycle:, complete:, host_mount_check:).call
     end
 
-    def initialize(capacity_sampler:, lifecycle:, complete:)
+    def initialize(capacity_sampler:, lifecycle:, complete:, host_mount_check:)
       @capacity_sampler = capacity_sampler
       @lifecycle = lifecycle
       @complete = complete
+      @host_mount_check = host_mount_check
     end
 
     def call
@@ -29,7 +31,7 @@ module AppleVerificationAttempts
 
     private
 
-    attr_reader :capacity_sampler, :lifecycle, :complete
+    attr_reader :capacity_sampler, :lifecycle, :complete, :host_mount_check
 
     def dispatch_queue
       started = 0
@@ -87,7 +89,7 @@ module AppleVerificationAttempts
     end
 
     def provision(attempt)
-      Provision.new(lifecycle:, completion: complete).call(attempt)
+      Provision.new(lifecycle:, completion: complete, host_mount_check:).call(attempt)
       WorkerHealth.record_success!(profile: attempt.apple_worker_profile)
       :started
     # Lifecycle#provision rescues-and-re-raises ANY StandardError; a non-listed

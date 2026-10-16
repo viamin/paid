@@ -1,0 +1,12 @@
+; Engine configuration file.
+; The gdUnit4 addon is provisioned by bin/validate-godot-gdunit4-readiness.
+config_version=5
+
+[application]
+config/name="Paid readiness acceptance fixture"
+
+[editor_plugins]
+enabled=PackedStringArray("res://addons/gdUnit4/plugin.cfg")
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
