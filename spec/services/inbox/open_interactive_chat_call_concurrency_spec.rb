@@ -29,7 +29,7 @@ RSpec.describe Inbox::OpenInteractiveChat, ".call" do
         start.pop
         ActiveRecord::Base.connection_pool.with_connection do
           TenantContext.with_system_access do
-            described_class.call(user: User.find(user.id), entry:).id
+            described_class.call(user: User.find(user.id), entry_id: entry.id).id
           end
         end
       end

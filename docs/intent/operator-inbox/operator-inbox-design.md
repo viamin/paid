@@ -63,8 +63,9 @@ lane's existing visibility and admission rules and render only `inbox-detail`.
 They do not build filter availability or render the queue. Invalid, resolved,
 filtered-out, and unauthorized entries return to the filtered inbox with a
 full-page navigation that refreshes the list, filters, and empty state.
-Interactive-chat authorization revalidates the entry with the same targeted
-lookup, retaining the current lane policy and membership checks.
+Interactive-chat authorization performs one targeted lookup itself, retaining
+the current lane policy and membership checks without repeating a controller
+lookup.
 Full unfiltered renders derive filter availability from the queue already
 built for the request. Closeout entries carry their computed status through
 to the detail pane and assessment so rendering does not repeat admission or

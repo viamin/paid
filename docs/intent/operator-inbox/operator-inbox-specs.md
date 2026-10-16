@@ -582,8 +582,12 @@
   redirect to the filtered Inbox as a full-page navigation so the queue and
   empty state refresh without a missing-frame error. Opening an Inbox chat
   SHALL revalidate membership with the same targeted lookup rather than
-  rebuilding other lanes.
-  *Test:* `spec/requests/inbox_spec.rb`, `spec/services/inbox/queue_spec.rb`.
+  rebuilding other lanes. Chat creation SHALL perform exactly one targeted
+  lookup immediately before it acts, so an entry that leaves the queue cannot
+  open or resume a chat and the controller does not repeat the lookup.
+  *Test:* `spec/requests/inbox_spec.rb`,
+  `spec/services/inbox/open_interactive_chat_spec.rb`,
+  `spec/services/inbox/queue_spec.rb`.
 
 - [x] **OPERATOR-INBOX-016** — When the system renders an unfiltered Inbox,
   it SHALL derive filter availability from the entries already built for
