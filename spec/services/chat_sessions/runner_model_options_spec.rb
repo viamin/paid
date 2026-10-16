@@ -30,6 +30,15 @@ RSpec.describe ChatSessions::RunnerModelOptions do
     ])
   end
 
+  # @spec CHAT-SESSION-PREFERENCES-003 CHAT-API-019
+  it "excludes free-policy runners whose model is selected dynamically" do
+    free_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+      config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } })
+
+    expect(described_class.options_for([ free_runner ])).to be_empty
+  end
+
   # @spec CHAT-SESSION-PREFERENCES-003
   it "excludes a tier with fresh account-specific unavailable evidence" do
     model = LlmModel.find_by!(model_id: "gpt-5.6-luna")

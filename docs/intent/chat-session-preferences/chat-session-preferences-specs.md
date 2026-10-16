@@ -28,13 +28,15 @@
 
 - [x] **CHAT-SESSION-PREFERENCES-003** - When a user configures a chat session,
   the system SHALL present only one compatible curated choice per Low, Medium,
-  and High tier for each available runner, with a label containing the tier and
-  concrete model ID, and SHALL reject selections that do not belong to an
-  available runner's curated choices. Low SHALL be the default for new chats;
-  legacy Automatic sessions SHALL resolve to Low on execution while explicit
-  stored selections remain unchanged. The choices and defaults SHALL satisfy
-  operator controls and every linked project's provider, model, and tier
-  policies.
+  and High tier for each available non-free-policy runner, with a label
+  containing the tier and concrete model ID, and SHALL reject selections that
+  do not belong to an available runner's curated choices. Free-policy runners
+  SHALL not offer a saved curated model choice because their model is selected
+  dynamically from the eligible free pool on each request. Low SHALL be the
+  default for new chats; legacy Automatic sessions SHALL resolve to Low on
+  execution while explicit stored selections remain unchanged. The choices and
+  defaults SHALL satisfy operator controls and every linked project's provider,
+  model, and tier policies.
   *Tests:* `spec/services/chat_sessions/runner_model_options_spec.rb`,
   `spec/services/chat_sessions/create_spec.rb`,
   `spec/services/chat_sessions/build_llm_client_spec.rb`.

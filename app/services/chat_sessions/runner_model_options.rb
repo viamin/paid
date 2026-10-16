@@ -30,6 +30,8 @@ module ChatSessions
 
     def options_for_runner(runner)
       # @spec CHAT-SESSION-PREFERENCES-003
+      return [] if runner.free_model_policy?
+
       CuratedModelOptions.for_runner(runner, projects: projects).map do |curated|
         option(runner, curated.model_id, "#{runner.display_name} — #{curated.label}", curated.tier)
       end

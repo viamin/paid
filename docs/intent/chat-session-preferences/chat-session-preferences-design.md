@@ -28,9 +28,11 @@ non-Turbo HTML callers keep the redirect flow.
 
 The session configuration UI presents one runner-and-model selection rather
 than independent runner and model fields. It offers only the curated Low,
-Medium, and High choices that are compatible with each chat-capable runner;
-the label includes both the user-facing tier and the concrete model ID. Low
-is the default for a new session. The selector is deliberately not a catalog
+Medium, and High choices that are compatible with each chat-capable,
+non-free-policy runner; the label includes both the user-facing tier and the
+concrete model ID. A free-policy runner offers no saved model choice because
+the eligible free pool dynamically selects its model on every request. Low is
+the default for a new session. The selector is deliberately not a catalog
 browser: catalog refreshes may replace a compatible concrete model within its
 existing tier but cannot add choices or promote a chat to a more expensive
 tier. API-key availability evidence, operator disables, and agent-harness
