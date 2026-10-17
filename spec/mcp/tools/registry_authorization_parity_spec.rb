@@ -828,6 +828,15 @@ RSpec.describe Tools::Registry do
         denied_user: -> { nil },
         arguments: -> { { preference_id: 0, confirmed: true } },
         ui_call: ->(user) { authorize_settings_edit!(user) }
+      },
+      {
+        tool_name: "manage_feature_intent",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { feature_intent_id: create(:feature_intent, project: project).id, action: "cancel", cancellation_reason: "already_handled", confirmed: true } },
+        ui_call: ->(user) {
+          feature_intent = FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve.find_by!(project: project)
+          authorize_record!(user, feature_intent, :cancel?, policy_class: FeatureIntentPolicy)
+        }
       }
     ] + operator_tool_scenarios
   end

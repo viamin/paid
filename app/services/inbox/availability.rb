@@ -190,9 +190,9 @@ module Inbox
     end
 
     def feature_decision_by_project
-      FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
-        .where(status: Inbox::Queue::FEATURE_DECISION_STATUSES)
-        .group(:project_id).count
+      Inbox::Queue.call(user: user, kind: Inbox::Queue::FEATURE_DECISION_KIND)
+        .group_by { |entry| entry.project.id }
+        .transform_values(&:size)
     end
 
     def retry_limited_by_project

@@ -2,12 +2,27 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec FEATURE-APPROVAL-012
+# @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec FEATURE-APPROVAL-012 @spec FEATURE-APPROVAL-020
 RSpec.describe "Feature intents" do
   let(:owner) { create(:user, :owner) }
   let(:project) { create(:project, account: owner.account) }
 
   before { sign_in owner }
+
+  describe "GET /feature_intents" do
+    # @spec FEATURE-APPROVAL-020
+    it "keeps background proposals and declined proposal history reachable outside the action Inbox" do
+      discovering = create(:feature_intent, project: project, status: "discovering", criteria_clarity_state: "pending",
+        title: "Background proposal")
+      cancelled = create(:feature_intent, project: project, status: "cancelled", cancelled_by: owner,
+        cancelled_at: 1.hour.ago, cancellation_reason: "superseded", title: "Declined proposal")
+
+      get feature_intents_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include(discovering.title, cancelled.title, "Declined proposals", "Reopen for discovery")
+    end
+  end
 
   describe "POST /feature_intents/:id/approve" do
     it "approves a ready feature intent and redirects to the inbox" do
@@ -88,6 +103,69 @@ RSpec.describe "Feature intents" do
 
       expect(response).to redirect_to(inbox_entry_path("#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"))
       expect(flash[:alert]).to include("Not ready to approve", "released")
+    end
+  end
+
+  describe "POST /feature_intents/:id/cancel" do
+    it "declines a discovering duplicate without requiring approval readiness" do
+      feature_intent = create(:feature_intent, project: project, status: "discovering", criteria_clarity_state: "pending")
+
+      post cancel_feature_intent_path(feature_intent), params: {
+        cancellation_reason: "already_handled",
+        replacement_reference: "https://github.com/viamin/paid/pull/4430"
+      }
+
+      expect(response).to redirect_to(feature_intents_path)
+      expect(flash[:notice]).to eq("Feature proposal declined. It remains available in proposal history.")
+      expect(feature_intent.reload).to have_attributes(
+        status: "cancelled",
+        cancelled_by: owner,
+        cancellation_reason: "already_handled",
+        replacement_reference: "https://github.com/viamin/paid/pull/4430"
+      )
+    end
+
+    it "redirects with a validation message when the cancellation reason is missing" do
+      feature_intent = create(:feature_intent, project: project, status: "discovering", criteria_clarity_state: "pending")
+
+      post cancel_feature_intent_path(feature_intent)
+
+      expect(response).to redirect_to(feature_intents_path)
+      expect(flash[:alert]).to eq("Select why this proposal is being declined.")
+      expect(feature_intent.reload.status).to eq("discovering")
+    end
+
+    # @spec FEATURE-APPROVAL-020
+    it "rejects a replacement reference outside http(s)" do
+      feature_intent = create(:feature_intent, project: project, status: "discovering", criteria_clarity_state: "pending")
+
+      post cancel_feature_intent_path(feature_intent), params: {
+        cancellation_reason: "already_handled",
+        replacement_reference: "javascript:alert(1)"
+      }
+
+      expect(response).to redirect_to(feature_intents_path)
+      expect(flash[:alert]).to eq("Replacement reference must be an http(s) URL")
+      expect(feature_intent.reload.status).to eq("discovering")
+    end
+  end
+
+  describe "POST /feature_intents/:id/reopen" do
+    # @spec FEATURE-APPROVAL-020
+    it "reopens a declined feature for discovery without retaining cancellation metadata" do
+      feature_intent = create(:feature_intent, project: project, status: "cancelled", cancelled_by: owner,
+        cancelled_at: 1.hour.ago, cancellation_reason: "superseded", replacement_reference: "https://github.com/viamin/paid/pull/4430")
+
+      post reopen_feature_intent_path(feature_intent)
+
+      expect(response).to redirect_to(feature_intents_path)
+      expect(feature_intent.reload).to have_attributes(
+        status: "discovering",
+        cancelled_by: nil,
+        cancelled_at: nil,
+        cancellation_reason: nil,
+        replacement_reference: nil
+      )
     end
   end
 end

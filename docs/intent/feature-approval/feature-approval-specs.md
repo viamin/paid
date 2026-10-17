@@ -145,10 +145,32 @@
 
 ## Inbox surface
 
+- [x] **FEATURE-APPROVAL-020** — When an Inbox-authorized member declines an
+  eligible feature proposal, including one in `discovering` with a pending
+  clarity assessment, the system SHALL require a structured reason, optionally
+  retain its replacement issue/PR/feature reference, record the actor and time,
+  and transition the existing intent to `cancelled` without deleting its brief,
+  links, design evidence, or approval history. The active Inbox and badge count
+  SHALL remove it, while sync/reconciliation SHALL preserve the terminal state.
+  Declining SHALL not close linked issues, cancel runs, release held work, or
+  imply replacement implementation is complete. An authorized member SHALL be
+  able to reopen a cancelled intent to held `discovering`. A membership-scoped
+  feature-proposals surface SHALL retain background proposals for decline and
+  cancelled proposals for authorized reopening, without adding either to the
+  action Inbox. The feature-decision
+  Inbox lane SHALL contain only approval-ready intents or intents with an open
+  recorded human decision; pending automated assessment and background discovery
+  alone are not human actions.
+  *Tests:* `spec/requests/feature_intents_spec.rb`,
+  `spec/services/inbox/queue_spec.rb`.
+  *Code:* `app/models/feature_intent.rb`,
+  `app/services/feature_intents/cancel.rb`,
+  `app/services/feature_intents/reopen.rb`, `app/services/inbox/queue.rb`.
+
 - [x] **FEATURE-APPROVAL-013** — For approval-gated features, `Inbox::Queue` SHALL expose a
-  `feature_decision` entry for every `FeatureIntent` whose status is not
-  `released`, `revising`, or `cancelled` (including `approved_waiting_for_merge`,
-  since a stale head after approval reopens the hold). Unlike every other
+  `feature_decision` entry for every approval-ready `FeatureIntent`, every intent
+  with an open recorded human decision, and every `approved_waiting_for_merge`
+  intent with a stale required design-PR head. Unlike every other
   Inbox kind, these entries SHALL use project-membership visibility
   (`FeatureIntentPolicy::Scope`, the same pattern as `plan_review_entries`)
   rather than the account+owner-scoped `scoped_projects` used by

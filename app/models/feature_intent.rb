@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# @spec INTENT-AMENDMENT-003 @spec INTENT-CONFORMANCE-REVIEW-001 @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec CONFIDENCE-DELIVERY-001
+# @spec INTENT-AMENDMENT-003 @spec INTENT-CONFORMANCE-REVIEW-001 @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec FEATURE-APPROVAL-020 @spec CONFIDENCE-DELIVERY-001
 # RDR-066 feature intent: links a feature's brief, discovery decisions,
 # design PRs, issue tree, and approval record. The RDR-067 amendment flow
 # (`released`/`revising` transitions) and the intent-conformance reviewer
@@ -28,10 +28,12 @@ class FeatureIntent < ApplicationRecord
   APPROVABLE_STATUSES = %w[design_open needs_decision ready_for_approval approved_waiting_for_merge].freeze
 
   CRITERIA_CLARITY_STATES = %w[pending clear vague].freeze
+  CANCELLATION_REASONS = %w[already_handled no_longer_wanted superseded].freeze
   DELIVERY_POLICIES = Project::FEATURE_DELIVERY_POLICIES
 
   belongs_to :project
   belongs_to :approved_by, class_name: "User", optional: true
+  belongs_to :cancelled_by, class_name: "User", optional: true
 
   has_many :feature_intent_issues, dependent: :destroy
   has_many :issues, through: :feature_intent_issues
@@ -45,6 +47,8 @@ class FeatureIntent < ApplicationRecord
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :criteria_clarity_state, presence: true, inclusion: { in: CRITERIA_CLARITY_STATES }
   validates :delivery_policy, presence: true, inclusion: { in: DELIVERY_POLICIES }
+  validates :cancellation_reason, inclusion: { in: CANCELLATION_REASONS }, allow_nil: true
+  validates :replacement_reference, format: { with: %r{\Ahttps?://\S+\z}i, message: "must be an http(s) URL" }, allow_blank: true
 
   attr_readonly :delivery_policy
 
@@ -69,6 +73,8 @@ class FeatureIntent < ApplicationRecord
   def criteria_clarity_clear? = criteria_clarity_state == "clear"
   def approval_gated? = delivery_policy == "approval_gated"
   def confidence_driven? = delivery_policy == "confidence_driven"
+
+  def cancelled? = status == "cancelled"
 
   # Persists the CriteriaClarityReview verdict (or the fail-closed "pending"
   # default) so Inbox rendering never makes a live LLM call per entry
@@ -117,6 +123,50 @@ class FeatureIntent < ApplicationRecord
     transition_to!("released", from: %w[approved_waiting_for_merge revising released])
   end
 
+  # Declining retains the design, issue links, evidence, and approval history.
+  # It deliberately does not mutate linked issues or runs: their own admission
+  # and hold rules remain authoritative until an operator changes them.
+  # @spec FEATURE-APPROVAL-020
+  def cancel!(by:, reason:, replacement_reference: nil)
+    with_lock do
+      return self if cancelled?
+
+      raise InvalidTransitionError, "cannot cancel a #{status} feature intent" if status.in?(%w[released revising])
+
+      cancelled_at = Time.current
+      update!(
+        status: "cancelled",
+        cancelled_by: by,
+        cancelled_at: cancelled_at,
+        cancellation_reason: reason,
+        replacement_reference: replacement_reference.presence
+      )
+      record_cancellation_audit_event
+    end
+    Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+    self
+  end
+
+  # A reopened proposal always returns to discovery. It remains held; reopening
+  # never reuses a former approval or releases any linked implementation work.
+  # @spec FEATURE-APPROVAL-020
+  def reopen!(by:)
+    with_lock do
+      raise InvalidTransitionError, "cannot reopen a #{status} feature intent" unless cancelled?
+
+      update!(
+        status: "discovering",
+        cancelled_by: nil,
+        cancelled_at: nil,
+        cancellation_reason: nil,
+        replacement_reference: nil
+      )
+      record_reopen_audit_event(by)
+    end
+    Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+    self
+  end
+
   private
 
   def transition_to!(next_status, from:)
@@ -141,6 +191,27 @@ class FeatureIntent < ApplicationRecord
         source: revision.source,
         pr_heads: revision.pr_heads
       }
+    )
+  end
+
+  def record_cancellation_audit_event
+    Audit::RecordEvent.call(
+      action: "feature_intent.cancelled",
+      actor: cancelled_by,
+      subject: self,
+      metadata: {
+        reason: cancellation_reason,
+        replacement_reference: replacement_reference
+      }
+    )
+  end
+
+  def record_reopen_audit_event(actor)
+    Audit::RecordEvent.call(
+      action: "feature_intent.reopened",
+      actor: actor,
+      subject: self,
+      metadata: { from_status: "cancelled", to_status: "discovering" }
     )
   end
 

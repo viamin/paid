@@ -644,6 +644,35 @@ RSpec.describe Inbox::Queue do
       expect(entry.kind).to eq(described_class::ESCALATED_PR_KIND)
     end
 
+    # @spec FEATURE-APPROVAL-020
+    it "excludes discovering work that is awaiting an automated clarity assessment" do
+      create(:feature_intent, project: project, status: "discovering", criteria_clarity_state: "pending")
+
+      entries = described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+
+      expect(entries).to be_empty
+    end
+
+    # @spec FEATURE-APPROVAL-020
+    it "keeps an intent with an open human decision in the action Inbox" do
+      feature_intent = create(:feature_intent, project: project, status: "discovering", criteria_clarity_state: "pending")
+      create(:feature_intent_decision, feature_intent: feature_intent, kind: "question")
+
+      entries = described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+
+      expect(entries.map(&:record)).to include(feature_intent)
+    end
+
+    # @spec FEATURE-APPROVAL-013
+    it "keeps an approved intent with a stale required design PR in the action Inbox" do
+      feature_intent = create(:feature_intent, :approved_waiting_for_merge, project: project)
+      create(:feature_intent_design_pr, :stale, feature_intent: feature_intent)
+
+      entries = described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+
+      expect(entries.map(&:record)).to include(feature_intent)
+    end
+
     # @spec FEATURE-APPROVAL-013
     it "returns a feature_decision entry for an open feature intent" do
       feature_intent = create(:feature_intent, :ready_for_approval, project: project, title: "Bulk CSV export")

@@ -139,6 +139,53 @@ paths:
                     type: integer
         default:
           $ref: '#/components/responses/Error'
+  /feature_intents/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/FeatureIntentId'
+    post:
+      operationId: cancelFeatureIntent
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cancellation_reason]
+              properties:
+                cancellation_reason:
+                  type: string
+                  enum: [already_handled, no_longer_wanted, superseded]
+                replacement_reference:
+                  type: string
+      responses:
+        '200':
+          description: Cancelled feature intent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureIntentResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /feature_intents/{id}/reopen:
+    parameters:
+      - $ref: '#/components/parameters/FeatureIntentId'
+    post:
+      operationId: reopenFeatureIntent
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: Reopened feature intent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureIntentResponse'
+        default:
+          $ref: '#/components/responses/Error'
   /chat/sessions:
     get:
       operationId: listChatSessions
@@ -226,6 +273,11 @@ components:
       in: header
       schema: {type: string, pattern: '^"[0-9a-f]{64}"$'}
     ChatSessionId:
+      name: id
+      in: path
+      required: true
+      schema: {type: integer}
+    FeatureIntentId:
       name: id
       in: path
       required: true
@@ -350,6 +402,15 @@ components:
       properties:
         user_id: {type: integer}
         account_id: {type: integer}
+    FeatureIntentResponse:
+      type: object
+      required: [id, status, cancelled_at, cancellation_reason, replacement_reference]
+      properties:
+        id: {type: integer}
+        status: {type: string}
+        cancelled_at: {type: string, format: date-time, nullable: true}
+        cancellation_reason: {type: string, nullable: true}
+        replacement_reference: {type: string, nullable: true}
     InboxListResponse:
       type: object
       required: [entries]

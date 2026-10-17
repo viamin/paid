@@ -72,6 +72,7 @@
                 <%= turbo_frame_tag "inbox_nav_badge_desktop", loading: :lazy, src: inbox_count_path %>
               </span>
               <%= link_to "Projects", projects_path, class: nav_link_class %>
+              <%= link_to "Feature proposals", feature_intents_path, class: nav_link_class %>
               <%= link_to "Agent Runs", agent_runs_path, class: nav_link_class %>
               <%= link_to "Chat", chat_sessions_path, class: nav_link_class %>
               <% if current_account&.scheduler_paused? %>
@@ -212,6 +213,7 @@
               <%= turbo_frame_tag "inbox_nav_badge_mobile", loading: :lazy, src: inbox_count_path %>
             </div>
             <%= link_to "Projects", projects_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
+            <%= link_to "Feature proposals", feature_intents_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Agent Runs", agent_runs_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Chat", chat_sessions_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <% if current_account&.scheduler_paused? %>

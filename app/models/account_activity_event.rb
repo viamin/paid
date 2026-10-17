@@ -51,6 +51,8 @@ class AccountActivityEvent < ApplicationRecord
     "prompt_version.approved" => "approval",
     "prompt_version.rejected" => "approval",
     "feature_intent.approved" => "approval",
+    "feature_intent.cancelled" => "approval",
+    "feature_intent.reopened" => "approval",
     "feature_intent.released" => "approval",
     "configuration_profile.applied" => "configuration_profile",
     "configuration_profile.reverted" => "configuration_profile",

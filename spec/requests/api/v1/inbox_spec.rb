@@ -132,4 +132,30 @@ RSpec.describe "Mobile inbox API" do
     expect(response).to have_http_status(:not_found)
     expect(response.parsed_body.dig("error", "code")).to eq("not_found")
   end
+
+  # @spec FEATURE-APPROVAL-020
+  it "rejects a cancellation without the required structured reason" do
+    feature_intent = create(:feature_intent, project:, status: "discovering", criteria_clarity_state: "pending")
+
+    expect {
+      post "/api/v1/feature_intents/#{feature_intent.id}/cancel", params: {}.to_json,
+        headers: headers.merge("Content-Type" => "application/json")
+    }.to raise_error(Committee::InvalidRequest, /cancellation_reason/)
+
+    expect(feature_intent.reload.status).to eq("discovering")
+  end
+
+  # @spec FEATURE-APPROVAL-020
+  it "rejects a cancellation with a non-http(s) replacement reference" do
+    feature_intent = create(:feature_intent, project:, status: "discovering", criteria_clarity_state: "pending")
+
+    post "/api/v1/feature_intents/#{feature_intent.id}/cancel", params: {
+      cancellation_reason: "already_handled",
+      replacement_reference: "javascript:alert(1)"
+    }.to_json, headers: headers.merge("Content-Type" => "application/json")
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.dig("error", "message")).to eq("Replacement reference must be an http(s) URL")
+    expect(feature_intent.reload.status).to eq("discovering")
+  end
 end

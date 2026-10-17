@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_073238) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_220129) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1695,7 +1695,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_073238) do
     t.index ["project_id"], name: "index_explicit_preferences_on_project_id"
     t.index ["recorded_by_id"], name: "index_explicit_preferences_on_recorded_by_id"
     t.index ["user_id"], name: "index_explicit_preferences_on_user_id"
-    t.check_constraint "scope::text = ANY (ARRAY['user'::character varying, 'project'::character varying, 'feature'::character varying]::text[])", name: "explicit_preferences_scope"
+    t.check_constraint "scope::text = ANY (ARRAY['user'::character varying::text, 'project'::character varying::text, 'feature'::character varying::text])", name: "explicit_preferences_scope"
   end
 
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
@@ -1840,6 +1840,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_073238) do
     t.jsonb "approved_pr_heads", default: {}, null: false, comment: "Design PR number => head SHA snapshot the human approved; a later commit on any key makes the approval stale."
     t.datetime "approved_revision_recorded_at", comment: "When the approved design revision was recorded."
     t.text "brief", comment: "Feature brief the design was researched from."
+    t.string "cancellation_reason", comment: "Why the feature proposal was declined."
+    t.datetime "cancelled_at", comment: "When the feature proposal was declined."
+    t.bigint "cancelled_by_id", comment: "User who declined the feature proposal."
     t.datetime "created_at", null: false
     t.datetime "criteria_clarity_evaluated_at", comment: "When criteria_clarity_state was last computed."
     t.text "criteria_clarity_explanation", comment: "Human-facing explanation of the criteria_clarity_state verdict."
@@ -1849,10 +1852,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_073238) do
     t.jsonb "issue_tree_manifest", default: {}, null: false, comment: "Planned issue-tree receipt keyed by stable task identity, including expected relationships and qualified remote identities."
     t.jsonb "issue_tree_verification", default: {}, null: false, comment: "Latest structural issue-tree verification result, revision, time, filing progress, and unresolved work."
     t.bigint "project_id", null: false
+    t.string "replacement_reference", comment: "Optional issue, pull request, or feature reference that supersedes this proposal."
     t.string "status", default: "design_open", null: false, comment: "Lifecycle status: discovering, design_open, needs_decision, ready_for_approval, approved_waiting_for_merge, released, revising, cancelled."
     t.string "title", null: false, comment: "Human-readable feature name."
     t.datetime "updated_at", null: false
     t.index ["approved_by_id"], name: "index_feature_intents_on_approved_by_id"
+    t.index ["cancelled_by_id"], name: "index_feature_intents_on_cancelled_by_id"
     t.index ["project_id", "status"], name: "index_feature_intents_on_project_id_and_status"
     t.index ["project_id"], name: "index_feature_intents_on_project_id"
     t.index ["status"], name: "index_feature_intents_on_status"
@@ -4288,6 +4293,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_073238) do
   add_foreign_key "feature_intent_issues", "issues"
   add_foreign_key "feature_intents", "projects"
   add_foreign_key "feature_intents", "users", column: "approved_by_id"
+  add_foreign_key "feature_intents", "users", column: "cancelled_by_id"
   add_foreign_key "github_installations", "accounts"
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"

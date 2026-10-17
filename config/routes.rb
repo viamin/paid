@@ -218,8 +218,10 @@ Rails.application.routes.draw do
   end
 
   # Feature intent design-decision approval (RDR-066)
-  resources :feature_intents, only: [] do
+  resources :feature_intents, only: [ :index ] do
     post :approve, on: :member
+    post :cancel, on: :member
+    post :reopen, on: :member
   end
 
   # Style guide management
@@ -391,6 +393,8 @@ Rails.application.routes.draw do
       get "inbox/count", to: "inbox#count"
       get "inbox/entries/:entry_id", to: "inbox#show"
       post "inbox/entries/:entry_id/chat", to: "inbox#chat"
+      post "feature_intents/:id/cancel", to: "feature_intents#cancel"
+      post "feature_intents/:id/reopen", to: "feature_intents#reopen"
       get "projects/:project_id/design_artifact_findings", to: "design_artifact_findings#index"
       scope "chat" do
         resources :sessions, controller: "chat_sessions", only: %i[index create show update destroy] do

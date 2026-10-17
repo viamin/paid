@@ -203,6 +203,32 @@ this release state; it does not bypass this transition contract.
 
 ## Inbox decision flow and Mark approved
 
+### Declining an unwanted proposal
+
+An Inbox-authorized project member may decline a nonterminal proposal from any
+pre-approval state, including `discovering`; approval readiness and criteria
+clarity do not apply to that action. `FeatureIntent#cancel!` records the actor,
+time, selected reason (`already_handled`, `superseded`, or `no_longer_wanted`),
+and an optional replacement reference, then transitions the existing intent to
+`cancelled`. It preserves the source brief, design evidence, issue links, and
+approval-revision history. It does not close linked issues, cancel runs, release
+held work, or imply a replacement PR delivered the feature.
+
+A cancellation removes the proposal from the action Inbox and invalidates its
+badge cache. Reconciliation and sync retain the terminal cancellation rather
+than recreating or approving it. An authorized member can reopen a cancelled
+proposal to `discovering`; reopening remains held and does not revive an old
+approval. The action Inbox admits feature work only when an approval is ready
+or an open recorded human decision needs a response. Pending clarity assessment
+and ordinary discovery progress remain background work rather than Inbox noise.
+
+The membership-scoped Feature proposals page is the non-action history surface:
+it shows nonterminal proposals (including background discovery) with the
+structured decline action, and separately shows cancelled proposals with the
+authorized reopen action. It is intentionally separate from `Inbox::Queue`, so
+neither background discovery nor cancellation history affects Inbox filtering
+or its badge count.
+
 ### Readiness is a single answer, computed once
 
 `FeatureIntents::ApprovalReadiness.call(feature_intent:)` returns a
