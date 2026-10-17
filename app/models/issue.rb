@@ -98,8 +98,11 @@ class Issue < ApplicationRecord
   # several designs (the join's issue_id index is not unique), so this
   # association resolves only one link; code that must consider every linked
   # design evaluates the FeatureIntentIssue set directly (see
-  # FeatureIntents::RunAdmission and FeatureIntents::ReleaseIssue).
-  has_one :feature_intent_issue, dependent: :destroy
+  # FeatureIntents::RunAdmission and FeatureIntents::ReleaseIssue). The
+  # collection owns deletion so cleanup removes every link, not just the
+  # singular compatibility accessor's first match.
+  has_many :feature_intent_issues, dependent: :destroy
+  has_one :feature_intent_issue
   has_one :feature_intent, through: :feature_intent_issue
 
   has_many :issue_dependencies, dependent: :destroy
