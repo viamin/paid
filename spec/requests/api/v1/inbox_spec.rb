@@ -134,14 +134,14 @@ RSpec.describe "Mobile inbox API" do
   end
 
   # @spec FEATURE-APPROVAL-020
-  it "returns an unprocessable response when a cancellation reason is missing" do
+  it "rejects a cancellation without the required structured reason" do
     feature_intent = create(:feature_intent, project:, status: "discovering", criteria_clarity_state: "pending")
 
-    post "/api/v1/feature_intents/#{feature_intent.id}/cancel", headers: headers
+    expect {
+      post "/api/v1/feature_intents/#{feature_intent.id}/cancel", params: {}.to_json,
+        headers: headers.merge("Content-Type" => "application/json")
+    }.to raise_error(Committee::InvalidRequest, /cancellation_reason/)
 
-    expect(response).to have_http_status(:unprocessable_entity)
-    expect(response.parsed_body.dig("error", "code")).to eq("validation_failed")
-    expect(response.parsed_body.dig("error", "message")).to eq("Select why this proposal is being declined.")
     expect(feature_intent.reload.status).to eq("discovering")
   end
 end

@@ -148,11 +148,12 @@ paths:
         - bearerAuth: []
       x-required-pat-scopes: [inbox]
       requestBody:
-        required: false
+        required: true
         content:
           application/json:
             schema:
               type: object
+              required: [cancellation_reason]
               properties:
                 cancellation_reason:
                   type: string
