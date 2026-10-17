@@ -3,6 +3,14 @@
 require "rails_helper"
 
 RSpec.describe "Mobile inbox API" do
+  around do |example|
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    example.run
+  ensure
+    Rails.cache = original_cache
+  end
+
   let(:account) { create(:account) }
   let(:user) { create(:user, account:) }
   let(:project) { create(:project, account:, created_by: user, owner: "acme", repo: "mobile") }
