@@ -18,7 +18,7 @@ through `012`. Assessment generation through `agent_harness` remains planned.
   *Tests:* `spec/mcp/tools/save_explicit_preference_spec.rb`, `spec/models/explicit_preference_spec.rb`, `spec/services/chat_sessions/build_system_prompt_spec.rb`, `spec/services/explicit_preferences/persist_spec.rb`, `spec/services/explicit_preferences/context_spec.rb`.
   *Code:* `app/mcp/tools/*explicit_preference.rb`, `app/models/explicit_preference.rb`, `app/services/chat_sessions/build_system_prompt.rb`, `app/services/explicit_preferences/`.
 - [x] **FACET-CONFIDENCE-008** — When an issue's material prerequisites are mapped, Paid SHALL retain the agent's mapping rationale and coverage assessment, including relevant design documents, and SHALL NOT consider an unassessed empty mapping ready.
-  *Tests:* `spec/models/feature_intent_issue_prerequisite_mapping_spec.rb`.
+  *Tests:* `spec/models/feature_intent_issue_prerequisite_mapping_spec.rb`, `spec/models/feature_intent_issue_prerequisite_spec.rb`.
   *Code:* `app/models/feature_intent_issue_prerequisite_mapping.rb`, `app/models/feature_intent_issue_prerequisite.rb`.
 - [x] **FACET-CONFIDENCE-009** — When evaluating initial issue readiness, Paid SHALL require each material facet's known intent and technical scores to meet their respective project thresholds without averaging across facets or requiring unrelated feature facets to pass.
 - [x] **FACET-CONFIDENCE-010** — When confidence settings are initialized, Paid SHALL default intent and technical thresholds to 80/100 each and SHALL permit independently authorized, audited project configuration within 0–100.
