@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class ChatSession < ApplicationRecord
+  has_many :chat_diagrams, dependent: :destroy
   include TenantScoped
   self.ignored_columns += [ "mode" ]
 

@@ -42,6 +42,18 @@ RSpec.describe "ChatMessages" do
         expect(response.parsed_body.length).to eq(4)
       end
 
+      # @spec QUESTION-EXPLORATION-003 QUESTION-EXPLORATION-012
+      it "includes a typed diagram in the reconnectable message payload" do
+        message = create(:chat_message, :assistant, chat_session: chat_session)
+        diagram = create(:chat_diagram, chat_session: chat_session, chat_message: message)
+
+        get chat_session_chat_messages_path(chat_session)
+
+        payload = response.parsed_body.find { |item| item["id"] == message.id }
+        expect(payload.fetch("diagram")).to include("id" => diagram.id, "question_key" => diagram.question_key,
+          "description" => diagram.description)
+      end
+
       it "filters by role" do
         create(:chat_message, chat_session: chat_session, role: "user")
         create(:chat_message, :assistant, chat_session: chat_session)

@@ -198,6 +198,7 @@ module ChatSessions
         tool_name: tool_call_message.tool_name
       )
 
+      ChatDiagrams::AttachToMessage.call(message: message)
       on_message_persisted&.call(message)
       message
     end

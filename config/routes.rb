@@ -400,6 +400,9 @@ Rails.application.routes.draw do
           resources :messages, controller: "chat_messages", only: %i[index create] do
             post :resolve, on: :member
           end
+          resources :diagrams, controller: "chat_diagrams", only: [] do
+            resources :comments, controller: "chat_diagram_comments", only: :create
+          end
         end
       end
     end
@@ -468,6 +471,9 @@ Rails.application.routes.draw do
       member do
         post :resolve
       end
+    end
+    resources :chat_diagrams, only: [] do
+      resources :comments, controller: "chat_diagram_comments", only: :create
     end
   end
 

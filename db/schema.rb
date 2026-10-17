@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_121546) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -743,6 +743,36 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
     t.index ["project_id"], name: "index_change_intents_on_project_id"
     t.index ["requested_changes_at"], name: "index_change_intents_on_requested_changes_at", where: "(requested_changes_at IS NOT NULL)"
     t.index ["superseded_by_id"], name: "index_change_intents_on_superseded_by_id"
+  end
+
+  create_table "chat_diagram_comments", comment: "Human comments with durable diagram context", force: :cascade do |t|
+    t.bigint "actor_id", null: false, comment: "User who made the comment"
+    t.text "body", null: false
+    t.bigint "chat_diagram_id", null: false
+    t.datetime "created_at", null: false
+    t.text "element_context", comment: "Selected element text copied at comment time"
+    t.string "element_id", comment: "Selected element identity, if any"
+    t.string "question_key", null: false, comment: "Question identity copied from the diagram"
+    t.datetime "updated_at", null: false
+    t.index ["actor_id"], name: "index_chat_diagram_comments_on_actor_id"
+    t.index ["chat_diagram_id", "created_at"], name: "index_chat_diagram_comments_on_chat_diagram_id_and_created_at"
+    t.index ["chat_diagram_id"], name: "index_chat_diagram_comments_on_chat_diagram_id"
+  end
+
+  create_table "chat_diagrams", comment: "Typed, temporary diagrams rendered in chat", force: :cascade do |t|
+    t.bigint "chat_message_id", comment: "Optional transcript message that introduced the diagram"
+    t.bigint "chat_session_id", null: false
+    t.datetime "created_at", null: false
+    t.boolean "current", default: true, null: false, comment: "Whether this is the active diagram for its question"
+    t.jsonb "description", default: {}, null: false, comment: "Validated element and relationship description"
+    t.string "question_key", null: false, comment: "Stable question identity supplied with the diagram"
+    t.string "question_title", null: false, comment: "Human-readable question shown with the diagram"
+    t.text "summary", null: false, comment: "Short collapsed-card summary"
+    t.text "text_equivalent", null: false, comment: "Accessible textual equivalent of the diagram"
+    t.datetime "updated_at", null: false
+    t.index ["chat_message_id"], name: "index_chat_diagrams_on_chat_message_id"
+    t.index ["chat_session_id", "question_key"], name: "index_chat_diagrams_one_current_per_question", unique: true, where: "current"
+    t.index ["chat_session_id"], name: "index_chat_diagrams_on_chat_session_id"
   end
 
   create_table "chat_messages", force: :cascade do |t|
@@ -4132,6 +4162,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
   add_foreign_key "change_intents", "chat_sessions", on_delete: :nullify
   add_foreign_key "change_intents", "issues", on_delete: :nullify
   add_foreign_key "change_intents", "projects", on_delete: :cascade
+  add_foreign_key "chat_diagram_comments", "chat_diagrams"
+  add_foreign_key "chat_diagram_comments", "users", column: "actor_id"
+  add_foreign_key "chat_diagrams", "chat_messages"
+  add_foreign_key "chat_diagrams", "chat_sessions"
   add_foreign_key "chat_messages", "chat_sessions"
   add_foreign_key "chat_session_projects", "chat_sessions"
   add_foreign_key "chat_session_projects", "projects"

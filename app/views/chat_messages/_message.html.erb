@@ -24,5 +24,6 @@
 <% else %>
   <div class="<%= chat_message_wrapper_classes(message) %>">
     <%= render "chat_messages/bubble", message: message %>
+    <%= render "chat_diagrams/diagram", diagram: message.chat_diagram, chat_session: message.chat_session if message.chat_diagram %>
   </div>
 <% end %>

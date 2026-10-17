@@ -97,6 +97,21 @@ RSpec.describe ChatSessions::ResolveToolCall do
       expect(result.content).to eq("Done.")
     end
 
+    # @spec QUESTION-EXPLORATION-003 QUESTION-EXPLORATION-012
+    it "links a presented diagram to its persisted tool result" do
+      diagram = create(:chat_diagram, chat_session: chat_session)
+      tool_call_message.update!(tool_name: "present_chat_diagram")
+      allow(Tools::Registry).to receive(:dispatch).and_return({ "diagram" => { "id" => diagram.id } })
+
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: "approve", llm_client: llm_client
+      )
+
+      tool_result = chat_session.messages.find_by(role: "tool")
+      expect(diagram.reload.chat_message).to eq(tool_result)
+    end
+
     it "resumes the loop with the completed tool round-trip in context" do
       described_class.call(
         chat_session: chat_session, tool_call_message: tool_call_message,

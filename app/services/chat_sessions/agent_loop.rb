@@ -517,6 +517,7 @@ module ChatSessions
         tool_name: tool_call[:name]
       )
 
+      ChatDiagrams::AttachToMessage.call(message: tool_result_message)
       track_created_message(tool_result_message)
       on_message_persisted&.call(tool_result_message)
       tool_result_message

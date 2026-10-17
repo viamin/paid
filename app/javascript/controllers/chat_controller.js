@@ -288,6 +288,9 @@ export default class extends Controller {
     case "message_created":
       this.handleMessageCreated(data)
       break
+      case "diagram_created":
+        this.handleDiagramCreated(data)
+        break
     case "message_deleted":
       this.handleMessageDeleted(data)
       break
@@ -385,6 +388,24 @@ export default class extends Controller {
     this.setStatus("Ready")
     this.incrementTokenUsage(data.tokens)
     this.scrollToBottom()
+  }
+
+  // @spec QUESTION-EXPLORATION-012
+  handleDiagramCreated(data) {
+    if (!data.html || !this.hasMessagesTarget) return
+    if (this.messagesTarget.querySelector(`[data-chat-diagram-id="${data.diagram_id}"]`)) return
+
+    this.removeDiagramForQuestion(data.question_key)
+    this.messagesTarget.insertAdjacentHTML("beforeend", data.html)
+    this.scrollToBottom()
+  }
+
+  removeDiagramForQuestion(questionKey) {
+    if (typeof questionKey !== "string") return
+
+    this.messagesTarget.querySelectorAll("[data-diagram-question-key]").forEach((diagram) => {
+      if (diagram.dataset.diagramQuestionKey === questionKey) diagram.remove()
+    })
   }
 
   // Updates the workspace-capability badge in place when the background
@@ -744,8 +765,23 @@ export default class extends Controller {
       }
     }
 
+    this.removeLiveDiagramDuplicates(messageElement)
     this.appendCreatedMessage(messageElement)
     this.scrollToBottom()
+  }
+
+  // @spec QUESTION-EXPLORATION-003 QUESTION-EXPLORATION-012
+  // Diagram creation is broadcast before the tool-result message is persisted.
+  // Retain a diagram in newly replayed markup unless its live counterpart is
+  // already in the transcript; this preserves reload and reconnect rendering.
+  removeLiveDiagramDuplicates(messageElement) {
+    const existingDiagramIds = new Set(
+      [...this.messagesTarget.querySelectorAll("[data-chat-diagram-id]")]
+        .map((diagram) => diagram.dataset.chatDiagramId)
+    )
+    messageElement.querySelectorAll("[data-chat-diagram-id]").forEach((diagram) => {
+      if (existingDiagramIds.has(diagram.dataset.chatDiagramId)) diagram.remove()
+    })
   }
 
   // @spec CHAT-API-024

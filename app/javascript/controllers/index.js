@@ -43,6 +43,9 @@ application.register("confirm-delete", ConfirmDeleteController)
 import DashboardFramesController from "./dashboard_frames_controller"
 application.register("dashboard-frames", DashboardFramesController)
 
+import DiagramController from "./diagram_controller"
+application.register("diagram", DiagramController)
+
 import DisclosureGroupController from "./disclosure_group_controller"
 application.register("disclosure-group", DisclosureGroupController)
 

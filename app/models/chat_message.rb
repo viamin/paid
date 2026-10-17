@@ -7,6 +7,7 @@ class ChatMessage < ApplicationRecord
   before_validation :set_external_id, on: :create
 
   belongs_to :chat_session
+  has_one :chat_diagram, dependent: :nullify
   has_many :api_usage_attempts, dependent: :nullify
 
   validates :role, inclusion: { in: ROLES }

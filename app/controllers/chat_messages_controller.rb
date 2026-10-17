@@ -13,7 +13,7 @@ class ChatMessagesController < ApplicationController
     only: %i[create resolve]
 
   def index
-    messages = policy_scope(ChatMessage)
+    messages = policy_scope(ChatMessage).includes(:chat_diagram)
       .where(chat_session: @chat_session)
 
     messages = messages.where(role: params[:role]) if params[:role].present?
@@ -311,7 +311,8 @@ class ChatMessagesController < ApplicationController
       tool_status: message.tool_status,
       tokens_input: message.tokens_input,
       tokens_output: message.tokens_output,
-      created_at: message.created_at
+      created_at: message.created_at,
+      diagram: ChatDiagrams::Serializer.call(message.chat_diagram)
     }
   end
 

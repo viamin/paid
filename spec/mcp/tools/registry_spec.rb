@@ -56,6 +56,7 @@ RSpec.describe Tools::Registry do
       set_labels
       submit_clarifying_answers
       save_clarifying_answer
+      present_chat_diagram
       save_explicit_preference
       delete_explicit_preference
       verify_apple_project
@@ -231,7 +232,7 @@ RSpec.describe Tools::Registry do
       names = definitions.map { |definition| definition[:name] }
 
       expect(names).to include("list_projects", "get_project", "operator_console_inventory")
-      expect(names).not_to include("trigger_agent_run", "operator_suspend_account")
+      expect(names).not_to include("trigger_agent_run", "present_chat_diagram", "operator_suspend_account")
     end
   end
 

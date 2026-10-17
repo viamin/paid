@@ -290,6 +290,17 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "present_chat_diagram",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> { { question_key: "delivery", question_title: "Delivery", summary: "A summary",
+          text_equivalent: "A text equivalent", description: { "elements" => [ { "id" => "app", "label" => "App", "description" => "The application." } ], "relationships" => [] } } },
+        session: ->(user) { build(:chat_session, account: user.account, created_by: user) },
+        ui_call: ->(user) {
+          session = build(:chat_session, account: user.account, created_by: user)
+          authorize_record!(user, ChatMessage.new(chat_session: session), :create?, policy_class: ChatMessagePolicy)
+        }
+      },
+      {
         tool_name: "get_inbox_chat_context",
         denied_user: -> {
           project

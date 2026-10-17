@@ -214,6 +214,25 @@ paths:
       responses:
         '200': {description: Tool resolution response or SSE stream, content: {application/json: {schema: {$ref: '#/components/schemas/ChatAssistantResponse'}}, text/event-stream: {schema: {type: string}}}}
         default: {$ref: '#/components/responses/Error'}
+  /chat/sessions/{session_id}/diagrams/{diagram_id}/comments:
+    parameters: [{$ref: '#/components/parameters/ChatSessionIdAsSessionId'}, {$ref: '#/components/parameters/ChatDiagramId'}]
+    post:
+      operationId: createChatDiagramComment
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string}
+                element_id: {type: string}
+      responses:
+        '201': {description: Created diagram comment, content: {application/json: {schema: {$ref: '#/components/schemas/ChatDiagramComment'}}}}
+        default: {$ref: '#/components/responses/Error'}
 components:
   securitySchemes:
     bearerAuth:
@@ -232,6 +251,11 @@ components:
       schema: {type: integer}
     ChatSessionIdAsSessionId:
       name: session_id
+      in: path
+      required: true
+      schema: {type: integer}
+    ChatDiagramId:
+      name: diagram_id
       in: path
       required: true
       schema: {type: integer}
@@ -306,7 +330,7 @@ components:
           properties:
             code:
               type: string
-              enum: [invalid_request, unauthorized, forbidden, not_found, conflict, validation_failed, rate_limited, internal_error, provider_error, provider_unavailable]
+              enum: [invalid_request, unauthorized, forbidden, not_found, conflict, validation_failed, stale_element, rate_limited, internal_error, provider_error, provider_unavailable]
             message: {type: string}
             details: {type: object, additionalProperties: true}
     ChatSessionListResponse:
@@ -332,6 +356,32 @@ components:
         role: {type: string}
         content: {type: string, nullable: true}
         tool_status: {type: string, nullable: true}
+        diagram:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ChatDiagram'
+    ChatDiagram:
+      type: object
+      required: [id, question_key, question_title, summary, text_equivalent, description, current]
+      properties:
+        id: {type: integer}
+        question_key: {type: string}
+        question_title: {type: string}
+        summary: {type: string}
+        text_equivalent: {type: string}
+        description: {type: object, additionalProperties: true}
+        current: {type: boolean}
+    ChatDiagramComment:
+      type: object
+      required: [id, actor_id, question_key, body, created_at]
+      properties:
+        id: {type: integer}
+        actor_id: {type: integer}
+        question_key: {type: string}
+        body: {type: string}
+        element_id: {type: string, nullable: true}
+        element_context: {type: string, nullable: true}
+        created_at: {type: string, format: date-time}
     ChatMessageListResponse:
       type: object
       required: [messages]
