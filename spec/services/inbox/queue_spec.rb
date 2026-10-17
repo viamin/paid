@@ -664,6 +664,16 @@ RSpec.describe Inbox::Queue do
     end
 
     # @spec FEATURE-APPROVAL-013
+    it "keeps an approved intent with a stale required design PR in the action Inbox" do
+      feature_intent = create(:feature_intent, :approved_waiting_for_merge, project: project)
+      create(:feature_intent_design_pr, :stale, feature_intent: feature_intent)
+
+      entries = described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+
+      expect(entries.map(&:record)).to include(feature_intent)
+    end
+
+    # @spec FEATURE-APPROVAL-013
     it "returns a feature_decision entry for an open feature intent" do
       feature_intent = create(:feature_intent, :ready_for_approval, project: project, title: "Bulk CSV export")
 

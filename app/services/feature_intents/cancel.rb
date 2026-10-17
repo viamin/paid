@@ -7,7 +7,7 @@ module FeatureIntents
       new(...).call
     end
 
-    def initialize(feature_intent:, actor:, cancellation_reason:, replacement_reference: nil)
+    def initialize(feature_intent:, actor:, cancellation_reason: nil, replacement_reference: nil)
       @feature_intent = feature_intent
       @actor = actor
       @cancellation_reason = cancellation_reason

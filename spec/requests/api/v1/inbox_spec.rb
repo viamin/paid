@@ -132,4 +132,16 @@ RSpec.describe "Mobile inbox API" do
     expect(response).to have_http_status(:not_found)
     expect(response.parsed_body.dig("error", "code")).to eq("not_found")
   end
+
+  # @spec FEATURE-APPROVAL-020
+  it "returns an unprocessable response when a cancellation reason is missing" do
+    feature_intent = create(:feature_intent, project:, status: "discovering", criteria_clarity_state: "pending")
+
+    post "/api/v1/feature_intents/#{feature_intent.id}/cancel", headers: headers
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.dig("error", "code")).to eq("validation_failed")
+    expect(response.parsed_body.dig("error", "message")).to eq("Select why this proposal is being declined.")
+    expect(feature_intent.reload.status).to eq("discovering")
+  end
 end

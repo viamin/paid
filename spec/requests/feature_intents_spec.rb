@@ -109,6 +109,16 @@ RSpec.describe "Feature intents" do
         replacement_reference: "https://github.com/viamin/paid/pull/4430"
       )
     end
+
+    it "redirects with a validation message when the cancellation reason is missing" do
+      feature_intent = create(:feature_intent, project: project, status: "discovering", criteria_clarity_state: "pending")
+
+      post cancel_feature_intent_path(feature_intent)
+
+      expect(response).to redirect_to(inbox_entry_path("#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"))
+      expect(flash[:alert]).to eq("Select why this proposal is being declined.")
+      expect(feature_intent.reload.status).to eq("discovering")
+    end
   end
 
   describe "POST /feature_intents/:id/reopen" do

@@ -165,9 +165,9 @@
   `app/services/feature_intents/reopen.rb`, `app/services/inbox/queue.rb`.
 
 - [x] **FEATURE-APPROVAL-013** — For approval-gated features, `Inbox::Queue` SHALL expose a
-  `feature_decision` entry for every `FeatureIntent` whose status is not
-  `released`, `revising`, or `cancelled` (including `approved_waiting_for_merge`,
-  since a stale head after approval reopens the hold). Unlike every other
+  `feature_decision` entry for every approval-ready `FeatureIntent`, every intent
+  with an open recorded human decision, and every `approved_waiting_for_merge`
+  intent with a stale required design-PR head. Unlike every other
   Inbox kind, these entries SHALL use project-membership visibility
   (`FeatureIntentPolicy::Scope`, the same pattern as `plan_review_entries`)
   rather than the account+owner-scoped `scoped_projects` used by

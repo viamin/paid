@@ -581,9 +581,10 @@ module Inbox
     # entries stay visible to any project member with Inbox access, not just
     # the project's owner.
     # The action Inbox is not a status report. A feature enters this lane only
-    # when a member can approve it now or answer a recorded human decision;
-    # discovery and pending automated assessments belong to background progress.
-    # @spec FEATURE-APPROVAL-020
+    # when a member can approve it now, answer a recorded human decision, or
+    # re-review a stale approved design PR; discovery and pending automated
+    # assessments belong to background progress.
+    # @spec FEATURE-APPROVAL-013 @spec FEATURE-APPROVAL-020
     def feature_decision_entries
       scope = FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
         .where.not(status: FeatureIntent::TERMINAL_STATUSES)
@@ -599,7 +600,8 @@ module Inbox
 
     def feature_action_required?(feature_intent)
       FeatureIntents::ApprovalReadiness.call(feature_intent: feature_intent).ready? ||
-        feature_intent.feature_intent_decisions.any?(&:open?)
+        feature_intent.feature_intent_decisions.any?(&:open?) ||
+        feature_intent.feature_intent_design_prs.any? { |design_pr| design_pr.required? && design_pr.stale? }
     end
 
     def feature_decision_entry(feature_intent)

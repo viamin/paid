@@ -11,8 +11,10 @@ module Api
         authorize feature_intent, :cancel?, policy_class: FeatureIntentPolicy
         FeatureIntents::Cancel.call(feature_intent:, actor: current_user, **cancellation_attributes)
         render json: feature_payload(feature_intent.reload)
-      rescue FeatureIntents::Cancel::InvalidCancellationError, FeatureIntent::InvalidTransitionError => error
-        render_error(:unprocessable_entity, :invalid_transition, error.message)
+      rescue FeatureIntents::Cancel::InvalidCancellationError => error
+        render_error(:unprocessable_entity, :validation_failed, error.message)
+      rescue FeatureIntent::InvalidTransitionError => error
+        render_error(:unprocessable_entity, :conflict, error.message)
       end
 
       def reopen
