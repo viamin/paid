@@ -114,7 +114,7 @@ RSpec.describe Inbox::Queue do
     # @spec AUTO-MERGE-009
     it "returns a merge-approval Inbox entry for an unevaluated review-gated PR" do
       project.update!(owner_reviewer_login: nil)
-      create(
+      pr = create(
         :issue,
         :pull_request,
         project: project,

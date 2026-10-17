@@ -649,6 +649,26 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(automation_scan_results(result)).to be_empty
       end
 
+      # @spec OPERATOR-INBOX-002K
+      it "persists stale approval revisions for an auto-merge-off PR" do
+        project.update!(auto_merge_mode: "off", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_owner_approval_ready_signals(
+          head_sha: "current-revision",
+          approved_revision: "approved-revision"
+        )
+
+        activity.execute(project_id: project.id)
+
+        blocker = pr_issue.reload.auto_merge_blockers.fetch("failed").find do |candidate|
+          candidate["signal"] == "reviews_fresh"
+        end
+        expect(blocker.fetch("approval_evidence")).to include(
+          "approved_revision" => "approved-revision",
+          "current_revision" => "current-revision"
+        )
+      end
+
       # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
       it "does not assess human PR merge eligibility in Dependabot-only mode" do
         project.update!(auto_merge_mode: "dependabot_only", owner_reviewer_login: "viamin")
@@ -12486,10 +12506,12 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     )
   end
 
-  def stub_owner_approval_ready_signals(checks_conclusion: "success", head_sha: "abc123", review_freshness: :stale)
+  def stub_owner_approval_ready_signals(checks_conclusion: "success", head_sha: "abc123", review_freshness: :stale,
+    approved_revision: nil)
     stub_github_for_pr(
       checks: [ { name: "rspec", conclusion: checks_conclusion } ],
-      reviews: [ { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current } ],
+      reviews: [ { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current,
+                  commit_id: approved_revision } ].compact,
       head_sha: head_sha
     )
     allow(activity).to receive_messages(
