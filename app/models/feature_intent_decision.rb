@@ -12,6 +12,8 @@ class FeatureIntentDecision < ApplicationRecord
 
   belongs_to :feature_intent
   belongs_to :resolved_by, class_name: "User", optional: true
+  has_many :facets, class_name: "FeatureIntentFacet", dependent: :nullify
+  has_many :facet_evidence, class_name: "FeatureIntentFacetEvidence", dependent: :nullify
 
   validates :kind, presence: true, inclusion: { in: KINDS }
   validates :design_claim, presence: true
