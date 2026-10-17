@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_17_095634) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -292,6 +292,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
     t.bigint "blocked_by_issue_ids", default: [], comment: "IDs of issues/PRs that block the created issue from being picked up for work.", array: true
     t.string "branch_name", limit: 255
     t.datetime "completed_at"
+    t.jsonb "confidence_delivery_snapshot", default: {}, null: false, comment: "Immutable confidence-delivery scope, evidence, thresholds, and merged-design baseline admitted for this run."
     t.bigint "configuration_bundle_id", comment: "Configuration bundle assigned to the run before execution."
     t.string "configuration_bundle_selection_context", comment: "Primary optimization context used for bundle routing, such as task or project."
     t.string "configuration_bundle_selection_mode", comment: "Whether configuration bundle routing favored exploitative or exploratory selection for this run."
@@ -1795,9 +1796,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_050631) do
     t.datetime "created_at", null: false
     t.bigint "feature_intent_id", null: false
     t.bigint "issue_id", null: false
+    t.jsonb "readiness_mapping", default: {}, null: false, comment: "Agent-authored current scope, facet prerequisites, and relevant design baseline for confidence delivery."
+    t.text "release_error", comment: "Most recent GitHub planning-hold reconciliation failure, retained for visible retry."
+    t.jsonb "release_snapshot", default: {}, null: false, comment: "Immutable readiness evidence recorded when Paid releases the workflow-owned planning hold."
+    t.string "release_state", default: "held", null: false, comment: "Confidence-delivery projection state: held, pending, released, or reconciliation_failed."
+    t.datetime "released_at", comment: "When the workflow-owned planning hold was reconciled successfully."
     t.datetime "updated_at", null: false
     t.index ["feature_intent_id"], name: "index_feature_intent_issues_on_feature_intent_id"
     t.index ["issue_id"], name: "index_feature_intent_issues_on_issue_id"
+    t.index ["release_state"], name: "index_feature_intent_issues_on_release_state"
   end
 
   create_table "feature_intents", comment: "RDR-066 feature intent: links a feature's approved design revision to its issue tree.", force: :cascade do |t|

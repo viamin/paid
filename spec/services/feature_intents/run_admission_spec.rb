@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024 @spec CONFIDENCE-DELIVERY-014 @spec CONFIDENCE-DELIVERY-015
+# @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024 @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-005
 RSpec.describe FeatureIntents::RunAdmission do
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project) }
@@ -35,14 +35,17 @@ RSpec.describe FeatureIntents::RunAdmission do
     expect(described_class.call(issue: issue)).not_to be_allowed
   end
 
-  it "fails closed for confidence-driven work until its complete delivery integration exists" do
+  it "admits released confidence-driven work from its immutable readiness snapshot" do
     feature = create(:feature_intent, :confidence_driven, project: project)
-    create(:feature_intent_issue, feature_intent: feature, issue: issue)
+    create(:feature_intent_issue, feature_intent: feature, issue: issue,
+      release_state: "released",
+      readiness_mapping: confidence_mapping,
+      release_snapshot: confidence_snapshot)
 
     result = described_class.call(issue: issue)
 
-    expect(result).not_to be_allowed
-    expect(result.reason).to include("not available")
+    expect(result).to be_allowed
+    expect(result.revision).to eq("a" * 40)
   end
 
   it "keeps mixed-policy features on their own admission contracts" do # @spec CONFIDENCE-DELIVERY-001
@@ -54,5 +57,27 @@ RSpec.describe FeatureIntents::RunAdmission do
 
     expect(described_class.call(issue: approval_issue)).to be_allowed
     expect(described_class.call(issue: issue)).not_to be_allowed
+  end
+
+  it "fails closed when confidence work is missing a reconciled release or assessment" do
+    feature = create(:feature_intent, :confidence_driven, project: project)
+    create(:feature_intent_issue, feature_intent: feature, issue: issue)
+
+    expect(described_class.call(issue: issue)).not_to be_allowed
+  end
+
+  def confidence_mapping
+    {
+      "coverage" => "complete",
+      "scope_revision" => "scope-v1",
+      "prerequisites" => [
+        { "id" => "intent", "assessment" => { "status" => "completed", "evidence_revision" => "evidence-v1", "intent_score" => 80, "technical_score" => 80 } }
+      ],
+      "design_artifacts" => [ { "path" => "docs/intent/example.md", "required" => true, "merged" => true, "scope_revision" => "scope-v1", "revision" => "a" * 40 } ]
+    }
+  end
+
+  def confidence_snapshot
+    FeatureIntents::ScopedReadiness.call(project: project, mapping: confidence_mapping).snapshot
   end
 end
