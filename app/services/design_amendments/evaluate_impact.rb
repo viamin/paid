@@ -55,6 +55,8 @@ module DesignAmendments
       return empty_result if branch_candidates.empty?
 
       review_result = review.equal?(REVIEW_NOT_COMPUTED) ? ImpactReview.call(amendment: amendment, branches: branch_candidates) : review
+      raise ImpactReviewFailedError, "confidence-driven impact review failed; retry before routing forward work" if amendment.feature_intent.confidence_driven? && review_result.nil?
+
       mapping = review_result ? review_result.mapping : fail_closed_mapping
 
       return route_confidence_findings(mapping, review_result, started_at) if amendment.feature_intent.confidence_driven?

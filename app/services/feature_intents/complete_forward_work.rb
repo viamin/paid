@@ -122,7 +122,7 @@ module FeatureIntents
     end
 
     def suitable_unstarted_issue?(issue)
-      issue && issue != completion_issue && issue.github_state == "open" &&
+      issue && !issue.is_pull_request? && issue != completion_issue && issue.github_state == "open" &&
         !issue.agent_runs.where(status: AgentRun::DEDUP_BLOCKING_STATUSES).exists?
     end
 
@@ -180,7 +180,7 @@ module FeatureIntents
 
     def ensure_dependency!(issue)
       return if issue == completion_issue
-      return :cycle if Issues::DetectCycle.call(from_issue: issue, target_issue_id: completion_issue.id)
+      return :cycle if Issues::DetectCycle.call(from_issue: issue, target_issue_id: completion_issue.id, adjacency: dependency_adjacency)
 
       key = "dependency:#{issue.id}"
       mark_pending!(key)
@@ -191,7 +191,7 @@ module FeatureIntents
       client.update_issue(feature_intent.project.full_name, completion_issue.github_number, body: updated_body) if updated_body != body
       verified = client.issue(feature_intent.project.full_name, completion_issue.github_number).body.to_s
       line = ProjectConventions::IssueDependencies.depends_on_line(project: feature_intent.project, github_number: issue.github_number)
-      raise GithubClient::Error, "completion dependency was not read back" unless verified.include?(line)
+      raise GithubClient::Error, "completion dependency was not read back" unless verified.match?(/\b#{Regexp.escape(line)}\b/)
 
       completion_issue.update!(body: verified)
       persist_dependency!(issue)
@@ -212,6 +212,10 @@ module FeatureIntents
 
     def required_issues
       feature_intent.issues.where.not(id: completion_issue.id)
+    end
+
+    def dependency_adjacency
+      @dependency_adjacency ||= IssueDependency.account_adjacency(feature_intent.project.account)
     end
 
     def append_finding(body, marker)

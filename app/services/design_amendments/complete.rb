@@ -24,8 +24,9 @@ module DesignAmendments
 
       # Run the LLM impact review before opening the transaction below, so
       # the network round trip doesn't hold the transaction's row locks
-      # open. A review failure fails closed inside EvaluateImpact, so
-      # nothing here depends on catching it.
+      # open. Approval-gated failures fail closed inside EvaluateImpact;
+      # confidence-driven failures raise after this baseline is committed so
+      # a retry cannot materialize speculative remote forward work.
       review = EvaluateImpact.review_for(amendment)
 
       # requires_new so a write failure rolls back exactly this unit

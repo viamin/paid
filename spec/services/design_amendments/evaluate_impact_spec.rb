@@ -185,6 +185,25 @@ RSpec.describe DesignAmendments::EvaluateImpact do
     expect(DesignAmendmentPause.where(issue: affected_issue)).not_to exist
   end
 
+  it "raises for retry without creating remote forward work when confidence assessment fails" do # @spec CONFIDENCE-DELIVERY-008
+    confidence_amendment, completion_issue, affected_issue = confidence_delivery_setup
+    client = instance_double(GithubClient)
+    allow(project).to receive(:client).and_return(client)
+    allow(client).to receive(:create_issue)
+    allow(client).to receive(:update_issue)
+    allow(DesignAmendments::ImpactReview).to receive(:call).and_return(nil)
+
+    expect {
+      described_class.call(amendment: confidence_amendment)
+    }.to raise_error(DesignAmendments::ImpactReviewFailedError)
+
+    expect(FeatureIntentForwardWorkItem).not_to exist
+    expect(client).not_to have_received(:create_issue)
+    expect(client).not_to have_received(:update_issue)
+    expect(completion_issue.reload.body).to eq("Completion")
+    expect(affected_issue.reload.body).to eq("Implementation")
+  end
+
   it "reconciles all confidence findings once after routing them" do # @spec CONFIDENCE-DELIVERY-008
     confidence_amendment, completion_issue, affected_issue = confidence_delivery_setup
     second_issue = create(:issue, project:, github_number: 702, body: "Second implementation")
