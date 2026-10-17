@@ -563,6 +563,7 @@ module Screenshots
       when /\Adevise\// then [ :sign_in ]
       when /\Adashboard\//, "dashboard/show.html.erb" then [ :dashboard ]
       when /\Ainbox\// then [ :dashboard ]
+      when /\Afeature_intents\// then [ :dashboard ]
       when /\Ahome\// then [ :dashboard ]
       when /\Anotifications\// then [ :notifications ]
       when /\Aonboarding\// then [ :onboarding ]
