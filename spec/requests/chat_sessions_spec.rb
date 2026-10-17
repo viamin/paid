@@ -161,7 +161,7 @@ RSpec.describe "ChatSessions" do
       end
 
       it "ignores projects outside the account" do
-        runner = create_openai_chat_runner
+        create_openai_chat_runner
         other_project = create(:project, model_preferences: { "max_tier" => "low" })
 
         get runner_model_options_chat_sessions_path, params: { project_id: other_project.id }
