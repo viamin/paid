@@ -94,8 +94,11 @@ class Issue < ApplicationRecord
   has_many :intent_conformance_decisions, dependent: :destroy
   has_many :clarifying_question_progresses, dependent: :destroy
 
-  # @spec INTENT-AMENDMENT-003 — feature intent linkage; an
-  # issue belongs to at most one feature tree (unique index on the join).
+  # @spec INTENT-AMENDMENT-003 — feature intent linkage. An issue may serve
+  # several designs (the join's issue_id index is not unique), so this
+  # association resolves only one link; code that must consider every linked
+  # design evaluates the FeatureIntentIssue set directly (see
+  # FeatureIntents::RunAdmission and FeatureIntents::ReleaseIssue).
   has_one :feature_intent_issue, dependent: :destroy
   has_one :feature_intent, through: :feature_intent_issue
 

@@ -57,7 +57,11 @@ Record an immutable release snapshot: issue scope revision, feature policy,
 material facet/direction IDs, assessment/evidence revisions, thresholds and
 merged design baseline. Reconcile the workflow-owned planning label and
 dependencies without erasing unrelated human holds. No new human approval
-record is required. Queue admission consumes the same result at auto-pick,
+record is required. An issue may serve several designs; its planning hold
+reconciles and its admission passes only when every linked confidence
+design's scoped readiness passes — never an arbitrary single link, and
+already-released snapshots stay immutable while later links reconcile.
+Queue admission consumes the same result at auto-pick,
 eager enqueue, dequeue, API/chat/manual starts and actual run creation. The
 admitted snapshot is copied onto the created run so later scope changes cannot
 silently alter active work.

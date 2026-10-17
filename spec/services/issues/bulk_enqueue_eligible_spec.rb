@@ -146,4 +146,27 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
     expect(Issues::EnqueueEligible).to have_received(:call)
       .with(third_issue, project: project, skip_project_gate: true)
   end
+
+  describe "#release_confidence_delivery_holds" do
+    it "reconciles each held confidence-delivery issue once, however many unreleased links serve it" do
+      link_scope = instance_double(ActiveRecord::Relation)
+      where_chain = instance_double(ActiveRecord::QueryMethods::WhereChain)
+      issue_scope = instance_double(ActiveRecord::Relation)
+      held_issue = instance_double(Issue)
+      allow(FeatureIntentIssue).to receive(:joins).with(:feature_intent).and_return(link_scope)
+      allow(link_scope).to receive(:where).with(feature_intents: { project_id: project.id, delivery_policy: "confidence_driven" }).and_return(link_scope)
+      allow(link_scope).to receive(:where).with(no_args).and_return(where_chain)
+      allow(where_chain).to receive(:not).with(release_state: "released").and_return(link_scope)
+      allow(link_scope).to receive(:distinct).and_return(link_scope)
+      allow(link_scope).to receive(:pluck).with(:issue_id).and_return([ 9, 9 ])
+      allow(Issue).to receive(:where).and_return(issue_scope)
+      allow(issue_scope).to receive(:find_each).and_yield(held_issue)
+      allow(FeatureIntents::ReleaseIssue).to receive(:call)
+      allow(service).to receive(:release_confidence_delivery_holds).and_call_original
+
+      service.send(:release_confidence_delivery_holds)
+
+      expect(FeatureIntents::ReleaseIssue).to have_received(:call).once.with(issue: held_issue)
+    end
+  end
 end

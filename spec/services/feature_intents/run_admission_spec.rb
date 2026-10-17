@@ -66,6 +66,45 @@ RSpec.describe FeatureIntents::RunAdmission do
     expect(described_class.call(issue: issue)).not_to be_allowed
   end
 
+  it "requires every confidence design the issue serves to permit admission" do
+    released_feature = create(:feature_intent, :confidence_driven, project: project)
+    create(:feature_intent_issue, feature_intent: released_feature, issue: issue,
+      release_state: "released", readiness_mapping: confidence_mapping, release_snapshot: confidence_snapshot)
+    held_feature = create(:feature_intent, :confidence_driven, project: project)
+    create(:feature_intent_issue, feature_intent: held_feature, issue: issue)
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_allowed
+    expect(result.reason).to include("has not reconciled")
+  end
+
+  it "holds admission when any linked approval-gated design is unreleased" do
+    approval_feature = create(:feature_intent, project: project, status: "approved_waiting_for_merge")
+    create(:feature_intent_issue, feature_intent: approval_feature, issue: issue)
+    confidence_feature = create(:feature_intent, :confidence_driven, project: project)
+    create(:feature_intent_issue, feature_intent: confidence_feature, issue: issue,
+      release_state: "released", readiness_mapping: confidence_mapping, release_snapshot: confidence_snapshot)
+
+    expect(described_class.call(issue: issue)).not_to be_allowed
+  end
+
+  it "admits when every design permits, pinning the first linked baseline deterministically" do
+    first_feature = create(:feature_intent, :confidence_driven, project: project)
+    create(:feature_intent_issue, feature_intent: first_feature, issue: issue,
+      release_state: "released",
+      readiness_mapping: confidence_mapping,
+      release_snapshot: confidence_snapshot.merge("merged_baseline" => "b" * 40))
+    second_feature = create(:feature_intent, :confidence_driven, project: project)
+    create(:feature_intent_issue, feature_intent: second_feature, issue: issue,
+      release_state: "released", readiness_mapping: confidence_mapping, release_snapshot: confidence_snapshot)
+
+    result = described_class.call(issue: issue)
+
+    expect(result).to be_allowed
+    expect(result.revision).to eq("b" * 40)
+  end
+
   def confidence_mapping
     {
       "coverage" => "complete",

@@ -1,9 +1,11 @@
 # frozen_string_literal: true
 
 module FeatureIntents
-  # The one deterministic admission gate for implementation work linked to an
-  # feature. It intentionally reads the current feature state
-  # every time: a run can be queued before a design becomes held again.
+  # The one deterministic admission gate for implementation work linked to
+  # feature intents. An issue may serve several designs, so every linked
+  # feature intent must permit the run. It intentionally reads the current
+  # feature state every time: a run can be queued before a design becomes
+  # held again.
   # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024 @spec CONFIDENCE-DELIVERY-005
   class RunAdmission
     Result = Data.define(:allowed, :revision, :reason, :snapshot) do
@@ -19,27 +21,40 @@ module FeatureIntents
     end
 
     def call
-      return allowed unless feature_intent
-      return confidence_delivery_admission if feature_intent.confidence_driven?
-      return denied("Feature intent is not released.") unless feature_intent.released?
-      return denied("Feature intent has no approved repository revision.") if feature_intent.approved_design_revision.blank?
+      permits = links.map { |link| admit_link(link) }
+      denial = permits.find { |result| !result.allowed? }
+      return denial if denial
 
-      allowed(feature_intent.approved_design_revision)
+      permits.find { |result| result.revision.present? || result.snapshot.present? } || allowed
     end
 
     private
 
     attr_reader :issue
 
-    def feature_intent
-      @feature_intent ||= FeatureIntent.joins(:feature_intent_issues).find_by(feature_intent_issues: { issue_id: issue.id })
+    # An issue may serve several designs (the issue_id index on the join is
+    # not unique); each link carries its own admission contract, so every
+    # link is evaluated rather than an arbitrary one.
+    def links
+      @links ||= FeatureIntentIssue.includes(:feature_intent)
+        .where(issue_id: issue.id)
+        .order(:id).to_a
     end
 
-    def allowed(revision = nil, snapshot: {}) = Result.new(allowed: true, revision: revision, reason: nil, snapshot: snapshot)
+    def admit_link(link)
+      return confidence_admission(link) if link.feature_intent.confidence_driven?
 
-    def denied(reason) = Result.new(allowed: false, revision: nil, reason: reason, snapshot: {})
+      approval_admission(link.feature_intent)
+    end
 
-    def confidence_delivery_admission
+    def approval_admission(feature)
+      return denied("Feature intent is not released.") unless feature.released?
+      return denied("Feature intent has no approved repository revision.") if feature.approved_design_revision.blank?
+
+      allowed(feature.approved_design_revision)
+    end
+
+    def confidence_admission(link)
       return denied("Confidence-driven issue has not reconciled its workflow-owned planning hold.") unless link.release_state == "released"
 
       readiness = ScopedReadiness.call(project: issue.project, mapping: link.readiness_mapping)
@@ -52,8 +67,8 @@ module FeatureIntents
       )
     end
 
-    def link
-      @link ||= issue.feature_intent_issue
-    end
+    def allowed(revision = nil, snapshot: {}) = Result.new(allowed: true, revision: revision, reason: nil, snapshot: snapshot)
+
+    def denied(reason) = Result.new(allowed: false, revision: nil, reason: reason, snapshot: {})
   end
 end

@@ -60,13 +60,17 @@ module Issues
     # candidate scope while their GitHub planning projection is unresolved.
     # Reconcile them before reading that scope, so the periodic eager-queue
     # sweep can release newly-ready work without treating a label as evidence.
+    # An issue may serve several designs, so reconciliation runs once per
+    # issue — ReleaseIssue reconciles every unreleased confidence link the
+    # issue serves as one set.
     # @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-006
     def release_confidence_delivery_holds
-      FeatureIntentIssue.includes(:issue, :feature_intent)
-        .joins(:feature_intent)
+      held_issue_ids = FeatureIntentIssue.joins(:feature_intent)
         .where(feature_intents: { project_id: project.id, delivery_policy: "confidence_driven" })
         .where.not(release_state: "released")
-        .find_each { |link| FeatureIntents::ReleaseIssue.call(issue: link.issue) }
+        .distinct.pluck(:issue_id)
+
+      Issue.where(id: held_issue_ids).find_each { |issue| FeatureIntents::ReleaseIssue.call(issue: issue) }
     end
 
     def eligible_scope
