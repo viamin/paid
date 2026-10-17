@@ -8,6 +8,8 @@
 # Inbox access may approve"). Delegates to ProjectPolicy so this stays in
 # sync with the project's general membership rules.
 class FeatureIntentPolicy < ApplicationPolicy
+  def index? = user.present?
+
   def show?
     ProjectPolicy.new(user, record.project).show?
   end

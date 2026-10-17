@@ -222,6 +222,13 @@ approval. The action Inbox admits feature work only when an approval is ready
 or an open recorded human decision needs a response. Pending clarity assessment
 and ordinary discovery progress remain background work rather than Inbox noise.
 
+The membership-scoped Feature proposals page is the non-action history surface:
+it shows nonterminal proposals (including background discovery) with the
+structured decline action, and separately shows cancelled proposals with the
+authorized reopen action. It is intentionally separate from `Inbox::Queue`, so
+neither background discovery nor cancellation history affects Inbox filtering
+or its badge count.
+
 ### Readiness is a single answer, computed once
 
 `FeatureIntents::ApprovalReadiness.call(feature_intent:)` returns a

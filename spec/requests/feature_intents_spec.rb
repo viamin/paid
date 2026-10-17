@@ -9,6 +9,21 @@ RSpec.describe "Feature intents" do
 
   before { sign_in owner }
 
+  describe "GET /feature_intents" do
+    # @spec FEATURE-APPROVAL-020
+    it "keeps background proposals and declined proposal history reachable outside the action Inbox" do
+      discovering = create(:feature_intent, project: project, status: "discovering", criteria_clarity_state: "pending",
+        title: "Background proposal")
+      cancelled = create(:feature_intent, project: project, status: "cancelled", cancelled_by: owner,
+        cancelled_at: 1.hour.ago, cancellation_reason: "superseded", title: "Declined proposal")
+
+      get feature_intents_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include(discovering.title, cancelled.title, "Declined proposals", "Reopen for discovery")
+    end
+  end
+
   describe "POST /feature_intents/:id/approve" do
     it "approves a ready feature intent and redirects to the inbox" do
       feature_intent = create(:feature_intent, :ready_for_approval, project: project)
@@ -100,8 +115,8 @@ RSpec.describe "Feature intents" do
         replacement_reference: "https://github.com/viamin/paid/pull/4430"
       }
 
-      expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND))
-      expect(flash[:notice]).to eq("Feature proposal declined and removed from the Inbox.")
+      expect(response).to redirect_to(feature_intents_path)
+      expect(flash[:notice]).to eq("Feature proposal declined. It remains available in proposal history.")
       expect(feature_intent.reload).to have_attributes(
         status: "cancelled",
         cancelled_by: owner,
@@ -115,7 +130,7 @@ RSpec.describe "Feature intents" do
 
       post cancel_feature_intent_path(feature_intent)
 
-      expect(response).to redirect_to(inbox_entry_path("#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"))
+      expect(response).to redirect_to(feature_intents_path)
       expect(flash[:alert]).to eq("Select why this proposal is being declined.")
       expect(feature_intent.reload.status).to eq("discovering")
     end
@@ -128,7 +143,7 @@ RSpec.describe "Feature intents" do
 
       post reopen_feature_intent_path(feature_intent)
 
-      expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND))
+      expect(response).to redirect_to(feature_intents_path)
       expect(feature_intent.reload.status).to eq("discovering")
     end
   end

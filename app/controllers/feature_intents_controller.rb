@@ -4,6 +4,16 @@
 class FeatureIntentsController < ApplicationController
   before_action :set_feature_intent, only: %i[approve cancel reopen]
 
+  # Background discovery and cancellation history remain reachable here rather
+  # than becoming non-actionable entries in the Inbox queue.
+  # @spec FEATURE-APPROVAL-020
+  def index
+    authorize FeatureIntent, :index?, policy_class: FeatureIntentPolicy
+    scope = policy_scope(FeatureIntent).includes(:project, :cancelled_by)
+    @feature_intents = scope.where.not(status: FeatureIntent::TERMINAL_STATUSES).order(created_at: :desc, id: :desc)
+    @cancelled_feature_intents = scope.where(status: "cancelled").order(cancelled_at: :desc, id: :desc)
+  end
+
   def approve
     authorize @feature_intent, :approve?, policy_class: FeatureIntentPolicy
 
@@ -28,22 +38,22 @@ class FeatureIntentsController < ApplicationController
     authorize @feature_intent, :cancel?, policy_class: FeatureIntentPolicy
 
     FeatureIntents::Cancel.call(feature_intent: @feature_intent, actor: current_user, **cancellation_attributes)
-    redirect_to inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND), notice: "Feature proposal declined and removed from the Inbox."
+    redirect_to feature_intents_path, notice: "Feature proposal declined. It remains available in proposal history."
   rescue FeatureIntents::Cancel::NotAuthorizedError
     user_not_authorized
   rescue FeatureIntents::Cancel::InvalidCancellationError, FeatureIntent::InvalidTransitionError => e
-    redirect_to inbox_entry_path(feature_decision_entry_id), alert: e.message
+    redirect_to feature_intents_path, alert: e.message
   end
 
   def reopen
     authorize @feature_intent, :reopen?, policy_class: FeatureIntentPolicy
 
     FeatureIntents::Reopen.call(feature_intent: @feature_intent, actor: current_user)
-    redirect_to inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND), notice: "Feature proposal reopened for discovery."
+    redirect_to feature_intents_path, notice: "Feature proposal reopened for discovery."
   rescue FeatureIntents::Reopen::NotAuthorizedError
     user_not_authorized
   rescue FeatureIntent::InvalidTransitionError => e
-    redirect_to inbox_path(kind: Inbox::Queue::FEATURE_DECISION_KIND), alert: e.message
+    redirect_to feature_intents_path, alert: e.message
   end
 
   private

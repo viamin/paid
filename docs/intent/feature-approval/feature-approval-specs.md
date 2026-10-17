@@ -154,7 +154,10 @@
   SHALL remove it, while sync/reconciliation SHALL preserve the terminal state.
   Declining SHALL not close linked issues, cancel runs, release held work, or
   imply replacement implementation is complete. An authorized member SHALL be
-  able to reopen a cancelled intent to held `discovering`. The feature-decision
+  able to reopen a cancelled intent to held `discovering`. A membership-scoped
+  feature-proposals surface SHALL retain background proposals for decline and
+  cancelled proposals for authorized reopening, without adding either to the
+  action Inbox. The feature-decision
   Inbox lane SHALL contain only approval-ready intents or intents with an open
   recorded human decision; pending automated assessment and background discovery
   alone are not human actions.

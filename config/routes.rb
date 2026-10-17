@@ -218,7 +218,7 @@ Rails.application.routes.draw do
   end
 
   # Feature intent design-decision approval (RDR-066)
-  resources :feature_intents, only: [] do
+  resources :feature_intents, only: [ :index ] do
     post :approve, on: :member
     post :cancel, on: :member
     post :reopen, on: :member
