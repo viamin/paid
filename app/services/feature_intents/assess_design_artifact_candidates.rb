@@ -73,6 +73,8 @@ module FeatureIntents
 
     def result_for(output)
       payload = JSON.parse(output.to_s)
+      return no_match("Semantic assessment returned an invalid response") unless payload.is_a?(Hash)
+
       identity = payload["issue_identity"].presence
       return no_match(payload["explanation"]) unless identity
       return no_match("Semantic assessment returned an unknown candidate") unless candidate_identities.include?(identity)

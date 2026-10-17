@@ -35,4 +35,13 @@ RSpec.describe FeatureIntents::AssessDesignArtifactCandidates do
 
     expect(result).not_to be_covered
   end
+
+  it "treats a non-object semantic response as invalid" do
+    response = instance_double(AgentHarness::Response, success?: true, output: "[]")
+    allow(AgentHarness).to receive(:send_message).and_return(response)
+
+    result = described_class.call(project:, artifact:, issues:)
+
+    expect(result).to have_attributes(identity: nil, evidence: "Semantic assessment returned an invalid response")
+  end
 end
