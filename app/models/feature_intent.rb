@@ -47,7 +47,7 @@ class FeatureIntent < ApplicationRecord
   validates :criteria_clarity_state, presence: true, inclusion: { in: CRITERIA_CLARITY_STATES }
   validates :delivery_policy, presence: true, inclusion: { in: DELIVERY_POLICIES }
   validates :cancellation_reason, inclusion: { in: CANCELLATION_REASONS }, allow_nil: true
-  validates :replacement_reference, format: { with: %r{\Ahttps?://}i, message: "must be an http(s) URL" }, allow_blank: true
+  validates :replacement_reference, format: { with: %r{\Ahttps?://\S+\z}i, message: "must be an http(s) URL" }, allow_blank: true
 
   attr_readonly :delivery_policy
 
