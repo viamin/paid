@@ -142,7 +142,18 @@ module FeatureIntents
       return unless assessment.covered?
 
       repository, number = assessment.identity.split("#", 2)
-      { repository:, number:, provenance: "semantic candidate assessment: #{assessment.evidence}" }
+      candidate = issues_by_identity.fetch(assessment.identity)
+      {
+        repository:, number:, revision: candidate[:revision] || candidate["revision"],
+        provenance: "semantic candidate assessment: #{assessment.evidence}"
+      }.compact
+    end
+
+    def issues_by_identity
+      @issues_by_identity ||= issues.each_with_object({}) do |issue, candidates|
+        identity = qualified_reference(issue)
+        candidates[identity] = issue if identity
+      end
     end
 
     def fingerprint(artifact, state)

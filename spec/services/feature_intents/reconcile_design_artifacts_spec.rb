@@ -7,7 +7,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifacts do
   let(:project) { create(:project, owner: "acme", repo: "widget") }
   let(:issues) do
     [
-      { repository: "acme/widget", number: 10, state: "open" },
+      { repository: "acme/widget", number: 10, state: "open", revision: "2026-10-16T00:00:00Z" },
       { repository: "shared/platform", number: 11, state: "closed" }
     ]
   end
@@ -55,7 +55,10 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifacts do
 
     expect(result.findings).to be_empty
     expect(result.associations).to contain_exactly(
-      include(identity: "acme/widget#10", provenance: "semantic candidate assessment: Candidate implements the RDR scope")
+      include(
+        identity: "acme/widget#10", issue_revision: "2026-10-16T00:00:00Z",
+        provenance: "semantic candidate assessment: Candidate implements the RDR scope"
+      )
     )
   end
 
