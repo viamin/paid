@@ -36,6 +36,7 @@ class FeatureIntent < ApplicationRecord
   has_many :feature_intent_issues, dependent: :destroy
   has_many :issues, through: :feature_intent_issues
   has_many :feature_intent_decisions, dependent: :destroy
+  has_many :facets, class_name: "FeatureIntentFacet", dependent: :destroy
   has_many :feature_intent_design_prs, dependent: :destroy
   has_many :feature_intent_approval_revisions, dependent: :restrict_with_error
   has_many :design_amendments, dependent: :restrict_with_error
