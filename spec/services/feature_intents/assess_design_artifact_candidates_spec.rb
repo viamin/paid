@@ -28,6 +28,21 @@ RSpec.describe FeatureIntents::AssessDesignArtifactCandidates do
     expect(AgentHarness).to have_received(:send_message).once
   end
 
+  it "reassesses when the artifact revision changes" do
+    first_response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"issue_identity":null,"explanation":"The first revision has no match."}')
+    second_response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"issue_identity":"acme/widget#10","explanation":"The revised artifact is covered."}')
+    allow(AgentHarness).to receive(:send_message).and_return(first_response, second_response)
+
+    first = described_class.call(project:, artifact:, issues:)
+    second = described_class.call(project:, artifact: artifact.merge(revision: "b" * 40), issues:)
+
+    expect(first).not_to be_covered
+    expect(second).to have_attributes(identity: "acme/widget#10", evidence: "The revised artifact is covered.")
+    expect(AgentHarness).to have_received(:send_message).twice
+  end
+
   it "does not use closed work as semantic implementation coverage" do
     closed_issues = issues.map { |issue| issue.merge(state: "closed") }
 

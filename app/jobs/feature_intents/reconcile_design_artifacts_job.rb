@@ -45,6 +45,7 @@ module FeatureIntents
       issue = project_issue(design_pr.pull_request_number)
       {
         path: "pull/#{design_pr.pull_request_number}",
+        revision: design_pr.head_sha,
         body: issue&.body,
         status: design_pr.draft? ? "draft" : nil,
         related_issues: explicit_references(issue&.body),
@@ -104,6 +105,7 @@ module FeatureIntents
     def rdr_artifact(artifact)
       {
         path: artifact.path,
+        revision: artifact.revision,
         body: artifact.body,
         status: rdr_status(artifact.body),
         related_issues: explicit_references(artifact.body),
