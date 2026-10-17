@@ -48,6 +48,16 @@ RSpec.describe FeatureIntents::ReleaseIssue do
     expect(issue.reload.labels).to include("planning")
   end
 
+  it "releases when the remote planning hold was already removed" do
+    allow(project.client).to receive(:remove_label_from_issue).and_raise(GithubClient::NotFoundError, "Label not found")
+
+    result = described_class.call(issue: issue)
+
+    expect(result).to be_released
+    expect(link.reload).to have_attributes(release_state: "released", release_error: nil)
+    expect(issue.reload.labels).to contain_exactly("human-hold")
+  end
+
   it "does not release stale scope when it changes during the GitHub reconciliation" do
     allow(project.client).to receive(:remove_label_from_issue) do
       link.update!(readiness_mapping: mapping.merge("scope_revision" => "scope-v2"))

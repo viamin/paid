@@ -87,6 +87,8 @@ module FeatureIntents
       return unless issue.labels.include?(planning_label)
 
       issue.project.client.remove_label_from_issue(issue.project.full_name, issue.github_number, planning_label)
+    rescue GithubClient::NotFoundError
+      # The remote label is already absent, so the desired projection is met.
     end
 
     def finalize_release(snapshots)
