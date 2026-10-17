@@ -18,6 +18,8 @@ class FeatureIntentFacetEvidence < ApplicationRecord
   validates :evidence_revision, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validate :tenant_owns_sources
   validate :direction_belongs_to_facet
+  validate :decision_belongs_to_facet_feature
+  validate :superseding_evidence_belongs_to_account_and_facet
 
   private
 
@@ -30,5 +32,17 @@ class FeatureIntentFacetEvidence < ApplicationRecord
     return if feature_intent_facet_direction.blank? || feature_intent_facet_direction.feature_intent_facet_id == feature_intent_facet_id
 
     errors.add(:feature_intent_facet_direction, "must belong to the evidence facet")
+  end
+
+  def decision_belongs_to_facet_feature
+    return if feature_intent_decision.blank? || feature_intent_decision.feature_intent_id == feature_intent_facet&.feature_intent_id
+
+    errors.add(:feature_intent_decision, "must belong to the evidence facet feature")
+  end
+
+  def superseding_evidence_belongs_to_account_and_facet
+    return if superseded_by.blank? || (superseded_by.account_id == account_id && superseded_by.feature_intent_facet_id == feature_intent_facet_id)
+
+    errors.add(:superseded_by, "must belong to the evidence account and facet")
   end
 end

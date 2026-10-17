@@ -16,7 +16,7 @@ module FeatureIntents
 
     def call
       existing = FeatureIntentFacetEvidence.find_by(account: facet.account, idempotency_key: attributes.fetch(:idempotency_key))
-      return existing if existing
+      return find_existing! if existing
 
       facet.with_lock { create_or_return_existing }
     rescue ActiveRecord::RecordNotUnique

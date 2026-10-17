@@ -31,4 +31,14 @@ RSpec.describe FeatureIntents::IngestFacetEvidence do
     expect(second).to eq(first)
     expect(facet.reload.evidence_revision).to eq(1)
   end
+
+  it "rejects an idempotency key already used for another facet" do
+    described_class.call(facet:, attributes:)
+    other_facet = create(:feature_intent_facet, feature_intent: facet.feature_intent)
+
+    expect { described_class.call(facet: other_facet, attributes:) }
+      .to raise_error(described_class::IdempotencyConflict, "evidence key belongs to another facet")
+
+    expect(other_facet.reload.evidence_revision).to eq(0)
+  end
 end
