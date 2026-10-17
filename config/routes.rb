@@ -463,6 +463,7 @@ Rails.application.routes.draw do
     post :clone_project, on: :member
     collection do
       get :sidebar_page
+      get :runner_model_options
     end
     member do
       get :older_messages

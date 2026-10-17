@@ -97,12 +97,26 @@ options: managed free API chat therefore rejects confidential and restricted
 context before transmission with an actionable configuration error. The shared
 selector applies the same rejection to free `pi` and `omp` runners regardless
 of transport, because they cannot enforce that routing. Empty or
-privacy-incompatible free pools are excluded from fallback candidates so a
-later configured runner remains reachable. Broader container lifecycle and
+privacy-incompatible free pools and non-free runners without a resolvable Low
+tier are excluded from fallback candidates so a later configured runner
+remains reachable. Broader container lifecycle and
 mutation behavior are owned by the RDR-037 chat segments.
 
 The API-mode chat surface is implemented and exposed across both HTML and API
 entry points.
+
+### Curated paid chat tiers
+
+API-key chat presents and resolves a bounded Low, Medium, and High policy,
+rather than exposing every catalog row or relying on a hard-coded provider
+fallback. The shared resolver applies catalog activity, operator state, tool
+support, agent-harness compatibility, and fresh runner/account availability
+evidence.
+OpenAI resolves Low/Medium/High to GPT-5.6 Luna/Terra/Sol. A missing Low tier
+is actionable and does not escalate to a higher tier. The selected concrete
+model and tier are recorded on the chat session so request and usage records
+can be explained after catalog refresh. Existing explicit session models are
+retained; legacy Automatic sessions resolve to Low when first executed.
 
 What ships today:
 

@@ -29,7 +29,7 @@
   </div>
 
   <% if can_update_chat_session %>
-    <% runner_model_options = ChatSessions::RunnerModelOptions.options_for(available_runners) %>
+    <% runner_model_options = ChatSessions::RunnerModelOptions.options_for(available_runners, projects: session_projects) %>
     <% selected_runner_model = runner_model_options.find { |option| option.runner_id == chat_session.runner_id && option.model_id == chat_session.model } %>
     <% runner_model_choices = runner_model_options.map { |option| [option.label, option.value] } %>
     <% runner_model_choices.unshift(["Choose a valid runner and model", ""]) unless selected_runner_model %>
