@@ -27,12 +27,36 @@ non-Turbo HTML callers keep the redirect flow.
 ## Runner and model controls
 
 The session configuration UI presents one runner-and-model selection rather
-than independent runner and model fields. Its options are derived from each
-chat-capable runner's configured model policy: every runner has an Automatic
-option, and explicit options only use that runner's configured direct-outbound
-or tier models. The submitted option is resolved against the current user's
-available chat runners before it is saved, so a stale or crafted selection
-cannot pair a runner with an unrelated model.
+than independent runner and model fields. It offers only the curated Low,
+Medium, and High choices that are compatible with each chat-capable,
+non-free-policy runner; the label includes both the user-facing tier and the
+concrete model ID. A free-policy runner offers no saved model choice because
+the eligible free pool dynamically selects its model on every request. Low is
+the default for a new session. The selector is deliberately not a catalog
+browser: catalog refreshes may replace a compatible concrete model within its
+existing tier but cannot add choices or promote a chat to a more expensive
+tier. API-key availability evidence, operator disables, catalog tool support,
+and agent-harness compatibility filter these choices. An unavailable tier has
+actionable feedback rather than silently selecting a higher tier.
+Project provider restrictions, model allowlists and exclusions, and tier
+limits filter the choices for linked project context through the same policy
+path used by agent runs.
+
+The new-chat dialog applies the same filtering for the project selected inside
+the dialog. The runner-and-model choices are rendered unfiltered while no
+project is chosen; when the user picks or changes the project, the dialog
+re-fetches the curated choices from `ChatSessionsController#runner_model_options`
+for that project and rebuilds the selector, resetting any selection the new
+policy no longer permits. The create path resolves the submitted option against
+the same policy projects, so the offered choices and the accepted choices
+cannot drift apart. A failed or stale refresh never widens what the server
+accepts: resolution on create remains the authority.
+
+The submitted option is resolved against the current user's available chat
+runners before it is saved, so a stale or crafted selection cannot pair a
+runner with an unrelated model. Legacy Automatic sessions (`model: nil`)
+resolve to Low on their next execution and record that effective choice;
+explicit stored models are preserved.
 
 Changing the selection in either chat header saves through Turbo. A status
 beside the control shows when saving is in progress and whether it succeeded

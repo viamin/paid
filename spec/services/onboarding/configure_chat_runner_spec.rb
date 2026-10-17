@@ -10,8 +10,8 @@ RSpec.describe Onboarding::ConfigureChatRunner do
     Onboarding::StartOnboarding.call(account: account)
     Onboarding::CompleteStep.call(account: account, step: "account_profile")
     allow(AgentHarness).to receive(:check_provider).and_return({ status: "ok" })
-    Runner::DIRECT_OUTBOUND_SERVICE_TYPES.excluding("openrouter").each do |service_type|
-      create(:llm_model, provider: service_type)
+    RunnerSupport::API_SERVICE_TYPES.keys.excluding("openrouter").each do |service_type|
+      create(:llm_model, provider: service_type, model_id: onboarding_model_id(service_type), tier: "low", supports_tools: true)
     end
   end
 
@@ -80,6 +80,7 @@ RSpec.describe Onboarding::ConfigureChatRunner do
     expect(result.runner).to be_api_key
     expect(result.runner.provider_api_key).to eq(result.provider_api_key)
     expect(result.chat_session.runner).to eq(result.runner)
+    expect_chat_model_selection(result.chat_session, service_type)
     expect(result.chat_session.title).to eq("Welcome to Paid — let's set you up")
     expect_completed_step(result, service_type)
   end
@@ -101,5 +102,16 @@ RSpec.describe Onboarding::ConfigureChatRunner do
         "api_service_type" => service_type
       )
     )
+  end
+
+  def onboarding_model_id(service_type)
+    "#{service_type}-chat-low"
+  end
+
+  def expect_chat_model_selection(chat_session, service_type)
+    return expect(chat_session.model).to be_nil if service_type == "openrouter"
+
+    expect(chat_session.model).to eq(onboarding_model_id(service_type))
+    expect(chat_session.metadata).to include("model_tier" => "low")
   end
 end
