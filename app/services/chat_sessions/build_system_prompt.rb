@@ -44,10 +44,12 @@ module ChatSessions
     # Lower-priority sections are dropped first when the prompt exceeds the budget.
     def build_sections
       sections = []
+      explicit_preferences_content = explicit_preferences_section
       sections << { priority: 0, content: base_identity }
       sections << { priority: 1, content: page_context } if page_context.present?
       sections << { priority: 1, content: project_context } if primary_project
       sections << { priority: 1, content: clarifying_questions_context } if clarifying_question_issue
+      sections << { priority: 1, content: explicit_preferences_content } if explicit_preferences_content.present?
       # @spec PROJECT-CREATION-010 — a fresh (blank) project needs its setup
       # interview surfaced in every chat started against it, so setup can also
       # happen from a plain new chat session.
@@ -169,7 +171,8 @@ module ChatSessions
       chat_session.account.onboarding_completed_at.blank?
     end
 
-    # @spec QUESTION-EXPLORATION-001 @spec QUESTION-EXPLORATION-013
+    # @spec QUESTION-EXPLORATION-001 @spec QUESTION-EXPLORATION-008 @spec QUESTION-EXPLORATION-013
+    # @spec QUESTION-EXPLORATION-011 @spec FACET-CONFIDENCE-006 @spec FACET-CONFIDENCE-007
     # The pending questions are snapshotted into session metadata by
     # ClarifyingQuestions::OpenChat before the session row is inserted, so
     # this section never performs GitHub I/O while ChatSessions::Create's
@@ -183,7 +186,9 @@ module ChatSessions
         ## Clarifying Questions for #{issue.is_pull_request? ? "PR" : "Issue"} ##{issue.github_number}: #{issue.title}
         #{questions.each_with_index.map { |question, index| render_pending_question(question, index:, progress: progress_by_position[index + 1]) }.join("\n")}
 
-        Help the user explore these questions and ask focused follow-ups when needed. A confirmed answer to one question can be saved with `save_clarifying_answer` and remains a draft: it does not post to GitHub or resolve the inbox item. Include useful human context from a temporary diagram or research finding when saving it. Once every question has a final answer, call `submit_clarifying_answers` with the answers in the displayed order. For a choice question, answer with one selection per line: the option's displayed text (extra rationale may follow), its number, or its letter, or an `Other: <description>` line when no option fits. That action posts the answers to GitHub and resolves this inbox item, so ask for confirmation through the tool rather than claiming it has been posted.
+        Help the user explore these questions and ask focused follow-ups when needed. Before asking for facts, inspect available repository and Inbox context with the read-only tools. Choose the aid that the evidence makes useful; if the useful method is unclear, ask how the user wants to investigate. The user can redirect that method at any time. Use A/B questions only to distinguish plausible directions: always accept either direction, both, neither, conditions, and free-text alternatives. Do not treat a diagram click, selection, collapse, trial edit, or an assessment inference as a durable preference. A contextual answer applies only to its current question unless the user explicitly states a preference and explicitly chooses or clarifies its scope.
+
+        A confirmed answer to one question can be saved with `save_clarifying_answer` and remains a draft: it does not post to GitHub or resolve the inbox item. Include useful human context from a temporary diagram or research finding when saving it. Once every question has a final answer, call `submit_clarifying_answers` with the answers in the displayed order. For a choice question, answer with one selection per line: the option's displayed text (extra rationale may follow), its number, or its letter, or an `Other: <description>` line when no option fits. That action posts the answers to GitHub and resolves this inbox item, so ask for confirmation through the tool rather than claiming it has been posted.
       PROMPT
     end
 
@@ -239,6 +244,12 @@ module ChatSessions
         ## Preferences
         Prefer concise, technical responses. Show code when relevant. Ask before making destructive changes.
       PROMPT
+    end
+
+    # @spec FACET-CONFIDENCE-007
+    def explicit_preferences_section
+      statements = explicit_preferences.map { |preference| "- #{preference.statement}" }
+      "## Explicit Preferences\n\n#{statements.join("\n")}".strip
     end
 
     # --- Section helpers ---
@@ -321,6 +332,16 @@ module ChatSessions
 
     def primary_project
       @primary_project ||= chat_session.project
+    end
+
+    def explicit_preferences
+      return ExplicitPreference.none unless chat_session.created_by
+
+      @explicit_preferences ||= ExplicitPreferences::Context.call(
+        owner: chat_session.created_by,
+        project: primary_project,
+        feature_intent: clarifying_question_issue&.feature_intent
+      )
     end
 
     def clarifying_question_issue

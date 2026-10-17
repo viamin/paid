@@ -24,14 +24,16 @@ diagram and durable-progress work remains planned.
 - [x] **QUESTION-EXPLORATION-007** — While an authorized collaborator uses a shared exploration conversation, Paid SHALL enforce project and tenant access on transcript, message, diagram, subscription and tool operations and SHALL attribute actions to that collaborator rather than the session creator.
   *Tests:* `spec/models/chat_session_spec.rb`, `spec/policies/chat_session_policy_spec.rb`, `spec/requests/chat_sessions_spec.rb`, `spec/requests/chat_messages_spec.rb`, `spec/channels/chat_channel_spec.rb`, `spec/jobs/chat_sessions/process_message_job_spec.rb`, `spec/jobs/chat_sessions/resolve_tool_call_job_spec.rb`, `spec/services/chat_sessions/resolve_tool_call_spec.rb`.
   *Code:* `app/models/chat_session.rb`, `app/policies/project_policy.rb`, `app/policies/chat_session_policy.rb`, `app/policies/chat_message_policy.rb`, `app/channels/chat_channel.rb`, `app/jobs/chat_sessions/process_message_job.rb`, `app/jobs/chat_sessions/resolve_tool_call_job.rb`, `app/services/chat_sessions/tool_dispatch.rb`.
-- [ ] **QUESTION-EXPLORATION-008** — When selecting a question's exploration method, Paid SHALL investigate available facts first, adapt its aid to context, and ask how the person wants to investigate when the method is unclear.
+- [x] **QUESTION-EXPLORATION-008** — When selecting a question's exploration method, Paid SHALL investigate available facts first, adapt its aid to context, and ask how the person wants to investigate when the method is unclear.
+  *Tests:* `spec/services/chat_sessions/build_system_prompt_spec.rb`.
+  *Code:* `app/services/chat_sessions/build_system_prompt.rb`.
 - [x] **QUESTION-EXPLORATION-009** — When Paid renders a generated diagram, it SHALL validate its typed description, escape untrusted content and prevent generated scripts from executing in the application origin; invalid output SHALL leave a usable textual conversation.
   *Tests:* `spec/models/chat_diagram_spec.rb`.
   *Code:* `app/models/chat_diagram.rb`, `app/views/chat_diagrams/_diagram.html.erb`.
 - [ ] **QUESTION-EXPLORATION-010** — When Paid initiates an investigation, it SHALL enforce the configured budget and execution policy, request authorization before exceeding either, and expose progress and cancellation for long-running work.
 - [x] **QUESTION-EXPLORATION-011** — When a user selects, collapses or experimentally edits a diagram, Paid SHALL treat the interaction as exploration and SHALL NOT infer a preference or increase intent certainty solely from that interaction.
-  *Tests:* `spec/system/chat_diagrams_spec.rb`.
-  *Code:* `app/javascript/controllers/diagram_controller.js`.
+  *Tests:* `spec/system/chat_diagrams_spec.rb`, `spec/services/chat_sessions/build_system_prompt_spec.rb`, `spec/services/explicit_preferences/persist_spec.rb`.
+  *Code:* `app/javascript/controllers/diagram_controller.js`, `app/services/chat_sessions/build_system_prompt.rb`, `app/services/explicit_preferences/persist.rb`.
 - [x] **QUESTION-EXPLORATION-012** — When an exploration action is available through the UI, Paid SHALL expose an equivalent authorized API/tool action and consistent message context through HTML, Cable and SSE transports.
   *Tests:* `spec/services/chat_diagrams/comment_spec.rb`, `spec/requests/chat_diagram_comments_spec.rb`, `spec/requests/api/v1/chat_diagram_comments_spec.rb`, `spec/services/chat_sessions/resolve_tool_call_spec.rb`, `spec/system/chat_diagrams_spec.rb`.
   *Code:* `app/controllers/chat_diagram_comments_controller.rb`, `app/controllers/api/v1/chat_diagram_comments_controller.rb`, `app/services/chat_diagrams/attach_to_message.rb`, `app/services/chat_diagrams/serializer.rb`.
