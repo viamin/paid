@@ -4,9 +4,9 @@ module DesignAmendments
   # Records the merged repository revision of an approved design amendment:
   # the new baseline. Advances the feature's approved design revision,
   # returns the feature to `released`, and evaluates revision impact across
-  # the feature's branches. Atomic — an evaluation failure leaves the
-  # amendment unmerged and the feature revising.
-  # @spec INTENT-AMENDMENT-004
+  # the feature's branches. Confidence-driven routing follows the baseline
+  # transaction so its durable remote-write intents survive GitHub failures.
+  # @spec INTENT-AMENDMENT-004 @spec CONFIDENCE-DELIVERY-008
   class Complete
     def self.call(...)
       new(...).call
@@ -24,27 +24,29 @@ module DesignAmendments
 
       # Run the LLM impact review before opening the transaction below, so
       # the network round trip doesn't hold the transaction's row locks
-      # open. A review failure fails closed inside EvaluateImpact, so
-      # nothing here depends on catching it.
+      # open. Approval-gated failures fail closed inside EvaluateImpact;
+      # confidence-driven failures raise after this baseline is committed so
+      # a retry cannot materialize speculative remote forward work.
       review = EvaluateImpact.review_for(amendment)
 
       # requires_new so a write failure rolls back exactly this unit
       # (savepoint) instead of poisoning a caller's transaction.
       DesignAmendment.transaction(requires_new: true) do
-        amendment.update!(
-          status: "merged",
-          amended_revision: merged_revision,
-          merged_at: Time.current
-        )
-        record_new_baseline
-        EvaluateImpact.call(amendment: amendment, review: review)
+        record_merge
+        EvaluateImpact.call(amendment: amendment, review: review) unless amendment.feature_intent.confidence_driven?
       end
+      EvaluateImpact.call(amendment: amendment, review: review) if amendment.feature_intent.confidence_driven?
       amendment
     end
 
     private
 
     attr_reader :amendment, :merged_revision
+
+    def record_merge
+      amendment.update!(status: "merged", amended_revision: merged_revision, merged_at: Time.current)
+      record_new_baseline
+    end
 
     def record_new_baseline
       feature = amendment.feature_intent
