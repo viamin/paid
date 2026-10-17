@@ -25,6 +25,8 @@ module FeatureIntents
     end
 
     def call
+      return denied("Issue has unresolved dependencies.") unless issue.ready_to_work?
+
       permits = links.map { |link| admit_link(link) }
       denial = permits.find { |result| !result.allowed? }
       return denial if denial

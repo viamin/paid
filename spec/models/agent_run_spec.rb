@@ -99,6 +99,20 @@ RSpec.describe AgentRun do
       expect(agent_run.errors[:issue]).to include("Feature intent is not released.")
     end
 
+    it "rejects manual implementation runs with unresolved dependencies" do # @spec FEATURE-APPROVAL-023 @spec CONFIDENCE-DELIVERY-005
+      project = create(:project)
+      issue = create(:issue, project: project)
+      feature = create(:feature_intent, project: project)
+      create(:feature_intent_issue, feature_intent: feature, issue: issue)
+      blocker = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue, depends_on_issue: blocker)
+
+      agent_run = build(:agent_run, project: project, issue: issue, goal: "create_pr")
+
+      expect(agent_run).not_to be_valid
+      expect(agent_run.errors[:issue]).to include("Issue has unresolved dependencies.")
+    end
+
     # @spec FEATURE-APPROVAL-024
     it "snapshots a released feature's approved revision onto an implementation run" do
       project = create(:project)

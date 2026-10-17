@@ -35,6 +35,36 @@ RSpec.describe FeatureIntents::RunAdmission do
     expect(described_class.call(issue: issue)).not_to be_allowed
   end
 
+  it "denies released work while an issue dependency remains open" do # @spec FEATURE-APPROVAL-023 @spec CONFIDENCE-DELIVERY-005
+    feature = create(:feature_intent, project: project)
+    create(:feature_intent_issue, feature_intent: feature, issue: issue)
+    blocker = create(:issue, project: project, github_state: "open")
+    create(:issue_dependency, issue: issue, depends_on_issue: blocker)
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_allowed
+    expect(result.reason).to include("unresolved dependencies")
+  end
+
+  it "denies released work while a dependency is awaiting deployment" do # @spec FEATURE-APPROVAL-023 @spec CONFIDENCE-DELIVERY-005
+    feature = create(:feature_intent, project: project)
+    create(:feature_intent_issue, feature_intent: feature, issue: issue)
+    blocker = create(:issue, :pull_request, project: project, github_state: "closed", deployed_at: nil)
+    create(:issue_dependency, issue: issue, depends_on_issue: blocker, requires_deployment: true)
+
+    expect(described_class.call(issue: issue)).not_to be_allowed
+  end
+
+  it "denies released work while an external dependency is unresolved" do # @spec FEATURE-APPROVAL-023 @spec CONFIDENCE-DELIVERY-005
+    feature = create(:feature_intent, project: project)
+    create(:feature_intent_issue, feature_intent: feature, issue: issue)
+    create(:issue_dependency, issue: issue, depends_on_issue: nil,
+      depends_on_owner: "org", depends_on_repo: "repo", depends_on_number: 42)
+
+    expect(described_class.call(issue: issue)).not_to be_allowed
+  end
+
   it "admits released confidence-driven work from its immutable readiness snapshot" do
     feature = create(:feature_intent, :confidence_driven, project: project)
     create(:feature_intent_issue, feature_intent: feature, issue: issue,
