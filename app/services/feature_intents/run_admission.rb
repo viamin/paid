@@ -2,11 +2,12 @@
 
 module FeatureIntents
   # The one deterministic admission gate for implementation work linked to
-  # feature intents. An issue may serve several designs, so every linked
-  # feature intent must permit the run. It intentionally reads the current
-  # feature state every time: a run can be queued before a design becomes
-  # held again.
-  # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024 @spec CONFIDENCE-DELIVERY-005
+  # feature intents. It first reconciles confidence-driven planning holds so
+  # direct API, chat, and manual starts share auto-pick's release contract.
+  # An issue may serve several designs, so every linked feature intent must
+  # permit the run. It intentionally reads the current feature state every
+  # time: a run can be queued before a design becomes held again.
+  # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024 @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-005
   class RunAdmission
     Result = Data.define(:allowed, :revision, :reason, :snapshot) do
       def allowed? = allowed
@@ -21,6 +22,9 @@ module FeatureIntents
     end
 
     def call
+      release = ReleaseIssue.call(issue: issue)
+      return denied(release.reason) unless release.released?
+
       permits = links.map { |link| admit_link(link) }
       denial = permits.find { |result| !result.allowed? }
       return denial if denial

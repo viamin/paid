@@ -12,7 +12,7 @@ implements release and unified admission claims `003`–`006` and `009`.
   *Tests:* `spec/services/feature_intents/release_issue_spec.rb`, `spec/models/agent_run_spec.rb`.
   *Code:* `app/services/feature_intents/release_issue.rb`, `app/models/agent_run.rb`.
 - [x] **CONFIDENCE-DELIVERY-005** — When admitting confidence-driven work through auto-pick, eager enqueue, dequeue, API/chat, manual start or run creation, Paid SHALL enforce the same readiness/dependency contract and SHALL NOT interpret a missing assessment as ready.
-  *Tests:* `spec/services/feature_intents/run_admission_spec.rb`, `spec/services/issues/enqueue_eligible_spec.rb`.
+  *Tests:* `spec/models/agent_run_spec.rb`, `spec/services/feature_intents/run_admission_spec.rb`, `spec/services/issues/enqueue_eligible_spec.rb`.
   *Code:* `app/services/feature_intents/run_admission.rb`, `app/services/issues/enqueue_eligible.rb`, `app/models/agent_run.rb`.
 - [x] **CONFIDENCE-DELIVERY-006** — When external label edits or failed GitHub writes leave visible readiness inconsistent with local state, Paid SHALL reconcile idempotently and expose the discrepancy rather than silently bypass readiness or silently retain an unexplained feature gate.
   *Tests:* `spec/services/feature_intents/release_issue_spec.rb`, `spec/services/issues/bulk_enqueue_eligible_spec.rb`.

@@ -129,6 +129,26 @@ RSpec.describe AgentRun do
       expect(agent_run.confidence_delivery_snapshot).to include("scope_revision" => "scope-v1", "delivery_policy" => "confidence_driven")
     end
 
+    # @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-005
+    it "reconciles a ready confidence-delivery issue before creating an implementation run" do
+      project = create(:project)
+      issue = create(:issue, project: project, labels: [ "planning" ])
+      feature = create(:feature_intent, :confidence_driven, project: project)
+      mapping = {
+        "coverage" => "complete", "scope_revision" => "scope-v1",
+        "prerequisites" => [ { "id" => "scope", "assessment" => { "status" => "completed", "evidence_revision" => "e1", "intent_score" => 80, "technical_score" => 80 } } ],
+        "design_artifacts" => [ { "path" => "docs/intent/example.md", "required" => true, "merged" => true, "scope_revision" => "scope-v1", "revision" => "a" * 40 } ]
+      }
+      link = create(:feature_intent_issue, feature_intent: feature, issue:, readiness_mapping: mapping)
+      allow(project.client).to receive(:remove_label_from_issue)
+
+      agent_run = create(:agent_run, project:, issue:, goal: "create_pr")
+
+      expect(project.client).to have_received(:remove_label_from_issue).with(project.full_name, issue.github_number, "planning")
+      expect(link.reload.release_state).to eq("released")
+      expect(agent_run.confidence_delivery_snapshot).to include("scope_revision" => "scope-v1")
+    end
+
     # @spec FEATURE-APPROVAL-024
     it "preserves an ordinary implementation run's requested checkout revision" do
       revision = "c" * 40
