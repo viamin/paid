@@ -24,6 +24,13 @@ RSpec.describe FeatureIntents::CompleteForwardWork do
     end
   end
 
+  def record_recoverable_finding
+    described_class.record_finding(
+      feature_intent:, completion_issue:, client:, affected_issue: implementation_issue,
+      fingerprint: "r" * 64, finding: { summary: "Recover this remote write." }
+    )
+  end
+
   it "updates an unstarted issue and read-backs its completion dependency" do
     result = described_class.record_finding(
       feature_intent:, completion_issue:, client:, affected_issue: implementation_issue,
@@ -64,6 +71,26 @@ RSpec.describe FeatureIntents::CompleteForwardWork do
     body = remote_bodies.fetch(implementation_issue.github_number)
     expect(body.scan("## Forward work").count).to eq(1)
     expect(body.scan("Interrupted write.").count).to eq(1)
+  end
+
+  it "recovers an unstarted-issue write after its local transaction rolls back" do
+    allow(client).to receive(:issue) do |_repo, number|
+      body = number == completion_issue.github_number ? "Completion" : remote_bodies.fetch(number)
+      remote_issue_class.new(body:, state: "open")
+    end
+
+    expect {
+      ActiveRecord::Base.transaction(requires_new: true) do
+        record_recoverable_finding
+      end
+    }.to raise_error(GithubClient::Error, /read back/)
+
+    expect(FeatureIntentCompletion.where(feature_intent:)).to be_empty
+    expect {
+      record_recoverable_finding
+    }.to raise_error(GithubClient::Error, /read back/)
+    expect(remote_bodies.fetch(implementation_issue.github_number).scan("## Forward work").count).to eq(1)
+    expect(remote_bodies.fetch(implementation_issue.github_number).scan("Recover this remote write.").count).to eq(1)
   end
 
   it "creates forward work instead of changing an issue with a rate-limited run" do

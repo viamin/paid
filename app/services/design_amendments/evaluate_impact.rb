@@ -90,8 +90,9 @@ module DesignAmendments
     # running. The same AI impact assessment that would hold an approval-gated
     # branch is therefore a forward-work finding for this policy.
     def route_confidence_findings(mapping, review_result, started_at)
-      routed = confidence_findings(mapping).map do |issue, assessment|
-        FeatureIntents::CompleteForwardWork.record_finding(
+      findings = confidence_findings(mapping)
+      routed = findings.map do |issue, assessment|
+        FeatureIntents::CompleteForwardWork.record_finding_without_reconciliation(
           feature_intent: amendment.feature_intent,
           completion_issue: confidence_completion_issue!,
           affected_issue: issue,
@@ -100,9 +101,17 @@ module DesignAmendments
         )
         issue.id
       end
+      reconcile_confidence_findings! if findings.any?
       amendment.update!(impact: confidence_impact_snapshot(mapping, routed), evaluated_at: Time.current)
       log_completion({}, routed, review_result, started_at)
       Result.new(paused: {}, follow_ups: routed, review_failed: review_result.nil?)
+    end
+
+    def reconcile_confidence_findings!
+      FeatureIntents::CompleteForwardWork.reconcile(
+        feature_intent: amendment.feature_intent,
+        completion_issue: confidence_completion_issue!
+      )
     end
 
     def confidence_findings(mapping)

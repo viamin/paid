@@ -17,6 +17,7 @@ module FeatureIntents
     end
 
     def self.record_finding(...) = new(...).record_finding
+    def self.record_finding_without_reconciliation(...) = new(...).record_finding_without_reconciliation
     def self.reconcile(...) = new(...).reconcile
     def self.complete(acceptance_verified:, isolation:, release_authorized:, **attributes)
       new(**attributes).complete(acceptance_verified:, isolation:, release_authorized:)
@@ -32,11 +33,17 @@ module FeatureIntents
     end
 
     def record_finding
+      result = record_finding_without_reconciliation
+      reconciliation = reconcile
+      return Result.new(completion:, item: result.item.reload, code: reconciliation.code) unless reconciliation.success?
+
+      Result.new(completion:, item: result.item.reload, code: nil)
+    end
+
+    def record_finding_without_reconciliation
       item = persist_finding
       reopen_remote_completion_issue! if reopening_pending?
       with_routing_lock(item) { route_finding!(item) unless item.reload.status == "applied" }
-      reconciliation = reconcile
-      return Result.new(completion:, item: item.reload, code: reconciliation.code) unless reconciliation.success?
 
       Result.new(completion:, item: item.reload, code: nil)
     end
@@ -211,7 +218,7 @@ module FeatureIntents
       [ body, "## Forward work", finding.fetch("summary", "A new finding requires follow-up."), marker ].reject(&:blank?).join("\n\n")
     end
 
-    def marker_for(item) = "<!-- paid:confidence-forward-work:#{completion.id}:#{item.fingerprint} -->"
+    def marker_for(item) = "<!-- paid:confidence-forward-work:#{feature_intent.id}:#{item.fingerprint} -->"
 
     def mark_pending!(key)
       completion.with_lock do
