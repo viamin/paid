@@ -103,9 +103,11 @@ revision without impact evaluation.
 `affected`, `unaffected`, or `uncertain`, citing design claims copied from the
 amendment evidence. Rails performs only structural validation: known branch
 ids, terminal outcome enum, cited claims drawn from the provided claim list,
-and a minimum confidence. **Failure fails closed**: an unsuccessful,
-unparseable, invalid, or low-confidence review marks *every* candidate
-`uncertain`.
+and a minimum confidence. **Failure fails closed**: for approval-gated
+features, an unsuccessful, unparseable, invalid, or low-confidence review
+marks *every* candidate `uncertain`. For confidence-driven features, it raises
+for retry before any forward-work artifact is created; a reviewer outage is not
+evidence that every branch needs public follow-up work.
 
 The application then applies the bounded pause set:
 

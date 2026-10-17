@@ -41,6 +41,7 @@ class FeatureIntent < ApplicationRecord
   has_many :feature_intent_design_prs, dependent: :destroy
   has_many :feature_intent_approval_revisions, dependent: :restrict_with_error
   has_many :design_amendments, dependent: :restrict_with_error
+  has_one :feature_intent_completion, dependent: :destroy
 
   validates :title, presence: true
   validates :status, presence: true, inclusion: { in: STATUSES }

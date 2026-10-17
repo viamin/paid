@@ -1758,6 +1758,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_220129) do
     t.index ["feature_intent_id"], name: "index_feature_intent_approval_revisions_on_feature_intent_id"
   end
 
+  create_table "feature_intent_completions", comment: "Completion-cycle state and remote-write receipts for confidence-driven feature delivery.", force: :cascade do |t|
+    t.datetime "completed_at"
+    t.bigint "completion_issue_id"
+    t.datetime "created_at", null: false
+    t.integer "cycle", default: 1, null: false, comment: "Monotonic completion cycle, incremented when a post-completion finding reopens work."
+    t.bigint "feature_intent_id", null: false
+    t.integer "findings_generation", default: 0, null: false
+    t.jsonb "pending_operations", default: {}, null: false, comment: "Durable remote-write intents that block a completion claim until read back."
+    t.jsonb "release_readiness", default: {}, null: false, comment: "Acceptance, isolation, and release-authorization evidence for the current cycle."
+    t.string "status", default: "pending", null: false, comment: "pending while forward work or remote writes remain; complete only after a verified closeout."
+    t.datetime "updated_at", null: false
+    t.index ["completion_issue_id"], name: "index_feature_intent_completions_on_completion_issue_id"
+    t.index ["feature_intent_id"], name: "index_feature_intent_completions_on_feature_intent_id", unique: true
+    t.check_constraint "cycle > 0", name: "chk_feature_intent_completions_cycle"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'complete'::character varying]::text[])", name: "chk_feature_intent_completions_status"
+  end
+
   create_table "feature_intent_decisions", comment: "RDR-066 open product decisions for a feature intent: clarifying questions and AI-inferred decisions awaiting human confirmation.", force: :cascade do |t|
     t.text "answer", comment: "Human's answer or confirmation note."
     t.datetime "created_at", null: false
@@ -1789,6 +1806,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_220129) do
     t.index ["feature_intent_id", "pull_request_number"], name: "index_feature_intent_design_prs_unique_pr", unique: true
     t.index ["feature_intent_id"], name: "index_feature_intent_design_prs_on_feature_intent_id"
     t.index ["pull_request_number"], name: "index_feature_intent_design_prs_on_pull_request_number"
+  end
+
+  create_table "feature_intent_forward_work_items", comment: "Idempotent findings routed to an unstarted issue or a completion-blocking follow-up.", force: :cascade do |t|
+    t.bigint "affected_issue_id"
+    t.datetime "created_at", null: false
+    t.bigint "feature_intent_completion_id", null: false
+    t.jsonb "finding", default: {}, null: false
+    t.string "fingerprint", limit: 64, null: false, comment: "Stable finding identity supplied by the assessment pipeline."
+    t.bigint "follow_up_issue_id"
+    t.string "status", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.index ["affected_issue_id"], name: "index_feature_intent_forward_work_items_on_affected_issue_id"
+    t.index ["feature_intent_completion_id", "fingerprint"], name: "index_forward_work_on_completion_and_fingerprint", unique: true
+    t.index ["feature_intent_completion_id"], name: "index_forward_work_on_completion"
+    t.index ["follow_up_issue_id"], name: "index_feature_intent_forward_work_items_on_follow_up_issue_id"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'applied'::character varying]::text[])", name: "chk_forward_work_items_status"
   end
 
   create_table "feature_intent_issues", comment: "Links feature intent records to their issue trees (implementation issues and PR issues).", force: :cascade do |t|
@@ -4248,9 +4281,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_220129) do
   add_foreign_key "failure_classifications", "projects", on_delete: :cascade
   add_foreign_key "feature_intent_approval_revisions", "feature_intents"
   add_foreign_key "feature_intent_approval_revisions", "users", column: "approved_by_id"
+  add_foreign_key "feature_intent_completions", "feature_intents"
+  add_foreign_key "feature_intent_completions", "issues", column: "completion_issue_id"
   add_foreign_key "feature_intent_decisions", "feature_intents"
   add_foreign_key "feature_intent_decisions", "users", column: "resolved_by_id"
   add_foreign_key "feature_intent_design_prs", "feature_intents"
+  add_foreign_key "feature_intent_forward_work_items", "feature_intent_completions"
+  add_foreign_key "feature_intent_forward_work_items", "issues", column: "affected_issue_id"
+  add_foreign_key "feature_intent_forward_work_items", "issues", column: "follow_up_issue_id"
   add_foreign_key "feature_intent_issues", "feature_intents"
   add_foreign_key "feature_intent_issues", "issues"
   add_foreign_key "feature_intents", "projects"
