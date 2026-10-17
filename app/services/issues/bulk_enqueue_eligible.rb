@@ -15,6 +15,7 @@ module Issues
     def call # @spec EAGER-QUEUE-003
       return [] unless skip_project_gate || Issues::AutoPickProjectGate.call(project)
 
+      release_confidence_delivery_holds
       counts = { created: 0, existing: 0, skipped: 0 }
       runs = []
 
@@ -53,6 +54,19 @@ module Issues
       return ordered_eligible_scope.each(&) if limit.present?
 
       eligible_scope.find_each(&)
+    end
+
+    # Held confidence-delivery issues are intentionally absent from the normal
+    # candidate scope while their GitHub planning projection is unresolved.
+    # Reconcile them before reading that scope, so the periodic eager-queue
+    # sweep can release newly-ready work without treating a label as evidence.
+    # @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-006
+    def release_confidence_delivery_holds
+      FeatureIntentIssue.includes(:issue, :feature_intent)
+        .joins(:feature_intent)
+        .where(feature_intents: { project_id: project.id, delivery_policy: "confidence_driven" })
+        .where.not(release_state: "released")
+        .find_each { |link| FeatureIntents::ReleaseIssue.call(issue: link.issue) }
     end
 
     def eligible_scope

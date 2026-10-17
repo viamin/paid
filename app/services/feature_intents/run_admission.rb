@@ -4,9 +4,9 @@ module FeatureIntents
   # The one deterministic admission gate for implementation work linked to an
   # feature. It intentionally reads the current feature state
   # every time: a run can be queued before a design becomes held again.
-  # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024
+  # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024 @spec CONFIDENCE-DELIVERY-005
   class RunAdmission
-    Result = Data.define(:allowed, :revision, :reason) do
+    Result = Data.define(:allowed, :revision, :reason, :snapshot) do
       def allowed? = allowed
     end
 
@@ -20,7 +20,7 @@ module FeatureIntents
 
     def call
       return allowed unless feature_intent
-      return confidence_delivery_unavailable if feature_intent.confidence_driven?
+      return confidence_delivery_admission if feature_intent.confidence_driven?
       return denied("Feature intent is not released.") unless feature_intent.released?
       return denied("Feature intent has no approved repository revision.") if feature_intent.approved_design_revision.blank?
 
@@ -35,16 +35,25 @@ module FeatureIntents
       @feature_intent ||= FeatureIntent.joins(:feature_intent_issues).find_by(feature_intent_issues: { issue_id: issue.id })
     end
 
-    def allowed(revision = nil) = Result.new(allowed: true, revision: revision, reason: nil)
+    def allowed(revision = nil, snapshot: {}) = Result.new(allowed: true, revision: revision, reason: nil, snapshot: snapshot)
 
-    def denied(reason) = Result.new(allowed: false, revision: nil, reason: reason)
+    def denied(reason) = Result.new(allowed: false, revision: nil, reason: reason, snapshot: {})
 
-    # @spec CONFIDENCE-DELIVERY-014
-    # P10-P12 will replace this with the unified confidence readiness,
-    # policy-specific review, and completion contract. Never fall through to
-    # approval-gated admission merely because that older policy is available.
-    def confidence_delivery_unavailable
-      denied("Confidence-driven delivery is not available until admission, review, and completion integrations are installed.")
+    def confidence_delivery_admission
+      return denied("Confidence-driven issue has not reconciled its workflow-owned planning hold.") unless link.release_state == "released"
+
+      readiness = ScopedReadiness.call(project: issue.project, mapping: link.readiness_mapping)
+      return denied(readiness.blockers.map(&:message).join(" ")) unless readiness.ready?
+      return denied("Confidence-driven issue scope changed after release and needs reconciliation.") unless link.release_snapshot["scope_revision"] == readiness.snapshot["scope_revision"]
+
+      allowed(
+        link.release_snapshot["merged_baseline"] || readiness.snapshot.dig("design_artifacts", 0, "revision"),
+        snapshot: link.release_snapshot
+      )
+    end
+
+    def link
+      @link ||= issue.feature_intent_issue
     end
   end
 end

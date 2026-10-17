@@ -21,9 +21,11 @@ P01 implements this boundary with `projects.new_feature_delivery_policy`,
 approval-gated posture, and `FeatureIntents::AttachFromAgentRun` snapshots
 `approval_gated` whenever enrollment is disabled. Project settings updates are
 authorized by `ProjectPolicy#update?` and recorded as account activity.
-`FeatureIntents::RunAdmission` explicitly denies a confidence-driven feature
-until P10–P12 replace that denial with unified readiness, review, and
-completion enforcement; selection or enrollment alone never releases work.
+P10 replaces the admission denial with `FeatureIntents::ReleaseIssue` and
+`FeatureIntents::RunAdmission`: a passing scoped-readiness result records an
+immutable release snapshot, reconciles only Paid's planning hold, and is
+rechecked at queue and run admission. P11/P12 still own policy-specific review
+and completion enforcement; selection or enrollment alone never releases work.
 
 ## State and transitions
 
@@ -56,7 +58,9 @@ material facet/direction IDs, assessment/evidence revisions, thresholds and
 merged design baseline. Reconcile the workflow-owned planning label and
 dependencies without erasing unrelated human holds. No new human approval
 record is required. Queue admission consumes the same result at auto-pick,
-eager enqueue, dequeue, API/chat/manual starts and actual run creation.
+eager enqueue, dequeue, API/chat/manual starts and actual run creation. The
+admitted snapshot is copied onto the created run so later scope changes cannot
+silently alter active work.
 
 Serialize the transition between an unstarted scope edit and run admission.
 Admission either receives the revised ready scope or the already-started run

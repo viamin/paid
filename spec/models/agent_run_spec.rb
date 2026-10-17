@@ -112,6 +112,23 @@ RSpec.describe AgentRun do
       expect(agent_run.base_commit_sha).to eq(revision)
     end
 
+    it "snapshots the admitted confidence-delivery baseline onto an implementation run" do # @spec CONFIDENCE-DELIVERY-004
+      project = create(:project)
+      issue = create(:issue, project: project)
+      feature = create(:feature_intent, :confidence_driven, project: project)
+      mapping = {
+        "coverage" => "complete", "scope_revision" => "scope-v1",
+        "prerequisites" => [ { "id" => "scope", "assessment" => { "status" => "completed", "evidence_revision" => "e1", "intent_score" => 80, "technical_score" => 80 } } ],
+        "design_artifacts" => [ { "path" => "docs/intent/example.md", "required" => true, "merged" => true, "scope_revision" => "scope-v1", "revision" => "a" * 40 } ]
+      }
+      snapshot = FeatureIntents::ScopedReadiness.call(project:, mapping:).snapshot.merge("delivery_policy" => "confidence_driven")
+      create(:feature_intent_issue, feature_intent: feature, issue:, readiness_mapping: mapping, release_state: "released", release_snapshot: snapshot)
+
+      agent_run = create(:agent_run, project:, issue:, goal: "create_pr")
+
+      expect(agent_run.confidence_delivery_snapshot).to include("scope_revision" => "scope-v1", "delivery_policy" => "confidence_driven")
+    end
+
     # @spec FEATURE-APPROVAL-024
     it "preserves an ordinary implementation run's requested checkout revision" do
       revision = "c" * 40

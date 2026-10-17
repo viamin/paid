@@ -14,6 +14,7 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
   let(:auto_pick_enabled) { true }
 
   before do
+    allow(service).to receive(:release_confidence_delivery_holds)
     allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(true)
     allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:eligible_scope)
       .with(project)
@@ -42,6 +43,7 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
     result = service.call
 
     expect(result).to eq([ first_run, second_run ])
+    expect(service).to have_received(:release_confidence_delivery_holds)
   end
 
   it "returns early when auto_pick is disabled" do

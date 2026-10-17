@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
+  attr_readonly :confidence_delivery_snapshot
   attribute :focus, :string, default: "general"
   attribute :execution_origin, :string, default: "paid_native"
   attribute :external_metadata, :json, default: {}
@@ -4380,6 +4381,7 @@ class AgentRun < ApplicationRecord
 
     admission = FeatureIntents::RunAdmission.call(issue: issue)
     self.base_commit_sha = admission.revision if admission.revision
+    self.confidence_delivery_snapshot = admission.snapshot if admission.snapshot.present?
   end
 
   def feature_intent_admission

@@ -26,6 +26,8 @@ module Issues
         return nil
       end
 
+      return nil unless confidence_delivery_released?
+
       unless eligible?
         log_ineligible
         return nil
@@ -74,6 +76,15 @@ module Issues
         .eligible_scope(project)
         .where(id: issue.id)
         .exists?
+    end
+
+    # @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-005
+    def confidence_delivery_released?
+      result = FeatureIntents::ReleaseIssue.call(issue: issue)
+      return true if result.released?
+
+      Rails.logger.info(log_context("enqueue_eligible.confidence_delivery_held", reason: result.reason))
+      false
     end
 
     # @spec ISSUE-ENHANCEMENT-013 @spec ISSUE-ENHANCEMENT-015
