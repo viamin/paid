@@ -13,8 +13,12 @@ RSpec.describe Onboarding::ValidateChatApiKeyJob do
     allow(AgentHarness).to receive(:check_provider).and_return(
       { status: "error", error_category: :authentication }
     )
-    Runner::DIRECT_OUTBOUND_SERVICE_TYPES.excluding("openrouter").each do |service_type|
-      create(:llm_model, provider: service_type)
+    RunnerSupport::API_SERVICE_TYPES.keys.excluding("openrouter").each do |service_type|
+      create(:llm_model,
+        provider: service_type,
+        model_id: "#{service_type}-chat-low",
+        tier: "low",
+        supports_tools: true)
     end
   end
 

@@ -1,8 +1,12 @@
 # EARS Specs: Facet Confidence
 
-Status: P08 implements `006` and `007`; P09 implements `008` through `012`.
+Status: P05 implements the durable facet/evidence and prerequisite-map foundation
+for `001` and `008`; P08 implements `006` and `007`; P09 implements `009`
+through `012`. Assessment generation through `agent_harness` remains planned.
 
-- [ ] **FACET-CONFIDENCE-001** — When assessing a feature or issue facet, Paid SHALL represent intent certainty and technical confidence separately on a 0–100 scale and SHALL represent unknown values explicitly rather than inventing human intent.
+- [x] **FACET-CONFIDENCE-001** — When assessing a feature or issue facet, Paid SHALL represent intent certainty and technical confidence separately on a 0–100 scale and SHALL represent unknown values explicitly rather than inventing human intent.
+  *Tests:* `spec/models/feature_intent_facet_assessment_spec.rb`.
+  *Code:* `app/models/feature_intent_facet_assessment.rb`.
 - [ ] **FACET-CONFIDENCE-002** — When an agent produces a facet assessment, Paid SHALL record its evidence references, evidence revision, rubric/model version and concise explanation through the agent_harness interface.
 - [ ] **FACET-CONFIDENCE-003** — When human statements contradict earlier directions, Paid SHALL preserve attribution, honor explicit corrections over superseded evidence, and ask for clarification of unresolved disagreement rather than count statements as votes.
 - [ ] **FACET-CONFIDENCE-004** — When assessing intent certainty, Paid SHALL NOT treat repeated agent suggestions, duplicated evidence or incidental UI interactions as additional human agreement.
@@ -14,6 +18,8 @@ Status: P08 implements `006` and `007`; P09 implements `008` through `012`.
   *Tests:* `spec/mcp/tools/save_explicit_preference_spec.rb`, `spec/models/explicit_preference_spec.rb`, `spec/services/chat_sessions/build_system_prompt_spec.rb`, `spec/services/explicit_preferences/persist_spec.rb`, `spec/services/explicit_preferences/context_spec.rb`.
   *Code:* `app/mcp/tools/*explicit_preference.rb`, `app/models/explicit_preference.rb`, `app/services/chat_sessions/build_system_prompt.rb`, `app/services/explicit_preferences/`.
 - [x] **FACET-CONFIDENCE-008** — When an issue's material prerequisites are mapped, Paid SHALL retain the agent's mapping rationale and coverage assessment, including relevant design documents, and SHALL NOT consider an unassessed empty mapping ready.
+  *Tests:* `spec/models/feature_intent_issue_prerequisite_mapping_spec.rb`, `spec/models/feature_intent_issue_prerequisite_spec.rb`.
+  *Code:* `app/models/feature_intent_issue_prerequisite_mapping.rb`, `app/models/feature_intent_issue_prerequisite.rb`.
 - [x] **FACET-CONFIDENCE-009** — When evaluating initial issue readiness, Paid SHALL require each material facet's known intent and technical scores to meet their respective project thresholds without averaging across facets or requiring unrelated feature facets to pass.
 - [x] **FACET-CONFIDENCE-010** — When confidence settings are initialized, Paid SHALL default intent and technical thresholds to 80/100 each and SHALL permit independently authorized, audited project configuration within 0–100.
 - [x] **FACET-CONFIDENCE-011** — When assessing a research issue, Paid SHALL assess clarity and feasibility of its investigation scope rather than require certainty about the implementation answer the investigation seeks.

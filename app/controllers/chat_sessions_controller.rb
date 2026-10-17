@@ -79,6 +79,20 @@ class ChatSessionsController < ApplicationController
     render json: { messages: messages.map { |m| recent_message_payload(m) }, has_more: has_more }
   end
 
+  # @spec CHAT-SESSION-PREFERENCES-003
+  # Serves the new-chat dialog's runner/model choices for the currently
+  # selected project so the dialog never offers a tier the project's policy
+  # rejects at create time. A blank or unknown project_id yields the same
+  # unfiltered choices the dialog renders initially, mirroring how
+  # runner_model_policy_projects resolves policy projects on create.
+  def runner_model_options
+    authorize ChatSession.new(account: current_account), :create?
+    projects = current_account.projects.where(id: params[:project_id])
+    options = ChatSessions::RunnerModelOptions.options_for(available_chat_runners, projects:)
+
+    render json: { options: options.map { |option| { label: option.label, value: option.value } } }
+  end
+
   def sidebar_page
     archived = archived_param?
     sidebar = sidebar_batch(
@@ -322,12 +336,20 @@ class ChatSessionsController < ApplicationController
 
     selection = ChatSessions::RunnerModelOptions.resolve(
       runners: available_chat_runners,
-      value: value
+      value: value,
+      projects: runner_model_policy_projects(permitted)
     )
     raise ArgumentError, "Choose a valid runner and model combination." unless selection
 
     permitted[:runner_id] = selection.runner_id
     permitted[:model] = selection.model_id
+    permitted[:metadata] = (@chat_session&.metadata || {}).merge(permitted[:metadata] || {}).merge("model_tier" => selection.tier)
+  end
+
+  def runner_model_policy_projects(permitted)
+    project_id = permitted.key?(:project_id) ? permitted[:project_id] : @chat_session&.project_id
+    linked_ids = @chat_session&.chat_session_projects&.pluck(:project_id) || []
+    current_account.projects.where(id: linked_ids << project_id).to_a
   end
 
   def normalize_legacy_create_params!(permitted)
