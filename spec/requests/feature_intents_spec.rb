@@ -134,17 +134,38 @@ RSpec.describe "Feature intents" do
       expect(flash[:alert]).to eq("Select why this proposal is being declined.")
       expect(feature_intent.reload.status).to eq("discovering")
     end
+
+    # @spec FEATURE-APPROVAL-020
+    it "rejects a replacement reference outside http(s)" do
+      feature_intent = create(:feature_intent, project: project, status: "discovering", criteria_clarity_state: "pending")
+
+      post cancel_feature_intent_path(feature_intent), params: {
+        cancellation_reason: "already_handled",
+        replacement_reference: "javascript:alert(1)"
+      }
+
+      expect(response).to redirect_to(feature_intents_path)
+      expect(flash[:alert]).to eq("Replacement reference must be an http(s) URL")
+      expect(feature_intent.reload.status).to eq("discovering")
+    end
   end
 
   describe "POST /feature_intents/:id/reopen" do
-    it "reopens a declined feature for discovery without releasing held work" do
+    # @spec FEATURE-APPROVAL-020
+    it "reopens a declined feature for discovery without retaining cancellation metadata" do
       feature_intent = create(:feature_intent, project: project, status: "cancelled", cancelled_by: owner,
-        cancelled_at: 1.hour.ago, cancellation_reason: "superseded")
+        cancelled_at: 1.hour.ago, cancellation_reason: "superseded", replacement_reference: "https://github.com/viamin/paid/pull/4430")
 
       post reopen_feature_intent_path(feature_intent)
 
       expect(response).to redirect_to(feature_intents_path)
-      expect(feature_intent.reload.status).to eq("discovering")
+      expect(feature_intent.reload).to have_attributes(
+        status: "discovering",
+        cancelled_by: nil,
+        cancelled_at: nil,
+        cancellation_reason: nil,
+        replacement_reference: nil
+      )
     end
   end
 end

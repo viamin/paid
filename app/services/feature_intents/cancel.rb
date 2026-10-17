@@ -19,6 +19,8 @@ module FeatureIntents
       raise InvalidCancellationError, "Select why this proposal is being declined." unless cancellation_reason.in?(FeatureIntent::CANCELLATION_REASONS)
 
       feature_intent.cancel!(by: actor, reason: cancellation_reason, replacement_reference: replacement_reference).tap { log_cancellation }
+    rescue ActiveRecord::RecordInvalid => error
+      raise InvalidCancellationError, error.record.errors.full_messages.to_sentence
     end
 
     private

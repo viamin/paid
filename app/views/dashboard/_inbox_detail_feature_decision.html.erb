@@ -111,7 +111,7 @@
     <div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
       <h3 class="text-sm font-semibold text-gray-900">Remove this proposal from the Inbox</h3>
       <p class="mt-1 text-sm text-gray-600">Declining preserves the brief, linked issues, evidence, and approval history. It does not release, close, or cancel replacement work.</p>
-      <%= form_with url: cancel_feature_intent_path(feature_intent), method: :post, class: "mt-3 flex flex-wrap items-end gap-3", data: { turbo_confirm: "Decline this proposal? It can later be reopened for discovery." } do |form| %>
+      <%= form_with url: cancel_feature_intent_path(feature_intent), method: :post, class: "mt-3 flex flex-wrap items-end gap-3", data: { turbo_confirm: "Decline this proposal? It can later be reopened for discovery.", turbo_frame: "_top" } do |form| %>
         <div>
           <%= form.label :cancellation_reason, "Reason", class: "block text-xs font-medium text-gray-700" %>
           <%= form.select :cancellation_reason, [["Already handled or duplicate", "already_handled"], ["Superseded", "superseded"], ["No longer wanted", "no_longer_wanted"]], {}, class: "mt-1 rounded-md border-gray-300 text-sm" %>

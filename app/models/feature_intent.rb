@@ -47,6 +47,7 @@ class FeatureIntent < ApplicationRecord
   validates :criteria_clarity_state, presence: true, inclusion: { in: CRITERIA_CLARITY_STATES }
   validates :delivery_policy, presence: true, inclusion: { in: DELIVERY_POLICIES }
   validates :cancellation_reason, inclusion: { in: CANCELLATION_REASONS }, allow_nil: true
+  validates :replacement_reference, format: { with: %r{\Ahttps?://}i, message: "must be an http(s) URL" }, allow_blank: true
 
   attr_readonly :delivery_policy
 
@@ -152,7 +153,13 @@ class FeatureIntent < ApplicationRecord
     with_lock do
       raise InvalidTransitionError, "cannot reopen a #{status} feature intent" unless cancelled?
 
-      update!(status: "discovering")
+      update!(
+        status: "discovering",
+        cancelled_by: nil,
+        cancelled_at: nil,
+        cancellation_reason: nil,
+        replacement_reference: nil
+      )
       record_reopen_audit_event(by)
     end
     Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
