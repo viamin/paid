@@ -861,6 +861,7 @@ RSpec.describe "Projects" do
     end
 
     def create_api_chat_runner
+      create(:llm_model, provider: "openrouter", model_id: "moonshotai/kimi-k2", tier: "low", supports_tools: true)
       create(:runner, :api_key, user: user, runner_key: "opencode",
         provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
         config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })

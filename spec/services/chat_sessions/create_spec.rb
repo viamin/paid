@@ -78,6 +78,35 @@ RSpec.describe ChatSessions::Create do
       expect(session.runner).not_to eq(non_chat_runner)
     end
 
+    # @spec CHAT-SESSION-PREFERENCES-003
+    it "defaults a new OpenAI chat to the curated Low model" do
+      runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"),
+        config: { "opencode" => { "api_provider" => "openai", "model" => "gpt-5.6-luna" } })
+      model = LlmModel.find_or_initialize_by(model_id: "gpt-5.6-luna")
+      model.assign_attributes(display_name: "GPT-5.6 Luna", provider: "openai", category: "coding",
+        tier: "low", capability_score: 9.0, pricing_tier: "paid", catalog_source: "seeded",
+        supports_tools: true, active: true)
+      model.save!
+
+      session = described_class.call(account: account, user: user, runner_id: runner.id)
+
+      expect(session.model).to eq("gpt-5.6-luna")
+      expect(session.metadata).to include("model_tier" => "low")
+    end
+
+    # @spec CHAT-API-018
+    it "leaves a new free-policy chat unpinned for per-request model selection" do
+      runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+        config: { "opencode" => { "api_provider" => "openrouter", "model_policy" => "free" } })
+
+      session = described_class.call(account: account, user: user, runner_id: runner.id)
+
+      expect(session.model).to be_nil
+      expect(session.metadata).not_to have_key("model_tier")
+    end
+
     it "prefers a configured API-key runner when one is available" do
       default_runner = user.runners.find_by!(runner_key: "claude")
       api_key_record = create(:provider_api_key, user: user, api_key: "sk-openrouter-test", api_service_type: "openrouter")
@@ -87,6 +116,11 @@ RSpec.describe ChatSessions::Create do
         provider_api_key: api_key_record,
         config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } }
       )
+      model = LlmModel.find_or_initialize_by(model_id: "moonshotai/kimi-k2")
+      model.assign_attributes(display_name: "Kimi K2", provider: "openrouter", category: "coding",
+        tier: "low", capability_score: 8.0, pricing_tier: "paid", catalog_source: "manual",
+        supports_tools: true, active: true)
+      model.save!
 
       session = described_class.call(account: account, user: user)
 
@@ -258,6 +292,11 @@ RSpec.describe ChatSessions::Create do
   end
 
   def create_api_chat_runner
+    model = LlmModel.find_or_initialize_by(model_id: "moonshotai/kimi-k2")
+    model.assign_attributes(display_name: "Kimi K2", provider: "openrouter", category: "coding",
+      tier: "low", capability_score: 8.0, pricing_tier: "paid", catalog_source: "manual",
+      supports_tools: true, active: true)
+    model.save!
     create(:runner, :api_key, user: user, runner_key: "opencode",
       provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
       config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })

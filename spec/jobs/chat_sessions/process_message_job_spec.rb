@@ -416,6 +416,7 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
   end
 
   def configure_chat_fallback(configured: true)
+    ChatFallbackCatalog.seed_low_tier_models
     primary_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
       provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
       config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })

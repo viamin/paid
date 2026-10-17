@@ -138,6 +138,25 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
     end
 
     context "with an OpenAI-compatible API key runner" do
+      # @spec CHAT-SESSION-PREFERENCES-003
+      it "moves a legacy Automatic session to the curated Low model without replacing explicit selections" do
+        api_key_record = create(:provider_api_key, user: user, api_key: "sk-openai-test", api_service_type: "openai")
+        runner = create(:runner, :api_key, user: user, runner_key: "opencode", provider_api_key: api_key_record,
+          config: { "opencode" => { "api_provider" => "openai", "model" => "gpt-5.6-luna" } })
+        model = LlmModel.find_or_initialize_by(model_id: "gpt-5.6-luna")
+        model.assign_attributes(display_name: "GPT-5.6 Luna", provider: "openai", category: "coding",
+          tier: "low", capability_score: 9.0, pricing_tier: "paid", catalog_source: "seeded",
+          supports_tools: true, active: true)
+        model.save!
+        automatic = create(:chat_session, account: account, created_by: user, runner: runner, model: nil)
+        explicit = create(:chat_session, account: account, created_by: user, runner: runner, model: "gpt-4o")
+
+        expect(described_class.call(chat_session: automatic).model).to eq("gpt-5.6-luna")
+        expect(automatic.reload.metadata).to include("model_tier" => "low")
+        expect(described_class.call(chat_session: explicit).model).to eq("gpt-4o")
+        expect(explicit.reload.model).to eq("gpt-4o")
+      end
+
       it "returns an HttpClient with OpenAICompatibleTransport" do
         api_key_record = create(:provider_api_key, user: user, api_key: "sk-or-test-key", api_service_type: "openrouter")
         runner = create(:runner, :api_key,
@@ -157,6 +176,8 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       # @spec ONBOARD-CHAT-002
       it "routes a Google API-key runner to Gemini's OpenAI-compatible endpoint" do
         api_key_record = create(:provider_api_key, user: user, api_key: "gemini-test-key", api_service_type: "google")
+        create(:llm_model, provider: "google", model_id: "gemini-2.5-flash-lite", tier: "low",
+          capability_score: 7.0, supports_tools: true)
         runner = create(:runner, :api_key,
           user: user,
           runner_key: "gemini",
@@ -165,11 +186,11 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         chat_session = create(:chat_session, account: account, created_by: user, runner: runner)
 
         client = described_class.call(chat_session: chat_session)
-        chat_transport = stub_chat_transport(client, result: succeeded_result(model: "gemini-2.5-flash"))
+        chat_transport = stub_chat_transport(client, result: succeeded_result(model: "gemini-2.5-flash-lite"))
 
         client.call([ { role: "user", content: "What did you find?" } ])
 
-        expect(client.model).to eq("gemini-2.5-flash")
+        expect(client.model).to eq("gemini-2.5-flash-lite")
         expect(chat_transport).to have_received(:call) do |request|
           expect(request[:candidates].first[:endpoint]).to eq("https://generativelanguage.googleapis.com/v1beta/openai")
         end
@@ -299,6 +320,11 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
           provider_api_key: api_key_record,
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } }
         )
+        model = LlmModel.find_or_initialize_by(model_id: "moonshotai/kimi-k2")
+        model.assign_attributes(display_name: "Kimi K2", provider: "openrouter", category: "coding",
+          tier: "low", capability_score: 8.0, pricing_tier: "paid", catalog_source: "manual",
+          supports_tools: true, active: true)
+        model.save!
 
         client = described_class.call(chat_session: chat_session)
 

@@ -38,17 +38,21 @@ module ChatSessions
       end
 
       (current_candidates + configured_candidates + automatic_candidates).uniq.select do |runner|
-        free_pool_available?(runner, chat_session: chat_session)
+        free_pool_available?(runner, chat_session: chat_session) &&
+          curated_low_available?(runner, chat_session: chat_session)
       end
     end
 
     def switch!(chat_session:, runner:)
+      # @spec CHAT-API-026
+      option = CuratedModelOptions.resolve(runner:, projects: chat_session.llm_policy_projects) unless runner.free_model_policy?
       model = if runner.free_model_policy?
         FreeModels::SelectChatModel.for_session(runner: runner, chat_session: chat_session).model_id
       else
-        model_for(runner)
+        option&.model_id ||
+          raise(LlmClientConfigurationError, "No compatible Low chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy.")
       end
-      chat_session.update!(runner: runner, model: model)
+      chat_session.update!(runner: runner, model: model, metadata: chat_session.metadata.merge("model_tier" => option&.tier).compact)
     end
 
     # @spec CHAT-API-019
@@ -61,11 +65,16 @@ module ChatSessions
       false
     end
 
-    # @spec CHAT-API-018
-    def model_for(runner, project: nil)
-      return FreeModels::SelectChatModel.call(runner: runner, project: project).model_id if runner.free_model_policy?
+    # Non-free fallbacks switch to the curated Low tier, and switch! raises
+    # LlmClientConfigurationError when none resolves. That error is not an
+    # AgentHarness::Error, so FallbackLoop would abort instead of trying the
+    # next configured fallback — skip such runners up front, mirroring the
+    # free-pool skip above.
+    # @spec CHAT-API-026
+    def curated_low_available?(runner, chat_session:)
+      return true if runner.free_model_policy?
 
-      runner.direct_outbound_model_id.presence || default_model_for_service_type(service_type_for(runner))
+      CuratedModelOptions.resolve(runner:, projects: chat_session.llm_policy_projects).present?
     end
 
     def notice_for(error:, runner:)
@@ -106,14 +115,6 @@ module ChatSessions
 
         ids << runner.id
       end
-    end
-
-    def service_type_for(runner)
-      runner.provider_api_key&.api_service_type || runner.required_api_service_type
-    end
-
-    def default_model_for_service_type(service_type)
-      BuildLlmClient.default_model_for_service_type(service_type)
     end
   end
 end

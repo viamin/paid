@@ -16,7 +16,14 @@
       </button>
     </div>
 
-    <%= form_with model: chat_session, url: chat_sessions_path, class: "mt-6 space-y-5" do |form| %>
+    <%# @spec CHAT-SESSION-PREFERENCES-003 %>
+    <%= form_with model: chat_session,
+                  url: chat_sessions_path,
+                  class: "mt-6 space-y-5",
+                  data: {
+                    controller: "chat-runner-model-options",
+                    chat_runner_model_options_url_value: runner_model_options_chat_sessions_path
+                  } do |form| %>
       <div class="grid gap-5 md:grid-cols-2">
         <div>
           <%= form.label :container_capability, "Session type", class: "block text-sm font-medium text-gray-700" %>
@@ -32,6 +39,7 @@
                           options_for_select(runner_model_options.map { |option| [option.label, option.value] }),
                           { include_blank: "Choose a runner and model" },
                           id: "new_chat_session_runner_model",
+                          data: { chat_runner_model_options_target: "runnerModelSelect" },
                           class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>
         <div>
@@ -39,6 +47,10 @@
           <%= form.select :project_id,
                           options_from_collection_for_select(available_projects, :id, :name),
                           { include_blank: "No project" },
+                          data: {
+                            chat_runner_model_options_target: "projectSelect",
+                            action: "change->chat-runner-model-options#projectChanged"
+                          },
                           class: "mt-1 block w-full rounded-md border-gray-300 py-2 pl-3 pr-10 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500" %>
         </div>
       </div>
