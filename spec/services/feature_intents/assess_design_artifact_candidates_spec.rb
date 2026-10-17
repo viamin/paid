@@ -28,6 +28,18 @@ RSpec.describe FeatureIntents::AssessDesignArtifactCandidates do
     expect(AgentHarness).to have_received(:send_message).once
   end
 
+  it "retains a completed assessment after the former cache expiry" do
+    response = instance_double(AgentHarness::Response, success?: true, output: '{"issue_identity":"acme/widget#10","explanation":"It implements the RDR scope."}')
+    allow(AgentHarness).to receive(:send_message).and_return(response)
+
+    described_class.call(project:, artifact:, issues:)
+    travel 8.days do
+      described_class.call(project:, artifact:, issues:)
+    end
+
+    expect(AgentHarness).to have_received(:send_message).once
+  end
+
   it "reassesses when the artifact revision changes" do
     first_response = instance_double(AgentHarness::Response, success?: true,
       output: '{"issue_identity":null,"explanation":"The first revision has no match."}')

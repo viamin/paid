@@ -134,7 +134,7 @@ module FeatureIntents
     end
 
     def exact_backlinks(artifact)
-      Issue.joins(:project).includes(:project).where(projects: { account_id: project.account_id }).where(
+      project.issues.includes(:project).where(
         "issues.body LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(artifact[:path])}%"
       ).filter_map do |issue|
         next if issue.is_pull_request? || !issue.trusted?

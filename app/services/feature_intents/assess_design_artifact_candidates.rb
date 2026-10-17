@@ -12,7 +12,6 @@ module FeatureIntents
   class AssessDesignArtifactCandidates
     DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 45
-    CACHE_TTL = 7.days
     Result = Data.define(:identity, :evidence) do
       def covered? = identity.present?
     end
@@ -96,7 +95,7 @@ module FeatureIntents
     end
 
     def cache(result)
-      Rails.cache.write(cache_key, { "identity" => result.identity, "evidence" => result.evidence }, expires_in: CACHE_TTL)
+      Rails.cache.write(cache_key, { "identity" => result.identity, "evidence" => result.evidence })
       result
     end
 

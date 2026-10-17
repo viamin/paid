@@ -137,6 +137,25 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
   end
 
+  it "does not use an exact backlink from another repository in the account" do
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-020-service-container-architecture.md",
+      revision: "a" * 40,
+      body: "Status: Accepted"
+    )
+    other_project = create(:project, account: project.account, owner: "acme", repo: "other-widget")
+    create(:issue, project: other_project, github_number: 216,
+      body: "Implements docs/rdrs/RDR-020-service-container-architecture.md")
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ artifact ])
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(
+      artifact_path: artifact.path, revision: artifact.revision, state: "missing_tree", status: "open"
+    )
+    expect(DesignArtifactAssociation.count).to eq(0)
+  end
+
   it "does not treat an untrusted issue backlink as structural evidence" do
     artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
       path: "docs/rdrs/RDR-020-service-container-architecture.md",
