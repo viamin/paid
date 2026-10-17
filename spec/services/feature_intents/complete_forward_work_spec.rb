@@ -141,4 +141,21 @@ RSpec.describe FeatureIntents::CompleteForwardWork do
     expect(result.code).to eq(:dependency_cycle)
     expect(completion_issue.reload.dependencies).not_to include(implementation_issue)
   end
+
+  it "rejects linked issues from another project" do
+    foreign_issue = create(:issue, project: create(:project), github_number: 900)
+
+    expect {
+      FeatureIntentCompletion.create!(feature_intent:, completion_issue: foreign_issue)
+    }.to raise_error(ActiveRecord::RecordInvalid, /must belong to the feature intent's project/)
+
+    completion = FeatureIntentCompletion.create!(feature_intent:, completion_issue:)
+    expect {
+      completion.forward_work_items.create!(fingerprint: "f" * 64, affected_issue: foreign_issue)
+    }.to raise_error(ActiveRecord::RecordInvalid, /must belong to the feature intent's project/)
+
+    expect {
+      completion.forward_work_items.create!(fingerprint: "g" * 64, follow_up_issue: foreign_issue)
+    }.to raise_error(ActiveRecord::RecordInvalid, /must belong to the feature intent's project/)
+  end
 end

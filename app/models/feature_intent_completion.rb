@@ -10,4 +10,15 @@ class FeatureIntentCompletion < ApplicationRecord
 
   validates :status, inclusion: { in: STATUSES }
   validates :cycle, numericality: { only_integer: true, greater_than: 0 }
+  validate :completion_issue_belongs_to_feature_project
+
+  private
+
+  # @spec CONFIDENCE-DELIVERY-008 @spec CONFIDENCE-DELIVERY-011
+  def completion_issue_belongs_to_feature_project
+    return if completion_issue.blank? || feature_intent.blank?
+    return if completion_issue.project_id == feature_intent.project_id
+
+    errors.add(:completion_issue, "must belong to the feature intent's project")
+  end
 end
