@@ -12,10 +12,10 @@ RSpec.describe ChatSessions::RunnerModelOptions do
   end
 
   before do
-    create(:llm_model, :openai, model_id: "gpt-5.6-luna", tier: "low", capability_score: 9.0)
-    create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid", capability_score: 9.0)
-    create(:llm_model, :openai, model_id: "gpt-5.6-sol", tier: "high", capability_score: 9.0)
-    create(:llm_model, :openai, model_id: "gpt-5.6-extra", tier: "high", capability_score: 10.0)
+    create(:llm_model, :openai, model_id: "gpt-5.6-luna", tier: "low", capability_score: 9.0, supports_tools: true)
+    create(:llm_model, :openai, model_id: "gpt-5.6-terra", tier: "mid", capability_score: 9.0, supports_tools: true)
+    create(:llm_model, :openai, model_id: "gpt-5.6-sol", tier: "high", capability_score: 9.0, supports_tools: true)
+    create(:llm_model, :openai, model_id: "gpt-5.6-extra", tier: "high", capability_score: 10.0, supports_tools: true)
   end
 
   # @spec CHAT-SESSION-PREFERENCES-003
@@ -63,6 +63,13 @@ RSpec.describe ChatSessions::RunnerModelOptions do
     LlmModel.find_by!(model_id: "gpt-5.6-terra").update!(operator_active_override: false)
 
     expect(described_class.options_for([ runner ]).map(&:model_id)).to eq(%w[gpt-5.6-luna gpt-5.6-sol])
+  end
+
+  # @spec CHAT-SESSION-PREFERENCES-003
+  it "excludes models that cannot support chat tools" do
+    LlmModel.find_by!(model_id: "gpt-5.6-luna").update!(supports_tools: false)
+
+    expect(described_class.options_for([ runner ]).map(&:model_id)).to eq(%w[gpt-5.6-terra gpt-5.6-sol])
   end
 
   # @spec CHAT-SESSION-PREFERENCES-003

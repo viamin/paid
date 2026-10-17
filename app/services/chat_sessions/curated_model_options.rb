@@ -52,7 +52,7 @@ module ChatSessions
         runner_key: runner.runner_key,
         api_provider: model_provider,
         auth_type: runner.auth_type
-      ).select(&:model?).map(&:model)
+      ).select(&:model?).map(&:model).select(&:supports_tools?)
     end
 
     def preferred_model(tier, models)

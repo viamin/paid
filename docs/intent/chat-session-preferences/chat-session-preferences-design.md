@@ -35,9 +35,9 @@ the eligible free pool dynamically selects its model on every request. Low is
 the default for a new session. The selector is deliberately not a catalog
 browser: catalog refreshes may replace a compatible concrete model within its
 existing tier but cannot add choices or promote a chat to a more expensive
-tier. API-key availability evidence, operator disables, and agent-harness
-compatibility filter these choices. An unavailable tier has actionable
-feedback rather than silently selecting a higher tier.
+tier. API-key availability evidence, operator disables, catalog tool support,
+and agent-harness compatibility filter these choices. An unavailable tier has
+actionable feedback rather than silently selecting a higher tier.
 Project provider restrictions, model allowlists and exclusions, and tier
 limits filter the choices for linked project context through the same policy
 path used by agent runs.

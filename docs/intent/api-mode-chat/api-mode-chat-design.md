@@ -109,8 +109,9 @@ entry points.
 
 API-key chat presents and resolves a bounded Low, Medium, and High policy,
 rather than exposing every catalog row or relying on a hard-coded provider
-fallback. The shared resolver applies catalog activity, operator state,
-agent-harness compatibility, and fresh runner/account availability evidence.
+fallback. The shared resolver applies catalog activity, operator state, tool
+support, agent-harness compatibility, and fresh runner/account availability
+evidence.
 OpenAI resolves Low/Medium/High to GPT-5.6 Luna/Terra/Sol. A missing Low tier
 is actionable and does not escalate to a higher tier. The selected concrete
 model and tier are recorded on the chat session so request and usage records

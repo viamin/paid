@@ -27,8 +27,9 @@
   `app/javascript/controllers/chat_controller.js`.
 
 - [x] **CHAT-SESSION-PREFERENCES-003** - When a user configures a chat session,
-  the system SHALL present only one compatible curated choice per Low, Medium,
-  and High tier for each available non-free-policy runner, with a label
+  the system SHALL present only one compatible, tool-capable curated choice per
+  Low, Medium, and High tier for each available non-free-policy runner, with a
+  label
   containing the tier and concrete model ID, and SHALL reject selections that
   do not belong to an available runner's curated choices. Free-policy runners
   SHALL not offer a saved curated model choice because their model is selected
