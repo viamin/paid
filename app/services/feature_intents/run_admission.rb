@@ -2,8 +2,11 @@
 
 module FeatureIntents
   # The one deterministic admission gate for implementation work linked to
-  # feature intents. It first reconciles confidence-driven planning holds so
-  # direct API, chat, and manual starts share auto-pick's release contract.
+  # feature intents. Reconciliation belongs to the enqueue and sweep paths,
+  # which run outside the run-creation transaction; admission only reads the
+  # resulting release evidence so it never holds database locks during a
+  # GitHub request. Direct API, chat, and manual starts therefore share the
+  # same already-reconciled release contract as auto-pick.
   # An issue may serve several designs, so every linked feature intent must
   # permit the run. It intentionally reads the current feature state every
   # time: a run can be queued before a design becomes held again.
@@ -22,9 +25,6 @@ module FeatureIntents
     end
 
     def call
-      release = ReleaseIssue.call(issue: issue)
-      return denied(release.reason) unless release.released?
-
       permits = links.map { |link| admit_link(link) }
       denial = permits.find { |result| !result.allowed? }
       return denial if denial

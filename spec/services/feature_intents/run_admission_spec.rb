@@ -66,7 +66,7 @@ RSpec.describe FeatureIntents::RunAdmission do
     expect(described_class.call(issue: issue)).not_to be_allowed
   end
 
-  it "requires every confidence design the issue serves to permit admission" do
+  it "requires every confidence design the issue serves to have released evidence" do
     released_feature = create(:feature_intent, :confidence_driven, project: project)
     create(:feature_intent_issue, feature_intent: released_feature, issue: issue,
       release_state: "released", readiness_mapping: confidence_mapping, release_snapshot: confidence_snapshot)
