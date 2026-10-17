@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_16_073238) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_16_202350) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1332,6 +1332,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_073238) do
     t.index ["project_id", "status"], name: "index_design_amendments_on_project_id_and_status"
     t.index ["project_id"], name: "index_design_amendments_on_project_id"
     t.index ["status"], name: "index_design_amendments_on_status"
+  end
+
+  create_table "design_artifact_associations", comment: "Evidence-backed local reconciliation links between a design artifact revision and synchronized GitHub work.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "artifact_path", limit: 2048, null: false
+    t.string "artifact_revision", limit: 255, null: false
+    t.datetime "created_at", null: false
+    t.string "issue_identity", limit: 512, null: false, comment: "Repository-qualified synchronized issue identity."
+    t.string "issue_revision", limit: 255, comment: "Synchronized issue revision assessed for this association."
+    t.bigint "project_id", null: false
+    t.string "provenance", limit: 255, null: false, comment: "Structural evidence that established the local association."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_design_artifact_associations_on_account_id"
+    t.index ["project_id", "artifact_path", "artifact_revision", "issue_identity"], name: "idx_design_artifact_associations_identity", unique: true
+    t.index ["project_id"], name: "index_design_artifact_associations_on_project_id"
   end
 
   create_table "design_artifact_findings", comment: "Durable issue-tree traceability gaps found while reconciling repository design artifacts.", force: :cascade do |t|
@@ -4230,6 +4245,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_073238) do
   add_foreign_key "design_amendments", "feature_intents"
   add_foreign_key "design_amendments", "projects"
   add_foreign_key "design_amendments", "users", column: "approved_by_id"
+  add_foreign_key "design_artifact_associations", "accounts", on_delete: :cascade
+  add_foreign_key "design_artifact_associations", "projects", on_delete: :cascade
   add_foreign_key "design_artifact_findings", "accounts", on_delete: :cascade
   add_foreign_key "design_artifact_findings", "projects", on_delete: :cascade
   add_foreign_key "dispatch_circuit_breakers", "accounts"

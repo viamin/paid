@@ -10,7 +10,7 @@ module FeatureIntents
   # @spec DESIGN-RECONCILIATION-001
   class ReconcileDesignArtifacts
     Finding = Data.define(:fingerprint, :path, :revision, :state, :evidence)
-    Result = Data.define(:findings, :last_successful_coverage_at) do
+    Result = Data.define(:findings, :associations, :last_successful_coverage_at) do
       def actionable_findings = findings.reject { |finding| finding.state == "deferred" }
     end
 
@@ -26,7 +26,11 @@ module FeatureIntents
 
     def call
       findings = artifacts.filter_map { |artifact| finding_for(artifact) }.uniq(&:fingerprint)
-      Result.new(findings:, last_successful_coverage_at: coverage_complete? ? Time.current : nil)
+      Result.new(
+        findings:,
+        associations: artifacts.flat_map { |artifact| associations_for(artifact) },
+        last_successful_coverage_at: coverage_complete? ? Time.current : nil
+      )
     end
 
     private
@@ -42,13 +46,28 @@ module FeatureIntents
       Finding.new(fingerprint: fingerprint(artifact, state), path: artifact[:path], revision:, state:, evidence:)
     end
 
+    def associations_for(artifact)
+      normalized = normalize(artifact)
+      semantic_association = semantic_association_for(artifact)
+      (normalized.fetch(:associated_issues) + (semantic_association ? [ semantic_association ] : [])).filter_map do |association|
+        identity = qualified_reference(association)
+        next unless identity && issue_identities.include?(identity)
+
+        {
+          path: artifact[:path], revision:, identity:,
+          issue_revision: association[:revision] || association["revision"],
+          provenance: association[:provenance] || association["provenance"]
+        }.compact
+      end
+    end
+
     def state_for(artifact)
       return [ "unverifiable", [ "GitHub coverage was incomplete" ] ] unless coverage_complete?
       return [ "deferred", [ "Artifact status is #{artifact[:status]}" ] ] if deferred?(artifact)
 
-      references = artifact[:references]
+      references = artifact[:references] | artifact[:associated_identities]
       return stale_metadata(artifact) if references.empty? && artifact[:stored_identities].any?
-      return [ "missing_tree", [ "No explicit qualified issue links were found" ] ] if references.empty?
+      return missing_tree(artifact) if references.empty?
 
       missing = references.reject { |reference| issue_identities.include?(reference) }
       return if missing.empty?
@@ -60,12 +79,15 @@ module FeatureIntents
       {
         status: artifact[:status].to_s,
         references: qualified_references(artifact[:related_issues]),
-        stored_identities: qualified_references(artifact[:stored_identities])
+        stored_identities: qualified_references(artifact[:stored_identities]),
+        associated_issues: Array(artifact[:associated_issues]),
+        associated_identities: qualified_references(Array(artifact[:associated_issues])),
+        body: artifact[:body], path: artifact[:path], revision: artifact[:revision] || revision
       }
     end
 
     def deferred?(artifact)
-      artifact[:status].casecmp?("draft") || artifact[:status].casecmp?("deferred") || artifact[:status].casecmp?("superseded")
+      %w[draft deferred superseded historical].any? { |status| artifact[:status].casecmp?(status) }
     end
 
     def stale_metadata(artifact)
@@ -96,6 +118,42 @@ module FeatureIntents
 
     def issue_identities
       @issue_identities ||= issues.filter_map { |issue| qualified_reference(issue) }.to_set
+    end
+
+    def missing_tree(artifact)
+      assessment = semantic_assessment_for(artifact)
+      return if assessment.covered?
+
+      [ "missing_tree", [ "No explicit qualified issue links were found", assessment.evidence ] ]
+    end
+
+    def semantic_assessment_for(artifact)
+      @semantic_assessments ||= {}
+      @semantic_assessments[artifact[:path]] ||= AssessDesignArtifactCandidates.call(project:, artifact:, issues:)
+    end
+
+    def semantic_association_for(artifact)
+      normalized = normalize(artifact)
+      return unless coverage_complete?
+      return if deferred?(normalized) || normalized[:stored_identities].any?
+      return if (normalized[:references] | normalized[:associated_identities]).any?
+
+      assessment = semantic_assessment_for(normalized)
+      return unless assessment.covered?
+
+      repository, number = assessment.identity.split("#", 2)
+      candidate = issues_by_identity.fetch(assessment.identity)
+      {
+        repository:, number:, revision: candidate[:revision] || candidate["revision"],
+        provenance: "semantic candidate assessment: #{assessment.evidence}"
+      }.compact
+    end
+
+    def issues_by_identity
+      @issues_by_identity ||= issues.each_with_object({}) do |issue, candidates|
+        identity = qualified_reference(issue)
+        candidates[identity] = issue if identity
+      end
     end
 
     def fingerprint(artifact, state)

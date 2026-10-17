@@ -181,8 +181,15 @@
   examines RDR artifacts using the project's configured `rdr_convention`
   directory and filename pattern (defaulting to `docs/rdrs/RDR-*.md`) or open design PRs at
   a pinned revision,
-  the system SHALL classify declared issue-tree evidence as missing, partial,
-  stale/unlinked, deliberately deferred, or unverifiable. Failed or partial
+  the system SHALL compare declared issue-tree evidence with existing open and
+  closed synchronized issues, stored identities, canonical manifests, and exact
+  artifact backlinks before classifying a gap. It SHALL retain an evidence-backed
+  local association with its provenance and assessed revisions when structural
+  evidence is unambiguous; this resolves a finding without repairing the document.
+  The system SHALL classify declared issue-tree evidence as missing, partial,
+  stale/unlinked, deliberately deferred (including explicitly historical decisions),
+  or unverifiable. Closed work alone SHALL NOT establish semantic implementation
+  coverage. Failed or partial
   GitHub reads SHALL yield `unverifiable`, not an absence finding, and SHALL
   NOT resolve a prior open finding for the artifact; draft and
   superseded/deferred artifacts SHALL not be treated as missing merely from
@@ -194,7 +201,9 @@
   SHALL NOT resolve prior findings. Open findings SHALL appear as authorized
   Inbox traceability-gap work, including their pinned revision and evidence;
   Inbox badge and filter caches SHALL invalidate when a finding enters or
-  leaves the open state.
+  leaves the open state. Semantic candidate assessment SHALL use `agent_harness`
+  only after structural evidence is exhausted and be cached by assessed revisions;
+  the existing daily sweep remains the bounded fallback for unchanged inputs.
   *Tests:* `spec/services/feature_intents/reconcile_design_artifacts_spec.rb`,
   `spec/jobs/feature_intents/reconcile_design_artifacts_job_spec.rb`,
   `spec/jobs/feature_intents/design_artifact_reconciliation_sweep_job_spec.rb`.
