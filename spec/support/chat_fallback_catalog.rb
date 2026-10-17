@@ -30,6 +30,7 @@ module ChatFallbackCatalog
         category: row[:category],
         tier: "low",
         capability_score: row[:capability_score],
+        supports_tools: true,
         active: true
       )
     end

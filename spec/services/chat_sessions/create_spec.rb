@@ -85,7 +85,8 @@ RSpec.describe ChatSessions::Create do
         config: { "opencode" => { "api_provider" => "openai", "model" => "gpt-5.6-luna" } })
       model = LlmModel.find_or_initialize_by(model_id: "gpt-5.6-luna")
       model.assign_attributes(display_name: "GPT-5.6 Luna", provider: "openai", category: "coding",
-        tier: "low", capability_score: 9.0, pricing_tier: "paid", catalog_source: "seeded", active: true)
+        tier: "low", capability_score: 9.0, pricing_tier: "paid", catalog_source: "seeded",
+        supports_tools: true, active: true)
       model.save!
 
       session = described_class.call(account: account, user: user, runner_id: runner.id)
@@ -117,7 +118,8 @@ RSpec.describe ChatSessions::Create do
       )
       model = LlmModel.find_or_initialize_by(model_id: "moonshotai/kimi-k2")
       model.assign_attributes(display_name: "Kimi K2", provider: "openrouter", category: "coding",
-        tier: "low", capability_score: 8.0, pricing_tier: "paid", catalog_source: "manual", active: true)
+        tier: "low", capability_score: 8.0, pricing_tier: "paid", catalog_source: "manual",
+        supports_tools: true, active: true)
       model.save!
 
       session = described_class.call(account: account, user: user)
@@ -292,7 +294,8 @@ RSpec.describe ChatSessions::Create do
   def create_api_chat_runner
     model = LlmModel.find_or_initialize_by(model_id: "moonshotai/kimi-k2")
     model.assign_attributes(display_name: "Kimi K2", provider: "openrouter", category: "coding",
-      tier: "low", capability_score: 8.0, pricing_tier: "paid", catalog_source: "manual", active: true)
+      tier: "low", capability_score: 8.0, pricing_tier: "paid", catalog_source: "manual",
+      supports_tools: true, active: true)
     model.save!
     create(:runner, :api_key, user: user, runner_key: "opencode",
       provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),

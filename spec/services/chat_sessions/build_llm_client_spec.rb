@@ -145,7 +145,8 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
           config: { "opencode" => { "api_provider" => "openai", "model" => "gpt-5.6-luna" } })
         model = LlmModel.find_or_initialize_by(model_id: "gpt-5.6-luna")
         model.assign_attributes(display_name: "GPT-5.6 Luna", provider: "openai", category: "coding",
-          tier: "low", capability_score: 9.0, pricing_tier: "paid", catalog_source: "seeded", active: true)
+          tier: "low", capability_score: 9.0, pricing_tier: "paid", catalog_source: "seeded",
+          supports_tools: true, active: true)
         model.save!
         automatic = create(:chat_session, account: account, created_by: user, runner: runner, model: nil)
         explicit = create(:chat_session, account: account, created_by: user, runner: runner, model: "gpt-4o")
@@ -175,7 +176,8 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       # @spec ONBOARD-CHAT-002
       it "routes a Google API-key runner to Gemini's OpenAI-compatible endpoint" do
         api_key_record = create(:provider_api_key, user: user, api_key: "gemini-test-key", api_service_type: "google")
-        create(:llm_model, provider: "google", model_id: "gemini-2.5-flash-lite", tier: "low", capability_score: 7.0)
+        create(:llm_model, provider: "google", model_id: "gemini-2.5-flash-lite", tier: "low",
+          capability_score: 7.0, supports_tools: true)
         runner = create(:runner, :api_key,
           user: user,
           runner_key: "gemini",
@@ -320,7 +322,8 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         )
         model = LlmModel.find_or_initialize_by(model_id: "moonshotai/kimi-k2")
         model.assign_attributes(display_name: "Kimi K2", provider: "openrouter", category: "coding",
-          tier: "low", capability_score: 8.0, pricing_tier: "paid", catalog_source: "manual", active: true)
+          tier: "low", capability_score: 8.0, pricing_tier: "paid", catalog_source: "manual",
+          supports_tools: true, active: true)
         model.save!
 
         client = described_class.call(chat_session: chat_session)

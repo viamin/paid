@@ -164,7 +164,8 @@ RSpec.describe ChatSessions::FallbackRunners do
         config: { "opencode" => { "api_provider" => "openai", "model" => "gpt-5.6-luna" } })
       model = LlmModel.find_or_initialize_by(model_id: "gpt-5.6-luna")
       model.assign_attributes(display_name: "GPT-5.6 Luna", provider: "openai", category: "coding",
-        tier: "low", capability_score: 9.0, pricing_tier: "paid", catalog_source: "seeded", active: true)
+        tier: "low", capability_score: 9.0, pricing_tier: "paid", catalog_source: "seeded",
+        supports_tools: true, active: true)
       model.save!
       session = create(:chat_session, account: account, created_by: user)
 

@@ -1754,7 +1754,7 @@ RSpec.describe "ChatSessions" do
 
   def create_openai_chat_runner(name: nil, configured_model: "gpt-5.6-luna")
     %w[low mid high].zip(%w[gpt-5.6-luna gpt-5.6-terra gpt-5.6-sol]).each do |tier, model_id|
-      create(:llm_model, :openai, model_id: model_id, tier: tier, capability_score: 9.0)
+      create(:llm_model, :openai, model_id: model_id, tier: tier, capability_score: 9.0, supports_tools: true)
     end
     attributes = { user: user, runner_key: "opencode",
       provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"),
