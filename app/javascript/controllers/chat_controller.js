@@ -765,8 +765,23 @@ export default class extends Controller {
       }
     }
 
+    this.removeLiveDiagramDuplicates(messageElement)
     this.appendCreatedMessage(messageElement)
     this.scrollToBottom()
+  }
+
+  // @spec QUESTION-EXPLORATION-003 QUESTION-EXPLORATION-012
+  // Diagram creation is broadcast before the tool-result message is persisted.
+  // Retain a diagram in newly replayed markup unless its live counterpart is
+  // already in the transcript; this preserves reload and reconnect rendering.
+  removeLiveDiagramDuplicates(messageElement) {
+    const existingDiagramIds = new Set(
+      [...this.messagesTarget.querySelectorAll("[data-chat-diagram-id]")]
+        .map((diagram) => diagram.dataset.chatDiagramId)
+    )
+    messageElement.querySelectorAll("[data-chat-diagram-id]").forEach((diagram) => {
+      if (existingDiagramIds.has(diagram.dataset.chatDiagramId)) diagram.remove()
+    })
   }
 
   // @spec CHAT-API-024

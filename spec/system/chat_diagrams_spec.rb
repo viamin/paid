@@ -55,4 +55,29 @@ RSpec.describe "Chat diagrams", :js, system_driver: :paid_cuprite, type: :system
 
     expect(page).to have_css("[data-chat-diagram-id='#{diagram.id}']")
   end
+
+  # @spec QUESTION-EXPLORATION-003 QUESTION-EXPLORATION-012
+  it "does not duplicate a live diagram when its tool result arrives" do
+    visit chat_session_path(chat_session)
+    diagram = create(:chat_diagram, chat_session:)
+    tool_result = create(:chat_message, :tool, chat_session:)
+    diagram.update!(chat_message: tool_result)
+    diagram_html = ApplicationController.render(partial: "chat_diagrams/diagram", locals: { diagram:, chat_session: })
+    message_html = ApplicationController.render(partial: "chat_messages/message", locals: { message: tool_result })
+
+    page.execute_script(<<~JS, { type: "diagram_created", diagram_id: diagram.id, question_key: diagram.question_key, html: diagram_html })
+      const chat = window.Stimulus.getControllerForElementAndIdentifier(
+        document.querySelector("[data-controller~='chat']"), "chat"
+      )
+      chat.handleEvent(arguments[0])
+    JS
+    page.execute_script(<<~JS, { type: "message_created", message_id: tool_result.id, html: message_html })
+      const chat = window.Stimulus.getControllerForElementAndIdentifier(
+        document.querySelector("[data-controller~='chat']"), "chat"
+      )
+      chat.handleEvent(arguments[0])
+    JS
+
+    expect(page).to have_css("[data-chat-diagram-id='#{diagram.id}']", count: 1)
+  end
 end
