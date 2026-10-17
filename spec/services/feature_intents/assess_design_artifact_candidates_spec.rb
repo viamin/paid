@@ -51,12 +51,50 @@ RSpec.describe FeatureIntents::AssessDesignArtifactCandidates do
     expect(result).not_to be_covered
   end
 
-  it "treats a non-object semantic response as invalid" do
-    response = instance_double(AgentHarness::Response, success?: true, output: "[]")
-    allow(AgentHarness).to receive(:send_message).and_return(response)
+  it "retries a malformed semantic response instead of caching it" do
+    malformed_response = instance_double(AgentHarness::Response, success?: true, output: "[]")
+    completed_response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"issue_identity":"acme/widget#10","explanation":"It implements the RDR scope."}')
+    allow(AgentHarness).to receive(:send_message).and_return(malformed_response, completed_response)
 
-    result = described_class.call(project:, artifact:, issues:)
+    invalid = described_class.call(project:, artifact:, issues:)
+    retry_result = described_class.call(project:, artifact:, issues:)
 
-    expect(result).to have_attributes(identity: nil, evidence: "Semantic assessment returned an invalid response")
+    expect(invalid).to have_attributes(identity: nil, evidence: "Semantic assessment returned an invalid response")
+    expect(retry_result).to have_attributes(identity: "acme/widget#10", evidence: "It implements the RDR scope.")
+    expect(AgentHarness).to have_received(:send_message).twice
+  end
+
+  it "retries an unavailable semantic assessment instead of caching it" do
+    response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"issue_identity":"acme/widget#10","explanation":"It implements the RDR scope."}')
+    attempts = 0
+    allow(AgentHarness).to receive(:send_message) do
+      attempts += 1
+      raise AgentHarness::Error, "provider timeout" if attempts == 1
+
+      response
+    end
+
+    unavailable = described_class.call(project:, artifact:, issues:)
+    retry_result = described_class.call(project:, artifact:, issues:)
+
+    expect(unavailable).to have_attributes(identity: nil, evidence: "Semantic assessment was unavailable")
+    expect(retry_result).to have_attributes(identity: "acme/widget#10", evidence: "It implements the RDR scope.")
+    expect(AgentHarness).to have_received(:send_message).twice
+  end
+
+  it "retries an incomplete semantic assessment instead of caching it" do
+    incomplete_response = instance_double(AgentHarness::Response, success?: false)
+    completed_response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"issue_identity":"acme/widget#10","explanation":"It implements the RDR scope."}')
+    allow(AgentHarness).to receive(:send_message).and_return(incomplete_response, completed_response)
+
+    incomplete = described_class.call(project:, artifact:, issues:)
+    retry_result = described_class.call(project:, artifact:, issues:)
+
+    expect(incomplete).to have_attributes(identity: nil, evidence: "Semantic assessment did not complete")
+    expect(retry_result).to have_attributes(identity: "acme/widget#10", evidence: "It implements the RDR scope.")
+    expect(AgentHarness).to have_received(:send_message).twice
   end
 end

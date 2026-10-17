@@ -6,7 +6,8 @@ require "json"
 module FeatureIntents
   # Uses the harness for the semantic judgment left after deterministic
   # traceability checks. The cache key includes both the artifact and candidate
-  # revisions, so a daily sweep never repeats an unchanged assessment.
+  # revisions, so a daily sweep never repeats an unchanged completed assessment.
+  # Unavailable or malformed responses are deliberately retried on the next sweep.
   # @spec DESIGN-RECONCILIATION-001
   class AssessDesignArtifactCandidates
     DEFAULT_MODEL = "claude-sonnet-4-6"
@@ -63,25 +64,31 @@ module FeatureIntents
 
     def assess
       response = AgentHarness.send_message(prompt, provider: :claude, model: DEFAULT_MODEL, timeout: TIMEOUT, tools: :none, **Llm::TextMode.options)
-      result = response.success? ? result_for(response.output) : no_match("Semantic assessment did not complete")
-      cache(result)
+      return no_match("Semantic assessment did not complete") unless response.success?
+
+      payload = response_payload(response.output)
+      return no_match("Semantic assessment returned an invalid response") unless payload
+
+      cache(result_for(payload))
     rescue AgentHarness::Error => e
       Rails.logger.warn(message: "feature_intents.design_artifact_assessment_failed", project_id: project.id,
         artifact_path: artifact[:path], error_class: e.class.name, error: e.message)
-      cache(no_match("Semantic assessment was unavailable"))
+      no_match("Semantic assessment was unavailable")
     end
 
-    def result_for(output)
-      payload = JSON.parse(output.to_s)
-      return no_match("Semantic assessment returned an invalid response") unless payload.is_a?(Hash)
-
+    def result_for(payload)
       identity = payload["issue_identity"].presence
       return no_match(payload["explanation"]) unless identity
       return no_match("Semantic assessment returned an unknown candidate") unless candidate_identities.include?(identity)
 
       Result.new(identity:, evidence: payload["explanation"].to_s.truncate(200))
+    end
+
+    def response_payload(output)
+      payload = JSON.parse(output.to_s)
+      payload if payload.is_a?(Hash)
     rescue JSON::ParserError
-      no_match("Semantic assessment returned an invalid response")
+      nil
     end
 
     def no_match(evidence)
