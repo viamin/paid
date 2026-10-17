@@ -1676,6 +1676,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_073238) do
     t.check_constraint "termination_reason::text = ANY (ARRAY['completed'::character varying::text, 'cancelled'::character varying::text, 'timed_out'::character varying::text, 'failed'::character varying::text, 'evicted'::character varying::text])", name: "chk_execution_usages_termination_reason_valid"
   end
 
+  create_table "explicit_preferences", comment: "Explicit user statements retained for their confirmed scope; never inferred from interaction data.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Tenant that owns this preference."
+    t.bigint "chat_session_id", comment: "Exploration conversation that supplied the statement, when applicable."
+    t.datetime "created_at", null: false
+    t.bigint "feature_intent_id", comment: "Feature target when the user explicitly chose feature scope."
+    t.bigint "project_id", comment: "Project target when the user explicitly chose project or feature scope."
+    t.bigint "recorded_by_id", null: false, comment: "Collaborator who confirmed the statement and scope."
+    t.string "scope", limit: 20, null: false, comment: "Confirmed scope: user, project, or feature."
+    t.text "statement", null: false, comment: "Verbatim explicit preference statement supplied by the user."
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false, comment: "User whose explicit preference this is."
+    t.index ["account_id", "user_id", "scope"], name: "index_explicit_preferences_on_account_id_and_user_id_and_scope"
+    t.index ["account_id"], name: "index_explicit_preferences_on_account_id"
+    t.index ["chat_session_id"], name: "index_explicit_preferences_on_chat_session_id"
+    t.index ["feature_intent_id"], name: "index_explicit_preferences_on_feature_intent_id"
+    t.index ["project_id", "scope"], name: "index_explicit_preferences_on_project_id_and_scope"
+    t.index ["project_id"], name: "index_explicit_preferences_on_project_id"
+    t.index ["recorded_by_id"], name: "index_explicit_preferences_on_recorded_by_id"
+    t.index ["user_id"], name: "index_explicit_preferences_on_user_id"
+    t.check_constraint "scope::text = ANY (ARRAY['user'::character varying, 'project'::character varying, 'feature'::character varying]::text[])", name: "explicit_preferences_scope"
+  end
+
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Account this connector event belongs to."
     t.string "connector_key", null: false, comment: "Connector source key from Interop::Catalog (e.g. jira, linear, slack)."
@@ -3075,6 +3097,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_073238) do
     t.bigint "github_installation_id", comment: "GitHub App installation for repo auth; mutually exclusive with github_token_id"
     t.bigint "github_token_id"
     t.boolean "inherit_priority_labels", default: true, null: false
+    t.integer "intent_threshold", default: 80, null: false, comment: "Minimum intent certainty (0-100) for each mapped facet prerequisite."
     t.jsonb "interop_settings", default: {}, null: false, comment: "Project-level coexistence settings for gradual adoption, imports, connectors, and external execution sources."
     t.boolean "knowledge_evolution_enabled", default: false, null: false
     t.string "knowledge_status", limit: 50, default: "pending", null: false
@@ -3134,6 +3157,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_073238) do
     t.jsonb "security_alert_types", default: ["dependabot", "code_scanning"], null: false
     t.string "setup_status", comment: "Blank-project bootstrap state: pending, in_progress, or completed. Null when setup is not required."
     t.string "tdd_mode", default: "off", null: false, comment: "Project-level TDD mode from RDR-056: off | non_strict | strict"
+    t.integer "technical_threshold", default: 80, null: false, comment: "Minimum technical confidence (0-100) for each mapped facet prerequisite."
     t.integer "token_budget_max_input_tokens", comment: "Per-run input token budget; runs exceeding it without output are terminated early (nil = defer to provider/global default)"
     t.integer "token_limit_warning_threshold", default: 80, null: false
     t.bigint "total_cost_cents", default: 0, null: false
@@ -3158,6 +3182,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_073238) do
     t.index ["setup_status"], name: "index_projects_on_setup_status", where: "(setup_status IS NOT NULL)"
     t.check_constraint "apple_verification_mode::text = ANY (ARRAY['off'::character varying::text, 'on_demand'::character varying::text, 'automatic'::character varying::text])", name: "chk_projects_apple_verification_mode"
     t.check_constraint "github_token_id IS NOT NULL AND github_installation_id IS NULL OR github_token_id IS NULL AND github_installation_id IS NOT NULL", name: "chk_projects_exactly_one_github_credential"
+    t.check_constraint "intent_threshold >= 0 AND intent_threshold <= 100", name: "projects_intent_threshold_bounds"
+    t.check_constraint "technical_threshold >= 0 AND technical_threshold <= 100", name: "projects_technical_threshold_bounds"
   end
 
   create_table "prompt_versions", force: :cascade do |t|
@@ -4238,6 +4264,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_16_073238) do
   add_foreign_key "execution_resources", "agent_runs", on_delete: :nullify
   add_foreign_key "execution_resources", "projects", on_delete: :nullify
   add_foreign_key "execution_usages", "agent_runs", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "accounts", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "chat_sessions", on_delete: :nullify
+  add_foreign_key "explicit_preferences", "feature_intents", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "projects", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "users", column: "recorded_by_id", on_delete: :restrict
+  add_foreign_key "explicit_preferences", "users", on_delete: :cascade
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade

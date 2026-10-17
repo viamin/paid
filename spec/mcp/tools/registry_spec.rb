@@ -56,6 +56,8 @@ RSpec.describe Tools::Registry do
       set_labels
       submit_clarifying_answers
       save_clarifying_answer
+      save_explicit_preference
+      delete_explicit_preference
       verify_apple_project
       capture_apple_screenshot
       stop_apple_verification

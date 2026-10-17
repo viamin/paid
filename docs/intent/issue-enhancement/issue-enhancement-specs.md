@@ -546,3 +546,24 @@
   *Code:* `app/services/issues/detect_truncated_body.rb`,
   `app/temporal/activities/run_agent_activity.rb#inject_body_integrity_note`,
   `app/temporal/activities/enhance_issue_activity.rb#comment_body_for`.
+
+- [x] **ISSUE-ENHANCEMENT-018** — When a label-enabled project's effective
+  inherited or custom auto-pick skip labels hold an issue, automatic
+  `enhance_issue` rechecks and follow-ups SHALL neither transition the issue
+  to `in_progress`, reset or consume its enhancement-round budget, nor create
+  an enhancement run. Clearing `needs_input` while held SHALL deliberately
+  move the stale clarification Inbox item to `new` while preserving questions
+  and audit evidence; removal of the hold SHALL return the issue to normal
+  eager eligibility without another needs-input-label toggle. The shared
+  `DefaultCandidateSource` hold policy SHALL honor `ignored` mode, where
+  upstream labels are not control state and an existing local auto-pick
+  exclusion remains authoritative. At dequeue, every unclaimed automatic
+  enhancement run, including a sync recheck with `auto_pick: false`, SHALL be
+  rechecked and cancelled safely if it is held; claimed/running and explicit
+  manual work SHALL remain under their normal lifecycle.
+  *Tests:* `spec/temporal/activities/fetch_issues_activity_spec.rb`,
+  `spec/temporal/activities/queue_agent_run_activity_spec.rb`,
+  `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`.
+  *Code:* `Automation::Strategies::AutoPick::DefaultCandidateSource`,
+  `FetchIssuesActivity#detect_enhance_issue_rechecks`,
+  `QueueAgentRunActivity`, `AgentRuns::RecheckIssueEligibility`.
