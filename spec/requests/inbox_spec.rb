@@ -718,8 +718,15 @@ RSpec.describe "Inbox" do
     expect(master_detail["data-inbox-master-detail-detail-open-value"]).to eq("true")
   end
 
-  it "renders merge-approval detail with the PR action and blocker summary" do
-    pr = create_merge_approval_pr(title: "Approval blocked PR")
+  it "renders stale manual-merge guidance with approval evidence and no automatic-merge promise" do
+    project.update!(auto_merge_mode: "off")
+    snapshot = stale_approval_snapshot.tap do |assessment|
+      assessment.fetch("failed").first["approval_evidence"] = {
+        "approved_revision" => "approved123",
+        "current_revision" => "current456"
+      }
+    end
+    pr = create_merge_approval_pr(title: "Approval blocked PR", snapshot: snapshot)
 
     get inbox_entry_path(
       entry_id(Inbox::Queue::MERGE_APPROVAL_KIND, pr),
@@ -728,8 +735,11 @@ RSpec.describe "Inbox" do
     )
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Merge Approval", "PR", "Re-approve on GitHub", "View PR")
-    expect(response.body).to include("Waiting for owner re-approval on the current HEAD commit")
+    expect(response.body).to include("Merge Approval", "PR", "Approval is stale for the current revision", "View PR")
+    expect(response.body).to include("Commits were added after the recorded approval", "GitHub still shows Approved")
+    expect(response.body).to include("manual merge decision", "Re-approval alone will not cause Paid to merge it")
+    expect(response.body).to include("approved123", "current456", "Compare approved and current revisions on GitHub")
+    expect(response.body).not_to include("so Paid can merge it on the next PR scan")
   end
 
   # @spec INTENT-CONFORMANCE-006

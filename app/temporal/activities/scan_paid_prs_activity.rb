@@ -3794,7 +3794,7 @@ module Activities
     # and the strategy's evaluation of them, so callers can reuse both
     # without re-running the signal gates.
     AutoMergeEvaluation = Data.define(:signals, :analysis)
-    AutoMergeSignalBuild = Data.define(:signals, :review_freshness)
+    AutoMergeSignalBuild = Data.define(:signals, :review_freshness, :approval_evidence)
 
     # Evaluates human-authored PR merge eligibility via the AutoMerge
     # strategy. Collects signals from provider data, persists the blocker
@@ -3828,7 +3828,13 @@ module Activities
       log_skip_auto_merge(project, issue) if signals.skip_auto_merge?
 
       analysis = evaluate_auto_merge(project, signals)
-      stage_auto_merge_snapshot(issue, analysis, review_freshness: signal_build.review_freshness, head_sha: pr_head_sha(pr_data))
+      stage_auto_merge_snapshot(
+        issue,
+        analysis,
+        review_freshness: signal_build.review_freshness,
+        approval_evidence: signal_build.approval_evidence,
+        head_sha: pr_head_sha(pr_data)
+      )
       AutoMergeEvaluation.new(signals:, analysis:)
     end
 
@@ -3889,7 +3895,11 @@ module Activities
         intent_conformance_ok: intent_conformance_ok
       )
 
-      AutoMergeSignalBuild.new(signals:, review_freshness:)
+      AutoMergeSignalBuild.new(
+        signals:,
+        review_freshness:,
+        approval_evidence: approval_evidence_for(project, reviews, pr_data)
+      )
     end
 
     # Evaluates bot-authored PR merge eligibility via the AutoMerge
@@ -4040,16 +4050,35 @@ module Activities
       @auto_merge_head_shas ||= {}
     end
 
-    def stage_auto_merge_snapshot(issue, analysis, review_freshness: :fresh, head_sha: nil)
+    def stage_auto_merge_snapshot(issue, analysis, review_freshness: :fresh, approval_evidence: {}, head_sha: nil)
       snapshot = {
         "failed" => analysis.failed_blockers.map(&:to_h).map(&:stringify_keys),
         "not_evaluated" => analysis.not_evaluated_blockers.map(&:to_h).map(&:stringify_keys)
       }
 
       remap_review_freshness_failure!(snapshot) if review_freshness == :not_evaluated
+      attach_approval_evidence!(snapshot, approval_evidence) if review_freshness == :stale
 
       auto_merge_snapshots[issue.id] = snapshot
       auto_merge_head_shas[issue.id] = head_sha if head_sha.present?
+    end
+
+    # Preserve the scan's revision evidence with the stale blocker. Inbox
+    # renderers must not make a fresh GitHub call merely to explain why an
+    # approval GitHub still displays is no longer fresh for Paid's policy.
+    # @spec OPERATOR-INBOX-002K
+    def approval_evidence_for(project, reviews, pr_data)
+      approval = owner_approval_for(project, reviews || [])
+      {
+        "approved_revision" => approval&.fetch(:commit_id),
+        "approved_at" => approval&.fetch(:submitted_at)&.iso8601,
+        "current_revision" => pr_head_sha(pr_data)
+      }.compact
+    end
+
+    def attach_approval_evidence!(snapshot, approval_evidence)
+      blocker = Array(snapshot["failed"]).find { |candidate| candidate["signal"] == "reviews_fresh" }
+      blocker["approval_evidence"] = approval_evidence if blocker && approval_evidence.present?
     end
 
     def remap_review_freshness_failure!(snapshot)

@@ -41,6 +41,18 @@
   per-PR auto-merge activation excludes the PR from this manual-action lane even
   when the project mode is `off`, because it authorizes the scanner's automatic
   merge path; a structured hold remains visible and blocks that path.
+  Guidance SHALL be derived from the structured hold, approval freshness,
+  remaining blockers, and effective per-PR auto-merge activation state — never
+  from a rendered summary. When a recorded approval is stale, the Inbox SHALL
+  say that commits were added after it even if GitHub still displays Approved,
+  and show approved/current revisions, assessment time, and a comparison link
+  when the scan captured that evidence. With automatic merge inactive,
+  guidance SHALL direct the operator to review the current changes and make the
+  manual merge decision on GitHub; re-approval alone SHALL NOT be described as
+  triggering a Paid merge. With automatic merge active, it SHALL say that
+  current-revision approval causes a later scan to reevaluate subject to
+  remaining checks and policy, not promise a merge. The web detail, API, chat
+  context, and displayed blocker next actions SHALL use the same guidance.
   *Code:* `app/services/inbox/merge_approval.rb`, `app/services/inbox/queue.rb`,
   `app/services/inbox/count.rb`, `app/services/inbox/availability.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,

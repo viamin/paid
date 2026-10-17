@@ -61,7 +61,7 @@ module Inbox
 
       def summary
         return "Human review requested before merging" if held_for_review?
-        return "Waiting for owner re-approval on the current HEAD commit" if stale_approval?
+        return "Approval is stale for the current revision" if stale_approval?
         return "Human review required before manual merge" if manual_merge? && approval_required?
         return "Manual merge decision required" if manual_merge?
 
@@ -70,6 +70,22 @@ module Inbox
 
       def waiting_since
         issue.awaiting_approval_since || issue.github_updated_at
+      end
+
+      # A presentation contract derived from the assessment state, rather than
+      # from its human-readable summary. The web, API, and chat surfaces share
+      # it so a project with per-PR auto-merge activation cannot receive the
+      # manual-merge instructions (or vice versa).
+      # @spec OPERATOR-INBOX-002K
+      def guidance
+        {
+          heading: guidance_heading,
+          instruction: guidance_instruction,
+          automatic_merge_active: automatic_merge_active?,
+          stale_approval: stale_approval?,
+          approval_evidence: approval_evidence,
+          blockers: display_blockers
+        }
       end
 
       private
@@ -83,11 +99,77 @@ module Inbox
       end
 
       def manual_merge?
-        issue.project.auto_merge_mode == "off"
+        !automatic_merge_active?
       end
 
       def approval_required?
         blockers.any? { |blocker| blocker["signal"] == "owner_approved" }
+      end
+
+      def automatic_merge_active?
+        Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(
+          project: issue.project,
+          pull_request: issue
+        )
+      end
+
+      def guidance_heading
+        return "Human review is on hold" if held_for_review?
+        return "Approval is stale for the current revision" if stale_approval?
+        return "Manual merge decision on GitHub" if manual_merge?
+
+        "Review on GitHub"
+      end
+
+      def guidance_instruction
+        return "Review the current changes and remove the hold when automatic merging may resume." if held_for_review?
+        return stale_approval_instruction if stale_approval?
+        return "Review the current changes and make the manual merge decision on GitHub. Paid will not merge this pull request automatically." if manual_merge?
+
+        "Approve the current revision on GitHub. Paid will reevaluate it on a later scan, subject to all remaining checks and policy."
+      end
+
+      def stale_approval_instruction
+        explanation = "Commits were added after the recorded approval, so Paid treats that approval as stale even if GitHub still shows Approved."
+        return "#{explanation} Review the current changes and make the manual merge decision on GitHub. Re-approval alone will not cause Paid to merge it." if manual_merge?
+
+        "#{explanation} Review and approve the current revision on GitHub; Paid will reevaluate it on a later scan, subject to all remaining checks and policy."
+      end
+
+      def display_blockers
+        blockers.map do |blocker|
+          blocker.merge("next_action" => blocker_next_action(blocker))
+        end
+      end
+
+      def blocker_next_action(blocker)
+        return guidance_instruction if blocker["signal"].in?(APPROVAL_SIGNALS)
+
+        blocker["next_action"]
+      end
+
+      def approval_evidence
+        evidence = stale_approval_blocker&.fetch("approval_evidence", {})&.deep_stringify_keys || {}
+        approved_revision = evidence["approved_revision"]
+        current_revision = evidence["current_revision"] || issue.last_scanned_head_sha
+        return {} if approved_revision.blank? && current_revision.blank? && issue.auto_merge_evaluated_at.blank?
+
+        evidence.merge(
+          "approved_revision" => approved_revision,
+          "current_revision" => current_revision,
+          "assessed_at" => issue.auto_merge_evaluated_at&.iso8601,
+          "comparison_url" => comparison_url(approved_revision, current_revision)
+        ).compact
+      end
+
+      def stale_approval_blocker
+        blockers.find { |blocker| blocker["signal"] == "reviews_fresh" }
+      end
+
+      def comparison_url(approved_revision, current_revision)
+        return if approved_revision.blank? || current_revision.blank?
+
+        "#{issue.project.github_url}/compare/#{approved_revision}...#{current_revision}"
       end
     end
 
