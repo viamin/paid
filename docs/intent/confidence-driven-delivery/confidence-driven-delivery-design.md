@@ -62,9 +62,11 @@ reconciles and its admission passes only when every linked confidence
 design's scoped readiness passes — never an arbitrary single link, and
 already-released snapshots stay immutable while later links reconcile.
 Queue admission consumes the same result at auto-pick,
-eager enqueue, dequeue, API/chat/manual starts and actual run creation. The
-admitted snapshot is copied onto the created run so later scope changes cannot
-silently alter active work.
+eager enqueue, dequeue, API/chat/manual starts and actual run creation. When a
+direct admission encounters an unreleased confidence link, it invokes the same
+release reconciliation before denying the run; already-released links read only
+their local release evidence. The admitted snapshot is copied onto the created
+run so later scope changes cannot silently alter active work.
 
 Serialize the transition between an unstarted scope edit and run admission.
 Admission either receives the revised ready scope or the already-started run

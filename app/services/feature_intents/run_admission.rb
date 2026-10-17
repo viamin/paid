@@ -2,11 +2,10 @@
 
 module FeatureIntents
   # The one deterministic admission gate for implementation work linked to
-  # feature intents. Reconciliation belongs to the enqueue and sweep paths,
-  # which run outside the run-creation transaction; admission only reads the
-  # resulting release evidence so it never holds database locks during a
-  # GitHub request. Direct API, chat, and manual starts therefore share the
-  # same already-reconciled release contract as auto-pick.
+  # feature intents. An unreleased confidence link is reconciled before it is
+  # denied, so direct API, chat, manual, and model-creation paths share the
+  # automatic release contract with auto-pick. Already released links only
+  # read their recorded evidence and never make a GitHub request.
   # An issue may serve several designs, so every linked feature intent must
   # permit the run. It intentionally reads the current feature state every
   # time: a run can be queued before a design becomes held again.
@@ -61,7 +60,7 @@ module FeatureIntents
     end
 
     def confidence_admission(link)
-      return denied("Confidence-driven issue has not reconciled its workflow-owned planning hold.") unless link.release_state == "released"
+      return reconcile_confidence_admission(link) unless link.release_state == "released"
 
       readiness = ScopedReadiness.call(project: issue.project, mapping: link.readiness_mapping)
       return denied(readiness.blockers.map(&:message).join(" ")) unless readiness.ready?
@@ -71,6 +70,13 @@ module FeatureIntents
         link.release_snapshot["merged_baseline"] || readiness.snapshot.dig("design_artifacts", 0, "revision"),
         snapshot: link.release_snapshot
       )
+    end
+
+    def reconcile_confidence_admission(link)
+      result = ReleaseIssue.call(issue: issue)
+      return denied(result.reason) unless result.released?
+
+      confidence_admission(link.reload)
     end
 
     def allowed(revision = nil, snapshot: {}) = Result.new(allowed: true, revision: revision, reason: nil, snapshot: snapshot)
