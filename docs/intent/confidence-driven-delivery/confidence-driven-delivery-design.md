@@ -72,10 +72,13 @@ retains its original snapshot and the change becomes follow-up work. Do not
 hold a database lock across GitHub network calls: use an idempotent pending
 operation and verify its target revision before committing readiness.
 
-External label removal requests reconciliation. Missing assessment cannot be
-interpreted as a passing result, and projection failures must be visible in
-Inbox/GitHub context. Do not let a ready-looking issue remain silently blocked
-by a second, unexplained feature gate.
+External label edits request reconciliation: a removed hold re-checks
+readiness, and an externally re-added planning hold on already-released work
+is swept off by the periodic eager-queue pass rather than silently skipping
+auto-pick (the label is itself a default skip label). Missing assessment
+cannot be interpreted as a passing result, and projection failures must be
+visible in Inbox/GitHub context. Do not let a ready-looking issue remain
+silently blocked by a second, unexplained feature gate.
 
 ## Baseline and review dispatch
 

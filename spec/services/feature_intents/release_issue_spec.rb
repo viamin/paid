@@ -121,4 +121,50 @@ RSpec.describe FeatureIntents::ReleaseIssue do
     expect(result).to be_released
     expect(link.reload.release_snapshot).to include("preserved" => true)
   end
+
+  # @spec CONFIDENCE-DELIVERY-006
+  it "removes an externally re-added planning label when every design already released" do
+    link.update!(release_state: "released", released_at: Time.current, release_snapshot: { "scope_revision" => "scope-v1", "preserved" => true })
+
+    result = described_class.call(issue: issue)
+
+    expect(result).to be_released
+    expect(project.client).to have_received(:remove_label_from_issue).with(project.full_name, issue.github_number, "planning")
+    expect(link.reload).to have_attributes(release_state: "released", release_error: nil)
+    expect(link.release_snapshot).to include("preserved" => true)
+    expect(issue.reload.labels).to contain_exactly("human-hold")
+  end
+
+  it "does not call GitHub for a fully released issue whose planning label is absent" do
+    link.update!(release_state: "released", released_at: Time.current)
+    issue.update!(labels: [ "human-hold" ])
+
+    result = described_class.call(issue: issue)
+
+    expect(result).to be_released
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+  end
+
+  it "leaves a human planning hold untouched when the issue serves no confidence design" do
+    link.destroy!
+
+    result = described_class.call(issue: issue)
+
+    expect(result).to be_released
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
+  it "reports a failed projection reconciliation without touching released evidence" do
+    link.update!(release_state: "released", released_at: Time.current, release_snapshot: { "scope_revision" => "scope-v1", "preserved" => true })
+    allow(project.client).to receive(:remove_label_from_issue).and_raise(GithubClient::ApiError, "unavailable")
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(result.reason).to include("unavailable")
+    expect(link.reload).to have_attributes(release_state: "released", release_error: nil)
+    expect(link.release_snapshot).to include("preserved" => true)
+    expect(issue.reload.labels).to include("planning")
+  end
 end

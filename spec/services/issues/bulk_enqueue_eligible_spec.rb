@@ -149,24 +149,71 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
 
   describe "#release_confidence_delivery_holds" do
     it "reconciles each held confidence-delivery issue once, however many unreleased links serve it" do
-      link_scope = instance_double(ActiveRecord::Relation)
-      where_chain = instance_double(ActiveRecord::QueryMethods::WhereChain)
-      issue_scope = instance_double(ActiveRecord::Relation)
-      held_issue = instance_double(Issue)
-      allow(FeatureIntentIssue).to receive(:joins).with(:feature_intent).and_return(link_scope)
-      allow(link_scope).to receive(:where).with(feature_intents: { project_id: project.id, delivery_policy: "confidence_driven" }).and_return(link_scope)
-      allow(link_scope).to receive(:where).with(no_args).and_return(where_chain)
-      allow(where_chain).to receive(:not).with(release_state: "released").and_return(link_scope)
-      allow(link_scope).to receive(:distinct).and_return(link_scope)
-      allow(link_scope).to receive(:pluck).with(:issue_id).and_return([ 9, 9 ])
-      allow(Issue).to receive(:where).and_return(issue_scope)
-      allow(issue_scope).to receive(:find_each).and_yield(held_issue)
+      stub_unreleased_confidence_ids([ 9, 9 ])
+      stub_stale_planning_label_ids([])
+      held_issue = stub_issue_sweep
       allow(FeatureIntents::ReleaseIssue).to receive(:call)
       allow(service).to receive(:release_confidence_delivery_holds).and_call_original
 
       service.send(:release_confidence_delivery_holds)
 
       expect(FeatureIntents::ReleaseIssue).to have_received(:call).once.with(issue: held_issue)
+    end
+
+    # @spec CONFIDENCE-DELIVERY-006
+    it "also reconciles fully released issues whose planning label was re-added externally" do
+      stub_unreleased_confidence_ids([])
+      stub_stale_planning_label_ids([ 11 ])
+      reheld_issue = stub_issue_sweep
+      allow(FeatureIntents::ReleaseIssue).to receive(:call)
+      allow(service).to receive(:release_confidence_delivery_holds).and_call_original
+
+      service.send(:release_confidence_delivery_holds)
+
+      expect(FeatureIntents::ReleaseIssue).to have_received(:call).once.with(issue: reheld_issue)
+    end
+
+    it "reconciles an issue only once when it is both unreleased and carries a stale planning label" do
+      stub_unreleased_confidence_ids([ 9 ])
+      stub_stale_planning_label_ids([ 9 ])
+      held_issue = stub_issue_sweep
+      allow(FeatureIntents::ReleaseIssue).to receive(:call)
+      allow(service).to receive(:release_confidence_delivery_holds).and_call_original
+
+      service.send(:release_confidence_delivery_holds)
+
+      expect(FeatureIntents::ReleaseIssue).to have_received(:call).once.with(issue: held_issue)
+    end
+
+    def stub_unreleased_confidence_ids(ids)
+      link_scope = instance_double(ActiveRecord::Relation)
+      where_chain = instance_double(ActiveRecord::QueryMethods::WhereChain)
+      allow(FeatureIntentIssue).to receive(:joins).with(:feature_intent).and_return(link_scope)
+      allow(link_scope).to receive(:where).with(feature_intents: { project_id: project.id, delivery_policy: "confidence_driven" }).and_return(link_scope)
+      allow(link_scope).to receive(:where).with(no_args).and_return(where_chain)
+      allow(where_chain).to receive(:not).with(release_state: "released").and_return(link_scope)
+      allow(link_scope).to receive(:distinct).and_return(link_scope)
+      allow(link_scope).to receive(:pluck).with(:issue_id).and_return(ids)
+    end
+
+    def stub_stale_planning_label_ids(ids)
+      released_scope = instance_double(ActiveRecord::Relation)
+      allow(FeatureIntentIssue).to receive(:joins).with(:feature_intent, :issue).and_return(released_scope)
+      allow(released_scope).to receive(:where).with(feature_intents: { project_id: project.id, delivery_policy: "confidence_driven" }).and_return(released_scope)
+      allow(released_scope).to receive(:where).with(release_state: "released").and_return(released_scope)
+      allow(released_scope).to receive(:where)
+        .with("issues.labels @> ?::jsonb", [ FeatureIntents::ReleaseIssue::PLANNING_LABEL ].to_json)
+        .and_return(released_scope)
+      allow(released_scope).to receive(:distinct).and_return(released_scope)
+      allow(released_scope).to receive(:pluck).with(:issue_id).and_return(ids)
+    end
+
+    def stub_issue_sweep
+      swept_issue = instance_double(Issue)
+      issue_scope = instance_double(ActiveRecord::Relation)
+      allow(Issue).to receive(:where).and_return(issue_scope)
+      allow(issue_scope).to receive(:find_each).and_yield(swept_issue)
+      swept_issue
     end
   end
 end

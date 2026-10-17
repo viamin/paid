@@ -9,6 +9,8 @@ module FeatureIntents
   # final write verifies the scope revision that was assessed.
   # @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-004 @spec CONFIDENCE-DELIVERY-006 @spec CONFIDENCE-DELIVERY-009
   class ReleaseIssue
+    PLANNING_LABEL = "planning"
+
     Result = Data.define(:released, :reason) do
       def released? = released
     end
@@ -20,7 +22,8 @@ module FeatureIntents
     end
 
     def call
-      return Result.new(released: true, reason: nil) if links.empty?
+      return Result.new(released: true, reason: nil) if confidence_links.empty?
+      return reconcile_released_projection if links.empty?
 
       readiness_by_link = links.to_h { |link| [ link, assess(link) ] }
       return hold(readiness_by_link) if readiness_by_link.any? { |_link, readiness| !readiness.ready? }
@@ -40,14 +43,31 @@ module FeatureIntents
 
     # An issue may serve several designs (the issue_id index on the join is
     # not unique); each confidence-driven link owns a distinct readiness
-    # mapping. Released snapshots are immutable evidence, so only unreleased
-    # links reconcile.
-    def links
-      @links ||= FeatureIntentIssue.includes(:feature_intent)
+    # mapping.
+    def confidence_links
+      @confidence_links ||= FeatureIntentIssue.includes(:feature_intent)
         .where(issue_id: issue.id)
-        .where.not(release_state: "released")
         .order(:id)
         .select { |link| link.feature_intent.confidence_driven? }
+    end
+
+    # Released snapshots are immutable evidence, so only unreleased links
+    # reconcile.
+    def links
+      @links ||= confidence_links.reject { |link| link.release_state == "released" }
+    end
+
+    # Every design the issue serves already recorded immutable release
+    # evidence, so a planning label that reappears externally is a stale
+    # projection of a satisfied contract (CONFIDENCE-DELIVERY-006): the label
+    # is a default auto-pick skip label, and leaving it on would hold ready
+    # work indefinitely. Reconcile it without re-touching snapshots.
+    def reconcile_released_projection
+      return Result.new(released: true, reason: nil) unless issue.labels.include?(PLANNING_LABEL)
+
+      remove_planning_hold
+      issue.update!(labels: issue.labels - [ PLANNING_LABEL ])
+      Result.new(released: true, reason: nil)
     end
 
     def assess(link)
@@ -84,9 +104,9 @@ module FeatureIntents
     end
 
     def remove_planning_hold
-      return unless issue.labels.include?(planning_label)
+      return unless issue.labels.include?(PLANNING_LABEL)
 
-      issue.project.client.remove_label_from_issue(issue.project.full_name, issue.github_number, planning_label)
+      issue.project.client.remove_label_from_issue(issue.project.full_name, issue.github_number, PLANNING_LABEL)
     rescue GithubClient::NotFoundError
       # The remote label is already absent, so the desired projection is met.
     end
@@ -97,7 +117,7 @@ module FeatureIntents
         return result unless result.released?
       end
 
-      issue.update!(labels: issue.labels - [ planning_label ])
+      issue.update!(labels: issue.labels - [ PLANNING_LABEL ])
       Result.new(released: true, reason: nil)
     end
 
@@ -125,7 +145,5 @@ module FeatureIntents
         link.update!(release_state: "reconciliation_failed", release_error: message)
       end
     end
-
-    def planning_label = "planning"
   end
 end

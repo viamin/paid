@@ -15,8 +15,8 @@ implements release and unified admission claims `003`–`006` and `009`.
   *Tests:* `spec/services/feature_intents/run_admission_spec.rb`, `spec/services/issues/enqueue_eligible_spec.rb`.
   *Code:* `app/services/feature_intents/run_admission.rb`, `app/services/issues/enqueue_eligible.rb`, `app/models/agent_run.rb`.
 - [x] **CONFIDENCE-DELIVERY-006** — When external label edits or failed GitHub writes leave visible readiness inconsistent with local state, Paid SHALL reconcile idempotently and expose the discrepancy rather than silently bypass readiness or silently retain an unexplained feature gate.
-  *Tests:* `spec/services/feature_intents/release_issue_spec.rb`.
-  *Code:* `app/services/feature_intents/release_issue.rb`.
+  *Tests:* `spec/services/feature_intents/release_issue_spec.rb`, `spec/services/issues/bulk_enqueue_eligible_spec.rb`.
+  *Code:* `app/services/feature_intents/release_issue.rb`, `app/services/issues/bulk_enqueue_eligible.rb`.
 - [ ] **CONFIDENCE-DELIVERY-007** — When confidence decreases or intent changes after a confidence-driven run starts, Paid SHALL preserve its admitted baseline and SHALL NOT pause or cancel the run solely for that finding, regardless of whether feature-flag isolation is possible.
 - [ ] **CONFIDENCE-DELIVERY-008** — When a new finding affects confidence-driven work, Paid SHALL update an appropriate unstarted issue or create a deduplicated follow-up linked as a blocking dependency of the overall completion issue.
 - [x] **CONFIDENCE-DELIVERY-009** — When an unstarted issue's scope changes concurrently with admission, Paid SHALL either admit its revised ready scope or preserve the already-started snapshot and record follow-up work, without silently changing the active run's scope.

@@ -62,15 +62,31 @@ module Issues
     # sweep can release newly-ready work without treating a label as evidence.
     # An issue may serve several designs, so reconciliation runs once per
     # issue — ReleaseIssue reconciles every unreleased confidence link the
-    # issue serves as one set.
+    # issue serves as one set. Fully released issues are swept only while the
+    # workflow-owned planning label is still projected on them, so an
+    # externally re-added hold cannot silently hold ready work forever.
     # @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-006
     def release_confidence_delivery_holds
-      held_issue_ids = FeatureIntentIssue.joins(:feature_intent)
+      issue_ids = unreleased_confidence_issue_ids | stale_planning_label_issue_ids
+      Issue.where(id: issue_ids).find_each { |issue| FeatureIntents::ReleaseIssue.call(issue: issue) }
+    end
+
+    def unreleased_confidence_issue_ids
+      FeatureIntentIssue.joins(:feature_intent)
         .where(feature_intents: { project_id: project.id, delivery_policy: "confidence_driven" })
         .where.not(release_state: "released")
         .distinct.pluck(:issue_id)
+    end
 
-      Issue.where(id: held_issue_ids).find_each { |issue| FeatureIntents::ReleaseIssue.call(issue: issue) }
+    # The planning label is a default auto-pick skip label, so a fully
+    # released issue would never re-enter any selection path while an
+    # externally re-added hold stays on it (CONFIDENCE-DELIVERY-006).
+    def stale_planning_label_issue_ids
+      FeatureIntentIssue.joins(:feature_intent, :issue)
+        .where(feature_intents: { project_id: project.id, delivery_policy: "confidence_driven" })
+        .where(release_state: "released")
+        .where("issues.labels @> ?::jsonb", [ FeatureIntents::ReleaseIssue::PLANNING_LABEL ].to_json)
+        .distinct.pluck(:issue_id)
     end
 
     def eligible_scope
