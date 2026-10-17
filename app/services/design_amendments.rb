@@ -13,4 +13,8 @@ module DesignAmendments
   # Raised when a lifecycle move is requested from a status that does not
   # allow it.
   class InvalidTransitionError < StandardError; end
+
+  # Raised after a confidence-driven amendment's impact review fails. The
+  # caller retries rather than creating remote work from an unassessed impact.
+  class ImpactReviewFailedError < StandardError; end
 end
