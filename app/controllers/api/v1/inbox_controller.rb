@@ -29,9 +29,10 @@ module Api
       # @spec MOBILE-API-007 MOBILE-API-010
       def count
         authorize :inbox, policy_class: InboxPolicy
+        count = Inbox::Count.call(user: current_user)
         return if conditional_response?({})
 
-        render json: { count: Inbox::Count.call(user: current_user) }
+        render json: { count: }
       end
 
       # @spec MOBILE-API-008

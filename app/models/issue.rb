@@ -98,6 +98,8 @@ class Issue < ApplicationRecord
   # issue belongs to at most one feature tree (unique index on the join).
   has_one :feature_intent_issue, dependent: :destroy
   has_one :feature_intent, through: :feature_intent_issue
+  has_many :completion_cycles, class_name: "FeatureIntentCompletion", foreign_key: :completion_issue_id,
+                              dependent: :nullify, inverse_of: :completion_issue
 
   has_many :issue_dependencies, dependent: :destroy
   has_many :dependencies, through: :issue_dependencies, source: :depends_on_issue
