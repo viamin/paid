@@ -36,7 +36,7 @@ module FeatureIntents
     attr_reader :project
 
     def design_pull_request(pull_request_number)
-      FeatureIntentDesignPr.joins(:feature_intent).includes(feature_intent: :issues).find_by(
+      FeatureIntentDesignPr.joins(:feature_intent).includes(feature_intent: { issues: :project }).find_by(
         feature_intents: { project_id: project.id }, pull_request_number:
       )
     end
@@ -89,7 +89,7 @@ module FeatureIntents
     end
 
     def open_design_pull_requests
-      FeatureIntentDesignPr.joins(:feature_intent).includes(feature_intent: :issues).where(
+      FeatureIntentDesignPr.joins(:feature_intent).includes(feature_intent: { issues: :project }).where(
         feature_intents: { project_id: project.id }, merged_at: nil
       )
     end
@@ -134,7 +134,7 @@ module FeatureIntents
     end
 
     def exact_backlinks(artifact)
-      Issue.joins(:project).where(projects: { account_id: project.account_id }).where(
+      Issue.joins(:project).includes(:project).where(projects: { account_id: project.account_id }).where(
         "issues.body LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(artifact[:path])}%"
       ).filter_map do |issue|
         next unless explicit_artifact_backlink?(issue, artifact)
@@ -152,7 +152,7 @@ module FeatureIntents
     end
 
     def manifest_associations(artifact)
-      FeatureIntent.where(project:).includes(:issues).filter_map do |feature_intent|
+      FeatureIntent.where(project:).includes(issues: :project).filter_map do |feature_intent|
         next unless artifact[:path].in?(feature_intent.design_document_paths)
 
         feature_intent.issues.filter_map { |issue| association_for(issue, "canonical issue-tree manifest") }
