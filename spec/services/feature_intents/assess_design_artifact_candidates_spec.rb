@@ -63,6 +63,22 @@ RSpec.describe FeatureIntents::AssessDesignArtifactCandidates do
     expect(result).not_to be_covered
   end
 
+  it "assesses candidates beyond the first batch before reporting no coverage" do
+    batched_issues = (1..51).map do |number|
+      { repository: "acme/widget", number:, state: "open", revision: "revision-#{number}", title: "Issue #{number}", body: "Scope #{number}." }
+    end
+    no_match_response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"issue_identity":null,"explanation":"No match in this batch."}')
+    match_response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"issue_identity":"acme/widget#51","explanation":"It implements the RDR scope."}')
+    allow(AgentHarness).to receive(:send_message).and_return(no_match_response, match_response)
+
+    result = described_class.call(project:, artifact:, issues: batched_issues)
+
+    expect(result).to have_attributes(identity: "acme/widget#51", evidence: "It implements the RDR scope.")
+    expect(AgentHarness).to have_received(:send_message).twice
+  end
+
   it "retries a malformed semantic response instead of caching it" do
     malformed_response = instance_double(AgentHarness::Response, success?: true, output: "[]")
     completed_response = instance_double(AgentHarness::Response, success?: true,

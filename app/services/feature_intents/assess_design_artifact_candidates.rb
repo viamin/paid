@@ -12,6 +12,7 @@ module FeatureIntents
   class AssessDesignArtifactCandidates
     DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 45
+    CANDIDATES_PER_ASSESSMENT = 50
     Result = Data.define(:identity, :evidence) do
       def covered? = identity.present?
     end
@@ -40,7 +41,7 @@ module FeatureIntents
     def initialize(project:, artifact:, issues:)
       @project = project
       @artifact = artifact
-      @issues = Array(issues).select { |issue| issue[:state].to_s == "open" }.first(50)
+      @issues = Array(issues).select { |issue| issue[:state].to_s == "open" }
     end
 
     def call
@@ -62,23 +63,36 @@ module FeatureIntents
     end
 
     def assess
-      response = AgentHarness.send_message(prompt, provider: :claude, model: DEFAULT_MODEL, timeout: TIMEOUT, tools: :none, **Llm::TextMode.options)
-      return no_match("Semantic assessment did not complete") unless response.success?
+      last_result = nil
+      candidate_batches.each do |candidates|
+        result, completed = assess_candidates(candidates)
+        return result unless completed
+        return cache(result) if result.covered?
+
+        last_result = result
+      end
+
+      cache(last_result || no_match("No semantic candidate covered the artifact"))
+    end
+
+    def assess_candidates(candidates)
+      response = AgentHarness.send_message(prompt(candidates), provider: :claude, model: DEFAULT_MODEL, timeout: TIMEOUT, tools: :none, **Llm::TextMode.options)
+      return [ no_match("Semantic assessment did not complete"), false ] unless response.success?
 
       payload = response_payload(response.output)
-      return no_match("Semantic assessment returned an invalid response") unless payload
+      return [ no_match("Semantic assessment returned an invalid response"), false ] unless payload
 
-      cache(result_for(payload))
+      [ result_for(payload, candidates), true ]
     rescue AgentHarness::Error => e
       Rails.logger.warn(message: "feature_intents.design_artifact_assessment_failed", project_id: project.id,
         artifact_path: artifact[:path], error_class: e.class.name, error: e.message)
-      no_match("Semantic assessment was unavailable")
+      [ no_match("Semantic assessment was unavailable"), false ]
     end
 
-    def result_for(payload)
+    def result_for(payload, candidates)
       identity = payload["issue_identity"].presence
       return no_match(payload["explanation"]) unless identity
-      return no_match("Semantic assessment returned an unknown candidate") unless candidate_identities.include?(identity)
+      return no_match("Semantic assessment returned an unknown candidate") unless candidate_identities(candidates).include?(identity)
 
       Result.new(identity:, evidence: payload["explanation"].to_s.truncate(200))
     end
@@ -107,17 +121,19 @@ module FeatureIntents
       issues.map { |issue| [ issue[:repository], issue[:number], issue[:revision] ].join("#") }.join("|")
     end
 
-    def prompt
-      format(PROMPT, path: artifact[:path], artifact: artifact[:body].to_s.truncate(10_000), candidates: candidate_text)
+    def candidate_batches = issues.each_slice(CANDIDATES_PER_ASSESSMENT)
+
+    def prompt(candidates)
+      format(PROMPT, path: artifact[:path], artifact: artifact[:body].to_s.truncate(10_000), candidates: candidate_text(candidates))
     end
 
-    def candidate_text
-      issues.map do |issue|
+    def candidate_text(candidates)
+      candidates.map do |issue|
         "- #{identity_for(issue)}: #{issue[:title].to_s.truncate(500)}\n#{issue[:body].to_s.truncate(2_000)}"
       end.join("\n")
     end
 
-    def candidate_identities = issues.map { |issue| identity_for(issue) }
+    def candidate_identities(candidates) = candidates.map { |issue| identity_for(issue) }
 
     def identity_for(issue) = "#{issue[:repository]}##{issue[:number]}"
   end
