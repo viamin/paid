@@ -36,7 +36,7 @@ module FeatureIntents
     attr_reader :project
 
     def design_pull_request(pull_request_number)
-      FeatureIntentDesignPr.joins(:feature_intent).includes(feature_intent: :issues).find_by(
+      FeatureIntentDesignPr.joins(:feature_intent).includes(feature_intent: { issues: :project }).find_by(
         feature_intents: { project_id: project.id }, pull_request_number:
       )
     end
@@ -45,9 +45,14 @@ module FeatureIntents
       issue = project_issue(design_pr.pull_request_number)
       {
         path: "pull/#{design_pr.pull_request_number}",
+        revision: design_pr.head_sha,
+        body: issue&.body,
         status: design_pr.draft? ? "draft" : nil,
         related_issues: explicit_references(issue&.body),
         stored_identities: design_pr.feature_intent.issues.map { |linked| identity_for(linked) },
+        associated_issues: design_pr.feature_intent.issues.filter_map do |linked|
+          association_for(linked, "Paid feature intent linkage")
+        end,
         coverage_complete: issue.present? && design_pr.draft.in?([ true, false ])
       }
     end
@@ -84,15 +89,15 @@ module FeatureIntents
     end
 
     def open_design_pull_requests
-      FeatureIntentDesignPr.joins(:feature_intent).includes(feature_intent: :issues).where(
+      FeatureIntentDesignPr.joins(:feature_intent).includes(feature_intent: { issues: :project }).where(
         feature_intents: { project_id: project.id }, merged_at: nil
       )
     end
 
     def reconcile(artifact, revision:, coverage_complete: true)
-      issues, complete = issue_coverage(artifact)
+      issues, complete, associated_issues = issue_coverage(artifact)
       PersistDesignArtifactFindings.call(
-        project:, revision:, artifacts: [ artifact ], issues:,
+        project:, revision:, artifacts: [ artifact.merge(associated_issues:) ], issues:,
         coverage_complete: coverage_complete && artifact.fetch(:coverage_complete, true) && complete
       )
     end
@@ -100,6 +105,8 @@ module FeatureIntents
     def rdr_artifact(artifact)
       {
         path: artifact.path,
+        revision: artifact.revision,
+        body: artifact.body,
         status: rdr_status(artifact.body),
         related_issues: explicit_references(artifact.body),
         stored_identities: []
@@ -113,7 +120,55 @@ module FeatureIntents
     def issue_coverage(artifact)
       references = artifact.fetch(:related_issues)
       projects = projects_for(references)
-      [ issue_facts(projects.values), references.all? { |reference| projects.key?(repository_for(reference)) } ]
+      associations = Array(artifact[:associated_issues]) + structural_associations(artifact)
+      association_projects = associations.filter_map { |association| association[:project] }.uniq
+      [
+        issue_facts((projects.values + association_projects).uniq),
+        references.all? { |reference| projects.key?(repository_for(reference)) },
+        associations
+      ]
+    end
+
+    def structural_associations(artifact)
+      exact_backlinks(artifact) + manifest_associations(artifact)
+    end
+
+    def exact_backlinks(artifact)
+      project.issues.includes(:project).where(
+        "issues.body LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(artifact[:path])}%"
+      ).filter_map do |issue|
+        next if issue.is_pull_request? || !issue.trusted?
+        next unless explicit_artifact_backlink?(issue, artifact)
+
+        association_for(issue, "exact artifact backlink")
+      end
+    end
+
+    def explicit_artifact_backlink?(issue, artifact)
+      relationship_text(issue.body).match?(artifact_path_pattern(artifact.fetch(:path)))
+    end
+
+    def artifact_path_pattern(path)
+      /(?<![\w.\/-])#{Regexp.escape(path)}(?![\w.\/-])/
+    end
+
+    def manifest_associations(artifact)
+      FeatureIntent.where(project:).includes(issues: :project).filter_map do |feature_intent|
+        next unless artifact[:path].in?(feature_intent.design_document_paths)
+
+        feature_intent.issues.filter_map { |issue| association_for(issue, "canonical issue-tree manifest") }
+      end.flatten
+    end
+
+    def association_for(issue, provenance)
+      return unless issue.github_number
+
+      {
+        repository: issue.project.full_name,
+        number: issue.github_number,
+        revision: issue.github_updated_at&.iso8601,
+        provenance:, project: issue.project
+      }
     end
 
     def projects_for(references)
@@ -124,9 +179,14 @@ module FeatureIntents
     end
 
     def issue_facts(projects)
-      Issue.joins(:project).where(project_id: projects.map(&:id)).where.not(github_number: nil)
-        .pluck("projects.owner", "projects.repo", "issues.github_number")
-        .map { |owner, repo, number| { repository: "#{owner}/#{repo}", number: } }
+      Issue.joins(:project).includes(:project).where(project_id: projects.map(&:id)).where.not(github_number: nil).filter_map do |issue|
+        next if issue.is_pull_request? || !issue.trusted?
+
+        {
+          repository: issue.project.full_name, number: issue.github_number, state: issue.github_state,
+          title: issue.title, body: issue.body, revision: issue.github_updated_at&.iso8601
+        }
+      end
     end
 
     def repository_for(reference)

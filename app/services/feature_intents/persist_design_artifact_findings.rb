@@ -39,9 +39,21 @@ module FeatureIntents
 
     def persist(result)
       DesignArtifactFinding.transaction do
+        result.associations.each { |association| persist_association(association) }
         result.findings.each { |finding| upsert(finding, result.last_successful_coverage_at) }
         resolve_absent_findings(result.findings) if result.last_successful_coverage_at
       end
+    end
+
+    def persist_association(association)
+      record = DesignArtifactAssociation.find_or_initialize_by(
+        project:, artifact_path: association.fetch(:path), artifact_revision: association.fetch(:revision),
+        issue_identity: association.fetch(:identity)
+      )
+      record.assign_attributes(
+        account: project.account, issue_revision: association[:issue_revision], provenance: association.fetch(:provenance)
+      )
+      record.save!
     end
 
     def upsert(finding, covered_at)
