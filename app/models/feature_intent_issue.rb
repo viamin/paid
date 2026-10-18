@@ -8,6 +8,7 @@ class FeatureIntentIssue < ApplicationRecord
 
   belongs_to :feature_intent
   belongs_to :issue
+  has_one :prerequisite_mapping, class_name: "FeatureIntentIssuePrerequisiteMapping", dependent: :destroy
 
   validates :issue_id, uniqueness: { scope: :feature_intent_id }
   validates :release_state, inclusion: { in: RELEASE_STATES }

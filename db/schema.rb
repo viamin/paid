@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_17_095634) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_17_142025) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1696,7 +1696,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_17_095634) do
     t.index ["project_id"], name: "index_explicit_preferences_on_project_id"
     t.index ["recorded_by_id"], name: "index_explicit_preferences_on_recorded_by_id"
     t.index ["user_id"], name: "index_explicit_preferences_on_user_id"
-    t.check_constraint "scope::text = ANY (ARRAY['user'::character varying, 'project'::character varying, 'feature'::character varying]::text[])", name: "explicit_preferences_scope"
+    t.check_constraint "scope::text = ANY (ARRAY['user'::character varying::text, 'project'::character varying::text, 'feature'::character varying::text])", name: "explicit_preferences_scope"
   end
 
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
@@ -1759,6 +1759,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_17_095634) do
     t.index ["feature_intent_id"], name: "index_feature_intent_approval_revisions_on_feature_intent_id"
   end
 
+  create_table "feature_intent_completions", comment: "Completion-cycle state and remote-write receipts for confidence-driven feature delivery.", force: :cascade do |t|
+    t.datetime "completed_at"
+    t.bigint "completion_issue_id"
+    t.datetime "created_at", null: false
+    t.integer "cycle", default: 1, null: false, comment: "Monotonic completion cycle, incremented when a post-completion finding reopens work."
+    t.bigint "feature_intent_id", null: false
+    t.integer "findings_generation", default: 0, null: false
+    t.jsonb "pending_operations", default: {}, null: false, comment: "Durable remote-write intents that block a completion claim until read back."
+    t.jsonb "release_readiness", default: {}, null: false, comment: "Acceptance, isolation, and release-authorization evidence for the current cycle."
+    t.string "status", default: "pending", null: false, comment: "pending while forward work or remote writes remain; complete only after a verified closeout."
+    t.datetime "updated_at", null: false
+    t.index ["completion_issue_id"], name: "index_feature_intent_completions_on_completion_issue_id"
+    t.index ["feature_intent_id"], name: "index_feature_intent_completions_on_feature_intent_id", unique: true
+    t.check_constraint "cycle > 0", name: "chk_feature_intent_completions_cycle"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'complete'::character varying::text])", name: "chk_feature_intent_completions_status"
+  end
+
   create_table "feature_intent_decisions", comment: "RDR-066 open product decisions for a feature intent: clarifying questions and AI-inferred decisions awaiting human confirmation.", force: :cascade do |t|
     t.text "answer", comment: "Human's answer or confirmation note."
     t.datetime "created_at", null: false
@@ -1790,6 +1807,135 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_17_095634) do
     t.index ["feature_intent_id", "pull_request_number"], name: "index_feature_intent_design_prs_unique_pr", unique: true
     t.index ["feature_intent_id"], name: "index_feature_intent_design_prs_on_feature_intent_id"
     t.index ["pull_request_number"], name: "index_feature_intent_design_prs_on_pull_request_number"
+  end
+
+  create_table "feature_intent_facet_assessments", comment: "Versioned agent assessments of candidate directions against facet evidence.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "assessed_at"
+    t.datetime "created_at", null: false
+    t.jsonb "evidence_references", default: [], null: false
+    t.integer "evidence_revision", null: false
+    t.text "explanation", default: "", null: false
+    t.bigint "feature_intent_facet_direction_id", null: false
+    t.integer "intent_score"
+    t.string "model_version", null: false
+    t.string "rubric_version", null: false
+    t.string "status", default: "unknown", null: false
+    t.integer "technical_score"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_feature_intent_facet_assessments_on_account_id"
+    t.index ["feature_intent_facet_direction_id", "evidence_revision"], name: "index_facet_assessments_direction_revision"
+    t.index ["feature_intent_facet_direction_id"], name: "idx_on_feature_intent_facet_direction_id_3af4455063"
+    t.check_constraint "intent_score >= 0 AND intent_score <= 100 OR intent_score IS NULL", name: "facet_assessments_intent_bounds"
+    t.check_constraint "status::text = ANY (ARRAY['unknown'::character varying::text, 'pending'::character varying::text, 'completed'::character varying::text, 'failed'::character varying::text, 'superseded'::character varying::text])", name: "facet_assessment_status"
+    t.check_constraint "technical_score >= 0 AND technical_score <= 100 OR technical_score IS NULL", name: "facet_assessments_technical_bounds"
+  end
+
+  create_table "feature_intent_facet_directions", comment: "Candidate directions for a facet; scores belong to a direction.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.text "description", null: false
+    t.bigint "feature_intent_facet_id", null: false
+    t.jsonb "log_data"
+    t.string "name", null: false
+    t.string "status", default: "active", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_feature_intent_facet_directions_on_account_id"
+    t.index ["feature_intent_facet_id", "name"], name: "idx_on_feature_intent_facet_id_name_f5a6e56431", unique: true
+    t.index ["feature_intent_facet_id"], name: "idx_on_feature_intent_facet_id_b98fb4f64a"
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'superseded'::character varying::text])", name: "facet_direction_status"
+  end
+
+  create_table "feature_intent_facet_evidence", comment: "Attributable evidence retained independently of temporary visual artifacts.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "actor_id"
+    t.datetime "created_at", null: false
+    t.integer "evidence_revision", null: false
+    t.bigint "feature_intent_decision_id"
+    t.bigint "feature_intent_facet_direction_id"
+    t.bigint "feature_intent_facet_id", null: false
+    t.string "idempotency_key", null: false
+    t.datetime "occurred_at", null: false
+    t.string "source_reference", null: false
+    t.string "source_type", null: false
+    t.text "statement", null: false
+    t.bigint "superseded_by_id"
+    t.text "textual_context"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "idempotency_key"], name: "index_facet_evidence_idempotency", unique: true
+    t.index ["account_id"], name: "index_feature_intent_facet_evidence_on_account_id"
+    t.index ["actor_id"], name: "index_feature_intent_facet_evidence_on_actor_id"
+    t.index ["feature_intent_decision_id"], name: "idx_on_feature_intent_decision_id_6fef7ea51c"
+    t.index ["feature_intent_facet_direction_id"], name: "idx_on_feature_intent_facet_direction_id_01061c090f"
+    t.index ["feature_intent_facet_id", "evidence_revision"], name: "idx_on_feature_intent_facet_id_evidence_revision_06283b242e"
+    t.index ["feature_intent_facet_id"], name: "index_feature_intent_facet_evidence_on_feature_intent_facet_id"
+    t.index ["superseded_by_id"], name: "index_feature_intent_facet_evidence_on_superseded_by_id"
+  end
+
+  create_table "feature_intent_facets", comment: "Named tenant-owned feature or issue aspects assessed independently.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.text "design_claim", null: false
+    t.integer "evidence_revision", default: 0, null: false
+    t.bigint "feature_intent_decision_id"
+    t.bigint "feature_intent_id", null: false
+    t.bigint "issue_id"
+    t.jsonb "log_data"
+    t.string "name", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "feature_intent_id"], name: "idx_on_account_id_feature_intent_id_22e10796a9"
+    t.index ["account_id"], name: "index_feature_intent_facets_on_account_id"
+    t.index ["feature_intent_decision_id"], name: "index_feature_intent_facets_on_feature_intent_decision_id"
+    t.index ["feature_intent_id", "issue_id"], name: "index_feature_intent_facets_on_feature_intent_id_and_issue_id"
+    t.index ["feature_intent_id"], name: "index_feature_intent_facets_on_feature_intent_id"
+    t.index ["issue_id"], name: "index_feature_intent_facets_on_issue_id"
+  end
+
+  create_table "feature_intent_forward_work_items", comment: "Idempotent findings routed to an unstarted issue or a completion-blocking follow-up.", force: :cascade do |t|
+    t.bigint "affected_issue_id"
+    t.datetime "created_at", null: false
+    t.bigint "feature_intent_completion_id", null: false
+    t.jsonb "finding", default: {}, null: false
+    t.string "fingerprint", limit: 64, null: false, comment: "Stable finding identity supplied by the assessment pipeline."
+    t.bigint "follow_up_issue_id"
+    t.string "status", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.index ["affected_issue_id"], name: "index_feature_intent_forward_work_items_on_affected_issue_id"
+    t.index ["feature_intent_completion_id", "fingerprint"], name: "index_forward_work_on_completion_and_fingerprint", unique: true
+    t.index ["feature_intent_completion_id"], name: "index_forward_work_on_completion"
+    t.index ["follow_up_issue_id"], name: "index_feature_intent_forward_work_items_on_follow_up_issue_id"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'applied'::character varying::text])", name: "chk_forward_work_items_status"
+  end
+
+  create_table "feature_intent_issue_prerequisite_mappings", comment: "Audited coverage and design baseline for one linked issue's prerequisites.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "coverage_assessment", default: "unknown", null: false
+    t.text "coverage_rationale", default: "", null: false
+    t.datetime "created_at", null: false
+    t.bigint "feature_intent_issue_id", null: false
+    t.jsonb "log_data"
+    t.jsonb "relevant_design_documents", default: [], null: false
+    t.string "scope_revision"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_feature_intent_issue_prerequisite_mappings_on_account_id"
+    t.index ["feature_intent_issue_id"], name: "idx_on_feature_intent_issue_id_9dd9dd3e25", unique: true
+    t.check_constraint "coverage_assessment::text = ANY (ARRAY['unknown'::character varying::text, 'incomplete'::character varying::text, 'complete'::character varying::text])", name: "issue_prerequisite_mapping_coverage"
+  end
+
+  create_table "feature_intent_issue_prerequisites", comment: "Material facet directions required before a linked issue can become ready.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "feature_intent_facet_direction_id"
+    t.bigint "feature_intent_facet_id", null: false
+    t.bigint "feature_intent_issue_prerequisite_mapping_id", null: false
+    t.jsonb "log_data"
+    t.text "materiality_rationale", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_feature_intent_issue_prerequisites_on_account_id"
+    t.index ["feature_intent_facet_direction_id"], name: "idx_on_feature_intent_facet_direction_id_1cd66b5f10"
+    t.index ["feature_intent_facet_id"], name: "idx_on_feature_intent_facet_id_5eef7ee3f6"
+    t.index ["feature_intent_issue_prerequisite_mapping_id", "feature_intent_facet_id", "feature_intent_facet_direction_id"], name: "index_issue_prerequisites_unique_mapping", unique: true
+    t.index ["feature_intent_issue_prerequisite_mapping_id"], name: "idx_on_feature_intent_issue_prerequisite_mapping_id_d60e1156f7"
   end
 
   create_table "feature_intent_issues", comment: "Links feature intent records to their issue trees (implementation issues and PR issues).", force: :cascade do |t|
@@ -4250,9 +4396,34 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_17_095634) do
   add_foreign_key "failure_classifications", "projects", on_delete: :cascade
   add_foreign_key "feature_intent_approval_revisions", "feature_intents"
   add_foreign_key "feature_intent_approval_revisions", "users", column: "approved_by_id"
+  add_foreign_key "feature_intent_completions", "feature_intents"
+  add_foreign_key "feature_intent_completions", "issues", column: "completion_issue_id"
   add_foreign_key "feature_intent_decisions", "feature_intents"
   add_foreign_key "feature_intent_decisions", "users", column: "resolved_by_id"
   add_foreign_key "feature_intent_design_prs", "feature_intents"
+  add_foreign_key "feature_intent_facet_assessments", "accounts", on_delete: :cascade
+  add_foreign_key "feature_intent_facet_assessments", "feature_intent_facet_directions", on_delete: :cascade
+  add_foreign_key "feature_intent_facet_directions", "accounts", on_delete: :cascade
+  add_foreign_key "feature_intent_facet_directions", "feature_intent_facets", on_delete: :cascade
+  add_foreign_key "feature_intent_facet_evidence", "accounts", on_delete: :cascade
+  add_foreign_key "feature_intent_facet_evidence", "feature_intent_decisions", on_delete: :nullify
+  add_foreign_key "feature_intent_facet_evidence", "feature_intent_facet_directions", on_delete: :nullify
+  add_foreign_key "feature_intent_facet_evidence", "feature_intent_facet_evidence", column: "superseded_by_id", on_delete: :nullify
+  add_foreign_key "feature_intent_facet_evidence", "feature_intent_facets", on_delete: :cascade
+  add_foreign_key "feature_intent_facet_evidence", "users", column: "actor_id", on_delete: :nullify
+  add_foreign_key "feature_intent_facets", "accounts", on_delete: :cascade
+  add_foreign_key "feature_intent_facets", "feature_intent_decisions", on_delete: :nullify
+  add_foreign_key "feature_intent_facets", "feature_intents", on_delete: :cascade
+  add_foreign_key "feature_intent_facets", "issues", on_delete: :cascade
+  add_foreign_key "feature_intent_forward_work_items", "feature_intent_completions"
+  add_foreign_key "feature_intent_forward_work_items", "issues", column: "affected_issue_id"
+  add_foreign_key "feature_intent_forward_work_items", "issues", column: "follow_up_issue_id"
+  add_foreign_key "feature_intent_issue_prerequisite_mappings", "accounts", on_delete: :cascade
+  add_foreign_key "feature_intent_issue_prerequisite_mappings", "feature_intent_issues", on_delete: :cascade
+  add_foreign_key "feature_intent_issue_prerequisites", "accounts", on_delete: :cascade
+  add_foreign_key "feature_intent_issue_prerequisites", "feature_intent_facet_directions", on_delete: :restrict
+  add_foreign_key "feature_intent_issue_prerequisites", "feature_intent_facets", on_delete: :restrict
+  add_foreign_key "feature_intent_issue_prerequisites", "feature_intent_issue_prerequisite_mappings", on_delete: :cascade
   add_foreign_key "feature_intent_issues", "feature_intents"
   add_foreign_key "feature_intent_issues", "issues"
   add_foreign_key "feature_intents", "projects"
@@ -5309,6 +5480,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_17_095634) do
 
   create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
       CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
+  SQL
+
+  create_trigger :logidze_on_feature_intent_facet_directions, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_feature_intent_facet_directions BEFORE INSERT OR UPDATE ON public.feature_intent_facet_directions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_feature_intent_facets, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_feature_intent_facets BEFORE INSERT OR UPDATE ON public.feature_intent_facets FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_feature_intent_issue_prerequisite_mappings, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_feature_intent_issue_prerequisite_mappings BEFORE INSERT OR UPDATE ON public.feature_intent_issue_prerequisite_mappings FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_feature_intent_issue_prerequisites, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_feature_intent_issue_prerequisites BEFORE INSERT OR UPDATE ON public.feature_intent_issue_prerequisites FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_github_tokens, sql_definition: <<-SQL

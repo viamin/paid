@@ -103,6 +103,12 @@ follow-up must not depend on completion, which would make a cycle. Read back
 the remote dependency. Failed writes retain a visible pending operation and
 block a completion claim, not running implementation.
 
+An unavailable or invalid impact assessment is not itself a finding. For a
+confidence-driven feature, evaluation raises so the caller can retry before it
+creates or edits any remote forward-work artifact. This avoids turning a
+transient reviewer outage into speculative public issues while preserving the
+already admitted baseline.
+
 The completion issue depends on all implementation and follow-up work and
 verifies feature acceptance. Recheck findings/dependencies against the version
 being closed; a concurrent new finding keeps completion open. If already
