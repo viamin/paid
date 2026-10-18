@@ -57,11 +57,6 @@ module Inbox
     TEST_REVIEW_PR_PHASES = %w[draft restarted].freeze
     TEST_REVIEW_PENDING_SUMMARY = "TDD red-phase gate: waiting for a human test-review verdict on the proposed tests."
 
-    # Statuses shown in the Inbox: the feature is not yet released, and not
-    # abandoned. Included even while `approved_waiting_for_merge`, since a
-    # stale design-PR head after approval invalidates it and the Inbox must
-    # keep explaining what holds the feature (RDR-066).
-    FEATURE_DECISION_STATUSES = (FeatureIntent::STATUSES - %w[released revising cancelled]).freeze
 
     Entry = Struct.new(
       :id,
@@ -585,17 +580,28 @@ module Inbox
     # `scoped_projects`'s owner-scoped visibility: RDR-066 requires these
     # entries stay visible to any project member with Inbox access, not just
     # the project's owner.
-    # @spec FEATURE-APPROVAL-013
+    # The action Inbox is not a status report. A feature enters this lane only
+    # when a member can approve it now, answer a recorded human decision, or
+    # re-review a stale approved design PR; discovery and pending automated
+    # assessments belong to background progress.
+    # @spec FEATURE-APPROVAL-013 @spec FEATURE-APPROVAL-020
     def feature_decision_entries
       scope = FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
-        .where(status: FEATURE_DECISION_STATUSES)
+        .where.not(status: FeatureIntent::TERMINAL_STATUSES)
       scope = scope.where(project: project) if project
 
       # approved_by is loaded too because FeatureDecisionSummary reads the
       # approver's email for approved_waiting_for_merge entries.
       only_record(scope).includes(:project, :approved_by, :feature_intent_decisions, :feature_intent_design_prs)
         .order(:created_at, :id)
+        .select { |feature_intent| feature_action_required?(feature_intent) }
         .map { |feature_intent| feature_decision_entry(feature_intent) }
+    end
+
+    def feature_action_required?(feature_intent)
+      FeatureIntents::ApprovalReadiness.call(feature_intent: feature_intent).ready? ||
+        feature_intent.feature_intent_decisions.any?(&:open?) ||
+        feature_intent.feature_intent_design_prs.any? { |design_pr| design_pr.required? && design_pr.stale? }
     end
 
     def feature_decision_entry(feature_intent)

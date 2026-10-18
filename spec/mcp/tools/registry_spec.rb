@@ -61,6 +61,7 @@ RSpec.describe Tools::Registry do
       verify_apple_project
       capture_apple_screenshot
       stop_apple_verification
+      manage_feature_intent
     ]
   end
 

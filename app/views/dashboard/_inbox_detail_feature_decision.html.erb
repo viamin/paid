@@ -1,4 +1,4 @@
-<%# @spec FEATURE-APPROVAL-013 %>
+<%# @spec FEATURE-APPROVAL-020 %>
 <% feature_intent = entry.record %>
 <% readiness = FeatureIntents::ApprovalReadiness.call(feature_intent: feature_intent) %>
 <div class="space-y-6">
@@ -106,6 +106,22 @@
             disabled: !readiness.ready?,
             class: "inline-flex items-center rounded-md bg-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-teal-500 disabled:cursor-not-allowed disabled:bg-gray-300",
             form: { data: { turbo_confirm: "Approve #{feature_intent.title} at its current design PR heads?", turbo_frame: "_top" } } %>
+    </div>
+
+    <div class="rounded-lg border border-gray-200 bg-gray-50 p-4">
+      <h3 class="text-sm font-semibold text-gray-900">Remove this proposal from the Inbox</h3>
+      <p class="mt-1 text-sm text-gray-600">Declining preserves the brief, linked issues, evidence, and approval history. It does not release, close, or cancel replacement work.</p>
+      <%= form_with url: cancel_feature_intent_path(feature_intent), method: :post, class: "mt-3 flex flex-wrap items-end gap-3", data: { turbo_confirm: "Decline this proposal? It can later be reopened for discovery.", turbo_frame: "_top" } do |form| %>
+        <div>
+          <%= form.label :cancellation_reason, "Reason", class: "block text-xs font-medium text-gray-700" %>
+          <%= form.select :cancellation_reason, [["Already handled or duplicate", "already_handled"], ["Superseded", "superseded"], ["No longer wanted", "no_longer_wanted"]], {}, class: "mt-1 rounded-md border-gray-300 text-sm" %>
+        </div>
+        <div>
+          <%= form.label :replacement_reference, "Replacement issue, PR, or feature (optional)", class: "block text-xs font-medium text-gray-700" %>
+          <%= form.url_field :replacement_reference, class: "mt-1 rounded-md border-gray-300 text-sm", placeholder: "https://github.com/org/repo/pull/123" %>
+        </div>
+        <%= form.submit "Decline and remove", class: "inline-flex items-center rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50" %>
+      <% end %>
     </div>
   <% end %>
 </div>

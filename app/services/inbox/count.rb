@@ -48,11 +48,9 @@ module Inbox
       PlanReviewPolicy::Scope.new(user, DecompositionDecision).resolve.open_plan_reviews.count
     end
 
-    # @spec FEATURE-APPROVAL-013
+    # @spec FEATURE-APPROVAL-020
     def feature_decision_count
-      FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
-        .where(status: Inbox::Queue::FEATURE_DECISION_STATUSES)
-        .count
+      Inbox::Queue.call(user: user, kind: Inbox::Queue::FEATURE_DECISION_KIND).size
     end
 
     def merge_approval_count
