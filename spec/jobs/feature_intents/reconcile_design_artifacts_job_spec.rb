@@ -8,6 +8,11 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
   let(:feature_intent) { create(:feature_intent, project:) }
   let(:design_pr) { create(:feature_intent_design_pr, feature_intent:, pull_request_number: 100, draft: false) }
 
+  before do
+    response = instance_double(AgentHarness::Response, success?: false, output: nil)
+    allow(AgentHarness).to receive(:send_message).and_return(response)
+  end
+
   it "persists an actionable finding from a synced design pull request" do
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
 
@@ -74,6 +79,31 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     expect(DesignArtifactFinding.count).to eq(0)
   end
 
+  it "uses a stored Paid feature-intent link without requiring a document repair" do
+    create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
+    linked_issue = create(:issue, project:, github_number: 101)
+    create(:feature_intent_issue, feature_intent:, issue: linked_issue)
+
+    described_class.perform_now(project.id, design_pr.pull_request_number)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.sole.provenance).to eq("Paid feature intent linkage")
+  end
+
+  it "assesses synchronized open issue candidates before creating a missing-tree finding" do
+    allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
+    response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"issue_identity":"acme/widget#101","explanation":"It implements this design."}')
+    allow(AgentHarness).to receive(:send_message).and_return(response)
+    create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
+    create(:issue, project:, github_number: 101, title: "Implement design", body: "Implementation work")
+
+    described_class.perform_now(project.id, design_pr.pull_request_number)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.sole).to have_attributes(issue_identity: "acme/widget#101")
+  end
+
   it "uses issue links listed under an RDR relationship heading" do
     artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
       path: "docs/rdrs/RDR-020-service-container-architecture.md",
@@ -86,6 +116,80 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     described_class.perform_now(project.id)
 
     expect(DesignArtifactFinding.count).to eq(0)
+  end
+
+  it "uses an exact issue backlink to reconcile an RDR without repairing the document" do
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-020-service-container-architecture.md",
+      revision: "a" * 40,
+      body: "Status: Accepted"
+    )
+    create(:issue, project:, github_number: 216,
+      body: "Implements docs/rdrs/RDR-020-service-container-architecture.md")
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ artifact ])
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.sole).to have_attributes(
+      artifact_path: artifact.path, artifact_revision: artifact.revision,
+      issue_identity: "acme/widget#216", provenance: "exact artifact backlink"
+    )
+  end
+
+  it "does not use an exact backlink from another repository in the account" do
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-020-service-container-architecture.md",
+      revision: "a" * 40,
+      body: "Status: Accepted"
+    )
+    other_project = create(:project, account: project.account, owner: "acme", repo: "other-widget")
+    create(:issue, project: other_project, github_number: 216,
+      body: "Implements docs/rdrs/RDR-020-service-container-architecture.md")
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ artifact ])
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(
+      artifact_path: artifact.path, revision: artifact.revision, state: "missing_tree", status: "open"
+    )
+    expect(DesignArtifactAssociation.count).to eq(0)
+  end
+
+  it "does not treat an untrusted issue backlink as structural evidence" do
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-020-service-container-architecture.md",
+      revision: "a" * 40,
+      body: "Status: Accepted"
+    )
+    create(:issue, project:, github_number: 216, github_creator_login: "attacker",
+      body: "Implements docs/rdrs/RDR-020-service-container-architecture.md")
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ artifact ])
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(
+      artifact_path: artifact.path, revision: artifact.revision, state: "missing_tree", status: "open"
+    )
+    expect(DesignArtifactAssociation.count).to eq(0)
+  end
+
+  it "does not treat an incidental artifact-path mention as an artifact backlink" do
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-020-service-container-architecture.md",
+      revision: "a" * 40,
+      body: "Status: Accepted"
+    )
+    create(:issue, project:, github_number: 216,
+      body: "We discussed `docs/rdrs/RDR-020-service-container-architecture.md` last week.")
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ artifact ])
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(
+      artifact_path: artifact.path, revision: artifact.revision, state: "missing_tree", status: "open"
+    )
+    expect(DesignArtifactAssociation.count).to eq(0)
   end
 
   it "does not treat an incidental issue mention as an issue-tree relationship" do
