@@ -156,10 +156,11 @@ class ChatSession < ApplicationRecord
   # by the latest focus snapshot, falling back to the linked issue when the
   # focus is absent or names an issue outside the feature.
   def exploration_issue
-    return clarifying_question_issue unless feature_intent
+    feature = feature_intent
+    return clarifying_question_issue unless feature
 
     focus_issue_id = exploration_focus&.dig("issue_id")
-    focus_issue = feature_intent.issues.find_by(id: focus_issue_id) if focus_issue_id
+    focus_issue = focused_feature_issue(feature, focus_issue_id) if focus_issue_id
     focus_issue || clarifying_question_issue
   end
 
@@ -170,6 +171,14 @@ class ChatSession < ApplicationRecord
     focus = metadata["exploration_focus"] if metadata.is_a?(Hash)
     focus.is_a?(Hash) ? focus : nil
   end
+
+  def focused_feature_issue(feature, issue_id)
+    issues = feature.issues
+    return issues.find_by(id: issue_id) unless issues.loaded?
+
+    issues.find { |issue| issue.id.to_s == issue_id.to_s }
+  end
+  private :focused_feature_issue
 
   # @spec CHAT-API-019
   def llm_policy_projects

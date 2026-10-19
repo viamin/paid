@@ -71,4 +71,24 @@ RSpec.describe "Mobile chat sessions API" do
     get "/api/v1/chat/sessions", headers: headers
     expect(response.parsed_body.fetch("sessions").map { |session| session.fetch("id") }).to eq([ chat_session.id ])
   end
+
+  # @spec QUESTION-EXPLORATION-018 MOBILE-API-011
+  it "lists the focused issue for multiple feature conversations" do
+    first_feature = create(:feature_intent, project: create(:project, account:))
+    second_feature = create(:feature_intent, project: create(:project, account:))
+    first_issue = create(:issue, project: first_feature.project)
+    second_issue = create(:issue, project: second_feature.project)
+    create(:feature_intent_issue, feature_intent: first_feature, issue: first_issue)
+    create(:feature_intent_issue, feature_intent: second_feature, issue: second_issue)
+    create(:chat_session, account:, created_by: user, project: first_feature.project, feature_intent: first_feature,
+      metadata: { "exploration_focus" => { "issue_id" => first_issue.id } })
+    create(:chat_session, account:, created_by: user, project: second_feature.project, feature_intent: second_feature,
+      metadata: { "exploration_focus" => { "issue_id" => second_issue.id } })
+
+    queries = capture_queries { get "/api/v1/chat/sessions", headers: headers }
+
+    focus_ids = response.parsed_body.fetch("sessions").pluck("exploration_focus_issue_id")
+    expect(focus_ids).to include(first_issue.id, second_issue.id)
+    expect(queries.grep(/FROM "issues".*"issues"\."id" =/)).to be_empty
+  end
 end
