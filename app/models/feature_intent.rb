@@ -27,6 +27,9 @@ class FeatureIntent < ApplicationRecord
   # ready, or a prior approval is being refreshed against a new PR head.
   APPROVABLE_STATUSES = %w[design_open needs_decision ready_for_approval approved_waiting_for_merge].freeze
 
+  # Statuses the criteria-clarity evaluation may move the feature between.
+  CLARITY_TRANSITIONABLE_STATUSES = %w[design_open needs_decision ready_for_approval].freeze
+
   CRITERIA_CLARITY_STATES = %w[pending clear vague].freeze
   CANCELLATION_REASONS = %w[already_handled no_longer_wanted superseded].freeze
   DELIVERY_POLICIES = Project::FEATURE_DELIVERY_POLICIES
@@ -80,12 +83,18 @@ class FeatureIntent < ApplicationRecord
   # Persists the CriteriaClarityReview verdict (or the fail-closed "pending"
   # default) so Inbox rendering never makes a live LLM call per entry
   # (RDR-066 readiness is AI-assisted but AGD-cached, not ZFC-per-render).
+  # A successful evaluation is also the transition driver between the
+  # reviewable statuses: open decisions hold the feature at `needs_decision`,
+  # and a `clear` verdict with every decision resolved readies it for
+  # approval (FEATURE-APPROVAL-019). Approved and terminal statuses are
+  # never touched — the clarity job cannot reopen or un-approve a feature.
   def record_criteria_clarity!(state:, explanation:)
     update!(
       criteria_clarity_state: state,
       criteria_clarity_explanation: explanation,
       criteria_clarity_evaluated_at: Time.current
     )
+    transition_after_clarity_evaluation!
   end
 
   # Records a human's Mark approved decision: the actor, time, and the exact
@@ -169,6 +178,20 @@ class FeatureIntent < ApplicationRecord
   end
 
   private
+
+  # @spec FEATURE-APPROVAL-019 — the criteria-clarity evaluation owns the
+  # `needs_decision` / `ready_for_approval` transitions. A vague verdict with
+  # no open decisions leaves the status alone: the blocker is the clarity
+  # verdict itself, which `ApprovalReadiness` reports without a status move.
+  def transition_after_clarity_evaluation!
+    return unless status.in?(CLARITY_TRANSITIONABLE_STATUSES)
+
+    if feature_intent_decisions.open_decisions.exists?
+      update!(status: "needs_decision")
+    elsif criteria_clarity_clear?
+      update!(status: "ready_for_approval")
+    end
+  end
 
   def transition_to!(next_status, from:)
     raise InvalidTransitionError, "cannot move feature intent from #{status} to #{next_status}" unless status.in?(from)

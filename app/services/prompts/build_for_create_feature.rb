@@ -6,6 +6,7 @@ module Prompts
   # @spec CREATE-FEATURE-003
   # @spec RDR-ROLLOUT-GUARD-003
   # @spec FEATURE-CREATION-008
+  # @spec FEATURE-APPROVAL-019
   #
   # Builds the agent prompt for a `create_feature` run. The run is responsible
   # for taking a structured feature brief (collected via chat or the
@@ -124,6 +125,26 @@ module Prompts
            a `## Dependencies` section for multiple links)
          Be parseable by `Issues::ParseDependencies`. File issues via the
          existing cross-repo issue-filing path.
+      7. **Emit open decisions**: If the brief or your research left material
+         questions or assumptions a human must settle before approving the
+         design, emit them in your final output inside an HTML comment block,
+         exactly in this shape:
+
+         ```
+         <!-- feature-decisions-start -->
+         [
+           {"kind": "question", "design_claim": "The design claim this affects", "prompt": "The clarifying question"},
+           {"kind": "inferred_decision", "design_claim": "The design claim this affects", "prompt": "[inferred] the assumption you made"}
+         ]
+         <!-- feature-decisions-end -->
+         ```
+
+         `kind` is `question` (something you need answered) or
+         `inferred_decision` (an assumption you made that a human should
+         confirm or reject). `design_claim` names the part of the design the
+         decision affects. Emit the block only when at least one genuine open
+         decision exists — omit the entire block otherwise, and never invent
+         decisions your research did not surface.
 
       # Rules — you MUST follow these
 
@@ -132,7 +153,9 @@ module Prompts
         Do not invent components that do not exist.
       - **Honour the brief.** Do not invent facts the brief does not support.
         If the brief is silent on something the RDR requires, mark it as
-        `[inferred]` and surface it in the PR description for human review.
+        `[inferred]` in the RDR, surface it in the PR description for human
+        review, and emit it in the `feature-decisions` block (step 7) as an
+        `inferred_decision` so it reaches the approval Inbox.
       - **Preserve evidence status.** Do not promote an unresolved assumption
         or AI hypothesis into a confirmed fact, and do not fabricate customer
         evidence. Label supplied evidence, user-confirmed choices, and

@@ -4,14 +4,17 @@
 # question Paid could not answer from the repository, or an AI-inferred
 # decision awaiting human confirmation. Each one names the design claim it
 # affects so the Inbox can explain what it holds (RDR-066 "Discovery and
-# approval readiness").
-# @spec FEATURE-APPROVAL-006 @spec FEATURE-APPROVAL-007
+# approval readiness"). Rows materialized from a run's explicitly emitted
+# decisions carry `source_agent_run_id` as their evidence ground
+# (FEATURE-APPROVAL-019).
+# @spec FEATURE-APPROVAL-006 @spec FEATURE-APPROVAL-007 @spec FEATURE-APPROVAL-019
 class FeatureIntentDecision < ApplicationRecord
   KINDS = %w[question inferred_decision].freeze
   STATUSES = %w[open resolved].freeze
 
   belongs_to :feature_intent
   belongs_to :resolved_by, class_name: "User", optional: true
+  belongs_to :source_agent_run, class_name: "AgentRun", optional: true
   has_many :facets, class_name: "FeatureIntentFacet", dependent: :nullify
   has_many :facet_evidence, class_name: "FeatureIntentFacetEvidence", dependent: :nullify
 

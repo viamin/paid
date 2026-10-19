@@ -47,7 +47,8 @@
       <ul class="space-y-2">
         <% unconfirmed.each do |decision| %>
           <li class="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm">
-            <p class="text-gray-900">[inferred] <%= decision.prompt %></p>
+            <%# The [inferred] flag lives in the decision's prompt text (FEATURE-APPROVAL-019). %>
+            <p class="text-gray-900"><%= decision.prompt %></p>
             <p class="mt-1 text-xs text-gray-500">Affects: <%= decision.design_claim %></p>
           </li>
         <% end %>
