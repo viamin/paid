@@ -63,6 +63,22 @@ RSpec.describe FeatureIntents::ReleaseIssue do
     expect(link.reload.release_state).to eq("held")
   end
 
+  it "keeps a ready-mapped issue held while a local dependency remains open" do # @spec CONFIDENCE-DELIVERY-003
+    dependency = create(:issue, project: project, github_state: "open")
+    create(:issue_dependency, issue: issue, depends_on_issue: dependency)
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(result.reason).to eq("Issue has unresolved dependencies.")
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(link.reload).to have_attributes(
+      release_state: "held",
+      release_error: "Issue has unresolved dependencies."
+    )
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
   it "retains a visible retry state when GitHub rejects the planning-label removal" do
     allow(project.client).to receive(:remove_label_from_issue).and_raise(GithubClient::ApiError, "unavailable")
 

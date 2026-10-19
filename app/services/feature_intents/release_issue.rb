@@ -23,6 +23,7 @@ module FeatureIntents
 
     def call
       return Result.new(released: true, reason: nil) if confidence_links.empty?
+      return hold_for_dependencies unless issue.ready_to_work?
       return reconcile_released_projection if links.empty?
 
       readiness_by_link = links.to_h { |link| [ link, assess(link) ] }
@@ -81,6 +82,15 @@ module FeatureIntents
       blocked = readiness_by_link.reject { |_link, readiness| readiness.ready? }
       blocked.each { |link, readiness| mark_held(link, reason_for(readiness)) }
       Result.new(released: false, reason: reason_for(blocked.first[1]))
+    end
+
+    # Readiness mappings establish scoped confidence, but dependencies are an
+    # independent execution prerequisite shared with RunAdmission. Record the
+    # hold on links that have not yet released; released snapshots remain
+    # immutable evidence even if a later dependency change retains the label.
+    def hold_for_dependencies
+      links.each { |link| mark_held(link, "Issue has unresolved dependencies.") }
+      Result.new(released: false, reason: "Issue has unresolved dependencies.")
     end
 
     def mark_held(link, reason)
