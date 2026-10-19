@@ -663,9 +663,13 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         blocker = pr_issue.reload.auto_merge_blockers.fetch("failed").find do |candidate|
           candidate["signal"] == "reviews_fresh"
         end
-        expect(blocker.fetch("approval_evidence")).to include(
-          "approved_revision" => "approved-revision",
-          "current_revision" => "current-revision"
+        stale_entries = blocker.fetch("approval_evidence").fetch("stale_approvals")
+        expect(stale_entries).to contain_exactly(
+          hash_including(
+            "approver_login" => "viamin",
+            "approved_revision" => "approved-revision",
+            "current_revision" => "current-revision"
+          )
         )
       end
 
@@ -7473,6 +7477,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(automation_scan_results(result)).to eq([])
       end
+
+      # @spec OPERATOR-INBOX-002K
+      # Regression for #4519: a fresh owner re-approval coexisting with a
+      # stale configured-manual-reviewer approval must not be recorded as
+      # the stale approval — the Inbox explanation has to surface the
+      # approval that actually failed freshness, including its approver.
+      it "persists the manual reviewer's stale approval evidence rather than the fresh owner approval" do
+        activity.execute(project_id: project.id)
+
+        blocker = Issue.find_by!(project: project, github_number: 42)
+          .reload.auto_merge_blockers.fetch("failed").find do |candidate|
+            candidate["signal"] == "reviews_fresh"
+          end
+        expect(blocker.fetch("approval_evidence").fetch("stale_approvals")).to contain_exactly(
+          hash_including("approver_login" => "reviewer")
+        )
+      end
     end
 
     context "when the configured manual reviewer is not allowlisted and their approval is stale" do
@@ -12518,7 +12539,19 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       owner_approved_or_self_authored?: true,
       no_outstanding_review_feedback?: true,
       all_blocking_review_methods_complete?: true,
-      review_freshness_for_head: review_freshness
+      review_freshness_for_head: review_freshness,
+      freshness_for_head: build_stale_freshness_result(
+        review_freshness,
+        approved_revision: approved_revision
+      )
+    )
+  end
+
+  def build_stale_freshness_result(state, approved_revision: nil)
+    Activities::ScanPaidPrsActivity::ReviewFreshnessResult.new(
+      state: state,
+      stale_approvals: approved_revision ? [ { user_login: "viamin", commit_id: approved_revision,
+                                               submitted_at: Time.current } ] : []
     )
   end
 

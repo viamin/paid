@@ -148,18 +148,42 @@ module Inbox
         blocker["next_action"]
       end
 
+      # @spec OPERATOR-INBOX-002K
       def approval_evidence
         evidence = stale_approval_blocker&.fetch("approval_evidence", {})&.deep_stringify_keys || {}
-        approved_revision = evidence["approved_revision"]
-        current_revision = evidence["current_revision"] || issue.last_scanned_head_sha
-        return {} if approved_revision.blank? && current_revision.blank? && issue.auto_merge_evaluated_at.blank?
+        stale_entries = approval_evidence_stale_entries(evidence)
+        return {} if stale_entries.empty? && issue.auto_merge_evaluated_at.blank?
 
-        evidence.merge(
-          "approved_revision" => approved_revision,
-          "current_revision" => current_revision,
-          "assessed_at" => issue.auto_merge_evaluated_at&.iso8601,
-          "comparison_url" => comparison_url(approved_revision, current_revision)
-        ).compact
+        current_revision = stale_entries.first&.fetch("current_revision") ||
+          evidence["current_revision"] ||
+          issue.last_scanned_head_sha
+        assessed_at = issue.auto_merge_evaluated_at&.iso8601
+
+        enriched = stale_entries.map do |entry|
+          approved_revision = entry["approved_revision"]
+          entry.merge(
+            "assessed_at" => assessed_at,
+            "comparison_url" => comparison_url(approved_revision, current_revision)
+          ).compact
+        end
+        return {} if enriched.empty?
+
+        { "stale_approvals" => enriched, "current_revision" => current_revision }.compact
+      end
+
+      # Returns the per-approvals evidence in the canonical array shape,
+      # converting snapshots written by the legacy single-approval schema
+      # (the owner's evidence only — see #4519) into a single-entry array
+      # so the view never has to branch on the snapshot shape.
+      def approval_evidence_stale_entries(evidence)
+        return Array(evidence["stale_approvals"]) if evidence["stale_approvals"].present?
+
+        legacy = {
+          "approved_revision" => evidence["approved_revision"],
+          "approved_at" => evidence["approved_at"],
+          "current_revision" => evidence["current_revision"]
+        }.compact
+        legacy.empty? ? [] : [ legacy ]
       end
 
       def stale_approval_blocker

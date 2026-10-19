@@ -1,3 +1,4 @@
+<%# @spec OPERATOR-INBOX-002K %>
 <div class="space-y-6">
   <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
     <h3 class="text-sm font-semibold text-emerald-900">
@@ -12,17 +13,29 @@
   <% if entry.guidance.fetch(:stale_approval) && approval_evidence.present? %>
     <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
       <h3 class="font-semibold">Recorded approval and current revision</h3>
-      <% if approval_evidence["approved_revision"].present? %>
-        <p class="mt-1">Approved revision: <code><%= approval_evidence["approved_revision"] %></code></p>
-      <% end %>
-      <% if approval_evidence["current_revision"].present? %>
-        <p class="mt-1">Current revision: <code><%= approval_evidence["current_revision"] %></code></p>
-      <% end %>
-      <% if approval_evidence["assessed_at"].present? %>
-        <p class="mt-1">Paid assessed this state at <%= Time.iso8601(approval_evidence["assessed_at"]).to_fs(:long) %>.</p>
-      <% end %>
-      <% if approval_evidence["comparison_url"].present? %>
-        <p class="mt-2"><%= link_to "Compare approved and current revisions on GitHub", approval_evidence["comparison_url"], target: "_blank", rel: "noopener noreferrer", class: "font-semibold underline" %></p>
+      <% Array(approval_evidence["stale_approvals"]).each_with_index do |stale, index| %>
+        <% if stale["approver_login"].present? %>
+          <p class="mt-1<%= index.zero? ? "" : " mt-3 border-t border-amber-200 pt-2" %>">
+            <strong>Approver:</strong> <code><%= stale["approver_login"] %></code>
+          </p>
+        <% end %>
+        <% if stale["approved_revision"].present? %>
+          <p class="mt-1">Approved revision: <code><%= stale["approved_revision"] %></code></p>
+        <% end %>
+        <% if stale["approved_at"].present? %>
+          <p class="mt-1">Approved at: <%= Time.iso8601(stale["approved_at"]).to_fs(:long) %></p>
+        <% end %>
+        <% if stale["current_revision"].present? %>
+          <p class="mt-1">Current revision: <code><%= stale["current_revision"] %></code></p>
+        <% end %>
+        <% if stale["assessed_at"].present? && index == approval_evidence["stale_approvals"].length - 1 %>
+          <p class="mt-1">Paid assessed this state at <%= Time.iso8601(stale["assessed_at"]).to_fs(:long) %>.</p>
+        <% end %>
+        <% if stale["comparison_url"].present? %>
+          <p class="mt-2">
+            <%= link_to "Compare #{stale['approver_login'].presence || 'approved'} and current revisions on GitHub", stale["comparison_url"], target: "_blank", rel: "noopener noreferrer", class: "font-semibold underline" %>
+          </p>
+        <% end %>
       <% end %>
     </div>
   <% end %>

@@ -720,26 +720,62 @@ RSpec.describe "Inbox" do
 
   it "renders stale manual-merge guidance with approval evidence and no automatic-merge promise" do
     project.update!(auto_merge_mode: "off")
-    snapshot = stale_approval_snapshot.tap do |assessment|
-      assessment.fetch("failed").first["approval_evidence"] = {
-        "approved_revision" => "approved123",
-        "current_revision" => "current456"
-      }
-    end
+    snapshot = stale_approval_snapshot
+    snapshot.fetch("failed").first["approval_evidence"] = {
+      "stale_approvals" => [ stale_entry("viamin", "approved123", "current456", 2.hours.ago) ]
+    }
     pr = create_merge_approval_pr(title: "Approval blocked PR", snapshot: snapshot)
 
-    get inbox_entry_path(
-      entry_id(Inbox::Queue::MERGE_APPROVAL_KIND, pr),
-      project_id: project.id,
-      kind: Inbox::Queue::MERGE_APPROVAL_KIND
-    )
+    visit_merge_approval_entry(pr)
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Merge Approval", "PR", "Approval is stale for the current revision", "View PR")
     expect(response.body).to include("Commits were added after the recorded approval", "GitHub still shows Approved")
     expect(response.body).to include("manual merge decision", "Re-approval alone will not cause Paid to merge it")
-    expect(response.body).to include("approved123", "current456", "Compare approved and current revisions on GitHub")
+    expect(response.body).to include("approved123", "current456", "Compare viamin and current revisions on GitHub")
     expect(response.body).not_to include("so Paid can merge it on the next PR scan")
+  end
+
+  # @spec OPERATOR-INBOX-002K
+  # Regression for #4519: when both the owner and the configured manual
+  # reviewer approvals are stale (or when the manual reviewer's stale
+  # approval coexists with a fresh owner re-approval), the Inbox detail
+  # must surface every approver that failed freshness and link the
+  # comparison from THAT approver's recorded revision.
+  it "renders each stale approver separately when multiple approvals are stale" do
+    project.update!(auto_merge_mode: "off")
+    snapshot = stale_approval_snapshot
+    snapshot.fetch("failed").first["approval_evidence"] = {
+      "stale_approvals" => [
+        stale_entry("reviewer", "manual123", "current999", 3.hours.ago),
+        stale_entry("viamin", "owner456", "current999", 30.minutes.ago)
+      ]
+    }
+    pr = create_merge_approval_pr(title: "Both stale", snapshot: snapshot)
+
+    visit_merge_approval_entry(pr)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("manual123", "owner456", "current999")
+    expect(response.body).to include("Compare", "viamin", "current revisions on GitHub")
+    expect(response.body.scan("Approver:").length).to eq(2)
+  end
+
+  # @spec OPERATOR-INBOX-002K
+  it "renders legacy flat-shaped approval evidence written before the array schema" do
+    project.update!(auto_merge_mode: "off")
+    snapshot = stale_approval_snapshot
+    snapshot.fetch("failed").first["approval_evidence"] = {
+      "approved_revision" => "legacy123",
+      "approved_at" => 2.hours.ago.iso8601,
+      "current_revision" => "legacy456"
+    }
+    pr = create_merge_approval_pr(title: "Legacy evidence", snapshot: snapshot)
+
+    visit_merge_approval_entry(pr)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("legacy123", "legacy456", "Compare approved and current revisions on GitHub")
   end
 
   # @spec INTENT-CONFORMANCE-006
@@ -1788,5 +1824,22 @@ RSpec.describe "Inbox" do
       } ],
       "not_evaluated" => []
     }
+  end
+
+  def stale_entry(approver_login, approved_revision, current_revision, approved_at)
+    {
+      "approver_login" => approver_login,
+      "approved_revision" => approved_revision,
+      "approved_at" => approved_at.iso8601,
+      "current_revision" => current_revision
+    }
+  end
+
+  def visit_merge_approval_entry(pr)
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MERGE_APPROVAL_KIND, pr),
+      project_id: project.id,
+      kind: Inbox::Queue::MERGE_APPROVAL_KIND
+    )
   end
 end

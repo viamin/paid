@@ -46,17 +46,25 @@
   from a rendered summary. When a recorded approval is stale, the Inbox SHALL
   say that commits were added after it even if GitHub still displays Approved,
   and show approved/current revisions, assessment time, and a comparison link
-  when the scan captured that evidence. With automatic merge inactive,
-  guidance SHALL direct the operator to review the current changes and make the
-  manual merge decision on GitHub; re-approval alone SHALL NOT be described as
-  triggering a Paid merge. With automatic merge active, it SHALL say that
-  current-revision approval causes a later scan to reevaluate subject to
-  remaining checks and policy, not promise a merge. The web detail, API, chat
-  context, and displayed blocker next actions SHALL use the same guidance.
+  when the scan captured that evidence. Each blocking approval (owner and any
+  configured manual reviewer, evaluated independently — see AUTO-MERGE-006)
+  that failed freshness SHALL be surfaced with its approver login and
+  per-approver comparison link, so a fresh owner re-approval does not mask a
+  stale configured manual reviewer approval (#4519). With automatic merge
+  inactive, guidance SHALL direct the operator to review the current changes
+  and make the manual merge decision on GitHub; re-approval alone SHALL NOT
+  be described as triggering a Paid merge. With automatic merge active, it
+  SHALL say that current-revision approval causes a later scan to reevaluate
+  subject to remaining checks and policy, not promise a merge. The web
+  detail, API, chat context, and displayed blocker next actions SHALL use
+  the same guidance.
   *Code:* `app/services/inbox/merge_approval.rb`, `app/services/inbox/queue.rb`,
-  `app/services/inbox/count.rb`, `app/services/inbox/availability.rb`.
+  `app/services/inbox/count.rb`, `app/services/inbox/availability.rb`,
+  `app/views/dashboard/_inbox_detail_merge_approval.html.erb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
-  `spec/services/inbox/availability_spec.rb`, `spec/requests/inbox_spec.rb`.
+  `spec/services/inbox/availability_spec.rb`, `spec/requests/inbox_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002B** — When a visible notification is active and
   `blocking: true`, the system SHALL expose it as an `action_required` inbox
