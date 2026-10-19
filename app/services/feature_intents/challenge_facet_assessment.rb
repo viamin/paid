@@ -23,8 +23,7 @@ module FeatureIntents
         validate_superseded_evidence!
         evidence = IngestFacetEvidence.call(facet:, attributes: evidence_attributes)
         supersedes&.update!(superseded_by: evidence)
-        assessment = default_direction.assessments.where(status: "pending").order(created_at: :desc).first!
-        Result.new(evidence:, assessment:)
+        Result.new(evidence:, assessment: current_or_scheduled_assessment)
       end
     end
 
@@ -33,12 +32,17 @@ module FeatureIntents
     attr_reader :actor, :facet, :source_reference, :statement, :supersedes
 
     def evidence_attributes
-      { idempotency_key: "facet-challenge:#{source_reference}", source_type: "human_correction",
+      { idempotency_key: "facet-challenge:#{facet.id}:#{source_reference}", source_type: "human_correction",
         source_reference:, statement:, occurred_at: Time.current, actor: }
     end
 
     def default_direction
-      facet.directions.find_by!(status: "active")
+      facet.directions.where(status: "active").order(:id).first!
+    end
+
+    def current_or_scheduled_assessment
+      pending = default_direction.assessments.where(status: "pending").order(created_at: :desc).first
+      pending || ScheduleFacetAssessment.call(direction: default_direction)
     end
 
     def validate_actor!
