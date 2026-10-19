@@ -182,11 +182,11 @@ shipped in #4113 and #4114. `AttachFromAgentRun` creates and links Feature
 Intents, design PRs, and proposed issue trees; `RunAdmission` enforces the
 hold at selection, creation, dequeue, and dispatch; and design-PR
 reconciliation uses the same `MarkApproved` authorization/readiness contract.
-
-FEATURE-APPROVAL-019 remains open: attachment records repository/API facts
-today, but does not turn an agent run's explicitly emitted questions or
-`[inferred]` decisions into `FeatureIntentDecision` rows. The Inbox therefore
-shows the truthful empty decision state rather than fabricating one.
+FEATURE-APPROVAL-019 shipped with the decision-materialization slice: when a
+feature run completes, `FeatureIntents::RecordRunDecisions` parses the run's
+recorded output for an explicitly emitted decisions block and records
+`FeatureIntentDecision` rows from it, so the Inbox decision sections render
+real run-raised questions and `[inferred]` decisions.
 
 ## Approval revisions and release
 
@@ -399,17 +399,26 @@ own output, never invented human answers. Two grounded sources:
   recorded on the `AgentRun` are the source of truth for what was actually
   filed and opened. The FeatureIntent mirrors those facts. This is what
   FEATURE-APPROVAL-018 ships today (design PR rows + linked issues).
-- Any clarifying questions or AI-inferred decisions the run produced will
-  eventually be recorded on the FeatureIntent's `FeatureIntentDecision`
-  rows only when the run's output explicitly contains them — the run's
-  summary is parsed, not assumed. Inferred decisions will be flagged with
-  `[inferred]` in their prompt text so a human can confirm or reject them
-  through the Inbox (FEATURE-APPROVAL-007). The service never fabricates
-  a question that the run did not raise. This behavior is tracked by the
-  open spec FEATURE-APPROVAL-019 and is not yet implemented: today
-  `AttachFromAgentRun` does not parse the run summary, and the Inbox
-  decision-listing sections render empty when no decisions were separately
-  recorded.
+- Any clarifying questions or AI-inferred decisions the run produced are
+  recorded on the FeatureIntent's `FeatureIntentDecision` rows only when
+  the run's output explicitly contains them — the run's summary is parsed,
+  never assumed. The `create_feature`/`lid_planning` prompts instruct the
+  agent to emit a structured block (`<!-- feature-decisions-start -->` …
+  `<!-- feature-decisions-end -->` around a JSON array of
+  `{kind, design_claim, prompt}` items) in its final output;
+  `FeatureIntents::RunDecisionEmissions` parses that block with the same
+  deterministic-marker approach the multi-issue plan parser uses, and
+  `FeatureIntents::RecordRunDecisions` materializes the items as decision
+  rows bound to their source run (`source_agent_run_id` makes re-recording
+  on a retried run a no-op). Inferred decisions carry the `[inferred]` flag
+  in their prompt text so a human can confirm or reject them through the
+  Inbox (FEATURE-APPROVAL-007). Items missing a prompt or design claim, or
+  carrying an unknown kind, are skipped rather than repaired, and a run
+  that emits no block produces no rows — the service never fabricates a
+  question that the run did not raise. Recording open decisions moves the
+  feature to `needs_decision`; the criteria-clarity evaluation is the
+  transition driver back to `ready_for_approval` (see "Status transitions
+  during attachment").
 
 ### Branching by run goal
 

@@ -4,6 +4,7 @@ module Prompts
   # @spec LID-RUNS-002
   # @spec LID-RUNS-005
   # @spec LID-RUNS-007
+  # @spec FEATURE-APPROVAL-019
   class BuildForLidPlanning
     # Documentation copy of the prompt this class builds, seeded into the
     # Prompts admin UI for reference (see db/seeds/prompts.rb, slug
@@ -34,6 +35,21 @@ module Prompts
       Open a Planning PR containing only these docs changes, with an inference checklist so a
       human reviewer can confirm or correct every `[inferred]` item before implementation work
       begins.
+
+      When material questions or `[inferred]` assumptions remain for a human to settle, emit
+      them in your final output inside an HTML comment block, exactly in this shape:
+
+      ```
+      <!-- feature-decisions-start -->
+      [
+        {"kind": "question", "design_claim": "The design claim this affects", "prompt": "The clarifying question"},
+        {"kind": "inferred_decision", "design_claim": "The design claim this affects", "prompt": "[inferred] the assumption you made"}
+      ]
+      <!-- feature-decisions-end -->
+      ```
+
+      Emit the block only when at least one genuine open decision exists — omit the entire
+      block otherwise, and never invent decisions your analysis did not surface.
     PROMPT
 
     attr_reader :project_name, :project_description, :plan_docs, :adoption
@@ -76,11 +92,35 @@ module Prompts
         "",
         plan_docs_section,
         "",
-        "When plan docs are silent, infer cautiously from the codebase and mark brownfield rationale as `[inferred]`."
+        "When plan docs are silent, infer cautiously from the codebase and mark brownfield rationale as `[inferred]`.",
+        "",
+        emission_directive
       ].join("\n").strip
     end
 
     private
+
+    # @spec FEATURE-APPROVAL-019 — feature-linked planning runs surface their
+    # load-bearing open decisions through the structured emission block so
+    # they can be materialized as FeatureIntentDecision rows. Project-level
+    # adoption runs emit the same shape harmlessly: with no linked
+    # FeatureIntent there is nothing to record.
+    def emission_directive
+      <<~DIRECTIVE.rstrip
+        When material questions or `[inferred]` assumptions remain for a human to settle, emit
+        them in your final output inside an HTML comment block, exactly in this shape:
+
+        <!-- feature-decisions-start -->
+        [
+          {"kind": "question", "design_claim": "The design claim this affects", "prompt": "The clarifying question"},
+          {"kind": "inferred_decision", "design_claim": "The design claim this affects", "prompt": "[inferred] the assumption you made"}
+        ]
+        <!-- feature-decisions-end -->
+
+        Emit the block only when at least one genuine open decision exists — omit the entire
+        block otherwise, and never invent decisions your analysis did not surface.
+      DIRECTIVE
+    end
 
     def run_kind_directive
       if adoption

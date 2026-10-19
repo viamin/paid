@@ -70,6 +70,21 @@ RSpec.describe Activities::CreatePullRequestActivity do
     )
   end
 
+  # Records an explicit feature-decisions emission block on the run's stdout
+  # so FEATURE-APPROVAL-019 attachment materializes real rows.
+  def log_decision_emissions(run)
+    run.log!("stdout", <<~TEXT)
+      Opened the RDR PR.
+
+      <!-- feature-decisions-start -->
+      [
+        {"kind": "question", "design_claim": "Dark mode applies to the settings UI", "prompt": "Should dark mode apply to the marketing pages too?"},
+        {"kind": "inferred_decision", "design_claim": "Theme persistence is per user", "prompt": "Persisting the theme per user account."}
+      ]
+      <!-- feature-decisions-end -->
+    TEXT
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(
@@ -105,6 +120,37 @@ RSpec.describe Activities::CreatePullRequestActivity do
         required: true
       )
       expect(feature_intent.reload.status).to eq("design_open")
+    end
+
+    it "materializes run-emitted decisions when attaching a create-feature design PR" do # @spec FEATURE-APPROVAL-019
+      agent_run.update!(goal: "create_feature")
+      feature_intent = create(:feature_intent, project: project, status: "discovering")
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+      log_decision_emissions(agent_run)
+      pull_request = OpenStruct.new(number: 42, head: OpenStruct.new(sha: "a" * 40))
+
+      activity.send(:attach_to_feature_intent!, agent_run, pull_request)
+
+      decisions = feature_intent.reload.feature_intent_decisions
+      expect(decisions.count).to eq(2)
+      expect(decisions.questions.open_decisions.map(&:prompt))
+        .to include("Should dark mode apply to the marketing pages too?")
+      expect(decisions.inferred_decisions.open_decisions.map(&:prompt))
+        .to include("[inferred] Persisting the theme per user account.")
+      expect(feature_intent.status).to eq("needs_decision")
+    end
+
+    it "records no decisions when the run emitted none" do # @spec FEATURE-APPROVAL-019
+      agent_run.update!(goal: "create_feature")
+      feature_intent = create(:feature_intent, project: project, status: "discovering")
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+      agent_run.log!("stdout", "Opened the RDR PR. No open questions.")
+      pull_request = OpenStruct.new(number: 42, head: OpenStruct.new(sha: "a" * 40))
+
+      activity.send(:attach_to_feature_intent!, agent_run, pull_request)
+
+      expect(feature_intent.reload.feature_intent_decisions).to be_empty
+      expect(feature_intent.status).to eq("design_open")
     end
 
     it "rejects a source-linked branch after reconciling a reserved PR" do # @spec EAGER-QUEUE-010

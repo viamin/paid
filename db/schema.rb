@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_17_142025) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_19_173051) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1799,11 +1799,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_17_142025) do
     t.text "prompt", null: false, comment: "The question text, or the inferred decision's stated assumption."
     t.datetime "resolved_at"
     t.bigint "resolved_by_id"
+    t.bigint "source_agent_run_id", comment: "Agent run whose recorded output explicitly emitted this decision; grounds recording and makes re-recording on a retried run a no-op."
     t.string "status", default: "open", null: false, comment: "open or resolved. For inferred_decision, resolved means human-confirmed."
     t.datetime "updated_at", null: false
     t.index ["feature_intent_id", "status"], name: "index_feature_intent_decisions_on_feature_intent_id_and_status"
     t.index ["feature_intent_id"], name: "index_feature_intent_decisions_on_feature_intent_id"
     t.index ["resolved_by_id"], name: "index_feature_intent_decisions_on_resolved_by_id"
+    t.index ["source_agent_run_id"], name: "index_feature_intent_decisions_on_source_agent_run_id"
     t.index ["status"], name: "index_feature_intent_decisions_on_status"
   end
 
@@ -4413,6 +4415,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_17_142025) do
   add_foreign_key "feature_intent_approval_revisions", "users", column: "approved_by_id"
   add_foreign_key "feature_intent_completions", "feature_intents"
   add_foreign_key "feature_intent_completions", "issues", column: "completion_issue_id"
+  add_foreign_key "feature_intent_decisions", "agent_runs", column: "source_agent_run_id", validate: false
   add_foreign_key "feature_intent_decisions", "feature_intents"
   add_foreign_key "feature_intent_decisions", "users", column: "resolved_by_id"
   add_foreign_key "feature_intent_design_prs", "feature_intents"

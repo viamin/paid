@@ -349,21 +349,31 @@
   *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`.
   *Code:* `app/services/feature_intents/attach_from_agent_run.rb`.
 
-- [ ] **FEATURE-APPROVAL-019** — For approval-gated features, the run
-  path SHALL record `FeatureIntentDecision` rows on the `FeatureIntent`
-  only when the run's own summary explicitly contains the question or
-  the `[inferred]` decision; absent decisions SHALL surface as the
-  truthful "no questions" state in the Inbox detail view, not a
-  fabricated default. Currently the design-doc section "Evidence grounding"
-  describes this behavior but the recording code path does not ship
-  (`FeatureIntents::AttachFromAgentRun` does not parse the run summary
-  for questions/inferred decisions); the Inbox decision-listing section
-  is therefore still empty for every project. This spec is the gap
-  marker — code/tests land in the follow-up that implements the
-  decision-recording path.
-  *Tests:* (none — pending implementation).
-  *Code:* (none — pending implementation; tracks alongside
-  `app/services/feature_intents/attach_from_agent_run.rb`).
+- [x] **FEATURE-APPROVAL-019** — For approval-gated features, when a
+  `create_feature` (or chained `lid_planning`) run completes and opens its
+  docs-only PR, the run path SHALL parse the run's recorded output for an
+  explicitly emitted structured decisions block and SHALL record each
+  emitted clarifying question and `[inferred]` decision as a
+  `FeatureIntentDecision` row bound to the design claim it affects and to
+  the run that emitted it. Inferred decisions SHALL carry the `[inferred]`
+  flag in their prompt text so a human can confirm or reject them through
+  the Inbox (FEATURE-APPROVAL-007). The parser SHALL record nothing the run
+  did not explicitly emit: a run whose output contains no decisions block
+  produces no rows, and malformed or incomplete items are skipped rather
+  than repaired. Recording open decisions SHALL move the feature to
+  `needs_decision`; a criteria-clarity evaluation that returns `clear` with
+  every decision resolved SHALL move it to `ready_for_approval`
+  (transitioning from `design_open`/`needs_decision` only — the clarity job
+  never touches approved or terminal features). Recording is idempotent per
+  run: a retried run never duplicates its own decisions.
+  *Tests:* `spec/services/feature_intents/run_decision_emissions_spec.rb`,
+  `spec/services/feature_intents/record_run_decisions_spec.rb`,
+  `spec/services/feature_intents/evaluate_criteria_clarity_spec.rb`,
+  `spec/temporal/activities/create_pull_request_activity_spec.rb`.
+  *Code:* `app/services/feature_intents/run_decision_emissions.rb`,
+  `app/services/feature_intents/record_run_decisions.rb`,
+  `app/temporal/activities/create_pull_request_activity.rb`,
+  `app/models/feature_intent.rb`.
 
 ## Immutable approval and release
 
