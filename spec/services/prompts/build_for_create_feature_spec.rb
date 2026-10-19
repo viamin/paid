@@ -70,6 +70,22 @@ RSpec.describe Prompts::BuildForCreateFeature do
       expect(prompt).to include("target_rdr_number")
     end
 
+    it "instructs the agent to emit open decisions in the structured block, never invented" do # @spec FEATURE-APPROVAL-019
+      prompt = described_class.call(
+        project_name: "Paid",
+        full_name: "viamin/paid",
+        feature_brief: feature_brief
+      )
+
+      expect(prompt).to include("feature-decisions-start")
+      expect(prompt).to include("feature-decisions-end")
+      expect(prompt).to include('"kind": "question"')
+      expect(prompt).to include('"kind": "inferred_decision"')
+      expect(prompt).to include('"design_claim"')
+      expect(prompt).to include("Emit the block only when at least one genuine open")
+      expect(prompt).to include("never invent")
+    end
+
     it "instructs the agent to decompose the RDR into an issue tree" do
       prompt = described_class.call(
         project_name: "Paid",

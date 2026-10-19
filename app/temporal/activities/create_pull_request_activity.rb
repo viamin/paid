@@ -149,6 +149,11 @@ module Activities
     # create_feature runs and `lid_planning` for chained lid_planning
     # runs; everything else is a no-op so the same activity code can run
     # without goal-specific gates.
+    #
+    # @spec FEATURE-APPROVAL-019 — the same choke point materializes the
+    # run's explicitly emitted questions and [inferred] decisions into
+    # FeatureIntentDecision rows, so the Inbox decision sections render
+    # what the run actually raised (never a fabricated default).
     def attach_to_feature_intent!(agent_run, pr)
       design_pr_kind = design_pr_kind_for(agent_run)
       return unless design_pr_kind
@@ -163,6 +168,7 @@ module Activities
         head_sha: pr.head&.sha.to_s,
         design_pr_kind: design_pr_kind
       )
+      FeatureIntents::RecordRunDecisions.call(feature_intent: feature_intent, agent_run: agent_run)
     rescue => e
       logger.warn(
         message: "agent_execution.feature_intent_attach_failed",
