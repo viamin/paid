@@ -1013,6 +1013,14 @@
             </div>
 
             <div>
+              <label class="flex items-center gap-2 text-sm font-medium leading-6 text-gray-900">
+                <%= form.check_box :question_exploration_enabled, class: "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+                Enable question exploration conversations
+              </label>
+              <p class="mt-1 text-xs text-gray-500">Opens Inbox clarifying questions in one shared conversation per feature, focused on the opened question. Standalone issues keep their own conversation. Existing conversations, saved answers, and evidence are preserved when this is turned off.</p>
+            </div>
+
+            <div>
               <%= form.label :tdd_mode, "TDD Mode", class: "block text-sm font-medium leading-6 text-gray-900" %>
               <div class="mt-2 max-w-xs">
                 <%= form.select :tdd_mode,

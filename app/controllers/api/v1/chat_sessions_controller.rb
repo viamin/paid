@@ -109,6 +109,9 @@ module Api
           runner_name: session.runner&.display_name, project_id: session.project_id,
           project_name: session.project&.name || projects.first&.name, project_names: projects.map(&:name),
           auto_approve: session.auto_approve?, created_by_id: session.created_by_id,
+          feature_intent_id: session.feature_intent_id,
+          clarifying_question_issue_id: session.clarifying_question_issue_id,
+          exploration_focus_issue_id: session.exploration_issue&.id,
           created_at: session.created_at, updated_at: session.updated_at,
           total_tokens_input: session.total_tokens_input, total_tokens_output: session.total_tokens_output,
           estimated_cost_cents: session.estimated_cost_cents

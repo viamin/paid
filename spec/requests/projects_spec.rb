@@ -2128,6 +2128,24 @@ RSpec.describe "Projects" do
         expect(response.body).to include("Confidence-driven work remains held")
       end
 
+      it "shows the question-exploration rollout setting, disabled by default" do # @spec QUESTION-EXPLORATION-019
+        project = create(:project, account: account, github_token: github_token)
+
+        expect(project.question_exploration_enabled).to be(false)
+        get edit_project_path(project)
+
+        expect(response.body).to include('name="project[question_exploration_enabled]"')
+        expect(response.body).to include("Enable question exploration conversations")
+      end
+
+      it "updates the question-exploration rollout setting through the settings form" do # @spec QUESTION-EXPLORATION-019
+        project = create(:project, account: account, github_token: github_token)
+
+        patch project_path(project), params: { project: { question_exploration_enabled: true } }
+
+        expect(project.reload.question_exploration_enabled).to be(true)
+      end
+
       # @spec GITHUB-SYNC-020
       it "explains unavailable code scanning and offers a refresh in settings" do
         project = create(:project, account: account, github_token: github_token,

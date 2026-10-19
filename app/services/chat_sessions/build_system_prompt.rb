@@ -48,7 +48,7 @@ module ChatSessions
       sections << { priority: 0, content: base_identity }
       sections << { priority: 1, content: page_context } if page_context.present?
       sections << { priority: 1, content: project_context } if primary_project
-      sections << { priority: 1, content: clarifying_questions_context } if clarifying_question_issue
+      sections << { priority: 1, content: clarifying_questions_context } if exploration_issue
       sections << { priority: 1, content: explicit_preferences_content } if explicit_preferences_content.present?
       # @spec PROJECT-CREATION-010 — a fresh (blank) project needs its setup
       # interview surfaced in every chat started against it, so setup can also
@@ -179,10 +179,11 @@ module ChatSessions
     # insert transaction is open.
     # @spec QUESTION-EXPLORATION-016
     def clarifying_questions_context
-      issue = clarifying_question_issue
+      issue = exploration_issue
       questions = Array(chat_session.metadata&.dig("clarifying_questions"))
       progress_by_position = progress_by_position_for(questions)
       <<~PROMPT.strip
+        #{feature_conversation_header}
         ## Clarifying Questions for #{issue.is_pull_request? ? "PR" : "Issue"} ##{issue.github_number}: #{issue.title}
         #{questions.each_with_index.map { |question, index| render_pending_question(question, index:, progress: progress_by_position[index + 1]) }.join("\n")}
 
@@ -190,6 +191,17 @@ module ChatSessions
 
         A confirmed answer to one question can be saved with `save_clarifying_answer` and remains a draft: it does not post to GitHub or resolve the inbox item. Include useful human context from a temporary diagram or research finding when saving it. Once every question has a final answer, call `submit_clarifying_answers` with the answers in the displayed order. For a choice question, answer with one selection per line: the option's displayed text (extra rationale may follow), its number, or its letter, or an `Other: <description>` line when no option fits. That action posts the answers to GitHub and resolves this inbox item, so ask for confirmation through the tool rather than claiming it has been posted.
       PROMPT
+    end
+
+    # @spec QUESTION-EXPLORATION-018
+    # A feature conversation names the feature whose issues share it, so the
+    # assistant keeps the shared context in mind while answering the focused
+    # issue's questions.
+    def feature_conversation_header
+      return "" unless chat_session.feature_intent
+
+      "## Feature Conversation: #{chat_session.feature_intent.title}\n" \
+        "All issues linked to this feature share this conversation.\n\n"
     end
 
     # @spec QUESTION-EXPLORATION-016
@@ -215,7 +227,7 @@ module ChatSessions
 
     def progress_by_position_for(questions)
       digest = ClarifyingQuestions::SaveProgress.question_digest(questions)
-      clarifying_question_issue.clarifying_question_progresses
+      exploration_issue.clarifying_question_progresses
         .answered.where(question_digest: digest).ordered.index_by(&:position)
     end
 
@@ -340,12 +352,15 @@ module ChatSessions
       @explicit_preferences ||= ExplicitPreferences::Context.call(
         owner: chat_session.created_by,
         project: primary_project,
-        feature_intent: clarifying_question_issue&.feature_intent
+        feature_intent: chat_session.feature_intent || exploration_issue&.feature_intent
       )
     end
 
-    def clarifying_question_issue
-      chat_session.clarifying_question_issue
+    # @spec QUESTION-EXPLORATION-018
+    # Resolves the issue the conversation currently focuses on: the linked
+    # standalone issue, or the focus issue of a feature conversation.
+    def exploration_issue
+      chat_session.exploration_issue
     end
 
     def reference_projects
