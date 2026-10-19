@@ -226,6 +226,8 @@
   leaves the open state. Semantic candidate assessment SHALL use `agent_harness`
   only after structural evidence is exhausted and be cached by assessed revisions;
   the existing daily sweep remains the bounded fallback for unchanged inputs.
+  Issue coverage SHALL load shared project records separately from issue rows,
+  so project audit history is not duplicated for every synchronized issue.
   *Tests:* `spec/services/feature_intents/reconcile_design_artifacts_spec.rb`,
   `spec/jobs/feature_intents/reconcile_design_artifacts_job_spec.rb`,
   `spec/jobs/feature_intents/design_artifact_reconciliation_sweep_job_spec.rb`.
