@@ -78,6 +78,11 @@ one deduplicated finding per artifact/revision and
 reports evidence, coverage time, and an explicit state: `missing_tree`,
 `partial_tree`, `stale_metadata`, `deferred`, or `unverifiable`.
 
+Issue coverage preloads shared project records in a separate query rather than
+joining full project rows into the issue result. Project audit history must not
+be repeated for every issue: PostgreSQL results and their Ruby string copies
+would otherwise multiply that history by the synchronized issue count.
+
 Only structural existence and linkage checks happen in Rails. An issue number
 in prose is not a relationship: a line must declare a relationship keyword or
 field before it establishes coverage. A weak semantic candidate is not linked
