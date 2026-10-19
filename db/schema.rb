@@ -1787,7 +1787,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_173051) do
     t.index ["completion_issue_id"], name: "index_feature_intent_completions_on_completion_issue_id"
     t.index ["feature_intent_id"], name: "index_feature_intent_completions_on_feature_intent_id", unique: true
     t.check_constraint "cycle > 0", name: "chk_feature_intent_completions_cycle"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'complete'::character varying]::text[])", name: "chk_feature_intent_completions_status"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'complete'::character varying::text])", name: "chk_feature_intent_completions_status"
   end
 
   create_table "feature_intent_decisions", comment: "RDR-066 open product decisions for a feature intent: clarifying questions and AI-inferred decisions awaiting human confirmation.", force: :cascade do |t|
@@ -1843,7 +1843,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_173051) do
     t.index ["feature_intent_facet_direction_id", "evidence_revision"], name: "index_facet_assessments_direction_revision"
     t.index ["feature_intent_facet_direction_id"], name: "idx_on_feature_intent_facet_direction_id_3af4455063"
     t.check_constraint "intent_score >= 0 AND intent_score <= 100 OR intent_score IS NULL", name: "facet_assessments_intent_bounds"
-    t.check_constraint "status::text = ANY (ARRAY['unknown'::character varying, 'pending'::character varying, 'completed'::character varying, 'failed'::character varying, 'superseded'::character varying]::text[])", name: "facet_assessment_status"
+    t.check_constraint "status::text = ANY (ARRAY['unknown'::character varying::text, 'pending'::character varying::text, 'completed'::character varying::text, 'failed'::character varying::text, 'superseded'::character varying::text])", name: "facet_assessment_status"
     t.check_constraint "technical_score >= 0 AND technical_score <= 100 OR technical_score IS NULL", name: "facet_assessments_technical_bounds"
   end
 
@@ -1859,7 +1859,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_173051) do
     t.index ["account_id"], name: "index_feature_intent_facet_directions_on_account_id"
     t.index ["feature_intent_facet_id", "name"], name: "idx_on_feature_intent_facet_id_name_f5a6e56431", unique: true
     t.index ["feature_intent_facet_id"], name: "idx_on_feature_intent_facet_id_b98fb4f64a"
-    t.check_constraint "status::text = ANY (ARRAY['active'::character varying, 'superseded'::character varying]::text[])", name: "facet_direction_status"
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'superseded'::character varying::text])", name: "facet_direction_status"
   end
 
   create_table "feature_intent_facet_evidence", comment: "Attributable evidence retained independently of temporary visual artifacts.", force: :cascade do |t|
@@ -1920,7 +1920,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_173051) do
     t.index ["feature_intent_completion_id", "fingerprint"], name: "index_forward_work_on_completion_and_fingerprint", unique: true
     t.index ["feature_intent_completion_id"], name: "index_forward_work_on_completion"
     t.index ["follow_up_issue_id"], name: "index_feature_intent_forward_work_items_on_follow_up_issue_id"
-    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying, 'applied'::character varying]::text[])", name: "chk_forward_work_items_status"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'applied'::character varying::text])", name: "chk_forward_work_items_status"
   end
 
   create_table "feature_intent_issue_prerequisite_mappings", comment: "Audited coverage and design baseline for one linked issue's prerequisites.", force: :cascade do |t|
@@ -1935,7 +1935,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_173051) do
     t.datetime "updated_at", null: false
     t.index ["account_id"], name: "index_feature_intent_issue_prerequisite_mappings_on_account_id"
     t.index ["feature_intent_issue_id"], name: "idx_on_feature_intent_issue_id_9dd9dd3e25", unique: true
-    t.check_constraint "coverage_assessment::text = ANY (ARRAY['unknown'::character varying, 'incomplete'::character varying, 'complete'::character varying]::text[])", name: "issue_prerequisite_mapping_coverage"
+    t.check_constraint "coverage_assessment::text = ANY (ARRAY['unknown'::character varying::text, 'incomplete'::character varying::text, 'complete'::character varying::text])", name: "issue_prerequisite_mapping_coverage"
   end
 
   create_table "feature_intent_issue_prerequisites", comment: "Material facet directions required before a linked issue can become ready.", force: :cascade do |t|
@@ -5501,6 +5501,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_173051) do
       CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
   SQL
 
+  create_trigger :logidze_on_feature_intent_facet_directions, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_feature_intent_facet_directions BEFORE INSERT OR UPDATE ON public.feature_intent_facet_directions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_feature_intent_facets, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_feature_intent_facets BEFORE INSERT OR UPDATE ON public.feature_intent_facets FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_feature_intent_issue_prerequisite_mappings, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_feature_intent_issue_prerequisite_mappings BEFORE INSERT OR UPDATE ON public.feature_intent_issue_prerequisite_mappings FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_feature_intent_issue_prerequisites, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_feature_intent_issue_prerequisites BEFORE INSERT OR UPDATE ON public.feature_intent_issue_prerequisites FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
   create_trigger :logidze_on_github_tokens, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_github_tokens BEFORE INSERT OR UPDATE ON public.github_tokens FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{token,last_used_at,repositories_synced_at,accessible_repositories}')
   SQL
@@ -5591,21 +5607,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_173051) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
-  SQL
-
-  create_trigger :logidze_on_feature_intent_facets, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_feature_intent_facets BEFORE INSERT OR UPDATE ON public.feature_intent_facets FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
-  SQL
-
-  create_trigger :logidze_on_feature_intent_facet_directions, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_feature_intent_facet_directions BEFORE INSERT OR UPDATE ON public.feature_intent_facet_directions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
-  SQL
-
-  create_trigger :logidze_on_feature_intent_issue_prerequisite_mappings, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_feature_intent_issue_prerequisite_mappings BEFORE INSERT OR UPDATE ON public.feature_intent_issue_prerequisite_mappings FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
-  SQL
-
-  create_trigger :logidze_on_feature_intent_issue_prerequisites, sql_definition: <<-SQL
-      CREATE TRIGGER logidze_on_feature_intent_issue_prerequisites BEFORE INSERT OR UPDATE ON public.feature_intent_issue_prerequisites FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 end
