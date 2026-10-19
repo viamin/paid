@@ -30,13 +30,13 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.3.0"
+gem "avo", "4.3.2"
 
 # json 3.0.0 changed JSON.parse/dump options to keyword-only arguments.
 # Rails 8.1.4's ActiveSupport::JSON.decode (lib/active_support/json/decoding.rb:25)
 # already calls JSON.parse(json, **options), so the 3.x line is safe here;
 # this constraint just keeps the major version bump deliberate.
-gem "json", "~> 3.0"
+gem "json", "~> 3.1"
 
 # Docker API's transitive MultiJson dependency is selected by Sawyer/Octokit.
 # 1.21.2 forwards parser options as keywords, as required by json 3.x.
