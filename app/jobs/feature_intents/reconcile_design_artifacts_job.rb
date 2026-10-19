@@ -179,7 +179,7 @@ module FeatureIntents
     end
 
     def issue_facts(projects)
-      Issue.joins(:project).includes(:project).where(project_id: projects.map(&:id)).where.not(github_number: nil).filter_map do |issue|
+      Issue.preload(:project).where(project_id: projects.map(&:id)).where.not(github_number: nil).filter_map do |issue|
         next if issue.is_pull_request? || !issue.trusted?
 
         {

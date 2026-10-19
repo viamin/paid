@@ -79,6 +79,22 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     expect(DesignArtifactFinding.count).to eq(0)
   end
 
+  it "loads issue coverage without duplicating project audit history per issue" do
+    create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "Implements #101")
+    create(:issue, project:, github_number: 101)
+    queries = []
+    subscriber = ->(event) { queries << event.payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.perform_now(project.id, design_pr.pull_request_number)
+    end
+
+    issue_queries = queries.grep(/SELECT .* FROM "issues"/)
+    expect(issue_queries).not_to be_empty
+    expect(issue_queries.grep(/"projects"\."log_data"/)).to be_empty
+    expect(DesignArtifactFinding.count).to eq(0)
+  end
+
   it "uses a stored Paid feature-intent link without requiring a document repair" do
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
     linked_issue = create(:issue, project:, github_number: 101)
