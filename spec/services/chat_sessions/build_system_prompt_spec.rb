@@ -19,6 +19,22 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
   describe "#call" do
     subject(:prompt) { described_class.new(chat_session: chat_session).call }
 
+    # @spec FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
+    it "presents persisted facet scores and evidence reasoning without assessing during render" do
+      project = create(:project, account: account)
+      chat_session.update!(project: project)
+      facet = create(:feature_intent_facet, feature_intent: create(:feature_intent, project: project))
+      direction = create(:feature_intent_facet_direction, feature_intent_facet: facet)
+      create(:feature_intent_facet_assessment, feature_intent_facet_direction: direction, account: account,
+        evidence_revision: facet.evidence_revision, status: "completed", intent_score: 85, technical_score: 70,
+        explanation: "An explicit requirement is clear; prototype coverage is limited.", evidence_references: [ "chat-1" ])
+      allow(AgentHarness).to receive(:send_message)
+
+      expect(prompt).to include("Facet Confidence", "Intent certainty: 85/100", "Technical confidence: 70/100",
+        "Expressed intent evidence: chat-1", "Inferred fit: assessment interpretation")
+      expect(AgentHarness).not_to have_received(:send_message)
+    end
+
     describe "base identity" do
       subject(:prompt) { prompt_builder.call }
 

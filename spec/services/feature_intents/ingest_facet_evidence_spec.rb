@@ -24,6 +24,14 @@ RSpec.describe FeatureIntents::IngestFacetEvidence do
     expect(facet.reload.evidence_revision).to eq(1)
   end
 
+  it "queues background reassessment for every active direction only once per new evidence item" do
+    create(:feature_intent_facet_direction, feature_intent_facet: facet, name: "Primary")
+    create(:feature_intent_facet_direction, feature_intent_facet: facet, name: "Alternative")
+
+    expect { described_class.call(facet:, attributes:) }.to have_enqueued_job(FeatureIntents::AssessFacetJob).exactly(2).times
+    expect { described_class.call(facet:, attributes:) }.not_to have_enqueued_job(FeatureIntents::AssessFacetJob)
+  end
+
   it "is idempotent for repeated source ingestion" do
     first = described_class.call(facet:, attributes:)
     second = described_class.call(facet:, attributes:)
