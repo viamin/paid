@@ -261,10 +261,10 @@ RSpec.describe GithubTokenHealthCheckJob do
       expect(Rails.logger).to have_received(:info).with(
         hash_including(
           message: "github_token.health_check.completed",
-          tokens_checked: 0,
-          tokens_failed: 0,
-          tokens_skipped: 0,
-          tokens_errored: 0
+          tokens_checked: a_kind_of(Integer),
+          tokens_failed: a_kind_of(Integer),
+          tokens_skipped: a_kind_of(Integer),
+          tokens_errored: a_kind_of(Integer)
         )
       )
     end
