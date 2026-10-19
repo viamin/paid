@@ -35,13 +35,13 @@ RSpec.describe FeatureIntents::RecordRunDecisions do
     expect(result.recorded_count).to eq(2)
     decisions = feature_intent.feature_intent_decisions.order(:id)
     expect(decisions.count).to eq(2)
-    expect(decisions.find { |d| d.question? }).to have_attributes(
+    expect(decisions.find(&:question?)).to have_attributes(
       design_claim: "Dark mode applies to the settings UI",
       prompt: "Should dark mode apply to the marketing pages too?",
       status: "open",
       source_agent_run_id: agent_run.id
     )
-    expect(decisions.find { |d| d.inferred_decision? }).to have_attributes(
+    expect(decisions.find(&:inferred_decision?)).to have_attributes(
       prompt: "[inferred] Persisting the theme choice per user account.",
       source_agent_run_id: agent_run.id
     )
