@@ -41,7 +41,7 @@ module FeatureIntents
     # not unique); each link carries its own admission contract, so every
     # link is evaluated rather than an arbitrary one.
     def links
-      @links ||= FeatureIntentIssue.includes(:feature_intent)
+      @links ||= FeatureIntentIssue.includes(:feature_intent, :prerequisite_mapping)
         .where(issue_id: issue.id)
         .order(:id).to_a
     end
@@ -62,9 +62,9 @@ module FeatureIntents
     def confidence_admission(link)
       return reconcile_confidence_admission(link) unless link.release_state == "released"
 
-      readiness = ScopedReadiness.call(project: issue.project, mapping: link.readiness_mapping)
+      readiness = ScopedReadiness.call(project: issue.project, mapping: link.current_readiness_mapping)
       return denied(readiness.blockers.map(&:message).join(" ")) unless readiness.ready?
-      return denied("Confidence-driven issue scope changed after release and needs reconciliation.") unless link.release_snapshot["scope_revision"] == readiness.snapshot["scope_revision"]
+      return reconcile_changed_scope(link) unless link.release_snapshot["scope_revision"] == readiness.snapshot["scope_revision"]
 
       allowed(
         link.release_snapshot["merged_baseline"] || readiness.snapshot.dig("design_artifacts", 0, "revision"),
@@ -77,6 +77,14 @@ module FeatureIntents
       return denied(result.reason) unless result.released?
 
       confidence_admission(link.reload)
+    end
+
+    # A run has not been created yet, so its prior release snapshot may be
+    # replaced by the revised scope. Existing runs retain their copied,
+    # readonly snapshots.
+    def reconcile_changed_scope(link)
+      link.with_lock { link.update!(release_state: "held", released_at: nil, release_error: nil) }
+      reconcile_confidence_admission(link)
     end
 
     def allowed(revision = nil, snapshot: {}) = Result.new(allowed: true, revision: revision, reason: nil, snapshot: snapshot)

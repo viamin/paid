@@ -45,7 +45,7 @@ module FeatureIntents
     # not unique); each confidence-driven link owns a distinct readiness
     # mapping.
     def confidence_links
-      @confidence_links ||= FeatureIntentIssue.includes(:feature_intent)
+      @confidence_links ||= FeatureIntentIssue.includes(:feature_intent, :prerequisite_mapping)
         .where(issue_id: issue.id)
         .order(:id)
         .select { |link| link.feature_intent.confidence_driven? }
@@ -71,7 +71,7 @@ module FeatureIntents
     end
 
     def assess(link)
-      ScopedReadiness.call(project: issue.project, mapping: link.readiness_mapping)
+      ScopedReadiness.call(project: issue.project, mapping: link.current_readiness_mapping)
     end
 
     # Every blocked link records its own blockers so no design in the set is
@@ -123,7 +123,7 @@ module FeatureIntents
 
     def finalize_link(link, snapshot)
       link.with_lock do
-        return Result.new(released: false, reason: "Issue scope changed while its planning hold was being released.") unless link.readiness_mapping["scope_revision"] == snapshot["scope_revision"]
+        return Result.new(released: false, reason: "Issue scope changed while its planning hold was being released.") unless link.current_readiness_mapping["scope_revision"] == snapshot["scope_revision"]
 
         link.update!(release_state: "released", release_snapshot: snapshot, released_at: Time.current, release_error: nil)
       end

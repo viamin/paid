@@ -30,6 +30,31 @@ RSpec.describe FeatureIntents::ReleaseIssue do
     expect(issue.reload.labels).to contain_exactly("human-hold")
   end
 
+  it "uses the persisted prerequisite mapping when the compatibility payload is empty" do # @spec CONFIDENCE-DELIVERY-003
+    link.update!(readiness_mapping: {})
+    persisted_mapping = create(:feature_intent_issue_prerequisite_mapping,
+      feature_intent_issue: link,
+      relevant_design_documents: mapping.fetch("design_artifacts"))
+    facet = create(:feature_intent_facet, feature_intent: feature)
+    direction = create(:feature_intent_facet_direction, feature_intent_facet: facet)
+    create(:feature_intent_facet_assessment,
+      feature_intent_facet_direction: direction,
+      evidence_revision: facet.evidence_revision,
+      status: "completed",
+      intent_score: 80,
+      technical_score: 80)
+    create(:feature_intent_issue_prerequisite,
+      feature_intent_issue_prerequisite_mapping: persisted_mapping,
+      feature_intent_facet: facet,
+      feature_intent_facet_direction: direction)
+    persisted_mapping.update!(coverage_assessment: "complete")
+
+    result = described_class.call(issue: issue)
+
+    expect(result).to be_released
+    expect(link.reload.release_snapshot).to include("scope_revision" => "scope-v1")
+  end
+
   it "keeps an unassessed issue held without calling GitHub" do
     link.update!(readiness_mapping: {})
 

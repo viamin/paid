@@ -12,4 +12,12 @@ class FeatureIntentIssue < ApplicationRecord
 
   validates :issue_id, uniqueness: { scope: :feature_intent_id }
   validates :release_state, inclusion: { in: RELEASE_STATES }
+
+  # The normalized prerequisite mapping is the current readiness producer.
+  # Keep the JSON column as a compatibility fallback for links created before
+  # prerequisite mappings were persisted.
+  # @spec CONFIDENCE-DELIVERY-003
+  def current_readiness_mapping
+    prerequisite_mapping&.readiness_payload || readiness_mapping
+  end
 end

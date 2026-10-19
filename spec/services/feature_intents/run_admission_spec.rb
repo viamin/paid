@@ -91,6 +91,24 @@ RSpec.describe FeatureIntents::RunAdmission do
     expect(link.reload.release_state).to eq("released")
   end
 
+  it "reconciles a changed unstarted scope before admission" do # @spec CONFIDENCE-DELIVERY-009
+    feature = create(:feature_intent, :confidence_driven, project: project)
+    changed_mapping = confidence_mapping.deep_merge(
+      "scope_revision" => "scope-v2",
+      "design_artifacts" => [ { "path" => "docs/intent/example.md", "required" => true, "merged" => true, "scope_revision" => "scope-v2", "revision" => "b" * 40 } ]
+    )
+    link = create(:feature_intent_issue, feature_intent: feature, issue: issue,
+      release_state: "released",
+      readiness_mapping: changed_mapping,
+      release_snapshot: confidence_snapshot)
+
+    result = described_class.call(issue: issue)
+
+    expect(result).to be_allowed
+    expect(result.revision).to eq("b" * 40)
+    expect(link.reload.release_snapshot).to include("scope_revision" => "scope-v2")
+  end
+
   it "keeps mixed-policy features on their own admission contracts" do # @spec CONFIDENCE-DELIVERY-001
     approval_issue = create(:issue, project: project)
     approval_feature = create(:feature_intent, project: project)
