@@ -837,6 +837,21 @@ RSpec.describe Tools::Registry do
           feature_intent = FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve.find_by!(project: project)
           authorize_record!(user, feature_intent, :cancel?, policy_class: FeatureIntentPolicy)
         }
+      },
+      {
+        tool_name: "challenge_facet_assessment",
+        denied_user: -> {
+          project
+          create(:user, :member, account: account)
+        },
+        arguments: -> {
+          facet = create(:feature_intent_facet, feature_intent: create(:feature_intent, project: project))
+          { facet_id: facet.id, statement: "Denied correction.", chat_message_id: 0, confirmed: true }
+        },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :update?, policy_class: ProjectPolicy)
+        }
       }
     ] + operator_tool_scenarios
   end

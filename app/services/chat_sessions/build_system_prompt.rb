@@ -160,7 +160,7 @@ module ChatSessions
         .where(status: %w[completed unknown failed pending])
         .order(created_at: :desc).limit(20).to_a
         .select { |assessment| assessment.evidence_revision == assessment.feature_intent_facet_direction.feature_intent_facet.evidence_revision }
-        .uniq { |assessment| assessment.feature_intent_facet_direction_id }
+        .uniq(&:feature_intent_facet_direction_id)
     end
 
     def render_facet_assessment(assessment)
