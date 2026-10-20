@@ -30,6 +30,7 @@ module Tools
       "Tools::SaveClarifyingAnswer",
       "Tools::ListExplicitPreferences",
       "Tools::SaveExplicitPreference",
+      "Tools::ChallengeFacetAssessment",
       "Tools::DeleteExplicitPreference",
       "Tools::CreateIssue",
       "Tools::EditIssue",

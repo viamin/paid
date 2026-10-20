@@ -45,9 +45,11 @@ module ChatSessions
     def build_sections
       sections = []
       explicit_preferences_content = explicit_preferences_section
+      facet_confidence_content = facet_confidence_context if primary_project
       sections << { priority: 0, content: base_identity }
       sections << { priority: 1, content: page_context } if page_context.present?
       sections << { priority: 1, content: project_context } if primary_project
+      sections << { priority: 1, content: facet_confidence_content } if facet_confidence_content.present?
       sections << { priority: 1, content: clarifying_questions_context } if exploration_issue
       sections << { priority: 1, content: explicit_preferences_content } if explicit_preferences_content.present?
       # @spec PROJECT-CREATION-010 — a fresh (blank) project needs its setup
@@ -135,6 +137,45 @@ module ChatSessions
       parts << style_guide_section(project)
       parts.compact.join("\n\n")
     end
+
+    # Persisted assessment state is deliberately rendered as data. Assessment
+    # work belongs to FeatureIntents::AssessFacetJob, never a chat/page read.
+    # @spec FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
+    def facet_confidence_context
+      assessments = current_facet_assessments
+      return if assessments.empty?
+
+      <<~PROMPT.strip
+        ## Facet Confidence
+        #{assessments.map { |assessment| render_facet_assessment(assessment) }.join("\n")}
+
+        Treat expressed intent evidence, inferred fit, and demonstrated feasibility as distinct. Scores are advisory shadow-mode assessments and do not authorize work release. If a user challenges an interpretation, retain their explicit correction as new evidence and request reassessment.
+      PROMPT
+    end
+
+    def current_facet_assessments
+      FeatureIntentFacetAssessment.includes(feature_intent_facet_direction: :feature_intent_facet)
+        .joins(feature_intent_facet_direction: :feature_intent_facet)
+        .where(feature_intent_facets: { feature_intent_id: FeatureIntent.where(project: primary_project).select(:id) })
+        .where(status: %w[completed unknown failed pending])
+        .order(created_at: :desc).limit(20).to_a
+        .select { |assessment| assessment.evidence_revision == assessment.feature_intent_facet_direction.feature_intent_facet.evidence_revision }
+        .uniq(&:feature_intent_facet_direction_id)
+    end
+
+    def render_facet_assessment(assessment)
+      direction = assessment.feature_intent_facet_direction
+      [
+        "- #{direction.feature_intent_facet.name} / #{direction.name}: #{assessment.status}",
+        "  - Intent certainty: #{display_score(assessment.intent_score)}",
+        "  - Technical confidence: #{display_score(assessment.technical_score)}",
+        "  - Expressed intent evidence: #{assessment.evidence_references.join(", ").presence || "none cited"}",
+        "  - Inferred fit: assessment interpretation — #{assessment.explanation}",
+        "  - Demonstrated feasibility: technical score above; verify cited technical evidence before treating it as proof."
+      ].join("\n")
+    end
+
+    def display_score(score) = score.nil? ? "unknown" : "#{score}/100"
 
     # @spec PROJECT-CREATION-010
     def project_setup_section

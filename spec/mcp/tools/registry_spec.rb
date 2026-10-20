@@ -57,6 +57,7 @@ RSpec.describe Tools::Registry do
       submit_clarifying_answers
       save_clarifying_answer
       save_explicit_preference
+      challenge_facet_assessment
       delete_explicit_preference
       verify_apple_project
       capture_apple_screenshot
