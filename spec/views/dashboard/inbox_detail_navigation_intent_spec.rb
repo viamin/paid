@@ -7,6 +7,17 @@ require "rails_helper"
 # Top-level so RSpec can resolve it from example bodies.
 InboxNavigationIntentViolation = Class.new(StandardError)
 
+# Names of embedded Turbo flows that intentionally render inside the
+# `inbox-detail` frame (i.e. are exempt from `data-turbo-frame="_top"`).
+# Adding a new flow here is a deliberate, reviewed opt-in keyed by name —
+# `assert_navigation_intent!` rejects any unknown
+# `data-turbo-frame-spec-whitelist` value, so a contributor cannot bypass the
+# guard by typing a one-off string with no name to grep for (see #4502).
+# No `<a>` currently uses this whitelist; the anchor check is wired up too
+# for defense in depth (a future reviewer may introduce one and inherit
+# the same name-pinning guarantee).
+INBOX_DETAIL_WHITELISTED_EMBEDDED_FLOWS = %w[answer-in-chat].freeze
+
 # @spec INBOX-NAV-INTENT-001
 # Turbo "Content missing" bugs in inbox detail panes keep recurring (#3922,
 # #3822, #4031, #4500, #4501) because each new inbox kind must remember to opt
@@ -22,8 +33,9 @@ InboxNavigationIntentViolation = Class.new(StandardError)
 # 3. Explicitly whitelisted embedded flow — recognized by the guard via a
 #    `data-turbo-frame-spec-whitelist` marker so future embedded Turbo
 #    affordances (e.g. "Answer in chat" in `_inbox_detail_clarifying_questions`)
-#    opt in deliberately, by name, with a comment in the partial explaining
-#    why.
+#    opt in deliberately, by name (the name must also appear in
+#    `INBOX_DETAIL_WHITELISTED_EMBEDDED_FLOWS`), with a comment in the partial
+#    explaining why.
 #
 # Renders every inbox kind dispatched by `app/views/dashboard/_inbox_detail.html.erb`
 # so new kinds inherit the guard automatically — no per-kind opt-in.
@@ -117,7 +129,7 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       has_top_frame = anchor["data-turbo-frame"] == "_top"
       target_blank = anchor["target"] == "_blank"
       rel_noopener = anchor["rel"].to_s.split(/\s+/).include?("noopener")
-      whitelisted = anchor["data-turbo-frame-spec-whitelist"].present?
+      whitelisted = INBOX_DETAIL_WHITELISTED_EMBEDDED_FLOWS.include?(anchor["data-turbo-frame-spec-whitelist"].to_s)
 
       next if has_top_frame || whitelisted || (target_blank && rel_noopener)
 
@@ -126,7 +138,7 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
 
     fragment.css("form").each do |form|
       has_top_frame = form["data-turbo-frame"] == "_top"
-      whitelisted = form["data-turbo-frame-spec-whitelist"].present?
+      whitelisted = INBOX_DETAIL_WHITELISTED_EMBEDDED_FLOWS.include?(form["data-turbo-frame-spec-whitelist"].to_s)
 
       next if has_top_frame || whitelisted
 
@@ -148,8 +160,9 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
 
       1. `data-turbo-frame="_top"` on the element itself (or on the <form> for `button_to`/`form_with`).
       2. An external link with `target="_blank"` (and a `rel="noopener noreferrer"`).
-      3. A whitelisted embedded flow: add `data-turbo-frame-spec-whitelist="<name>"` and a
-         code comment in the partial explaining why it intentionally renders inside the frame.
+      3. A whitelisted embedded flow: add `data-turbo-frame-spec-whitelist="<name>"` (with
+         `<name>` listed in `INBOX_DETAIL_WHITELISTED_EMBEDDED_FLOWS`) and a code comment in
+         the partial explaining why it intentionally renders inside the frame.
     MSG
   end
 
@@ -209,12 +222,21 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   end
 
   describe "action_required" do
+    # A real AgentRun row so `notification.subject.is_a?(AgentRun)` is truthy
+    # and exercises the "View Agent Run" link branches. `instance_double`
+    # cannot stand in here because verifying doubles still report false for
+    # unrelated `is_a?` checks.
+    let(:agent_run_subject) do
+      TenantContext.with_system_access do
+        create(:agent_run, project: project, issue: entry_issue)
+      end
+    end
+
     let(:entry) do
-      # The simplest Notification record shape that satisfies
-      # `notification.subject.is_a?(AgentRun)` is a real Notification row — the
-      # partial's branches only consult `entry.issue`/`notification.subject`,
-      # so a plain struct works for the most common (issue) branches and the
-      # subject checks just return false.
+      # The simplest Notification record shape that satisfies the partial's
+      # `entry.issue` and `notification.description` reads. The subject stays
+      # nil so the most common (issue) branches render and the AgentRun branches
+      # fall through (those get dedicated coverage below).
       build_entry.call(Inbox::Queue::ACTION_REQUIRED_KIND,
         record: Struct.new(:description, :subject, keyword_init: true)
           .new(description: "Resume the project.", subject: nil),
@@ -246,6 +268,28 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
         summary_text: "Re-grant the GitHub permission.")
       allow(view).to receive(:inbox_entry_path).and_return("/inbox/entry-elsewhere")
       fragment = render_detail_partial(entry_with_action_url)
+      assert_navigation_intent!(fragment, kind: "action_required")
+    end
+
+    it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent (agent-run subject)" do
+      entry_with_agent_run_subject = build_entry.call(Inbox::Queue::ACTION_REQUIRED_KIND,
+        issue: nil,
+        record: Struct.new(:description, :subject, keyword_init: true)
+          .new(description: "Resume the project.", subject: agent_run_subject),
+        title_text: "Resume the project.")
+      fragment = render_detail_partial(entry_with_agent_run_subject)
+      assert_navigation_intent!(fragment, kind: "action_required")
+    end
+
+    it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent (action_url present, agent-run subject)" do
+      entry_with_action_url_and_agent_run = build_entry.call(Inbox::Queue::ACTION_REQUIRED_KIND,
+        issue: nil,
+        record: Struct.new(:description, :subject, keyword_init: true)
+          .new(description: "Resume the project.", subject: agent_run_subject),
+        action_url: "/projects/#{project.id}/agent_runs",
+        title_text: "Resume the project.")
+      allow(view).to receive(:inbox_entry_path).and_return("/inbox/entry-elsewhere")
+      fragment = render_detail_partial(entry_with_action_url_and_agent_run)
       assert_navigation_intent!(fragment, kind: "action_required")
     end
   end
@@ -530,6 +574,28 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       expect {
         assert_navigation_intent!(augmented_fragment, kind: "clarifying_questions")
       }.not_to raise_error
+    end
+
+    it "raises when a form carries `data-turbo-frame-spec-whitelist` with a name not in the allowlist" do
+      fragment = render_detail_partial(entry)
+      augmented_fragment = Nokogiri::HTML.fragment(
+        fragment.to_html + '<form action="/sneaky" data-turbo-frame-spec-whitelist="sneaky-name">Go</form>'
+      )
+
+      expect {
+        assert_navigation_intent!(augmented_fragment, kind: "clarifying_questions")
+      }.to raise_error(InboxNavigationIntentViolation, %r{/sneaky})
+    end
+
+    it "raises when an anchor carries `data-turbo-frame-spec-whitelist` with a name not in the allowlist" do
+      fragment = render_detail_partial(entry)
+      augmented_fragment = Nokogiri::HTML.fragment(
+        fragment.to_html + '<a href="/sneaky" data-turbo-frame-spec-whitelist="sneaky-name">Go</a>'
+      )
+
+      expect {
+        assert_navigation_intent!(augmented_fragment, kind: "clarifying_questions")
+      }.to raise_error(InboxNavigationIntentViolation, %r{/sneaky})
     end
   end
 end
