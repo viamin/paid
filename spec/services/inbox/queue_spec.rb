@@ -250,6 +250,21 @@ RSpec.describe Inbox::Queue do
       expect(entry.guidance.fetch(:instruction)).not_to include("manual merge decision")
     end
 
+    # @spec OPERATOR-INBOX-002K
+    it "explains a review hold as a manual merge decision when automatic merge is inactive" do
+      project.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      create(
+        :issue, :pull_request, project: project,
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ]
+      )
+
+      guidance = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole.guidance
+
+      expect(guidance).to include(automatic_merge_active: false)
+      expect(guidance.fetch(:instruction)).to include("manual merge decision", "will not merge this pull request automatically")
+      expect(guidance.fetch(:instruction)).not_to include("remove the hold")
+    end
+
     it "returns a merge-approval Inbox entry for an ignored-mode local review hold without a blocker snapshot" do # @spec LABEL-CONTROL-004
       project.update!(label_integration_mode: "ignored")
       pr = create(

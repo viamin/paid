@@ -122,11 +122,17 @@ module Inbox
       end
 
       def guidance_instruction
-        return "Review the current changes and remove the hold when automatic merging may resume." if held_for_review?
+        return held_review_instruction if held_for_review?
         return stale_approval_instruction if stale_approval?
         return "Review the current changes and make the manual merge decision on GitHub. Paid will not merge this pull request automatically." if manual_merge?
 
         "Approve the current revision on GitHub. Paid will reevaluate it on a later scan, subject to all remaining checks and policy."
+      end
+
+      def held_review_instruction
+        return "Review the current changes and make the manual merge decision on GitHub. Paid will not merge this pull request automatically." if manual_merge?
+
+        "Review the current changes and remove the hold when automatic merging may resume."
       end
 
       def stale_approval_instruction

@@ -3351,10 +3351,6 @@ module Activities
     # signal is checked individually so that an owner re-approval cannot
     # mask a stale manual review from the configured reviewer.
     # @spec AUTO-MERGE-006
-    def review_freshness_for_head(client, project, issue, pr_data, reviews)
-      freshness_for_head(client, project, issue, pr_data, reviews).state
-    end
-
     def freshness_for_head(client, project, issue, pr_data, reviews)
       return ReviewFreshnessResult.new(state: :fresh, stale_approvals: []) if reviews.nil?
 

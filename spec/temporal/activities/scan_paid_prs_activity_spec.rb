@@ -610,7 +610,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           reviews: [ { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current } ]
         )
         allow(activity).to receive_messages(owner_approved_or_self_authored?: true, no_outstanding_review_feedback?: false,
-          all_blocking_review_methods_complete?: true, review_freshness_for_head: :fresh)
+          all_blocking_review_methods_complete?: true,
+          freshness_for_head: build_stale_freshness_result(:fresh))
         expect(activity).not_to receive(:dependencies_resolved?)
 
         freeze_time do
@@ -7607,9 +7608,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         allow(activity).to receive(:pull_request_collector).with(project, client: github_client).and_return(collector)
 
-        review_freshness = activity.send(:review_freshness_for_head, github_client, project, issue, pr_data, reviews)
+        review_freshness = activity.send(:freshness_for_head, github_client, project, issue, pr_data, reviews)
 
-        expect(review_freshness).to eq(:fresh)
+        expect(review_freshness.state).to eq(:fresh)
         expect(collector).to have_received(:only_base_merge_commits_since?).with(
           approval_sha: approval_sha,
           head_sha: head_sha,
@@ -12539,7 +12540,6 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       owner_approved_or_self_authored?: true,
       no_outstanding_review_feedback?: true,
       all_blocking_review_methods_complete?: true,
-      review_freshness_for_head: review_freshness,
       freshness_for_head: build_stale_freshness_result(
         review_freshness,
         approved_revision: approved_revision
