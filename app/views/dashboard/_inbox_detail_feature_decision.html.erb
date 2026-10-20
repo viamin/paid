@@ -94,9 +94,9 @@
           <% issue = issue_link.issue %>
           <li class="text-sm text-gray-600">
             <%= link_to "##{issue.github_number} #{issue.title}", issue.github_url, target: "_blank", rel: "noopener", class: "text-indigo-600 hover:text-indigo-500" %>
-            <% if feature_intent.approval_gated? && (!feature_intent.released? || feature_intent.approved_design_revision.blank?) %>
-              <span class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800" data-testid="feature-intent-hold">
-                <%= feature_intent.revising? ? "Held: feature revising" : (feature_intent.approved_design_revision.blank? ? "Held: feature missing approved revision" : "Held: feature awaiting release") %>
+            <% if (link_hold = FeatureIntents::IssueHold.call(issue: issue, feature: feature_intent)) %>
+              <span class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800" data-testid="feature-intent-hold" title="<%= link_hold.code %>">
+                <%= link_hold.message %>
               </span>
             <% end %>
           </li>
