@@ -9,4 +9,10 @@ class ChatInvestigations::RunJob < ApplicationJob
   def perform(investigation_id)
     ChatInvestigations::Run.call(investigation: ChatInvestigation.find(investigation_id))
   end
+
+  private
+
+  def tenant_account
+    ChatInvestigation.find_by(id: arguments.first)&.account
+  end
 end

@@ -3,6 +3,13 @@
 require "rails_helper"
 
 RSpec.describe ChatInvestigations::RunJob do
+  # @spec QUESTION-EXPLORATION-010
+  it "resolves the investigation account for tenant isolation" do
+    investigation = create(:chat_investigation)
+
+    expect(described_class.new(investigation.id).send(:tenant_account)).to eq(investigation.account)
+  end
+
   # @spec QUESTION-EXPLORATION-010 QUESTION-EXPLORATION-013
   it "publishes a reconnectable result and settles its reservation" do
     investigation = create(:chat_investigation, reserved_cost_cents: 10)
