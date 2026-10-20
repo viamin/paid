@@ -113,6 +113,17 @@ RSpec.describe AgentRun do
       expect(agent_run.errors[:issue]).to include("Issue has unresolved dependencies.")
     end
 
+    it "does not apply feature admission to an unlinked issue with dependencies" do # @spec CONFIDENCE-DELIVERY-005
+      project = create(:project)
+      issue = create(:issue, project: project)
+      blocker = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue, depends_on_issue: blocker)
+
+      agent_run = build(:agent_run, project: project, issue: issue, goal: "create_pr")
+
+      expect(agent_run).to be_valid
+    end
+
     # @spec FEATURE-APPROVAL-024
     it "snapshots a released feature's approved revision onto an implementation run" do
       project = create(:project)
