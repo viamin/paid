@@ -35,6 +35,26 @@ RSpec.describe "Mobile chat investigations API" do
     expect(response.parsed_body).to include("status" => "cancelled")
   end
 
+  it "returns not found when the session is not linked to a project" do # @spec QUESTION-EXPLORATION-007 QUESTION-EXPLORATION-012
+    account_session = create(:chat_session, account:, created_by: user)
+
+    post "/api/v1/chat/sessions/#{account_session.id}/investigations", params: {
+      position: 1, kind: "research", prompt: "Compare the options"
+    }, headers: headers
+
+    expect(response).to have_http_status(:not_found)
+  end
+
+  it "returns not found when the session is not linked to a clarifying question" do # @spec QUESTION-EXPLORATION-007 QUESTION-EXPLORATION-012
+    unlinked_session = create(:chat_session, account:, project:, created_by: user)
+
+    post "/api/v1/chat/sessions/#{unlinked_session.id}/investigations", params: {
+      position: 1, kind: "research", prompt: "Compare the options"
+    }, headers: headers
+
+    expect(response).to have_http_status(:not_found)
+  end
+
   it "eager-loads question progress so listing stays at a constant query count" do # @spec QUESTION-EXPLORATION-012
     progress = session.clarifying_question_progresses.first
     investigation_attrs = { account:, project:, created_by: user, chat_session: session, clarifying_question_progress: progress }

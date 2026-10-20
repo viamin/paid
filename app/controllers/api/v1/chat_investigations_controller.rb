@@ -16,7 +16,7 @@ module Api
       # @spec QUESTION-EXPLORATION-010 QUESTION-EXPLORATION-012
       def create
         authorize ChatMessage.new(chat_session: @chat_session), :create?, policy_class: ChatMessagePolicy
-        authorize @chat_session.project, :explore?
+        authorize @project, :explore?
         ensure_exploration_enabled!
         result = ChatInvestigations::Start.call(question: question, actor: current_user, **investigation_params)
         render json: investigation_json(result.investigation), status: :created
@@ -31,7 +31,7 @@ module Api
 
       def cancel
         authorize ChatMessage.new(chat_session: @chat_session), :create?, policy_class: ChatMessagePolicy
-        authorize @chat_session.project, :explore?
+        authorize @project, :explore?
         render json: investigation_json(ChatInvestigations::Cancel.call(investigation: @investigation, actor: current_user))
       end
 
@@ -39,6 +39,7 @@ module Api
 
       def set_chat_session
         @chat_session = policy_scope(ChatSession).find(params[:session_id])
+        @project = @chat_session.project || raise(ActiveRecord::RecordNotFound, "Chat session has no project")
       end
 
       def set_investigation
@@ -46,7 +47,10 @@ module Api
       end
 
       def question
-        @chat_session.clarifying_question_issue.clarifying_question_progresses.find_by!(position: params.require(:position))
+        issue = @chat_session.clarifying_question_issue
+        raise ActiveRecord::RecordNotFound, "Chat session has no linked question" unless issue
+
+        issue.clarifying_question_progresses.find_by!(position: params.require(:position))
       end
 
       def investigation_params
@@ -54,7 +58,7 @@ module Api
       end
 
       def ensure_exploration_enabled!
-        raise Pundit::NotAuthorizedError, "Question exploration is not enabled for this project" unless FeatureFlags.enabled?(:question_exploration, project: @chat_session.project)
+        raise Pundit::NotAuthorizedError, "Question exploration is not enabled for this project" unless FeatureFlags.enabled?(:question_exploration, project: @project)
       end
 
       def investigation_json(investigation)

@@ -1,7 +1,11 @@
 # frozen_string_literal: true
 
 class ChatInvestigations::RunJob < ApplicationJob
-  queue_as :default
+  queue_as :low_priority
+
+  # Experiments may provision a container and seed its workspace. Keep that
+  # external I/O away from the interactive chat queue and bound a stuck run.
+  self.perform_timeout = 15.minutes
 
   discard_on ActiveRecord::RecordNotFound
 

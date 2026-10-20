@@ -4,6 +4,12 @@ require "rails_helper"
 
 RSpec.describe ChatInvestigations::RunJob do
   # @spec QUESTION-EXPLORATION-010
+  it "uses the low-priority queue with a bounded execution time" do
+    expect(described_class.queue_name).to eq("low_priority")
+    expect(described_class.perform_timeout).to eq(15.minutes)
+  end
+
+  # @spec QUESTION-EXPLORATION-010
   it "resolves the investigation account for tenant isolation" do
     investigation = create(:chat_investigation)
 
