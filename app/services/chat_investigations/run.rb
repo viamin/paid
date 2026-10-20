@@ -2,6 +2,9 @@
 
 module ChatInvestigations
   class Run
+    class Error < StandardError; end
+    class WorkspaceUnavailableError < Error; end
+
     def self.call(...)
       new(...).call
     end
@@ -83,7 +86,7 @@ module ChatInvestigations
 
     def experiment_result
       ChatSessions::ProvisionWorkspace.call(chat_session: investigation.chat_session)
-      raise "Isolated workspace is unavailable" unless investigation.chat_session.reload.container_ready?
+      raise WorkspaceUnavailableError, "Isolated workspace is unavailable" unless investigation.chat_session.reload.container_ready?
 
       "An isolated workspace is ready for this experiment."
     end

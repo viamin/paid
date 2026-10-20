@@ -16,6 +16,7 @@ class Account < ApplicationRecord
   enum :status, { active: 0, suspended: 1, deactivated: 2 }
 
   before_destroy :destroy_apple_verification_records
+  before_destroy :destroy_chat_records
 
   has_many :users, dependent: :destroy
   has_many :account_memberships, dependent: :destroy
@@ -58,6 +59,7 @@ class Account < ApplicationRecord
   has_many :egress_allowlist_entries, dependent: :destroy
   has_many :chat_sessions, dependent: :destroy
   has_many :chat_investigations, dependent: :destroy
+  has_many :clarifying_question_progresses, dependent: :destroy
   has_many :explicit_preferences, dependent: :destroy
   has_many :api_usage_attempts, dependent: :destroy
   has_many :quality_thresholds, dependent: :destroy
@@ -233,6 +235,24 @@ class Account < ApplicationRecord
     apple_verification_waivers.destroy_all
     apple_verification_attempts.destroy_all
     apple_verification_workflow_revisions.destroy_all
+  end
+
+  # Chat-domain teardown ordering. Chat records reference users and issues, but
+  # the dependent-destroy cascade reaches `users` and `projects` (which destroys
+  # issues) long before the chat associations declared further down:
+  #
+  # * User#chat_investigations uses dependent: :restrict_with_exception, so a
+  #   surviving investigation raises DeleteRestrictionError when its author is
+  #   destroyed.
+  # * clarifying_question_progresses.answered_by_id and
+  #   chat_sessions.clarifying_question_issue_id are foreign keys that block
+  #   deleting the referenced user or issue.
+  #
+  # Clearing the chat domain up front lets the rest of the cascade proceed.
+  def destroy_chat_records
+    chat_investigations.destroy_all
+    clarifying_question_progresses.destroy_all
+    chat_sessions.destroy_all
   end
 
   def normalized_remediation_policy
