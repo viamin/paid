@@ -460,7 +460,8 @@ run_setup() {
 
   log "Running bin/setup ${setup_args[*]}..."
   local status=0
-  STARTUP_CLEANUP_KILL_ALL="$STARTUP_CLEANUP_KILL_ALL" \
+  # @spec POSTGRESQL-PERSISTENCE-011
+  PAID_SKIP_AUTO_SCHEMA_DUMP=1 STARTUP_CLEANUP_KILL_ALL="$STARTUP_CLEANUP_KILL_ALL" \
     dev_supervisor_run_clean bin/setup "${setup_args[@]}" || status=$?
   # Mirror bin/setup's worktree-database creation by reaping orphans, but only
   # after a clean setup — the DB is in a known-good state and Ruby is available.
@@ -480,7 +481,8 @@ run_migrations_if_needed() {
     fail "bin/ensure-worktree-databases failed. Fix database setup and rerun bin/dev-update --full."
   fi
 
-  if output="$(dev_supervisor_run_clean bin/rails db:migrate 2>&1)"; then
+  # @spec POSTGRESQL-PERSISTENCE-011
+  if output="$(PAID_SKIP_AUTO_SCHEMA_DUMP=1 dev_supervisor_run_clean bin/rails db:migrate 2>&1)"; then
     log_command_output "db:migrate" "$output"
     log "Database migrations are current."
   else
