@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe "Inbox" do
   let(:account) { create(:account) }
@@ -1331,6 +1332,59 @@ RSpec.describe "Inbox" do
     document = Nokogiri::HTML(response.body)
 
     expect(document.at_css(%(a[href="#{project.github_url}/pull/100"]))).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "exposes a file-issue action so operators can establish ownership when no issue covers the artifact" do
+    finding = create(:design_artifact_finding, project: project, account: project.account)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::TRACEABILITY_GAP_KIND, finding), kind: Inbox::Queue::TRACEABILITY_GAP_KIND)
+
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css(%(form[action="#{resolve_design_artifact_finding_path(finding)}"]))).to be_present
+    expect(document.at_css(%(form[action="#{file_issue_design_artifact_finding_path(finding)}"]))).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "exposes a design-PR document-link repair action for stale metadata" do
+    finding = create(:design_artifact_finding, project: project, account: project.account, state: "stale_metadata")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::TRACEABILITY_GAP_KIND, finding), kind: Inbox::Queue::TRACEABILITY_GAP_KIND)
+
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css(%(form[action="#{repair_document_links_design_artifact_finding_path(finding)}"]))).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "rejects an unverified file-issue submit with a stale revision" do
+    finding = create(:design_artifact_finding, project: project, account: project.account)
+
+    expect do
+      post file_issue_design_artifact_finding_path(finding), params: {
+        filing: { revision: "stale", title: "Repair", body: "Cite repair." }
+      }
+    end.not_to change(Issue, :count)
+
+    expect(finding.reload.status).to eq("open")
+    expect(response).to be_redirect
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "redirects a filed traceability gap to its durable issue location" do
+    finding = create(:design_artifact_finding, project: project, account: project.account)
+    remote = OpenStruct.new(
+      id: 2_000_001, number: 42, title: "Repair traceability", body: "Cite repair.", state: "open", labels: [],
+      user: nil, created_at: Time.current, updated_at: Time.current,
+      html_url: "https://github.com/acme/alpha/issues/42", pull_request: nil
+    )
+    allow(github_client).to receive_messages(search_issues: Data.define(:items).new([]), create_issue: remote)
+
+    post file_issue_design_artifact_finding_path(finding), params: {
+      filing: { revision: finding.revision, title: "Repair traceability", body: "Cite repair." }
+    }
+
+    issue = finding.reload.resolution_issue
+    expect(response).to redirect_to(project_path(project, anchor: "issue_#{issue.id}"))
   end
 
   # @spec OPERATOR-INBOX-002J
