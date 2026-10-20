@@ -41,6 +41,26 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
     ENV["DEV_SUPERVISOR_FAST_DIAGNOSTICS"] = previous
   end
 
+  # @spec POSTGRESQL-PERSISTENCE-011
+  it "disables automatic schema dumps for setup and migration subprocesses" do
+    [ false, true ].each do |migration_trigger|
+      Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
+        script_path = prepare_script_fixture(dir)
+        env = migration_trigger_env(dir)
+        env.delete("DEV_UPDATE_CHANGED_FILES") unless migration_trigger
+        env.delete("DEV_UPDATE_RESTART_TRIGGER_FILES") unless migration_trigger
+
+        _stdout, stderr, status = Open3.capture3(env, script_path, "--full", chdir: dir)
+
+        expect(status.success?).to be(true), stderr
+        expect(File.read(File.join(dir, "setup-schema-env.log")).strip).to eq("1")
+        if migration_trigger
+          expect(File.read(File.join(dir, "migrate-schema-env.log")).strip).to eq("1")
+        end
+      end
+    end
+  end
+
   # @spec PROMPT-DEFAULT-SYNC-007
   it "synchronizes prompt defaults before completing a lightweight update" do
     Dir.mktmpdir("dev-update-spec", exec_tmpdir) do |dir|
@@ -871,6 +891,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
       <<~BASH
         #!/usr/bin/env bash
         touch "#{dir}/setup-ran"
+        echo "${PAID_SKIP_AUTO_SCHEMA_DUMP:-}" > "#{dir}/setup-schema-env.log"
         printf 'setup %s\\n' "$*" >> "#{dir}/calls.log"
         printf '%s\n' "${STARTUP_CLEANUP_KILL_ALL:-}" > "#{dir}/setup-env.log"
         #{capture_setup_bundler_line}
@@ -893,6 +914,7 @@ RSpec.describe "bin/dev-update" do # rubocop:disable RSpec/DescribeClass
         #!/usr/bin/env bash
         printf 'rails %s\\n' "$*" >> "#{dir}/calls.log"
         if [ "$*" = "db:migrate" ]; then
+          echo "${PAID_SKIP_AUTO_SCHEMA_DUMP:-}" > "#{dir}/migrate-schema-env.log"
           if [ "#{rails_migrate_exit_status}" -eq 0 ]; then
             echo "migrated"
           else
