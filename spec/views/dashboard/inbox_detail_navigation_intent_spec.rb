@@ -48,8 +48,8 @@ INBOX_DETAIL_GUARDED_KINDS = []
 # so new kinds inherit the guard automatically — no per-kind opt-in. That
 # inheritance is *enforced*, not aspirational: the "coverage canary" contexts at
 # the bottom fail CI when `Inbox::Queue::KINDS` and this spec's per-kind
-# contexts drift apart, or when the dispatcher stops branching on a kind
-# explicitly (which would silently fall through to the `plan_review` partial).
+# contexts drift apart, or when the dispatcher stops rendering a kind's
+# matching detail partial (which would silently fall through to `plan_review`).
 #
 # The negative test at the bottom (`intentionally nonconforming action`) proves
 # the guard bites by rendering a kind with a deliberately nonconforming link
@@ -245,6 +245,24 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "merge_approval")
     end
+
+    it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent (stale approval)" do
+      entry_with_stale_approval = build_entry.call(Inbox::Queue::MERGE_APPROVAL_KIND,
+        guidance: {
+          heading: "Approval needs review", instruction: "Review the current revision.",
+          approval_evidence: {
+            "stale_approvals" => [ {
+              "approver_login" => "octocat", "approved_revision" => "abc123",
+              "approved_at" => 1.hour.ago.iso8601, "current_revision" => "def456",
+              "assessed_at" => Time.current.iso8601,
+              "comparison_url" => "https://github.com/acme/alpha/compare/abc123...def456"
+            } ]
+          },
+          blockers: [], stale_approval: true
+        })
+      fragment = render_detail_partial(entry_with_stale_approval)
+      assert_navigation_intent!(fragment, kind: "merge_approval")
+    end
   end
 
   describe "action_required" do
@@ -419,7 +437,10 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
     let(:feature_intent_record) do
       TenantContext.with_system_access do
         create(:feature_intent, :ready_for_approval, project: project, title: "Approve the feature.",
-          brief: "Ship the feature.")
+          brief: "Ship the feature.").tap do |feature_intent|
+          create(:feature_intent_design_pr, feature_intent: feature_intent, pull_request_number: 41)
+          create(:feature_intent_issue, feature_intent: feature_intent, issue: entry_issue)
+        end
       end
     end
     let(:entry) do
@@ -461,6 +482,20 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
 
     it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent" do
       fragment = render_detail_partial(entry)
+      assert_navigation_intent!(fragment, kind: "retry_limited")
+    end
+
+    it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent (push blocked)" do
+      push_blocked_issue = TenantContext.with_system_access do
+        create(:issue, project: project, github_number: 9).tap do |issue|
+          issue.update_columns(runner_retry_abandoned_at: 1.hour.ago,
+            runner_retry_abandon_reason: "Push rejected: GitHub App lacks workflows permission")
+        end
+      end
+      push_blocked_entry = build_entry.call(Inbox::Queue::RETRY_LIMITED_KIND,
+        issue: push_blocked_issue,
+        summary_text: "GitHub App cannot push workflow changes.")
+      fragment = render_detail_partial(push_blocked_entry)
       assert_navigation_intent!(fragment, kind: "retry_limited")
     end
   end
@@ -700,10 +735,11 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
 
     it "dispatches every inbox kind explicitly in `_inbox_detail.html.erb`" do
       dispatcher = Rails.root.join("app/views/dashboard/_inbox_detail.html.erb").read
-      undispatched = Inbox::Queue::KINDS.reject { |kind| dispatcher.include?("entry.#{kind}?") }
+      dispatched_kinds = dispatcher.scan(%r{"dashboard/inbox_detail_([a-z_]+)"}).flatten.uniq
+      undispatched = Inbox::Queue::KINDS - dispatched_kinds
 
       expect(undispatched).to be_empty, <<~MSG
-        These inbox kinds have no `entry.<kind>?` branch in
+        These inbox kinds have no matching detail partial dispatched by
         `app/views/dashboard/_inbox_detail.html.erb`: #{undispatched.inspect}
         They would silently render the `plan_review` partial through the `else` fallback,
         so the guard would never walk their own actions (#4502).

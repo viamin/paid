@@ -65,10 +65,12 @@
   the queue no longer defines, SHALL fail. Every `*_KIND` constant
   `Inbox::Queue` declares MUST appear in `KINDS`, since a kind missing from
   `KINDS` never reaches the inbox and therefore cannot be guarded. Every
-  kind in `KINDS` MUST be dispatched by an explicit `entry.<kind>?`
-  branch in `app/views/dashboard/_inbox_detail.html.erb`, so a kind whose
-  branch is missing cannot fall through the `else` fallback and render the
-  `plan_review` partial while passing CI.
+  kind in `KINDS` MUST have a matching `dashboard/inbox_detail_<kind>`
+  partial dispatched by `app/views/dashboard/_inbox_detail.html.erb`, so a
+  kind whose branch is missing cannot fall through the `else` fallback and
+  render the `plan_review` partial while passing CI. The check MUST derive
+  dispatches from rendered partial names rather than `entry.<kind>?` text,
+  because kinds also appear in unrelated badge-class predicates.
   *Test:* `spec/views/dashboard/inbox_detail_navigation_intent_spec.rb`
   (`describe "coverage canary"`).
   *Code:* `spec/views/dashboard/inbox_detail_navigation_intent_spec.rb`

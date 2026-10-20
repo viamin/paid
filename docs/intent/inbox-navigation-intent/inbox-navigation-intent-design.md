@@ -65,9 +65,12 @@ in the guard spec registers the kind it covers in
   context, or a context for a kind the queue dropped),
 - a `*_KIND` constant exists outside `KINDS` (an unreachable kind nobody
   can guard), or
-- a kind has no explicit `entry.<kind>?` branch in the dispatcher, which
+- a kind has no matching detail partial dispatched by the dispatcher, which
   would otherwise fall through the `else` fallback and render the
-  `plan_review` partial under a kind it does not belong to.
+  `plan_review` partial under a kind it does not belong to. The canary
+  verifies dispatched partial names rather than predicate text elsewhere in
+  the template, because badge styling may mention kinds without dispatching
+  their own partials.
 
 ## What this segment owns
 
@@ -82,7 +85,7 @@ in the guard spec registers the kind it covers in
   conforming element MUST NOT — so the guard cannot be silently disabled
   by a future contributor who edits only the assertion's rule list.
 - The coverage canary that ties the guard's per-kind contexts to
-  `Inbox::Queue::KINDS` and to the dispatcher's explicit branches, so
+  `Inbox::Queue::KINDS` and to the dispatcher's matching detail partials, so
   "new kinds inherit the guard" stays true as the inbox grows.
 
 ## What this segment does NOT own
