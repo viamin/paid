@@ -3,7 +3,8 @@
 
 # @spec REPO-DEPENDENCY-AUDIT-001, REPO-DEPENDENCY-AUDIT-002,
 # @spec REPO-DEPENDENCY-AUDIT-003, REPO-DEPENDENCY-AUDIT-004,
-# @spec REPO-DEPENDENCY-AUDIT-005, REPO-DEPENDENCY-AUDIT-007
+# @spec REPO-DEPENDENCY-AUDIT-005, REPO-DEPENDENCY-AUDIT-007,
+# @spec REPO-DEPENDENCY-AUDIT-008
 #
 # Runs `yarn audit --json`, parses the JSON event stream, and exits with
 # the same status the surrounding `bin/audit` suite expects: zero when
@@ -132,7 +133,13 @@ module Security
     end
 
     def run_yarn_audit
-      Open3.capture3("yarn", "audit", "--json", *@argv)
+      # @spec REPO-DEPENDENCY-AUDIT-008
+      stdout, stderr, status = Open3.capture3("yarn", "audit", "--json", *@argv)
+      # yarn always emits UTF-8 JSON, but Open3 tags captured output with
+      # Encoding.default_external, which is US-ASCII when LANG is unset
+      # (e.g. this CI runner's locale). Retag so non-ASCII advisory text
+      # (author names, descriptions) doesn't blow up `strip`/`each_line`.
+      [ stdout.force_encoding(Encoding::UTF_8), stderr.force_encoding(Encoding::UTF_8), status ]
     end
 
     def process_failure_detail(stderr, status)
