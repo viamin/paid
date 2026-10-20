@@ -122,19 +122,26 @@ module Automation
             held_ids = DesignAmendmentPause.held_issue_ids(project)
             scope = scope.where.not(id: held_ids) if held_ids.present?
 
-            # @spec FEATURE-APPROVAL-023 — a linked feature tree stays out
-            # of every automatic selection path until its release transaction
-            # has recorded a repository revision.
+            # @spec FEATURE-APPROVAL-023 — approval-gated trees retain their
+            # original whole-feature release rule. Confidence-driven links use
+            # their own reconciled release state instead.
             held_feature_issue_ids = FeatureIntentIssue.joins(:feature_intent)
               .where(feature_intents: { project_id: project.id })
+              .where(feature_intents: { delivery_policy: "approval_gated" })
               .where.not(feature_intents: { status: "released" })
               .select(:issue_id)
             scope = scope.where.not(id: held_feature_issue_ids)
 
             missing_revision_issue_ids = FeatureIntentIssue.joins(:feature_intent)
-              .where(feature_intents: { project_id: project.id, status: "released", approved_design_revision: nil })
+              .where(feature_intents: { project_id: project.id, delivery_policy: "approval_gated", status: "released", approved_design_revision: nil })
               .select(:issue_id)
             scope = scope.where.not(id: missing_revision_issue_ids)
+
+            unreleased_confidence_issue_ids = FeatureIntentIssue.joins(:feature_intent)
+              .where(feature_intents: { project_id: project.id, delivery_policy: "confidence_driven" })
+              .where.not(release_state: "released")
+              .select(:issue_id)
+            scope = scope.where.not(id: unreleased_confidence_issue_ids)
 
             # @spec AUTO-PICK-QUEUE-011 — issues whose latest model
             # selection pins a tier no configured runner can satisfy stay
