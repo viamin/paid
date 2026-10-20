@@ -54,6 +54,28 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "parses non-ASCII advisory text under a runner locale with no LANG/LC_ALL set" do
+    # @spec REPO-DEPENDENCY-AUDIT-008
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(
+        dir,
+        allowlist: empty_allowlist,
+        yarn_output: yarn_advisory_output(
+          ghsa_id: "GHSA-xxxx-yyyy-zzzz",
+          module_name: "demo-pkg",
+          title: "Désérialisation non sécurisée"
+        ),
+        yarn_exit: 1
+      )
+
+      stdout, stderr, status = Open3.capture3(locale_free_env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(1), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stderr).not_to include("Encoding::CompatibilityError")
+      expect(stdout).to include("GHSA-xxxx-yyyy-zzzz (high) demo-pkg")
+    end
+  end
+
   it "exits zero and surfaces an accepted advisory when the allowlist covers it, even though yarn exits 1 for the advisory report" do
     # @spec REPO-DEPENDENCY-AUDIT-004
     Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
@@ -415,6 +437,10 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     { "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}" }
   end
 
+  def locale_free_env(dir)
+    env(dir).merge("LANG" => "", "LANGUAGE" => "", "LC_ALL" => "")
+  end
+
   def run_with_report_env(dir, report_path)
     Open3.capture3(
       env(dir).merge("YARN_AUDIT_ACCEPTED_REPORT" => report_path),
@@ -479,7 +505,7 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     JSON.generate(type: "auditSummary", data: { vulnerabilities: {}, dependencies: 0 })
   end
 
-  def yarn_advisory_output(ghsa_id:, module_name:)
+  def yarn_advisory_output(ghsa_id:, module_name:, title: "Demo advisory")
     advisory = {
       type: "auditAdvisory",
       data: {
@@ -489,7 +515,7 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
           github_advisory_id: ghsa_id,
           module_name: module_name,
           severity: "high",
-          title: "Demo advisory",
+          title: title,
           recommendation: "Upgrade to 2.0.0",
           vulnerable_versions: "<2.0.0",
           patched_versions: ">=2.0.0"

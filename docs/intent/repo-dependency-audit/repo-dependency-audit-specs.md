@@ -64,6 +64,18 @@
   `bin/bundler-audit`.
   *Code:* `.github/workflows/security.yml`.
 
+## Output Handling
+
+- [x] **REPO-DEPENDENCY-AUDIT-008** — Regardless of the invoking shell's
+  locale (including a runner with no `LANG`/`LC_ALL` set, where Ruby's
+  `Encoding.default_external` is `US-ASCII`), the wrapper SHALL correctly
+  parse `yarn audit --json` output containing non-ASCII bytes (e.g.
+  advisory text with accented author names) without raising an encoding
+  error. A locale-dependent crash SHALL NOT be reported as a scanner
+  failure that masks the real advisory data.
+  *Tests:* `spec/scripts/yarn_audit_check_spec.rb`.
+  *Code:* `bin/yarn-audit-check`.
+
 ## Package Manager
 
 - [x] **REPO-DEPENDENCY-AUDIT-007** — Paid SHALL continue to use Yarn

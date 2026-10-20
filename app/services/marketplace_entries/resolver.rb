@@ -137,7 +137,10 @@ module MarketplaceEntries
         match_constraint(conditions["goals"], agent_run.goal) &&
         match_constraint(conditions["project_ids"], project.id) &&
         match_constraint(conditions["repository_full_names"], project.full_name) &&
-        match_text_constraint(conditions["task_text_includes_any"])
+        match_text_constraint(conditions["task_text_includes_any"]) &&
+        match_issue_labels_constraint(conditions["issue_labels_includes_any"]) &&
+        match_repo_profile_constraint(conditions["languages_include_any"], languages_in_repo_profile) &&
+        match_repo_profile_constraint(conditions["repo_files_include_any"], marker_files_in_repo_profile)
     end
 
     def match_constraint(allowed_values, actual_value)
@@ -159,6 +162,34 @@ module MarketplaceEntries
       return false if haystack.blank?
 
       candidates.any? { |pattern| haystack.include?(pattern.downcase) }
+    end
+
+    def match_issue_labels_constraint(labels) # @spec TOOL-SIDECAR-003
+      candidates = Array(labels).map(&:to_s).reject(&:blank?)
+      return true if candidates.empty?
+
+      issue_labels = Array(agent_run.issue&.labels).map(&:to_s)
+      return false if issue_labels.empty?
+
+      (candidates & issue_labels).any?
+    end
+
+    def match_repo_profile_constraint(values, profile_values) # @spec TOOL-SIDECAR-004
+      candidates = Array(values).map(&:to_s).reject(&:blank?)
+      return true if candidates.empty?
+
+      available = Array(profile_values).map(&:to_s)
+      return false if available.empty?
+
+      (candidates & available).any?
+    end
+
+    def languages_in_repo_profile
+      project.respond_to?(:effective_repo_profile) ? project.effective_repo_profile.fetch("languages", []) : []
+    end
+
+    def marker_files_in_repo_profile
+      project.respond_to?(:effective_repo_profile) ? project.effective_repo_profile.fetch("marker_files", []) : []
     end
 
     def provider_key

@@ -110,7 +110,13 @@ The wrapper script `bin/audit` runs `yarn audit --json` and processes the
 JSON stream itself rather than trusting the exit code alone. The script:
 
 1. Captures the JSON output, ignoring progress noise, and reads every
-   `auditAdvisory` event into an in-memory list of findings.
+   `auditAdvisory` event into an in-memory list of findings. Captured
+   stdout/stderr are retagged as UTF-8 (Yarn's actual output encoding)
+   before parsing, since `Open3.capture3` otherwise tags them with
+   `Encoding.default_external`, which is US-ASCII on a runner with no
+   `LANG` set — non-ASCII advisory text (author names, descriptions)
+   would then raise `Encoding::CompatibilityError` instead of being
+   parsed (REPO-DEPENDENCY-AUDIT-008).
 2. Validates the allowlist: each entry has `id`, `module`, `reason`,
    `owner`, `expires_on`, `tracking_issue`; each `expires_on` is a parseable
    ISO 8601 date and is not in the past; each `id` is unique; each `id`

@@ -286,6 +286,202 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     expect(attachments).to have_received(:where).once.with(attachment_source: "manual")
   end
 
+  describe "rule_scoping predicates (issue_labels_includes_any, languages_include_any, repo_files_include_any)" do # @spec TOOL-SIDECAR-003 # @spec TOOL-SIDECAR-004
+    let(:attachments) { agent_run_marketplace_entries }
+    let(:labels_match_rule) do
+      build_rule(
+        mode: "automatic",
+        enabled: true,
+        position: 0,
+        id: 11,
+        rationale: "Scoped by label",
+        conditions: { "issue_labels_includes_any" => [ "tooling" ] }
+      )
+    end
+    let(:languages_match_rule) do
+      build_rule(
+        mode: "automatic",
+        enabled: true,
+        position: 0,
+        id: 12,
+        rationale: "Scoped by language",
+        conditions: { "languages_include_any" => [ "ruby" ] }
+      )
+    end
+    let(:repo_files_match_rule) do
+      build_rule(
+        mode: "automatic",
+        enabled: true,
+        position: 0,
+        id: 13,
+        rationale: "Scoped by marker file",
+        conditions: { "repo_files_include_any" => [ "Gemfile" ] }
+      )
+    end
+
+    it "matches an automatic rule when the issue label is in the configured set" do # @spec TOOL-SIDECAR-003
+      entry = build_entry(rules: [ labels_match_rule ])
+      project = project_double(repo_profile: { "languages" => [], "marker_files" => [] })
+      issue = issue_double(labels: [ "tooling" ])
+      agent_run = agent_run_for(project:, issue:)
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
+      allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+      expect(resolver.call.map(&:entry)).to eq([ entry ])
+    end
+
+    it "does not match when the configured label set is non-empty but the issue carries none of the labels" do # @spec TOOL-SIDECAR-003
+      entry = build_entry(rules: [ labels_match_rule ])
+      project = project_double(repo_profile: { "languages" => [], "marker_files" => [] })
+      issue = issue_double(labels: [ "different" ])
+      agent_run = agent_run_for(project:, issue:)
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
+      allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+      expect(resolver.call).to be_empty
+    end
+
+    it "treats an absent issue_labels_includes_any key as no constraint" do # @spec TOOL-SIDECAR-003
+      entry = build_entry
+      project = project_double(repo_profile: { "languages" => [], "marker_files" => [] })
+      issue = issue_double(labels: [ "anything" ])
+      agent_run = agent_run_for(project:, issue:)
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
+      allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+      expect(resolver.call.map(&:entry)).to eq([ entry ])
+    end
+
+    it "treats an empty issue_labels_includes_any array as no constraint" do # @spec TOOL-SIDECAR-003
+      empty_labels_rule = build_rule(
+        mode: "automatic",
+        enabled: true,
+        position: 0,
+        id: 14,
+        rationale: "Empty label scope",
+        conditions: { "issue_labels_includes_any" => [] }
+      )
+      entry = build_entry(rules: [ empty_labels_rule ])
+      project = project_double(repo_profile: { "languages" => [], "marker_files" => [] })
+      issue = issue_double(labels: [ "anything" ])
+      agent_run = agent_run_for(project:, issue:)
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
+      allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+      expect(resolver.call.map(&:entry)).to eq([ entry ])
+    end
+
+    it "matches when the project language is in the configured set" do # @spec TOOL-SIDECAR-004
+      entry = build_entry(rules: [ languages_match_rule ])
+      project = project_double(repo_profile: { "languages" => [ "ruby" ], "marker_files" => [ "Gemfile" ] })
+      issue = issue_double(labels: [])
+      agent_run = agent_run_for(project:, issue:)
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
+      allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+      expect(resolver.call.map(&:entry)).to eq([ entry ])
+    end
+
+    it "does not match when the project language is absent from the configured set" do # @spec TOOL-SIDECAR-004
+      entry = build_entry(rules: [ languages_match_rule ])
+      project = project_double(repo_profile: { "languages" => [ "javascript" ], "marker_files" => [ "package.json" ] })
+      issue = issue_double(labels: [])
+      agent_run = agent_run_for(project:, issue:)
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
+      allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+      expect(resolver.call).to be_empty
+    end
+
+    it "matches when the project's marker_files include the configured entry" do # @spec TOOL-SIDECAR-004
+      entry = build_entry(rules: [ repo_files_match_rule ])
+      project = project_double(repo_profile: { "languages" => [ "ruby" ], "marker_files" => [ "Gemfile" ] })
+      issue = issue_double(labels: [])
+      agent_run = agent_run_for(project:, issue:)
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
+      allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+      expect(resolver.call.map(&:entry)).to eq([ entry ])
+    end
+
+    it "does not match when the repo profile lacks the configured marker file" do # @spec TOOL-SIDECAR-004
+      entry = build_entry(rules: [ repo_files_match_rule ])
+      project = project_double(repo_profile: { "languages" => [ "ruby" ], "marker_files" => [ "package.json" ] })
+      issue = issue_double(labels: [])
+      agent_run = agent_run_for(project:, issue:)
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
+      allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+      expect(resolver.call).to be_empty
+    end
+
+    it "treats an empty repo_files_include_any array as no constraint" do # @spec TOOL-SIDECAR-004
+      empty_files_rule = build_rule(
+        mode: "automatic",
+        enabled: true,
+        position: 0,
+        id: 15,
+        rationale: "Empty file scope",
+        conditions: { "repo_files_include_any" => [] }
+      )
+      entry = build_entry(rules: [ empty_files_rule ])
+      project = project_double(repo_profile: { "languages" => [], "marker_files" => [] })
+      issue = issue_double(labels: [])
+      agent_run = agent_run_for(project:, issue:)
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
+      allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+      expect(resolver.call.map(&:entry)).to eq([ entry ])
+    end
+
+    def project_double(repo_profile:)
+      Class.new do
+        def initialize(repo_profile)
+          @repo_profile = repo_profile
+        end
+
+        def account_id = 44
+        def id = 12
+        def full_name = "acme/repo"
+        def effective_repo_profile = @repo_profile
+      end.new(repo_profile)
+    end
+
+    def issue_double(labels:)
+      Class.new do
+        def initialize(labels)
+          @labels = labels
+        end
+
+        attr_reader :labels
+        def title = nil
+        def body = nil
+      end.new(labels)
+    end
+
+    def agent_run_for(project:, issue: nil)
+      attachments_for_run = attachments
+      issue_obj = issue
+      Class.new do
+        define_method(:agent_type) { "codex" }
+        define_method(:goal) { "create_pr" }
+        define_method(:custom_prompt) { "Implement the issue" }
+        define_method(:issue) { issue_obj }
+        define_method(:agent_run_marketplace_entries) { attachments_for_run }
+        define_method(:runner) { nil }
+      end.new
+    end
+  end
+
   def agent_run_marketplace_entries
     stub_const("ResolverDblessAttachments", Class.new do
       def where(...)
@@ -359,9 +555,9 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
     ]
   end
 
-  def build_rule(mode:, enabled:, position:, id:, rationale:)
+  def build_rule(mode:, enabled:, position:, id:, rationale:, conditions: {})
     Struct.new(:mode, :enabled, :position, :id, :rationale, :conditions, keyword_init: true) do
       def enabled? = enabled
-    end.new(mode:, enabled:, position:, id:, rationale:, conditions: {})
+    end.new(mode:, enabled:, position:, id:, rationale:, conditions: conditions)
   end
 end
