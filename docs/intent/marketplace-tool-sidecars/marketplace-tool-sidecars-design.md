@@ -85,6 +85,34 @@ containers. A non-allowlisted image raises `Containers::McpProvisioner::Error`
 with a typed, non-retryable message so the activity surfaces it as a clean
 configuration failure rather than retrying.
 
+### Rule-scoping predicates
+
+`MarketplaceEntries::Resolver#rule_matches?` recognizes three additional
+condition keys, each optional and conjunctive with the existing keys
+(`provider_keys`, `agent_types`, `goals`, `project_ids`,
+`repository_full_names`, `task_text_includes_any`). All evaluate from data
+already loaded at run-creation time so a rule check never introduces a new
+per-rule query:
+
+- `issue_labels_includes_any` — any-of intersection between the rule's
+  values and the run's `agent_run.issue.labels`. The key's presence in the
+  rule is independent of whether the run has an issue: when the rule's list
+  is non-empty but the run has no labels (no `issue`, or `labels` blank), the
+  rule fails closed for that run.
+- `languages_include_any` — any-of intersection between the rule's values
+  and `project.effective_repo_profile["languages"]`. Absent/empty rule list
+  imposes no constraint; an empty profile set fails closed.
+- `repo_files_include_any` — any-of intersection between the rule's values
+  and `project.effective_repo_profile["marker_files"]`. Same absent/empty
+  convention as languages.
+
+Comparison is exact, case-sensitive string equality on the JSON array
+elements, so a rule key authored as `["Ruby"]` matches a stored `"ruby"`
+only when the entry's stored form already matches. `Languages` and
+`marker_files` are normalized to lowercase by
+`Projects::RepoProfile.normalize`, so rule authors should author lowercase
+keys to stay in step with stored values.
+
 ### Rollout guard
 
 Provisioning remains behind `FeatureFlags.enabled?(:marketplace_tool_sidecars,

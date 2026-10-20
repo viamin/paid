@@ -31,6 +31,30 @@
   *Code:* `FeatureFlags::DEFINITIONS`,
   `Containers::McpProvisioner#tool_sidecars_enabled?`.
 
+- [x] **TOOL-SIDECAR-003** — `MarketplaceEntries::Resolver#rule_matches?`
+  SHALL evaluate `issue_labels_includes_any` as an any-of match against the
+  run's `agent_run.issue.labels`, conjunctively with existing condition keys;
+  when the key is absent OR empty, the predicate SHALL impose no constraint
+  (treating the absence as "match"). When the key is present and non-empty,
+  the rule matches iff the issue labels intersect the configured set
+  (case-sensitive string equality on the array elements).
+  *Tests:* `spec/services/marketplace_entries/resolver_dbless_spec.rb`,
+  `spec/services/marketplace_entries/resolver_spec.rb`.
+  *Code:* `MarketplaceEntries::Resolver#rule_matches?`,
+  `MarketplaceEntries::Resolver#match_issue_labels_constraint`.
+
+- [x] **TOOL-SIDECAR-004** — `MarketplaceEntries::Resolver#rule_matches?`
+  SHALL evaluate `languages_include_any` and `repo_files_include_any` as
+  any-of matches against `project.effective_repo_profile["languages"]` and
+  `project.effective_repo_profile["marker_files"]` respectively, conjunctively
+  with existing condition keys. When either key is absent OR empty, the
+  predicate SHALL impose no constraint. When present and non-empty, the rule
+  matches iff the corresponding profile set intersects the configured set.
+  *Tests:* `spec/services/marketplace_entries/resolver_dbless_spec.rb`,
+  `spec/services/marketplace_entries/resolver_spec.rb`.
+  *Code:* `MarketplaceEntries::Resolver#rule_matches?`,
+  `MarketplaceEntries::Resolver#match_repo_profile_constraint`.
+
 - [x] **TOOL-SIDECAR-005** — When a `tool` sidecar is provisioned for an
   agent run, the container SHALL be created on `NetworkPolicy::NETWORK_NAME`
   with all Linux capabilities dropped, `no-new-privileges`, the image-family
