@@ -41,7 +41,7 @@ class ProjectsController < ApplicationController
     AgentRun.preload_created_issue_records(@recent_agent_runs)
     settings = current_user.settings
     open_items = @project.issues.where(github_state: "open").order(github_number: :desc)
-    @issues = open_items.issues_only.includes(:sub_issues).limit(settings.max_issues_per_page)
+    @issues = open_items.issues_only.includes(:sub_issues, feature_intent_issues: :feature_intent).limit(settings.max_issues_per_page)
     @issue_lifecycle_statuses = Issue.lifecycle_statuses(@issues)
     @paid_prs_by_issue_id = Issue.open_paid_generated_prs_by_issue_id(
       project: @project, issue_ids: @issues.map(&:id)

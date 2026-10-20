@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_20_003850) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_20_164810) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -282,6 +282,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_003850) do
   create_table "agent_runs", force: :cascade do |t|
     t.string "adoption_mode_snapshot", comment: "Project adoption mode captured when an external execution was ingested."
     t.string "agent_type", limit: 50, null: false
+    t.string "approved_design_revision", comment: "Approved feature design revision that admitted this implementation run."
     t.string "auth_provider", limit: 50
     t.jsonb "authority_grants", default: {}, null: false, comment: "Secret-free execution authority grant snapshot for the run"
     t.boolean "auto_pick", default: false, null: false
@@ -380,6 +381,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_003850) do
     t.datetime "updated_at", null: false
     t.jsonb "verification_result", default: {}, null: false, comment: "Persisted interactive self-verification outcome and related artifacts for verification-enabled agent runs."
     t.string "worktree_path", limit: 500
+    t.index ["approved_design_revision"], name: "index_agent_runs_on_approved_design_revision"
     t.index ["configuration_bundle_id"], name: "index_agent_runs_on_configuration_bundle_id"
     t.index ["continuation_request_id"], name: "index_agent_runs_on_continuation_request_id", where: "(continuation_request_id IS NOT NULL)"
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
@@ -1932,6 +1934,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_003850) do
     t.index ["feature_intent_completion_id"], name: "index_forward_work_on_completion"
     t.index ["follow_up_issue_id"], name: "index_feature_intent_forward_work_items_on_follow_up_issue_id"
     t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'applied'::character varying::text])", name: "chk_forward_work_items_status"
+  end
+
+  create_table "feature_intent_issue_dependencies", comment: "Snapshot of dependency edges between issues in one approved feature tree.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "depends_on_feature_intent_issue_id", null: false
+    t.bigint "feature_intent_issue_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["depends_on_feature_intent_issue_id"], name: "idx_on_depends_on_feature_intent_issue_id_b2b58b0492"
+    t.index ["feature_intent_issue_id", "depends_on_feature_intent_issue_id"], name: "idx_feature_intent_issue_dependencies_unique", unique: true
+    t.index ["feature_intent_issue_id"], name: "idx_on_feature_intent_issue_id_32c718a1ab"
   end
 
   create_table "feature_intent_issue_prerequisite_mappings", comment: "Audited coverage and design baseline for one linked issue's prerequisites.", force: :cascade do |t|
@@ -4457,6 +4469,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_003850) do
   add_foreign_key "feature_intent_forward_work_items", "feature_intent_completions"
   add_foreign_key "feature_intent_forward_work_items", "issues", column: "affected_issue_id"
   add_foreign_key "feature_intent_forward_work_items", "issues", column: "follow_up_issue_id"
+  add_foreign_key "feature_intent_issue_dependencies", "feature_intent_issues", column: "depends_on_feature_intent_issue_id", on_delete: :cascade
+  add_foreign_key "feature_intent_issue_dependencies", "feature_intent_issues", on_delete: :cascade
   add_foreign_key "feature_intent_issue_prerequisite_mappings", "accounts", on_delete: :cascade
   add_foreign_key "feature_intent_issue_prerequisite_mappings", "feature_intent_issues", on_delete: :cascade
   add_foreign_key "feature_intent_issue_prerequisites", "accounts", on_delete: :cascade

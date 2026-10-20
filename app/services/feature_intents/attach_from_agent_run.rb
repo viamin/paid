@@ -125,12 +125,9 @@ module FeatureIntents
     def attach_issue
       return IssueLinkResult.new(feature_intent_issue: nil) if feature_intent.nil? || issue.nil?
 
-      link = feature_intent.feature_intent_issues.find_by(issue_id: issue.id)
-      return IssueLinkResult.new(feature_intent_issue: link) if link
-
-      IssueLinkResult.new(
-        feature_intent_issue: feature_intent.feature_intent_issues.create!(issue: issue)
-      )
+      link = feature_intent.feature_intent_issues.find_or_create_by!(issue: issue)
+      record_in_tree_dependency_edges(link)
+      IssueLinkResult.new(feature_intent_issue: link)
     rescue ActiveRecord::RecordInvalid
       IssueLinkResult.new(feature_intent_issue: nil)
     end
@@ -178,6 +175,28 @@ module FeatureIntents
         design_pr_kind: design_pr_kind || "rdr",
         required: required.nil? ? required_for_kind : required
       )
+    end
+
+    def record_in_tree_dependency_edges(link)
+      linked_by_issue_id = feature_intent.feature_intent_issues.index_by(&:issue_id)
+      dependency_edges_for(link.issue, linked_by_issue_id).each do |dependent_link, prerequisite_link|
+        FeatureIntentIssueDependency.find_or_create_by!(
+          feature_intent_issue: dependent_link,
+          depends_on_feature_intent_issue: prerequisite_link
+        )
+      end
+    end
+
+    def dependency_edges_for(linked_issue, linked_by_issue_id)
+      current_edges = linked_issue.issue_dependencies.filter_map do |dependency|
+        prerequisite = linked_by_issue_id[dependency.depends_on_issue_id]
+        [ linked_by_issue_id[linked_issue.id], prerequisite ] if prerequisite
+      end
+      reverse_edges = IssueDependency.where(depends_on_issue_id: linked_issue.id).filter_map do |dependency|
+        dependent = linked_by_issue_id[dependency.issue_id]
+        [ dependent, linked_by_issue_id[linked_issue.id] ] if dependent
+      end
+      current_edges + reverse_edges
     end
 
     # @spec FEATURE-APPROVAL-018 — head SHA comes from GitHub. When a new

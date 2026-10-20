@@ -251,6 +251,17 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
         described_class.attach_issue(feature_intent: feature_intent, issue: implementation_issue)
       }.not_to change(feature_intent.feature_intent_issues, :count)
     end
+
+    it "records dependency edges once both issues are attached to the feature tree" do
+      prerequisite = create(:issue, project: project)
+      implementation_issue = create(:issue, project: project)
+      create(:issue_dependency, issue: implementation_issue, depends_on_issue: prerequisite)
+
+      prerequisite_link = described_class.attach_issue(feature_intent:, issue: prerequisite).feature_intent_issue
+      implementation_link = described_class.attach_issue(feature_intent:, issue: implementation_issue).feature_intent_issue
+
+      expect(implementation_link.in_tree_dependencies).to contain_exactly(prerequisite_link)
+    end
   end
 
   describe "closed-unmerged reconciliation" do
