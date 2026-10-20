@@ -1,0 +1,29 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe ChatInvestigations::RunJob do
+  # @spec QUESTION-EXPLORATION-010 QUESTION-EXPLORATION-013
+  it "publishes a reconnectable result and settles its reservation" do
+    investigation = create(:chat_investigation, reserved_cost_cents: 10)
+    project_version = create(:project_version, project: investigation.project)
+    collector_run = create(:collector_run, project_version:, collector_type: "routes")
+    artifact = create(:knowledge_artifact, project: investigation.project, collector_run:,
+      identifier: investigation.prompt, content: "Repository evidence")
+    create(:knowledge_chunk, project: investigation.project, knowledge_artifact: artifact,
+      content: "Repository evidence")
+
+    described_class.perform_now(investigation.id)
+
+    expect(investigation.reload).to have_attributes(status: "completed", result: "Repository evidence", reserved_cost_cents: 0)
+  end
+
+  it "does not execute queued work after execution is disabled" do
+    investigation = create(:chat_investigation, reserved_cost_cents: 10)
+    create(:execution_control, :enabled, scope: "project", project: investigation.project)
+
+    described_class.perform_now(investigation.id)
+
+    expect(investigation.reload).to have_attributes(status: "awaiting_authorization", reserved_cost_cents: 0)
+  end
+end

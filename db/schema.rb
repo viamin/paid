@@ -746,6 +746,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_200635) do
     t.index ["superseded_by_id"], name: "index_change_intents_on_superseded_by_id"
   end
 
+  create_table "chat_investigations", comment: "Bounded research or isolated experiment work requested from a chat question.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "cancelled_at", comment: "When a collaborator cancelled the investigation."
+    t.bigint "chat_session_id", null: false
+    t.bigint "clarifying_question_progress_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", null: false
+    t.integer "estimated_cost_cents", default: 0, null: false, comment: "Maximum cost checked before dispatch."
+    t.datetime "finished_at", comment: "When the investigation reached a terminal state."
+    t.string "kind", null: false, comment: "Investigation mode: research or experiment."
+    t.jsonb "metadata", default: {}, null: false, comment: "Non-secret progress and isolated runtime metadata."
+    t.bigint "project_id", null: false
+    t.text "prompt", null: false, comment: "Question-scoped request, never executable application-origin HTML."
+    t.integer "reserved_cost_cents", default: 0, null: false, comment: "Budget held while this investigation is active."
+    t.text "result", comment: "Reconnectable textual result or failure explanation."
+    t.datetime "started_at", comment: "When durable execution began."
+    t.string "status", default: "queued", null: false, comment: "Lifecycle state, including authorization and cancellation outcomes."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_chat_investigations_on_account_id"
+    t.index ["chat_session_id"], name: "index_chat_investigations_on_chat_session_id"
+    t.index ["clarifying_question_progress_id", "created_at"], name: "idx_on_clarifying_question_progress_id_created_at_25dd030c72"
+    t.index ["clarifying_question_progress_id"], name: "index_chat_investigations_on_clarifying_question_progress_id"
+    t.index ["created_by_id"], name: "index_chat_investigations_on_created_by_id"
+    t.index ["project_id", "status"], name: "index_chat_investigations_on_project_id_and_status"
+    t.index ["project_id"], name: "index_chat_investigations_on_project_id"
+  end
+
   create_table "chat_messages", force: :cascade do |t|
     t.bigint "chat_session_id", null: false
     t.text "content"
@@ -4318,6 +4345,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_200635) do
   add_foreign_key "change_intents", "chat_sessions", on_delete: :nullify
   add_foreign_key "change_intents", "issues", on_delete: :nullify
   add_foreign_key "change_intents", "projects", on_delete: :cascade
+  add_foreign_key "chat_investigations", "accounts"
+  add_foreign_key "chat_investigations", "chat_sessions"
+  add_foreign_key "chat_investigations", "clarifying_question_progresses"
+  add_foreign_key "chat_investigations", "projects"
+  add_foreign_key "chat_investigations", "users", column: "created_by_id"
   add_foreign_key "chat_messages", "chat_sessions"
   add_foreign_key "chat_session_projects", "chat_sessions"
   add_foreign_key "chat_session_projects", "projects"

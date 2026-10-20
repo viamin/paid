@@ -303,6 +303,40 @@ paths:
       responses:
         '200': {description: Tool resolution response or SSE stream, content: {application/json: {schema: {$ref: '#/components/schemas/ChatAssistantResponse'}}, text/event-stream: {schema: {type: string}}}}
         default: {$ref: '#/components/responses/Error'}
+  /chat/sessions/{session_id}/investigations:
+    parameters: [{$ref: '#/components/parameters/ChatSessionIdAsSessionId'}]
+    get:
+      operationId: listChatInvestigations
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
+      responses:
+        '200': {description: Reconnectable question investigations., content: {application/json: {schema: {type: object}}}}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createChatInvestigation
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
+      responses:
+        '201': {description: Investigation queued or awaiting additional authorization., content: {application/json: {schema: {type: object}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /chat/sessions/{session_id}/investigations/{id}:
+    parameters: [{$ref: '#/components/parameters/ChatSessionIdAsSessionId'}, {$ref: '#/components/parameters/ChatInvestigationId'}]
+    get:
+      operationId: getChatInvestigation
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
+      responses:
+        '200': {description: Investigation status and result., content: {application/json: {schema: {type: object}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /chat/sessions/{session_id}/investigations/{id}/cancel:
+    parameters: [{$ref: '#/components/parameters/ChatSessionIdAsSessionId'}, {$ref: '#/components/parameters/ChatInvestigationId'}]
+    post:
+      operationId: cancelChatInvestigation
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
+      responses:
+        '200': {description: Cancelled investigation., content: {application/json: {schema: {type: object}}}}
+        default: {$ref: '#/components/responses/Error'}
 components:
   securitySchemes:
     bearerAuth:
@@ -326,6 +360,11 @@ components:
       schema: {type: integer}
     ChatSessionIdAsSessionId:
       name: session_id
+      in: path
+      required: true
+      schema: {type: integer}
+    ChatInvestigationId:
+      name: id
       in: path
       required: true
       schema: {type: integer}
