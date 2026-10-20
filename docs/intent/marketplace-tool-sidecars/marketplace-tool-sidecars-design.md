@@ -108,10 +108,11 @@ per-rule query:
 
 Comparison is exact, case-sensitive string equality on the JSON array
 elements, so a rule key authored as `["Ruby"]` matches a stored `"ruby"`
-only when the entry's stored form already matches. `Languages` and
-`marker_files` are normalized to lowercase by
-`Projects::RepoProfile.normalize`, so rule authors should author lowercase
-keys to stay in step with stored values.
+only when the entry's stored form already matches. `languages` are normalized
+to lowercase by `Projects::RepoProfile.normalize_language`, but `marker_files`
+are only whitespace-stripped by `normalize_strings` and keep their stored case,
+so `repo_files_include_any` rule values must match the marker file name exactly
+as stored (e.g. `"Gemfile"`, not `"gemfile"`).
 
 ### Rollout guard
 

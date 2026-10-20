@@ -411,7 +411,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
       expect(resolver.call.map(&:entry)).to eq([ entry ])
     end
 
-    it "treats an absent languages_include_any key as no constraint even when marker_files match" do # @spec TOOL-SIDECAR-004
+    it "does not match when the repo profile lacks the configured marker file" do # @spec TOOL-SIDECAR-004
       entry = build_entry(rules: [ repo_files_match_rule ])
       project = project_double(repo_profile: { "languages" => [ "ruby" ], "marker_files" => [ "package.json" ] })
       issue = issue_double(labels: [])
