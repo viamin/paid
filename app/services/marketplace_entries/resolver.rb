@@ -132,7 +132,7 @@ module MarketplaceEntries
 
     def rule_matches?(rule, _entry)
       conditions = rule.conditions
-      match_constraint(conditions["provider_keys"], provider_key) && # @spec TOOL-SIDECAR-003 # @spec TOOL-SIDECAR-004
+      match_constraint(conditions["provider_keys"], provider_key) &&
         match_constraint(conditions["agent_types"], agent_run.agent_type) &&
         match_constraint(conditions["goals"], agent_run.goal) &&
         match_constraint(conditions["project_ids"], project.id) &&

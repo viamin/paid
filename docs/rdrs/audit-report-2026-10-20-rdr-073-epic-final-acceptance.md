@@ -35,7 +35,7 @@ The EARS spec for the segment (`docs/intent/marketplace-tool-sidecars/marketplac
 carries claims `[x] TOOL-SIDECAR-001`, `[x] TOOL-SIDECAR-002`, `[x] TOOL-SIDECAR-003`,
 `[x] TOOL-SIDECAR-004`, `[x] TOOL-SIDECAR-005`, `[x] TOOL-SIDECAR-006`, and
 `[x] TOOL-SIDECAR-007`. `@spec TOOL-SIDECAR-003` / `-004` annotations are
-present at `app/services/marketplace_entries/resolver.rb:135, 167, 177` and
+present at `app/services/marketplace_entries/resolver.rb:167, 177` and
 in `spec/services/marketplace_entries/resolver_dbless_spec.rb:289, 322, 334,
 346, 358, 378, 390, 402, 414, 426` and `spec/services/marketplace_entries/resolver_spec.rb:120, 139, 157, 174, 191`.
 
