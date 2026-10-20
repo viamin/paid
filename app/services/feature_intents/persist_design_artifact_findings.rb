@@ -61,7 +61,8 @@ module FeatureIntents
       record.assign_attributes(
         account: project.account, artifact_path: finding.path, revision: finding.revision,
         state: finding.state, evidence: finding.evidence, covered_at: covered_at || record.covered_at || Time.current,
-        status: "open", resolved_at: nil
+        status: record.decision_pending? ? record.status : "open",
+        resolved_at: record.decision_pending? ? record.resolved_at : nil
       )
       record.save!
     end

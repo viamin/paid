@@ -636,3 +636,26 @@
   request SHALL recheck entry visibility and lane membership and render an
   empty frame if the entry is no longer available.
   *Test:* `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-018** — When reconciliation leaves an open
+  traceability finding after structural matching, the Inbox SHALL explain in
+  plain language whether it is missing linkage, potentially missing/partial
+  work, stale metadata, deliberate deferral, or unavailable coverage. It
+  SHALL show the pinned artifact/revision, last successful coverage, cited
+  evidence and a direct GitHub link, and SHALL state that missing links do
+  not prove missing implementation and closed work does not prove delivery.
+  An authorized operator SHALL be able to link an existing project issue,
+  defer, dismiss/not-applicable, or recheck with a required reason where a
+  decision is made. The write SHALL verify the pinned revision and project
+  ownership, retain actor/provenance, remove the item from the unassigned
+  queue without claiming a repair, and remain pending until reconciliation
+  verifies resolution. Unavailable coverage SHALL offer access/retry guidance
+  instead of a new-implementation recommendation. Chat is optional and does
+  not substitute for the decision workflow. The API SHALL expose the same
+  authorized resolution operation and resulting decision state.
+  *Code:* `DesignArtifactFindings::Resolve`,
+  `DesignArtifactFindingsController`,
+  `Api::V1::DesignArtifactFindingsController`,
+  `app/views/dashboard/_inbox_detail_traceability_gap.html.erb`.
+  *Test:* `spec/services/design_artifact_findings/resolve_spec.rb`,
+  `spec/requests/inbox_spec.rb`.

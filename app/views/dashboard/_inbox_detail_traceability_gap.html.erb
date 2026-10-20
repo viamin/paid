@@ -6,7 +6,18 @@
                     "#{entry.project.github_url}/blob/#{entry.record.revision}/#{artifact_path}"
                   end %>
 <p class="text-sm text-gray-700">
-  Reconciliation found a <strong><%= entry.record.state.humanize.downcase %></strong> traceability gap at the recorded revision.
+  <% case entry.record.state %>
+  <% when "missing_tree" %>
+    This document is not linked to a tracked work tree. That does not prove implementation is missing.
+  <% when "partial_tree" %>
+    Existing work may cover only part of this document; choose whether it is the right owner.
+  <% when "stale_metadata" %>
+    The document or its recorded links are stale and need a verified repair.
+  <% when "unverifiable" %>
+    Coverage could not be read. Restore access or retry; do not file implementation work from unavailable coverage.
+  <% else %>
+    This finding needs an explicit operator decision before it can leave the action queue.
+  <% end %>
 </p>
 
 <dl class="mt-4 space-y-3 text-sm">
@@ -19,6 +30,10 @@
     <dd class="mt-1 font-mono text-xs text-gray-700"><%= entry.record.revision %></dd>
   </div>
   <div>
+    <dt class="font-medium text-gray-900">Last successful coverage</dt>
+    <dd class="mt-1 text-gray-700"><%= l(entry.record.covered_at, format: :long) %></dd>
+  </div>
+  <div>
     <dt class="font-medium text-gray-900">Evidence</dt>
     <dd class="mt-1">
       <ul class="list-disc space-y-1 pl-5 text-gray-700">
@@ -29,3 +44,33 @@
     </dd>
   </div>
 </dl>
+
+<section class="mt-6 border-t border-gray-200 pt-5" aria-labelledby="traceability-actions-heading">
+  <h3 id="traceability-actions-heading" class="text-base font-semibold text-gray-900">Resolve or assign this finding</h3>
+  <p class="mt-1 text-sm text-gray-700">
+    A decision is recorded against revision <code><%= entry.record.revision %></code>. Reconciliation, not this form, verifies a repair.
+  </p>
+
+  <% if entry.record.state == "unverifiable" %>
+    <p class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-900">Retry after GitHub access or coverage is available. Filing a new implementation issue would be misleading.</p>
+  <% else %>
+    <%= form_with url: resolve_design_artifact_finding_path(entry.record), class: "mt-4 space-y-3" do |form| %>
+      <%= hidden_field_tag "resolution[revision]", entry.record.revision %>
+      <div>
+        <%= form.label :issue_id, "Link existing work (optional issue ID)", class: "block text-sm font-medium text-gray-900" %>
+        <%= form.number_field :issue_id, name: "resolution[issue_id]", min: 1, class: "mt-1 w-full rounded-md border-gray-300" %>
+      </div>
+      <div>
+        <%= form.label :reason, "Reason", class: "block text-sm font-medium text-gray-900" %>
+        <%= form.text_area :reason, name: "resolution[reason]", required: true, rows: 3, class: "mt-1 w-full rounded-md border-gray-300" %>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <%= form.button "Link existing work", name: "resolution[state]", value: "assigned", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %>
+        <%= form.button "Defer", name: "resolution[state]", value: "deferred", class: "rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300" %>
+        <%= form.button "Dismiss / not applicable", name: "resolution[state]", value: "dismissed", class: "rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300" %>
+      </div>
+    <% end %>
+  <% end %>
+  <%= button_to "Recheck", recheck_design_artifact_finding_path(entry.record), params: { revision: entry.record.revision }, class: "mt-3 text-sm font-medium text-indigo-600" %>
+  <%= button_to "Chat about this (optional)", inbox_interactive_chat_path(entry.id), class: "mt-3 text-sm font-medium text-indigo-600" %>
+</section>
