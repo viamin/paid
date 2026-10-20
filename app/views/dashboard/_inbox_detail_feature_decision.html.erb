@@ -85,7 +85,10 @@
     </div>
   <% end %>
 
-  <% issue_links = feature_intent.feature_intent_issues.includes(:issue) %>
+  <%# Preload each issue's feature-intent links (and their features) so the
+      per-issue IssueHold projection below reads preloaded associations
+      instead of issuing one link query per tree row (FEATURE-APPROVAL-023). %>
+  <% issue_links = feature_intent.feature_intent_issues.includes(issue: { feature_intent_issues: :feature_intent }) %>
   <% if issue_links.any? %>
     <div class="space-y-2">
       <h3 class="text-sm font-semibold text-gray-900">Proposed issue tree</h3>

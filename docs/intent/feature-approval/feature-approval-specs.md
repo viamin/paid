@@ -405,9 +405,17 @@
   Admission denials SHALL carry a stable machine-readable code; `revising`
   SHALL be distinct from other unreleased states, and linked-issue list
   surfaces SHALL display the corresponding derived hold without persisting it.
+  When several linked features are held at once, the displayed hold SHALL
+  follow a fixed precedence — approval-gated holds above confidence-driven
+  holds — independent of link creation or load order, and list surfaces SHALL
+  render per-issue holds from preloaded associations rather than per-issue
+  link queries.
   *Tests:* `spec/services/feature_intents/run_admission_spec.rb`,
-  `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`.
+  `spec/agent_runs/recheck_issue_eligibility_spec.rb`,
+  `spec/services/feature_intents/issue_hold_spec.rb`,
+  `spec/views/dashboard/inbox_detail_feature_decision_partial_spec.rb`.
   *Code:* `app/services/feature_intents/run_admission.rb`,
+  `app/services/feature_intents/issue_hold.rb`,
   `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
   `app/services/agent_runs/recheck_issue_eligibility.rb`,
   `app/jobs/process_run_queue_job.rb`, `app/models/agent_run.rb`.

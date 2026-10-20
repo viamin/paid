@@ -7,6 +7,20 @@ module FeatureIntents
   class IssueHold
     Hold = Data.define(:code, :message)
 
+    # Deterministic badge precedence when several linked features are held:
+    # approval-gated holds outrank confidence-driven holds, and within each
+    # delivery policy the more specific state outranks the more generic one,
+    # so the reported reason never depends on link creation or load order.
+    HOLD_SEVERITY = {
+      "feature_revising" => 7,
+      "no_approved_revision" => 6,
+      "feature_not_released" => 5,
+      "confidence_release_held" => 4,
+      "confidence_release_reconciliation_failed" => 3,
+      "confidence_release_pending" => 2,
+      "confidence_release_unreleased" => 1
+    }.freeze
+
     def self.call(...) = new(...).call
 
     def initialize(issue:, feature: nil)
@@ -15,10 +29,10 @@ module FeatureIntents
     end
 
     def call
-      link = links.find { |candidate| feature_matches_scope?(candidate) && feature_held?(candidate, candidate.feature_intent) }
-      return unless link
+      holds = held_links.map { |link| hold_for(link) }
+      return if holds.empty?
 
-      hold_for(link)
+      holds.max_by { |hold| HOLD_SEVERITY.fetch(hold.code) }
     end
 
     private
@@ -26,14 +40,19 @@ module FeatureIntents
     attr_reader :issue, :feature
 
     def links
-      return issue.feature_intent_issues if issue.association(:feature_intent_issues).loaded?
+      return issue.feature_intent_issues.sort_by(&:id) if issue.association(:feature_intent_issues).loaded?
 
-      issue.feature_intent_issues.includes(:feature_intent).to_a
+      issue.feature_intent_issues.includes(:feature_intent).order(:id).to_a
+    end
+
+    def held_links
+      links.select { |candidate| feature_matches_scope?(candidate) && feature_held?(candidate) }
     end
 
     # Restrict to the supplied feature scope when one is provided (e.g. the
     # feature-decision view). Without a scope, any linked feature is
-    # considered, so the project issue list surfaces the first hold.
+    # considered, so the project issue list surfaces the highest-precedence
+    # hold across the issue's linked designs.
     def feature_matches_scope?(candidate)
       feature.nil? || candidate.feature_intent_id == feature.id
     end
@@ -42,9 +61,10 @@ module FeatureIntents
     # hold from the feature's release state, while confidence-driven features
     # project a hold from the link's reconciled `release_state` — mirroring
     # `RunAdmission`'s `confidence_admission` branch (CONFIDENCE-DELIVERY-003).
-    def feature_held?(candidate, target_feature)
-      return true if target_feature.approval_gated? && (!target_feature.released? || target_feature.approved_design_revision.blank?)
-      return true if target_feature.confidence_driven? && candidate.release_state != "released"
+    def feature_held?(candidate)
+      target = candidate.feature_intent
+      return true if target.approval_gated? && (!target.released? || target.approved_design_revision.blank?)
+      return true if target.confidence_driven? && candidate.release_state != "released"
 
       false
     end

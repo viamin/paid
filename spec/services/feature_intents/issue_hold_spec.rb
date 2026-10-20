@@ -123,4 +123,17 @@ RSpec.describe FeatureIntents::IssueHold do
 
     expect(hold.code).to eq("feature_not_released")
   end
+
+  it "prefers an approval-gated hold regardless of link creation order" do
+    issue = create(:issue)
+    confidence_feature = create(:feature_intent, :confidence_driven, project: issue.project)
+    create(:feature_intent_issue, feature_intent: confidence_feature, issue: issue,
+      release_state: "held", release_error: "Material prerequisite coverage has not been confirmed.")
+    approval_feature = create(:feature_intent, project: issue.project, status: "approved_waiting_for_merge")
+    create(:feature_intent_issue, feature_intent: approval_feature, issue: issue)
+
+    hold = described_class.call(issue: issue)
+
+    expect(hold.code).to eq("feature_not_released")
+  end
 end
