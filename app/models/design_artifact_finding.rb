@@ -18,6 +18,7 @@ class DesignArtifactFinding < ApplicationRecord
   after_commit :bump_inbox_cache_version, if: :inbox_visibility_changed?
 
   scope :open_findings, -> { where(status: "open") }
+  scope :pending_findings, -> { where(status: %w[open assigned deferred dismissed]) }
 
   belongs_to :resolution_actor, class_name: "User", optional: true
   belongs_to :resolution_issue, class_name: "Issue", optional: true

@@ -1333,6 +1333,31 @@ RSpec.describe "Inbox" do
     expect(document.at_css(%(a[href="#{project.github_url}/pull/100"]))).to be_present
   end
 
+  # @spec OPERATOR-INBOX-018
+  it "exposes a file-issue action so operators can establish ownership when no issue covers the artifact" do
+    finding = create(:design_artifact_finding, project: project, account: project.account)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::TRACEABILITY_GAP_KIND, finding), kind: Inbox::Queue::TRACEABILITY_GAP_KIND)
+
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css(%(form[action="#{resolve_design_artifact_finding_path(finding)}"]))).to be_present
+    expect(document.at_css(%(form[action="#{file_issue_design_artifact_finding_path(finding)}"]))).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "rejects an unverified file-issue submit with a stale revision" do
+    finding = create(:design_artifact_finding, project: project, account: project.account)
+
+    expect do
+      post file_issue_design_artifact_finding_path(finding), params: {
+        filing: { revision: "stale", title: "Repair", body: "Cite repair." }
+      }
+    end.not_to change(Issue, :count)
+
+    expect(finding.reload.status).to eq("open")
+    expect(response).to be_redirect
+  end
+
   # @spec OPERATOR-INBOX-002J
   it "links the test_review_pending detail pane to the pull request" do
     pr = create_tdd_test_review_pr(title: "Red-phase tests for CSV export", github_number: 518)

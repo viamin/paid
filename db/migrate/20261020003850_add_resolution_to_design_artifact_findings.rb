@@ -26,12 +26,28 @@ class AddResolutionToDesignArtifactFindings < ActiveRecord::Migration[8.1]
   end
 
   def down
-    remove_check_constraint :design_artifact_findings, name: "chk_design_artifact_findings_status"
-    add_check_constraint :design_artifact_findings, "status IN ('open', 'resolved')", name: "chk_design_artifact_findings_status"
-    remove_reference :design_artifact_findings, :resolution_issue, foreign_key: true, if_exists: true
-    remove_reference :design_artifact_findings, :resolution_actor, foreign_key: true, if_exists: true
-    remove_column :design_artifact_findings, :resolution_metadata
-    remove_column :design_artifact_findings, :resolution_reason
-    remove_column :design_artifact_findings, :resolution_state
+    # The widened check constraint accepts 'assigned', 'deferred', and
+    # 'dismissed'. PostgreSQL validates a new check constraint against every
+    # existing row, so any rows in those statuses must be coerced to an
+    # open/resolved-only value before the narrower constraint is re-added,
+    # otherwise db:rollback fails before the resolution columns can be removed.
+    # Down migrations on a small status table are bounded; ignore the
+    # strong_migrations long-running warning for this rollback path.
+    safety_assured do
+      execute <<~SQL.squish
+        UPDATE design_artifact_findings
+        SET status = 'open'
+        WHERE status IN ('assigned', 'deferred', 'dismissed')
+      SQL
+
+      remove_check_constraint :design_artifact_findings, name: "chk_design_artifact_findings_status"
+      add_check_constraint :design_artifact_findings, "status IN ('open', 'resolved')",
+        name: "chk_design_artifact_findings_status", validate: false
+      remove_foreign_key :design_artifact_findings, :issues, column: :resolution_issue_id, if_exists: true
+      remove_foreign_key :design_artifact_findings, :users, column: :resolution_actor_id, if_exists: true
+      remove_column :design_artifact_findings, :resolution_metadata
+      remove_column :design_artifact_findings, :resolution_reason
+      remove_column :design_artifact_findings, :resolution_state
+    end
   end
 end

@@ -8,7 +8,10 @@ module FeatureIntents
     def self.call(...) = new(...).call
 
     def self.resolve_removed_rdr_findings(project:, paths:, directory:, file_pattern:)
-      project.design_artifact_findings.open_findings
+      # Include decision-pending rows so an operator's assigned/deferred/
+      # dismissed decision no longer leaves a permanent record once the RDR is
+      # removed: reconciliation, not the operator's note, is the verifier.
+      project.design_artifact_findings.pending_findings
         .where("artifact_path LIKE ?", "#{ActiveRecord::Base.sanitize_sql_like(directory)}/%")
         .find_each do |finding|
           next unless File.dirname(finding.artifact_path) == directory
@@ -71,7 +74,10 @@ module FeatureIntents
       paths = Array(artifacts).filter_map { |artifact| artifact[:path] }.uniq
       return if paths.empty?
 
-      project.design_artifact_findings.open_findings.where(artifact_path: paths)
+      # Include decision-pending rows so an operator's assigned/deferred/
+      # dismissed decision does not remain pending when reconciliation
+      # verifies the underlying gap is gone.
+      project.design_artifact_findings.pending_findings.where(artifact_path: paths)
         .where.not(fingerprint: findings.map(&:fingerprint)).find_each(&:resolve!)
     end
   end

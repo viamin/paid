@@ -63,4 +63,31 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
 
     expect(DesignArtifactFinding.sole).to have_attributes(status: "resolved", resolved_at: be_present)
   end
+
+  # @spec OPERATOR-INBOX-018
+  it "resolves a deferred RDR finding when the underlying RDR is removed after reconciliation" do
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
+    finding = DesignArtifactFinding.sole
+    finding.update!(status: "deferred", resolution_state: "deferred", resolution_reason: "out of scope")
+
+    described_class.resolve_removed_rdr_findings(
+      project:, paths: [], directory: "docs/rdrs", file_pattern: "RDR-*.md"
+    )
+
+    expect(finding.reload).to have_attributes(status: "resolved", resolved_at: be_present)
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "resolves an assigned RDR finding when reconciliation verifies the gap is gone" do
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
+    finding = DesignArtifactFinding.sole
+    finding.update!(status: "assigned", resolution_state: "assigned", resolution_reason: "owned by #1")
+
+    described_class.call(
+      project:, revision:, artifacts: [ artifact.merge(related_issues: [ "acme/widget#10" ]) ],
+      issues: [ { repository: "acme/widget", number: 10 } ]
+    )
+
+    expect(finding.reload).to have_attributes(status: "resolved", resolved_at: be_present)
+  end
 end
