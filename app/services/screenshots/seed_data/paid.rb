@@ -24,7 +24,7 @@ module Screenshots
           end
 
           user.settings.update!(
-            allowed_service_images: [ "postgres:16", "redis:7-alpine", "selenium/standalone-chromium:latest" ]
+            allowed_service_images: [ "postgres:16.15", "redis:7-alpine", "selenium/standalone-chromium:latest" ]
           )
 
           github_token = GithubToken.find_or_create_by!(account: account, name: "Screenshot Token") do |record|

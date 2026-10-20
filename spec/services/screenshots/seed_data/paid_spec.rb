@@ -64,6 +64,16 @@ RSpec.describe Screenshots::SeedData::Paid do
     expect(login_session).to be_awaiting_authorization
   end
 
+  it "seeds a service container whose image is covered by the owner's allowlist" do
+    result = described_class.call
+
+    service_container = ServiceContainer.find(result.dig("service_container", "id"))
+    owner = User.find(result.dig("user", "id"))
+
+    expect(service_container).to be_persisted
+    expect(owner.settings.allowed_service_images).to include(service_container.image)
+  end
+
   it "returns marketplace entry metadata for marketplace screenshot targets" do
     result = described_class.call
 
