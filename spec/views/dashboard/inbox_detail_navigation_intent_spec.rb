@@ -129,9 +129,10 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       has_top_frame = anchor["data-turbo-frame"] == "_top"
       target_blank = anchor["target"] == "_blank"
       rel_noopener = anchor["rel"].to_s.split(/\s+/).include?("noopener")
+      rel_noreferrer = anchor["rel"].to_s.split(/\s+/).include?("noreferrer")
       whitelisted = INBOX_DETAIL_WHITELISTED_EMBEDDED_FLOWS.include?(anchor["data-turbo-frame-spec-whitelist"].to_s)
 
-      next if has_top_frame || whitelisted || (target_blank && rel_noopener)
+      next if has_top_frame || whitelisted || (target_blank && rel_noopener && rel_noreferrer)
 
       rules_violated << { kind: kind, kind_hint: "anchor", href: href, html: anchor.to_html.lines.first.to_s.strip }
     end
@@ -596,6 +597,17 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       expect {
         assert_navigation_intent!(augmented_fragment, kind: "clarifying_questions")
       }.to raise_error(InboxNavigationIntentViolation, %r{/sneaky})
+    end
+
+    it "raises when an external-looking anchor carries `rel=\"noopener\"` without `noreferrer`" do
+      fragment = render_detail_partial(entry)
+      augmented_fragment = Nokogiri::HTML.fragment(
+        fragment.to_html + '<a href="https://example.com/partial-noopener" target="_blank" rel="noopener">Go</a>'
+      )
+
+      expect {
+        assert_navigation_intent!(augmented_fragment, kind: "clarifying_questions")
+      }.to raise_error(InboxNavigationIntentViolation, %r{/partial-noopener})
     end
   end
 end
