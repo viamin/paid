@@ -45,6 +45,8 @@ class AddResolutionToDesignArtifactFindings < ActiveRecord::Migration[8.1]
         name: "chk_design_artifact_findings_status", validate: false
       remove_foreign_key :design_artifact_findings, :issues, column: :resolution_issue_id, if_exists: true
       remove_foreign_key :design_artifact_findings, :users, column: :resolution_actor_id, if_exists: true
+      remove_reference :design_artifact_findings, :resolution_issue, foreign_key: false, if_exists: true
+      remove_reference :design_artifact_findings, :resolution_actor, foreign_key: false, if_exists: true
       remove_column :design_artifact_findings, :resolution_metadata
       remove_column :design_artifact_findings, :resolution_reason
       remove_column :design_artifact_findings, :resolution_state

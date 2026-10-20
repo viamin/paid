@@ -90,4 +90,22 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
 
     expect(finding.reload).to have_attributes(status: "resolved", resolved_at: be_present)
   end
+
+  # @spec OPERATOR-INBOX-018 DESIGN-RECONCILIATION-001
+  it "reopens an assigned finding when its issue closes without resolving the gap" do
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
+    finding = DesignArtifactFinding.sole
+    issue = create(:issue, :closed, project:)
+    finding.update!(
+      status: "assigned", resolution_state: "assigned", resolution_reason: "Owned by ##{issue.github_number}",
+      resolution_issue: issue, resolution_metadata: { "revision" => revision }
+    )
+
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
+
+    expect(finding.reload).to have_attributes(
+      status: "open", resolution_state: "assigned", resolution_issue: issue,
+      resolution_metadata: include("reopened_reason" => "The assigned issue closed without reconciliation resolving this gap.")
+    )
+  end
 end

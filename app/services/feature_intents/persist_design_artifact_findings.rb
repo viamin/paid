@@ -41,11 +41,18 @@ module FeatureIntents
     attr_reader :project, :revision, :artifacts, :issues, :coverage_complete
 
     def persist(result)
+      records = existing_records(result.findings)
+
       DesignArtifactFinding.transaction do
         result.associations.each { |association| persist_association(association) }
-        result.findings.each { |finding| upsert(finding, result.last_successful_coverage_at) }
+        result.findings.each { |finding| upsert(finding, result.last_successful_coverage_at, records[finding.fingerprint]) }
         resolve_absent_findings(result.findings) if result.last_successful_coverage_at
       end
+    end
+
+    def existing_records(findings)
+      project.design_artifact_findings.where(fingerprint: findings.map(&:fingerprint))
+        .includes(:resolution_issue).index_by(&:fingerprint)
     end
 
     def persist_association(association)
@@ -59,15 +66,36 @@ module FeatureIntents
       record.save!
     end
 
-    def upsert(finding, covered_at)
-      record = project.design_artifact_findings.find_or_initialize_by(fingerprint: finding.fingerprint)
+    def upsert(finding, covered_at, record)
+      record ||= project.design_artifact_findings.build(fingerprint: finding.fingerprint)
       record.assign_attributes(
         account: project.account, artifact_path: finding.path, revision: finding.revision,
         state: finding.state, evidence: finding.evidence, covered_at: covered_at || record.covered_at || Time.current,
-        status: record.decision_pending? ? record.status : "open",
-        resolved_at: record.decision_pending? ? record.resolved_at : nil
+        **resolution_attributes(record)
       )
       record.save!
+    end
+
+    def resolution_attributes(record)
+      return reopened_attributes(record) if assigned_issue_closed?(record)
+      return { status: record.status, resolved_at: record.resolved_at } if record.decision_pending?
+
+      { status: "open", resolved_at: nil }
+    end
+
+    def assigned_issue_closed?(record)
+      record.status == "assigned" && record.resolution_issue&.github_state == "closed"
+    end
+
+    def reopened_attributes(record)
+      {
+        status: "open",
+        resolved_at: nil,
+        resolution_metadata: record.resolution_metadata.merge(
+          "reopened_at" => Time.current.iso8601,
+          "reopened_reason" => "The assigned issue closed without reconciliation resolving this gap."
+        )
+      }
     end
 
     def resolve_absent_findings(findings)
