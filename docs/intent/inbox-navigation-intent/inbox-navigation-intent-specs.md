@@ -12,10 +12,15 @@
   of three navigation-intent rules: (a) carry `data-turbo-frame="_top"`
   on the element (or on the `<form>` wrapping `button_to`/`form_with`
   submissions), (b) carry both `target="_blank"` and a `rel` containing
-  `noopener` and `noreferrer` for an external destination, or (c) carry a
+  `noopener` and `noreferrer` for a destination whose `href` is an
+  absolute `http(s)` URL, or (c) carry a
   `data-turbo-frame-spec-whitelist` value listed in
   `INBOX_DETAIL_WHITELISTED_EMBEDDED_FLOWS`, with a code comment in the
   partial explaining why the flow intentionally renders inside the frame.
+  An in-app `href` SHALL NOT satisfy rule (b) regardless of `target` or
+  `rel` — an internal link opened in a new tab is still internal
+  navigation and must declare rule (a)'s `data-turbo-frame="_top"` or be
+  reported as nonconforming.
   In-page anchors (`href` starting with `#`), blank anchors, and any
   element the guard walks but that already satisfies one of the rules
   SHALL be accepted without raising. The guard MUST walk every inbox
@@ -25,7 +30,8 @@
   operational-failures branches], manual_review, intent_conformance,
   feature_decision, retry_limited, change_intent_draft, partial_closeout,
   test_review_pending, project_setup_pending, traceability_gap) so new
-  kinds added to the dispatcher inherit the policy automatically.
+  kinds added to the dispatcher inherit the policy automatically, with
+  that inheritance enforced by INBOX-NAV-INTENT-003.
   *Test:* `spec/views/dashboard/inbox_detail_navigation_intent_spec.rb`.
   *Code:* `spec/views/dashboard/inbox_detail_navigation_intent_spec.rb`
   (`assert_navigation_intent!`,
@@ -50,3 +56,20 @@
   *Code:* `spec/views/dashboard/inbox_detail_navigation_intent_spec.rb`
   (`assert_navigation_intent!`,
   `InboxNavigationIntentViolation`).
+
+- [x] **INBOX-NAV-INTENT-003** — The "new inbox kinds inherit the guard
+  automatically" property MUST be enforced by CI, not asserted in prose.
+  The set of inbox kinds this spec walks (each per-kind context registers
+  the kind it covers in `INBOX_DETAIL_GUARDED_KINDS`) MUST equal
+  `Inbox::Queue::KINDS` — a kind with no context, or a context for a kind
+  the queue no longer defines, SHALL fail. Every `*_KIND` constant
+  `Inbox::Queue` declares MUST appear in `KINDS`, since a kind missing from
+  `KINDS` never reaches the inbox and therefore cannot be guarded. Every
+  kind in `KINDS` MUST be dispatched by an explicit `entry.<kind>?`
+  branch in `app/views/dashboard/_inbox_detail.html.erb`, so a kind whose
+  branch is missing cannot fall through the `else` fallback and render the
+  `plan_review` partial while passing CI.
+  *Test:* `spec/views/dashboard/inbox_detail_navigation_intent_spec.rb`
+  (`describe "coverage canary"`).
+  *Code:* `spec/views/dashboard/inbox_detail_navigation_intent_spec.rb`
+  (`INBOX_DETAIL_GUARDED_KINDS`).

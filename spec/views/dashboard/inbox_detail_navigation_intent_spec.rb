@@ -18,6 +18,13 @@ InboxNavigationIntentViolation = Class.new(StandardError)
 # the same name-pinning guarantee).
 INBOX_DETAIL_WHITELISTED_EMBEDDED_FLOWS = %w[answer-in-chat].freeze
 
+# Inbox kinds this spec walks. Each per-kind context below registers the kind
+# it covers, and the "coverage canary" holds the registry to
+# `Inbox::Queue::KINDS` — so adding a kind without adding a context fails CI
+# instead of quietly leaving the new partial's actions unguarded (see #4502).
+# Top-level so the canary examples can read it from their example bodies.
+INBOX_DETAIL_GUARDED_KINDS = []
+
 # @spec INBOX-NAV-INTENT-001
 # Turbo "Content missing" bugs in inbox detail panes keep recurring (#3922,
 # #3822, #4031, #4500, #4501) because each new inbox kind must remember to opt
@@ -38,7 +45,11 @@ INBOX_DETAIL_WHITELISTED_EMBEDDED_FLOWS = %w[answer-in-chat].freeze
 #    explaining why.
 #
 # Renders every inbox kind dispatched by `app/views/dashboard/_inbox_detail.html.erb`
-# so new kinds inherit the guard automatically — no per-kind opt-in.
+# so new kinds inherit the guard automatically — no per-kind opt-in. That
+# inheritance is *enforced*, not aspirational: the "coverage canary" contexts at
+# the bottom fail CI when `Inbox::Queue::KINDS` and this spec's per-kind
+# contexts drift apart, or when the dispatcher stops branching on a kind
+# explicitly (which would silently fall through to the `plan_review` partial).
 #
 # The negative test at the bottom (`intentionally nonconforming action`) proves
 # the guard bites by rendering a kind with a deliberately nonconforming link
@@ -130,9 +141,14 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       target_blank = anchor["target"] == "_blank"
       rel_noopener = anchor["rel"].to_s.split(/\s+/).include?("noopener")
       rel_noreferrer = anchor["rel"].to_s.split(/\s+/).include?("noreferrer")
+      # Rule 2 is an *external* link rule: `target="_blank"` on an in-app path
+      # is still an in-app navigation (Turbo or not), and silently opening it
+      # in a new tab is exactly the drift the policy forbids. So the href must
+      # itself resolve to an absolute `http(s)` destination.
+      external_href = href.match?(%r{\Ahttps?://})
       whitelisted = INBOX_DETAIL_WHITELISTED_EMBEDDED_FLOWS.include?(anchor["data-turbo-frame-spec-whitelist"].to_s)
 
-      next if has_top_frame || whitelisted || (target_blank && rel_noopener && rel_noreferrer)
+      next if has_top_frame || whitelisted || (external_href && target_blank && rel_noopener && rel_noreferrer)
 
       rules_violated << { kind: kind, kind_hint: "anchor", href: href, html: anchor.to_html.lines.first.to_s.strip }
     end
@@ -160,18 +176,23 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       Every <a> and <form> in the inbox-detail Turbo Frame must satisfy exactly one of:
 
       1. `data-turbo-frame="_top"` on the element itself (or on the <form> for `button_to`/`form_with`).
-      2. An external link with `target="_blank"` (and a `rel="noopener noreferrer"`).
+      2. An external link whose href is an absolute `http(s)` URL, with `target="_blank"`
+         (and a `rel="noopener noreferrer"`). An in-app href does NOT qualify, however the
+         `target` is set — that would move internal navigation into a new tab.
       3. A whitelisted embedded flow: add `data-turbo-frame-spec-whitelist="<name>"` (with
          `<name>` listed in `INBOX_DETAIL_WHITELISTED_EMBEDDED_FLOWS`) and a code comment in
          the partial explaining why it intentionally renders inside the frame.
     MSG
   end
 
-  # Per-kind contexts. A new inbox kind inherits the guard automatically when
-  # `_inbox_detail.html.erb` is updated to dispatch to a new partial — add a
-  # context here that builds the minimum Entry shape the partial needs to
-  # render through its branches.
+  # Per-kind contexts, each registering its kind in
+  # `INBOX_DETAIL_GUARDED_KINDS` so the "coverage canary" at the bottom can hold
+  # them to `Inbox::Queue::KINDS`. Adding an inbox kind means adding a context
+  # here that builds the minimum Entry shape its partial needs to render
+  # through its branches — the canary fails CI until that context exists.
   describe "clarifying_questions" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::CLARIFYING_QUESTIONS_KIND
+
     let(:entry) do
       build_entry.call(Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
         record: entry_issue,
@@ -185,6 +206,8 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   end
 
   describe "plan_review" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::PLAN_REVIEW_KIND
+
     let(:plan_review_record) do
       TenantContext.with_system_access do
         create(:decomposition_decision,
@@ -210,6 +233,8 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   end
 
   describe "merge_approval" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::MERGE_APPROVAL_KIND
+
     let(:entry) do
       build_entry.call(Inbox::Queue::MERGE_APPROVAL_KIND,
         guidance: { heading: "Awaiting approval", instruction: "Approve the PR.",
@@ -223,6 +248,8 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   end
 
   describe "action_required" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::ACTION_REQUIRED_KIND
+
     # A real AgentRun row so `notification.subject.is_a?(AgentRun)` is truthy
     # and exercises the "View Agent Run" link branches. `instance_double`
     # cannot stand in here because verifying doubles still report false for
@@ -296,6 +323,8 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   end
 
   describe "escalated_pr" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::ESCALATED_PR_KIND
+
     let(:escalated_record) do
       # Real Issue row keeps `entry.issue.github_url` resolvable; the
       # `block.record` is the Inbox::EscalatedPullRequests::Entry struct shape
@@ -328,6 +357,8 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   end
 
   describe "manual_review" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::MANUAL_REVIEW_KIND
+
     let(:manual_review_issue) do
       TenantContext.with_system_access do
         issue = create(:issue, project: project, github_number: 11)
@@ -349,6 +380,8 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   end
 
   describe "intent_conformance" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::INTENT_CONFORMANCE_KIND
+
     let(:intent_verdict) do
       TenantContext.with_system_access do
         IntentConformanceVerdict.create!(
@@ -381,6 +414,8 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   end
 
   describe "feature_decision" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::FEATURE_DECISION_KIND
+
     let(:feature_intent_record) do
       TenantContext.with_system_access do
         create(:feature_intent, :ready_for_approval, project: project, title: "Approve the feature.",
@@ -408,6 +443,8 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   end
 
   describe "retry_limited" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::RETRY_LIMITED_KIND
+
     let(:retry_issue) do
       TenantContext.with_system_access do
         issue = create(:issue, project: project, github_number: 8)
@@ -429,6 +466,8 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   end
 
   describe "change_intent_draft" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::CHANGE_INTENT_DRAFT_KIND
+
     let(:change_intent) do
       TenantContext.with_system_access do
         create(:change_intent, :draft, project: project, title: "Prefer sliding window")
@@ -448,6 +487,8 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   end
 
   describe "partial_closeout" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::PARTIAL_CLOSEOUT_KIND
+
     let(:stalled_status) do
       Struct.new(:reason, :outcome, :blockers, :unresolved_prerequisites, :evidence, :admissible,
         :open_request, :resolved_current_generation, :stalled?, keyword_init: true)
@@ -481,6 +522,8 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   end
 
   describe "test_review_pending" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::TEST_REVIEW_PENDING_KIND
+
     it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent" do
       entry = build_entry.call(Inbox::Queue::TEST_REVIEW_PENDING_KIND)
       fragment = render_detail_partial(entry)
@@ -489,6 +532,8 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   end
 
   describe "project_setup_pending" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::PROJECT_SETUP_PENDING_KIND
+
     let(:project_for_setup) do
       TenantContext.with_system_access do
         create(:project, account: account, created_by: owner, owner: "acme", repo: "beta",
@@ -512,6 +557,8 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   end
 
   describe "traceability_gap" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::TRACEABILITY_GAP_KIND
+
     let(:finding) do
       TenantContext.with_system_access do
         DesignArtifactFinding.create!(
@@ -608,6 +655,68 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
       expect {
         assert_navigation_intent!(augmented_fragment, kind: "clarifying_questions")
       }.to raise_error(InboxNavigationIntentViolation, %r{/partial-noopener})
+    end
+
+    it "raises when an internal anchor carries the full external-link attribute set" do
+      fragment = render_detail_partial(entry)
+      augmented_fragment = Nokogiri::HTML.fragment(
+        fragment.to_html + '<a href="/projects/1" target="_blank" rel="noopener noreferrer">Go</a>'
+      )
+
+      expect {
+        assert_navigation_intent!(augmented_fragment, kind: "clarifying_questions")
+      }.to raise_error(InboxNavigationIntentViolation, %r{/projects/1})
+    end
+
+    it "does NOT raise when a new action is an absolute external link opened in a new tab" do
+      fragment = render_detail_partial(entry)
+      augmented_fragment = Nokogiri::HTML.fragment(
+        fragment.to_html + '<a href="https://example.com/external" target="_blank" rel="noopener noreferrer">Go</a>'
+      )
+
+      expect {
+        assert_navigation_intent!(augmented_fragment, kind: "clarifying_questions")
+      }.not_to raise_error
+    end
+  end
+
+  # @spec INBOX-NAV-INTENT-003
+  # The inheritance canary. "New inbox kinds inherit the guard automatically"
+  # is only true while coverage and `Inbox::Queue::KINDS` move together, so
+  # these examples fail CI on drift instead of leaving the guard quietly
+  # covering less than the inbox dispatches.
+  describe "coverage canary" do
+    it "walks every inbox kind Inbox::Queue dispatches" do
+      covered = INBOX_DETAIL_GUARDED_KINDS.uniq
+
+      expect(covered).to match_array(Inbox::Queue::KINDS), <<~MSG
+        Inbox kinds and this spec's per-kind contexts have drifted apart.
+          Kinds with no context here: #{(Inbox::Queue::KINDS - covered).inspect}
+          Contexts for kinds Inbox::Queue no longer defines: #{(covered - Inbox::Queue::KINDS).inspect}
+        Add a `describe "<kind>"` context that registers its kind in
+        `INBOX_DETAIL_GUARDED_KINDS`, and drop the stale ones (#4502).
+      MSG
+    end
+
+    it "dispatches every inbox kind explicitly in `_inbox_detail.html.erb`" do
+      dispatcher = Rails.root.join("app/views/dashboard/_inbox_detail.html.erb").read
+      undispatched = Inbox::Queue::KINDS.reject { |kind| dispatcher.include?("entry.#{kind}?") }
+
+      expect(undispatched).to be_empty, <<~MSG
+        These inbox kinds have no `entry.<kind>?` branch in
+        `app/views/dashboard/_inbox_detail.html.erb`: #{undispatched.inspect}
+        They would silently render the `plan_review` partial through the `else` fallback,
+        so the guard would never walk their own actions (#4502).
+      MSG
+    end
+
+    it "lists every `*_KIND` constant Inbox::Queue defines as a dispatched kind" do
+      declared_kinds = Inbox::Queue.constants(false).grep(/_KIND\z/).map { |name| Inbox::Queue.const_get(name, false) }
+
+      expect(declared_kinds).to match_array(Inbox::Queue::KINDS), <<~MSG
+        `Inbox::Queue` declares kind constants outside `KINDS`: #{(declared_kinds - Inbox::Queue::KINDS).inspect}.
+        A kind missing from `KINDS` never reaches the inbox, so this spec cannot guard it (#4502).
+      MSG
     end
   end
 end

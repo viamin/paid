@@ -37,7 +37,11 @@ must hold; the assertion fails otherwise.
 
 2. **External link.** The element carries `target="_blank"` *and*
    `rel="noopener noreferrer"` and its `href` resolves to an absolute
-   external URL. The `noopener`/`noreferrer` pair is required so an
+   external `http(s)` URL. The scheme check is part of the rule, not a
+   detail: `target="_blank"` on an in-app path is still internal
+   navigation, so accepting it on the strength of the attribute pair alone
+   would let a link quietly escape the frame while claiming to be
+   conforming. The `noopener`/`noreferrer` pair is required so an
    inadvertently-shipped blanked-out link cannot navigate-in-place via the
    `target` change and leak referrer information.
 
@@ -53,7 +57,17 @@ must hold; the assertion fails otherwise.
 The same guard walks every inbox-kind partial dispatched by
 `app/views/dashboard/_inbox_detail.html.erb` automatically — no per-kind
 opt-in — so new inbox kinds inherit the policy without remembering to wire
-it up.
+it up. That inheritance is *enforced*, not asserted: each per-kind context
+in the guard spec registers the kind it covers in
+`INBOX_DETAIL_GUARDED_KINDS`, and a coverage canary fails CI when
+
+- the recorded kinds no longer equal `Inbox::Queue::KINDS` (a kind with no
+  context, or a context for a kind the queue dropped),
+- a `*_KIND` constant exists outside `KINDS` (an unreachable kind nobody
+  can guard), or
+- a kind has no explicit `entry.<kind>?` branch in the dispatcher, which
+  would otherwise fall through the `else` fallback and render the
+  `plan_review` partial under a kind it does not belong to.
 
 ## What this segment owns
 
@@ -67,6 +81,9 @@ it up.
   rendered fragment MUST raise `InboxNavigationIntentViolation`, and a
   conforming element MUST NOT — so the guard cannot be silently disabled
   by a future contributor who edits only the assertion's rule list.
+- The coverage canary that ties the guard's per-kind contexts to
+  `Inbox::Queue::KINDS` and to the dispatcher's explicit branches, so
+  "new kinds inherit the guard" stays true as the inbox grows.
 
 ## What this segment does NOT own
 
@@ -82,7 +99,8 @@ it up.
   lanes (e.g. `partial_closeout`, `change_intent_draft`). This guard
   pulls them in via the dispatcher in `_inbox_detail.html.erb`; new kinds
   inherit the policy by adding a new partial and being rendered by the
-  shared `assert_navigation_intent!` walk.
+  shared `assert_navigation_intent!` walk — and the coverage canary fails
+  CI until a per-kind context exists to walk them.
 - The interaction model of embedded Turbo flows themselves (e.g. "Answer
   in chat" replacing the questions in place, or popup chat opening from
   the inbox). The whitelist is just a marker; the flow's UX is owned by
