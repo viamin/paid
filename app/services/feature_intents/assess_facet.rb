@@ -74,8 +74,13 @@ module FeatureIntents
       assessment
     end
 
+    # Re-reads both rows under row locks instead of trusting the in-memory
+    # instances captured while building the prompt: locking also waits out an
+    # ingest transaction that already advanced the revision but has not yet
+    # committed. Facet is locked before direction to match the lock order of
+    # ChallengeFacetAssessment, so the two cannot deadlock.
     def current_evidence?
-      direction.status == "active" && facet.evidence_revision == assessment.evidence_revision
+      facet.lock!.evidence_revision == assessment.evidence_revision && direction.lock!.status == "active"
     end
 
     def valid_payload?(payload)
