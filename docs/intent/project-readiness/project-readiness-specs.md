@@ -104,3 +104,10 @@ prefix: PROJECT-READINESS
   `Projects::Readiness::BootstrapWriteGuard`, `Tdd::WriteGuard`.
   *Test:* `spec/requests/godot_gdunit4_readiness_lifecycle_spec.rb`,
   `bin/validate-godot-gdunit4-readiness`.
+
+- [x] **PROJECT-READINESS-010** — When an operator uses the bootstrap,
+  project-settings, or failed-run-details action from a `project_setup_pending`
+  Inbox detail, the action SHALL navigate the top-level page rather than the
+  `inbox-detail` Turbo Frame.
+  *Code:* `dashboard/_inbox_detail_project_setup_pending`.
+  *Test:* `spec/requests/inbox_spec.rb`.
