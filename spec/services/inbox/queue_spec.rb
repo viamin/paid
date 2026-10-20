@@ -207,8 +207,62 @@ RSpec.describe Inbox::Queue do
       entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
 
       expect(entries.find { |entry| entry.issue == review_required }.summary).to eq("Human review required before manual merge")
-      expect(entries.find { |entry| entry.issue == reapproval_required }.summary).to eq("Waiting for owner re-approval on the current HEAD commit")
+      expect(entries.find { |entry| entry.issue == reapproval_required }.summary).to eq("Approval is stale for the current revision")
       expect(entries.map(&:issue)).not_to include(checks_pending)
+    end
+
+    # @spec OPERATOR-INBOX-002K
+    it "explains stale approval as a manual merge decision when automatic merge is inactive" do
+      project.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      create(
+        :issue, :pull_request, project: project,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [ blocker(signal: "reviews_fresh", reason_code: "stale_approval") ], not_evaluated: [])
+      )
+
+      guidance = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole.guidance
+
+      expect(guidance).to include(
+        heading: "Approval is stale for the current revision",
+        automatic_merge_active: false,
+        stale_approval: true
+      )
+      expect(guidance.fetch(:instruction)).to include(
+        "GitHub still shows Approved",
+        "manual merge decision",
+        "Re-approval alone will not cause Paid to merge it"
+      )
+    end
+
+    # @spec OPERATOR-INBOX-002K
+    it "explains a stale approval as a later automatic reevaluation when auto-merge is active" do
+      project.update!(auto_merge_mode: "all", auto_pick_enabled: false)
+      create(
+        :issue, :pull_request, project: project,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [ blocker(signal: "reviews_fresh", reason_code: "stale_approval") ], not_evaluated: [])
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry.guidance).to include(automatic_merge_active: true, stale_approval: true)
+      expect(entry.guidance.fetch(:instruction)).to include("reevaluate", "subject to all remaining checks and policy")
+      expect(entry.guidance.fetch(:instruction)).not_to include("manual merge decision")
+    end
+
+    # @spec OPERATOR-INBOX-002K
+    it "explains a review hold as a manual merge decision when automatic merge is inactive" do
+      project.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      create(
+        :issue, :pull_request, project: project,
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ]
+      )
+
+      guidance = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole.guidance
+
+      expect(guidance).to include(automatic_merge_active: false)
+      expect(guidance.fetch(:instruction)).to include("manual merge decision", "will not merge this pull request automatically")
+      expect(guidance.fetch(:instruction)).not_to include("remove the hold")
     end
 
     it "returns a merge-approval Inbox entry for an ignored-mode local review hold without a blocker snapshot" do # @spec LABEL-CONTROL-004

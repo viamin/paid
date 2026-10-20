@@ -78,6 +78,7 @@ module Inbox
       :summary_text,
       :title_text,
       :action_url,
+      :guidance,
       :closeout_status,
       keyword_init: true
     ) do
@@ -429,7 +430,8 @@ module Inbox
           tasks: [],
           summary_text: snapshot.summary,
           title_text: nil,
-          action_url: nil
+          action_url: nil,
+          guidance: snapshot.guidance
         )
       end
     end

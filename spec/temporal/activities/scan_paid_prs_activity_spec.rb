@@ -610,7 +610,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
           reviews: [ { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current } ]
         )
         allow(activity).to receive_messages(owner_approved_or_self_authored?: true, no_outstanding_review_feedback?: false,
-          all_blocking_review_methods_complete?: true, review_freshness_for_head: :fresh)
+          all_blocking_review_methods_complete?: true,
+          freshness_for_head: build_stale_freshness_result(:fresh))
         expect(activity).not_to receive(:dependencies_resolved?)
 
         freeze_time do
@@ -647,6 +648,30 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         expect(pr_issue.reload.auto_merge_blockers).to eq("failed" => [], "not_evaluated" => [])
         expect(pr_issue.auto_merge_evaluated_at).to be_present
         expect(automation_scan_results(result)).to be_empty
+      end
+
+      # @spec OPERATOR-INBOX-002K
+      it "persists stale approval revisions for an auto-merge-off PR" do
+        project.update!(auto_merge_mode: "off", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_owner_approval_ready_signals(
+          head_sha: "current-revision",
+          approved_revision: "approved-revision"
+        )
+
+        activity.execute(project_id: project.id)
+
+        blocker = pr_issue.reload.auto_merge_blockers.fetch("failed").find do |candidate|
+          candidate["signal"] == "reviews_fresh"
+        end
+        stale_entries = blocker.fetch("approval_evidence").fetch("stale_approvals")
+        expect(stale_entries).to contain_exactly(
+          hash_including(
+            "approver_login" => "viamin",
+            "approved_revision" => "approved-revision",
+            "current_revision" => "current-revision"
+          )
+        )
       end
 
       # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
@@ -7453,6 +7478,23 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(automation_scan_results(result)).to eq([])
       end
+
+      # @spec OPERATOR-INBOX-002K
+      # Regression for #4519: a fresh owner re-approval coexisting with a
+      # stale configured-manual-reviewer approval must not be recorded as
+      # the stale approval — the Inbox explanation has to surface the
+      # approval that actually failed freshness, including its approver.
+      it "persists the manual reviewer's stale approval evidence rather than the fresh owner approval" do
+        activity.execute(project_id: project.id)
+
+        blocker = Issue.find_by!(project: project, github_number: 42)
+          .reload.auto_merge_blockers.fetch("failed").find do |candidate|
+            candidate["signal"] == "reviews_fresh"
+          end
+        expect(blocker.fetch("approval_evidence").fetch("stale_approvals")).to contain_exactly(
+          hash_including("approver_login" => "reviewer")
+        )
+      end
     end
 
     context "when the configured manual reviewer is not allowlisted and their approval is stale" do
@@ -7566,9 +7608,9 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         allow(activity).to receive(:pull_request_collector).with(project, client: github_client).and_return(collector)
 
-        review_freshness = activity.send(:review_freshness_for_head, github_client, project, issue, pr_data, reviews)
+        review_freshness = activity.send(:freshness_for_head, github_client, project, issue, pr_data, reviews)
 
-        expect(review_freshness).to eq(:fresh)
+        expect(review_freshness.state).to eq(:fresh)
         expect(collector).to have_received(:only_base_merge_commits_since?).with(
           approval_sha: approval_sha,
           head_sha: head_sha,
@@ -12486,17 +12528,30 @@ RSpec.describe Activities::ScanPaidPrsActivity do
     )
   end
 
-  def stub_owner_approval_ready_signals(checks_conclusion: "success", head_sha: "abc123", review_freshness: :stale)
+  def stub_owner_approval_ready_signals(checks_conclusion: "success", head_sha: "abc123", review_freshness: :stale,
+    approved_revision: nil)
     stub_github_for_pr(
       checks: [ { name: "rspec", conclusion: checks_conclusion } ],
-      reviews: [ { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current } ],
+      reviews: [ { id: 1, user_login: "viamin", state: "APPROVED", body: "", submitted_at: Time.current,
+                  commit_id: approved_revision } ].compact,
       head_sha: head_sha
     )
     allow(activity).to receive_messages(
       owner_approved_or_self_authored?: true,
       no_outstanding_review_feedback?: true,
       all_blocking_review_methods_complete?: true,
-      review_freshness_for_head: review_freshness
+      freshness_for_head: build_stale_freshness_result(
+        review_freshness,
+        approved_revision: approved_revision
+      )
+    )
+  end
+
+  def build_stale_freshness_result(state, approved_revision: nil)
+    Activities::ScanPaidPrsActivity::ReviewFreshnessResult.new(
+      state: state,
+      stale_approvals: approved_revision ? [ { user_login: "viamin", commit_id: approved_revision,
+                                               submitted_at: Time.current } ] : []
     )
   end
 
