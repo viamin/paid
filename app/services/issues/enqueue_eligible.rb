@@ -80,6 +80,8 @@ module Issues
 
     # @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-005
     def confidence_delivery_released?
+      return true unless issue.confidence_delivery?
+
       result = FeatureIntents::ReleaseIssue.call(issue: issue)
       return true if result.released?
 

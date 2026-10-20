@@ -107,6 +107,16 @@ class Issue < ApplicationRecord
   has_many :completion_cycles, class_name: "FeatureIntentCompletion", foreign_key: :completion_issue_id,
                               dependent: :nullify, inverse_of: :completion_issue
 
+  # An issue may serve more than one design. Automatic enqueue uses this
+  # predicate to invoke the confidence-release contract only when at least one
+  # linked design opted into that delivery policy.
+  # @spec CONFIDENCE-DELIVERY-005
+  def confidence_delivery?
+    feature_intent_issues.joins(:feature_intent)
+      .where(feature_intents: { delivery_policy: "confidence_driven" })
+      .exists?
+  end
+
   has_many :issue_dependencies, dependent: :destroy
   has_many :dependencies, through: :issue_dependencies, source: :depends_on_issue
   has_many :reverse_issue_dependencies, class_name: "IssueDependency",
