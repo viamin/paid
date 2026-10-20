@@ -54,6 +54,47 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
     expect(project.design_artifact_findings.open_findings.pluck(:state)).to contain_exactly("missing_tree", "unverifiable")
   end
 
+  # @spec OPERATOR-INBOX-018 DESIGN-RECONCILIATION-001
+  it "carries a deferred decision across an unrelated artifact revision" do
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
+    finding = DesignArtifactFinding.sole
+    finding.update!(status: "deferred", resolution_state: "deferred", resolution_reason: "Awaiting a planned documentation update")
+
+    described_class.call(project:, revision: "b" * 40, artifacts: [ artifact ], issues: [])
+
+    expect(DesignArtifactFinding.sole).to have_attributes(
+      revision: "b" * 40, status: "deferred", resolution_reason: "Awaiting a planned documentation update"
+    )
+  end
+
+  # @spec OPERATOR-INBOX-018 DESIGN-RECONCILIATION-001
+  it "carries a dismissed decision across an unrelated artifact revision" do
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
+    finding = DesignArtifactFinding.sole
+    finding.update!(status: "dismissed", resolution_state: "dismissed", resolution_reason: "Not applicable to this historical document")
+
+    described_class.call(project:, revision: "b" * 40, artifacts: [ artifact ], issues: [])
+
+    expect(DesignArtifactFinding.sole).to have_attributes(
+      revision: "b" * 40, status: "dismissed", resolution_reason: "Not applicable to this historical document"
+    )
+  end
+
+  # @spec OPERATOR-INBOX-018 DESIGN-RECONCILIATION-001
+  it "reopens a deferred decision when the reconciliation evidence materially changes" do
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
+    finding = DesignArtifactFinding.sole
+    finding.update!(status: "deferred", resolution_state: "deferred", resolution_reason: "Awaiting a planned documentation update")
+
+    described_class.call(
+      project:, revision: "b" * 40, artifacts: [ artifact.merge(stored_identities: [ "acme/widget#10" ]) ], issues: []
+    )
+
+    expect(project.design_artifact_findings.open_findings.sole).to have_attributes(
+      revision: "b" * 40, state: "stale_metadata"
+    )
+  end
+
   it "resolves an open RDR finding when its path was removed after a successful discovery" do
     described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
 
@@ -62,5 +103,50 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
     )
 
     expect(DesignArtifactFinding.sole).to have_attributes(status: "resolved", resolved_at: be_present)
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "resolves a deferred RDR finding when the underlying RDR is removed after reconciliation" do
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
+    finding = DesignArtifactFinding.sole
+    finding.update!(status: "deferred", resolution_state: "deferred", resolution_reason: "out of scope")
+
+    described_class.resolve_removed_rdr_findings(
+      project:, paths: [], directory: "docs/rdrs", file_pattern: "RDR-*.md"
+    )
+
+    expect(finding.reload).to have_attributes(status: "resolved", resolved_at: be_present)
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "resolves an assigned RDR finding when reconciliation verifies the gap is gone" do
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
+    finding = DesignArtifactFinding.sole
+    finding.update!(status: "assigned", resolution_state: "assigned", resolution_reason: "owned by #1")
+
+    described_class.call(
+      project:, revision:, artifacts: [ artifact.merge(related_issues: [ "acme/widget#10" ]) ],
+      issues: [ { repository: "acme/widget", number: 10 } ]
+    )
+
+    expect(finding.reload).to have_attributes(status: "resolved", resolved_at: be_present)
+  end
+
+  # @spec OPERATOR-INBOX-018 DESIGN-RECONCILIATION-001
+  it "reopens an assigned finding when its issue closes without resolving the gap" do
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
+    finding = DesignArtifactFinding.sole
+    issue = create(:issue, :closed, project:)
+    finding.update!(
+      status: "assigned", resolution_state: "assigned", resolution_reason: "Owned by ##{issue.github_number}",
+      resolution_issue: issue, resolution_metadata: { "revision" => revision }
+    )
+
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
+
+    expect(finding.reload).to have_attributes(
+      status: "open", resolution_state: "assigned", resolution_issue: issue,
+      resolution_metadata: include("reopened_reason" => "The assigned issue closed without reconciliation resolving this gap.")
+    )
   end
 end
