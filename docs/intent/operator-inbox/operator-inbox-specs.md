@@ -77,8 +77,14 @@
   guidance. Informational status/history notifications, including automatic
   code-scanning verification waits, SHALL remain outside this lane and its
   badge; credential and configuration notifications that require an operator
-  correction remain blocking entries.
-  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`.
+  correction remain blocking entries. The detail pane's full-page
+  destinations — the linked action URL (`notification.action_url`) and the
+  "View Agent Run" link for `AgentRun` subjects — SHALL opt out of the
+  `inbox-detail` Turbo frame (`data-turbo-frame="_top"`) so they navigate the
+  full page instead of leaving a "Content missing" placeholder in the pane
+  (#4501); external GitHub links keep their `target="_blank"` behavior.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/views/dashboard/_inbox_detail_action_required.html.erb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
 
