@@ -70,8 +70,10 @@ module ClarifyingQuestions
       ClarifyingQuestionProgress.find_by!(issue:, question_digest:, position:)
     end
 
+    # @spec QUESTION-EXPLORATION-018 — resolves the focused issue of a feature
+    # conversation, or the linked standalone issue.
     def issue
-      chat_session.clarifying_question_issue
+      chat_session.exploration_issue
     end
 
     def questions

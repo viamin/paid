@@ -122,6 +122,19 @@ RSpec.describe Tools::UpdateProjectSettings do
       )
     end
 
+    it "updates and audits the question-exploration rollout setting" do # @spec QUESTION-EXPLORATION-019
+      result = nil
+      expect {
+        result = call(settings: { "question_exploration_enabled" => true })
+      }.to change(AccountActivityEvent, :count).by(1)
+
+      expect(result[:question_exploration_enabled]).to be(true)
+      expect(project.reload.question_exploration_enabled).to be(true)
+      expect(account.account_activity_events.last.metadata.fetch("changed_fields")).to include(
+        "question_exploration_enabled"
+      )
+    end
+
     it "does not record activity when nothing changed" do
       project.update!(paused: false)
 

@@ -32,6 +32,9 @@ class ClarifyingQuestionProgress < ApplicationRecord
   def chat_belongs_to_issue
     return unless chat_session
     return if chat_session.clarifying_question_issue_id == issue_id
+    # @spec QUESTION-EXPLORATION-018 — a feature conversation accepts progress
+    # for any issue attached to its feature, not just its linked issue.
+    return if chat_session.feature_intent && chat_session.feature_intent.issue_ids.include?(issue_id)
 
     errors.add(:chat_session, "must be linked to the progress issue")
   end

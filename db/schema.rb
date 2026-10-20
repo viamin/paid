@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_19_173051) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_19_213859) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -792,6 +792,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_173051) do
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.uuid "external_id", default: -> { "gen_random_uuid()" }, null: false
+    t.bigint "feature_intent_id", comment: "Feature whose related issues share this exploration conversation."
     t.datetime "idle_timeout_at"
     t.string "inbox_item_key", comment: "Stable Inbox::Queue entry key that this interactive chat session was opened from."
     t.jsonb "inbox_item_metadata", default: {}, null: false, comment: "Audit snapshot of the linked inbox item's queue metadata at chat open time."
@@ -813,6 +814,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_173051) do
     t.index ["created_by_id", "inbox_item_key", "status"], name: "index_chat_sessions_inbox_history", where: "(inbox_item_key IS NOT NULL)"
     t.index ["created_by_id"], name: "index_chat_sessions_on_created_by_id"
     t.index ["external_id"], name: "index_chat_sessions_on_external_id", unique: true
+    t.index ["feature_intent_id"], name: "index_chat_sessions_on_feature_intent_id"
+    t.index ["feature_intent_id"], name: "index_chat_sessions_one_open_feature_chat", unique: true, where: "((feature_intent_id IS NOT NULL) AND ((status)::text <> 'archived'::text))"
     t.index ["idle_timeout_at"], name: "index_chat_sessions_on_idle_timeout_at"
     t.index ["project_id"], name: "index_chat_sessions_on_project_id"
     t.index ["proxy_token"], name: "index_chat_sessions_on_proxy_token", unique: true
@@ -3278,6 +3281,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_173051) do
     t.jsonb "quality_gate_settings", default: {}, null: false
     t.jsonb "quality_pause_metadata", default: {}, null: false
     t.datetime "quality_paused_at"
+    t.boolean "question_exploration_enabled", default: false, null: false, comment: "RDR-069 rollout gate for question-centered exploration conversations; initially disabled for every project."
     t.boolean "quiet_mode", default: false, null: false, comment: "When true, Paid suppresses all issue/PR comment posting for this project (PR description writes are unaffected)."
     t.datetime "readiness_evaluated_at", comment: "When the current project-readiness snapshot was evaluated against a checkout."
     t.jsonb "readiness_gaps", default: [], null: false, comment: "Latest deterministic project-readiness gaps used by the operator Inbox."
@@ -4304,6 +4308,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_173051) do
   add_foreign_key "chat_session_projects", "chat_sessions"
   add_foreign_key "chat_session_projects", "projects"
   add_foreign_key "chat_sessions", "accounts"
+  add_foreign_key "chat_sessions", "feature_intents", validate: false
   add_foreign_key "chat_sessions", "issues", column: "clarifying_question_issue_id", validate: false
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
