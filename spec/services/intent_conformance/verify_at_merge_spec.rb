@@ -243,4 +243,18 @@ RSpec.describe IntentConformance::VerifyAtMerge do
       end
     end
   end
+
+  # @spec CONFIDENCE-DELIVERY-010
+  context "when the issue belongs to a confidence-driven feature" do
+    let(:confidence_feature) { create(:feature_intent, :confidence_driven, project: project, status: "revising") }
+
+    before do
+      create(:feature_intent_issue, feature_intent: confidence_feature, issue: issue)
+      create(:design_amendment_pause, design_amendment: create(:design_amendment, project: project, feature_intent: confidence_feature), issue: issue)
+    end
+
+    it "does not impose approval-gated amendment or verdict blockers" do
+      expect(call).to be_nil
+    end
+  end
 end

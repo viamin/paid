@@ -24,6 +24,10 @@ through `012`. Assessment generation through `agent_harness` remains planned.
 - [x] **FACET-CONFIDENCE-010** — When confidence settings are initialized, Paid SHALL default intent and technical thresholds to 80/100 each and SHALL permit independently authorized, audited project configuration within 0–100.
 - [x] **FACET-CONFIDENCE-011** — When assessing a research issue, Paid SHALL assess clarity and feasibility of its investigation scope rather than require certainty about the implementation answer the investigation seeks.
 - [x] **FACET-CONFIDENCE-012** — When an assessment is invalid, fails, or targets superseded evidence, Paid SHALL NOT apply it as a current passing assessment and SHALL expose the unresolved assessment state.
-- [ ] **FACET-CONFIDENCE-013** — When presenting assessments or constructing builder context, Paid SHALL include both scores and relevant evidence summaries and SHALL distinguish expressed intent, inferred fit and demonstrated feasibility.
+- [x] **FACET-CONFIDENCE-013** — When presenting assessments or constructing builder context, Paid SHALL include both scores and relevant evidence summaries and SHALL distinguish expressed intent, inferred fit and demonstrated feasibility.
+  *Tests:* `spec/services/feature_intents/admitted_intent_context_spec.rb`.
+  *Code:* `app/services/feature_intents/admitted_intent_context.rb`, `app/services/prompt_assembly/sections/admitted_intent.rb`.
 - [ ] **FACET-CONFIDENCE-014** — While displaying Inbox or chat state, Paid SHALL read persisted assessments without making per-entry synchronous LLM calls.
-- [ ] **FACET-CONFIDENCE-015** — For confidence-driven features, when project thresholds or facet evidence change after a run starts, Paid SHALL route resulting findings through the confidence-driven delivery policy without using this change alone to pause that run.
+- [x] **FACET-CONFIDENCE-015** — For confidence-driven features, when project thresholds or facet evidence change after a run starts, Paid SHALL route resulting findings through the confidence-driven delivery policy without using this change alone to pause that run.
+  *Tests:* `spec/services/design_amendments/evaluate_impact_spec.rb`, `spec/services/feature_intents/admitted_intent_context_spec.rb`.
+  *Code:* `app/services/design_amendments/evaluate_impact.rb`, `app/services/feature_intents/admitted_intent_context.rb`.
