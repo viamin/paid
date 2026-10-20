@@ -6,10 +6,19 @@
     answer form. Without the lg grid wrapper the flex default would still
     render but the question list would lose its sticky bottom submit button. %>
 <div class="space-y-6">
+  <%# Whitelisted embedded flow: this form intentionally renders inside the
+      `inbox-detail` Turbo frame so the chat panel replaces the questions
+      in place (see #4031, #4374). The CI guard in
+      spec/views/dashboard/inbox_detail_navigation_intent_spec.rb
+      recognizes the `data-turbo-frame-spec-whitelist="answer-in-chat"` marker
+      on the form and exempts it from the `data-turbo-frame="_top"`
+      requirement. Do NOT "fix" this to `_top` — that re-introduces the
+      Content-missing bug (see #4502). %>
   <% if Inbox::InteractiveChatAccess.allowed?(user: current_user, project: entry.project) %>
     <%= button_to "Answer in chat",
           project_issue_clarifying_questions_chat_path(entry.project, entry.issue),
-          class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+          class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500",
+          form: { data: { turbo_frame_spec_whitelist: "answer-in-chat" } } %>
   <% end %>
   <% if entry.questions.any? %>
     <%= render "dashboard/inbox_clarifying_answer_form",
