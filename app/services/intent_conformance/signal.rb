@@ -21,6 +21,7 @@ module IntentConformance
     end
 
     def ok?
+      return true if confidence_driven?
       return true unless enforced?
       return true if head_sha.blank?
       return true if verdict&.within_scope?
@@ -38,6 +39,12 @@ module IntentConformance
 
     def verdict
       @verdict ||= IntentConformanceVerdict.current_for(issue: issue, head_sha: head_sha)
+    end
+
+    def confidence_driven?
+      FeatureIntent.joins(:feature_intent_issues)
+        .where(feature_intent_issues: { issue_id: issue.id }, delivery_policy: "confidence_driven")
+        .exists?
     end
   end
 end
