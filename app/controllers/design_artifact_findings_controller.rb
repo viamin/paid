@@ -22,7 +22,7 @@ class DesignArtifactFindingsController < ApplicationController
       finding:, user: current_user, title: file_issue_params[:title], body: file_issue_params[:body],
       revision: file_issue_params[:revision]
     )
-    redirect_to inbox_entry_path("traceability_gap:#{finding.id}"),
+    redirect_to project_path(finding.project, anchor: "issue_#{issue.id}"),
       notice: "Filed ##{issue.github_number} and linked the finding to it. Recheck after the cited work changes."
   rescue ArgumentError => e
     redirect_back fallback_location: inbox_entry_path("traceability_gap:#{params[:id]}"), alert: e.message

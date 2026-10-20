@@ -27,7 +27,7 @@ module DesignArtifactFindings
       cached_project = project
       finding.with_lock do
         verify_revision!
-        issue = reuse_assigned_issue(cached_project) || create_and_persist_issue!(cached_project)
+        issue = reuse_assigned_issue(cached_project) || recover_marked_issue(cached_project) || create_and_persist_issue!(cached_project)
         Resolve.call(finding:, user:, state: "assigned", reason: idempotent_reason_for(issue),
           revision: finding.revision, issue:)
         issue
@@ -70,6 +70,19 @@ module DesignArtifactFindings
       raise GithubClient::Error, "GitHub did not return a created issue" if remote.nil?
 
       Issues::UpsertFromGithub.call(project: project_record, github_issue: remote)
+    end
+
+    # GitHub can accept creation before the local upsert or resolution link
+    # commits. Search for the deterministic marker before creating so a retry
+    # claims that remote issue instead of filing a duplicate.
+    def recover_marked_issue(project_record)
+      remote = project_record.client.search_issues(marker_query(project_record), per_page: 100).items
+        .find { |candidate| candidate.body.to_s.include?(marker) }
+      Issues::UpsertFromGithub.call(project: project_record, github_issue: remote) if remote
+    end
+
+    def marker_query(project_record)
+      %(repo:#{project_record.full_name} is:issue state:open in:body "#{marker}")
     end
 
     def body_with_marker

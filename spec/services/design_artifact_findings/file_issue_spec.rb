@@ -20,7 +20,10 @@ RSpec.describe DesignArtifactFindings::FileIssue do
   end
 
   before do
-    allow(client).to receive(:create_issue).and_return(remote)
+    allow(client).to receive_messages(
+      create_issue: remote,
+      search_issues: Data.define(:items).new([])
+    )
     allow(project).to receive(:client).and_return(client)
   end
 
@@ -56,6 +59,22 @@ RSpec.describe DesignArtifactFindings::FileIssue do
     expect(first.id).to eq(second.id)
     expect(client).to have_received(:create_issue).once
     expect(finding.reload.resolution_issue_id).to eq(first.id)
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "recovers a remotely filed issue by marker before retrying creation" do
+    remote.body = "Cite repair.\n\n<!-- paid-traceability-finding:#{finding.id}:#{finding.revision} -->"
+    allow(client).to receive(:search_issues)
+      .with(%(repo:#{project.full_name} is:issue state:open in:body "<!-- paid-traceability-finding:#{finding.id}:#{finding.revision} -->"), per_page: 100)
+      .and_return(Data.define(:items).new([ remote ]))
+
+    issue = described_class.call(
+      finding:, user:, title: "Repair traceability", body: "Cite repair.", revision: finding.revision
+    )
+
+    expect(issue.github_number).to eq(remote.number)
+    expect(client).not_to have_received(:create_issue)
+    expect(finding.reload).to have_attributes(status: "assigned", resolution_issue: issue)
   end
 
   # @spec OPERATOR-INBOX-018

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe "Inbox" do
   let(:account) { create(:account) }
@@ -1356,6 +1357,24 @@ RSpec.describe "Inbox" do
 
     expect(finding.reload.status).to eq("open")
     expect(response).to be_redirect
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "redirects a filed traceability gap to its durable issue location" do
+    finding = create(:design_artifact_finding, project: project, account: project.account)
+    remote = OpenStruct.new(
+      id: 2_000_001, number: 42, title: "Repair traceability", body: "Cite repair.", state: "open", labels: [],
+      user: nil, created_at: Time.current, updated_at: Time.current,
+      html_url: "https://github.com/acme/alpha/issues/42", pull_request: nil
+    )
+    allow(github_client).to receive_messages(search_issues: Data.define(:items).new([]), create_issue: remote)
+
+    post file_issue_design_artifact_finding_path(finding), params: {
+      filing: { revision: finding.revision, title: "Repair traceability", body: "Cite repair." }
+    }
+
+    issue = finding.reload.resolution_issue
+    expect(response).to redirect_to(project_path(project, anchor: "issue_#{issue.id}"))
   end
 
   # @spec OPERATOR-INBOX-002J
