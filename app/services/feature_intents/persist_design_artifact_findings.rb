@@ -45,14 +45,20 @@ module FeatureIntents
 
       DesignArtifactFinding.transaction do
         result.associations.each { |association| persist_association(association) }
-        result.findings.each { |finding| upsert(finding, result.last_successful_coverage_at, records[finding.fingerprint]) }
-        resolve_absent_findings(result.findings) if result.last_successful_coverage_at
+        persisted = result.findings.map do |finding|
+          upsert(finding, result.last_successful_coverage_at, records[finding.fingerprint], records[finding_identity(finding)])
+        end
+        resolve_absent_findings(persisted) if result.last_successful_coverage_at
       end
     end
 
     def existing_records(findings)
-      project.design_artifact_findings.where(fingerprint: findings.map(&:fingerprint))
-        .includes(:resolution_issue).index_by(&:fingerprint)
+      paths = findings.map(&:path).uniq
+      records = project.design_artifact_findings.where(artifact_path: paths).includes(:resolution_issue).to_a
+      records.each_with_object({}) do |record, index|
+        index[record.fingerprint] = record
+        index[finding_identity(record)] ||= record
+      end
     end
 
     def persist_association(association)
@@ -66,14 +72,27 @@ module FeatureIntents
       record.save!
     end
 
-    def upsert(finding, covered_at, record)
-      record ||= project.design_artifact_findings.build(fingerprint: finding.fingerprint)
+    def upsert(finding, covered_at, exact_record, identity_record)
+      record = exact_record || carry_forward_record(finding, identity_record)
+      record ||= project.design_artifact_findings.build
       record.assign_attributes(
-        account: project.account, artifact_path: finding.path, revision: finding.revision,
+        account: project.account, fingerprint: finding.fingerprint, artifact_path: finding.path, revision: finding.revision,
         state: finding.state, evidence: finding.evidence, covered_at: covered_at || record.covered_at || Time.current,
         **resolution_attributes(record)
       )
       record.save!
+      record
+    end
+
+    def carry_forward_record(finding, record)
+      return unless record&.decision_pending?
+      return unless record.evidence == finding.evidence
+
+      record
+    end
+
+    def finding_identity(finding)
+      [ finding.respond_to?(:artifact_path) ? finding.artifact_path : finding.path, finding.state ].join(":")
     end
 
     def resolution_attributes(record)
@@ -106,7 +125,7 @@ module FeatureIntents
       # dismissed decision does not remain pending when reconciliation
       # verifies the underlying gap is gone.
       project.design_artifact_findings.pending_findings.where(artifact_path: paths)
-        .where.not(fingerprint: findings.map(&:fingerprint)).find_each(&:resolve!)
+        .where.not(id: findings.map(&:id)).find_each(&:resolve!)
     end
   end
 end

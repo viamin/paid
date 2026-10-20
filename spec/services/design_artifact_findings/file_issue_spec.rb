@@ -41,6 +41,11 @@ RSpec.describe DesignArtifactFindings::FileIssue do
       resolution_reason: "Filed as #42 to own the document repair.",
       resolution_actor: user, resolution_issue: issue
     )
+    expect(client).to have_received(:create_issue).with(
+      project.full_name, title: "Repair traceability for docs/rdrs/RDR-100.md",
+      body: include("## Traceability finding context", "`#{finding.artifact_path}`", "`#{finding.revision}`", "Reconciliation evidence:"),
+      labels: anything
+    )
   end
 
   # @spec OPERATOR-INBOX-018

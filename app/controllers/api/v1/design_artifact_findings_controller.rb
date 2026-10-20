@@ -57,6 +57,18 @@ module Api
         render_error(:unprocessable_entity, :invalid_resolution, e.message)
       end
 
+      def repair_document_links
+        project = policy_scope(Project).find(params[:project_id])
+        authorize project, :manage_issues?, policy_class: ProjectPolicy
+        finding = project.design_artifact_findings.find(params[:id])
+        run = DesignArtifactFindings::RepairDocumentLinks.call(
+          finding:, user: current_user, revision: params.require(:revision)
+        )
+        render json: { finding: serialize(finding), agent_run: { id: run.id, status: run.status } }
+      rescue ArgumentError => e
+        render_error(:unprocessable_entity, :invalid_resolution, e.message)
+      end
+
       private
 
       def serialize(finding)

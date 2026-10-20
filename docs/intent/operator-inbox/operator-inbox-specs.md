@@ -645,7 +645,7 @@
   evidence and a direct GitHub link, and SHALL state that missing links do
   not prove missing implementation and closed work does not prove delivery.
   An authorized operator SHALL be able to link an existing project issue,
-  defer, dismiss/not-applicable, or recheck with a required reason where a
+  repair stale document links through a focused design PR, defer, dismiss/not-applicable, or recheck with a required reason where a
   decision is made. The write SHALL verify the pinned revision and project
   ownership, retain actor/provenance, remove the item from the unassigned
   queue without claiming a repair, and remain pending until reconciliation

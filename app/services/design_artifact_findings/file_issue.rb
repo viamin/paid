@@ -86,7 +86,22 @@ module DesignArtifactFindings
     end
 
     def body_with_marker
-      [ body, marker ].reject(&:blank?).join("\n\n")
+      [ body, finding_context, marker ].reject(&:blank?).join("\n\n")
+    end
+
+    def finding_context
+      evidence = finding.evidence.map { |item| "- #{item}" }.join("\n")
+      <<~CONTEXT.strip
+        ## Traceability finding context
+
+        - Artifact: `#{finding.artifact_path}`
+        - Pinned revision: `#{finding.revision}`
+        - Classification: `#{finding.state}`
+        - Last successful coverage: #{finding.covered_at.iso8601}
+
+        Reconciliation evidence:
+        #{evidence}
+      CONTEXT
     end
 
     def marker

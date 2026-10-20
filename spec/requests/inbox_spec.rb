@@ -1346,6 +1346,16 @@ RSpec.describe "Inbox" do
   end
 
   # @spec OPERATOR-INBOX-018
+  it "exposes a design-PR document-link repair action for stale metadata" do
+    finding = create(:design_artifact_finding, project: project, account: project.account, state: "stale_metadata")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::TRACEABILITY_GAP_KIND, finding), kind: Inbox::Queue::TRACEABILITY_GAP_KIND)
+
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css(%(form[action="#{repair_document_links_design_artifact_finding_path(finding)}"]))).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-018
   it "rejects an unverified file-issue submit with a stale revision" do
     finding = create(:design_artifact_finding, project: project, account: project.account)
 

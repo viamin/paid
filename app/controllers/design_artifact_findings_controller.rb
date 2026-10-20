@@ -35,6 +35,15 @@ class DesignArtifactFindingsController < ApplicationController
       alert: "GitHub rejected the new issue: #{e.message}"
   end
 
+  def repair_document_links
+    finding = DesignArtifactFinding.find(params[:id])
+    authorize finding.project, :manage_issues?, policy_class: ProjectPolicy
+    run = DesignArtifactFindings::RepairDocumentLinks.call(finding:, user: current_user, revision: params.require(:revision))
+    redirect_to project_agent_run_path(finding.project, run), notice: "Design-link repair queued. Reconciliation will verify the change."
+  rescue ArgumentError => e
+    redirect_back fallback_location: inbox_entry_path("traceability_gap:#{params[:id]}"), alert: e.message
+  end
+
   def recheck
     finding = DesignArtifactFinding.find(params[:id])
     authorize finding.project, :manage_issues?, policy_class: ProjectPolicy
