@@ -124,7 +124,16 @@ RSpec.describe ToolchainPins, :no_db do
       group.version_entries.each_with_index do |entry, index|
         path = root.join(entry.path)
         FileUtils.mkdir_p(path.dirname)
-        path.write("    image: postgres:16.#{index.zero? ? 14 : 15}\n")
+        version = "16.#{index.zero? ? 14 : 15}"
+        contents = case entry.path
+        when "db/seeds/service_containers.rb"
+          "    image: \"postgres:#{version}\",\n"
+        when "app/services/screenshots/seed_data/paid.rb"
+          "    record.image = \"postgres:#{version}\"\n"
+        else
+          "    image: postgres:#{version}\n"
+        end
+        path.write(contents)
       end
 
       expect(group.consistent?(root)).to be(false)
@@ -166,6 +175,15 @@ RSpec.describe ToolchainPins, :no_db do
         ".github/workflows/pr-screenshots.yml",
         ".github/workflows/pr-screenshots-publish.yml",
         ".github/workflows/ephemeral_tests.yml"
+      )
+    end
+
+    it "covers the Paid-owned PostgreSQL service-container defaults" do
+      image_paths = postgres.entries.select { |entry| entry.kind == :version }.map(&:path)
+
+      expect(image_paths).to include(
+        "db/seeds/service_containers.rb",
+        "app/services/screenshots/seed_data/paid.rb"
       )
     end
 

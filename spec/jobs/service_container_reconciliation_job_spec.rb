@@ -37,6 +37,54 @@ RSpec.describe ServiceContainerReconciliationJob do
       expect(sc.docker_container_id).to eq("alive123")
     end
 
+    # @spec TOOLCHAIN-PIN-026, CONTAINER-RUNTIME-042
+    it "reports runtime image drift without replacing the running service" do
+      sc = build(:service_container, image: "postgres:16.15", status: "running", docker_container_id: "old123")
+      sc.save!(validate: false)
+      container = instance_double(Docker::Container)
+      allow(backend).to receive(:get_container).with("old123").and_return(container)
+      allow(container).to receive(:json).and_return(
+        { "State" => { "Running" => true }, "Config" => { "Image" => "postgres:16.13" } }
+      )
+      allow(Rails.logger).to receive(:warn)
+
+      job.perform
+
+      expect(sc.reload).to have_attributes(status: "running", docker_container_id: "old123")
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "container_manager.service_container_image_drift",
+          requested_image: "postgres:16.15",
+          runtime_image: "postgres:16.13",
+          remediation: "drain consumers, then update the service container and recreate it"
+        )
+      )
+    end
+
+    # @spec TOOLCHAIN-PIN-026, CONTAINER-RUNTIME-042
+    it "reports an older configured PostgreSQL default without replacing the running service" do
+      sc = build(:service_container, image: "postgres:16.13", status: "running", docker_container_id: "old-default")
+      sc.save!(validate: false)
+      container = instance_double(Docker::Container)
+      allow(backend).to receive(:get_container).with("old-default").and_return(container)
+      allow(container).to receive(:json).and_return(
+        { "State" => { "Running" => true }, "Config" => { "Image" => "postgres:16.13" } }
+      )
+      allow(Rails.logger).to receive(:warn)
+
+      job.perform
+
+      expect(sc.reload).to have_attributes(status: "running", docker_container_id: "old-default")
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "container_manager.service_container_default_image_drift",
+          configured_image: "postgres:16.13",
+          default_image: "postgres:16.15",
+          runtime_image: "postgres:16.13"
+        )
+      )
+    end
+
     it "corrects records when Docker container exists but is stopped" do
       sc = create(:service_container, status: "running", docker_container_id: "stopped123", container_host: "elguapo")
       container = instance_double(Docker::Container)

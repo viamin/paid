@@ -88,6 +88,25 @@
   *Tests:* `spec/config/ci_workflow_file_spec.rb`.
   *Code:* `.github/workflows/ci.yml`.
 
+- [x] **TOOLCHAIN-PIN-025** — When `bin/update` updates the PostgreSQL server
+  image pin, it SHALL also update the Paid-owned seeded PostgreSQL
+  service-container default through the same PostgreSQL consistency group. A
+  migration SHALL update only an allowlist that exactly equals the prior full
+  default; it SHALL preserve customized allowlists and all persisted service
+  containers.
+  *Tests:* `spec/config/toolchain_pins_spec.rb`,
+  `spec/migrations/reconcile_postgresql_service_container_default_spec.rb`.
+  *Code:* `scripts/lib/toolchain_pins.rb`, `db/seeds/service_containers.rb`,
+  `ReconcilePostgresqlServiceContainerDefault` migration.
+
+- [x] **TOOLCHAIN-PIN-026** — When a running service container reports an
+  image reference different from its persisted requested image, or a running
+  PostgreSQL service still requests an older Paid default, the service
+  reconciliation job SHALL emit an actionable structured warning containing
+  both references and SHALL leave the container and its data intact.
+  *Tests:* `spec/jobs/service_container_reconciliation_job_spec.rb`.
+  *Code:* `ServiceContainerReconciliationJob`.
+
 ## Contract-Owned Agent CLI Versions
 
 - [x] **TOOLCHAIN-PIN-030** — `bin/update` SHALL NOT write agent CLI versions
@@ -142,6 +161,16 @@
   `spec/config/toolchain_pins_spec.rb`.
   *Code:* `bin/update`, `scripts/lib/upstream_registries.rb`,
   `scripts/lib/toolchain_pins.rb`.
+
+- [x] **TOOLCHAIN-PIN-041** — When a human deliberately upgrades Ruby, the
+  `.tool-versions` pin, production-image Ruby argument, and agent-image Ruby
+  source version and checksum SHALL agree. The agent image SHALL verify the
+  downloaded source checksum, and the devcontainer image SHALL fail its build
+  if its resolved Ruby version differs from `.tool-versions`, so stale built
+  runtime images are actionable rather than hidden by source-only checks.
+  *Tests:* `spec/config/toolchain_pins_ruby_runtime_spec.rb`.
+  *Code:* `.tool-versions`, `Dockerfile`, `.devcontainer/Dockerfile`,
+  `docker/agent/Dockerfile`.
 
 ## Safety Controls
 

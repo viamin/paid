@@ -86,6 +86,24 @@ the next. The real revision must be resolved from the PGDG package index for
 each target distribution; assuming a revision produces a package name that does
 not exist and breaks the image build.
 
+The same server pin also governs Paid's seeded PostgreSQL service-container
+default. That declaration is a first-class member of the PostgreSQL
+consistency group, not a separate source of truth. Existing service containers
+and account allowlists are tenant configuration: a pin update changes the
+default for new records and only migrates an allowlist that exactly equals the
+previous complete default. It never rewrites an existing service container or
+a customized allowlist. Operators update an existing container deliberately,
+after its consumers drain.
+
+The service-container reconciliation loop compares each running container's
+reported image reference with its persisted requested image, and compares a
+running PostgreSQL service's requested image with the current default. A
+mismatch is reported with both references and a concrete operator action, but
+is not replaced automatically: replacing a stateful PostgreSQL container could
+lose its volume-backed data. This makes a stale seeded configuration, stale
+pulled image, or out-of-band container replacement visible without confusing
+source-pin consistency with runtime conformance.
+
 GitHub-hosted jobs are deliberately looser. They add the PGDG repository at run
 time and install the client by major version only, so they never depend on the
 runner image's preinstalled PostgreSQL and are unaffected by a PGDG minor
@@ -130,3 +148,10 @@ PostgreSQL majors, Ruby and Node releases, and any pin held back by quarantine.
 The report names the version, where it came from, and what the human's next
 step is, so that "check for updates" is a complete answer on its own and does
 not require a second manual sweep.
+
+Ruby remains report-only, but a deliberate Ruby upgrade updates
+`.tool-versions`, the production-image argument, and the agent-image source
+and checksum together. The devcontainer's supported `3.4` base image is
+checked at build time against `.tool-versions`; rebuilding an agent or
+devcontainer image is therefore the actionable remediation for a stale
+already-built runtime.

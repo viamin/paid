@@ -26,7 +26,7 @@ class ServiceContainerReconciliationJob < ApplicationJob
 
     ServiceContainer.running.find_each do |sc|
       checked += 1
-      status = docker_container_status(sc)
+      status, runtime_image = docker_container_status(sc)
 
       case status
       when :not_running
@@ -51,6 +51,9 @@ class ServiceContainerReconciliationJob < ApplicationJob
           container_host: sc.container_host,
           reason: "transient Docker API error"
         )
+      when :running
+        report_image_drift(sc, runtime_image)
+        report_default_image_drift(sc, runtime_image)
       end
     rescue ActiveRecord::ActiveRecordError => e
       errors += 1
@@ -73,18 +76,55 @@ class ServiceContainerReconciliationJob < ApplicationJob
 
   private
 
-  # Returns :running, :not_running, or :unknown.
+  # Returns the status and, when known, the Docker-reported image reference.
   # :not_running means the container is confirmed missing or stopped.
   # :unknown means a transient API error occurred and we should not correct.
   def docker_container_status(service_container)
     container_id = service_container.docker_container_id
-    return :not_running if container_id.blank?
+    return [ :not_running, nil ] if container_id.blank?
 
     container = service_container.docker_backend.get_container(container_id)
-    container.json.dig("State", "Running") == true ? :running : :not_running
+    info = container.json
+    status = info.dig("State", "Running") == true ? :running : :not_running
+    [ status, info.dig("Config", "Image") ]
   rescue Docker::Error::NotFoundError
-    :not_running
+    [ :not_running, nil ]
   rescue Docker::Error::DockerError, Excon::Error
-    :unknown
+    [ :unknown, nil ]
+  end
+
+  # @spec TOOLCHAIN-PIN-026, CONTAINER-RUNTIME-042
+  def report_image_drift(service_container, runtime_image)
+    return if runtime_image.blank? || runtime_image == service_container.image
+
+    Rails.logger.warn(
+      message: "container_manager.service_container_image_drift",
+      service_container_id: service_container.id,
+      name: service_container.name,
+      requested_image: service_container.image,
+      runtime_image: runtime_image,
+      remediation: "drain consumers, then update the service container and recreate it"
+    )
+  end
+
+  # @spec TOOLCHAIN-PIN-026, CONTAINER-RUNTIME-042
+  def report_default_image_drift(service_container, runtime_image)
+    default_image = default_postgres_image
+    return unless default_image && service_container.image.include?("postgres")
+    return if service_container.image == default_image
+
+    Rails.logger.warn(
+      message: "container_manager.service_container_default_image_drift",
+      service_container_id: service_container.id,
+      name: service_container.name,
+      configured_image: service_container.image,
+      runtime_image: runtime_image,
+      default_image: default_image,
+      remediation: "drain consumers, then update the service container and recreate it"
+    )
+  end
+
+  def default_postgres_image
+    UserSetting.column_defaults.fetch("allowed_service_images", []).find { |image| image.start_with?("postgres:") }
   end
 end

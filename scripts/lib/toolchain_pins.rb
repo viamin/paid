@@ -32,9 +32,9 @@ module ToolchainPins
     AGENT_DOCKERFILE => "noble"
   }.freeze
 
-  # Compose files and workflow service blocks that pin the PostgreSQL server
-  # image. pr-screenshots.yml pulls through an ECR mirror, so the pattern
-  # tolerates a registry prefix.
+  # Compose files, workflow service blocks, and Paid-owned service defaults
+  # that pin the PostgreSQL server image. pr-screenshots.yml pulls through an
+  # ECR mirror, so the compose/workflow pattern tolerates a registry prefix.
   POSTGRES_IMAGE_PATHS = [
     ".devcontainer/compose.yaml",
     "docker-compose.yml",
@@ -48,6 +48,10 @@ module ToolchainPins
   ].freeze
 
   POSTGRES_IMAGE_PATTERN = %r{^(\s*image:\s*(?:[\w.\-]+/)*postgres:)(\d+(?:\.\d+)+)(\s*)$}
+  POSTGRES_SERVICE_DEFAULTS = {
+    "db/seeds/service_containers.rb" => /^(\s*image:\s*"postgres:)(\d+(?:\.\d+)+)(".*)$/,
+    "app/services/screenshots/seed_data/paid.rb" => /^(\s*record\.image\s*=\s*"postgres:)(\d+(?:\.\d+)+)(".*)$/
+  }.freeze
   POSTGRES_CLIENT_PATTERN = /(postgresql-client-\d+=)(\S+?)(\s|$)/
 
   # Agent CLI versions are declared by agent-harness installation contracts and
@@ -489,6 +493,10 @@ module ToolchainPins
         Entry.new(path: path, pattern: POSTGRES_IMAGE_PATTERN, kind: :version)
       end
 
+      service_default_entries = POSTGRES_SERVICE_DEFAULTS.map do |path, pattern|
+        Entry.new(path: path, pattern: pattern, kind: :version)
+      end
+
       client_entries = POSTGRES_CLIENT_DISTRIBUTIONS.map do |path, distribution|
         Entry.new(
           path: path,
@@ -503,7 +511,7 @@ module ToolchainPins
         ownership: :paid,
         source: { type: :docker_hub, repository: "library/postgres" },
         assets: {},
-        entries: image_entries + client_entries
+        entries: image_entries + service_default_entries + client_entries
       )
     end
   end
