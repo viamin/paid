@@ -47,4 +47,29 @@ RSpec.describe ClarifyingQuestions::SaveProgress do
       answer: "Revised answer", answered_by: user
     )
   end
+
+  # @spec QUESTION-EXPLORATION-018
+  it "records progress for the focused issue of a feature conversation" do
+    feature = create(:feature_intent, project:)
+    create(:feature_intent_issue, feature_intent: feature, issue:)
+    focused = create(:issue, :needs_input, project:, needs_input_questions: [ "Which storage backend?" ])
+    create(:feature_intent_issue, feature_intent: feature, issue: focused)
+    feature_session = create(:chat_session, account:, project:, created_by: user,
+      clarifying_question_issue: issue, feature_intent: feature,
+      metadata: {
+        "clarifying_questions" => [ "Which storage backend?" ],
+        "exploration_focus" => { "issue_id" => focused.id, "questions" => [ "Which storage backend?" ] }
+      })
+
+    progress = described_class.call(
+      chat_session: feature_session, position: 1, answer: "Use the app database.", actor: user
+    )
+
+    expect(progress).to have_attributes(
+      issue: focused,
+      question: "Which storage backend?",
+      answer: "Use the app database.",
+      chat_session: feature_session
+    )
+  end
 end

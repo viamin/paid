@@ -16,7 +16,7 @@ module Tools
     end
 
     def self.available_for_chat?(user:, session:)
-      issue = session&.clarifying_question_issue
+      issue = session&.exploration_issue
       issue.present? && policy_allows?(user:, record: issue.project, query: :update?, policy_class: ProjectPolicy)
     end
 
@@ -39,7 +39,7 @@ module Tools
     def perform(answers:, confirmed: false)
       raise ArgumentError, "Confirmation required: set confirmed=true to post clarifying answers" unless confirmed
 
-      issue = session.clarifying_question_issue || raise(ArgumentError, "This chat is not linked to clarifying questions")
+      issue = session.exploration_issue || raise(ArgumentError, "This chat is not linked to clarifying questions")
       questions = ClarifyingQuestions::Load.call(project: issue.project, issue: issue)
       raise ArgumentError, "Answer every pending question before posting" unless answers.size == questions.size
       validate_choice_answers!(questions:, answers:)
@@ -78,7 +78,7 @@ module Tools
     end
 
     def project_for_session
-      session.clarifying_question_issue&.project || session.project || raise(ArgumentError, "This chat has no project")
+      session.exploration_issue&.project || session.project || raise(ArgumentError, "This chat has no project")
     end
   end
 end

@@ -378,6 +378,54 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       expect(response).to redirect_to(chat_session_path(ChatSession.last))
     end
 
+    context "when question exploration is enabled for the project" do
+      let(:exploration_project) { create(:project, account: account, created_by: user, question_exploration_enabled: true) }
+      let(:feature) { create(:feature_intent, project: exploration_project, title: "Inbox redesign") }
+
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
+      end
+
+      def feature_issue
+        @feature_issue ||= create(:issue, :needs_input, project: exploration_project, github_number: 101,
+          body: issue_body, needs_input_questions: [ "What is the expected behavior?" ]).tap do |issue|
+          create(:feature_intent_issue, feature_intent: feature, issue: issue)
+        end
+      end
+
+      # @spec QUESTION-EXPLORATION-018
+      it "opens the shared feature conversation and redirects to it" do
+        expect {
+          post project_issue_clarifying_questions_chat_path(exploration_project, feature_issue)
+        }.to change(ChatSession, :count).by(1)
+
+        chat = ChatSession.find_by(feature_intent: feature)
+        expect(chat.clarifying_question_issue).to eq(feature_issue)
+        expect(chat.created_by).to eq(user)
+        expect(response).to redirect_to(chat_session_path(chat))
+      end
+
+      # @spec QUESTION-EXPLORATION-018 QUESTION-EXPLORATION-012
+      it "reuses the feature conversation from a related issue inside an Inbox frame" do
+        second_issue = create(:issue, :needs_input, project: exploration_project, github_number: 102,
+          body: issue_body, needs_input_questions: [ "Which storage backend?" ])
+        create(:feature_intent_issue, feature_intent: feature, issue: second_issue)
+
+        post project_issue_clarifying_questions_chat_path(exploration_project, feature_issue),
+          headers: { "Turbo-Frame" => "inbox-detail" }
+        chat = ChatSession.find_by!(feature_intent: feature)
+
+        expect {
+          post project_issue_clarifying_questions_chat_path(exploration_project, second_issue),
+            headers: { "Turbo-Frame" => "inbox-detail" }
+        }.not_to change(ChatSession, :count)
+
+        expect(response).to redirect_to(chat_session_path(chat, frame: "inbox-detail"))
+        expect(chat.reload.clarifying_question_issue).to eq(feature_issue)
+        expect(chat.metadata["exploration_focus"]).to include("issue_id" => second_issue.id)
+      end
+    end
+
     context "when the pending questions cannot be loaded" do
       let(:issue) { create(:issue, :needs_input, project: project, body: issue_body) }
 

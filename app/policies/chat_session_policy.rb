@@ -59,7 +59,10 @@ class ChatSessionPolicy < ApplicationPolicy
     def visible_regular_sessions(sessions)
       visible_ids = scope.left_outer_joins(project: :project_memberships)
         .where(account: user.account, inbox_item_key: nil)
-        .where("chat_sessions.clarifying_question_issue_id IS NULL OR project_memberships.user_id = ?", user.id)
+        .where(
+          "(chat_sessions.clarifying_question_issue_id IS NULL AND chat_sessions.feature_intent_id IS NULL) " \
+          "OR project_memberships.user_id = ?", user.id
+        )
         .select(:id)
 
       sessions.where(id: visible_ids)
@@ -94,9 +97,13 @@ class ChatSessionPolicy < ApplicationPolicy
     record.created_by == user && Inbox::InteractiveChatAccess.allowed?(user:, project: record.project)
   end
 
-  def linked_chat_visible?
-    return user_in_account? unless record.clarifying_question_issue.present?
+    # @spec QUESTION-EXPLORATION-007 QUESTION-EXPLORATION-019
+    # Shared exploration conversations (standalone linked-issue chats and
+    # feature conversations) carry project-scoped issue context and require
+    # project exploration access, never a bare account membership.
+    def linked_chat_visible?
+      return user_in_account? unless record.project_scoped_exploration?
 
-    ProjectPolicy.new(user, record.project).explore?
-  end
+      ProjectPolicy.new(user, record.project).explore?
+    end
 end
