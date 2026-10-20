@@ -59,6 +59,35 @@ RSpec.describe ChatChannel do
 
       expect(subscription).to be_rejected
     end
+
+    # @spec QUESTION-EXPLORATION-019
+    it "rejects subscription to a feature conversation without project access" do
+      create(:user, account: account)
+      member = create(:user, :member, account: account)
+      project = create(:project, account: account)
+      feature_session = create(:chat_session, account: account, project: project,
+        feature_intent: create(:feature_intent, project: project))
+
+      stub_connection current_user: member
+      subscribe(session_id: feature_session.id)
+
+      expect(subscription).to be_rejected
+    end
+
+    # @spec QUESTION-EXPLORATION-019
+    it "confirms subscription to a feature conversation for a project collaborator" do
+      collaborator = create(:user, :viewer, account: account)
+      project = create(:project, account: account)
+      collaborator.add_role(:project_viewer, project)
+      feature_session = create(:chat_session, account: account, project: project,
+        feature_intent: create(:feature_intent, project: project))
+
+      stub_connection current_user: collaborator
+      subscribe(session_id: feature_session.id)
+
+      expect(subscription).to be_confirmed
+      expect(subscription).to have_stream_from("chat_session:#{feature_session.id}")
+    end
   end
 
   # @spec CHAT-SESSION-REOPEN-005

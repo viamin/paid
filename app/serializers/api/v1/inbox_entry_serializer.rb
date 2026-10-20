@@ -82,11 +82,10 @@ module Api
         kind_payload
       end
 
-      # entry.record is the Issue for merge_approval (not the transient
-      # Inbox::MergeApproval::Snapshot), same object the web detail partial
-      # reads `auto_merge_blockers` from directly.
+      # The queue carries the normalized guidance computed from the persisted
+      # assessment, so API clients do not have to infer policy from copy.
       def merge_approval_payload
-        { blockers: entry.record.auto_merge_blockers&.fetch("failed", []) || [] }
+        { blockers: entry.guidance&.fetch(:blockers, []) || [], guidance: entry.guidance }
       end
 
       # entry.record is Inbox::EscalatedPullRequests::Entry (see

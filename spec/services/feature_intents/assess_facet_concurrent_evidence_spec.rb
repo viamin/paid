@@ -48,7 +48,9 @@ RSpec.describe FeatureIntents::AssessFacet do
       .to have_attributes(status: "superseded", intent_score: nil, technical_score: nil)
   ensure
     commit_now << true
-    [ ingest_thread, assess_thread ].compact.each { |thread| thread.join(5) || thread.kill.join }
+    [ ingest_thread, assess_thread ].compact.each do |thread|
+      raise "Assessment thread did not terminate" unless thread.join(5)
+    end
   end
 
   private

@@ -14,7 +14,7 @@
     `display: inline` (content-height) turbo-frame element. %>
 <%= turbo_frame_tag frame_id do %>
   <%= turbo_stream_from current_account, :chat_sessions %>
-  <%= turbo_stream_from chat_session.project, :chat_sessions if chat_session.clarifying_question_issue.present? %>
+  <%= turbo_stream_from chat_session.project, :chat_sessions if chat_session.project_scoped_exploration? %>
   <%= render "chat_sessions/chat_panel",
              chat_session: chat_session,
              chat_messages: chat_messages,

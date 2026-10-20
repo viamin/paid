@@ -42,14 +42,15 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload).to include(tasks: [ { "title" => "Do the thing" } ])
     end
 
-    it "serializes merge_approval with the issue's failed auto-merge blockers" do
+    it "serializes merge_approval with its normalized guidance" do
       issue = create(:issue, :pull_request, project: project,
         auto_merge_blockers: { "failed" => [ { "signal" => "owner_approved" } ], "not_evaluated" => [] })
-      entry = build_entry(Inbox::Queue::MERGE_APPROVAL_KIND, issue: issue, record: issue)
+      guidance = { heading: "Manual merge decision on GitHub", blockers: [ { "signal" => "owner_approved", "next_action" => "Make the manual decision." } ] }
+      entry = build_entry(Inbox::Queue::MERGE_APPROVAL_KIND, issue: issue, record: issue, guidance: guidance)
 
       payload = described_class.render(entry)
 
-      expect(payload).to include(blockers: [ { "signal" => "owner_approved" } ])
+      expect(payload).to include(blockers: guidance.fetch(:blockers), guidance: guidance)
     end
 
     it "serializes action_required with its remediation steps" do

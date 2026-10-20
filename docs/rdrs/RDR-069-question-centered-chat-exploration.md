@@ -155,6 +155,20 @@ make the experience question-centered are not yet shipped. See the
 [`audit-report-2026-10-12-rdr-069.md`](audit-report-2026-10-12-rdr-069.md)
 for the full criterion-by-criterion evidence.
 
+On 2026-10-19, [#4311](https://github.com/viamin/paid/issues/4311) (P02)
+shipped this RDR's project-level exploration rollout setting
+(`projects.question_exploration_enabled`, initially disabled for every
+project, exposed through the project settings form and the
+`update_project_settings` chat tool) plus the feature/standalone-issue
+conversation linkage and question focus: an Inbox question on a
+feature-linked issue opens the one shared conversation for that feature
+(`ChatSession#feature_intent`, with adoption of pre-existing per-issue
+chats), standalone issues keep their own conversation, focus moves visibly
+without repointing linkage, and disabling the setting preserves existing
+conversations, answers, evidence, and unrelated run policy. The linked open
+carries matching subject/actor context through HTML and the mobile Inbox
+chat API (`QUESTION-EXPLORATION-018`/`019`).
+
 ## 2026-10-12 Closeout
 
 Closeout issue [#4322](https://github.com/viamin/paid/issues/4322) audited
@@ -190,3 +204,8 @@ clarifying-question chat entry point and introduces no new diagram,
 investigation, or preference surface. Closeout issue #4322 remains open and
 keeps `Tracks #4309` language; only the umbrella's own final acceptance audit
 may close #4309.
+
+> 2026-10-19 update: the #4311 items in the list above (the
+> conversation-open/focus slice of `QUESTION-EXPLORATION-012` and the
+> project-level exploration rollout setting) have since shipped; see
+> Implementation Status. The other listed gaps remain open.

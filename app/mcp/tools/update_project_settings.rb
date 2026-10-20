@@ -52,6 +52,7 @@ module Tools
       upstream_full_name
       new_feature_delivery_policy
       confidence_delivery_enrollment_enabled
+      question_exploration_enabled
     ].freeze
 
     def self.tool_name = "update_project_settings"
