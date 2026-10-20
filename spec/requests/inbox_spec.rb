@@ -243,6 +243,54 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec OPERATOR-INBOX-002B
+  # Regression for #4501: internal GET links inside the inbox-detail frame
+  # navigate the frame unless they opt out, and no target page carries a
+  # matching "inbox-detail" frame — Turbo then replaces the pane with
+  # "Content missing". The action links must target the full page.
+  it "renders the action_required 'Open linked action' link with turbo_frame=_top so it navigates out of the inbox-detail frame" do
+    notification = create_action_required_notification
+    notification.update!(action_url: project_path(project))
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    link = document.at_css(%(a[href="#{project_path(project)}"]))
+
+    expect(link).to be_present
+    expect(link.text).to eq("Open linked action")
+    expect(link["data-turbo-frame"]).to eq("_top")
+  end
+
+  # @spec OPERATOR-INBOX-002B
+  # Regression for #4501: both "View Agent Run" branches (alongside an action
+  # URL, and as the sole action) must opt out of the inbox-detail frame.
+  it "renders every action_required 'View Agent Run' link with turbo_frame=_top so it navigates out of the inbox-detail frame" do
+    run = create(:agent_run, :failed, :with_custom_prompt, project: project)
+    with_action_url = create_action_required_notification(subject: run, source: "agent_run_action_url")
+    with_action_url.update!(action_url: project_path(project))
+    sole_action = create_action_required_notification(subject: run, source: "agent_run_sole_action")
+
+    [ with_action_url, sole_action ].each do |notification|
+      get inbox_entry_path(
+        entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+        kind: Inbox::Queue::ACTION_REQUIRED_KIND
+      )
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      link = document.at_css(%(a[href="#{project_agent_run_path(project, run)}"]))
+
+      expect(link).to be_present
+      expect(link.text).to eq("View Agent Run")
+      expect(link["data-turbo-frame"]).to eq("_top")
+    end
+  end
+
   # @spec PROJECT-READINESS-007
   it "renders the latest failed bootstrap run with its failure reason and details link" do
     project.update!(tdd_mode: "strict", readiness_gaps: [
