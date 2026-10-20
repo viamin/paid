@@ -636,6 +636,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to include("project_new")
     end
 
+    it "maps traceability finding actions to the Inbox detail surface" do
+      targets = described_class.call(changed_files: [ "app/controllers/design_artifact_findings_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "dashboard" ])
+    end
+
     it "maps prompts controller to include prompt_diff target" do
       targets = described_class.call(changed_files: [ "app/controllers/prompts_controller.rb" ])
 
