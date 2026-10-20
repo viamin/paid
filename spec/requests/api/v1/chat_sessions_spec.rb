@@ -91,4 +91,20 @@ RSpec.describe "Mobile chat sessions API" do
     expect(focus_ids).to include(first_issue.id, second_issue.id)
     expect(queries.grep(/FROM "issues".*"issues"\."id" =/)).to be_empty
   end
+
+  # @spec QUESTION-EXPLORATION-018 MOBILE-API-011
+  it "exposes exploration_focus_issue_id without an N+1 on standalone linked chats" do
+    project = create(:project, account:)
+    issue_one = create(:issue, project:)
+    issue_two = create(:issue, project:)
+    create(:chat_session, account:, created_by: user, project:, clarifying_question_issue: issue_one)
+    create(:chat_session, account:, created_by: user, project:, clarifying_question_issue: issue_two)
+
+    queries = capture_queries { get "/api/v1/chat/sessions", headers: headers }
+
+    expect(response).to have_http_status(:ok)
+    focus_ids = response.parsed_body.fetch("sessions").pluck("exploration_focus_issue_id")
+    expect(focus_ids).to include(issue_one.id, issue_two.id)
+    expect(queries.grep(/FROM "issues".*"issues"\."id" =/)).to be_empty
+  end
 end

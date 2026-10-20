@@ -9,7 +9,7 @@ module Api
       # @spec MOBILE-API-011 CHAT-API-001
       def index
         authorize ChatSession.new(account: current_account), :index?
-        sessions = session_scope.includes(:project, :runner, :chat_session_projects, :projects, feature_intent: :issues)
+        sessions = session_scope.includes(:project, :runner, :chat_session_projects, :projects, :clarifying_question_issue, feature_intent: :issues)
           .order(updated_at: :desc, id: :desc)
         render json: { sessions: sessions.map { |session| session_json(session) } }
       end
