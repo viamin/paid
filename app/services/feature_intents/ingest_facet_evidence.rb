@@ -18,7 +18,9 @@ module FeatureIntents
       existing = FeatureIntentFacetEvidence.find_by(account: facet.account, idempotency_key: attributes.fetch(:idempotency_key))
       return find_existing! if existing
 
-      facet.with_lock { create_or_return_existing }
+      evidence = facet.with_lock { create_or_return_existing }
+      schedule_assessments if @created
+      evidence
     rescue ActiveRecord::RecordNotUnique
       find_existing!
     end
@@ -32,6 +34,7 @@ module FeatureIntents
 
       evidence = facet.evidence.create!(attributes.merge(account: facet.account, evidence_revision: next_revision))
       facet.update!(evidence_revision: evidence.evidence_revision)
+      @created = true
       evidence
     end
 
@@ -47,5 +50,11 @@ module FeatureIntents
     end
 
     def next_revision = facet.evidence_revision + 1
+
+    def schedule_assessments
+      facet.directions.where(status: "active").find_each do |direction|
+        ScheduleFacetAssessment.call(direction:)
+      end
+    end
   end
 end
