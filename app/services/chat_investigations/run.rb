@@ -26,7 +26,9 @@ module ChatInvestigations
       investigation.with_lock do
         return false unless investigation.status == "queued"
 
-        return await_authorization! unless execution_allowed?
+        if (reason = denial_reason)
+          return await_authorization!(reason: reason)
+        end
 
         investigation.update!(status: "running", started_at: Time.current, metadata: investigation.metadata.merge("progress" => "running"))
       end
@@ -34,11 +36,24 @@ module ChatInvestigations
       true
     end
 
-    def await_authorization!
+    # The queued side effect may outlive the initiating collaborator's project
+    # access, so recheck authorization against the project before entering
+    # running. Per the question-exploration design, queued work must recheck
+    # membership; releasing the reservation and transitioning to
+    # awaiting_authorization keeps the project budget intact for collaborators
+    # who are still authorized.
+    def denial_reason
+      return "Execution is currently disabled by policy." unless execution_allowed?
+      return "The original author no longer has access to this project." unless creator_authorized?
+
+      nil
+    end
+
+    def await_authorization!(reason:)
       investigation.update!(
         status: "awaiting_authorization",
         reserved_cost_cents: 0,
-        metadata: investigation.metadata.merge("authorization_required" => "Execution is currently disabled by policy.")
+        metadata: investigation.metadata.merge("authorization_required" => reason)
       )
       ChatInvestigations::Broadcast.call(investigation)
       false
@@ -49,6 +64,10 @@ module ChatInvestigations
       !ExecutionControl.enabled.where(scope: "global").exists? &&
         !ExecutionControl.enabled.where(scope: "account", account: project.account).exists? &&
         !ExecutionControl.enabled.where(scope: "project", project:).exists?
+    end
+
+    def creator_authorized?
+      ProjectPolicy.new(investigation.created_by, investigation.project).explore?
     end
 
     def result_for_investigation
