@@ -411,7 +411,7 @@
   render per-issue holds from preloaded associations rather than per-issue
   link queries.
   *Tests:* `spec/services/feature_intents/run_admission_spec.rb`,
-  `spec/agent_runs/recheck_issue_eligibility_spec.rb`,
+  `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`,
   `spec/services/feature_intents/issue_hold_spec.rb`,
   `spec/views/dashboard/inbox_detail_feature_decision_partial_spec.rb`.
   *Code:* `app/services/feature_intents/run_admission.rb`,

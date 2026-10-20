@@ -26,12 +26,6 @@ RSpec.describe "dashboard/_inbox_detail_feature_decision", type: :view do
   end
 
   def render_detail(feature_intent)
-    render partial: "dashboard/inbox_detail_feature_decision",
-      locals: { entry: entry_for(feature_intent), scoped_project: nil, selected_kind: Inbox::Queue::FEATURE_DECISION_KIND }
-    rendered
-  end
-
-  def render_detail(feature_intent)
     policy_double = instance_double(FeatureIntentPolicy, approve?: false)
     view.define_singleton_method(:policy) { |_| policy_double }
     render partial: "dashboard/inbox_detail_feature_decision",
