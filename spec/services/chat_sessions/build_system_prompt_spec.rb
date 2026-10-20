@@ -480,6 +480,36 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("submit_clarifying_answers")
       end
 
+      describe "feature conversations" do
+        let(:feature) { create(:feature_intent, project: project, title: "Inbox redesign") }
+        let(:focused_issue) do
+          create(:issue, :needs_input, project: project, github_number: 8, title: "Focus question",
+            needs_input_questions: [ "Which storage backend?" ])
+        end
+
+        before do
+          create(:feature_intent_issue, feature_intent: feature, issue: issue)
+          create(:feature_intent_issue, feature_intent: feature, issue: focused_issue)
+        end
+
+        # @spec QUESTION-EXPLORATION-018
+        it "names the shared feature and renders the focused issue's questions" do
+          chat_session.update!(
+            feature_intent: feature,
+            metadata: {
+              "clarifying_question_issue_id" => issue.id,
+              "clarifying_questions" => focused_issue.needs_input_questions,
+              "exploration_focus" => { "issue_id" => focused_issue.id }
+            }
+          )
+
+          expect(prompt).to include("Feature Conversation: Inbox redesign")
+          expect(prompt).to include("Clarifying Questions for Issue #8: Focus question")
+          expect(prompt).to include("1. Which storage backend?")
+          expect(prompt).not_to include("Clarifying Questions for Issue #7")
+        end
+      end
+
       # @spec QUESTION-EXPLORATION-008 QUESTION-EXPLORATION-011 FACET-CONFIDENCE-006 FACET-CONFIDENCE-007
       it "grounds adaptive clarification and keeps exploration separate from durable preferences" do
         expect(prompt).to include("Before asking for facts, inspect available repository and Inbox context")

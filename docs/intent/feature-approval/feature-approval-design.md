@@ -70,15 +70,25 @@ completed planning run, or repository metadata that drifted after a merge.
 backstop for those cases. At a pinned repository revision it discovers RDR
 artifacts according to the project's `rdr_convention` repository profile
 (`docs/rdrs` and `RDR-*.md` are defaults), and open design PRs, then compares
-declared qualified issue relationships, persisted issue identities, and body/native-tree
-relationships. It produces one deduplicated finding per artifact/revision and
+declared qualified issue relationships, persisted issue identities, canonical
+issue-tree manifests, exact artifact backlinks, and body/native-tree relationships.
+An unambiguous structural association is retained with its provenance and revisions,
+resolves an otherwise stale finding, and never repairs the source document. It produces
+one deduplicated finding per artifact/revision and
 reports evidence, coverage time, and an explicit state: `missing_tree`,
 `partial_tree`, `stale_metadata`, `deferred`, or `unverifiable`.
+
+Issue coverage preloads shared project records in a separate query rather than
+joining full project rows into the issue result. Project audit history must not
+be repeated for every issue: PostgreSQL results and their Ruby string copies
+would otherwise multiply that history by the synchronized issue count.
 
 Only structural existence and linkage checks happen in Rails. An issue number
 in prose is not a relationship: a line must declare a relationship keyword or
 field before it establishes coverage. A weak semantic candidate is not linked
-until an `agent_harness` assessment confirms it.
+until an `agent_harness` assessment confirms it. The existing daily sweep is a bounded
+fallback; sync and design events prompt reassessment, while unchanged assessed inputs
+do not cause repeated semantic work.
 Failures or partial GitHub reads produce `unverifiable`, never an absence
 finding. Repository-specific draft, deferred, and superseded statuses are
 reported rather than treated as missing work. The reconciliation is read-only:
@@ -177,11 +187,11 @@ shipped in #4113 and #4114. `AttachFromAgentRun` creates and links Feature
 Intents, design PRs, and proposed issue trees; `RunAdmission` enforces the
 hold at selection, creation, dequeue, and dispatch; and design-PR
 reconciliation uses the same `MarkApproved` authorization/readiness contract.
-
-FEATURE-APPROVAL-019 remains open: attachment records repository/API facts
-today, but does not turn an agent run's explicitly emitted questions or
-`[inferred]` decisions into `FeatureIntentDecision` rows. The Inbox therefore
-shows the truthful empty decision state rather than fabricating one.
+FEATURE-APPROVAL-019 shipped with the decision-materialization slice: when a
+feature run completes, `FeatureIntents::RecordRunDecisions` parses the run's
+recorded output for an explicitly emitted decisions block and records
+`FeatureIntentDecision` rows from it, so the Inbox decision sections render
+real run-raised questions and `[inferred]` decisions.
 
 ## Approval revisions and release
 
@@ -202,6 +212,32 @@ a fresh authorized human approval is recorded. The #4114 admission wiring uses
 this release state; it does not bypass this transition contract.
 
 ## Inbox decision flow and Mark approved
+
+### Declining an unwanted proposal
+
+An Inbox-authorized project member may decline a nonterminal proposal from any
+pre-approval state, including `discovering`; approval readiness and criteria
+clarity do not apply to that action. `FeatureIntent#cancel!` records the actor,
+time, selected reason (`already_handled`, `superseded`, or `no_longer_wanted`),
+and an optional replacement reference, then transitions the existing intent to
+`cancelled`. It preserves the source brief, design evidence, issue links, and
+approval-revision history. It does not close linked issues, cancel runs, release
+held work, or imply a replacement PR delivered the feature.
+
+A cancellation removes the proposal from the action Inbox and invalidates its
+badge cache. Reconciliation and sync retain the terminal cancellation rather
+than recreating or approving it. An authorized member can reopen a cancelled
+proposal to `discovering`; reopening remains held and does not revive an old
+approval. The action Inbox admits feature work only when an approval is ready
+or an open recorded human decision needs a response. Pending clarity assessment
+and ordinary discovery progress remain background work rather than Inbox noise.
+
+The membership-scoped Feature proposals page is the non-action history surface:
+it shows nonterminal proposals (including background discovery) with the
+structured decline action, and separately shows cancelled proposals with the
+authorized reopen action. It is intentionally separate from `Inbox::Queue`, so
+neither background discovery nor cancellation history affects Inbox filtering
+or its badge count.
 
 ### Readiness is a single answer, computed once
 
@@ -368,17 +404,26 @@ own output, never invented human answers. Two grounded sources:
   recorded on the `AgentRun` are the source of truth for what was actually
   filed and opened. The FeatureIntent mirrors those facts. This is what
   FEATURE-APPROVAL-018 ships today (design PR rows + linked issues).
-- Any clarifying questions or AI-inferred decisions the run produced will
-  eventually be recorded on the FeatureIntent's `FeatureIntentDecision`
-  rows only when the run's output explicitly contains them — the run's
-  summary is parsed, not assumed. Inferred decisions will be flagged with
-  `[inferred]` in their prompt text so a human can confirm or reject them
-  through the Inbox (FEATURE-APPROVAL-007). The service never fabricates
-  a question that the run did not raise. This behavior is tracked by the
-  open spec FEATURE-APPROVAL-019 and is not yet implemented: today
-  `AttachFromAgentRun` does not parse the run summary, and the Inbox
-  decision-listing sections render empty when no decisions were separately
-  recorded.
+- Any clarifying questions or AI-inferred decisions the run produced are
+  recorded on the FeatureIntent's `FeatureIntentDecision` rows only when
+  the run's output explicitly contains them — the run's summary is parsed,
+  never assumed. The `create_feature`/`lid_planning` prompts instruct the
+  agent to emit a structured block (`<!-- feature-decisions-start -->` …
+  `<!-- feature-decisions-end -->` around a JSON array of
+  `{kind, design_claim, prompt}` items) in its final output;
+  `FeatureIntents::RunDecisionEmissions` parses that block with the same
+  deterministic-marker approach the multi-issue plan parser uses, and
+  `FeatureIntents::RecordRunDecisions` materializes the items as decision
+  rows bound to their source run (`source_agent_run_id` makes re-recording
+  on a retried run a no-op). Inferred decisions carry the `[inferred]` flag
+  in their prompt text so a human can confirm or reject them through the
+  Inbox (FEATURE-APPROVAL-007). Items missing a prompt or design claim, or
+  carrying an unknown kind, are skipped rather than repaired, and a run
+  that emits no block produces no rows — the service never fabricates a
+  question that the run did not raise. Recording open decisions moves the
+  feature to `needs_decision`; the criteria-clarity evaluation is the
+  transition driver back to `ready_for_approval` (see "Status transitions
+  during attachment").
 
 ### Branching by run goal
 

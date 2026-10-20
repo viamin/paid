@@ -3337,23 +3337,32 @@ module Activities
     # after the relevant reviewer's latest approval AND the post-approval
     # range contains content attributable to the PR author; :not_evaluated
     # when the post-approval range could not be classified; :fresh
+    # Pairs the aggregate review-freshness state for HEAD with the list of
+    # blocking approvals that actually failed freshness. Callers persist the
+    # list alongside the snapshot so the Inbox can show evidence for the
+    # approval(s) that triggered the stale state, not just the owner
+    # approval — important when the manual review method is enabled and a
+    # fresh owner re-approval coexists with a stale manual reviewer
+    # approval (#4519).
+    ReviewFreshnessResult = Data.define(:state, :stale_approvals)
+
     # otherwise. Clean base-branch merges (see AUTO-MERGE-006) carry no
     # author-side content and keep the approval fresh. Each blocking
     # signal is checked individually so that an owner re-approval cannot
     # mask a stale manual review from the configured reviewer.
     # @spec AUTO-MERGE-006
-    def review_freshness_for_head(client, project, issue, pr_data, reviews)
-      return :fresh if reviews.nil?
+    def freshness_for_head(client, project, issue, pr_data, reviews)
+      return ReviewFreshnessResult.new(state: :fresh, stale_approvals: []) if reviews.nil?
 
       head_committed_at = fetch_head_commit_date(client, project, issue, pr_data)
-      return :fresh if head_committed_at.nil?
+      return ReviewFreshnessResult.new(state: :fresh, stale_approvals: []) if head_committed_at.nil?
 
       blocking_approvals = blocking_approvals_for(project, reviews)
-      return :fresh if blocking_approvals.empty?
+      return ReviewFreshnessResult.new(state: :fresh, stale_approvals: []) if blocking_approvals.empty?
 
       head_sha = pr_data&.head&.sha
       base_branch = pr_data&.base_ref
-      return :stale if head_sha.blank? || base_branch.blank?
+      return ReviewFreshnessResult.new(state: :stale, stale_approvals: blocking_approvals) if head_sha.blank? || base_branch.blank?
 
       collector = pull_request_collector(project, client:)
 
@@ -3364,21 +3373,27 @@ module Activities
       # the post-approval range must consist entirely of content-free
       # base merges for the approval to remain fresh. Any approval that
       # fails the check keeps the PR stale.
-      freshness_states = blocking_approvals.map do |approval|
-        freshness_state_for_approval(
+      evaluated = blocking_approvals.map do |approval|
+        [ approval, freshness_state_for_approval(
           approval: approval,
           head_committed_at: head_committed_at,
           head_sha: head_sha,
           base_branch: base_branch,
           issue: issue,
           collector: collector
-        )
+        ) ]
       end
 
-      return :stale if freshness_states.include?(:stale)
-      return :not_evaluated if freshness_states.include?(:not_evaluated)
+      stale_approvals = evaluated.select { |_, state| state == :stale }.map(&:first)
+      state = if stale_approvals.any?
+        :stale
+      elsif evaluated.any? { |_, state| state == :not_evaluated }
+        :not_evaluated
+      else
+        :fresh
+      end
 
-      :fresh
+      ReviewFreshnessResult.new(state:, stale_approvals:)
     end
 
     def fetch_head_commit_date(client, project, issue, pr_data)
@@ -3457,10 +3472,11 @@ module Activities
       :stale
     end
 
-    # Returns the most recent submitted_at timestamp and matching commit_id
-    # among APPROVED reviews from trusted non-bot users matching the given
-    # block filter. +nil+ when no approval matches — callers fall back to
-    # their default (e.g. no owner approval recorded yet).
+    # Returns the most recent submitted_at timestamp, matching commit_id,
+    # and the approving user's login among APPROVED reviews from trusted
+    # non-bot users matching the given block filter. +nil+ when no approval
+    # matches — callers fall back to their default (e.g. no owner approval
+    # recorded yet).
     def latest_approval_for(project, reviews, trust_required: true)
       approvals = reviews.select do |r|
         r[:state] == "APPROVED" &&
@@ -3473,7 +3489,11 @@ module Activities
       return nil if latest.nil?
 
       matching = approvals.find { |r| r[:submitted_at] == latest }
-      { submitted_at: latest, commit_id: matching&.dig(:commit_id) }
+      {
+        submitted_at: latest,
+        commit_id: matching&.dig(:commit_id),
+        user_login: matching&.dig(:user_login)
+      }
     end
 
     def approval_login_allowed?(project, login, trust_required:)
@@ -3794,7 +3814,7 @@ module Activities
     # and the strategy's evaluation of them, so callers can reuse both
     # without re-running the signal gates.
     AutoMergeEvaluation = Data.define(:signals, :analysis)
-    AutoMergeSignalBuild = Data.define(:signals, :review_freshness)
+    AutoMergeSignalBuild = Data.define(:signals, :review_freshness, :approval_evidence)
 
     # Evaluates human-authored PR merge eligibility via the AutoMerge
     # strategy. Collects signals from provider data, persists the blocker
@@ -3828,7 +3848,13 @@ module Activities
       log_skip_auto_merge(project, issue) if signals.skip_auto_merge?
 
       analysis = evaluate_auto_merge(project, signals)
-      stage_auto_merge_snapshot(issue, analysis, review_freshness: signal_build.review_freshness, head_sha: pr_head_sha(pr_data))
+      stage_auto_merge_snapshot(
+        issue,
+        analysis,
+        review_freshness: signal_build.review_freshness,
+        approval_evidence: signal_build.approval_evidence,
+        head_sha: pr_head_sha(pr_data)
+      )
       AutoMergeEvaluation.new(signals:, analysis:)
     end
 
@@ -3853,7 +3879,9 @@ module Activities
       blocking_reviews_complete = all_blocking_review_methods_complete?(
         project, issue, reviews, checks: checks, pr_data: pr_data, progress_state: progress_state
       )
-      review_freshness = review_freshness_for_head(client, project, issue, pr_data, reviews)
+      review_freshness_result = freshness_for_head(client, project, issue, pr_data, reviews)
+      review_freshness = review_freshness_result.state
+      stale_approvals = review_freshness_result.stale_approvals
       reviews_fresh = review_freshness == :fresh
       dependencies_resolved = if human_dependency_check_required?(
         owner_approved: owner_approved,
@@ -3889,7 +3917,11 @@ module Activities
         intent_conformance_ok: intent_conformance_ok
       )
 
-      AutoMergeSignalBuild.new(signals:, review_freshness:)
+      AutoMergeSignalBuild.new(
+        signals:,
+        review_freshness:,
+        approval_evidence: approval_evidence_for(project, pr_data, stale_approvals: stale_approvals)
+      )
     end
 
     # Evaluates bot-authored PR merge eligibility via the AutoMerge
@@ -4040,16 +4072,46 @@ module Activities
       @auto_merge_head_shas ||= {}
     end
 
-    def stage_auto_merge_snapshot(issue, analysis, review_freshness: :fresh, head_sha: nil)
+    def stage_auto_merge_snapshot(issue, analysis, review_freshness: :fresh, approval_evidence: {}, head_sha: nil)
       snapshot = {
         "failed" => analysis.failed_blockers.map(&:to_h).map(&:stringify_keys),
         "not_evaluated" => analysis.not_evaluated_blockers.map(&:to_h).map(&:stringify_keys)
       }
 
       remap_review_freshness_failure!(snapshot) if review_freshness == :not_evaluated
+      attach_approval_evidence!(snapshot, approval_evidence) if review_freshness == :stale
 
       auto_merge_snapshots[issue.id] = snapshot
       auto_merge_head_shas[issue.id] = head_sha if head_sha.present?
+    end
+
+    # Persist revision evidence for each blocking approval that actually
+    # failed freshness, so the Inbox explanation matches the policy
+    # decision. Inbox renderers must not make a fresh GitHub call merely to
+    # explain why an approval GitHub still displays is no longer fresh for
+    # Paid's policy; when the manual review method is enabled, a fresh
+    # owner re-approval can coexist with a stale configured manual reviewer
+    # approval, and showing only the owner's SHA/time would mis-attribute
+    # the staleness (#4519).
+    # @spec OPERATOR-INBOX-002K
+    def approval_evidence_for(project, pr_data, stale_approvals: [])
+      current_revision = pr_head_sha(pr_data)
+      entries = stale_approvals.map do |approval|
+        {
+          "approver_login" => approval[:user_login],
+          "approved_revision" => approval[:commit_id],
+          "approved_at" => approval[:submitted_at]&.iso8601,
+          "current_revision" => current_revision
+        }.compact
+      end
+      return {} if entries.empty?
+
+      { "stale_approvals" => entries }
+    end
+
+    def attach_approval_evidence!(snapshot, approval_evidence)
+      blocker = Array(snapshot["failed"]).find { |candidate| candidate["signal"] == "reviews_fresh" }
+      blocker["approval_evidence"] = approval_evidence if blocker && approval_evidence.present?
     end
 
     def remap_review_freshness_failure!(snapshot)

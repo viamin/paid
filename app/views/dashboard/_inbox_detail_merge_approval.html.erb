@@ -1,29 +1,49 @@
+<%# @spec OPERATOR-INBOX-002K %>
 <div class="space-y-6">
   <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
     <h3 class="text-sm font-semibold text-emerald-900">
-      <%= if entry.summary == "Manual merge decision required"
-            "Manual merge decision on GitHub"
-          elsif entry.summary == "Waiting for owner re-approval on the current HEAD commit"
-            "Re-approve on GitHub"
-          else
-            "Review on GitHub"
-          end %>
+      <%= entry.guidance.fetch(:heading) %>
     </h3>
     <p class="mt-1 text-sm text-emerald-800">
-      <% if entry.summary == "Manual merge decision required" %>
-        This pull request's current-head checks and policy assessment are clear. Review and merge it on GitHub when appropriate.
-      <% elsif entry.summary == "Human review required before manual merge" %>
-        <%= entry.summary %>. Complete the required review on GitHub before making the merge decision.
-      <% else %>
-        <%= entry.summary %>. Re-approve this pull request on GitHub so Paid can merge it on the next PR scan.
-      <% end %>
+      <%= entry.guidance.fetch(:instruction) %>
     </p>
   </div>
+
+  <% approval_evidence = entry.guidance.fetch(:approval_evidence) %>
+  <% if entry.guidance.fetch(:stale_approval) && approval_evidence.present? %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <h3 class="font-semibold">Recorded approval and current revision</h3>
+      <% Array(approval_evidence["stale_approvals"]).each_with_index do |stale, index| %>
+        <% if stale["approver_login"].present? %>
+          <p class="mt-1<%= index.zero? ? "" : " mt-3 border-t border-amber-200 pt-2" %>">
+            <strong>Approver:</strong> <code><%= stale["approver_login"] %></code>
+          </p>
+        <% end %>
+        <% if stale["approved_revision"].present? %>
+          <p class="mt-1">Approved revision: <code><%= stale["approved_revision"] %></code></p>
+        <% end %>
+        <% if stale["approved_at"].present? %>
+          <p class="mt-1">Approved at: <%= Time.iso8601(stale["approved_at"]).to_fs(:long) %></p>
+        <% end %>
+        <% if stale["current_revision"].present? %>
+          <p class="mt-1">Current revision: <code><%= stale["current_revision"] %></code></p>
+        <% end %>
+        <% if stale["assessed_at"].present? && index == approval_evidence["stale_approvals"].length - 1 %>
+          <p class="mt-1">Paid assessed this state at <%= Time.iso8601(stale["assessed_at"]).to_fs(:long) %>.</p>
+        <% end %>
+        <% if stale["comparison_url"].present? %>
+          <p class="mt-2">
+            <%= link_to "Compare #{stale['approver_login'].presence || 'approved'} and current revisions on GitHub", stale["comparison_url"], target: "_blank", rel: "noopener noreferrer", class: "font-semibold underline" %>
+          </p>
+        <% end %>
+      <% end %>
+    </div>
+  <% end %>
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
     <ul class="space-y-2 text-sm text-gray-600">
-      <% entry.record.auto_merge_blockers.fetch("failed", []).each do |blocker| %>
+      <% entry.guidance.fetch(:blockers).each do |blocker| %>
         <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
           <p class="font-medium text-gray-900"><%= blocker.fetch("sanitized_message") %></p>
           <p class="mt-1"><%= blocker.fetch("next_action") %></p>

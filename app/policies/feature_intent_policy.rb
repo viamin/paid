@@ -8,12 +8,22 @@
 # Inbox access may approve"). Delegates to ProjectPolicy so this stays in
 # sync with the project's general membership rules.
 class FeatureIntentPolicy < ApplicationPolicy
+  def index? = user.present?
+
   def show?
     ProjectPolicy.new(user, record.project).show?
   end
 
   def approve?
     ProjectPolicy.new(user, record.project).manage_issues?
+  end
+
+  def cancel?
+    approve?
+  end
+
+  def reopen?
+    approve?
   end
 
   class Scope < ApplicationPolicy::Scope

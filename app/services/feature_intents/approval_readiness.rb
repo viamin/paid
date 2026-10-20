@@ -44,8 +44,8 @@ module FeatureIntents
     # accept an approval. Without this, a `discovering` feature intent that
     # happens to pass every other check (e.g. clear criteria, no open
     # decisions) would surface an enabled "Mark approved" button that 500s
-    # on click, because `discovering` is in `FEATURE_DECISION_STATUSES` (so
-    # it appears in the inbox) but not in `APPROVABLE_STATUSES`.
+    # on click. A discovering intent may appear only when it has an open human
+    # decision, but it still cannot be approved until its lifecycle advances.
     def not_approvable_status_blocker
       return if feature_intent.status.in?(FeatureIntent::APPROVABLE_STATUSES)
 
