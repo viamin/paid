@@ -5,6 +5,10 @@ module ChatInvestigations
     class Error < StandardError; end
     class WorkspaceUnavailableError < Error; end
 
+    INTERRUPTED_RESULT = "Execution was interrupted before completion."
+    WORKSPACE_UNAVAILABLE_RESULT = "Isolated workspace is unavailable"
+    WORKSPACE_READY_RESULT = "An isolated workspace is ready for this experiment."
+
     def self.call(...)
       new(...).call
     end
@@ -27,6 +31,7 @@ module ChatInvestigations
 
     def start
       investigation.with_lock do
+        return recover_interrupted! if investigation.status == "running"
         return false unless investigation.status == "queued"
 
         if (reason = denial_reason)
@@ -37,6 +42,23 @@ module ChatInvestigations
       end
       ChatInvestigations::Broadcast.call(investigation)
       true
+    end
+
+    # GoodJob's per-job advisory lock guarantees a re-entered Run never races a
+    # live execution of the same job, so finding the investigation still
+    # "running" means the prior execution died mid-run (deploy restart, OOM
+    # kill). Settle it and release the reservation rather than stranding the
+    # project budget until a manual cancel.
+    def recover_interrupted!
+      investigation.update!(
+        status: "failed",
+        result: INTERRUPTED_RESULT,
+        finished_at: Time.current,
+        reserved_cost_cents: 0,
+        metadata: investigation.metadata.merge("progress" => "failed")
+      )
+      ChatInvestigations::Broadcast.call(investigation)
+      false
     end
 
     # The queued side effect may outlive the initiating collaborator's project
@@ -84,11 +106,21 @@ module ChatInvestigations
       results.fetch(:results, []).map { |entry| entry[:content].to_s }.join("\n\n")
     end
 
+    # Experiments need the isolated workspace. A ready session reuses the live
+    # container; a pending/provisioning session already has a provision in
+    # flight, and provisioning again would orphan the live container for a
+    # duplicate (Containers::ProvisionForChat has no readiness guard).
     def experiment_result
-      ChatSessions::ProvisionWorkspace.call(chat_session: investigation.chat_session)
-      raise WorkspaceUnavailableError, "Isolated workspace is unavailable" unless investigation.chat_session.reload.container_ready?
+      chat_session = investigation.chat_session.reload
+      return WORKSPACE_READY_RESULT if chat_session.container_ready?
+      if chat_session.container_pending? || chat_session.container_provisioning?
+        raise WorkspaceUnavailableError, WORKSPACE_UNAVAILABLE_RESULT
+      end
 
-      "An isolated workspace is ready for this experiment."
+      ChatSessions::ProvisionWorkspace.call(chat_session:)
+      raise WorkspaceUnavailableError, WORKSPACE_UNAVAILABLE_RESULT unless chat_session.reload.container_ready?
+
+      WORKSPACE_READY_RESULT
     end
 
     def complete(result)

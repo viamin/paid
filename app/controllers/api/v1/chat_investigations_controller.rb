@@ -10,7 +10,7 @@ module Api
       # @spec QUESTION-EXPLORATION-012
       def index
         authorize ChatMessage.new(chat_session: @chat_session), :index?, policy_class: ChatMessagePolicy
-        render json: { investigations: @chat_session.chat_investigations.order(created_at: :desc).map { |item| investigation_json(item) } }
+        render json: { investigations: @chat_session.chat_investigations.includes(:clarifying_question_progress).order(created_at: :desc).map { |item| investigation_json(item) } }
       end
 
       # @spec QUESTION-EXPLORATION-010 QUESTION-EXPLORATION-012
