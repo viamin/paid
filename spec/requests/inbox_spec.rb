@@ -312,6 +312,28 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include(older_run.error_message)
   end
 
+  # @spec PROJECT-READINESS-010
+  it "targets project setup pending actions at the top-level page" do
+    project.update!(tdd_mode: "strict", readiness_gaps: [
+      { "kind" => "missing_ci", "description" => "CI is required.", "evidence" => {} }
+    ])
+    failed_run = create(:agent_run, :failed, project:, goal: "bootstrap_readiness")
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::PROJECT_SETUP_PENDING_KIND, project),
+      kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND
+    ), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    document = Nokogiri::HTML(response.body)
+    bootstrap_form = document.at_css(%(form[action="#{bootstrap_readiness_project_agent_runs_path(project)}"]))
+    settings_link = document.at_css(%(a[href="#{edit_project_path(project)}"]))
+    run_link = document.at_css(%(a[href="#{project_agent_run_path(project, failed_run)}"]))
+
+    expect(bootstrap_form["data-turbo-frame"]).to eq("_top")
+    expect(settings_link["data-turbo-frame"]).to eq("_top")
+    expect(run_link["data-turbo-frame"]).to eq("_top")
+  end
+
   # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-007
   it "directs operators to make the stalled issue depend on its follow-up prerequisite" do
     issue = create(:issue, project: project, github_number: 500, paid_state: "in_progress")
