@@ -1160,8 +1160,12 @@ class ProcessRunQueueJob < ApplicationJob
     # @spec CONFIDENCE-DELIVERY-009 — a queued confidence-delivery run retains
     # its immutable admission snapshot. A revised scope must get a fresh run
     # rather than changing the scope of this unstarted run at dispatch.
+    # approved_design_revision is nil on runs queued before this column
+    # existed; treat that as the legacy-compatible state (base_commit_sha
+    # already carried provenance for those runs) rather than cancelling them.
     if admission && (!admission.allowed? || (admission.revision && agent_run.base_commit_sha != admission.revision) ||
-      (admission.revision && agent_run.approved_design_revision != admission.revision) ||
+      (admission.revision && agent_run.approved_design_revision.present? &&
+        agent_run.approved_design_revision != admission.revision) ||
       (admission.snapshot.present? && agent_run.confidence_delivery_snapshot != admission.snapshot))
       agent_run.cancel!(error: admission.reason || "Feature intent revision changed before dispatch.")
       return :feature_intent_held
