@@ -108,7 +108,7 @@ module Screenshots
           provider.update!(enabled_for_agent_runs: true, enabled_for_fallback: true)
 
           service_container = ServiceContainer.find_or_create_by!(account: account, name: "Screenshot Postgres") do |record|
-    record.image = "postgres:16.15"
+            record.image = "postgres:16.15"
             record.port = 5432
             record.env = {}
             record.status = "stopped"

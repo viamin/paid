@@ -110,8 +110,8 @@ class ServiceContainerReconciliationJob < ApplicationJob
   # @spec TOOLCHAIN-PIN-026, CONTAINER-RUNTIME-042
   def report_default_image_drift(service_container, runtime_image)
     default_image = default_postgres_image
-    return unless default_image && service_container.image.include?("postgres")
-    return if service_container.image == default_image
+    return unless default_image && service_container.image.match?(%r{(?:^|/)postgres:\d})
+    return if repository_tag(service_container.image) == default_image
 
     Rails.logger.warn(
       message: "container_manager.service_container_default_image_drift",
@@ -126,5 +126,13 @@ class ServiceContainerReconciliationJob < ApplicationJob
 
   def default_postgres_image
     UserSetting.column_defaults.fetch("allowed_service_images", []).find { |image| image.start_with?("postgres:") }
+  end
+
+  # Returns the `repository:tag` segment of an image reference. Strips any
+  # registry prefix (`registry.example.com/foo/bar:1`) so callers can compare
+  # the configured image against the default without a misleading mismatch
+  # caused solely by a registry mirror.
+  def repository_tag(image)
+    image.to_s.split("/").last
   end
 end

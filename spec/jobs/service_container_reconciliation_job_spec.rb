@@ -85,6 +85,59 @@ RSpec.describe ServiceContainerReconciliationJob do
       )
     end
 
+    # @spec TOOLCHAIN-PIN-026, CONTAINER-RUNTIME-042
+    # Anchoring the match to the repository segment prevents every reconciliation
+    # cycle from emitting a spurious default-drift warning for registry-mirrored
+    # PostgreSQL images (e.g. the ECR pull-through used by pr-screenshots.yml).
+    it "does not flag a registry-prefixed PostgreSQL image when it matches the current default" do
+      sc = build(:service_container,
+                 image: "registry.example.com/postgres:16.15",
+                 status: "running", docker_container_id: "mirrored")
+      sc.save!(validate: false)
+      container = instance_double(Docker::Container)
+      allow(backend).to receive(:get_container).with("mirrored").and_return(container)
+      allow(container).to receive(:json).and_return(
+        { "State" => { "Running" => true }, "Config" => { "Image" => "registry.example.com/postgres:16.15" } }
+      )
+      allow(Rails.logger).to receive(:warn)
+
+      job.perform
+
+      expect(sc.reload).to have_attributes(status: "running", docker_container_id: "mirrored")
+      expect(Rails.logger).not_to have_received(:warn).with(
+        hash_including(message: "container_manager.service_container_default_image_drift")
+      )
+    end
+
+    # @spec TOOLCHAIN-PIN-026, CONTAINER-RUNTIME-042
+    # A registry-prefixed image at an older version is still drift — the
+    # comparison strips the registry mirror so the version, not the prefix,
+    # determines whether to warn.
+    it "still flags a registry-prefixed PostgreSQL image that lags the current default" do
+      sc = build(:service_container,
+                 image: "registry.example.com/postgres:16.13",
+                 status: "running", docker_container_id: "mirrored-old")
+      sc.save!(validate: false)
+      container = instance_double(Docker::Container)
+      allow(backend).to receive(:get_container).with("mirrored-old").and_return(container)
+      allow(container).to receive(:json).and_return(
+        { "State" => { "Running" => true }, "Config" => { "Image" => "registry.example.com/postgres:16.13" } }
+      )
+      allow(Rails.logger).to receive(:warn)
+
+      job.perform
+
+      expect(sc.reload).to have_attributes(status: "running", docker_container_id: "mirrored-old")
+      expect(Rails.logger).to have_received(:warn).with(
+        hash_including(
+          message: "container_manager.service_container_default_image_drift",
+          configured_image: "registry.example.com/postgres:16.13",
+          default_image: "postgres:16.15",
+          runtime_image: "registry.example.com/postgres:16.13"
+        )
+      )
+    end
+
     it "corrects records when Docker container exists but is stopped" do
       sc = create(:service_container, status: "running", docker_container_id: "stopped123", container_host: "elguapo")
       container = instance_double(Docker::Container)
