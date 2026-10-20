@@ -94,12 +94,28 @@ class Issue < ApplicationRecord
   has_many :intent_conformance_decisions, dependent: :destroy
   has_many :clarifying_question_progresses, dependent: :destroy
 
-  # @spec INTENT-AMENDMENT-003 — feature intent linkage; an
-  # issue belongs to at most one feature tree (unique index on the join).
-  has_one :feature_intent_issue, dependent: :destroy
+  # @spec INTENT-AMENDMENT-003 — feature intent linkage. An issue may serve
+  # several designs (the join's issue_id index is not unique), so this
+  # association resolves only one link; code that must consider every linked
+  # design evaluates the FeatureIntentIssue set directly (see
+  # FeatureIntents::RunAdmission and FeatureIntents::ReleaseIssue). The
+  # collection owns deletion so cleanup removes every link, not just the
+  # singular compatibility accessor's first match.
+  has_many :feature_intent_issues, dependent: :destroy
+  has_one :feature_intent_issue
   has_one :feature_intent, through: :feature_intent_issue
   has_many :completion_cycles, class_name: "FeatureIntentCompletion", foreign_key: :completion_issue_id,
                               dependent: :nullify, inverse_of: :completion_issue
+
+  # An issue may serve more than one design. Automatic enqueue uses this
+  # predicate to invoke the confidence-release contract only when at least one
+  # linked design opted into that delivery policy.
+  # @spec CONFIDENCE-DELIVERY-005
+  def confidence_delivery?
+    feature_intent_issues.joins(:feature_intent)
+      .where(feature_intents: { delivery_policy: "confidence_driven" })
+      .exists?
+  end
 
   has_many :issue_dependencies, dependent: :destroy
   has_many :dependencies, through: :issue_dependencies, source: :depends_on_issue

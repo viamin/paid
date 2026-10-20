@@ -8,6 +8,7 @@ RSpec.describe Issue do
     it { is_expected.to belong_to(:parent_issue).class_name("Issue").optional }
     it { is_expected.to have_many(:sub_issues).class_name("Issue").with_foreign_key(:parent_issue_id).dependent(:nullify) }
     it { is_expected.to have_many(:agent_runs).dependent(:nullify) }
+    it { is_expected.to have_many(:feature_intent_issues).dependent(:destroy) }
     it { is_expected.to have_many(:issue_dependencies).dependent(:destroy) }
     it { is_expected.to have_many(:dependencies).through(:issue_dependencies) }
     it { is_expected.to have_many(:reverse_issue_dependencies).class_name("IssueDependency").dependent(:destroy) }
@@ -52,6 +53,18 @@ RSpec.describe Issue do
 
         expect(issue).to be_valid
       end
+    end
+  end
+
+  describe "feature intent links" do
+    it "destroys every design link when an issue serves multiple designs" do # @spec INTENT-AMENDMENT-003
+      issue = create(:issue)
+      feature_intents = create_list(:feature_intent, 2, project: issue.project)
+      links = feature_intents.map { |feature_intent| create(:feature_intent_issue, issue:, feature_intent:) }
+
+      issue.destroy!
+
+      expect(FeatureIntentIssue.where(id: links)).to be_empty
     end
   end
 

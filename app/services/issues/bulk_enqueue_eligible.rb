@@ -15,6 +15,7 @@ module Issues
     def call # @spec EAGER-QUEUE-003
       return [] unless skip_project_gate || Issues::AutoPickProjectGate.call(project)
 
+      release_confidence_delivery_holds
       counts = { created: 0, existing: 0, skipped: 0 }
       runs = []
 
@@ -53,6 +54,39 @@ module Issues
       return ordered_eligible_scope.each(&) if limit.present?
 
       eligible_scope.find_each(&)
+    end
+
+    # Held confidence-delivery issues are intentionally absent from the normal
+    # candidate scope while their GitHub planning projection is unresolved.
+    # Reconcile them before reading that scope, so the periodic eager-queue
+    # sweep can release newly-ready work without treating a label as evidence.
+    # An issue may serve several designs, so reconciliation runs once per
+    # issue — ReleaseIssue reconciles every unreleased confidence link the
+    # issue serves as one set. Fully released issues are swept only while the
+    # workflow-owned planning label is still projected on them, so an
+    # externally re-added hold cannot silently hold ready work forever.
+    # @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-006
+    def release_confidence_delivery_holds
+      issue_ids = unreleased_confidence_issue_ids | stale_planning_label_issue_ids
+      Issue.where(id: issue_ids).find_each { |issue| FeatureIntents::ReleaseIssue.call(issue: issue) }
+    end
+
+    def unreleased_confidence_issue_ids
+      FeatureIntentIssue.joins(:feature_intent)
+        .where(feature_intents: { project_id: project.id, delivery_policy: "confidence_driven" })
+        .where.not(release_state: "released")
+        .distinct.pluck(:issue_id)
+    end
+
+    # The planning label is a default auto-pick skip label, so a fully
+    # released issue would never re-enter any selection path while an
+    # externally re-added hold stays on it (CONFIDENCE-DELIVERY-006).
+    def stale_planning_label_issue_ids
+      FeatureIntentIssue.joins(:feature_intent, :issue)
+        .where(feature_intents: { project_id: project.id, delivery_policy: "confidence_driven" })
+        .where(release_state: "released")
+        .where("issues.labels @> ?::jsonb", [ FeatureIntents::ReleaseIssue::PLANNING_LABEL ].to_json)
+        .distinct.pluck(:issue_id)
     end
 
     def eligible_scope
