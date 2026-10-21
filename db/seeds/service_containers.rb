@@ -6,7 +6,7 @@
 [
   {
     name: "postgres",
-    image: "postgres:16",
+    image: "postgres:16.15",
     port: 5432,
     env: { "POSTGRES_USER" => "agent", "POSTGRES_DB" => "agent_db", "POSTGRES_HOST_AUTH_METHOD" => "trust" }
   },
