@@ -214,13 +214,40 @@ module Activities
     # (CreatePullRequestActivity, per LID-RUNS-003) and in structured logs +
     # agent-run metadata (Lid::CoherenceCheck).
     def build_comment_body(client, project, pr_number, agent_run)
-      summary = generate_summary(client, project, pr_number, agent_run)
-      return if summary.blank?
+      repair_explanation = conflict_repair_explanation(agent_run)
+      summary = generate_summary(client, project, pr_number, agent_run) if summary_comment_requested?(agent_run)
+      return if repair_explanation.blank? && summary.blank?
 
-      "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}\n\n#{summary}"
+      sections = [ repair_explanation, summary ].compact.join("\n\n")
+      "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}\n\n#{sections}"
+    end
+
+    # The scoped repair prompt prevents an automatic conflict run from becoming
+    # general PR maintenance. The eventual freshness verdict remains the
+    # scanner's authoritative, fail-closed first-parent classification.
+    # @spec AUTO-MERGE-010
+    def conflict_repair_explanation(agent_run)
+      return unless agent_run.focus == "merge_conflict"
+
+      base_sha = summary_base_sha(agent_run)
+      head_sha = agent_run.result_commit_sha
+      return if base_sha.blank? || head_sha.blank?
+
+      comparison_url = "#{agent_run.project.github_url}/compare/#{base_sha}...#{head_sha}"
+      <<~MARKDOWN.strip
+        ## Automatic conflict repair
+
+        Paid ran because automatic rebase against the base branch found conflicts. The repair was constrained to base integration and conflict resolution for this pull request's existing task. [Compare the repair range on GitHub](#{comparison_url}).
+
+        A prior approval remains valid only if Paid's freshness check classifies the range as content-preserving. Conflict-resolution edits or any other author-side content require review of the current revision; this update does not enable automatic merging when that project policy is inactive.
+      MARKDOWN
     end
 
     def summary_comments_enabled?(agent_run)
+      agent_run.focus == "merge_conflict" || summary_comment_requested?(agent_run)
+    end
+
+    def summary_comment_requested?(agent_run)
       agent_run.settings_user&.settings&.agent_update_comment_mode == SUMMARY_COMMENT_MODE
     end
 

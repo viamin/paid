@@ -66,6 +66,17 @@ cannot fully return (the walk is bounded at the same 250-commit cap GitHub
 imposes on its compare response; an over-cap walk is unclassifiable), and
 the classification decision is logged so a stall is diagnosable.
 
+When an automatic rebase finds conflicts, the resulting existing-PR run is a
+repair, not a continuation of general implementation work. Its trusted prompt
+limits it to integrating the base branch and resolving the necessary conflicts
+within the PR's existing task and approved intent; a needed change outside that
+scope is reported for human direction. The normal update comment records the
+automatic trigger, the exact pre-run-to-result comparison, and the review
+consequence. A repair does not carry an approval across substantive
+conflict-resolution content and does not change the separate auto-merge policy:
+the existing fail-closed first-parent freshness classifier remains the sole
+authority for whether current-head review is required.
+
 Bot-authored dependency PRs take the narrower trusted path. Dependabot-like PRs
 may skip owner-approval and review-feedback gates, but they still require the
 project to permit dependency auto-merge, a supported executor author, green

@@ -158,3 +158,18 @@
   *Test:* `spec/services/automation/strategies/auto_merge_spec.rb`,
   `spec/temporal/activities/merge_pull_request_activity_spec.rb`,
   `spec/services/inbox/queue_spec.rb`, `spec/db/prompt_seeds_spec.rb`.
+
+- [x] **AUTO-MERGE-010** — When an automatic existing-PR run is focused on a
+  merge conflict, its trusted prompt SHALL limit work to base integration and
+  necessary conflict resolution within the PR's existing task and approved
+  intent, and SHALL direct the agent to stop rather than broaden the PR when a
+  required fix exceeds that boundary. When that run publishes its normal
+  summary update, the update SHALL name the automatic rebase-conflict trigger,
+  link the exact pre-run-to-result comparison, and explain that the existing
+  fail-closed freshness classifier — not the repair or a re-approval alone —
+  decides whether current-head review is required or automatic merging is
+  possible.
+  *Code:* `app/services/prompts/build_for_pr.rb`,
+  `app/temporal/activities/complete_existing_pr_run_activity.rb`.
+  *Test:* `spec/services/prompts/build_for_pr_spec.rb`,
+  `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`.

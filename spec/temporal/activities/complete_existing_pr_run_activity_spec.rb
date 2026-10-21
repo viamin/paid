@@ -122,6 +122,21 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       )
     end
 
+    it "explains the automatic conflict-repair trigger and review consequence" do # @spec AUTO-MERGE-010
+      agent_run.update!(focus: "merge_conflict", external_metadata: {
+        "pre_run_head_sha" => "fedcba9876543210012345678901234567890abc"
+      })
+
+      expect(github_client).to receive(:add_comment) do |_repository, _number, body|
+        expect(body).to include("## Automatic conflict repair")
+        expect(body).to include("automatic rebase against the base branch found conflicts")
+        expect(body).to include("Compare the repair range on GitHub")
+        expect(body).to include("freshness check classifies the range as content-preserving")
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
     # @spec QUIET-MODE-007
     it "skips the summary comment when the project has quiet mode enabled" do
       project.update!(quiet_mode: true)
