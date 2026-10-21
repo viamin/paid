@@ -57,6 +57,7 @@ class AgentRunPatternDetectorJob < ApplicationJob
 
   private
 
+  # @spec RUN-OBSTACLE-003
   def build_diagnoses(account, patterns)
     remaining_budget = AgentRunPatterns::DailyDiagnosisBudget.remaining_for(account: account)
 
@@ -74,6 +75,10 @@ class AgentRunPatternDetectorJob < ApplicationJob
         pattern: pattern,
         diagnosis: diagnosis
       )
+      # A reasoned dismissal mutes re-announcement in Notify while the
+      # decision record itself keeps accruing occurrences.
+      next if decision.dismissed?
+
       result[:diagnoses][fingerprint(pattern)] = diagnosis
       result[:decisions][fingerprint(pattern)] = decision
     end
