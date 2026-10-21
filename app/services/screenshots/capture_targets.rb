@@ -319,6 +319,7 @@ module Screenshots
       "style_guides_controller.rb" => %i[style_guides style_guide_new style_guide_show style_guide_edit],
       "chat_sessions_controller.rb" => %i[chat_sessions chat_session_show],
       "chat_messages_controller.rb" => [ :chat_session_show ],
+      "chat_diagram_comments_controller.rb" => [ :chat_session_show ],
       "quality_dashboards_controller.rb" => [ :quality_dashboard ],
       "workflow_statuses_controller.rb" => [ :workflow_status ],
       "tracker_configurations_controller.rb" => [ :project_edit ],

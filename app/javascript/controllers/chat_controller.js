@@ -776,10 +776,12 @@ export default class extends Controller {
   // already in the transcript; this preserves reload and reconnect rendering.
   removeLiveDiagramDuplicates(messageElement) {
     const existingDiagramIds = new Set(
-      [...this.messagesTarget.querySelectorAll("[data-chat-diagram-id]")]
-        .map((diagram) => diagram.dataset.chatDiagramId)
+      Array.from(
+        this.messagesTarget.querySelectorAll?.("[data-chat-diagram-id]") || [],
+        (diagram) => diagram.dataset.chatDiagramId
+      )
     )
-    messageElement.querySelectorAll("[data-chat-diagram-id]").forEach((diagram) => {
+    messageElement.querySelectorAll?.("[data-chat-diagram-id]").forEach((diagram) => {
       if (existingDiagramIds.has(diagram.dataset.chatDiagramId)) diagram.remove()
     })
   }
