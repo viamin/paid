@@ -8,8 +8,9 @@ class RemediationDecision < ApplicationRecord
     clear_runner_field
     disable_runner_fallback
   ].freeze
-  STATUSES = %w[proposed approved applied skipped failed reverted].freeze
-  OUTCOMES = %w[improved unchanged regressed].freeze
+  STATUSES = %w[proposed approved applied skipped dismissed failed reverted].freeze
+  OUTCOMES = %w[improved unchanged regressed insufficient_evidence].freeze
+  OBSTACLE_KINDS = %w[infrastructure_configuration implementation unknown].freeze
 
   belongs_to :account
   belongs_to :applied_by, class_name: "User", optional: true
@@ -21,6 +22,8 @@ class RemediationDecision < ApplicationRecord
   validates :action_target_type, presence: true
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :outcome, inclusion: { in: OUTCOMES }, allow_nil: true
+  validates :obstacle_kind, inclusion: { in: OBSTACLE_KINDS }
+  validates :dismissal_reason, presence: true, if: :dismissed?
   validates :occurrence_count, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :diagnosis_attempted_on, presence: true
   validates :diagnosis_attempt_count_on_day, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
@@ -68,5 +71,9 @@ class RemediationDecision < ApplicationRecord
 
   def auto_applied?
     applied? && applied_by_id.nil?
+  end
+
+  def dismissed?
+    status == "dismissed"
   end
 end

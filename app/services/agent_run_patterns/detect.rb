@@ -137,6 +137,7 @@ module AgentRunPatterns
             error_pattern: normalized_msg,
             occurrence_count: error_runs.size,
             total_failures: failed_runs.size,
+            total_count: runs.size,
             sample_messages: error_runs.map(&:error_message).compact.uniq.first(3),
             evidence_bundle: build_evidence_bundle(error_runs),
             run_ids: error_run_ids,

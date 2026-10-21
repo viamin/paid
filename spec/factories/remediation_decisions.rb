@@ -12,6 +12,8 @@ FactoryBot.define do
     action_target_id { account.id.to_s }
     action_target_metadata { {} }
     status { "proposed" }
+    obstacle_kind { "unknown" }
+    proposal_context { {} }
     revert_data { {} }
     pre_remediation_failure_count { 3 }
     occurrence_count { 1 }

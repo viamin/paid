@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_20_200635) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_21_040449) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1410,7 +1410,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_200635) do
     t.index ["resolution_actor_id"], name: "index_design_artifact_findings_on_resolution_actor_id"
     t.index ["resolution_issue_id"], name: "index_design_artifact_findings_on_resolution_issue_id"
     t.check_constraint "state::text = ANY (ARRAY['missing_tree'::character varying::text, 'partial_tree'::character varying::text, 'stale_metadata'::character varying::text, 'deferred'::character varying::text, 'unverifiable'::character varying::text])", name: "chk_design_artifact_findings_state"
-    t.check_constraint "status::text = ANY (ARRAY['open'::character varying, 'assigned'::character varying, 'deferred'::character varying, 'dismissed'::character varying, 'resolved'::character varying]::text[])", name: "chk_design_artifact_findings_status"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'assigned'::character varying::text, 'deferred'::character varying::text, 'dismissed'::character varying::text, 'resolved'::character varying::text])", name: "chk_design_artifact_findings_status"
   end
 
   create_table "dispatch_circuit_breakers", comment: "Account-level dispatch circuit breaker that halts scheduling when all providers fail simultaneously", force: :cascade do |t|
@@ -3581,13 +3581,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_20_200635) do
     t.datetime "created_at", null: false
     t.integer "diagnosis_attempt_count_on_day", default: 1, null: false, comment: "How many diagnosis attempts for this fingerprint consumed budget on diagnosis_attempted_on."
     t.date "diagnosis_attempted_on", comment: "UTC day when this fingerprint last consumed diagnosis budget."
+    t.text "dismissal_reason", comment: "Operator rationale retained when a recurring proposal is dismissed."
+    t.datetime "dismissed_at", comment: "When the operator dismissed this proposal."
     t.jsonb "evidence_pointers", default: [], null: false, comment: "Pointers into the sanitized evidence bundle that support the diagnosis."
     t.string "fingerprint", null: false, comment: "Stable pattern fingerprint used to dedupe recurring diagnoses."
     t.datetime "last_diagnosis_attempt_at", comment: "Timestamp of the most recent diagnosis attempt recorded for this audit row."
+    t.string "obstacle_kind", default: "unknown", null: false, comment: "Semantic classification: infrastructure_configuration, implementation, or unknown."
     t.integer "occurrence_count", default: 1, null: false, comment: "How many detections collapsed into this deduped decision row."
     t.string "outcome", comment: "Evaluation result for the remediation: improved, unchanged, or regressed."
+    t.integer "post_remediation_exposure_count", comment: "Comparable run exposure after an accepted correction."
     t.integer "post_remediation_failure_count", comment: "Observed failure count for the fingerprint after remediation evaluation."
+    t.integer "pre_remediation_exposure_count", comment: "Comparable run exposure in the detector window before a correction."
     t.integer "pre_remediation_failure_count", comment: "Observed failure count for the fingerprint before remediation was proposed."
+    t.jsonb "proposal_context", default: {}, null: false, comment: "Bounded affected scope, evidence snapshot, validation plan, and uncertainty."
     t.string "proposed_action", null: false, comment: "Frozen action enum proposed by the diagnosis pipeline."
     t.jsonb "revert_data", default: {}, null: false, comment: "Structured data needed to reverse an applied remediation unambiguously."
     t.text "root_cause", null: false, comment: "Human-readable diagnosis summary shown in notifications and audits."

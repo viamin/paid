@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module AgentRunPatterns
+  # @spec RUN-OBSTACLE-005
   class UpdateOutcomes
     def self.call(...)
       new(...).call
@@ -13,11 +14,12 @@ module AgentRunPatterns
 
     def call
       account.remediation_decisions.pending_outcome.find_each do |decision|
-        post_count = pattern_counts.fetch(decision.fingerprint, 0)
+        post_count, post_exposure = post_remediation_counts(decision)
 
         decision.update!(
           post_remediation_failure_count: post_count,
-          outcome: outcome_for(decision, post_count)
+          post_remediation_exposure_count: post_exposure,
+          outcome: outcome_for(decision, post_count, post_exposure)
         )
       end
     end
@@ -39,11 +41,26 @@ module AgentRunPatterns
         0
     end
 
-    def outcome_for(decision, post_count)
+    def post_remediation_counts(decision)
+      scope = AgentRun.joins(:project)
+        .where(projects: { account_id: account.id })
+        .where(goal: decision.proposal_context["goal"])
+        .where(completed_at: decision.applied_at..)
+
+      [ scope.where(status: AgentRun::FAILURE_STATUSES).count, scope.count ]
+    end
+
+    def outcome_for(decision, post_count, post_exposure)
+      return "insufficient_evidence" unless comparable_exposure?(decision, post_exposure)
       return "regressed" if post_count > decision.pre_remediation_failure_count.to_i
       return "unchanged" if post_count >= decision.pre_remediation_failure_count.to_i
 
       "improved"
+    end
+
+    def comparable_exposure?(decision, post_exposure)
+      baseline = decision.pre_remediation_exposure_count.to_i
+      baseline.positive? && post_exposure >= baseline
     end
   end
 end
