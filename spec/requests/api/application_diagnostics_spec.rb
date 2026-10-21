@@ -54,6 +54,24 @@ RSpec.describe "Application diagnostics proxy" do
     expect(agent_run.reload.verification_result).to include("app_log_tail" => "retained prior tail")
   end
 
+  # @spec APP-DIAGNOSTICS-004
+  it "rejects captures beyond the per-run budget without changing retained evidence" do
+    agent_run = create(:agent_run, :running)
+    agent_run.update!(verification_result: { "app_log_tail" => "retained" })
+    headers = {
+      "X-Agent-Run-Id" => agent_run.id.to_s,
+      "X-Proxy-Token" => agent_run.ensure_proxy_token!,
+      "CONTENT_TYPE" => "text/plain"
+    }
+    allow(Rails.cache).to receive(:increment)
+      .and_return(Api::ApplicationDiagnosticsController::CAPTURE_RATE_LIMIT_MAX_REQUESTS + 1)
+
+    put "/api/proxy/application-diagnostics", params: "one capture too many", headers: headers
+
+    expect(response).to have_http_status(:too_many_requests)
+    expect(agent_run.reload.verification_result.fetch("app_log_tail")).to eq("retained")
+  end
+
   # @spec APP-DIAGNOSTICS-003
   it "binds diagnostics to the run authenticated by the proxy token" do
     agent_run = create(:agent_run, :running)

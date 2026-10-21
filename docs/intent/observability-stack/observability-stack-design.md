@@ -132,7 +132,10 @@ read the redacted captured tail and its own `ContainerMetric` samples before
 choosing a verification outcome. The endpoint never accepts a target run,
 project, or container identifier. Captured logs are limited to 32 KiB before
 persistence; final recorder-owned capture supersedes the provisional log when
-available after the run. Results include tenant/project/run/revision/timestamp provenance and
+available after the run. Capture requests are also rate-limited per run (20
+captures per rolling hour, mirroring the proxy knowledge-search limiter) so a
+misbehaving container cannot drive unbounded database writes; requests past
+the budget receive `429` without touching retained evidence. Results include tenant/project/run/revision/timestamp provenance and
 cap lookback to one hour and samples to 100. Missing logs or metrics return an
 explicit `unavailable` status. The persisted log carries a `app_log_truncated`
 marker whenever the recorder hit the line or byte cap, so a caller can tell

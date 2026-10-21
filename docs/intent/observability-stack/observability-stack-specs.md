@@ -66,7 +66,9 @@
   verification is in progress, Paid SHALL accept only that run's bounded
   application-log tail, redact it before persistence, and make the captured
   tail available through that run's diagnostic retrieval endpoint before the
-  verification outcome is finalized.
+  verification outcome is finalized. Capture requests SHALL be bounded per
+  run to a fixed capture budget within a rolling window, rejecting excess
+  captures with `429` rather than persisting them.
   *Code:* `Api::ApplicationDiagnosticsController`,
   `AgentRuns::CaptureApplicationLog`.
   *Test:* `spec/requests/api/application_diagnostics_spec.rb`.
