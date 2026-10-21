@@ -176,4 +176,5 @@
   `app/services/conflict_repairs/assess_scope.rb`,
   `app/temporal/activities/complete_existing_pr_run_activity.rb`.
   *Test:* `spec/services/prompts/build_for_pr_spec.rb`,
+  `spec/services/conflict_repairs/assess_scope_spec.rb`,
   `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`.
