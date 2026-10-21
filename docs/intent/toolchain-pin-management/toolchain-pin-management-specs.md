@@ -107,6 +107,15 @@
   *Tests:* `spec/jobs/service_container_reconciliation_job_spec.rb`.
   *Code:* `ServiceContainerReconciliationJob`.
 
+- [x] **TOOLCHAIN-PIN-027** — When the screenshot seed data re-runs against a
+  dataset seeded before a PostgreSQL default pin change, it SHALL converge its
+  seed-owned PostgreSQL service container to the image the same run writes into
+  the owner allowlist, so a repeat run never returns a container outside that
+  allowlist. Tenant-owned service containers remain outside the seeder's
+  authority (see TOOLCHAIN-PIN-025).
+  *Tests:* `spec/services/screenshots/seed_data/paid_spec.rb`.
+  *Code:* `Screenshots::SeedData::Paid`.
+
 ## Contract-Owned Agent CLI Versions
 
 - [x] **TOOLCHAIN-PIN-030** — `bin/update` SHALL NOT write agent CLI versions

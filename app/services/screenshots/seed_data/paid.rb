@@ -5,6 +5,8 @@ require "digest"
 module Screenshots
   module SeedData
     class Paid
+      POSTGRES_IMAGE = "postgres:16.15"
+
       class << self
         def call
           password = "screenshot-password-123"
@@ -24,7 +26,7 @@ module Screenshots
           end
 
           user.settings.update!(
-            allowed_service_images: [ "postgres:16.15", "redis:7-alpine", "selenium/standalone-chromium:latest" ]
+            allowed_service_images: [ POSTGRES_IMAGE, "redis:7-alpine", "selenium/standalone-chromium:latest" ]
           )
 
           github_token = GithubToken.find_or_create_by!(account: account, name: "Screenshot Token") do |record|
@@ -108,11 +110,15 @@ module Screenshots
           provider.update!(enabled_for_agent_runs: true, enabled_for_fallback: true)
 
           service_container = ServiceContainer.find_or_create_by!(account: account, name: "Screenshot Postgres") do |record|
-            record.image = "postgres:16.15"
+            record.image = POSTGRES_IMAGE
             record.port = 5432
             record.env = {}
             record.status = "stopped"
           end
+          # Converge datasets seeded before a pin change: the create block above
+          # only runs for new records, but the allowlist rewrite always applies.
+          # @spec TOOLCHAIN-PIN-027
+          service_container.update!(image: POSTGRES_IMAGE)
 
           docker_host = account.docker_hosts.find_or_create_by!(identifier: "screenshots-local") do |record|
             record.display_name = "Screenshot Local Host"

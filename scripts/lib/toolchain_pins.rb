@@ -50,7 +50,7 @@ module ToolchainPins
   POSTGRES_IMAGE_PATTERN = %r{^(\s*image:\s*(?:[\w.\-]+/)*postgres:)(\d+(?:\.\d+)+)(\s*)$}
   POSTGRES_SERVICE_DEFAULTS = {
     "db/seeds/service_containers.rb" => /^(\s*image:\s*"postgres:)(\d+(?:\.\d+)+)(".*)$/,
-    "app/services/screenshots/seed_data/paid.rb" => /^(\s*record\.image\s*=\s*"postgres:)(\d+(?:\.\d+)+)(".*)$/
+    "app/services/screenshots/seed_data/paid.rb" => /^(\s*POSTGRES_IMAGE\s*=\s*"postgres:)(\d+(?:\.\d+)+)(".*)$/
   }.freeze
   POSTGRES_CLIENT_PATTERN = /(postgresql-client-\d+=)(\S+?)(\s|$)/
 

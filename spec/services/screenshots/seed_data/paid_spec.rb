@@ -64,13 +64,27 @@ RSpec.describe Screenshots::SeedData::Paid do
     expect(login_session).to be_awaiting_authorization
   end
 
-  it "seeds a service container whose image is covered by the owner's allowlist" do
+  it "seeds a service container whose image is covered by the owner's allowlist" do # @spec TOOLCHAIN-PIN-027
     result = described_class.call
 
     service_container = ServiceContainer.find(result.dig("service_container", "id"))
     owner = User.find(result.dig("user", "id"))
 
     expect(service_container).to be_persisted
+    expect(owner.settings.allowed_service_images).to include(service_container.image)
+  end
+
+  it "converges a service container seeded before the pin change on repeat runs" do # @spec TOOLCHAIN-PIN-027
+    first_run = described_class.call
+    ServiceContainer.find(first_run.dig("service_container", "id"))
+                    .update_column(:image, "postgres:16")
+
+    repeat_run = described_class.call
+
+    service_container = ServiceContainer.find(repeat_run.dig("service_container", "id"))
+    owner = User.find(repeat_run.dig("user", "id"))
+    expect(service_container.id).to eq(first_run.dig("service_container", "id"))
+    expect(service_container.image).to eq("postgres:16.15")
     expect(owner.settings.allowed_service_images).to include(service_container.image)
   end
 

@@ -95,6 +95,12 @@ previous complete default. It never rewrites an existing service container or
 a customized allowlist. Operators update an existing container deliberately,
 after its consumers drain.
 
+The screenshot fixture dataset is the one deliberate exception, because it is
+owned by its seeder rather than by a tenant: every run rewrites the fixture
+owner's allowlist, so the seeder also converges its own PostgreSQL container
+to the allowlisted image. A dataset seeded before a pin change is repaired by
+the next seed run instead of drifting outside the allowlist that run writes.
+
 The service-container reconciliation loop compares each running container's
 reported image reference with its persisted requested image, and compares a
 running PostgreSQL service's requested image with the current default. A

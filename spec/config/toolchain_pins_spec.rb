@@ -129,7 +129,7 @@ RSpec.describe ToolchainPins, :no_db do
         when "db/seeds/service_containers.rb"
           "    image: \"postgres:#{version}\",\n"
         when "app/services/screenshots/seed_data/paid.rb"
-          "    record.image = \"postgres:#{version}\"\n"
+          "    POSTGRES_IMAGE = \"postgres:#{version}\"\n"
         else
           "    image: postgres:#{version}\n"
         end
