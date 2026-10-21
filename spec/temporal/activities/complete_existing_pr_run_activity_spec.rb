@@ -16,7 +16,7 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
   let(:activity) { described_class.new }
   let(:github_client) { instance_double(GithubClient) }
   let(:pr_head) { double("pr_head", ref: "fix-branch") } # rubocop:disable RSpec/VerifiedDoubles
-  let(:pr_data) { double("pr_data", number: 42, html_url: "https://github.com/#{project.full_name}/pull/42", head: pr_head, body: "## Summary\n\nExisting draft body") } # rubocop:disable RSpec/VerifiedDoubles
+  let(:pr_data) { double("pr_data", number: 42, html_url: "https://github.com/#{project.full_name}/pull/42", head: pr_head, base: double("pr_base", sha: "base-branch-sha"), body: "## Summary\n\nExisting draft body") } # rubocop:disable RSpec/VerifiedDoubles
   let(:summary_response) do
     instance_double(
       AgentHarness::Response,
@@ -122,51 +122,65 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       )
     end
 
-    it "reports recorded repair-range evidence without claiming scope was verified" do # @spec AUTO-MERGE-010
+    it "accepts an in-scope repair and reports separate base-import and repair evidence" do # @spec AUTO-MERGE-010
       agent_run.update!(focus: "merge_conflict", external_metadata: {
         "pre_run_head_sha" => "fedcba9876543210012345678901234567890abc"
       })
-      allow(github_client).to receive(:compare_changed_files)
-        .with(project.full_name, "fedcba9876543210012345678901234567890abc", agent_run.result_commit_sha)
-        .and_return([ "/" ])
+      allow_conflict_repair_comparisons(base_files: [ "docs/base.md" ], result_files: [ "docs/base.md", "app/models/provider.rb" ])
+      allow_scope_assessment(approved: true, base_paths: [ "docs/base.md" ], repair_paths: [ "app/models/provider.rb" ])
 
       expect(github_client).to receive(:add_comment) do |_repository, _number, body|
         expect(body).to include(
           "## Automatic conflict repair",
           "automatic rebase against the base branch found conflicts",
           "Compare the repair range on GitHub",
-          "recorded 1 changed path",
-          "scope was requested but not independently verified",
+          "classified 1 base-import path and 1 repair-authored path",
+          "repair was accepted as in scope",
           "freshness check classifies the range as content-preserving"
         )
-        expect(body).not_to include("repair was constrained")
       end
 
       activity.execute(agent_run_id: agent_run.id)
     end
 
-    it "persists the changed-path evidence for an automatic conflict repair" do # @spec AUTO-MERGE-010
+    it "persists distinct base-import and repair-authored evidence" do # @spec AUTO-MERGE-010
       agent_run.update!(focus: "merge_conflict", external_metadata: {
         "pre_run_head_sha" => "fedcba9876543210012345678901234567890abc"
       })
-      allow(github_client).to receive(:compare_changed_files).and_return([ "/" ])
+      allow_conflict_repair_comparisons(base_files: [ "docs/base.md" ], result_files: [ "docs/base.md", "app/models/provider.rb" ])
+      allow_scope_assessment(approved: true, base_paths: [ "docs/base.md" ], repair_paths: [ "app/models/provider.rb" ])
 
       activity.execute(agent_run_id: agent_run.id)
 
       expect(agent_run.reload.external_metadata.fetch("conflict_repair_scope_assessment")).to include(
-        "status" => "unverified", "changed_files" => [ "/" ]
+        "status" => "approved",
+        "base_imported_paths" => [ "docs/base.md" ],
+        "repair_authored_paths" => [ "app/models/provider.rb" ]
       )
     end
 
-    it "does not claim scope is verified when repair-range evidence is unavailable" do # @spec AUTO-MERGE-010
+    it "rejects unrelated tooling changes before accepting the pushed repair" do # @spec AUTO-MERGE-010
       agent_run.update!(focus: "merge_conflict", external_metadata: { "pre_run_head_sha" => "pre-run-sha" })
-      allow(github_client).to receive(:compare_changed_files).and_raise(GithubClient::ApiError.new("unavailable", status: 503))
+      allow_conflict_repair_comparisons(base_files: [ "docs/base.md" ], result_files: [ "docs/base.md", "Gemfile" ])
+      allow_scope_assessment(approved: false, base_paths: [ "docs/base.md" ], repair_paths: [ "Gemfile" ], explanation: "Gemfile is unrelated tooling")
 
       expect(github_client).to receive(:add_comment) { |_repository, _number, body|
-        expect(body).to include("could not retrieve repair-range evidence")
+        expect(body).to include("repair was rejected and requires human review")
       }
 
-      activity.execute(agent_run_id: agent_run.id)
+      expect { activity.execute(agent_run_id: agent_run.id) }
+        .to raise_error(Temporalio::Error::ApplicationError, /requires human review/)
+
+      expect(agent_run.reload).to be_running
+      expect(agent_run.external_metadata.dig("conflict_repair_scope_assessment", "repair_authored_paths")).to eq([ "Gemfile" ])
+    end
+
+    it "fails closed when repair evidence is unavailable" do # @spec AUTO-MERGE-010
+      agent_run.update!(focus: "merge_conflict", external_metadata: { "pre_run_head_sha" => "pre-run-sha" })
+      allow(github_client).to receive(:compare_summary).and_raise(GithubClient::ApiError.new("unavailable", status: 503))
+
+      expect { activity.execute(agent_run_id: agent_run.id) }
+        .to raise_error(Temporalio::Error::ApplicationError, /requires human review/)
 
       expect(agent_run.reload.external_metadata.dig("conflict_repair_scope_assessment", "status")).to eq("unavailable")
     end
@@ -496,6 +510,35 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       .with(project.full_name, base_sha, agent_run.result_commit_sha)
       .and_return(summary_comparison)
     allow(AgentHarness).to receive(:send_message).and_return(summary_response)
+  end
+
+  def allow_conflict_repair_comparisons(base_files:, result_files:)
+    pre_run_sha = agent_run.external_metadata.fetch("pre_run_head_sha")
+    allow(github_client).to receive(:compare_summary)
+      .with(project.full_name, pre_run_sha, pr_data.base.sha)
+      .and_return(files_payload(base_files))
+    allow(github_client).to receive(:compare_summary)
+      .with(project.full_name, pre_run_sha, agent_run.result_commit_sha)
+      .and_return(files_payload(result_files))
+  end
+
+  def files_payload(paths)
+    { files: paths.map { |path| { filename: path, patch: "@@ #{path}" } } }
+  end
+
+  def allow_scope_assessment(approved:, base_paths:, repair_paths:, explanation: "Repair is in scope")
+    allow(AgentHarness).to receive(:send_message).and_return(
+      instance_double(
+        AgentHarness::Response,
+        success?: true,
+        output: {
+          approved: approved,
+          explanation: explanation,
+          base_imported_paths: base_paths,
+          repair_authored_paths: repair_paths
+        }.to_json
+      )
+    )
   end
 
   def enable_required_completion_verification

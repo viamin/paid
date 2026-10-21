@@ -164,14 +164,16 @@
   necessary conflict resolution within the PR's existing task and approved
   intent, and SHALL direct the agent to stop rather than broaden the PR when a
   required fix exceeds that boundary. When that run publishes its normal
-  summary update, the update SHALL name the automatic rebase-conflict trigger,
-  persist the comparison's changed-path evidence, report that scope was
-  requested but not independently verified, link the exact pre-run-to-result
-  comparison, and explain that the existing
+  summary update, Paid SHALL assess the repair with `agent_harness` before
+  accepting it and SHALL fail closed for an unavailable, malformed, or
+  out-of-scope assessment. The update SHALL name the automatic rebase-conflict
+  trigger, persist separate base-import and repair-authored path evidence, link
+  the exact pre-run-to-result comparison, and explain that the existing
   fail-closed freshness classifier — not the repair or a re-approval alone —
   decides whether current-head review is required or automatic merging is
   possible.
   *Code:* `app/services/prompts/build_for_pr.rb`,
+  `app/services/conflict_repairs/assess_scope.rb`,
   `app/temporal/activities/complete_existing_pr_run_activity.rb`.
   *Test:* `spec/services/prompts/build_for_pr_spec.rb`,
   `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`.

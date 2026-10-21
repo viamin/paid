@@ -43,6 +43,7 @@ module Activities
         client = project.client
 
         pr = client.pull_request(project.full_name, agent_run.source_pull_request_number)
+        enforce_conflict_repair_scope!(client, agent_run, pr)
         record_shipped_verification_result(agent_run)
 
         # A blocked completion-verification gate is a deterministic project
@@ -215,7 +216,7 @@ module Activities
     # (CreatePullRequestActivity, per LID-RUNS-003) and in structured logs +
     # agent-run metadata (Lid::CoherenceCheck).
     def build_comment_body(client, project, pr_number, agent_run)
-      repair_explanation = conflict_repair_explanation(client, agent_run)
+      repair_explanation = conflict_repair_explanation(agent_run)
       summary = generate_summary(client, project, pr_number, agent_run) if summary_comment_requested?(agent_run)
       return if repair_explanation.blank? && summary.blank?
 
@@ -223,19 +224,17 @@ module Activities
       "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}\n\n#{sections}"
     end
 
-    # The prompt requests a narrow repair, but only the GitHub comparison is
-    # objective evidence of what changed. It deliberately reports every repair
-    # as unverified: changed paths cannot establish whether an edit was needed
-    # to resolve a conflict or broadened the PR's task.
+    # The assessment is a completion gate, not merely an explanation. It keeps
+    # base-branch imports distinct from the agent-authored repair evidence.
     # @spec AUTO-MERGE-010
-    def conflict_repair_explanation(client, agent_run)
+    def conflict_repair_explanation(agent_run)
       return unless agent_run.focus == "merge_conflict"
 
       base_sha = summary_base_sha(agent_run)
       head_sha = agent_run.result_commit_sha
       return if base_sha.blank? || head_sha.blank?
 
-      assessment = conflict_repair_scope_assessment(client, agent_run, base_sha:, head_sha:)
+      assessment = conflict_repair_scope_assessment(agent_run, base_sha:, head_sha:)
       comparison_url = "#{agent_run.project.github_url}/compare/#{base_sha}...#{head_sha}"
       <<~MARKDOWN.strip
         ## Automatic conflict repair
@@ -246,30 +245,45 @@ module Activities
       MARKDOWN
     end
 
-    def conflict_repair_scope_assessment(client, agent_run, base_sha:, head_sha:)
+    def enforce_conflict_repair_scope!(client, agent_run, pr)
+      return unless agent_run.focus == "merge_conflict"
+
+      pre_run_sha = summary_base_sha(agent_run)
+      base_sha = pr.base&.sha
+      head_sha = agent_run.result_commit_sha
+      assessment = assess_conflict_repair_scope(client, agent_run, pre_run_sha:, base_sha:, head_sha:)
+      return if assessment["status"] == "approved"
+
+      refresh_pull_request_body(client, agent_run.project, pr, agent_run)
+      post_update_comment(client, agent_run.project, pr.number, agent_run)
+      raise Temporalio::Error::ApplicationError.new(
+        "Automatic conflict repair requires human review: #{assessment.fetch("explanation")}",
+        type: "ConflictRepairScopeRejected",
+        non_retryable: true
+      )
+    end
+
+    def assess_conflict_repair_scope(client, agent_run, pre_run_sha:, base_sha:, head_sha:)
+      assessment = if pre_run_sha.blank? || base_sha.blank? || head_sha.blank?
+        ConflictRepairs::AssessScope::Result.new(status: "unavailable", explanation: "Repair comparison commits were unavailable", base_imported_paths: [], repair_authored_paths: [])
+      else
+        ConflictRepairs::AssessScope.call(
+          agent_run: agent_run,
+          base_comparison: client.compare_summary(agent_run.project.full_name, pre_run_sha, base_sha),
+          result_comparison: client.compare_summary(agent_run.project.full_name, pre_run_sha, head_sha)
+        )
+      end
+      persist_conflict_repair_scope_assessment(agent_run, assessment.to_h.merge("base_sha" => pre_run_sha, "integration_base_sha" => base_sha, "head_sha" => head_sha))
+    rescue GithubClient::Error => e
+      logger.warn(message: "agent_execution.conflict_repair_scope_assessment_failed", agent_run_id: agent_run.id, error_class: e.class.name, error: e.message)
+      persist_conflict_repair_scope_assessment(agent_run, unavailable_assessment(pre_run_sha, base_sha, head_sha))
+    end
+
+    def conflict_repair_scope_assessment(agent_run, base_sha:, head_sha:)
       stored_assessment = agent_run.external_metadata[CONFLICT_REPAIR_SCOPE_ASSESSMENT_KEY]
       return stored_assessment if stored_assessment_matches?(stored_assessment, base_sha:, head_sha:)
 
-      changed_files = client.compare_changed_files(agent_run.project.full_name, base_sha, head_sha)
-      persist_conflict_repair_scope_assessment(agent_run, {
-        "status" => "unverified",
-        "base_sha" => base_sha,
-        "head_sha" => head_sha,
-        "changed_files" => Array(changed_files).filter_map { |path| path.to_s.presence }
-      })
-    rescue GithubClient::Error => e
-      logger.warn(
-        message: "agent_execution.conflict_repair_scope_assessment_failed",
-        agent_run_id: agent_run.id,
-        error_class: e.class.name,
-        error: e.message
-      )
-      persist_conflict_repair_scope_assessment(agent_run, {
-        "status" => "unavailable",
-        "base_sha" => base_sha,
-        "head_sha" => head_sha,
-        "changed_files" => []
-      })
+      unavailable_assessment(base_sha, nil, head_sha)
     end
 
     def stored_assessment_matches?(assessment, base_sha:, head_sha:)
@@ -287,7 +301,22 @@ module Activities
     def conflict_repair_scope_message(assessment)
       return "Paid could not retrieve repair-range evidence, so scope was requested but not independently verified." if assessment["status"] == "unavailable"
 
-      "Paid recorded #{assessment.fetch("changed_files").size} changed #{'path'.pluralize(assessment.fetch("changed_files").size)} in the repair range, but scope was requested but not independently verified."
+      base_count = assessment.fetch("base_imported_paths", []).size
+      repair_count = assessment.fetch("repair_authored_paths", []).size
+      decision = assessment["status"] == "approved" ? "accepted as in scope" : "rejected and requires human review"
+      "Paid classified #{base_count} base-import #{'path'.pluralize(base_count)} and #{repair_count} repair-authored #{'path'.pluralize(repair_count)}; the repair was #{decision}."
+    end
+
+    def unavailable_assessment(base_sha, integration_base_sha, head_sha)
+      {
+        "status" => "unavailable",
+        "explanation" => "Repair comparison evidence was unavailable",
+        "base_sha" => base_sha,
+        "integration_base_sha" => integration_base_sha,
+        "head_sha" => head_sha,
+        "base_imported_paths" => [],
+        "repair_authored_paths" => []
+      }
     end
 
     def summary_comments_enabled?(agent_run)
