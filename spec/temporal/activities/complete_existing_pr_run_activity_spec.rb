@@ -122,19 +122,53 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       )
     end
 
-    it "explains the automatic conflict-repair trigger and review consequence" do # @spec AUTO-MERGE-010
+    it "reports recorded repair-range evidence without claiming scope was verified" do # @spec AUTO-MERGE-010
       agent_run.update!(focus: "merge_conflict", external_metadata: {
         "pre_run_head_sha" => "fedcba9876543210012345678901234567890abc"
       })
+      allow(github_client).to receive(:compare_changed_files)
+        .with(project.full_name, "fedcba9876543210012345678901234567890abc", agent_run.result_commit_sha)
+        .and_return([ "/" ])
 
       expect(github_client).to receive(:add_comment) do |_repository, _number, body|
-        expect(body).to include("## Automatic conflict repair")
-        expect(body).to include("automatic rebase against the base branch found conflicts")
-        expect(body).to include("Compare the repair range on GitHub")
-        expect(body).to include("freshness check classifies the range as content-preserving")
+        expect(body).to include(
+          "## Automatic conflict repair",
+          "automatic rebase against the base branch found conflicts",
+          "Compare the repair range on GitHub",
+          "recorded 1 changed path",
+          "scope was requested but not independently verified",
+          "freshness check classifies the range as content-preserving"
+        )
+        expect(body).not_to include("repair was constrained")
       end
 
       activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "persists the changed-path evidence for an automatic conflict repair" do # @spec AUTO-MERGE-010
+      agent_run.update!(focus: "merge_conflict", external_metadata: {
+        "pre_run_head_sha" => "fedcba9876543210012345678901234567890abc"
+      })
+      allow(github_client).to receive(:compare_changed_files).and_return([ "/" ])
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(agent_run.reload.external_metadata.fetch("conflict_repair_scope_assessment")).to include(
+        "status" => "unverified", "changed_files" => [ "/" ]
+      )
+    end
+
+    it "does not claim scope is verified when repair-range evidence is unavailable" do # @spec AUTO-MERGE-010
+      agent_run.update!(focus: "merge_conflict", external_metadata: { "pre_run_head_sha" => "pre-run-sha" })
+      allow(github_client).to receive(:compare_changed_files).and_raise(GithubClient::ApiError.new("unavailable", status: 503))
+
+      expect(github_client).to receive(:add_comment) { |_repository, _number, body|
+        expect(body).to include("could not retrieve repair-range evidence")
+      }
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(agent_run.reload.external_metadata.dig("conflict_repair_scope_assessment", "status")).to eq("unavailable")
     end
 
     # @spec QUIET-MODE-007

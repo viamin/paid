@@ -165,7 +165,9 @@
   intent, and SHALL direct the agent to stop rather than broaden the PR when a
   required fix exceeds that boundary. When that run publishes its normal
   summary update, the update SHALL name the automatic rebase-conflict trigger,
-  link the exact pre-run-to-result comparison, and explain that the existing
+  persist the comparison's changed-path evidence, report that scope was
+  requested but not independently verified, link the exact pre-run-to-result
+  comparison, and explain that the existing
   fail-closed freshness classifier — not the repair or a re-approval alone —
   decides whether current-head review is required or automatic merging is
   possible.

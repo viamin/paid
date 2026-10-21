@@ -13,6 +13,7 @@ module Activities
     SUMMARY_PREFIX = "## Agent Update"
     GENERIC_MESSAGE = "Agent pushed updates to this PR."
     SUMMARY_COMMENT_MODE = "summary"
+    CONFLICT_REPAIR_SCOPE_ASSESSMENT_KEY = "conflict_repair_scope_assessment"
 
     class << self
       def agent_update_comment?(body)
@@ -214,7 +215,7 @@ module Activities
     # (CreatePullRequestActivity, per LID-RUNS-003) and in structured logs +
     # agent-run metadata (Lid::CoherenceCheck).
     def build_comment_body(client, project, pr_number, agent_run)
-      repair_explanation = conflict_repair_explanation(agent_run)
+      repair_explanation = conflict_repair_explanation(client, agent_run)
       summary = generate_summary(client, project, pr_number, agent_run) if summary_comment_requested?(agent_run)
       return if repair_explanation.blank? && summary.blank?
 
@@ -222,25 +223,71 @@ module Activities
       "#{COMMENT_MARKER}\n#{SUMMARY_PREFIX}\n\n#{sections}"
     end
 
-    # The scoped repair prompt prevents an automatic conflict run from becoming
-    # general PR maintenance. The eventual freshness verdict remains the
-    # scanner's authoritative, fail-closed first-parent classification.
+    # The prompt requests a narrow repair, but only the GitHub comparison is
+    # objective evidence of what changed. It deliberately reports every repair
+    # as unverified: changed paths cannot establish whether an edit was needed
+    # to resolve a conflict or broadened the PR's task.
     # @spec AUTO-MERGE-010
-    def conflict_repair_explanation(agent_run)
+    def conflict_repair_explanation(client, agent_run)
       return unless agent_run.focus == "merge_conflict"
 
       base_sha = summary_base_sha(agent_run)
       head_sha = agent_run.result_commit_sha
       return if base_sha.blank? || head_sha.blank?
 
+      assessment = conflict_repair_scope_assessment(client, agent_run, base_sha:, head_sha:)
       comparison_url = "#{agent_run.project.github_url}/compare/#{base_sha}...#{head_sha}"
       <<~MARKDOWN.strip
         ## Automatic conflict repair
 
-        Paid ran because automatic rebase against the base branch found conflicts. The repair was constrained to base integration and conflict resolution for this pull request's existing task. [Compare the repair range on GitHub](#{comparison_url}).
+        Paid ran because automatic rebase against the base branch found conflicts. #{conflict_repair_scope_message(assessment)} [Compare the repair range on GitHub](#{comparison_url}).
 
         A prior approval remains valid only if Paid's freshness check classifies the range as content-preserving. Conflict-resolution edits or any other author-side content require review of the current revision; this update does not enable automatic merging when that project policy is inactive.
       MARKDOWN
+    end
+
+    def conflict_repair_scope_assessment(client, agent_run, base_sha:, head_sha:)
+      stored_assessment = agent_run.external_metadata[CONFLICT_REPAIR_SCOPE_ASSESSMENT_KEY]
+      return stored_assessment if stored_assessment_matches?(stored_assessment, base_sha:, head_sha:)
+
+      changed_files = client.compare_changed_files(agent_run.project.full_name, base_sha, head_sha)
+      persist_conflict_repair_scope_assessment(agent_run, {
+        "status" => "unverified",
+        "base_sha" => base_sha,
+        "head_sha" => head_sha,
+        "changed_files" => Array(changed_files).filter_map { |path| path.to_s.presence }
+      })
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "agent_execution.conflict_repair_scope_assessment_failed",
+        agent_run_id: agent_run.id,
+        error_class: e.class.name,
+        error: e.message
+      )
+      persist_conflict_repair_scope_assessment(agent_run, {
+        "status" => "unavailable",
+        "base_sha" => base_sha,
+        "head_sha" => head_sha,
+        "changed_files" => []
+      })
+    end
+
+    def stored_assessment_matches?(assessment, base_sha:, head_sha:)
+      assessment.is_a?(Hash) &&
+        assessment["base_sha"] == base_sha &&
+        assessment["head_sha"] == head_sha
+    end
+
+    def persist_conflict_repair_scope_assessment(agent_run, assessment)
+      metadata = agent_run.external_metadata.deep_dup
+      agent_run.update!(external_metadata: metadata.merge(CONFLICT_REPAIR_SCOPE_ASSESSMENT_KEY => assessment))
+      assessment
+    end
+
+    def conflict_repair_scope_message(assessment)
+      return "Paid could not retrieve repair-range evidence, so scope was requested but not independently verified." if assessment["status"] == "unavailable"
+
+      "Paid recorded #{assessment.fetch("changed_files").size} changed #{'path'.pluralize(assessment.fetch("changed_files").size)} in the repair range, but scope was requested but not independently verified."
     end
 
     def summary_comments_enabled?(agent_run)
