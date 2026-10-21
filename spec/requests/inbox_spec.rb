@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe "Inbox" do
   let(:account) { create(:account) }
@@ -243,6 +244,54 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec OPERATOR-INBOX-002B
+  # Regression for #4501: internal GET links inside the inbox-detail frame
+  # navigate the frame unless they opt out, and no target page carries a
+  # matching "inbox-detail" frame — Turbo then replaces the pane with
+  # "Content missing". The action links must target the full page.
+  it "renders the action_required 'Open linked action' link with turbo_frame=_top so it navigates out of the inbox-detail frame" do
+    notification = create_action_required_notification
+    notification.update!(action_url: project_path(project))
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    link = document.at_css(%(a[href="#{project_path(project)}"]))
+
+    expect(link).to be_present
+    expect(link.text).to eq("Open linked action")
+    expect(link["data-turbo-frame"]).to eq("_top")
+  end
+
+  # @spec OPERATOR-INBOX-002B
+  # Regression for #4501: both "View Agent Run" branches (alongside an action
+  # URL, and as the sole action) must opt out of the inbox-detail frame.
+  it "renders every action_required 'View Agent Run' link with turbo_frame=_top so it navigates out of the inbox-detail frame" do
+    run = create(:agent_run, :failed, :with_custom_prompt, project: project)
+    with_action_url = create_action_required_notification(subject: run, source: "agent_run_action_url")
+    with_action_url.update!(action_url: project_path(project))
+    sole_action = create_action_required_notification(subject: run, source: "agent_run_sole_action")
+
+    [ with_action_url, sole_action ].each do |notification|
+      get inbox_entry_path(
+        entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+        kind: Inbox::Queue::ACTION_REQUIRED_KIND
+      )
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      link = document.at_css(%(a[href="#{project_agent_run_path(project, run)}"]))
+
+      expect(link).to be_present
+      expect(link.text).to eq("View Agent Run")
+      expect(link["data-turbo-frame"]).to eq("_top")
+    end
+  end
+
   # @spec PROJECT-READINESS-007
   it "renders the latest failed bootstrap run with its failure reason and details link" do
     project.update!(tdd_mode: "strict", readiness_gaps: [
@@ -262,6 +311,28 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Bootstrap run failed", failed_run.error_message)
     expect(response.body).to include(project_agent_run_path(project, failed_run))
     expect(response.body).not_to include(older_run.error_message)
+  end
+
+  # @spec PROJECT-READINESS-010
+  it "targets project setup pending actions at the top-level page" do
+    project.update!(tdd_mode: "strict", readiness_gaps: [
+      { "kind" => "missing_ci", "description" => "CI is required.", "evidence" => {} }
+    ])
+    failed_run = create(:agent_run, :failed, project:, goal: "bootstrap_readiness")
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::PROJECT_SETUP_PENDING_KIND, project),
+      kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND
+    ), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    document = Nokogiri::HTML(response.body)
+    bootstrap_form = document.at_css(%(form[action="#{bootstrap_readiness_project_agent_runs_path(project)}"]))
+    settings_link = document.at_css(%(a[href="#{edit_project_path(project)}"]))
+    run_link = document.at_css(%(a[href="#{project_agent_run_path(project, failed_run)}"]))
+
+    expect(bootstrap_form["data-turbo-frame"]).to eq("_top")
+    expect(settings_link["data-turbo-frame"]).to eq("_top")
+    expect(run_link["data-turbo-frame"]).to eq("_top")
   end
 
   # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-007
@@ -1261,6 +1332,59 @@ RSpec.describe "Inbox" do
     document = Nokogiri::HTML(response.body)
 
     expect(document.at_css(%(a[href="#{project.github_url}/pull/100"]))).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "exposes a file-issue action so operators can establish ownership when no issue covers the artifact" do
+    finding = create(:design_artifact_finding, project: project, account: project.account)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::TRACEABILITY_GAP_KIND, finding), kind: Inbox::Queue::TRACEABILITY_GAP_KIND)
+
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css(%(form[action="#{resolve_design_artifact_finding_path(finding)}"]))).to be_present
+    expect(document.at_css(%(form[action="#{file_issue_design_artifact_finding_path(finding)}"]))).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "exposes a design-PR document-link repair action for stale metadata" do
+    finding = create(:design_artifact_finding, project: project, account: project.account, state: "stale_metadata")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::TRACEABILITY_GAP_KIND, finding), kind: Inbox::Queue::TRACEABILITY_GAP_KIND)
+
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css(%(form[action="#{repair_document_links_design_artifact_finding_path(finding)}"]))).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "rejects an unverified file-issue submit with a stale revision" do
+    finding = create(:design_artifact_finding, project: project, account: project.account)
+
+    expect do
+      post file_issue_design_artifact_finding_path(finding), params: {
+        filing: { revision: "stale", title: "Repair", body: "Cite repair." }
+      }
+    end.not_to change(Issue, :count)
+
+    expect(finding.reload.status).to eq("open")
+    expect(response).to be_redirect
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "redirects a filed traceability gap to its durable issue location" do
+    finding = create(:design_artifact_finding, project: project, account: project.account)
+    remote = OpenStruct.new(
+      id: 2_000_001, number: 42, title: "Repair traceability", body: "Cite repair.", state: "open", labels: [],
+      user: nil, created_at: Time.current, updated_at: Time.current,
+      html_url: "https://github.com/acme/alpha/issues/42", pull_request: nil
+    )
+    allow(github_client).to receive_messages(search_issues: Data.define(:items).new([]), create_issue: remote)
+
+    post file_issue_design_artifact_finding_path(finding), params: {
+      filing: { revision: finding.revision, title: "Repair traceability", body: "Cite repair." }
+    }
+
+    issue = finding.reload.resolution_issue
+    expect(response).to redirect_to(project_path(project, anchor: "issue_#{issue.id}"))
   end
 
   # @spec OPERATOR-INBOX-002J

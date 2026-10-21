@@ -19,7 +19,7 @@ for arg in "$@"; do
       echo "  --changed  Lint only changed files (staged + unstaged vs HEAD)"
       echo "  --staged   Lint only staged files"
       echo ""
-      echo "Linters: RuboCop, ESLint, markdownlint, ShellCheck, Herb"
+      echo "Linters: RuboCop, ESLint, markdownlint, ShellCheck, Herb, instruction navigation"
       exit 0
       ;;
     *)
@@ -123,6 +123,9 @@ else
   # shellcheck disable=SC2086
   npx markdownlint $MARKDOWNLINT_ARGS --ignore node_modules --ignore vendor '**/*.md'
 fi
+
+echo "== Documentation: instruction navigation =="
+node scripts/check_instruction_links.mjs
 
 echo "== Shell: ShellCheck =="
 if [ "$FILE_FILTER" = true ]; then

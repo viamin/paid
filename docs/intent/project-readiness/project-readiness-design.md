@@ -62,6 +62,12 @@ readiness entry and its run failure visible. Successful bootstrap PRs use the
 ordinary draft/ready review flow and are separate from the later TDD
 test-review PR.
 
+Actions in the Inbox detail frame that leave the Inbox — starting a bootstrap
+run, opening project settings, and opening a failed run — explicitly target
+the top-level page. Their destinations do not render the `inbox-detail` Turbo
+frame, so frame-scoped navigation would otherwise replace the detail pane with
+Turbo's missing-content state.
+
 ## Bootstrap write boundary
 
 `bootstrap_readiness` is a distinct harness class, enforced at

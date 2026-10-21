@@ -77,6 +77,14 @@ The backend decision for service containers follows the selected run backend or
 the persisted service-container host so reuse, metrics, reconciliation, and
 cleanup stay routed to the daemon that actually owns the container.
 
+Reconciliation treats a container image mismatch or an old PostgreSQL default
+as observable configuration drift, not permission to replace a stateful
+service. It logs the persisted requested image, current default where relevant,
+and Docker-reported runtime image with instructions to drain consumers and
+update/recreate the service through the normal lifecycle. In particular,
+PostgreSQL service volumes are never silently replaced merely because a
+source-level default pin advances.
+
 Every service container is created with the same baseline capability controls
 already applied to agent and chat containers (`CONTAINER-RUNTIME-040`):
 `no-new-privileges` and all Linux capabilities dropped. `HARDENING_PROFILES`

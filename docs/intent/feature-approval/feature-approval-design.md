@@ -92,7 +92,8 @@ do not cause repeated semantic work.
 Failures or partial GitHub reads produce `unverifiable`, never an absence
 finding. Repository-specific draft, deferred, and superseded statuses are
 reported rather than treated as missing work. The reconciliation is read-only:
-operators may inspect evidence, link verified existing work, repair metadata,
+operators may inspect evidence, link verified existing work, repair stale document
+links through an authorized, idempotent design-PR run, repair metadata,
 or request a draft, but it never creates/duplicates/closes/transfers issues or
 changes execution holds. Any repair revalidates the current head and uses the
 normal authorized, idempotent write path.

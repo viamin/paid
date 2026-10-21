@@ -76,6 +76,22 @@ rechecks current queue membership and returns an empty frame for stale entries.
 
 ## Entry Kinds
 
+### `traceability_gap`
+
+Durable reconciliation findings are operator decisions, not proof that an
+implementation is absent. The detail pane names whether the finding is an
+unlinked document, potentially missing or partial work, ambiguous work, stale
+metadata, a deliberate deferral, or unavailable coverage. It shows the pinned
+artifact/revision, last successful coverage, candidates/evidence, and direct
+GitHub artifact link. Operators may link verified existing work, defer, or
+dismiss with a reason; each decision is revision-checked, records its actor
+and provenance, removes the item from the unassigned queue, and remains
+pending until reconciliation verifies resolution. Unverifiable coverage asks
+for retry/access repair rather than proposing new implementation work.
+
+Chat remains an optional contextual aid. It does not replace a decision and
+does not make a repair, approve a design, or change main.
+
 ### `clarifying_questions`
 
 Backed by `Dashboard::NeedsInputQueue`, preserving the existing project

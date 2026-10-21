@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_19_213859) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_20_200635) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1361,6 +1361,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_213859) do
     t.jsonb "evidence", default: [], null: false
     t.string "fingerprint", limit: 64, null: false, comment: "Stable reconciliation finding identity for one artifact, revision, and state."
     t.bigint "project_id", null: false
+    t.bigint "resolution_actor_id", comment: "User who last made the recorded finding decision."
+    t.bigint "resolution_issue_id", comment: "Authorized existing or newly filed issue assigned to resolve this finding."
+    t.jsonb "resolution_metadata", default: {}, null: false, comment: "Decision provenance, including cited revision and idempotency marker."
+    t.text "resolution_reason", comment: "Required operator explanation for a non-automatic finding decision."
+    t.string "resolution_state", comment: "Operator decision: assigned, deferred, dismissed, or verified."
     t.datetime "resolved_at"
     t.string "revision", limit: 255, null: false
     t.string "state", limit: 32, null: false, comment: "missing_tree, partial_tree, stale_metadata, deferred, or unverifiable."
@@ -1370,8 +1375,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_213859) do
     t.index ["project_id", "fingerprint"], name: "index_design_artifact_findings_on_project_id_and_fingerprint", unique: true
     t.index ["project_id", "status"], name: "index_design_artifact_findings_on_project_id_and_status"
     t.index ["project_id"], name: "index_design_artifact_findings_on_project_id"
+    t.index ["resolution_actor_id"], name: "index_design_artifact_findings_on_resolution_actor_id"
+    t.index ["resolution_issue_id"], name: "index_design_artifact_findings_on_resolution_issue_id"
     t.check_constraint "state::text = ANY (ARRAY['missing_tree'::character varying::text, 'partial_tree'::character varying::text, 'stale_metadata'::character varying::text, 'deferred'::character varying::text, 'unverifiable'::character varying::text])", name: "chk_design_artifact_findings_state"
-    t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'resolved'::character varying::text])", name: "chk_design_artifact_findings_status"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying, 'assigned'::character varying, 'deferred'::character varying, 'dismissed'::character varying, 'resolved'::character varying]::text[])", name: "chk_design_artifact_findings_status"
   end
 
   create_table "dispatch_circuit_breakers", comment: "Account-level dispatch circuit breaker that halts scheduling when all providers fail simultaneously", force: :cascade do |t|
@@ -4110,7 +4117,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_213859) do
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 5400, null: false
     t.string "agent_update_comment_mode", default: "off", null: false, comment: "Controls whether existing-PR agent followups post no comment or generate a paid summary comment."
-    t.jsonb "allowed_service_images", default: ["postgres:16.13", "redis:7-alpine", "selenium/standalone-chromium:latest"]
+    t.jsonb "allowed_service_images", default: ["postgres:16.15", "redis:7-alpine", "selenium/standalone-chromium:latest"]
     t.jsonb "auto_pick_skip_labels", comment: "Optional user-level override for labels that make auto-pick skip an issue. Null means inherit tenant or built-in defaults."
     t.boolean "auto_weight_enabled", default: false, null: false, comment: "Whether automated runner weights are recalculated from observed remaining quota instead of edited manually."
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
@@ -4380,7 +4387,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_19_213859) do
   add_foreign_key "design_artifact_associations", "accounts", on_delete: :cascade
   add_foreign_key "design_artifact_associations", "projects", on_delete: :cascade
   add_foreign_key "design_artifact_findings", "accounts", on_delete: :cascade
+  add_foreign_key "design_artifact_findings", "issues", column: "resolution_issue_id"
   add_foreign_key "design_artifact_findings", "projects", on_delete: :cascade
+  add_foreign_key "design_artifact_findings", "users", column: "resolution_actor_id"
   add_foreign_key "dispatch_circuit_breakers", "accounts"
   add_foreign_key "dispatch_circuit_breakers", "agent_runs", column: "last_probe_run_id", on_delete: :nullify, validate: false
   add_foreign_key "docker_hosts", "accounts"

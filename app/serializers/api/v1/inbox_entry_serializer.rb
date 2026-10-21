@@ -178,7 +178,9 @@ module Api
           artifact_path: finding.artifact_path,
           revision: finding.revision,
           state: finding.state,
-          evidence: finding.evidence
+          evidence: finding.evidence,
+          covered_at: finding.covered_at.iso8601,
+          recommended_action: finding.state == "unverifiable" ? "Restore coverage access and recheck." : "Record an explicit owner or disposition."
         }
       end
     end

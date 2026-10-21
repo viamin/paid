@@ -9,7 +9,7 @@
 - **Type**: Architecture
 - **Priority**: P1 `[inferred — not supplied by the feature brief]`
 - **Related RDRs**: [RDR-020](RDR-020-service-container-architecture.md) (Service Container Architecture), [RDR-055](RDR-055-agent-container-egress-allowlisting.md) (Agent Container Egress Allowlisting), [RDR-058](RDR-058-execution-authority-network-and-isolation.md) (Execution Authority, Network Policy, and Isolation), [RDR-062](RDR-062-execution-network-policy-intent.md) (Provider-Neutral Execution Network Policy Intent)
-- **Related Issues**: #4263 (epic), #4264–#4268 (implementation and closeout), #4445 (attachment contract gap), #4446 (rule-scoping gap), #4447 (endpoint exposure gap).
+- **Related Issues**: #4263 (epic), #4264–#4268 (implementation and closeout), #4445 (attachment contract, shipped 2026-10-20), #4446 (rule-scoping gap), #4447 (endpoint exposure gap).
 
 ## Problem Statement
 
@@ -432,13 +432,30 @@ ships behind a feature flag:
 
 ## Implementation Status
 
-**Partially Implemented — 2026-10-15.** Hardened provisioning, image gating,
+**Partially Implemented — 2026-10-20.** Hardened provisioning, image gating,
 flag-off behavior, per-run tracking, retry adoption, cleanup, capacity
-inventory, and the agent-facing non-MCP endpoint runtime contract have
-shipped. The marketplace attachment contract and rule-scoping predicates remain
-gaps. The rollout guard remains because no incident-free pilot evidence exists. See
-[the closeout audit](audit-report-2026-10-14-rdr-073.md) and the follow-up
-issues #4445, #4446, and #4447.
+inventory, the agent-facing non-MCP endpoint runtime contract, and the
+marketplace attachment contract (`TOOL-SIDECAR-001`/`002`) have shipped. Only
+the rule-scoping predicates (`TOOL-SIDECAR-003`/`004`, #4446) remain a verified
+gap. The rollout guard remains because no incident-free pilot evidence exists.
+See [the 2026-10-14 closeout audit](audit-report-2026-10-14-rdr-073.md), the
+[2026-10-20 attachment-contract audit](audit-report-2026-10-20-rdr-073.md),
+and the follow-up issue #4446.
+
+## 2026-10-20 Attachment Contract Update
+
+Issue #4445 shipped the Phase 1 marketplace attachment contract
+(`TOOL-SIDECAR-001`/`002`): `MarketplaceEntries::Renderer` now infers
+`tool_sidecar` for `entry_type: "tool"`, `MarketplaceEntryVersion` validates
+the canonical artifact and every provider renderer against the required
+`install_type`/`image`/`port` fields (plus optional `env`/`hardening`/`alias`
+shapes), and `MarketplaceEntries::RuntimeAttachments` contributes the
+normalized definition to `AgentRun#tool_sidecar_snapshot` (never
+`mcp_server_snapshot`) for automatic, team-default, and manual attachments
+alike. See [the attachment-contract audit](audit-report-2026-10-20-rdr-073.md)
+for file/test evidence. Status remains **Partially Implemented**: only the
+Phase 2 rule-scoping predicates (#4446) are still an open gap. `Tracks #4263`;
+this update does not close the epic.
 
 ## 2026-10-14 Closeout
 

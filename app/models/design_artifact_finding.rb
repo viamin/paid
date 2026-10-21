@@ -5,7 +5,7 @@
 # @spec DESIGN-RECONCILIATION-001
 class DesignArtifactFinding < ApplicationRecord
   STATES = %w[missing_tree partial_tree stale_metadata deferred unverifiable].freeze
-  STATUSES = %w[open resolved].freeze
+  STATUSES = %w[open assigned deferred dismissed resolved].freeze
 
   belongs_to :account
   belongs_to :project
@@ -18,9 +18,17 @@ class DesignArtifactFinding < ApplicationRecord
   after_commit :bump_inbox_cache_version, if: :inbox_visibility_changed?
 
   scope :open_findings, -> { where(status: "open") }
+  scope :pending_findings, -> { where(status: %w[open assigned deferred dismissed]) }
+
+  belongs_to :resolution_actor, class_name: "User", optional: true
+  belongs_to :resolution_issue, class_name: "Issue", optional: true
 
   def resolve!
     update!(status: "resolved", resolved_at: Time.current)
+  end
+
+  def decision_pending?
+    status.in?(%w[assigned deferred dismissed])
   end
 
   private

@@ -61,6 +61,14 @@ arrows:
     status: OK
     audited: 2026-10-11
     next: "Evaluate contract-specific repository prerequisites before Inbox surfacing or run admission (RDR-074)"
+  agent-instruction-navigation:
+    title: Agent Instruction Navigation
+    path: docs/intent/agent-instruction-navigation/agent-instruction-navigation-design.md
+    specs: docs/intent/agent-instruction-navigation/agent-instruction-navigation-specs.md
+    parent: PAID
+    taxonomy: foundation
+    status: OK
+    next: "Keep the canonical instruction entry point concise and its task routes verifiable"
   label-integration-mode:
     title: Per-Project Label Integration Mode
     path: docs/intent/label-integration-mode/label-integration-mode-design.md
@@ -681,8 +689,9 @@ arrows:
     parent: PAID
     taxonomy: runtime
     status: OK
-    audited: 2026-10-15
-    next: "Complete marketplace attachment contract and rule-scoping predicates (RDR-073 Phases 1–2)"
+    audited: 2026-10-20
+    sampled: 2026-10-20
+    next: "Run final acceptance audit (#4263) once rule-scoping predicates and EARS evidence are complete."
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.

@@ -86,8 +86,19 @@ class ArtifactStorage
   def upload(file_path:, key:, content_type: nil)
     resolved_content_type = content_type || content_type_for(file_path)
     File.open(file_path, "rb") do |file|
-      client.put_object(bucket: @bucket, key: key, body: file, content_type: resolved_content_type)
+      upload_io(io: file, key: key, content_type: resolved_content_type)
     end
+  end
+
+  # Uploads an already-open local file and returns a presigned GET URL. This
+  # lets callers retain the file descriptor they validated at a trust boundary.
+  #
+  # @param io [IO] open file positioned at the bytes to upload.
+  # @param key [String] object key, including any prefix.
+  # @param content_type [String, nil] MIME type of the file.
+  # @return [String] presigned GET URL for the uploaded object.
+  def upload_io(io:, key:, content_type: nil)
+    client.put_object(bucket: @bucket, key: key, body: io, content_type: content_type || DEFAULT_CONTENT_TYPE)
     signed_url(key)
   rescue Aws::S3::Errors::ServiceError => e
     raise StorageError, "S3 upload failed: #{e.message}"

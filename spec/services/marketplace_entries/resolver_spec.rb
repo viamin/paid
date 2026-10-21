@@ -117,6 +117,94 @@ RSpec.describe MarketplaceEntries::Resolver do
     expect(results.map(&:source)).to eq([ "manual", "manual" ])
   end
 
+  it "matches an automatic rule when the issue carries one of the configured labels" do # @spec TOOL-SIDECAR-003
+    project = create(:project)
+    entry = create_automatic_entry_with_conditions(
+      project.account,
+      "issue_labels_includes_any" => [ "tooling" ]
+    )
+    issue = create(:issue, :with_labels, project: project)
+    issue.update!(labels: [ "tooling", "bug" ])
+    agent_run = create(:agent_run, project: project, issue: issue, custom_prompt: "Implement the issue")
+
+    results = described_class.call(
+      project: project,
+      agent_run: agent_run,
+      auto_attach_enabled: true
+    )
+
+    expect(results.map(&:entry)).to eq([ entry ])
+  end
+
+  it "does not match an automatic rule when no issue label is in the configured set" do # @spec TOOL-SIDECAR-003
+    project = create(:project)
+    create_automatic_entry_with_conditions(
+      project.account,
+      "issue_labels_includes_any" => [ "tooling" ]
+    )
+    issue = create(:issue, project: project, labels: [ "unrelated" ])
+    agent_run = create(:agent_run, project: project, issue: issue, custom_prompt: "Implement the issue")
+
+    results = described_class.call(
+      project: project,
+      agent_run: agent_run,
+      auto_attach_enabled: true
+    )
+
+    expect(results).to be_empty
+  end
+
+  it "matches an automatic rule when the project language is in the configured set" do # @spec TOOL-SIDECAR-004
+    project = create(:project, repo_profile: { "languages" => [ "ruby" ], "marker_files" => [ "Gemfile" ] })
+    entry = create_automatic_entry_with_conditions(
+      project.account,
+      "languages_include_any" => [ "ruby" ]
+    )
+    agent_run = create(:agent_run, project: project, custom_prompt: "Implement the issue")
+
+    results = described_class.call(
+      project: project,
+      agent_run: agent_run,
+      auto_attach_enabled: true
+    )
+
+    expect(results.map(&:entry)).to eq([ entry ])
+  end
+
+  it "matches an automatic rule when the project's marker_files include the configured entry" do # @spec TOOL-SIDECAR-004
+    project = create(:project, repo_profile: { "languages" => [ "ruby" ], "marker_files" => [ "Gemfile" ] })
+    entry = create_automatic_entry_with_conditions(
+      project.account,
+      "repo_files_include_any" => [ "Gemfile" ]
+    )
+    agent_run = create(:agent_run, project: project, custom_prompt: "Implement the issue")
+
+    results = described_class.call(
+      project: project,
+      agent_run: agent_run,
+      auto_attach_enabled: true
+    )
+
+    expect(results.map(&:entry)).to eq([ entry ])
+  end
+
+  it "does not match when the repo profile has none of the configured marker files" do # @spec TOOL-SIDECAR-004
+    project = create(:project, repo_profile: { "languages" => [ "ruby" ], "marker_files" => [ "package.json" ] })
+    create_automatic_entry_with_conditions(
+      project.account,
+      "repo_files_include_any" => [ "Gemfile" ]
+    )
+    agent_run = create(:agent_run, project: project, custom_prompt: "Implement the issue")
+
+    results = described_class.call(
+      project: project,
+      agent_run: agent_run,
+      auto_attach_enabled: true
+    )
+
+    expect(results).to be_empty
+  end
+
   def create_automatic_entry_for(account)
     entry = create(:marketplace_entry, account: account, name: "Shared skill")
     version = create(:marketplace_entry_version,
@@ -127,6 +215,19 @@ RSpec.describe MarketplaceEntries::Resolver do
       })
     entry.update!(current_version: version)
     create(:marketplace_entry_rule, marketplace_entry: entry, mode: "automatic", conditions: {})
+    entry
+  end
+
+  def create_automatic_entry_with_conditions(account, conditions)
+    entry = create(:marketplace_entry, account: account, name: "Scoped skill")
+    version = create(:marketplace_entry_version,
+      marketplace_entry: entry,
+      canonical_artifact: {
+        "attachment_strategy" => "prompt_append",
+        "content" => "Follow the shared workflow."
+      })
+    entry.update!(current_version: version)
+    create(:marketplace_entry_rule, marketplace_entry: entry, mode: "automatic", conditions: conditions)
     entry
   end
 
