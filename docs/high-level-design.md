@@ -29,7 +29,9 @@ have moved elsewhere:
 - **Coverage truth.** Safety automation is only trustworthy when its operator
   surfaces distinguish a completed check from an unavailable one. Polling
   failures, disabled checks, and stale evidence must remain visible rather
-  than being represented as a healthy empty result.
+  than being represented as a healthy empty result. Agent-reported verification
+  is distinct from commit-bound, recorder-owned execution evidence; neither an
+  artifact nor a reported pass alone establishes arbitrary acceptance coverage.
 - **Design traceability.** Repository design records, tracked delivery work,
   and Paid's local links must be reconciled from explicit evidence. A failed
   repository read is unknown coverage, never proof that no work exists.
