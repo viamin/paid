@@ -115,8 +115,10 @@ module AgentRuns
       hash = payload.is_a?(Hash) ? payload.deep_stringify_keys : {}
       status = hash["status"].to_s
       status = "failed" unless status.in?(VALID_STATUSES)
+      recorder_log_tail = app_log_tail
+      log_tail = recorder_log_tail.presence || captured_log_tail
 
-      {
+      result = {
         "status" => status,
         "reported_status" => status,
         "summary" => hash["summary"].presence || default_summary_for(status),
@@ -129,10 +131,25 @@ module AgentRuns
         "changed_surfaces" => normalize_string_array(hash["changed_surfaces"]),
         "reported_acceptance_criteria" => normalize_criteria(hash["acceptance_criteria"] || hash["reported_acceptance_criteria"]),
         "artifacts" => normalize_artifacts(hash["artifacts"]),
-        "app_log_tail" => app_log_tail,
         "evidence" => evidence_for(hash),
         "recorded_at" => Time.current.iso8601
       }.compact
+      result.merge!("app_log_tail" => log_tail, "app_log_recorded_at" => log_recorded_at(recorder_log_tail)) if log_tail.present?
+      result
+    end
+
+    def captured_log_tail
+      previous_verification_result["app_log_tail"].presence
+    end
+
+    def log_recorded_at(recorder_log_tail)
+      return Time.current.iso8601 if recorder_log_tail.present?
+
+      previous_verification_result["app_log_recorded_at"] || Time.current.iso8601
+    end
+
+    def previous_verification_result
+      @previous_verification_result ||= @agent_run.verification_result.to_h
     end
 
     # Agent-authored JSON is a useful report, but it cannot attest to its own

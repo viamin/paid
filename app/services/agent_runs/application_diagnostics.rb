@@ -7,7 +7,8 @@ module AgentRuns
   class ApplicationDiagnostics
     MAX_LOOKBACK_SECONDS = 3_600
     MAX_SAMPLES = 100
-    MAX_LOG_BYTES = 32 * 1024
+    METRIC_NAMES = %w[cpu_percent memory_bytes memory_limit_bytes memory_percent pids_count].freeze
+    private_constant :METRIC_NAMES
 
     def self.call(...)
       new(...).call
@@ -38,13 +39,14 @@ module AgentRuns
     end
 
     def logs
-      tail = @agent_run.verification_result.to_h["app_log_tail"].to_s
+      verification = @agent_run.verification_result.to_h
+      tail = verification["app_log_tail"].to_s
       return unavailable("application log was not captured by verification") if tail.blank?
 
       { "status" => "available", "entries" => [ {
-        "timestamp" => @agent_run.verification_result.to_h["recorded_at"],
-        "content" => redact(tail.bytesize > MAX_LOG_BYTES ? tail.byteslice(-MAX_LOG_BYTES, MAX_LOG_BYTES) : tail),
-        "truncated" => tail.bytesize > MAX_LOG_BYTES
+        "timestamp" => verification["app_log_recorded_at"] || verification["recorded_at"],
+        "content" => redact(tail),
+        "truncated" => false
       } ] }
     end
 
@@ -61,7 +63,7 @@ module AgentRuns
       end.reverse
       return unavailable("no run-scoped application container samples are available") if samples.empty?
 
-      { "status" => "available", "samples" => samples, "metric_names" => samples.first.keys - [ "recorded_at" ] }
+      { "status" => "available", "samples" => samples, "metric_names" => METRIC_NAMES }
     end
 
     def since

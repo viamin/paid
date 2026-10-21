@@ -436,6 +436,7 @@ Rails.application.routes.draw do
     get "proxy/research/search", to: "proxy/research#search"
     get "proxy/git-credentials", to: "git_credentials#show"
     get "proxy/application-diagnostics", to: "application_diagnostics#show"
+    put "proxy/application-diagnostics", to: "application_diagnostics#capture"
 
     get "knowledge/search", to: "knowledge_search#search"
     get "knowledge/resolve", to: "knowledge_search#resolve"

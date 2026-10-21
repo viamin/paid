@@ -60,3 +60,12 @@
   with the existing container credential and SHALL not accept a target run,
   project, host, file, or container identifier.
   *Code:* `Api::ApplicationDiagnosticsController`.
+
+- [x] **APP-DIAGNOSTICS-004** — While an authenticated run is active and
+  verification is in progress, Paid SHALL accept only that run's bounded
+  application-log tail, redact it before persistence, and make the captured
+  tail available through that run's diagnostic retrieval endpoint before the
+  verification outcome is finalized.
+  *Code:* `Api::ApplicationDiagnosticsController`,
+  `AgentRuns::CaptureApplicationLog`.
+  *Test:* `spec/requests/api/application_diagnostics_spec.rb`.

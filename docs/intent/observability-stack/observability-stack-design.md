@@ -128,13 +128,16 @@ counterpart — neither replaces the other.
 
 Agents can retrieve read-only verification diagnostics through
 `GET /api/proxy/application-diagnostics`, authenticated by the existing
-run proxy credential. The endpoint never accepts a target run, project, or
-container identifier: it returns only the authenticated run's persisted,
-redacted application-log tail and its own `ContainerMetric` samples. Results
-include tenant/project/run/revision/timestamp provenance and cap lookback to
-one hour, samples to 100, and logs to 32 KiB. Missing logs or metrics return
-an explicit `unavailable` status. This works without Prometheus/Loki; it does
-not expose Docker, files, credentials, or cross-project queries.
+run proxy credential. During active verification, the agent can first upload
+its current application-log tail through the same authenticated endpoint, then
+read the redacted captured tail and its own `ContainerMetric` samples before
+choosing a verification outcome. The endpoint never accepts a target run,
+project, or container identifier. Captured logs are limited to 32 KiB before
+persistence; final recorder-owned capture supersedes the provisional log when
+available after the run. Results include tenant/project/run/revision/timestamp provenance and
+cap lookback to one hour and samples to 100. Missing logs or metrics return an
+explicit `unavailable` status. This works without Prometheus/Loki; it does not
+expose Docker, files, credentials, or cross-project queries.
 
 - **Not a raw `prometheus-client` middleware install.** The current app uses a
   custom collector rather than the original draft's in-process metric objects.

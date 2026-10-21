@@ -240,6 +240,22 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(agent_run.reload.verification_result.fetch("app_log_tail")).to include("[REDACTED")
   end
 
+  # @spec APP-DIAGNOSTICS-004
+  it "retains the active-run captured log when the final log file is unavailable" do
+    agent_run.update!(verification_result: {
+      "app_log_tail" => "captured during verification",
+      "app_log_recorded_at" => "2026-10-21T00:00:00Z"
+    })
+    File.write(result_path, JSON.generate(status: "passed"))
+
+    described_class.call(agent_run:, repo_path:)
+
+    expect(agent_run.reload.verification_result).to include(
+      "app_log_tail" => "captured during verification",
+      "app_log_recorded_at" => "2026-10-21T00:00:00Z"
+    )
+  end
+
   it "records a fallback status when no verification result file exists" do
     described_class.call(
       agent_run:,

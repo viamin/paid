@@ -72,10 +72,23 @@ module AgentRuns
         echo $! > #{Shellwords.escape(APP_PID_PATH)}
         ```
 
-        Run-scoped diagnostics are read-only and bounded. After verification results are recorded, use
-        `GET $PAID_PROXY_URL/api/proxy/application-diagnostics` with the existing run credentials to retrieve
-        the redacted application-log tail and available CPU/memory samples. These observations are scoped to
-        this run and revision; unavailable instrumentation is unavailable evidence, never a passing check.
+        After starting the app, capture its current log tail and inspect diagnostics while you can still act:
+
+        ```bash
+        tail -c 32768 #{Shellwords.escape(APP_LOG_PATH)} | curl --fail-with-body --connect-timeout 10 --max-time 30 \\
+          -X PUT "$PAID_PROXY_URL/api/proxy/application-diagnostics" \\
+          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
+          -H "X-Proxy-Token: $PROXY_TOKEN" \\
+          -H "Content-Type: text/plain" \\
+          --data-binary @-
+        curl --fail-with-body --connect-timeout 10 --max-time 30 \\
+          "$PAID_PROXY_URL/api/proxy/application-diagnostics" \\
+          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
+          -H "X-Proxy-Token: $PROXY_TOKEN"
+        ```
+
+        Diagnostics are bounded and scoped to this run and revision. Unavailable instrumentation is unavailable
+        evidence, never a passing check. Capture and inspect the log again if startup or browser verification fails.
 
         Record the verification result by writing JSON to `#{RESULT_PATH}` before you finish:
 

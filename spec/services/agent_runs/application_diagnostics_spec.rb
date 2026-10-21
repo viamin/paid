@@ -18,6 +18,16 @@ RSpec.describe AgentRuns::ApplicationDiagnostics do
     expect(result.fetch("provenance")).to include("agent_run_id" => agent_run.id, "project_id" => agent_run.project_id)
   end
 
+  # @spec APP-DIAGNOSTICS-002
+  it "advertises every container metric even when the oldest sample omits pids" do
+    create(:container_metric, agent_run:, recorded_at: 2.minutes.ago, pids_count: nil)
+    create(:container_metric, agent_run:, recorded_at: 1.minute.ago, pids_count: 3)
+
+    result = described_class.call(agent_run:)
+
+    expect(result.dig("metrics", "metric_names")).to include("pids_count")
+  end
+
   it "reports unavailable evidence instead of treating missing telemetry as success" do
     result = described_class.call(agent_run:)
 
