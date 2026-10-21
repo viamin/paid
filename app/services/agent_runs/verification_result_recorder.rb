@@ -158,8 +158,8 @@ module AgentRuns
 
     def freshness
       return { "state" => "unbound", "reason" => "tested_commit_unavailable" } if tested_commit.blank?
-      return { "state" => "stale", "reason" => "result_commit_changed" } if @result_commit.present? && git_head_sha.present? && @result_commit != git_head_sha
       return { "state" => "stale", "reason" => "run_result_commit_changed" } if @agent_run.result_commit_sha.present? && tested_commit != @agent_run.result_commit_sha
+      return { "state" => "stale", "reason" => "result_commit_changed" } if @result_commit.present? && git_head_sha.present? && @result_commit != git_head_sha
 
       { "state" => "current" }
     end

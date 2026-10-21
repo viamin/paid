@@ -206,6 +206,8 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
   # @spec LIVE-PREVIEW-010
   it "marks evidence stale when the run's reviewed commit differs from the tested commit" do
     agent_run.update!(result_commit_sha: "b" * 40)
+    git_status = instance_double(Process::Status, success?: true)
+    allow(Open3).to receive(:capture2e).and_return([ "c" * 40, git_status ])
     File.write(result_path, JSON.generate(status: "passed"))
 
     described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
