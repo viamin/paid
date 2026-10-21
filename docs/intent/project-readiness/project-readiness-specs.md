@@ -54,12 +54,17 @@ prefix: PROJECT-READINESS
 - [x] **PROJECT-READINESS-006** — When a readiness evaluation records a gap
   set different from the project's prior snapshot, the system SHALL persist the
   result and invalidate the Inbox cache. It SHALL queue re-evaluation after a
-  TDD-mode setting change and after a completed run with a result commit, but
-  SHALL not evaluate during Inbox polling.
+  TDD-mode or verification setting change, after a project-service-container
+  association change, after a service rename on an associated container, and
+  after a completed run with a result commit, but SHALL not evaluate during
+  Inbox polling.
   *Code:* `Projects::Readiness::Record`, `EvaluateProjectReadinessJob`,
-  `Project`, `AgentRun`.
+  `Project`, `ProjectServiceContainer`, `ServiceContainer`, `AgentRun`.
   *Test:* `spec/services/projects/readiness/record_spec.rb`,
-  `spec/models/project_spec.rb`, `spec/models/agent_run_spec.rb`.
+  `spec/models/project_spec.rb`, `spec/models/project_service_container_spec.rb`,
+  `spec/models/service_container_spec.rb`,
+  `spec/requests/projects/service_containers_spec.rb`,
+  `spec/models/agent_run_spec.rb`.
 
 - [x] **PROJECT-READINESS-007** — When an authorized operator explicitly
   triggers bootstrap from a current `project_setup_pending` Inbox entry, the

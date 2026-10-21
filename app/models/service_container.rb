@@ -22,6 +22,11 @@ class ServiceContainer < ApplicationRecord
   scope :running, -> { where(status: "running") }
   scope :stopped, -> { where(status: "stopped") }
 
+  # Readiness rules match configured services by name, so a rename must
+  # re-derive the persisted snapshot of every associated project.
+  # @spec PROJECT-READINESS-006
+  after_update_commit :enqueue_project_readiness_evaluations, if: :saved_change_to_name?
+
   # Virtual attribute for editing env as JSON text
   def env_json
     (env || {}).to_json
@@ -60,6 +65,10 @@ class ServiceContainer < ApplicationRecord
   end
 
   private
+
+  def enqueue_project_readiness_evaluations
+    project_ids.each { |id| EvaluateProjectReadinessJob.perform_later(id) }
+  end
 
   def env_json_valid
     errors.add(:env_json, "must be valid JSON") if @env_json_invalid
