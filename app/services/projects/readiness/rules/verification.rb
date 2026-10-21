@@ -28,7 +28,7 @@ module Projects
           return [] unless project.verification_enabled?
 
           [ configuration_gap, start_command_gap, service_gaps ].flatten.compact
-        rescue ::Screenshots::ConfigError => error
+        rescue ::Screenshots::ConfigError, ::URI::Error => error
           [ invalid_configuration_gap(error) ]
         end
 

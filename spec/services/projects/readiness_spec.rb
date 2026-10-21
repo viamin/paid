@@ -36,6 +36,15 @@ RSpec.describe Projects::Readiness do
     YAML
   end
 
+  def verification_config_with_unparseable_base_url
+    <<~YAML
+      base_url: "http://local host:3000"
+      routes:
+        - path: /
+          name: Home
+    YAML
+  end
+
   describe ".call" do
     it "reports every strict-TDD prerequisite absent from the current Forager-iOS fixture" do
       result = evaluate(tdd_mode: "strict", language: "GDScript", fixture: forager_ios_fixture)
@@ -124,6 +133,19 @@ RSpec.describe Projects::Readiness do
       Dir.mktmpdir do |repo_path|
         FileUtils.mkdir_p(File.join(repo_path, ".paid"))
         File.write(File.join(repo_path, ".paid/screenshots.yml"), "routes: invalid\n")
+
+        result = described_class.call(project:, repo_path:)
+
+        expect(result.gaps.map(&:kind)).to eq([ "verification_configuration_invalid" ])
+      end
+    end
+
+    it "reports an unparseable base_url as a repository setup gap instead of raising" do
+      project = build(:project, tdd_mode: "off", screenshot_settings: { "verification_enabled" => true })
+
+      Dir.mktmpdir do |repo_path|
+        FileUtils.mkdir_p(File.join(repo_path, ".paid"))
+        File.write(File.join(repo_path, ".paid/screenshots.yml"), verification_config_with_unparseable_base_url)
 
         result = described_class.call(project:, repo_path:)
 
