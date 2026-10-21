@@ -54,9 +54,9 @@ gaps appear in the
 `project_setup_pending` Inbox lane. The entry is project-backed (rather than
 issue- or PR-backed), lists the structural gap descriptions and evidence, and
 links the operator to project settings. A satisfied snapshot, or a project
-whose TDD mode is off, has no entry. This lane is visible using the same
-authorized-project scope as other owner-scoped Inbox lanes and deliberately
-does not depend on `auto_pick_enabled`.
+whose enabled capabilities have no gaps, has no entry. This lane is visible
+using the same authorized-project scope as other owner-scoped Inbox lanes and
+deliberately does not depend on `auto_pick_enabled`.
 
 The detail also exposes the newest relevant verification setup observation.
 That observation is diagnostic evidence, not a readiness latch: a later

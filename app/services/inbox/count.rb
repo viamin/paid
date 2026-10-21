@@ -138,7 +138,7 @@ module Inbox
 
     # @spec PROJECT-READINESS-005
     def project_setup_pending_count
-      Project.where(id: visible_project_ids).select(&:tdd_readiness_blocked?).count
+      Project.where(id: visible_project_ids).select(&:readiness_blocked?).count
     end
 
     # @spec DESIGN-RECONCILIATION-001

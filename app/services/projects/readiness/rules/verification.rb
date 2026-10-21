@@ -9,6 +9,12 @@ module Projects
       # durable evidence that the repository is unready.
       # @spec PROJECT-READINESS-011
       class Verification
+        GAP_KINDS = %w[
+          app_start_command_unavailable
+          missing_verification_service
+          verification_configuration_invalid
+        ].freeze
+
         def self.call(...)
           new(...).call
         end
@@ -43,7 +49,7 @@ module Projects
           return if runtime_plan.start_command_available?
 
           Gap.new(
-            kind: "app_start_command_unavailable",
+            kind: GAP_KINDS.first,
             description: "Interactive verification needs an applicable application start command.",
             evidence: { framework: runtime_plan.framework, base_url: runtime_plan.base_url }
           )
@@ -54,7 +60,7 @@ module Projects
             next if configured_service_names.include?(service_name)
 
             Gap.new(
-              kind: "missing_verification_service",
+              kind: GAP_KINDS.second,
               description: "Interactive verification requires the #{service_name} service to be configured for this project.",
               evidence: { service: service_name }
             )
@@ -67,7 +73,7 @@ module Projects
 
         def invalid_configuration_gap(error)
           Gap.new(
-            kind: "verification_configuration_invalid",
+            kind: GAP_KINDS.third,
             description: "Interactive verification configuration is invalid and must be repaired.",
             evidence: { error: error.message }
           )

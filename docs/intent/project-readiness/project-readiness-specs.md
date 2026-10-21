@@ -39,11 +39,14 @@ prefix: PROJECT-READINESS
   `Projects::Readiness::Detectors::Godot`.
   *Test:* `spec/services/projects/readiness_spec.rb`.
 
-- [x] **PROJECT-READINESS-005** — When an enabled TDD project's persisted
-  readiness snapshot has one or more gaps, the system SHALL surface exactly one
-  project-backed `project_setup_pending` Inbox entry to authorized operators,
-  including every stored gap's description and evidence; it SHALL not require
-  `auto_pick_enabled`, and a satisfied snapshot SHALL not appear.
+- [x] **PROJECT-READINESS-005** — When a project's enabled development or
+  verification capability has one or more persisted readiness gaps, the system
+  SHALL surface exactly one project-backed `project_setup_pending` Inbox entry
+  to authorized operators, including every stored gap's description and
+  evidence; it SHALL not require `auto_pick_enabled`, and a satisfied snapshot
+  SHALL not appear. The Inbox badge and availability filters SHALL use the
+  queue's eligibility, and the setup detail SHALL attribute the gap to its
+  actual blocking capability.
   *Code:* `Inbox::Queue`, `Inbox::Count`, `Inbox::Availability`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/services/inbox/availability_spec.rb`.
