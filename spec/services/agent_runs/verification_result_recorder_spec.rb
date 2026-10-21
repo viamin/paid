@@ -139,7 +139,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
 
   # @spec LIVE-PREVIEW-010
   it "retains a bounded recorder-owned app log artifact with run-owned provenance" do
-    storage = instance_double(ArtifactStorage, upload: "https://artifacts.test/verification.log")
+    storage = instance_double(ArtifactStorage, upload_io: "https://artifacts.test/verification.log")
     allow(ArtifactStorage).to receive_messages(configured?: true, new: storage)
     File.write(result_path, JSON.generate(status: "failed", reason: "browser_assertion_failed"))
     File.write(log_path, "failed browser assertion\n")
@@ -154,6 +154,28 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
       "agent_run_id" => agent_run.id
     )
     expect(artifact["storage_key"]).to include("verification/#{agent_run.id}")
+  end
+
+  # @spec LIVE-PREVIEW-010
+  it "rejects a symlinked recorder-owned app log without reading or uploading it" do
+    outside_dir = Dir.mktmpdir("verification-log-outside")
+    outside_path = File.join(outside_dir, File.basename(log_path))
+    storage = instance_double(ArtifactStorage, upload_io: "https://artifacts.test/verification.log")
+    allow(ArtifactStorage).to receive_messages(configured?: true, new: storage)
+    File.write(outside_path, "host-only log\n")
+    File.write(result_path, JSON.generate(status: "passed"))
+    FileUtils.rm_rf(File.dirname(log_path))
+    File.symlink(outside_dir, File.dirname(log_path))
+
+    described_class.call(agent_run:, repo_path:)
+
+    result = agent_run.reload.verification_result
+    expect(storage).not_to have_received(:upload_io)
+    expect(result["app_log_tail"]).to be_nil
+    expect(result.dig("evidence", "observed_artifacts")).to include(hash_including("state" => "inaccessible"))
+    expect(File).to exist(outside_path)
+  ensure
+    FileUtils.rm_rf(outside_dir) if outside_dir
   end
 
   # @spec LIVE-PREVIEW-010

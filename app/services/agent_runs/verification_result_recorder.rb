@@ -103,9 +103,10 @@ module AgentRuns
     end
 
     def recorded_result
-      return unless File.exist?(result_path)
+      contents = with_safe_repo_file(result_path) { |file| file.read }
+      return if contents.nil?
 
-      JSON.parse(File.read(result_path))
+      JSON.parse(contents)
     rescue JSON::ParserError => e
       invalid_json_result(e)
     end
@@ -264,18 +265,25 @@ module AgentRuns
     end
 
     def observed_artifacts
-      return [] unless File.file?(app_log_path)
-      return [ observed_log_artifact("too_large") ] if File.size(app_log_path) > MAX_RETAINED_ARTIFACT_BYTES
-      return [ observed_log_artifact("storage_unavailable") ] unless ArtifactStorage.configured?
+      return [] unless app_log_present?
 
-      retain_app_log
+      with_safe_repo_file(app_log_path) do |file|
+        observed_artifacts_for(file)
+      end || [ observed_log_artifact("inaccessible") ]
     rescue ArtifactStorage::StorageError => error
       [ observed_log_artifact("inaccessible", details: error.message) ]
     end
 
-    def retain_app_log
+    def observed_artifacts_for(file)
+      return [ observed_log_artifact("too_large") ] if file.size > MAX_RETAINED_ARTIFACT_BYTES
+      return [ observed_log_artifact("storage_unavailable") ] unless ArtifactStorage.configured?
+
+      retain_app_log(file)
+    end
+
+    def retain_app_log(file)
       key = verification_log_key
-      ArtifactStorage.new.upload(file_path: app_log_path, key: key, content_type: "text/plain")
+      ArtifactStorage.new.upload_io(io: file, key: key, content_type: "text/plain")
       [ observed_log_artifact("retained", storage_key: key) ]
     end
 
@@ -372,9 +380,7 @@ module AgentRuns
     end
 
     def app_log_tail
-      return if !File.exist?(app_log_path) || File.directory?(app_log_path)
-
-      read_log_tail(app_log_path, max_lines: LOG_TAIL_LINES)
+      with_safe_repo_file(app_log_path) { |file| read_log_tail(file, max_lines: LOG_TAIL_LINES) }
     rescue StandardError => e
       @logger.warn(
         message: "agent_runs.verification_result.log_tail_failed",
@@ -384,20 +390,59 @@ module AgentRuns
       nil
     end
 
-    def read_log_tail(path, max_lines:)
-      File.open(path, "rb") do |file|
-        buffer = +""
-        position = file.size
+    def read_log_tail(file, max_lines:)
+      buffer = +""
+      position = file.size
 
-        while position.positive? && buffer.count("\n") <= max_lines && buffer.bytesize < LOG_TAIL_MAX_BYTES
-          read_size = [ LOG_TAIL_CHUNK_BYTES, position ].min
-          position -= read_size
-          file.seek(position)
-          buffer.prepend(file.read(read_size))
-        end
-
-        normalize_log_tail(buffer, max_lines:)
+      while position.positive? && buffer.count("\n") <= max_lines && buffer.bytesize < LOG_TAIL_MAX_BYTES
+        read_size = [ LOG_TAIL_CHUNK_BYTES, position ].min
+        position -= read_size
+        file.seek(position)
+        buffer.prepend(file.read(read_size))
       end
+
+      normalize_log_tail(buffer, max_lines:)
+    end
+
+    # Agent-authored transient paths are resolved from the opened descriptor,
+    # then that same descriptor is used for every read and upload. This
+    # prevents a symlink replacement between validation and consumption.
+    # @spec LIVE-PREVIEW-010
+    def with_safe_repo_file(path)
+      File.open(path, File::RDONLY | File::NOFOLLOW) do |file|
+        return unless file.stat.file? && path_within_repo?(descriptor_path(file))
+
+        yield file
+      end
+    rescue Errno::EACCES, Errno::ELOOP, Errno::ENOENT, Errno::ENOTDIR
+      nil
+    end
+
+    def app_log_present?
+      File.lstat(app_log_path)
+      true
+    rescue Errno::EACCES, Errno::ENOENT, Errno::ENOTDIR
+      false
+    end
+
+    def descriptor_path(file)
+      File.realpath("/proc/self/fd/#{file.fileno}")
+    end
+
+    def path_within_repo?(path)
+      base = Pathname.new(@repo_path).realpath.to_s
+      path.start_with?("#{base}/")
+    rescue Errno::EACCES, Errno::ENOENT, Errno::ENOTDIR
+      false
+    end
+
+    def delete_transient_file(path)
+      return unless File.lstat(path).file?
+      return unless path_within_repo?(File.realpath(path))
+
+      File.delete(path)
+    rescue Errno::EACCES, Errno::ENOENT, Errno::ENOTDIR
+      nil
     end
 
     def normalize_log_tail(content, max_lines:)
@@ -408,7 +453,7 @@ module AgentRuns
 
     def cleanup_transient_files
       [ result_path, app_log_path, app_pid_path ].each do |path|
-        File.delete(path) if File.exist?(path) && !File.directory?(path)
+        delete_transient_file(path)
       rescue StandardError => e
         @logger.warn(
           message: "agent_runs.verification_result.cleanup_failed",

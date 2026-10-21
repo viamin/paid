@@ -133,6 +133,28 @@ RSpec.describe ArtifactStorage, :no_db do
     end
   end
 
+  describe "#upload_io" do
+    it "uploads an already-open file and returns a presigned URL" do
+      file = Tempfile.new([ "verification", ".log" ])
+      file.write("verification output")
+      file.rewind
+      s3_client.stub_responses(:put_object, {})
+      allow(store).to receive(:signed_url).and_return("https://example.test/verification.log")
+
+      url = store.upload_io(io: file, key: "verification/acme/run-42/app.log", content_type: "text/plain")
+
+      expect(url).to eq("https://example.test/verification.log")
+      expect(s3_client.api_requests.last[:params]).to include(
+        bucket: "test-bucket",
+        key: "verification/acme/run-42/app.log",
+        content_type: "text/plain"
+      )
+    ensure
+      file.close
+      file.unlink
+    end
+  end
+
   describe "#signed_url" do
     it "builds a presigned GET URL using the configured TTL" do
       presigner = instance_double(Aws::S3::Presigner)
