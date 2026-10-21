@@ -26,7 +26,7 @@ module Containers
       mutation_cmd = resolve_mutation_command(agent_run.project, agent_run.settings_user, languages)
       configured_mutation_cmd = mutation_cmd
       mutation_cmd = nil if ruby_db_gated?(languages, db_available)
-      record_database_skips(agent_run, languages, configured_mutation_cmd) if ruby_db_gated?(languages, db_available)
+      record_database_skips(agent_run, languages, configured_mutation_cmd) if db_dependent_languages(languages).any? && !db_available
       # RDR-056 (Strict TDD): mutation checks run after green, not during the
       # red test-review phase — a test_writing run has no implementation to
       # mutate yet, and running mutant against approved tests here would only

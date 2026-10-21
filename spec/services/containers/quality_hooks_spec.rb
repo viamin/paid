@@ -93,6 +93,9 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
         test_command: [],
         mutation_command: "true"
       )
+      expect(agent_run.reload.external_metadata.fetch("quality_checks_not_executed")).to contain_exactly(
+        hash_including("check" => "test", "language" => "elixir", "reason" => "database_service_unavailable", "status" => "not_executed")
+      )
     end
 
     it "runs each language's commands for a polyglot repo with a database" do
