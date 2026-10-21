@@ -41,6 +41,26 @@ metadata so review flows can distinguish what the agent verified from merely
 having provisioned a browser sidecar. This runs for both successful and
 non-zero runner exits, preserving verification evidence when the run fails.
 
+### Reported outcome versus observed evidence
+
+Interactive JSON is agent-authored reporting, not an execution attestation.
+The recorder therefore retains its status, browser steps, and criterion claims
+as `reported_*` data while separately recording recorder-owned facts: the
+tested commit when one is available, normalized runtime configuration, bounded
+app-log retention, artifact provenance, and evidence freshness. A claimed
+criterion is `unverified` unless a recorder-owned assertion supports it;
+reported failures, skips, and not-run states remain explicit. Screenshots and
+app logs are useful artifacts but never prove arbitrary behavior merely by
+existing.
+
+Reported artifact paths are only assessed relative to the repository and are
+never promoted into trusted object-storage keys. Recorder-created app logs are
+retained under the existing project object-storage namespace when available;
+missing, inaccessible, oversized, and untrusted artifacts remain visible as
+explicit states. Evidence becomes stale when its commit differs from the run's
+reviewed commit. This supplements RDR-076's shared evidence contract; it does
+not create merge authority or a separate acceptance model.
+
 ## Trace Artifact Contract
 
 Real agent-run trace viewing is tied to the same durable storage contract used
