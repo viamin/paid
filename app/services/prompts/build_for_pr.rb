@@ -446,7 +446,15 @@ module Prompts
 
         Automatic rebase against `#{base_branch}` failed due to conflicts.
         Run `git merge origin/#{base_branch}` and resolve all conflicts.
-        Ensure the merged result compiles and passes all tests.
+
+        Repair scope is limited to integrating `#{base_branch}` and resolving
+        the resulting conflicts within this pull request's existing task and
+        approved intent. Do not add unrelated dependencies, tooling, product
+        work, or opportunistic cleanup. If resolving a conflict would require
+        work outside that scope, stop and report the specific path and reason
+        for human direction rather than broadening this pull request.
+
+        Ensure the merged result compiles and passes the relevant checks.
       SECTION
 
       PromptAssembly::Section.new(
