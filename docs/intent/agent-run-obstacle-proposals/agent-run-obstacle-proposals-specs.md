@@ -18,7 +18,8 @@ prefix: RUN-OBSTACLE
 
 - [x] **RUN-OBSTACLE-003** — When the same unresolved proposal is observed,
   Paid SHALL deduplicate on the existing finding identity and target; a
-  dismissed proposal SHALL retain its reason and identity.
+  dismissed proposal SHALL retain its reason and identity. Paid SHALL dismiss
+  only a proposed decision after atomically verifying its state.
 
 - [x] **RUN-OBSTACLE-004** — When Paid detects an obstacle, it SHALL NOT apply
   a repair, start an agent run, or enable automatic remediation. Any repair

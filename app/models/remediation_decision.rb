@@ -85,10 +85,6 @@ class RemediationDecision < ApplicationRecord
     applied? && revert_data.to_h["handler"].present?
   end
 
-  def auto_applied?
-    applied? && applied_by_id.nil?
-  end
-
   def dismissed?
     status == "dismissed"
   end
@@ -104,6 +100,13 @@ class RemediationDecision < ApplicationRecord
 
   # @spec RUN-OBSTACLE-003
   def dismiss!(reason:)
-    update!(status: "dismissed", dismissal_reason: reason.to_s.strip, dismissed_at: Time.current)
+    with_lock do
+      unless dismissable?
+        errors.add(:status, "is not proposed")
+        raise ActiveRecord::RecordInvalid.new(self)
+      end
+
+      update!(status: "dismissed", dismissal_reason: reason.to_s.strip, dismissed_at: Time.current)
+    end
   end
 end

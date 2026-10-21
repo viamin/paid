@@ -183,20 +183,7 @@ RSpec.describe AgentRunPatterns::UpdateOutcomes do
 
   # @spec RUN-OBSTACLE-005
   it "counts provider-exhaustion failures by their structured categories" do
-    decision = create(
-      :remediation_decision,
-      account: account,
-      status: "applied",
-      applied_at: 1.hour.ago,
-      pre_remediation_failure_count: 2,
-      pre_remediation_exposure_count: 2,
-      proposal_context: {
-        "goal" => "analyze_issue",
-        "pattern_type" => "error_cluster",
-        "error_pattern" => "All issue-analysis providers exhausted: provider_auth, rate_limited",
-        "window_hours" => 6
-      }
-    )
+    decision = create_provider_exhaustion_decision
     create_list(:agent_run, 2, :completed, project: project, goal: "analyze_issue", completed_at: 30.minutes.ago)
     create_provider_exhaustion_run
     create_provider_exhaustion_run
@@ -234,6 +221,23 @@ RSpec.describe AgentRunPatterns::UpdateOutcomes do
         "goal" => "enhance_issue",
         "pattern_type" => "error_cluster",
         "error_pattern" => "quota exhausted <N>",
+        "window_hours" => 6
+      }
+    )
+  end
+
+  def create_provider_exhaustion_decision
+    create(
+      :remediation_decision,
+      account: account,
+      status: "applied",
+      applied_at: 1.hour.ago,
+      pre_remediation_failure_count: 2,
+      pre_remediation_exposure_count: 2,
+      proposal_context: {
+        "goal" => "analyze_issue",
+        "pattern_type" => "error_cluster",
+        "error_pattern" => "All issue-analysis providers exhausted: provider_auth, rate_limited",
         "window_hours" => 6
       }
     )

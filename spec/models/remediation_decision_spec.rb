@@ -18,6 +18,17 @@ RSpec.describe RemediationDecision do
     end
   end
 
+  describe "#dismiss!" do
+    # @spec RUN-OBSTACLE-003
+    it "rejects dismissal after a correction has been applied" do
+      decision = remediation_decision(applied_at: 1.hour.ago, outcome: nil)
+
+      expect { decision.dismiss!(reason: "No longer needed") }
+        .to raise_error(ActiveRecord::RecordInvalid)
+      expect(decision.reload).to have_attributes(status: "applied", dismissal_reason: nil)
+    end
+  end
+
   def insufficient_evidence_decision(applied_at:)
     remediation_decision(applied_at:, outcome: "insufficient_evidence")
   end
