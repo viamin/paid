@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUALITY-LOOPS-004 # @spec QUALITY-LOOPS-005 # @spec POLYGLOT-TEST-003 # @spec POLYGLOT-TEST-011
+RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUALITY-LOOPS-004 # @spec POLYGLOT-TEST-003 # @spec POLYGLOT-TEST-011
   subject(:host) { host_class.new }
 
   let(:host_class) do
