@@ -69,13 +69,13 @@ module Prompts
     #
     # Polyglot repos expose multiple languages through the persisted
     # +repo_profile+ (see #profile_languages). When no repo profile is
-    # present, the single detected primary language is used, preserving the
-    # pre-polyglot single-language behavior. A project without either signal
+    # present and a primary language has been detected, that single language
+    # preserves the pre-polyglot behavior. A project without either signal
     # intentionally resolves to no commands, which callers render as an
     # unavailable verification capability rather than a Ruby fallback.
     #
     # @param project [Project]
-    # @return [Array<String>] one or more downcased language keys
+    # @return [Array<String>] zero or more downcased language keys
     def self.test_languages(project) # @spec POLYGLOT-TEST-003 @spec POLYGLOT-TEST-012
       profile_languages(project).presence || [ detected_language(project) ].compact
     end
