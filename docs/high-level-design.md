@@ -345,6 +345,11 @@ built and as existing subsystems are mapped over time; not all existing code is
 traced yet, which is expected for brownfield adoption. When you build or change
 a component, add (or update) its segment under `docs/intent/`.
 
+The canonical agent instruction entry point is a concise navigation map, not a
+second handbook. It makes universal boundaries visible and routes detailed
+procedures to their owning design and operational documents; see
+`docs/intent/agent-instruction-navigation/`.
+
 ## References
 
 - `docs/ARCHITECTURE.md` — system design and technology stack
