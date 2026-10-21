@@ -38,6 +38,22 @@ RSpec.describe "Application diagnostics proxy" do
     expect(agent_run.reload.verification_result.fetch("app_log_tail")).to eq("retained")
   end
 
+  # @spec APP-DIAGNOSTICS-004
+  it "treats a blank captured log as a no-capture and preserves retained evidence" do
+    agent_run = create(:agent_run, :running)
+    agent_run.update!(verification_result: { "app_log_tail" => "retained prior tail" })
+    headers = {
+      "X-Agent-Run-Id" => agent_run.id.to_s,
+      "X-Proxy-Token" => agent_run.ensure_proxy_token!,
+      "CONTENT_TYPE" => "text/plain"
+    }
+
+    put "/api/proxy/application-diagnostics", params: "   \n", headers: headers
+
+    expect(response).to have_http_status(:no_content)
+    expect(agent_run.reload.verification_result).to include("app_log_tail" => "retained prior tail")
+  end
+
   # @spec APP-DIAGNOSTICS-003
   it "binds diagnostics to the run authenticated by the proxy token" do
     agent_run = create(:agent_run, :running)

@@ -18,6 +18,8 @@ module AgentRuns
     end
 
     def call
+      return if @content.strip.empty?
+
       raise TooLargeError, "application log exceeds #{MAX_LOG_BYTES} bytes" if @content.bytesize > MAX_LOG_BYTES
 
       @agent_run.update!(verification_result: verification_result)
