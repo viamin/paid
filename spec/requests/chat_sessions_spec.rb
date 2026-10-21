@@ -124,6 +124,79 @@ RSpec.describe "ChatSessions" do
     end
   end
 
+  describe "GET /chat/runner_model_options" do
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        get runner_model_options_chat_sessions_path
+
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      it "offers every curated tier when no project is selected" do
+        runner = create_openai_chat_runner
+
+        get runner_model_options_chat_sessions_path
+
+        expect(response).to have_http_status(:ok)
+        expect(option_labels).to eq([
+          "#{runner.display_name} — Low: gpt-5.6-luna",
+          "#{runner.display_name} — Medium: gpt-5.6-terra",
+          "#{runner.display_name} — High: gpt-5.6-sol"
+        ])
+      end
+
+      # @spec CHAT-SESSION-PREFERENCES-003
+      it "offers only the tiers the selected project's policy permits" do
+        runner = create_openai_chat_runner
+        project = create(:project, account: account, model_preferences: { "max_tier" => "low" })
+
+        get runner_model_options_chat_sessions_path, params: { project_id: project.id }
+
+        expect(response).to have_http_status(:ok)
+        expect(option_labels).to eq([ "#{runner.display_name} — Low: gpt-5.6-luna" ])
+      end
+
+      it "ignores projects outside the account" do
+        create_openai_chat_runner
+        other_project = create(:project, model_preferences: { "max_tier" => "low" })
+
+        get runner_model_options_chat_sessions_path, params: { project_id: other_project.id }
+
+        expect(response).to have_http_status(:ok)
+        expect(option_labels.length).to eq(3)
+      end
+
+      it "keeps unfiltered choices for an unknown project id" do
+        create_openai_chat_runner
+
+        get runner_model_options_chat_sessions_path, params: { project_id: 999_999_999 }
+
+        expect(response).to have_http_status(:ok)
+        expect(option_labels.length).to eq(3)
+      end
+
+      context "when authenticated as a viewer" do
+        let(:viewer) { create(:user, :viewer, account: account) }
+
+        before { sign_in viewer }
+
+        it "is not authorized" do
+          get runner_model_options_chat_sessions_path
+
+          expect(response).to redirect_to(root_path)
+        end
+      end
+
+      def option_labels
+        response.parsed_body.fetch("options").map { |option| option.fetch("label") }
+      end
+    end
+  end
+
   describe "POST /chat" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
@@ -207,15 +280,18 @@ RSpec.describe "ChatSessions" do
         expect(ChatSession.order(:id).last).to be_auto_approve
       end
 
-      it "creates a session with popup metadata context" do
+      # @spec CHAT-SESSION-PREFERENCES-003
+      it "creates a selected session without replacing popup metadata context" do
+        runner = create_openai_chat_runner
+        selection = ChatSessions::RunnerModelOptions.options_for([ runner ]).find { |option| option.tier == "low" }
         post chat_sessions_path(format: :json), params: {
           container_capability: "none",
+          runner_model: selection.value,
           project_id: create(:project, account: account).id,
           metadata: {
             entry_point: "popup",
             page_context: {
               url: "https://paid.example.test/projects/3",
-              page_title: "Acme API - Projects - Paid",
               project_name: "Acme API"
             }
           }
@@ -223,13 +299,14 @@ RSpec.describe "ChatSessions" do
 
         expect(response).to have_http_status(:created)
         expect(ChatSession.order(:id).last.metadata).to include(
+          "model_tier" => "low",
           "entry_point" => "popup",
           "page_context" => include("project_name" => "Acme API")
         )
       end
 
       it "accepts provider_id as a legacy alias for runner_id" do
-        runner = create_api_chat_runner
+        runner = create_openai_chat_runner
 
         post chat_sessions_path(format: :json), params: { container_capability: "none", provider_id: runner.id }
 
@@ -467,11 +544,9 @@ RSpec.describe "ChatSessions" do
         end
       end
 
-      it "lists only configured runner/model pairs and an automatic option for each runner" do
+      it "lists only curated Low, Medium, and High choices for each runner" do
         # @spec CHAT-SESSION-PREFERENCES-003
-        runner = create(:runner, :api_key, user: user, name: "OpenCode MiniMax", runner_key: "opencode",
-          provider_api_key: create(:provider_api_key, user: user, api_service_type: "minimax"),
-          config: { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M2" } })
+        runner = create_openai_chat_runner
         create(:llm_model, model_id: "glm-5.2", display_name: "GLM-5.2", provider: "zai_coding")
         chat_session.update_columns(runner_id: runner.id, model: "glm-5.2")
 
@@ -479,8 +554,10 @@ RSpec.describe "ChatSessions" do
 
         selects = Nokogiri::HTML(response.body).xpath("//form[@action='#{chat_session_path(chat_session)}']//select[@name='chat_session[runner_model]']")
 
-        expect(selects).to all(satisfy { |select| select.text.include?("#{runner.display_name} — Automatic") })
-        expect(selects).to all(satisfy { |select| select.text.include?("#{runner.display_name} — Minimax-m2") })
+        expect(selects).to all(satisfy { |select| select.text.include?("#{runner.display_name} — Low: gpt-5.6-luna") })
+        expect(selects).to all(satisfy { |select| select.text.include?("#{runner.display_name} — Medium: gpt-5.6-terra") })
+        expect(selects).to all(satisfy { |select| select.text.include?("#{runner.display_name} — High: gpt-5.6-sol") })
+        expect(selects).to all(satisfy { |select| !select.text.include?("Automatic") })
         expect(selects).to all(satisfy { |select| !select.text.include?("GLM-5.2") })
         expect(selects).to all(satisfy { |select| select.at_css("option").text == "Choose a valid runner and model" })
       end
@@ -988,19 +1065,34 @@ RSpec.describe "ChatSessions" do
         expect(chat_root["data-chat-account-id-value"]).to eq(account.id.to_s)
       end
 
+      # @spec CHAT-SESSION-PREFERENCES-003
+      it "wires the new-chat dialog to refresh runner and model choices for the selected project" do
+        create_openai_chat_runner
+
+        get chat_session_path(chat_session)
+
+        doc = Nokogiri::HTML(response.body)
+        dialog_form = doc.at_css("dialog form[data-controller='chat-runner-model-options']")
+        expect(dialog_form).to be_present
+        expect(dialog_form["data-chat-runner-model-options-url-value"]).to eq(runner_model_options_chat_sessions_path)
+
+        project_select = dialog_form.at_css("select[name='chat_session[project_id]']")
+        expect(project_select["data-chat-runner-model-options-target"]).to eq("projectSelect")
+        expect(project_select["data-action"]).to include("chat-runner-model-options#projectChanged")
+        expect(dialog_form.at_css("select[name='chat_session[runner_model]'][data-chat-runner-model-options-target='runnerModelSelect']")).to be_present
+      end
+
       it "only offers API-key-backed runners in the combined chat selector" do
         # @spec CHAT-API-006
         create(:runner, user: user, runner_key: "codex", auth_type: "subscription", enabled_for_chat: true)
-        api_runner = create(:runner, :api_key, user: user, runner_key: "opencode", name: "API Chat Runner",
-          provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
-          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+        api_runner = create_openai_chat_runner(name: "API Chat Runner")
 
         get chat_session_path(chat_session)
 
         doc = Nokogiri::HTML(response.body)
         runner_model_options = doc.css("select[name='chat_session[runner_model]'] option").map(&:text)
-        expect(runner_model_options).to include("#{api_runner.display_name} — Automatic")
-        expect(runner_model_options).not_to include("OpenAI Codex CLI — Automatic")
+        expect(runner_model_options).to include("#{api_runner.display_name} — Low: gpt-5.6-luna")
+        expect(runner_model_options).not_to include("OpenAI Codex CLI — Low: gpt-5.6-luna")
       end
 
       it "renders mobile archive controls without expanding the sidebar by default" do
@@ -1309,47 +1401,45 @@ RSpec.describe "ChatSessions" do
         expect(chat_session.model).to eq("gpt-4.1")
       end
 
-      it "saves a configured runner/model selection together in place" do
+      it "saves a curated runner/model selection together in place" do
         # @spec CHAT-SESSION-PREFERENCES-002 CHAT-SESSION-PREFERENCES-003
-        runner = create(:runner, :api_key, user: user, runner_key: "opencode",
-          provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
-          config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
-        selection = ChatSessions::RunnerModelOptions.options_for([ runner ]).find { |option| option.model_id == "moonshotai/kimi-k2" }
+        runner = create_openai_chat_runner
+        selection = ChatSessions::RunnerModelOptions.options_for([ runner ]).find { |option| option.tier == "mid" }
 
         patch chat_session_path(chat_session),
           params: { chat_session: { runner_model: selection.value } },
           headers: { "Accept" => "text/vnd.turbo-stream.html" }
 
         expect(response).to have_http_status(:no_content)
-        expect(chat_session.reload).to have_attributes(runner_id: runner.id, model: "moonshotai/kimi-k2")
+        expect(chat_session.reload).to have_attributes(runner_id: runner.id, model: "gpt-5.6-terra")
       end
 
-      it "offers a direct-outbound runner's provider-qualified model even when the catalog stores the bare id" do
+      it "offers the curated choices instead of a runner's configured model" do
         # @spec CHAT-SESSION-PREFERENCES-003
-        create(:llm_model, model_id: "MiniMax-M3", provider: "minimax", tier: "mid")
-        runner = create(:runner, :api_key, user: user, runner_key: "opencode",
-          provider_api_key: create(:provider_api_key, user: user, api_service_type: "minimax"),
-          config: { "opencode" => { "api_provider" => "minimax", "model" => "minimax/MiniMax-M3" } })
-        selection = ChatSessions::RunnerModelOptions.options_for([ runner ]).find { |option| option.model_id == "minimax/MiniMax-M3" }
-        expect(selection).not_to be_nil
+        runner = create_openai_chat_runner(configured_model: "gpt-configured-model")
+        selection = ChatSessions::RunnerModelOptions.options_for([ runner ]).find { |option| option.tier == "high" }
+
+        expect(selection.model_id).to eq("gpt-5.6-sol")
+        expect(ChatSessions::RunnerModelOptions.options_for([ runner ]).map(&:model_id)).not_to include("gpt-configured-model")
 
         patch chat_session_path(chat_session),
           params: { chat_session: { runner_model: selection.value } },
           headers: { "Accept" => "text/vnd.turbo-stream.html" }
 
         expect(response).to have_http_status(:no_content)
-        expect(chat_session.reload).to have_attributes(runner_id: runner.id, model: "minimax/MiniMax-M3")
+        expect(chat_session.reload).to have_attributes(runner_id: runner.id, model: "gpt-5.6-sol")
       end
 
-      it "saves a runner automatic selection without pinning a model" do
+      it "saves the curated Low selection with its tier" do
         # @spec CHAT-SESSION-PREFERENCES-003
-        runner = create_api_chat_runner
-        selection = ChatSessions::RunnerModelOptions.options_for([ runner ]).find { |option| option.model_id.nil? }
+        runner = create_openai_chat_runner
+        selection = ChatSessions::RunnerModelOptions.options_for([ runner ]).find { |option| option.tier == "low" }
 
         patch chat_session_path(chat_session, format: :json), params: { runner_model: selection.value }
 
         expect(response).to have_http_status(:ok)
-        expect(chat_session.reload).to have_attributes(runner_id: runner.id, model: nil)
+        expect(chat_session.reload).to have_attributes(runner_id: runner.id, model: "gpt-5.6-luna")
+        expect(chat_session.metadata).to include("model_tier" => "low")
       end
 
       it "rejects a stale or crafted runner/model selection" do
@@ -1660,5 +1750,17 @@ RSpec.describe "ChatSessions" do
     create(:runner, :api_key, user: user, runner_key: "opencode",
       provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
       config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
+  end
+
+  def create_openai_chat_runner(name: nil, configured_model: "gpt-5.6-luna")
+    %w[low mid high].zip(%w[gpt-5.6-luna gpt-5.6-terra gpt-5.6-sol]).each do |tier, model_id|
+      create(:llm_model, :openai, model_id: model_id, tier: tier, capability_score: 9.0, supports_tools: true)
+    end
+    attributes = { user: user, runner_key: "opencode",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "openai"),
+      config: { "opencode" => { "api_provider" => "openai", "model" => configured_model } }
+    }
+    attributes[:name] = name if name
+    create(:runner, :api_key, **attributes)
   end
 end

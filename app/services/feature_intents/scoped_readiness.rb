@@ -4,8 +4,8 @@ module FeatureIntents
   # Deterministically evaluates an agent-authored prerequisite map. Semantic
   # judgment belongs to the assessor; this boundary only verifies coverage,
   # freshness, independent score thresholds, and the relevant design baseline.
-  # It is deliberately shadow-only until the complete RDR-071 release path is
-  # wired, so callers cannot turn a passing assessment into run eligibility.
+  # ReleaseIssue consumes a passing result to reconcile the workflow-owned
+  # planning hold; RunAdmission rechecks it on every unstarted admission.
   # @spec FACET-CONFIDENCE-008 FACET-CONFIDENCE-009 FACET-CONFIDENCE-010
   # @spec FACET-CONFIDENCE-011 FACET-CONFIDENCE-012 CONFIDENCE-DELIVERY-003
   # @spec CONFIDENCE-DELIVERY-014
@@ -13,8 +13,8 @@ module FeatureIntents
     Blocker = Data.define(:code, :message, :prerequisite_id, :artifact_path)
     Result = Data.define(:ready, :blockers, :snapshot) do
       def ready? = ready
-      def shadow_only? = true
-      def releasable? = false
+      def shadow_only? = false
+      def releasable? = ready
     end
 
     COMPLETE_ASSESSMENT_STATUSES = %w[completed succeeded].freeze

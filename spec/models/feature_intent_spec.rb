@@ -109,5 +109,13 @@ RSpec.describe FeatureIntent do
 
       expect(feature_intent).not_to be_valid
     end
+
+    # @spec FEATURE-APPROVAL-020
+    it "only permits http(s) replacement references" do
+      feature_intent = build(:feature_intent, replacement_reference: "javascript:alert(1)")
+
+      expect(feature_intent).not_to be_valid
+      expect(feature_intent.errors[:replacement_reference]).to include("must be an http(s) URL")
+    end
   end
 end

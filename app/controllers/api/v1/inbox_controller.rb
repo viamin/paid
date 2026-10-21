@@ -29,9 +29,10 @@ module Api
       # @spec MOBILE-API-007 MOBILE-API-010
       def count
         authorize :inbox, policy_class: InboxPolicy
+        count = Inbox::Count.call(user: current_user)
         return if conditional_response?({})
 
-        render json: { count: Inbox::Count.call(user: current_user) }
+        render json: { count: }
       end
 
       # @spec MOBILE-API-008
@@ -43,14 +44,23 @@ module Api
         render json: { entry: InboxEntrySerializer.render(entry) }
       end
 
-      # @spec MOBILE-API-009
+      # @spec MOBILE-API-009 QUESTION-EXPLORATION-012
+      # A clarifying-questions entry opens the same linked conversation the
+      # Inbox detail pane's "Answer in chat" affordance opens, under the same
+      # manage-issues gate, so HTML and API opens carry matching subject/actor
+      # context. Every other entry keeps its personal interactive chat.
       def chat
         authorize :inbox, policy_class: InboxPolicy
-        chat_session = Inbox::OpenInteractiveChat.call(
-          user: current_user,
-          entry_id: params[:entry_id]
-        )
+        entry = Inbox::FindEntry.call(user: current_user, entry_id: params[:entry_id])
+        chat_session = if entry&.clarifying_questions? && entry.issue
+          authorize entry.project, :manage_issues?, policy_class: ProjectPolicy
+          ClarifyingQuestions::OpenChat.call(issue: entry.issue, user: current_user)
+        else
+          Inbox::OpenInteractiveChat.call(user: current_user, entry_id: params[:entry_id])
+        end
         render json: { chat_session_id: chat_session.id }, status: :created
+      rescue GithubClient::Error => e
+        render_error(:bad_gateway, :github_error, "Failed to load clarifying questions: #{e.message}")
       end
 
       private

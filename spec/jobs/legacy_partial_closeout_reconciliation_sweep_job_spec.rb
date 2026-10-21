@@ -84,12 +84,13 @@ RSpec.describe LegacyPartialCloseoutReconciliationSweepJob do
     it "starts with the first active account and persists its account cursor" do
       account
       later_account = create(:account)
+      first_account = Account.active.order(:id).first!
       allow(PartialCloseouts::ReconcileLegacy).to receive(:call).and_return(result_for)
 
       described_class.perform_now
 
-      expect(PartialCloseouts::ReconcileLegacy).to have_received(:call).with(account_id: account.id, after_id: nil)
-      expect(described_class).to have_received(:perform_later).with(after_account_id: account.id)
+      expect(PartialCloseouts::ReconcileLegacy).to have_received(:call).with(account_id: first_account.id, after_id: nil)
+      expect(described_class).to have_received(:perform_later).with(after_account_id: first_account.id)
       expect(later_account).to be_present
     end
 

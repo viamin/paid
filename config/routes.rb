@@ -60,6 +60,10 @@ Rails.application.routes.draw do
   get "inbox", to: "inbox#index", as: :inbox
   get "inbox/count", to: "inbox#count", as: :inbox_count
   get "inbox/partial-closeout-guide", to: "inbox#partial_closeout_guide", as: :partial_closeout_guide
+  post "design_artifact_findings/:id/resolve", to: "design_artifact_findings#resolve", as: :resolve_design_artifact_finding
+  post "design_artifact_findings/:id/file_issue", to: "design_artifact_findings#file_issue", as: :file_issue_design_artifact_finding
+  post "design_artifact_findings/:id/repair_document_links", to: "design_artifact_findings#repair_document_links", as: :repair_document_links_design_artifact_finding
+  post "design_artifact_findings/:id/recheck", to: "design_artifact_findings#recheck", as: :recheck_design_artifact_finding
   post "inbox/:entry_id/interactive_chat", to: "inbox#open_chat", as: :inbox_interactive_chat
   get "inbox/:entry_id/supplement", to: "inbox#supplement", as: :inbox_entry_supplement
   get "inbox/:entry_id", to: "inbox#show", as: :inbox_entry
@@ -218,8 +222,10 @@ Rails.application.routes.draw do
   end
 
   # Feature intent design-decision approval (RDR-066)
-  resources :feature_intents, only: [] do
+  resources :feature_intents, only: [ :index ] do
     post :approve, on: :member
+    post :cancel, on: :member
+    post :reopen, on: :member
   end
 
   # Style guide management
@@ -391,7 +397,13 @@ Rails.application.routes.draw do
       get "inbox/count", to: "inbox#count"
       get "inbox/entries/:entry_id", to: "inbox#show"
       post "inbox/entries/:entry_id/chat", to: "inbox#chat"
+      post "feature_intents/:id/cancel", to: "feature_intents#cancel"
+      post "feature_intents/:id/reopen", to: "feature_intents#reopen"
       get "projects/:project_id/design_artifact_findings", to: "design_artifact_findings#index"
+      post "projects/:project_id/design_artifact_findings/:id/resolve", to: "design_artifact_findings#resolve"
+      post "projects/:project_id/design_artifact_findings/:id/file_issue", to: "design_artifact_findings#file_issue"
+      post "projects/:project_id/design_artifact_findings/:id/repair_document_links", to: "design_artifact_findings#repair_document_links"
+      post "projects/:project_id/design_artifact_findings/:id/recheck", to: "design_artifact_findings#recheck"
       scope "chat" do
         resources :sessions, controller: "chat_sessions", only: %i[index create show update destroy] do
           patch :archive, on: :member
@@ -462,6 +474,7 @@ Rails.application.routes.draw do
     post :clone_project, on: :member
     collection do
       get :sidebar_page
+      get :runner_model_options
     end
     member do
       get :older_messages

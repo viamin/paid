@@ -25,6 +25,21 @@ RSpec.describe ProcessRunQueueJob do
     job.send(:temporal_priority_for, run)
   end
 
+  def confidence_delivery_mapping(scope_revision:)
+    {
+      "coverage" => "complete",
+      "scope_revision" => scope_revision,
+      "prerequisites" => [
+        { "id" => "intent", "assessment" => { "status" => "completed", "evidence_revision" => "evidence-#{scope_revision}", "intent_score" => 80, "technical_score" => 80 } }
+      ],
+      "design_artifacts" => [ { "path" => "docs/intent/example.md", "required" => true, "merged" => true, "scope_revision" => scope_revision, "revision" => "a" * 40 } ]
+    }
+  end
+
+  def confidence_delivery_snapshot(project:, mapping:)
+    FeatureIntents::ScopedReadiness.call(project:, mapping:).snapshot
+  end
+
   def create_strict_priority_vs_fair_share_runs
     strict_account = create(:account)
     strict_account.tenant_setting!.update!(queue_fairness_mode: "strict_priority")
@@ -1143,6 +1158,32 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.reload.status).to eq("running")
       expect(queued_run.temporal_workflow_id).to be_present
       expect(queued_run.started_at).to be_nil
+    end
+
+    # @spec CONFIDENCE-DELIVERY-009
+    it "cancels a queued confidence-delivery run when its admitted snapshot changes" do
+      project = create(:project)
+      issue = create(:issue, project: project)
+      feature = create(:feature_intent, :confidence_driven, project: project)
+      initial_mapping = confidence_delivery_mapping(scope_revision: "scope-v1")
+      link = create(:feature_intent_issue, feature_intent: feature, issue: issue,
+        release_state: "released",
+        readiness_mapping: initial_mapping,
+        release_snapshot: confidence_delivery_snapshot(project:, mapping: initial_mapping))
+      queued_run = create(:agent_run, :queued, project: project, issue: issue, goal: "create_pr")
+      expect(queued_run.base_commit_sha).to eq("a" * 40)
+      expect(queued_run.confidence_delivery_snapshot).to include("scope_revision" => "scope-v1")
+
+      changed_mapping = confidence_delivery_mapping(scope_revision: "scope-v2")
+      link.update!(readiness_mapping: changed_mapping)
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      result = job.send(:start_claimed_run, queued_run)
+
+      expect(result).to eq(:feature_intent_held)
+      expect(queued_run.reload.status).to eq("cancelled")
+      expect(queued_run.error_message).to include("revision changed before dispatch")
     end
 
     # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024

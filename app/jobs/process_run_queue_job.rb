@@ -1157,10 +1157,16 @@ class ProcessRunQueueJob < ApplicationJob
 
   def start_claimed_run(agent_run, planned_container_host: nil, host_placement_decision: nil)
     admission = FeatureIntents::RunAdmission.call(issue: agent_run.issue) if agent_run.create_pr_goal? && agent_run.issue
-    if admission && (!admission.allowed? || (admission.revision && agent_run.base_commit_sha != admission.revision))
+    # @spec CONFIDENCE-DELIVERY-009 — a queued confidence-delivery run retains
+    # its immutable admission snapshot. A revised scope must get a fresh run
+    # rather than changing the scope of this unstarted run at dispatch.
+    if admission && (!admission.allowed? || (admission.revision && agent_run.base_commit_sha != admission.revision) ||
+      (admission.snapshot.present? && agent_run.confidence_delivery_snapshot != admission.snapshot))
       agent_run.cancel!(error: admission.reason || "Feature intent revision changed before dispatch.")
       return :feature_intent_held
     end
+
+    snapshot_admitted_intent!(agent_run) if admission&.allowed?
 
     ConfigurationBundles::AssignToRun.call(agent_run: agent_run) if agent_run.configuration_bundle.blank?
 
@@ -1264,6 +1270,13 @@ class ProcessRunQueueJob < ApplicationJob
       workflow_id: workflow_id
     )
     true
+  end
+
+  def snapshot_admitted_intent!(agent_run)
+    snapshot = FeatureIntents::AdmittedIntentContext.capture(issue: agent_run.issue)
+    return if snapshot.blank? || agent_run.external_metadata["admitted_intent"].present?
+
+    agent_run.update!(external_metadata: agent_run.external_metadata.merge("admitted_intent" => snapshot))
   end
 
   # @spec OBSERVABILITY-002 — record provisioning_started_at and

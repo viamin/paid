@@ -545,6 +545,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "project_issue_clarifying_questions" ])
     end
 
+    it "maps feature proposal views to the dashboard screenshot target" do
+      targets = described_class.call(changed_files: [ "app/views/feature_intents/index.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "dashboard" ])
+    end
+
     it "maps project index partials to projects target" do
       targets = described_class.call(changed_files: [ "app/views/projects/_auto_pick_toggle_index.html.erb" ])
 
@@ -628,6 +634,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       targets = described_class.call(changed_files: [ "app/controllers/projects_controller.rb" ])
 
       expect(targets.map(&:slug)).to include("project_new")
+    end
+
+    it "maps traceability finding actions to the Inbox detail surface" do
+      targets = described_class.call(changed_files: [ "app/controllers/design_artifact_findings_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "dashboard" ])
     end
 
     it "maps prompts controller to include prompt_diff target" do

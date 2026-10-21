@@ -861,6 +861,7 @@ RSpec.describe "Projects" do
     end
 
     def create_api_chat_runner
+      create(:llm_model, provider: "openrouter", model_id: "moonshotai/kimi-k2", tier: "low", supports_tools: true)
       create(:runner, :api_key, user: user, runner_key: "opencode",
         provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
         config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
@@ -2125,6 +2126,24 @@ RSpec.describe "Projects" do
         expect(response.body).to include('name="project[new_feature_delivery_policy]"')
         expect(response.body).to include('name="project[confidence_delivery_enrollment_enabled]"')
         expect(response.body).to include("Confidence-driven work remains held")
+      end
+
+      it "shows the question-exploration rollout setting, disabled by default" do # @spec QUESTION-EXPLORATION-019
+        project = create(:project, account: account, github_token: github_token)
+
+        expect(project.question_exploration_enabled).to be(false)
+        get edit_project_path(project)
+
+        expect(response.body).to include('name="project[question_exploration_enabled]"')
+        expect(response.body).to include("Enable question exploration conversations")
+      end
+
+      it "updates the question-exploration rollout setting through the settings form" do # @spec QUESTION-EXPLORATION-019
+        project = create(:project, account: account, github_token: github_token)
+
+        patch project_path(project), params: { project: { question_exploration_enabled: true } }
+
+        expect(project.reload.question_exploration_enabled).to be(true)
       end
 
       # @spec GITHUB-SYNC-020

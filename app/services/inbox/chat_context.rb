@@ -203,10 +203,13 @@ module Inbox
     def pull_request_context
       return {} unless issue
 
+      merge_approval = inbox_kind == Queue::MERGE_APPROVAL_KIND ? Inbox::MergeApproval.call(issue) : nil
+
       {
         pull_request: work_item,
         review_phase: issue.pr_review_phase,
-        blockers: issue.auto_merge_blockers,
+        blockers: merge_approval ? merge_approval.guidance.fetch(:blockers) : issue.auto_merge_blockers,
+        merge_approval_guidance: merge_approval&.guidance,
         agent_runs: agent_run_output
       }
     end

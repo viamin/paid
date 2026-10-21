@@ -3,6 +3,14 @@
 require "rails_helper"
 
 RSpec.describe "Mobile inbox API" do
+  around do |example|
+    original_cache = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    example.run
+  ensure
+    Rails.cache = original_cache
+  end
+
   let(:account) { create(:account) }
   let(:user) { create(:user, account:) }
   let(:project) { create(:project, account:, created_by: user, owner: "acme", repo: "mobile") }
@@ -79,6 +87,7 @@ RSpec.describe "Mobile inbox API" do
   # @spec MOBILE-API-008 MOBILE-API-009
   it "re-resolves an entry and opens its native chat" do
     issue
+    stub_github_comments
     entry_id = "clarifying_questions:#{issue.id}"
 
     get "/api/v1/inbox/entries/#{entry_id}", headers: headers
@@ -88,6 +97,44 @@ RSpec.describe "Mobile inbox API" do
     post "/api/v1/inbox/entries/#{entry_id}/chat", headers: headers
     expect(response).to have_http_status(:created)
     expect(response.parsed_body.fetch("chat_session_id")).to be_present
+  end
+
+  # @spec QUESTION-EXPLORATION-012 QUESTION-EXPLORATION-018
+  it "opens the same linked conversation the Inbox detail pane opens, attributed to the bearer" do
+    issue
+    stub_github_comments
+    entry_id = "clarifying_questions:#{issue.id}"
+    html_chat = ClarifyingQuestions::OpenChat.call(issue: issue, user: user)
+
+    post "/api/v1/inbox/entries/#{entry_id}/chat", headers: headers
+
+    expect(response).to have_http_status(:created)
+    expect(response.parsed_body.fetch("chat_session_id")).to eq(html_chat.id)
+    chat = ChatSession.find(html_chat.id)
+    expect(chat.clarifying_question_issue).to eq(issue)
+    expect(chat.created_by).to eq(user)
+  end
+
+  # @spec QUESTION-EXPLORATION-018
+  it "opens the feature conversation for a feature issue on an exploration-enabled project" do
+    project.update!(question_exploration_enabled: true)
+    stub_github_comments
+    feature = create(:feature_intent, project: project)
+    create(:feature_intent_issue, feature_intent: feature, issue: issue)
+    entry_id = "clarifying_questions:#{issue.id}"
+
+    post "/api/v1/inbox/entries/#{entry_id}/chat", headers: headers
+
+    expect(response).to have_http_status(:created)
+    chat = ChatSession.find(response.parsed_body.fetch("chat_session_id"))
+    expect(chat.feature_intent).to eq(feature)
+    expect(chat.metadata["exploration_focus"]).to include("issue_id" => issue.id)
+  end
+
+  def stub_github_comments
+    github_client = instance_double(GithubClient)
+    allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive(:issue_comments).and_return([])
   end
 
   # @spec MOBILE-API-008 MOBILE-API-018
@@ -131,5 +178,31 @@ RSpec.describe "Mobile inbox API" do
 
     expect(response).to have_http_status(:not_found)
     expect(response.parsed_body.dig("error", "code")).to eq("not_found")
+  end
+
+  # @spec FEATURE-APPROVAL-020
+  it "rejects a cancellation without the required structured reason" do
+    feature_intent = create(:feature_intent, project:, status: "discovering", criteria_clarity_state: "pending")
+
+    expect {
+      post "/api/v1/feature_intents/#{feature_intent.id}/cancel", params: {}.to_json,
+        headers: headers.merge("Content-Type" => "application/json")
+    }.to raise_error(Committee::InvalidRequest, /cancellation_reason/)
+
+    expect(feature_intent.reload.status).to eq("discovering")
+  end
+
+  # @spec FEATURE-APPROVAL-020
+  it "rejects a cancellation with a non-http(s) replacement reference" do
+    feature_intent = create(:feature_intent, project:, status: "discovering", criteria_clarity_state: "pending")
+
+    post "/api/v1/feature_intents/#{feature_intent.id}/cancel", params: {
+      cancellation_reason: "already_handled",
+      replacement_reference: "javascript:alert(1)"
+    }.to_json, headers: headers.merge("Content-Type" => "application/json")
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.dig("error", "message")).to eq("Replacement reference must be an http(s) URL")
+    expect(feature_intent.reload.status).to eq("discovering")
   end
 end

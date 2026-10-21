@@ -19,6 +19,22 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
   describe "#call" do
     subject(:prompt) { described_class.new(chat_session: chat_session).call }
 
+    # @spec FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
+    it "presents persisted facet scores and evidence reasoning without assessing during render" do
+      project = create(:project, account: account)
+      chat_session.update!(project: project)
+      facet = create(:feature_intent_facet, feature_intent: create(:feature_intent, project: project))
+      direction = create(:feature_intent_facet_direction, feature_intent_facet: facet)
+      create(:feature_intent_facet_assessment, feature_intent_facet_direction: direction, account: account,
+        evidence_revision: facet.evidence_revision, status: "completed", intent_score: 85, technical_score: 70,
+        explanation: "An explicit requirement is clear; prototype coverage is limited.", evidence_references: [ "chat-1" ])
+      allow(AgentHarness).to receive(:send_message)
+
+      expect(prompt).to include("Facet Confidence", "Intent certainty: 85/100", "Technical confidence: 70/100",
+        "Expressed intent evidence: chat-1", "Inferred fit: assessment interpretation")
+      expect(AgentHarness).not_to have_received(:send_message)
+    end
+
     describe "base identity" do
       subject(:prompt) { prompt_builder.call }
 
@@ -478,6 +494,36 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("1. What is the expected behavior?")
         expect(prompt).to include("2. Should this be behind a flag?")
         expect(prompt).to include("submit_clarifying_answers")
+      end
+
+      describe "feature conversations" do
+        let(:feature) { create(:feature_intent, project: project, title: "Inbox redesign") }
+        let(:focused_issue) do
+          create(:issue, :needs_input, project: project, github_number: 8, title: "Focus question",
+            needs_input_questions: [ "Which storage backend?" ])
+        end
+
+        before do
+          create(:feature_intent_issue, feature_intent: feature, issue: issue)
+          create(:feature_intent_issue, feature_intent: feature, issue: focused_issue)
+        end
+
+        # @spec QUESTION-EXPLORATION-018
+        it "names the shared feature and renders the focused issue's questions" do
+          chat_session.update!(
+            feature_intent: feature,
+            metadata: {
+              "clarifying_question_issue_id" => issue.id,
+              "clarifying_questions" => focused_issue.needs_input_questions,
+              "exploration_focus" => { "issue_id" => focused_issue.id }
+            }
+          )
+
+          expect(prompt).to include("Feature Conversation: Inbox redesign")
+          expect(prompt).to include("Clarifying Questions for Issue #8: Focus question")
+          expect(prompt).to include("1. Which storage backend?")
+          expect(prompt).not_to include("Clarifying Questions for Issue #7")
+        end
       end
 
       # @spec QUESTION-EXPLORATION-008 QUESTION-EXPLORATION-011 FACET-CONFIDENCE-006 FACET-CONFIDENCE-007

@@ -270,6 +270,7 @@ module Screenshots
     CONTROLLER_TARGETS = {
       "dashboard_controller.rb" => [ :dashboard ],
       "inbox_controller.rb" => [ :dashboard ],
+      "design_artifact_findings_controller.rb" => [ :dashboard ],
       "feature_intents_controller.rb" => [ :dashboard ],
       "legacy_inbox_redirects_controller.rb" => [ :dashboard ],
       "home_controller.rb" => [ :dashboard ],
@@ -563,6 +564,7 @@ module Screenshots
       when /\Adevise\// then [ :sign_in ]
       when /\Adashboard\//, "dashboard/show.html.erb" then [ :dashboard ]
       when /\Ainbox\// then [ :dashboard ]
+      when /\Afeature_intents\// then [ :dashboard ]
       when /\Ahome\// then [ :dashboard ]
       when /\Anotifications\// then [ :notifications ]
       when /\Aonboarding\// then [ :onboarding ]

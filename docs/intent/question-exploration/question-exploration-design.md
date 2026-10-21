@@ -40,6 +40,28 @@ actions.
   chat is restored rather than replaced. Its title identifies the linked
   repository and issue or PR number (`Clarifying questions for owner/repo#123`)
   whenever it is created or reopened.
+- `ChatSession#feature_intent` links a feature conversation shared by every
+  issue attached to that feature. When question exploration is enabled for
+  the project, opening an Inbox question on a feature issue reuses the one
+  non-archived conversation for that feature (archived conversations are
+  restored), adopting a pre-existing per-issue linked chat for a feature
+  issue rather than forking context. A standalone issue keeps its own
+  per-issue conversation, and issues in unrelated projects never share one.
+  Opening another issue records a question focus — it must not repoint the
+  conversation's feature or issue linkage. The focus snapshot (issue, pending
+  questions, focusing actor, time) lives in session metadata next to the
+  questions snapshot, and a focus change appends a system notice carrying the
+  newly focused questions so the running transcript stays truthful without
+  rebuilding the persisted system prompt.
+- Question exploration rolls out through `Project#question_exploration_enabled`,
+  initially disabled for every project. The setting gates only the
+  feature-conversation path: the legacy per-issue clarifying chat entry stays
+  available when it is off. Disabling the setting preserves existing
+  conversations, saved answers, evidence, and unrelated run policy — it only
+  changes which conversation subsequent opens select. Authorized HTML, API
+  (mobile `inbox/entries/:id/chat` and the project settings endpoints) and
+  chat-tool (`update_project_settings`) surfaces expose the same toggle with
+  the same policy checks.
 - Extend `ChatMessage` with actor and question/facet context and typed diagram
   references. Keep domain records for answers separate from transcript text;
   archiving a conversation must not destroy the feature's intent. A
@@ -83,7 +105,10 @@ messages, diagrams, subscriptions, investigation tools and preference writes.
 Act as the sending collaborator, not automatically as the session creator;
 recheck membership for queued side effects. Do not expose a personal chat by
 attaching a feature to it. Each UI action has an equivalent structured API/tool
-operation with the same policy checks.
+operation with the same policy checks. Attaching a feature never widens
+visibility of chats that are not already project-scoped exploration
+conversations, and removing a collaborator's project membership removes their
+access to the feature conversation on every transport.
 
 The initial backend treats GitHub-comment authority as the write threshold:
 only a project user who can manage issue comments may open or use the linked

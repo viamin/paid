@@ -97,6 +97,7 @@ class PromptAssembly::BuildIssuePrompt
       PromptAssembly::Sections::ContinuationContext.call(context),
       PromptAssembly::Sections::TrustedComments.call(context),
       PromptAssembly::Sections::ClarifiedRequirements.call(context),
+      PromptAssembly::Sections::AdmittedIntent.call(context),
       PromptAssembly::Sections::ServiceEnvironment.call(context),
       PromptAssembly::Sections::KnowledgeContext.call(context),
       PromptAssembly::Sections::StyleGuides.call(context),

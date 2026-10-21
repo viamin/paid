@@ -62,6 +62,15 @@ RSpec.describe IntentConformance::Signal do
 
         expect(described_class.ok?(project: project, issue: issue, head_sha: "sha2")).to be(false)
       end
+
+      # @spec CONFIDENCE-DELIVERY-010
+      it "does not require approval-gated conformance for a confidence-driven feature" do
+        feature = create(:feature_intent, :confidence_driven, project: project)
+        create(:feature_intent_issue, feature_intent: feature, issue: issue)
+        create(:intent_conformance_verdict, :material_drift, issue: issue, pr_head_sha: "sha1")
+
+        expect(described_class.ok?(project: project, issue: issue, head_sha: "sha1")).to be(true)
+      end
     end
   end
 end

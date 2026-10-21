@@ -145,10 +145,32 @@
 
 ## Inbox surface
 
+- [x] **FEATURE-APPROVAL-020** — When an Inbox-authorized member declines an
+  eligible feature proposal, including one in `discovering` with a pending
+  clarity assessment, the system SHALL require a structured reason, optionally
+  retain its replacement issue/PR/feature reference, record the actor and time,
+  and transition the existing intent to `cancelled` without deleting its brief,
+  links, design evidence, or approval history. The active Inbox and badge count
+  SHALL remove it, while sync/reconciliation SHALL preserve the terminal state.
+  Declining SHALL not close linked issues, cancel runs, release held work, or
+  imply replacement implementation is complete. An authorized member SHALL be
+  able to reopen a cancelled intent to held `discovering`. A membership-scoped
+  feature-proposals surface SHALL retain background proposals for decline and
+  cancelled proposals for authorized reopening, without adding either to the
+  action Inbox. The feature-decision
+  Inbox lane SHALL contain only approval-ready intents or intents with an open
+  recorded human decision; pending automated assessment and background discovery
+  alone are not human actions.
+  *Tests:* `spec/requests/feature_intents_spec.rb`,
+  `spec/services/inbox/queue_spec.rb`.
+  *Code:* `app/models/feature_intent.rb`,
+  `app/services/feature_intents/cancel.rb`,
+  `app/services/feature_intents/reopen.rb`, `app/services/inbox/queue.rb`.
+
 - [x] **FEATURE-APPROVAL-013** — For approval-gated features, `Inbox::Queue` SHALL expose a
-  `feature_decision` entry for every `FeatureIntent` whose status is not
-  `released`, `revising`, or `cancelled` (including `approved_waiting_for_merge`,
-  since a stale head after approval reopens the hold). Unlike every other
+  `feature_decision` entry for every approval-ready `FeatureIntent`, every intent
+  with an open recorded human decision, and every `approved_waiting_for_merge`
+  intent with a stale required design-PR head. Unlike every other
   Inbox kind, these entries SHALL use project-membership visibility
   (`FeatureIntentPolicy::Scope`, the same pattern as `plan_review_entries`)
   rather than the account+owner-scoped `scoped_projects` used by
@@ -181,8 +203,15 @@
   examines RDR artifacts using the project's configured `rdr_convention`
   directory and filename pattern (defaulting to `docs/rdrs/RDR-*.md`) or open design PRs at
   a pinned revision,
-  the system SHALL classify declared issue-tree evidence as missing, partial,
-  stale/unlinked, deliberately deferred, or unverifiable. Failed or partial
+  the system SHALL compare declared issue-tree evidence with existing open and
+  closed synchronized issues, stored identities, canonical manifests, and exact
+  artifact backlinks before classifying a gap. It SHALL retain an evidence-backed
+  local association with its provenance and assessed revisions when structural
+  evidence is unambiguous; this resolves a finding without repairing the document.
+  The system SHALL classify declared issue-tree evidence as missing, partial,
+  stale/unlinked, deliberately deferred (including explicitly historical decisions),
+  or unverifiable. Closed work alone SHALL NOT establish semantic implementation
+  coverage. Failed or partial
   GitHub reads SHALL yield `unverifiable`, not an absence finding, and SHALL
   NOT resolve a prior open finding for the artifact; draft and
   superseded/deferred artifacts SHALL not be treated as missing merely from
@@ -194,7 +223,11 @@
   SHALL NOT resolve prior findings. Open findings SHALL appear as authorized
   Inbox traceability-gap work, including their pinned revision and evidence;
   Inbox badge and filter caches SHALL invalidate when a finding enters or
-  leaves the open state.
+  leaves the open state. Semantic candidate assessment SHALL use `agent_harness`
+  only after structural evidence is exhausted and be cached by assessed revisions;
+  the existing daily sweep remains the bounded fallback for unchanged inputs.
+  Issue coverage SHALL load shared project records separately from issue rows,
+  so project audit history is not duplicated for every synchronized issue.
   *Tests:* `spec/services/feature_intents/reconcile_design_artifacts_spec.rb`,
   `spec/jobs/feature_intents/reconcile_design_artifacts_job_spec.rb`,
   `spec/jobs/feature_intents/design_artifact_reconciliation_sweep_job_spec.rb`.
@@ -318,21 +351,31 @@
   *Tests:* `spec/services/feature_intents/attach_from_agent_run_spec.rb`.
   *Code:* `app/services/feature_intents/attach_from_agent_run.rb`.
 
-- [ ] **FEATURE-APPROVAL-019** — For approval-gated features, the run
-  path SHALL record `FeatureIntentDecision` rows on the `FeatureIntent`
-  only when the run's own summary explicitly contains the question or
-  the `[inferred]` decision; absent decisions SHALL surface as the
-  truthful "no questions" state in the Inbox detail view, not a
-  fabricated default. Currently the design-doc section "Evidence grounding"
-  describes this behavior but the recording code path does not ship
-  (`FeatureIntents::AttachFromAgentRun` does not parse the run summary
-  for questions/inferred decisions); the Inbox decision-listing section
-  is therefore still empty for every project. This spec is the gap
-  marker — code/tests land in the follow-up that implements the
-  decision-recording path.
-  *Tests:* (none — pending implementation).
-  *Code:* (none — pending implementation; tracks alongside
-  `app/services/feature_intents/attach_from_agent_run.rb`).
+- [x] **FEATURE-APPROVAL-019** — For approval-gated features, when a
+  `create_feature` (or chained `lid_planning`) run completes and opens its
+  docs-only PR, the run path SHALL parse the run's recorded output for an
+  explicitly emitted structured decisions block and SHALL record each
+  emitted clarifying question and `[inferred]` decision as a
+  `FeatureIntentDecision` row bound to the design claim it affects and to
+  the run that emitted it. Inferred decisions SHALL carry the `[inferred]`
+  flag in their prompt text so a human can confirm or reject them through
+  the Inbox (FEATURE-APPROVAL-007). The parser SHALL record nothing the run
+  did not explicitly emit: a run whose output contains no decisions block
+  produces no rows, and malformed or incomplete items are skipped rather
+  than repaired. Recording open decisions SHALL move the feature to
+  `needs_decision`; a criteria-clarity evaluation that returns `clear` with
+  every decision resolved SHALL move it to `ready_for_approval`
+  (transitioning from `design_open`/`needs_decision` only — the clarity job
+  never touches approved or terminal features). Recording is idempotent per
+  run: a retried run never duplicates its own decisions.
+  *Tests:* `spec/services/feature_intents/run_decision_emissions_spec.rb`,
+  `spec/services/feature_intents/record_run_decisions_spec.rb`,
+  `spec/services/feature_intents/evaluate_criteria_clarity_spec.rb`,
+  `spec/temporal/activities/create_pull_request_activity_spec.rb`.
+  *Code:* `app/services/feature_intents/run_decision_emissions.rb`,
+  `app/services/feature_intents/record_run_decisions.rb`,
+  `app/temporal/activities/create_pull_request_activity.rb`,
+  `app/models/feature_intent.rb`.
 
 ## Immutable approval and release
 

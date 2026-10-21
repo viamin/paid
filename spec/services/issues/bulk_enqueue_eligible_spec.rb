@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Issues::BulkEnqueueEligible, :no_db do
+RSpec.describe Issues::BulkEnqueueEligible do
   let(:project_class) { Struct.new(:id, :auto_pick_enabled?) }
   let(:issue_class) { Struct.new(:id) }
   let(:run_class) { Struct.new(:issue, :previously_new_record?) }
@@ -14,6 +14,7 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
   let(:auto_pick_enabled) { true }
 
   before do
+    allow(service).to receive(:release_confidence_delivery_holds)
     allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(true)
     allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:eligible_scope)
       .with(project)
@@ -42,6 +43,7 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
     result = service.call
 
     expect(result).to eq([ first_run, second_run ])
+    expect(service).to have_received(:release_confidence_delivery_holds)
   end
 
   it "returns early when auto_pick is disabled" do
@@ -143,5 +145,71 @@ RSpec.describe Issues::BulkEnqueueEligible, :no_db do
     expect(result).to eq([ existing_run, created_run ])
     expect(Issues::EnqueueEligible).to have_received(:call)
       .with(third_issue, project: project, skip_project_gate: true)
+  end
+
+  describe "#release_confidence_delivery_holds" do
+    let(:project) { create(:project) }
+
+    before do
+      allow(service).to receive(:release_confidence_delivery_holds).and_call_original
+    end
+
+    it "reconciles each held confidence-delivery issue once, however many unreleased links serve it" do
+      held_issue = create(:issue, project: project, labels: [])
+      feature = create(:feature_intent, :confidence_driven, project: project)
+      create(:feature_intent_issue, feature_intent: feature, issue: held_issue, release_state: "held")
+      second_feature = create(:feature_intent, :confidence_driven, project: project)
+      create(:feature_intent_issue, feature_intent: second_feature, issue: held_issue, release_state: "pending")
+      allow(FeatureIntents::ReleaseIssue).to receive(:call)
+
+      service.send(:release_confidence_delivery_holds)
+
+      expect(FeatureIntents::ReleaseIssue).to have_received(:call).once.with(issue: held_issue)
+    end
+
+    # @spec CONFIDENCE-DELIVERY-006
+    it "also reconciles fully released issues whose planning label was re-added externally" do
+      reheld_issue = create(:issue, project: project, labels: [ "planning" ])
+      feature = create(:feature_intent, :confidence_driven, project: project)
+      create(:feature_intent_issue, feature_intent: feature, issue: reheld_issue, release_state: "released")
+      allow(FeatureIntents::ReleaseIssue).to receive(:call)
+
+      service.send(:release_confidence_delivery_holds)
+
+      expect(FeatureIntents::ReleaseIssue).to have_received(:call).once.with(issue: reheld_issue)
+    end
+
+    it "reconciles an issue only once when it is both unreleased and carries a stale planning label" do
+      held_issue = create(:issue, project: project, labels: [ "planning" ])
+      feature = create(:feature_intent, :confidence_driven, project: project)
+      create(:feature_intent_issue, feature_intent: feature, issue: held_issue, release_state: "held")
+      allow(FeatureIntents::ReleaseIssue).to receive(:call)
+
+      service.send(:release_confidence_delivery_holds)
+
+      expect(FeatureIntents::ReleaseIssue).to have_received(:call).once.with(issue: held_issue)
+    end
+
+    it "selects only this project's unreleased links and released planning-label projections" do
+      held_issue = create(:issue, project: project, labels: [])
+      held_feature = create(:feature_intent, :confidence_driven, project: project)
+      create(:feature_intent_issue, feature_intent: held_feature, issue: held_issue, release_state: "held")
+      reheld_issue = create(:issue, project: project, labels: [ "planning" ])
+      released_feature = create(:feature_intent, :confidence_driven, project: project)
+      create(:feature_intent_issue, feature_intent: released_feature, issue: reheld_issue, release_state: "released")
+      unlabelled_issue = create(:issue, project: project, labels: [])
+      create(:feature_intent_issue, feature_intent: released_feature, issue: unlabelled_issue, release_state: "released")
+      other_project = create(:project)
+      other_issue = create(:issue, project: other_project, labels: [ "planning" ])
+      other_feature = create(:feature_intent, :confidence_driven, project: other_project)
+      create(:feature_intent_issue, feature_intent: other_feature, issue: other_issue, release_state: "held")
+      allow(FeatureIntents::ReleaseIssue).to receive(:call)
+
+      service.send(:release_confidence_delivery_holds)
+
+      expect(FeatureIntents::ReleaseIssue).to have_received(:call).twice
+      expect(FeatureIntents::ReleaseIssue).to have_received(:call).with(issue: held_issue)
+      expect(FeatureIntents::ReleaseIssue).to have_received(:call).with(issue: reheld_issue)
+    end
   end
 end

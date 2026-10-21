@@ -149,11 +149,11 @@ RSpec.describe FeatureIntents::ScopedReadiness do
     expect(result).to be_ready
   end
 
-  it "never releases work while the RDR-070 shadow-mode guard remains active" do
+  it "marks a passing assessment as releasable now that the RDR-071 release path is live" do
     result = described_class.call(project:, mapping: mapping)
 
     expect(result).to be_ready
-    expect(result).to be_shadow_only
-    expect(result).not_to be_releasable
+    expect(result).not_to be_shadow_only
+    expect(result).to be_releasable
   end
 end

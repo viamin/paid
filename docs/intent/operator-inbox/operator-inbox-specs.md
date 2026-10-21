@@ -41,10 +41,30 @@
   per-PR auto-merge activation excludes the PR from this manual-action lane even
   when the project mode is `off`, because it authorizes the scanner's automatic
   merge path; a structured hold remains visible and blocks that path.
+  Guidance SHALL be derived from the structured hold, approval freshness,
+  remaining blockers, and effective per-PR auto-merge activation state — never
+  from a rendered summary. When a recorded approval is stale, the Inbox SHALL
+  say that commits were added after it even if GitHub still displays Approved,
+  and show approved/current revisions, assessment time, and a comparison link
+  when the scan captured that evidence. Each blocking approval (owner and any
+  configured manual reviewer, evaluated independently — see AUTO-MERGE-006)
+  that failed freshness SHALL be surfaced with its approver login and
+  per-approver comparison link, so a fresh owner re-approval does not mask a
+  stale configured manual reviewer approval (#4519). With automatic merge
+  inactive, guidance SHALL direct the operator to review the current changes
+  and make the manual merge decision on GitHub; re-approval alone SHALL NOT
+  be described as triggering a Paid merge. With automatic merge active, it
+  SHALL say that current-revision approval causes a later scan to reevaluate
+  subject to remaining checks and policy, not promise a merge. The web
+  detail, API, chat context, and displayed blocker next actions SHALL use
+  the same guidance.
   *Code:* `app/services/inbox/merge_approval.rb`, `app/services/inbox/queue.rb`,
-  `app/services/inbox/count.rb`, `app/services/inbox/availability.rb`.
+  `app/services/inbox/count.rb`, `app/services/inbox/availability.rb`,
+  `app/views/dashboard/_inbox_detail_merge_approval.html.erb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
-  `spec/services/inbox/availability_spec.rb`, `spec/requests/inbox_spec.rb`.
+  `spec/services/inbox/availability_spec.rb`, `spec/requests/inbox_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002B** — When a visible notification is active and
   `blocking: true`, the system SHALL expose it as an `action_required` inbox
@@ -57,8 +77,14 @@
   guidance. Informational status/history notifications, including automatic
   code-scanning verification waits, SHALL remain outside this lane and its
   badge; credential and configuration notifications that require an operator
-  correction remain blocking entries.
-  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`.
+  correction remain blocking entries. The detail pane's full-page
+  destinations — the linked action URL (`notification.action_url`) and the
+  "View Agent Run" link for `AgentRun` subjects — SHALL opt out of the
+  `inbox-detail` Turbo frame (`data-turbo-frame="_top"`) so they navigate the
+  full page instead of leaving a "Content missing" placeholder in the pane
+  (#4501); external GitHub links keep their `target="_blank"` behavior.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/views/dashboard/_inbox_detail_action_required.html.erb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
 
@@ -610,3 +636,26 @@
   request SHALL recheck entry visibility and lane membership and render an
   empty frame if the entry is no longer available.
   *Test:* `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-018** — When reconciliation leaves an open
+  traceability finding after structural matching, the Inbox SHALL explain in
+  plain language whether it is missing linkage, potentially missing/partial
+  work, stale metadata, deliberate deferral, or unavailable coverage. It
+  SHALL show the pinned artifact/revision, last successful coverage, cited
+  evidence and a direct GitHub link, and SHALL state that missing links do
+  not prove missing implementation and closed work does not prove delivery.
+  An authorized operator SHALL be able to link an existing project issue,
+  repair stale document links through a focused design PR, defer, dismiss/not-applicable, or recheck with a required reason where a
+  decision is made. The write SHALL verify the pinned revision and project
+  ownership, retain actor/provenance, remove the item from the unassigned
+  queue without claiming a repair, and remain pending until reconciliation
+  verifies resolution. Unavailable coverage SHALL offer access/retry guidance
+  instead of a new-implementation recommendation. Chat is optional and does
+  not substitute for the decision workflow. The API SHALL expose the same
+  authorized resolution operation and resulting decision state.
+  *Code:* `DesignArtifactFindings::Resolve`,
+  `DesignArtifactFindingsController`,
+  `Api::V1::DesignArtifactFindingsController`,
+  `app/views/dashboard/_inbox_detail_traceability_gap.html.erb`.
+  *Test:* `spec/services/design_artifact_findings/resolve_spec.rb`,
+  `spec/requests/inbox_spec.rb`.

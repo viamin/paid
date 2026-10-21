@@ -112,7 +112,8 @@ reviewable settings plan. The mode composes with — never replaces — the
 project's independent auto-merge and TDD test-review choices.
 
 Onboarding itself is planned to become chat-led: a fresh account picks a
-provider API key first, lands in a working chat, and is walked through the
+provider API key first, lands in a working Low-tier chat with an auditable
+concrete model choice, and is walked through the
 rest of a minimal setup — an agent-run runner, a GitHub project and
 credential, optional Linear, and an operating profile — adapting to what the
 user reports using, with the existing step forms remaining as a fallback. See

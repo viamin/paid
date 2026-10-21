@@ -14,7 +14,7 @@ module Tools
     end
 
     def self.available_for_chat?(user:, session:)
-      issue = session&.clarifying_question_issue
+      issue = session&.exploration_issue
       issue.present? && policy_allows?(user:, record: issue.project, query: :update?, policy_class: ProjectPolicy)
     end
 
@@ -49,7 +49,7 @@ module Tools
     private
 
     def project_for_session
-      session.clarifying_question_issue&.project || raise(ArgumentError, "This chat is not linked to clarifying questions")
+      session.exploration_issue&.project || raise(ArgumentError, "This chat is not linked to clarifying questions")
     end
   end
 end

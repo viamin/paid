@@ -60,7 +60,7 @@ module IntentConformance
     attr_reader :project, :issue, :pr_head_sha
 
     def applicable?
-      feature_intent.present? && enforcement_enabled?
+      feature_intent.present? && feature_intent.approval_gated? && enforcement_enabled?
     end
 
     def enforcement_enabled?
