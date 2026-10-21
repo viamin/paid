@@ -230,6 +230,16 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     )
   end
 
+  # @spec APP-DIAGNOSTICS-001
+  it "redacts secrets before persisting the app log tail" do
+    File.write(result_path, JSON.generate(status: "passed"))
+    File.write(log_path, "boot token=super-secret-value\n")
+
+    described_class.call(agent_run:, repo_path:)
+
+    expect(agent_run.reload.verification_result.fetch("app_log_tail")).to include("[REDACTED")
+  end
+
   it "records a fallback status when no verification result file exists" do
     described_class.call(
       agent_run:,

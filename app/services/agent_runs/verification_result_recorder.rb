@@ -457,7 +457,7 @@ module AgentRuns
     def normalize_log_tail(content, max_lines:)
       content = content.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "")
       lines = content.lines.last(max_lines)
-      lines.join.presence
+      AgentRuns::Research::SecretGuard.redact_text(lines.join).presence
     end
 
     def cleanup_transient_files
