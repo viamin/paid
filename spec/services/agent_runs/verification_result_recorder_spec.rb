@@ -48,6 +48,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
   end
 
   before do
+    allow(ArtifactStorage).to receive(:configured?).and_return(false)
     FileUtils.mkdir_p(File.dirname(result_path))
   end
 
