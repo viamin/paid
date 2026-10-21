@@ -530,6 +530,9 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Merge Conflicts")
       expect(prompt).to include("git merge origin/main")
       expect(prompt).to include("resolve all conflicts")
+      expect(prompt).to include("Repair scope is limited to integrating `main` and resolving")
+      expect(prompt).to include("Do not add unrelated dependencies, tooling, product")
+      expect(prompt).to include("stop and report the specific path and reason")
     end
   end
 
