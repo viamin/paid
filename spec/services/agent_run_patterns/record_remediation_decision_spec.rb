@@ -163,4 +163,20 @@ RSpec.describe AgentRunPatterns::RecordRemediationDecision do
       occurrence_count: 2
     )
   end
+
+  # @spec RUN-OBSTACLE-003
+  it "preserves a reasoned dismissal after the proposed-decision dedupe window" do
+    decision = described_class.call(account: account, pattern: pattern, diagnosis: diagnosis)
+    decision.update!(status: "dismissed", dismissal_reason: "Known upstream outage", dismissed_at: Time.current)
+    decision.update_columns(created_at: 25.hours.ago)
+
+    repeated = described_class.call(account: account, pattern: pattern, diagnosis: diagnosis)
+
+    expect(repeated).to have_attributes(
+      id: decision.id,
+      status: "dismissed",
+      dismissal_reason: "Known upstream outage",
+      occurrence_count: 2
+    )
+  end
 end

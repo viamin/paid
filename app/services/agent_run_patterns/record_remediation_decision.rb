@@ -35,13 +35,7 @@ module AgentRunPatterns
       recorded_at = Time.current
 
       RemediationDecision.transaction do
-        existing = RemediationDecision
-          .where(dedupe_scope)
-          .where(status: %w[proposed dismissed])
-          .where("created_at >= ?", DEDUPE_WINDOW.ago)
-          .order(created_at: :desc)
-          .lock
-          .first
+        existing = dismissed_decision || recent_proposed_decision
 
         if existing
           update_existing_decision(existing, recorded_at)
@@ -54,6 +48,20 @@ module AgentRunPatterns
     private
 
     attr_reader :account, :diagnosis, :pattern
+
+    def dismissed_decision
+      RemediationDecision.where(dedupe_scope).where(status: "dismissed").order(created_at: :desc).lock.first
+    end
+
+    def recent_proposed_decision
+      RemediationDecision
+        .where(dedupe_scope)
+        .where(status: "proposed")
+        .where("created_at >= ?", DEDUPE_WINDOW.ago)
+        .order(created_at: :desc)
+        .lock
+        .first
+    end
 
     def update_existing_decision(decision, recorded_at)
       decision.assign_attributes(

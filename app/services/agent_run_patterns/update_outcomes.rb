@@ -65,7 +65,7 @@ module AgentRunPatterns
       failures = scope.where(status: AgentRun::FAILURE_STATUSES)
       return failures.count unless pattern_type == "error_cluster"
 
-      failures.count { |run| matching_error_pattern?(run, decision) }
+      error_cluster_failure_count(failures, decision)
     end
 
     # Mirrors AgentRunPatterns::Detect#detect_failure_streak: count only the
@@ -79,11 +79,29 @@ module AgentRunPatterns
         .size
     end
 
-    def matching_error_pattern?(run, decision)
+    def error_cluster_failure_count(failures, decision)
+      runs = failures.to_a
+      provider_failure_categories = provider_failure_categories_for(runs, decision)
+
+      runs.count { |run| matching_error_pattern?(run, decision, provider_failure_categories) }
+    end
+
+    def provider_failure_categories_for(runs, decision)
+      return {} unless decision.proposal_context["error_pattern"].to_s.start_with?(AgentRunPatterns::Detect::ANALYZE_ISSUE_PROVIDER_EXHAUSTION_PREFIX)
+
+      exhaustion_run_ids = runs.filter_map do |run|
+        run.id if AgentRunPatterns::Detect.analyze_issue_provider_exhaustion?(run, run.error_message.to_s)
+      end
+      return {} if exhaustion_run_ids.empty?
+
+      AgentRunLog.provider_failure_categories_by_run(exhaustion_run_ids)
+    end
+
+    def matching_error_pattern?(run, decision, provider_failure_categories)
       error_pattern = decision.proposal_context["error_pattern"]
       return true if error_pattern.blank?
 
-      AgentRunPatterns::Detect.normalize_error(run.error_message.to_s) == error_pattern
+      AgentRunPatterns::Detect.error_pattern_for(run, provider_failure_categories:) == error_pattern
     end
 
     def window_end(decision)

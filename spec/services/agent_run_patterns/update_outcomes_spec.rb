@@ -182,6 +182,35 @@ RSpec.describe AgentRunPatterns::UpdateOutcomes do
   end
 
   # @spec RUN-OBSTACLE-005
+  it "counts provider-exhaustion failures by their structured categories" do
+    decision = create(
+      :remediation_decision,
+      account: account,
+      status: "applied",
+      applied_at: 1.hour.ago,
+      pre_remediation_failure_count: 2,
+      pre_remediation_exposure_count: 2,
+      proposal_context: {
+        "goal" => "analyze_issue",
+        "pattern_type" => "error_cluster",
+        "error_pattern" => "All issue-analysis providers exhausted: provider_auth, rate_limited",
+        "window_hours" => 6
+      }
+    )
+    create_list(:agent_run, 2, :completed, project: project, goal: "analyze_issue", completed_at: 30.minutes.ago)
+    create_provider_exhaustion_run
+    create_provider_exhaustion_run
+
+    described_class.call(account: account)
+
+    expect(decision.reload).to have_attributes(
+      post_remediation_failure_count: 2,
+      post_remediation_exposure_count: 4,
+      outcome: "unchanged"
+    )
+  end
+
+  # @spec RUN-OBSTACLE-005
   it "uses the detected fingerprint for applied decisions created before proposal context existed" do
     decision = create_legacy_applied_decision
 
@@ -213,6 +242,21 @@ RSpec.describe AgentRunPatterns::UpdateOutcomes do
   def create_error_cluster_runs
     create(:agent_run, :failed, project: project, goal: "enhance_issue", error_message: "quota exhausted 7", completed_at: 30.minutes.ago)
     create_list(:agent_run, 3, :failed, project: project, goal: "enhance_issue", error_message: "unrelated failure", completed_at: 30.minutes.ago)
+  end
+
+  def create_provider_exhaustion_run
+    run = create(
+      :agent_run,
+      :failed,
+      project: project,
+      goal: "analyze_issue",
+      error_message: "All issue-analysis providers exhausted: openai (provider_auth), anthropic (rate_limited)",
+      completed_at: 30.minutes.ago
+    )
+    create(:agent_run_log, :system, agent_run: run,
+      metadata: { type: AgentRunLog::PROVIDER_FAILURE_TYPE, failure_category: "provider_auth" })
+    create(:agent_run_log, :system, agent_run: run,
+      metadata: { type: AgentRunLog::PROVIDER_FAILURE_TYPE, failure_category: "rate_limited" })
   end
 
   def create_legacy_applied_decision
