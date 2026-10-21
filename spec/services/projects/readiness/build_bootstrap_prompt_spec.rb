@@ -9,6 +9,7 @@ RSpec.describe Projects::Readiness::BuildBootstrapPrompt do
       project = build(
         :project,
         tdd_mode: "off",
+        screenshot_settings: { "verification_enabled" => true },
         readiness_gaps: [ {
           "kind" => "verification_configuration_invalid",
           "description" => "Interactive verification configuration is invalid and must be repaired."
@@ -25,6 +26,7 @@ RSpec.describe Projects::Readiness::BuildBootstrapPrompt do
     it "frames test-harness setup around runnable test execution" do
       project = build(
         :project,
+        tdd_mode: "strict",
         readiness_gaps: [ {
           "kind" => "missing_ci",
           "description" => "TDD requires a CI configuration."
@@ -41,6 +43,8 @@ RSpec.describe Projects::Readiness::BuildBootstrapPrompt do
     it "includes each capability's setup instruction when both have gaps" do
       project = build(
         :project,
+        tdd_mode: "strict",
+        screenshot_settings: { "verification_enabled" => true },
         readiness_gaps: [
           { "kind" => "missing_ci", "description" => "TDD requires a CI configuration." },
           { "kind" => "app_start_command_unavailable", "description" => "Interactive verification needs a start command." }

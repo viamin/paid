@@ -1612,6 +1612,20 @@ RSpec.describe Inbox::Queue do
     )
   end
 
+  # An agent run carrying the recorder-owned verification setup observation the
+  # setup Inbox detail renders (PROJECT-READINESS-012).
+  def create_run_with_setup_observation(project:, reason:, revision:, observed_at:, created_at:)
+    run = create(:agent_run, project:, status: "failed", created_at:)
+    observation = {
+      "reason" => reason,
+      "agent_run_id" => run.id,
+      "checkout_revision" => revision,
+      "observed_at" => observed_at
+    }
+    run.update!(verification_result: { "reason" => reason, "readiness_observation" => observation })
+    run
+  end
+
   # An open issue with a merged partial PR (no closing reference) linked via
   # parent_issue_id — the canonical partial-closeout stall from #4120.
   def create_partial_closeout_issue(github_number:, merged_pr_number: 14, **attrs)
@@ -1757,19 +1771,17 @@ RSpec.describe Inbox::Queue do
       account = create(:account)
       user = create(:user, account: account)
       project = create(:project, account:, created_by: user, tdd_mode: "off",
+        screenshot_settings: { "verification_enabled" => true },
         readiness_gaps: [ { "kind" => "app_start_command_unavailable", "description" => "Start the app." } ])
-      create(:agent_run, project:, verification_result: {
-        "readiness_observation" => {
-          "reason" => "app_start_command_unavailable",
-          "agent_run_id" => 123,
-          "checkout_revision" => "target-sha",
-          "observed_at" => Time.current.iso8601
-        }
-      })
+      create_run_with_setup_observation(project:, reason: "app_start_command_unavailable", revision: "stale-sha",
+        observed_at: 1.hour.ago.iso8601, created_at: 1.hour.ago)
+      newest = create_run_with_setup_observation(project:, reason: "app_start_command_unavailable",
+        revision: "target-sha", observed_at: Time.current.iso8601, created_at: 3.hours.ago)
 
       entry = described_class.call(user:, kind: described_class::PROJECT_SETUP_PENDING_KIND).sole
 
-      expect(entry.latest_verification_setup_observation).to include("checkout_revision" => "target-sha")
+      expect(entry.latest_verification_setup_observation)
+        .to include("checkout_revision" => "target-sha", "agent_run_id" => newest.id)
     end
   end
 end

@@ -494,6 +494,11 @@ class Project < ApplicationRecord
     readiness_gaps.select { |gap| readiness_gap_active?(gap) }
   end
 
+  # @spec PROJECT-READINESS-005 PROJECT-READINESS-012
+  def active_readiness_gap_kinds
+    active_readiness_gaps.filter_map { |gap| readiness_gap_kind(gap) }
+  end
+
   def readiness_gap_descriptions
     active_readiness_gaps.filter_map { |gap| gap["description"] || gap[:description] }
   end

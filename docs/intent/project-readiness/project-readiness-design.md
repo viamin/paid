@@ -58,10 +58,14 @@ whose enabled capabilities have no gaps, has no entry. This lane is visible
 using the same authorized-project scope as other owner-scoped Inbox lanes and
 deliberately does not depend on `auto_pick_enabled`.
 
-The detail also exposes the newest relevant verification setup observation.
-That observation is diagnostic evidence, not a readiness latch: a later
-target-branch evaluation replaces repository gaps from checkout evidence, and
-a recovered browser or service needs no cleanup action.
+The detail also exposes the newest relevant verification setup observation,
+selected by the observation's own recorded time rather than the run's creation
+time: an older, long-running run can record its setup failure after a newer run
+already recorded one. Runs without a recorded observation time are the last
+resort, and no run-count cutoff may hide a later observation. That observation
+is diagnostic evidence, not a readiness latch: a later target-branch evaluation
+replaces repository gaps from checkout evidence, and a recovered browser or
+service needs no cleanup action.
 
 Evaluation is queued when readiness-relevant settings change (TDD mode,
 verification settings), when a project's service-container associations change

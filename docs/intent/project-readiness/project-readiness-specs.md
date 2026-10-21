@@ -133,11 +133,14 @@ prefix: PROJECT-READINESS
 
 - [x] **PROJECT-READINESS-012** — When verification setup fails at runtime,
   the system SHALL retain its reason, agent run, checkout revision, and
-  observed time and show it alongside the related actionable setup gap. A
-  merged authorized bootstrap PR SHALL clear configuration-derived gaps only
-  after target-branch re-evaluation; it SHALL not trigger automatic bootstrap
-  or retry.
-  *Code:* `AgentRuns::VerificationResultRecorder`, `Inbox::Queue`,
+  observed time and show the newest such observation — ordered by that recorded
+  observation time rather than the run's creation time — alongside the related
+  actionable setup gap. A merged authorized bootstrap PR SHALL clear
+  configuration-derived gaps only after target-branch re-evaluation; it SHALL
+  not trigger automatic bootstrap or retry.
+  *Code:* `AgentRuns::VerificationResultRecorder`,
+  `Inbox::LatestVerificationSetupObservation`, `Inbox::Queue`,
   `dashboard/_inbox_detail_project_setup_pending`.
   *Test:* `spec/services/agent_runs/verification_result_recorder_spec.rb`,
+  `spec/services/inbox/latest_verification_setup_observation_spec.rb`,
   `spec/services/inbox/queue_spec.rb`, `spec/services/projects/readiness/record_spec.rb`.

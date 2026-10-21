@@ -71,7 +71,7 @@ module Projects
       end
 
       def gap_kinds
-        project.active_readiness_gaps.filter_map { |gap| gap["kind"] || gap[:kind] }
+        project.active_readiness_gap_kinds
       end
     end
   end
