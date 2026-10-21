@@ -8,7 +8,7 @@
 - **Status**: Partially Implemented, Partially Superseded
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: #3113 (Gitleaks secret scanning — closed, shipped via #3123), #3114 (Zizmor workflow security scanning — closed, shipped via this change)
+- **Related Issues**: #3113 (Gitleaks secret scanning — closed, shipped via [PR 3123](https://github.com/viamin/paid/pull/3123)), #3114 (Zizmor workflow security scanning — closed, shipped via this change)
 - **Related Tests**: Hook execution tests, CI pipeline tests, linter integration tests
 
 ## Implementation Status

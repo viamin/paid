@@ -8,7 +8,7 @@
 - **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: Medium
-- **Related Issues**: N/A (foundational decision)
+- **Related Issues**: #9, #10, #3181 (original implementation and subsequent LID backfill; historical linkage, not a new acceptance audit)
 - **Related Tests**: Authorization policy tests, account scoping tests
 
 ## Implementation Status

@@ -4,6 +4,8 @@
 
 ## Metadata
 
+- **Related Issues**: #1416, #1417, #1418, #1419, #1420, #1421, #2711, #3184
+
 - **Date**: 2026-04-23
 - **Status**: Implemented
 - **Type**: Architecture

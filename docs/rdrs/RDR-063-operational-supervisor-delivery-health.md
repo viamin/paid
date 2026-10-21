@@ -10,7 +10,7 @@
 - **Priority**: P1
 - **Related RDRs**: [RDR-011](RDR-011-observability.md) (Observability Stack), [RDR-015](RDR-015-end-to-end-optimization.md) (End-to-End Outcome Optimization), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization Architecture), [RDR-047](RDR-047-work-category-queue-priority.md) (Work-Category-Aware Queue Priority), [RDR-049](RDR-049-configuration-health-checks.md) (Configuration Health Checks), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-054](RDR-054-prompt-assembly-service.md) (Prompt Assembly Service)
 - **Related Intent**: TBD
-- **Related Issues**: TBD
+- **Related Issues**: #4341 (planning work; implementation remains subject to design and release gates)
 - **Related Tests**: TBD
 
 ## Problem Statement

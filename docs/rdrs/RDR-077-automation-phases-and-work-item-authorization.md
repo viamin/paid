@@ -2,6 +2,8 @@
 
 ## Metadata
 
+- **Related Issues**: #4509, #4510, #4511, #4512, #4513, #4514, #4515, #4516, #4517, #4518 (planning work; implementation remains subject to design and release gates)
+
 - **Date**: 2026-10-17
 - **Status**: Draft
 - **Type**: Architecture + Automation + Inbox UX

@@ -8,7 +8,7 @@
 - **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: Medium
-- **Related Issues**: N/A (foundational decision)
+- **Related Issues**: #139, #140, #3183 (original implementation and subsequent LID backfill; historical linkage, not a new acceptance audit)
 - **Related Tests**: Meta-agent tests, fallback logic tests
 
 ## Implementation Status
