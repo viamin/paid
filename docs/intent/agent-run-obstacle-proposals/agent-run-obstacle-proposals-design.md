@@ -51,7 +51,9 @@ fingerprint identity where available, and window represented by the proposal.
 It records before/after failure and exposure counts. It reports
 `insufficient_evidence` until the after period has comparable exposure, and
 reports improvement/unchanged/regression as observed recurrence only, not
-causal proof.
+causal proof. Once that bounded after period closes, an
+`insufficient_evidence` outcome is terminal: no new comparable evidence can
+enter the closed window.
 
 ## Boundaries
 

@@ -27,4 +27,6 @@ prefix: RUN-OBSTACLE
 - [x] **RUN-OBSTACLE-005** — When an accepted correction is evaluated, Paid
   SHALL record before/after failure and exposure samples from comparable scope;
   it SHALL report insufficient evidence when exposure is not comparable and
-  SHALL not claim causality from recurrence counts.
+  SHALL not claim causality from recurrence counts. It SHALL reevaluate an
+  insufficient-evidence outcome only while its bounded after period remains
+  open; that outcome is terminal after the period closes.

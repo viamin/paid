@@ -34,7 +34,22 @@ class RemediationDecision < ApplicationRecord
   scope :recent, -> { order(created_at: :desc, id: :desc) }
   scope :applied, -> { where(status: "applied") }
   # @spec RUN-OBSTACLE-005
-  scope :pending_outcome, -> { applied.where(outcome: [ nil, "insufficient_evidence" ]) }
+  scope :pending_outcome, -> {
+    applied.where(outcome: nil).or(
+      applied.where(outcome: "insufficient_evidence").where(
+        <<~SQL.squish,
+          applied_at + (
+            CASE
+            WHEN proposal_context ->> 'window_hours' ~ '^[1-9][0-9]*$'
+              THEN (proposal_context ->> 'window_hours')::integer
+            ELSE #{AgentRunPatterns::Detect::DEFAULT_WINDOW_HOURS}
+            END * INTERVAL '1 hour'
+          ) > ?
+        SQL
+        Time.current
+      )
+    )
+  }
   scope :for_runner_id, ->(runner_id) {
     where(action_target_id: runner_id.to_s, action_target_type: %w[runner runner_field])
   }
