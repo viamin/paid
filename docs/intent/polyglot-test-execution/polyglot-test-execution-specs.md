@@ -157,3 +157,14 @@
   `spec/services/prompts/build_for_issue_spec.rb`,
   `spec/services/prompts/build_for_pr_spec.rb`,
   `spec/services/containers/quality_hooks_spec.rb`.
+
+- [x] **POLYGLOT-TEST-012** — When a project has no supported detected or
+  explicitly configured repository language, the verification-command resolver
+  SHALL report no configured lint or test command and SHALL NOT fall back to
+  Ruby/Bundler commands. Prompt assembly and pre-commit hook installation SHALL
+  consume that same empty resolution so an unrelated dependency manifest or
+  toolchain is never required merely to satisfy an inherited default.
+  *Code:* `app/services/prompts/language_commands.rb`,
+  `app/services/containers/quality_hooks.rb`.
+  *Test:* `spec/services/prompts/language_commands_spec.rb`,
+  `spec/services/containers/quality_hooks_spec.rb`.
