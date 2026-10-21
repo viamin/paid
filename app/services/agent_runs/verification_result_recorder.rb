@@ -127,6 +127,7 @@ module AgentRuns
         "used_browser_tools" => hash["used_browser_tools"] == true,
         "browser_steps" => normalize_string_array(hash["browser_steps"]),
         "changed_surfaces" => normalize_string_array(hash["changed_surfaces"]),
+        "reported_acceptance_criteria" => normalize_criteria(hash["acceptance_criteria"] || hash["reported_acceptance_criteria"]),
         "artifacts" => normalize_artifacts(hash["artifacts"]),
         "app_log_tail" => app_log_tail,
         "evidence" => evidence_for(hash),
@@ -146,7 +147,7 @@ module AgentRuns
         "runtime_configuration" => runtime_configuration,
         "reported_artifact_assessments" => reported_artifact_assessments(payload["artifacts"]),
         "observed_artifacts" => observed_artifacts,
-        "coverage" => coverage_for(payload["acceptance_criteria"]),
+        "coverage" => coverage_for(payload["acceptance_criteria"] || payload["reported_acceptance_criteria"]),
         "limitations" => evidence_limitations
       }.compact
     end
@@ -205,6 +206,14 @@ module AgentRuns
           "state" => coverage_state(reported_status),
           "reason" => coverage_reason(reported_status)
         }.compact
+      end.first(50)
+    end
+
+    def normalize_criteria(value)
+      Array(value).filter_map do |criterion|
+        next unless criterion.is_a?(Hash)
+
+        criterion.deep_stringify_keys.slice("id", "status", "assertions", "steps").presence
       end.first(50)
     end
 

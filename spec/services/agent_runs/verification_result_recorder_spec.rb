@@ -118,6 +118,30 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
   end
 
   # @spec LIVE-PREVIEW-010
+  it "retains reported criterion coverage when rebinding the result to the shipped commit" do
+    File.write(result_path, JSON.generate(
+      status: "passed",
+      acceptance_criteria: [ { id: "AC-1", status: "passed", assertions: [ "Settings were saved" ] } ]
+    ))
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+    described_class.call(
+      agent_run:,
+      repo_path:,
+      fallback_result: agent_run.reload.verification_result,
+      record_missing: false,
+      result_commit: "b" * 40
+    )
+
+    result = agent_run.reload.verification_result
+    expect(result["reported_acceptance_criteria"]).to include(hash_including("id" => "AC-1", "status" => "passed"))
+    expect(result.dig("evidence", "tested_commit")).to eq("b" * 40)
+    expect(result.dig("evidence", "coverage")).to include(
+      hash_including("id" => "AC-1", "reported_status" => "passed", "state" => "unverified")
+    )
+  end
+
+  # @spec LIVE-PREVIEW-010
   it "rejects forged, missing, and repository-escaping reported artifact paths" do
     outside_path = File.join(Dir.tmpdir, "outside-verification-artifact.txt")
     File.write(outside_path, "outside")
