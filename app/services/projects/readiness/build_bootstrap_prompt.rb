@@ -33,7 +33,7 @@ module Projects
       attr_reader :project
 
       def gaps
-        project.readiness_gaps.map { |gap| "- #{gap['description'] || gap[:description]}" }.join("\n")
+        project.active_readiness_gaps.map { |gap| "- #{gap['description'] || gap[:description]}" }.join("\n")
       end
 
       def heading
@@ -71,7 +71,7 @@ module Projects
       end
 
       def gap_kinds
-        project.readiness_gaps.filter_map { |gap| gap["kind"] || gap[:kind] }
+        project.active_readiness_gaps.filter_map { |gap| gap["kind"] || gap[:kind] }
       end
     end
   end

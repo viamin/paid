@@ -162,7 +162,7 @@ module Inbox
       def latest_verification_setup_observation
         return unless project_setup_pending?
 
-        relevant_reasons = project.readiness_gaps.map { |gap| gap["kind"] || gap[:kind] }.to_set
+        relevant_reasons = project.active_readiness_gaps.map { |gap| gap["kind"] || gap[:kind] }.to_set
         project.agent_runs.order(created_at: :desc, id: :desc).limit(20).find do |run|
           observation = run.verification_result["readiness_observation"]
           observation && relevant_reasons.include?(observation["reason"])

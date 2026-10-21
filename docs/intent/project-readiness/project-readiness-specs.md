@@ -48,8 +48,8 @@ prefix: PROJECT-READINESS
   queue's eligibility, and the setup detail SHALL attribute the gap to its
   actual blocking capability.
   *Code:* `Inbox::Queue`, `Inbox::Count`, `Inbox::Availability`.
-  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
-  `spec/services/inbox/availability_spec.rb`.
+  *Test:* `spec/models/project_spec.rb`, `spec/services/inbox/queue_spec.rb`,
+  `spec/services/inbox/count_spec.rb`, `spec/services/inbox/availability_spec.rb`.
 
 - [x] **PROJECT-READINESS-006** — When a readiness evaluation records a gap
   set different from the project's prior snapshot, the system SHALL persist the
@@ -128,7 +128,7 @@ prefix: PROJECT-READINESS
   SHALL remain run-scoped observations, never durable repository gaps.
   *Code:* `Projects::Readiness::Rules::Verification`,
   `AgentRuns::VerificationResultRecorder`.
-  *Test:* `spec/services/projects/readiness_spec.rb`,
+  *Test:* `spec/models/project_spec.rb`, `spec/services/projects/readiness_spec.rb`,
   `spec/services/agent_runs/verification_result_recorder_spec.rb`.
 
 - [x] **PROJECT-READINESS-012** — When verification setup fails at runtime,

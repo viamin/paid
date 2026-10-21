@@ -485,13 +485,17 @@ class Project < ApplicationRecord
     "#{owner}/#{repo}"
   end
 
-  # @spec PROJECT-READINESS-011
+  # @spec PROJECT-READINESS-005 PROJECT-READINESS-011
   def readiness_blocked?
-    readiness_gaps.any?
+    active_readiness_gaps.any?
+  end
+
+  def active_readiness_gaps
+    readiness_gaps.select { |gap| readiness_gap_active?(gap) }
   end
 
   def readiness_gap_descriptions
-    readiness_gaps.filter_map { |gap| gap["description"] || gap[:description] }
+    active_readiness_gaps.filter_map { |gap| gap["description"] || gap[:description] }
   end
 
   # Repository where new PRs are opened for this project. For "own_repo"
@@ -1332,6 +1336,18 @@ class Project < ApplicationRecord
 
   def verification_enabled?
     verification_enabled
+  end
+
+  def readiness_gap_active?(gap)
+    kind = readiness_gap_kind(gap)
+    return tdd_mode.in?(Projects::Readiness::Rules::Tdd::REQUIRING_MODES) if kind.in?(Projects::Readiness::Rules::Tdd::GAP_KINDS)
+    return verification_enabled? if kind.in?(Projects::Readiness::Rules::Verification::GAP_KINDS)
+
+    true
+  end
+
+  def readiness_gap_kind(gap)
+    gap["kind"] || gap[:kind]
   end
 
   # Ensures the account-scoped playwright-mcp MCP server definition exists and is

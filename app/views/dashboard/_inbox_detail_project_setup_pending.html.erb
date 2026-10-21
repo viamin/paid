@@ -1,6 +1,7 @@
 <%# @spec PROJECT-READINESS-005 @spec PROJECT-READINESS-007 %>
 <div class="space-y-6">
-  <% gap_kinds = entry.record.readiness_gaps.map { |gap| gap["kind"] || gap[:kind] } %>
+  <% active_gaps = entry.record.active_readiness_gaps %>
+  <% gap_kinds = active_gaps.map { |gap| gap["kind"] || gap[:kind] } %>
   <% tdd_gap_present = gap_kinds.intersect?(Projects::Readiness::Rules::Tdd::GAP_KINDS) %>
   <% verification_gap_present = gap_kinds.intersect?(Projects::Readiness::Rules::Verification::GAP_KINDS) %>
   <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
@@ -27,7 +28,7 @@
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Missing prerequisites</h3>
     <ul class="space-y-2 text-sm text-gray-700">
-      <% entry.record.readiness_gaps.each do |gap| %>
+      <% active_gaps.each do |gap| %>
         <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
           <p><%= gap["description"] || gap[:description] %></p>
           <% evidence = gap["evidence"] || gap[:evidence] %>
