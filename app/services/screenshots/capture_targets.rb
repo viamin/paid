@@ -608,6 +608,7 @@ module Screenshots
       when /\Astyle_guides\// then rest_resource_targets(relative_path, "style_guides", index: :style_guides, new: :style_guide_new, show: :style_guide_show, edit: :style_guide_edit)
       when /\Achat_sessions\// then chat_session_targets(relative_path.delete_prefix("chat_sessions/"))
       when /\Achat_messages\// then [ :chat_session_show ]
+      when /\Achat_diagrams\// then [ :chat_session_show ]
       when /\Aknowledge\/artifacts\// then [ :project_knowledge_artifact_show ]
       when /\Aknowledge\/browse\// then knowledge_browse_targets(relative_path.delete_prefix("knowledge/browse/"))
       when /\Aknowledge\/context_intake\// then [ :project_context_intake ]
