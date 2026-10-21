@@ -124,6 +124,18 @@ counterpart — neither replaces the other.
 
 ## What this is not
 
+## Run-scoped application diagnostics
+
+Agents can retrieve read-only verification diagnostics through
+`GET /api/proxy/application-diagnostics`, authenticated by the existing
+run proxy credential. The endpoint never accepts a target run, project, or
+container identifier: it returns only the authenticated run's persisted,
+redacted application-log tail and its own `ContainerMetric` samples. Results
+include tenant/project/run/revision/timestamp provenance and cap lookback to
+one hour, samples to 100, and logs to 32 KiB. Missing logs or metrics return
+an explicit `unavailable` status. This works without Prometheus/Loki; it does
+not expose Docker, files, credentials, or cross-project queries.
+
 - **Not a raw `prometheus-client` middleware install.** The current app uses a
   custom collector rather than the original draft's in-process metric objects.
 - **Not a log-only monitoring story.** Structured logs complement this stack

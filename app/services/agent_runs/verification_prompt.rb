@@ -72,6 +72,11 @@ module AgentRuns
         echo $! > #{Shellwords.escape(APP_PID_PATH)}
         ```
 
+        Run-scoped diagnostics are read-only and bounded. After verification results are recorded, use
+        `GET $PAID_PROXY_URL/api/proxy/application-diagnostics` with the existing run credentials to retrieve
+        the redacted application-log tail and available CPU/memory samples. These observations are scoped to
+        this run and revision; unavailable instrumentation is unavailable evidence, never a passing check.
+
         Record the verification result by writing JSON to `#{RESULT_PATH}` before you finish:
 
         ```json
