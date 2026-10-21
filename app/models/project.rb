@@ -485,11 +485,6 @@ class Project < ApplicationRecord
     "#{owner}/#{repo}"
   end
 
-  # @spec PROJECT-READINESS-005
-  def tdd_readiness_blocked?
-    tdd_mode.in?(Projects::Readiness::Rules::Tdd::REQUIRING_MODES) && readiness_gaps.any?
-  end
-
   # @spec PROJECT-READINESS-011
   def readiness_blocked?
     readiness_gaps.any?
