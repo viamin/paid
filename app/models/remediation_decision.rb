@@ -82,6 +82,11 @@ class RemediationDecision < ApplicationRecord
     status == "proposed"
   end
 
+  # @spec RUN-OBSTACLE-004
+  def applicable?
+    status == "proposed"
+  end
+
   # @spec RUN-OBSTACLE-003
   def dismiss!(reason:)
     update!(status: "dismissed", dismissal_reason: reason.to_s.strip, dismissed_at: Time.current)

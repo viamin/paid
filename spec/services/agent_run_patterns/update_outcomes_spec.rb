@@ -122,6 +122,52 @@ RSpec.describe AgentRunPatterns::UpdateOutcomes do
   end
 
   # @spec RUN-OBSTACLE-005
+  it "reports improved for a failure-streak proposal when the streak breaks immediately" do
+    decision = create(
+      :remediation_decision,
+      account: account,
+      status: "applied",
+      applied_at: 1.hour.ago,
+      pre_remediation_failure_count: 3,
+      pre_remediation_exposure_count: 4,
+      proposal_context: { "goal" => "enhance_issue", "pattern_type" => "failure_streak", "window_hours" => 6 }
+    )
+    create(:agent_run, :completed, project: project, goal: "enhance_issue", completed_at: 50.minutes.ago)
+    create_list(:agent_run, 3, :failed, project: project, goal: "enhance_issue", completed_at: 10.minutes.ago)
+
+    described_class.call(account: account)
+
+    expect(decision.reload).to have_attributes(
+      post_remediation_failure_count: 0,
+      post_remediation_exposure_count: 4,
+      outcome: "improved"
+    )
+  end
+
+  # @spec RUN-OBSTACLE-005
+  it "reports regressed for a failure-streak proposal only when failures resume immediately" do
+    decision = create(
+      :remediation_decision,
+      account: account,
+      status: "applied",
+      applied_at: 1.hour.ago,
+      pre_remediation_failure_count: 2,
+      pre_remediation_exposure_count: 4,
+      proposal_context: { "goal" => "enhance_issue", "pattern_type" => "failure_streak", "window_hours" => 6 }
+    )
+    create_list(:agent_run, 3, :failed, project: project, goal: "enhance_issue", completed_at: 50.minutes.ago)
+    create(:agent_run, :completed, project: project, goal: "enhance_issue", completed_at: 10.minutes.ago)
+
+    described_class.call(account: account)
+
+    expect(decision.reload).to have_attributes(
+      post_remediation_failure_count: 3,
+      post_remediation_exposure_count: 4,
+      outcome: "regressed"
+    )
+  end
+
+  # @spec RUN-OBSTACLE-005
   it "counts only the diagnosed error pattern for error-cluster proposals" do
     decision = create_error_cluster_decision
     create_error_cluster_runs

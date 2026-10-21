@@ -59,10 +59,24 @@ module AgentRunPatterns
     end
 
     def failure_count(scope, decision)
+      pattern_type = decision.proposal_context["pattern_type"]
+      return streak_failure_count(scope) if pattern_type == "failure_streak"
+
       failures = scope.where(status: AgentRun::FAILURE_STATUSES)
-      return failures.count unless decision.proposal_context["pattern_type"] == "error_cluster"
+      return failures.count unless pattern_type == "error_cluster"
 
       failures.count { |run| matching_error_pattern?(run, decision) }
+    end
+
+    # Mirrors AgentRunPatterns::Detect#detect_failure_streak: count only the
+    # consecutive failures immediately following remediation, stopping at the
+    # first success. A later, unrelated failure run must not be conflated with
+    # a streak that the fix already broke.
+    def streak_failure_count(scope)
+      scope.order(completed_at: :asc, id: :asc)
+        .pluck(:status)
+        .take_while { |status| AgentRun::FAILURE_STATUSES.include?(status) }
+        .size
     end
 
     def matching_error_pattern?(run, decision)

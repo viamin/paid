@@ -9,6 +9,13 @@
           <h1 class="mt-1 text-2xl font-semibold text-gray-900">Remediation Decision #<%= @remediation_decision.id %></h1>
           <p class="mt-2 text-sm text-gray-600"><%= @remediation_decision.root_cause %></p>
         </div>
+        <% if @remediation_decision.applicable? %>
+          <%= button_to "Apply",
+                apply_remediation_decision_path(@remediation_decision),
+                method: :post,
+                class: "rounded-full border border-indigo-300 px-4 py-2 text-sm font-semibold text-indigo-700 hover:bg-indigo-50",
+                form: { data: { turbo_confirm: "Apply this remediation?" } } %>
+        <% end %>
         <% if @remediation_decision.revertable? %>
           <%= button_to "Revert",
                 revert_remediation_decision_path(@remediation_decision),

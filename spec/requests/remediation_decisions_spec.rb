@@ -29,6 +29,35 @@ RSpec.describe "RemediationDecisions" do
     end
   end
 
+  # @spec RUN-OBSTACLE-004
+  describe "POST /remediation_decisions/:id/apply" do
+    include ActiveJob::TestHelper
+
+    let(:decision) do
+      create(:remediation_decision, account: account, proposed_action: "notify")
+    end
+
+    it "queues the apply job and applies the proposed remediation" do
+      perform_enqueued_jobs do
+        post apply_remediation_decision_path(decision)
+      end
+
+      expect(response).to redirect_to(remediation_decision_path(decision))
+      expect(decision.reload).to have_attributes(status: "applied", applied_by: user)
+      expect(decision.applied_at).to be_present
+    end
+
+    it "does not apply an already-applied remediation" do
+      decision.update!(status: "applied", applied_at: Time.current)
+
+      post apply_remediation_decision_path(decision)
+
+      expect(response).to redirect_to(remediation_decision_path(decision))
+      expect(flash[:alert]).to include("Only proposed remediations can be applied")
+      expect(decision.reload.status).to eq("applied")
+    end
+  end
+
   describe "POST /remediation_decisions/:id/revert" do
     include ActiveJob::TestHelper
 
