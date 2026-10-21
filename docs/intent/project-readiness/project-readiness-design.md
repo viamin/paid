@@ -20,7 +20,7 @@ The result is intentionally ready for persistence by later phases:
 }
 ```
 
-The initial rule is TDD readiness. Both `strict` and `non_strict` TDD require
+The initial rules are TDD and interactive-verification readiness. Both `strict` and `non_strict` TDD require
 a CI marker, a test directory, and a test command. `off` adds no TDD gap. A
 future rule is independently additive, so a project with TDD off can still be
 blocked by a feature that has its own declared contract.
@@ -33,6 +33,15 @@ language switch. The initial specialized detector covers Godot 4.x + gdUnit4;
 it detects GDScript/Godot or `project.godot`, looks for `test` or `tests`, and
 requires `addons/gdUnit4` as the executable test-harness evidence.
 
+When interactive verification is enabled, readiness also validates the
+target-checkout configuration through `Screenshots::RuntimePlan`: it requires
+a parseable configuration, an applicable start command, and definitions for
+each configured service. These are repository/setup facts, so they become
+actionable gaps. Browser connectivity and whether a configured service happens
+to be healthy in a particular run are bounded runtime probes. Their failures
+remain structured run observations (including run, revision, time, and reason)
+and never become durable repository gaps. Disabled verification adds no gap.
+
 ## Inbox readiness snapshot
 
 The evaluator remains read-only. `Projects::Readiness::Record` persists its
@@ -40,13 +49,19 @@ serialized gaps and evaluation timestamp on the project after a worker has
 obtained a temporary checkout. The Inbox only reads that snapshot; it never
 clones, fetches, or evaluates during a poll/render.
 
-Enabled TDD projects with one or more stored gaps appear in the
+Projects whose enabled TDD or verification capability has one or more stored
+gaps appear in the
 `project_setup_pending` Inbox lane. The entry is project-backed (rather than
 issue- or PR-backed), lists the structural gap descriptions and evidence, and
 links the operator to project settings. A satisfied snapshot, or a project
 whose TDD mode is off, has no entry. This lane is visible using the same
 authorized-project scope as other owner-scoped Inbox lanes and deliberately
 does not depend on `auto_pick_enabled`.
+
+The detail also exposes the newest relevant verification setup observation.
+That observation is diagnostic evidence, not a readiness latch: a later
+target-branch evaluation replaces repository gaps from checkout evidence, and
+a recovered browser or service needs no cleanup action.
 
 Evaluation is queued when TDD readiness settings change and after a completed
 run that produced a result commit. A snapshot update bumps the Inbox cache
@@ -80,6 +95,11 @@ aborts the run with the offending paths recorded in its system log. This
 structural boundary is not a judgment about whether a configuration is
 runnable; the bootstrap prompt must inspect the actual checkout and configure
 a runnable harness.
+
+Verification bootstrap work may additionally change `.paid/screenshots.yml`.
+It is still explicitly admitted, bounded to configuration/harness files, and
+never auto-retried. A repository gap clears only after the bootstrap PR merges
+and the target branch is re-evaluated.
 
 The bootstrap class is deliberately separate from `Tdd::WriteGuard`. The
 `test_writing`, `test_fixing`, and `refactor` allowed-write semantics are

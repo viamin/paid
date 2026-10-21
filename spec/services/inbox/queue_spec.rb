@@ -1752,5 +1752,24 @@ RSpec.describe Inbox::Queue do
 
       expect(described_class.call(user:, kind: described_class::PROJECT_SETUP_PENDING_KIND)).to be_empty
     end
+
+    it "surfaces the newest matching verification setup observation" do # @spec PROJECT-READINESS-012
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account:, created_by: user, tdd_mode: "off",
+        readiness_gaps: [ { "kind" => "app_start_command_unavailable", "description" => "Start the app." } ])
+      create(:agent_run, project:, verification_result: {
+        "readiness_observation" => {
+          "reason" => "app_start_command_unavailable",
+          "agent_run_id" => 123,
+          "checkout_revision" => "target-sha",
+          "observed_at" => Time.current.iso8601
+        }
+      })
+
+      entry = described_class.call(user:, kind: described_class::PROJECT_SETUP_PENDING_KIND).sole
+
+      expect(entry.latest_verification_setup_observation).to include("checkout_revision" => "target-sha")
+    end
   end
 end

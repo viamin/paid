@@ -34,6 +34,16 @@
     </div>
   <% end %>
 
+  <% if (observation = entry.latest_verification_setup_observation) %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Latest verification setup observation</h3>
+      <p class="mt-1 text-sm text-amber-800"><%= observation["reason"].to_s.humanize %></p>
+      <p class="mt-1 text-xs text-amber-700">
+        Run #<%= observation["agent_run_id"] %> · revision <%= observation["checkout_revision"] || "unknown" %> · observed <%= observation["observed_at"] %>
+      </p>
+    </div>
+  <% end %>
+
   <div class="flex gap-3">
     <%= button_to "Start bootstrap run", bootstrap_readiness_project_agent_runs_path(entry.project),
           class: "inline-flex items-center rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500",

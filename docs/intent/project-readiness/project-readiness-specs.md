@@ -111,3 +111,25 @@ prefix: PROJECT-READINESS
   `inbox-detail` Turbo Frame.
   *Code:* `dashboard/_inbox_detail_project_setup_pending`.
   *Test:* `spec/requests/inbox_spec.rb`.
+
+- [x] **PROJECT-READINESS-011** — When interactive verification is enabled,
+  the system SHALL report checkout-backed setup gaps for invalid verification
+  configuration, an unavailable applicable start command, and configured
+  services absent from the project. It SHALL add no verification gap when the
+  capability is disabled. Browser connectivity and transient service health
+  SHALL remain run-scoped observations, never durable repository gaps.
+  *Code:* `Projects::Readiness::Rules::Verification`,
+  `AgentRuns::VerificationResultRecorder`.
+  *Test:* `spec/services/projects/readiness_spec.rb`,
+  `spec/services/agent_runs/verification_result_recorder_spec.rb`.
+
+- [x] **PROJECT-READINESS-012** — When verification setup fails at runtime,
+  the system SHALL retain its reason, agent run, checkout revision, and
+  observed time and show it alongside the related actionable setup gap. A
+  merged authorized bootstrap PR SHALL clear configuration-derived gaps only
+  after target-branch re-evaluation; it SHALL not trigger automatic bootstrap
+  or retry.
+  *Code:* `AgentRuns::VerificationResultRecorder`, `Inbox::Queue`,
+  `dashboard/_inbox_detail_project_setup_pending`.
+  *Test:* `spec/services/agent_runs/verification_result_recorder_spec.rb`,
+  `spec/services/inbox/queue_spec.rb`, `spec/services/projects/readiness/record_spec.rb`.

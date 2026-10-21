@@ -3,7 +3,7 @@
 require "rails_helper"
 require "tmpdir"
 
-# @spec PROJECT-READINESS-001, PROJECT-READINESS-002, PROJECT-READINESS-003, PROJECT-READINESS-004, POLYGLOT-TEST-003
+# @spec PROJECT-READINESS-001, PROJECT-READINESS-002, PROJECT-READINESS-003, PROJECT-READINESS-004, PROJECT-READINESS-011, POLYGLOT-TEST-003
 RSpec.describe Projects::Readiness do
   def evaluate(tdd_mode:, language:, repo_profile: {}, fixture: nil, files: [], directories: [])
     project = build(:project, tdd_mode:, primary_language: language, repo_profile:)
@@ -25,6 +25,15 @@ RSpec.describe Projects::Readiness do
 
   def forager_ios_fixture
     Rails.root.join("spec/fixtures/projects/forager-ios")
+  end
+
+  def verification_config(services: [])
+    <<~YAML
+      routes:
+        - path: /
+          name: Home
+      services: #{services.to_json}
+    YAML
   end
 
   describe ".call" do
@@ -89,6 +98,41 @@ RSpec.describe Projects::Readiness do
 
     it "adds no TDD gaps when TDD mode is off" do
       result = evaluate(tdd_mode: "off", language: "GDScript", fixture: forager_ios_fixture)
+
+      expect(result).to be_satisfied
+    end
+
+    it "reports parseable verification setup prerequisites from the checkout" do
+      project = build(:project, tdd_mode: "off", screenshot_settings: { "verification_enabled" => true })
+
+      Dir.mktmpdir do |repo_path|
+        FileUtils.mkdir_p(File.join(repo_path, ".paid"))
+        File.write(File.join(repo_path, ".paid/screenshots.yml"), verification_config(services: [ "postgres" ]))
+
+        result = described_class.call(project:, repo_path:)
+
+        expect(result.gaps.map(&:kind)).to contain_exactly(
+          "app_start_command_unavailable",
+          "missing_verification_service"
+        )
+      end
+    end
+
+    it "reports invalid verification configuration as a repository setup gap" do
+      project = build(:project, tdd_mode: "off", screenshot_settings: { "verification_enabled" => true })
+
+      Dir.mktmpdir do |repo_path|
+        FileUtils.mkdir_p(File.join(repo_path, ".paid"))
+        File.write(File.join(repo_path, ".paid/screenshots.yml"), "routes: invalid\n")
+
+        result = described_class.call(project:, repo_path:)
+
+        expect(result.gaps.map(&:kind)).to eq([ "verification_configuration_invalid" ])
+      end
+    end
+
+    it "does not evaluate verification prerequisites when verification is disabled" do
+      result = evaluate(tdd_mode: "off", language: "Ruby")
 
       expect(result).to be_satisfied
     end

@@ -466,7 +466,7 @@ class Project < ApplicationRecord
   after_update_commit :seed_eligible_issues, if: :auto_pick_just_enabled?
   after_update_commit :cancel_queued_auto_pick_runs, if: :auto_pick_just_disabled?
   after_update_commit :ensure_playwright_mcp_definition!, if: :verification_just_enabled?
-  after_update_commit :enqueue_readiness_evaluation, if: :saved_change_to_tdd_mode?
+  after_update_commit :enqueue_readiness_evaluation, if: :readiness_settings_changed?
   before_update :reset_issue_sync_state, if: :will_change_issue_target_repository?
   before_update :archive_previous_target_issues, if: :will_change_issue_target_repository?
   after_update_commit :cancel_previous_target_issue_runs, if: :saved_change_to_issue_target_repository?
@@ -477,6 +477,10 @@ class Project < ApplicationRecord
     EvaluateProjectReadinessJob.perform_later(id)
   end
 
+  def readiness_settings_changed?
+    saved_change_to_tdd_mode? || saved_change_to_screenshot_settings?
+  end
+
   def full_name
     "#{owner}/#{repo}"
   end
@@ -484,6 +488,11 @@ class Project < ApplicationRecord
   # @spec PROJECT-READINESS-005
   def tdd_readiness_blocked?
     tdd_mode.in?(Projects::Readiness::Rules::Tdd::REQUIRING_MODES) && readiness_gaps.any?
+  end
+
+  # @spec PROJECT-READINESS-011
+  def readiness_blocked?
+    readiness_gaps.any?
   end
 
   def readiness_gap_descriptions

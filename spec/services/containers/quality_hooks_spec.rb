@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUALITY-LOOPS-004 # @spec POLYGLOT-TEST-003 # @spec POLYGLOT-TEST-011
+RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUALITY-LOOPS-004 # @spec QUALITY-LOOPS-005 # @spec POLYGLOT-TEST-003 # @spec POLYGLOT-TEST-011
   subject(:host) { host_class.new }
 
   let(:host_class) do
@@ -44,6 +44,10 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
         lint_command: [ "bundle exec rubocop" ],
         test_command: [],
         mutation_command: "true"
+      )
+      expect(agent_run.reload.external_metadata.fetch("quality_checks_not_executed")).to contain_exactly(
+        hash_including("check" => "test", "reason" => "database_service_unavailable", "status" => "not_executed"),
+        hash_including("check" => "mutation", "reason" => "database_service_unavailable", "status" => "not_executed")
       )
     end
 

@@ -158,6 +158,17 @@ module Inbox
           .order(completed_at: :desc, id: :desc).first
       end
 
+      # @spec PROJECT-READINESS-012
+      def latest_verification_setup_observation
+        return unless project_setup_pending?
+
+        relevant_reasons = project.readiness_gaps.map { |gap| gap["kind"] || gap[:kind] }.to_set
+        project.agent_runs.order(created_at: :desc, id: :desc).limit(20).find do |run|
+          observation = run.verification_result["readiness_observation"]
+          observation && relevant_reasons.include?(observation["reason"])
+        end&.verification_result&.fetch("readiness_observation")
+      end
+
       def title
         title_text.presence || issue&.title || record.try(:title)
       end
@@ -777,7 +788,7 @@ module Inbox
     # @spec PROJECT-READINESS-005
     def project_setup_pending_entries
       scoped_projects.select { |candidate| !@record_id || candidate.id.to_s == @record_id.to_s }
-        .select(&:tdd_readiness_blocked?).map do |candidate|
+        .select(&:readiness_blocked?).map do |candidate|
         gap_descriptions = candidate.readiness_gap_descriptions
         Entry.new(
           id: "#{PROJECT_SETUP_PENDING_KIND}:#{candidate.id}",
