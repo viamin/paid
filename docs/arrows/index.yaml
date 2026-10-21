@@ -61,6 +61,14 @@ arrows:
     status: OK
     audited: 2026-10-11
     next: "Evaluate contract-specific repository prerequisites before Inbox surfacing or run admission (RDR-074)"
+  agent-instruction-navigation:
+    title: Agent Instruction Navigation
+    path: docs/intent/agent-instruction-navigation/agent-instruction-navigation-design.md
+    specs: docs/intent/agent-instruction-navigation/agent-instruction-navigation-specs.md
+    parent: PAID
+    taxonomy: foundation
+    status: OK
+    next: "Keep the canonical instruction entry point concise and its task routes verifiable"
   label-integration-mode:
     title: Per-Project Label Integration Mode
     path: docs/intent/label-integration-mode/label-integration-mode-design.md
