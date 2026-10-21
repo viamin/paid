@@ -75,6 +75,9 @@
           <%= render "chat_messages/message", message: segment.first %>
         <% end %>
       <% end %>
+      <% chat_session.chat_diagrams.current.where(chat_message_id: nil).each do |diagram| %>
+        <%= render "chat_diagrams/diagram", diagram: diagram, chat_session: chat_session %>
+      <% end %>
     </div>
 
     <div class="hidden px-2 pt-3"
