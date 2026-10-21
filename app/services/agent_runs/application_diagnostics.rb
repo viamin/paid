@@ -46,8 +46,12 @@ module AgentRuns
       { "status" => "available", "entries" => [ {
         "timestamp" => verification["app_log_recorded_at"] || verification["recorded_at"],
         "content" => redact(tail),
-        "truncated" => false
+        "truncated" => truthy?(verification["app_log_truncated"])
       } ] }
+    end
+
+    def truthy?(value)
+      value == true || value == "true"
     end
 
     def metrics

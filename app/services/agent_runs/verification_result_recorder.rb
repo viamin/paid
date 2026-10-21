@@ -68,6 +68,11 @@ module AgentRuns
 
     def apply_apple_gate(payload, decision)
       interactive = payload.is_a?(Hash) && payload["status"].present? ? normalize(payload) : {}
+      # When the agent never wrote a recorder-readable result on the gate
+      # path, the captured `app_log_tail` would otherwise be dropped by the
+      # wholesale `update!` below. Carry the captured log forward so the
+      # recorded state stays consistent with the normal-recorder path.
+      interactive = merge_captured_log(interactive) if interactive["app_log_tail"].blank?
       entry = { "state" => decision.pending? ? "pending" : "blocked", "gate" => decision.gate }
       entry["failure_classification"] = decision.attempt.failure_classification if decision.blocked? && decision.attempt
       entry["interactive_status"] = interactive["status"] if interactive["status"].present?
@@ -78,6 +83,17 @@ module AgentRuns
         "summary" => interactive["summary"].presence || apple_gate_summary(decision),
         "apple_verification" => entry,
         "recorded_at" => Time.current.iso8601
+      )
+    end
+
+    def merge_captured_log(hash)
+      tail = captured_log_tail
+      return hash if tail.blank?
+
+      hash.merge(
+        "app_log_tail" => tail,
+        "app_log_recorded_at" => previous_verification_result["app_log_recorded_at"] || Time.current.iso8601,
+        "app_log_truncated" => previous_verification_result.fetch("app_log_truncated", false)
       )
     end
 
@@ -115,8 +131,10 @@ module AgentRuns
       hash = payload.is_a?(Hash) ? payload.deep_stringify_keys : {}
       status = hash["status"].to_s
       status = "failed" unless status.in?(VALID_STATUSES)
-      recorder_log_tail = app_log_tail
+      recorder_log = app_log_tail
+      recorder_log_tail = recorder_log[:content]
       log_tail = recorder_log_tail.presence || captured_log_tail
+      truncated_flag = log_truncated(recorder_log_tail, recorder_log[:truncated])
 
       result = {
         "status" => status,
@@ -134,12 +152,27 @@ module AgentRuns
         "evidence" => evidence_for(hash),
         "recorded_at" => Time.current.iso8601
       }.compact
-      result.merge!("app_log_tail" => log_tail, "app_log_recorded_at" => log_recorded_at(recorder_log_tail)) if log_tail.present?
+      if log_tail.present?
+        result.merge!(
+          "app_log_tail" => log_tail,
+          "app_log_recorded_at" => log_recorded_at(recorder_log_tail),
+          "app_log_truncated" => truncated_flag
+        )
+      end
       result
     end
 
     def captured_log_tail
       previous_verification_result["app_log_tail"].presence
+    end
+
+    # When the recorder produced the tail it knows exactly whether the read
+    # hit a cap. When we fall back to the agent-captured tail the only honest
+    # answer is the marker the agent capture stored — if it stored one.
+    def log_truncated(recorder_log_tail, recorder_truncated)
+      return recorder_truncated if recorder_log_tail.present?
+
+      previous_verification_result.fetch("app_log_truncated", false)
     end
 
     def log_recorded_at(recorder_log_tail)
@@ -406,14 +439,15 @@ module AgentRuns
     end
 
     def app_log_tail
-      with_safe_repo_file(app_log_path) { |file| read_log_tail(file, max_lines: LOG_TAIL_LINES) }
+      result = with_safe_repo_file(app_log_path) { |file| read_log_tail(file, max_lines: LOG_TAIL_LINES) }
+      result.presence || { content: nil, truncated: false }
     rescue StandardError => e
       @logger.warn(
         message: "agent_runs.verification_result.log_tail_failed",
         agent_run_id: @agent_run.id,
         error: e.message
       )
-      nil
+      { content: nil, truncated: false }
     end
 
     def read_log_tail(file, max_lines:)
@@ -427,7 +461,11 @@ module AgentRuns
         buffer.prepend(file.read(read_size))
       end
 
-      normalize_log_tail(buffer, max_lines:)
+      # Truncation is true whenever either cap stopped the read or the final
+      # buffer holds more lines than the per-call limit. A caller reading
+      # `app_log_truncated` knows the persisted tail is a bounded excerpt.
+      truncated = position.positive? || buffer.count("\n") > max_lines
+      normalize_log_tail(buffer, max_lines:, truncated:)
     end
 
     # Agent-authored transient paths are resolved from the opened descriptor,
@@ -471,10 +509,16 @@ module AgentRuns
       nil
     end
 
-    def normalize_log_tail(content, max_lines:)
+    def normalize_log_tail(content, max_lines:, truncated: false)
       content = content.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "")
       lines = content.lines.last(max_lines)
-      AgentRuns::Research::SecretGuard.redact_text(lines.join).presence
+      # `truncated` reflects whether the read hit a cap. The final
+      # `lines.last(max_lines)` may also discard a trailing partial line when
+      # the buffer does not end with a newline; that is faithful redaction of
+      # the buffer we just read, not extra truncation, so it does not flip the
+      # flag.
+      redacted = AgentRuns::Research::SecretGuard.redact_text(lines.join).presence
+      { content: redacted, truncated: truncated }
     end
 
     def cleanup_transient_files

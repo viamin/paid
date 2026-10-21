@@ -122,8 +122,6 @@ messages. The structured JSON log line remains the source of truth for live
 tailing/alerting; the `AgentRunLog` entry is the durable, run-scoped
 counterpart — neither replaces the other.
 
-## What this is not
-
 ## Run-scoped application diagnostics
 
 Agents can retrieve read-only verification diagnostics through
@@ -136,8 +134,12 @@ project, or container identifier. Captured logs are limited to 32 KiB before
 persistence; final recorder-owned capture supersedes the provisional log when
 available after the run. Results include tenant/project/run/revision/timestamp provenance and
 cap lookback to one hour and samples to 100. Missing logs or metrics return an
-explicit `unavailable` status. This works without Prometheus/Loki; it does not
-expose Docker, files, credentials, or cross-project queries.
+explicit `unavailable` status. The persisted log carries a `app_log_truncated`
+marker whenever the recorder hit the line or byte cap, so a caller can tell
+when the tail it reads is a bounded excerpt. This works without Prometheus/Loki;
+it does not expose Docker, files, credentials, or cross-project queries.
+
+## What this is not
 
 - **Not a raw `prometheus-client` middleware install.** The current app uses a
   custom collector rather than the original draft's in-process metric objects.

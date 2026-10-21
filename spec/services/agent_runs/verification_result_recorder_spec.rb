@@ -58,10 +58,8 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
 
   it "persists the recorded verification result and app log tail onto the run" do
     File.write(result_path, JSON.generate(
-      status: "passed",
-      summary: "Verified the updated settings form.",
-      app_url: "http://localhost:3000/settings",
-      used_browser_tools: true,
+      status: "passed", summary: "Verified the updated settings form.",
+      app_url: "http://localhost:3000/settings", used_browser_tools: true,
       browser_steps: [ "Opened settings", "Saved the form" ],
       artifacts: [ { kind: "app_log", path: AgentRuns::VerificationPrompt::APP_LOG_PATH } ]
     ))
@@ -70,12 +68,10 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
 
     expect(agent_run.reload.verification_result).to include(
-      "status" => "passed",
-      "summary" => "Verified the updated settings form.",
-      "app_url" => "http://localhost:3000/settings",
-      "used_browser_tools" => true,
+      "status" => "passed", "summary" => "Verified the updated settings form.",
+      "app_url" => "http://localhost:3000/settings", "used_browser_tools" => true,
       "browser_steps" => [ "Opened settings", "Saved the form" ],
-      "app_log_tail" => "line 1\nline 2\n"
+      "app_log_tail" => "line 1\nline 2\n", "app_log_truncated" => false
     )
     expect(File).not_to exist(result_path)
     expect(File).not_to exist(log_path)
@@ -226,7 +222,49 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expected_tail = Array.new(40) { |index| "line #{index + 41}\n" }.join
     expect(agent_run.reload.verification_result).to include(
       "status" => "passed",
-      "app_log_tail" => expected_tail
+      "app_log_tail" => expected_tail,
+      "app_log_truncated" => true
+    )
+  end
+
+  # @spec APP-DIAGNOSTICS-001
+  it "flags the persisted tail as complete when the agent log fits within the caps" do
+    File.write(result_path, JSON.generate(status: "passed"))
+    File.write(log_path, "single entry\n")
+
+    described_class.call(agent_run:, repo_path:)
+
+    expect(agent_run.reload.verification_result).to include("app_log_truncated" => false)
+  end
+
+  # @spec APP-DIAGNOSTICS-001
+  it "flags the persisted tail as truncated when the byte cap stops the read" do
+    File.write(result_path, JSON.generate(status: "passed"))
+    File.write(log_path, "x" * (described_class::LOG_TAIL_MAX_BYTES + 1))
+
+    described_class.call(agent_run:, repo_path:)
+
+    expect(agent_run.reload.verification_result).to include(
+      "app_log_truncated" => true,
+      "app_log_tail" => "x" * described_class::LOG_TAIL_MAX_BYTES
+    )
+  end
+
+  # @spec APP-DIAGNOSTICS-004
+  it "falls back to the agent-captured `app_log_truncated` marker when no on-disk log is readable" do
+    agent_run.update!(verification_result: {
+      "app_log_tail" => "captured during verification",
+      "app_log_truncated" => true,
+      "app_log_recorded_at" => "2026-10-21T00:00:00Z"
+    })
+    File.write(result_path, JSON.generate(status: "passed"))
+
+    described_class.call(agent_run:, repo_path:)
+
+    expect(agent_run.reload.verification_result).to include(
+      "app_log_tail" => "captured during verification",
+      "app_log_truncated" => true,
+      "app_log_recorded_at" => "2026-10-21T00:00:00Z"
     )
   end
 
@@ -254,6 +292,27 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
       "app_log_tail" => "captured during verification",
       "app_log_recorded_at" => "2026-10-21T00:00:00Z"
     )
+  end
+
+  # @spec APP-DIAGNOSTICS-004
+  it "retains the active-run captured log on the apple-gate path when the agent wrote no result" do
+    FeatureFlags.enable!(:apple_verification_workers, project:)
+    project.update!(apple_verification_mode: "on_demand")
+    revision = create(:apple_verification_workflow_revision, :approved, project:,
+      lifecycle_gate: "pull_request_verification", required_checks: %w[ios-app.tests])
+    agent_run.update!(verification_result: {
+      "app_log_tail" => "captured during verification",
+      "app_log_recorded_at" => "2026-10-21T00:00:00Z", "app_log_truncated" => true
+    })
+
+    described_class.call(agent_run:, repo_path:)
+
+    result = agent_run.reload.verification_result
+    expect(result).to include(
+      "app_log_tail" => "captured during verification",
+      "app_log_recorded_at" => "2026-10-21T00:00:00Z", "app_log_truncated" => true
+    )
+    expect(result).to include("status" => "not_run", "reason" => "apple_verification_pending")
   end
 
   it "records a fallback status when no verification result file exists" do

@@ -41,4 +41,17 @@ RSpec.describe AgentRuns::ApplicationDiagnostics do
 
     expect(described_class.call(agent_run:).dig("metrics", "status")).to eq("unavailable")
   end
+
+  # @spec APP-DIAGNOSTICS-001
+  it "propagates the persisted truncation marker so callers know the tail is bounded" do
+    agent_run.update!(verification_result: {
+      "app_log_tail" => "truncated tail",
+      "app_log_recorded_at" => "2026-10-21T00:00:00Z",
+      "app_log_truncated" => true
+    })
+
+    result = described_class.call(agent_run:)
+
+    expect(result.dig("logs", "entries").first).to include("truncated" => true)
+  end
 end
