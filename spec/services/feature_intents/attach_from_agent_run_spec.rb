@@ -262,6 +262,48 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
 
       expect(implementation_link.in_tree_dependencies).to contain_exactly(prerequisite_link)
     end
+
+    it "rolls the link back when an in-tree edge raises a RecordInvalid mid-batch" do
+      prerequisite = create(:issue, project: project)
+      implementation_issue = create(:issue, project: project)
+      create(:issue_dependency, issue: implementation_issue, depends_on_issue: prerequisite)
+
+      prerequisite_link = described_class.attach_issue(feature_intent:, issue: prerequisite).feature_intent_issue
+
+      service = described_class.new(feature_intent: feature_intent, issue: implementation_issue)
+      allow(service).to receive(:record_in_tree_dependency_edges)
+        .and_raise(ActiveRecord::RecordInvalid.new(FeatureIntentIssueDependency.new))
+
+      service.attach_issue
+
+      implementation_link = feature_intent.feature_intent_issues.find_by(issue: implementation_issue)
+      expect(implementation_link).to be_nil
+      expect(prerequisite_link.in_tree_dependencies).to be_empty
+    end
+
+    it "does not record an in-tree edge when the only dependency points at the child's own umbrella" do
+      umbrella = create(:issue, project: project, github_state: "open")
+      child = create(:issue, project: project, parent_issue: umbrella, github_state: "open")
+      create(:issue_dependency, issue: child, depends_on_issue: umbrella)
+
+      umbrella_link = described_class.attach_issue(feature_intent:, issue: umbrella).feature_intent_issue
+      child_link = described_class.attach_issue(feature_intent:, issue: child).feature_intent_issue
+
+      expect(child_link.in_tree_dependencies).not_to include(umbrella_link)
+    end
+
+    it "does not record an in-tree edge on the umbrella when only the child references it via parent dep" do
+      umbrella = create(:issue, project: project, github_state: "open")
+      child = create(:issue, project: project, parent_issue: umbrella, github_state: "open")
+      create(:issue_dependency, issue: child, depends_on_issue: umbrella)
+
+      described_class.attach_issue(feature_intent:, issue: umbrella)
+      umbrella_link = feature_intent.feature_intent_issues.find_by(issue: umbrella)
+      described_class.attach_issue(feature_intent:, issue: child)
+
+      umbrella_link.reload
+      expect(umbrella_link.in_tree_dependencies).to be_empty
+    end
   end
 
   describe "closed-unmerged reconciliation" do
