@@ -81,4 +81,36 @@ RSpec.describe "RemediationDecisions" do
       expect(decision.reload.status).to eq("reverted")
     end
   end
+
+  # @spec RUN-OBSTACLE-003
+  describe "POST /remediation_decisions/:id/dismiss" do
+    it "dismisses a proposal with the operator's reason" do
+      post dismiss_remediation_decision_path(decision), params: { dismissal_reason: "Known upstream outage" }
+
+      expect(response).to redirect_to(remediation_decision_path(decision))
+      expect(decision.reload).to have_attributes(
+        status: "dismissed",
+        dismissal_reason: "Known upstream outage"
+      )
+      expect(decision.dismissed_at).to be_present
+    end
+
+    it "does not dismiss a proposal without a reason" do
+      post dismiss_remediation_decision_path(decision), params: { dismissal_reason: "  " }
+
+      expect(response).to redirect_to(remediation_decision_path(decision))
+      expect(flash[:alert]).to include("Dismissal reason can't be blank")
+      expect(decision.reload).to have_attributes(status: "proposed", dismissal_reason: nil, dismissed_at: nil)
+    end
+
+    it "does not dismiss an applied remediation" do
+      decision.update!(status: "applied", applied_at: Time.current)
+
+      post dismiss_remediation_decision_path(decision), params: { dismissal_reason: "Too late" }
+
+      expect(response).to redirect_to(remediation_decision_path(decision))
+      expect(flash[:alert]).to include("Only proposed remediations can be dismissed")
+      expect(decision.reload).to have_attributes(status: "applied", dismissal_reason: nil)
+    end
+  end
 end

@@ -34,6 +34,7 @@ Rails.application.routes.draw do
     post :mark_all_read, on: :collection
   end
   resources :remediation_decisions, only: [ :show ] do
+    post :dismiss, on: :member
     post :revert, on: :member
   end
 

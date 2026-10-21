@@ -19,12 +19,39 @@ RSpec.describe AgentRunPatterns::UpdateOutcomes do
     )
     create_list(:agent_run, 3, :failed, project: project, goal: "enhance_issue", completed_at: 30.minutes.ago)
 
-    described_class.call(account: account, patterns: [])
+    described_class.call(account: account)
 
     expect(decision.reload).to have_attributes(
       post_remediation_failure_count: 3,
       post_remediation_exposure_count: 3,
       outcome: "insufficient_evidence"
+    )
+  end
+
+  # @spec RUN-OBSTACLE-005
+  it "re-evaluates insufficient evidence after comparable exposure accrues" do
+    decision = create(
+      :remediation_decision,
+      account: account,
+      status: "applied",
+      applied_at: 1.hour.ago,
+      pre_remediation_failure_count: 3,
+      pre_remediation_exposure_count: 5,
+      proposal_context: { "goal" => "enhance_issue", "window_hours" => 6 },
+      outcome: "insufficient_evidence"
+    )
+    create_list(:agent_run, 2, :completed, project: project, goal: "enhance_issue", completed_at: 30.minutes.ago)
+
+    described_class.call(account: account)
+
+    create_list(:agent_run, 3, :completed, project: project, goal: "enhance_issue", completed_at: 15.minutes.ago)
+
+    described_class.call(account: account)
+
+    expect(decision.reload).to have_attributes(
+      post_remediation_failure_count: 0,
+      post_remediation_exposure_count: 5,
+      outcome: "improved"
     )
   end
 
@@ -42,7 +69,7 @@ RSpec.describe AgentRunPatterns::UpdateOutcomes do
     create(:agent_run, :failed, project: project, goal: "enhance_issue", completed_at: 30.minutes.ago)
     create_list(:agent_run, 4, :completed, project: project, goal: "enhance_issue", completed_at: 30.minutes.ago)
 
-    described_class.call(account: account, patterns: [])
+    described_class.call(account: account)
 
     expect(decision.reload).to have_attributes(
       post_remediation_failure_count: 1,
@@ -65,8 +92,97 @@ RSpec.describe AgentRunPatterns::UpdateOutcomes do
     create_list(:agent_run, 3, :failed, project: project, goal: "enhance_issue", completed_at: 30.minutes.ago)
     create_list(:agent_run, 2, :completed, project: project, goal: "enhance_issue", completed_at: 30.minutes.ago)
 
-    described_class.call(account: account, patterns: [])
+    described_class.call(account: account)
 
     expect(decision.reload.outcome).to eq("unchanged")
+  end
+
+  # @spec RUN-OBSTACLE-005
+  it "excludes failures outside the proposal's post-remediation window" do
+    decision = create(
+      :remediation_decision,
+      account: account,
+      status: "applied",
+      applied_at: 7.hours.ago,
+      pre_remediation_failure_count: 1,
+      pre_remediation_exposure_count: 2,
+      proposal_context: { "goal" => "enhance_issue", "window_hours" => 6 }
+    )
+    create(:agent_run, :failed, project: project, goal: "enhance_issue", completed_at: 6.hours.ago)
+    create(:agent_run, :completed, project: project, goal: "enhance_issue", completed_at: 5.hours.ago)
+    create_list(:agent_run, 3, :failed, project: project, goal: "enhance_issue", completed_at: 30.minutes.ago)
+
+    described_class.call(account: account)
+
+    expect(decision.reload).to have_attributes(
+      post_remediation_failure_count: 1,
+      post_remediation_exposure_count: 2,
+      outcome: "unchanged"
+    )
+  end
+
+  # @spec RUN-OBSTACLE-005
+  it "counts only the diagnosed error pattern for error-cluster proposals" do
+    decision = create_error_cluster_decision
+    create_error_cluster_runs
+
+    described_class.call(account: account)
+
+    expect(decision.reload).to have_attributes(
+      post_remediation_failure_count: 1,
+      post_remediation_exposure_count: 4,
+      outcome: "improved"
+    )
+  end
+
+  # @spec RUN-OBSTACLE-005
+  it "uses the detected fingerprint for applied decisions created before proposal context existed" do
+    decision = create_legacy_applied_decision
+
+    described_class.call(account: account)
+
+    expect(decision.reload).to have_attributes(
+      post_remediation_failure_count: 3,
+      outcome: "unchanged"
+    )
+  end
+
+  def create_error_cluster_decision
+    create(
+      :remediation_decision,
+      account: account,
+      status: "applied",
+      applied_at: 1.hour.ago,
+      pre_remediation_failure_count: 2,
+      pre_remediation_exposure_count: 4,
+      proposal_context: {
+        "goal" => "enhance_issue",
+        "pattern_type" => "error_cluster",
+        "error_pattern" => "quota exhausted <N>",
+        "window_hours" => 6
+      }
+    )
+  end
+
+  def create_error_cluster_runs
+    create(:agent_run, :failed, project: project, goal: "enhance_issue", error_message: "quota exhausted 7", completed_at: 30.minutes.ago)
+    create_list(:agent_run, 3, :failed, project: project, goal: "enhance_issue", error_message: "unrelated failure", completed_at: 30.minutes.ago)
+  end
+
+  def create_legacy_applied_decision
+    create_list(:agent_run, 3, :failed, project: project, goal: "enhance_issue", error_message: "GitHub API quota exhausted", completed_at: 30.minutes.ago)
+    create(
+      :remediation_decision,
+      account: account,
+      fingerprint: legacy_fingerprint,
+      status: "applied",
+      applied_at: 1.hour.ago,
+      pre_remediation_failure_count: 3,
+      proposal_context: {}
+    )
+  end
+
+  def legacy_fingerprint
+    AgentRunPatterns::Detect.call(account: account).find { |pattern| pattern.type == :error_cluster }.details[:fingerprint]
   end
 end

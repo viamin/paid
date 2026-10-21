@@ -45,7 +45,7 @@ module AgentRunPatterns
     rescue => e
       decision.update!(status: "failed") if decision.persisted? && decision.status == "proposed"
       Rails.logger.warn(
-        message: "agent_run_patterns.auto_apply_failed",
+        message: "agent_run_patterns.apply_failed",
         remediation_decision_id: decision.id,
         proposed_action: decision.proposed_action,
         error_class: e.class.name,

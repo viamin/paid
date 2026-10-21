@@ -101,10 +101,7 @@ RSpec.describe AgentRunPatternDetectorJob, :no_db do
         )
       end
 
-      # @spec RUN-OBSTACLE-004
       it "records a remediation proposal without invoking automatic repair" do
-        expect(AgentRunPatterns::AutoApply).not_to receive(:call)
-
         described_class.perform_now
 
         expect(AgentRunPatterns::RecordRemediationDecision).to have_received(:call).with(

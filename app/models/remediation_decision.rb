@@ -33,7 +33,8 @@ class RemediationDecision < ApplicationRecord
 
   scope :recent, -> { order(created_at: :desc, id: :desc) }
   scope :applied, -> { where(status: "applied") }
-  scope :pending_outcome, -> { applied.where(outcome: nil) }
+  # @spec RUN-OBSTACLE-005
+  scope :pending_outcome, -> { applied.where(outcome: [ nil, "insufficient_evidence" ]) }
   scope :for_runner_id, ->(runner_id) {
     where(action_target_id: runner_id.to_s, action_target_type: %w[runner runner_field])
   }
@@ -75,5 +76,14 @@ class RemediationDecision < ApplicationRecord
 
   def dismissed?
     status == "dismissed"
+  end
+
+  def dismissable?
+    status == "proposed"
+  end
+
+  # @spec RUN-OBSTACLE-003
+  def dismiss!(reason:)
+    update!(status: "dismissed", dismissal_reason: reason.to_s.strip, dismissed_at: Time.current)
   end
 end

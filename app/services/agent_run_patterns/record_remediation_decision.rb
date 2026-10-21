@@ -134,6 +134,7 @@ module AgentRunPatterns
       {
         "goal" => pattern.goal,
         "pattern_type" => pattern.type.to_s,
+        "error_pattern" => pattern.details[:error_pattern],
         "window_hours" => AgentRunPatterns::Detect::DEFAULT_WINDOW_HOURS,
         "affected_scope" => affected_scope,
         "evidence_bundle" => pattern.details[:evidence_bundle],

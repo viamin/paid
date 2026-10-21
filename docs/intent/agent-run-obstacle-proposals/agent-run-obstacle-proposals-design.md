@@ -46,11 +46,12 @@ being replaced. Existing issue filing and repair services remain separately
 authorized paths. Pattern detection does not call repair application, create an
 execution, or opt an account into automatic remediation.
 
-For an accepted/applied correction, outcome evaluation uses the same goal and
-window represented by the proposal. It records before/after failure and
-exposure counts. It reports `insufficient_evidence` until the after period has
-comparable exposure, and reports improvement/unchanged/regression as observed
-recurrence only, not causal proof.
+For an accepted/applied correction, outcome evaluation uses the same goal,
+fingerprint identity where available, and window represented by the proposal.
+It records before/after failure and exposure counts. It reports
+`insufficient_evidence` until the after period has comparable exposure, and
+reports improvement/unchanged/regression as observed recurrence only, not
+causal proof.
 
 ## Boundaries
 

@@ -7,9 +7,8 @@ module AgentRunPatterns
       new(...).call
     end
 
-    def initialize(account:, patterns:)
+    def initialize(account:)
       @account = account
-      @patterns = patterns
     end
 
     def call
@@ -26,28 +25,60 @@ module AgentRunPatterns
 
     private
 
-    attr_reader :account, :patterns
+    attr_reader :account
 
-    def pattern_counts
-      @pattern_counts ||= patterns.each_with_object({}) do |pattern, result|
-        result[pattern.details[:fingerprint].to_s] = failure_count(pattern)
+    def post_remediation_counts(decision)
+      return legacy_post_remediation_counts(decision) if decision.proposal_context["goal"].blank?
+      return [ 0, 0 ] if decision.applied_at.blank?
+
+      scope = AgentRun.joins(:project)
+        .where(projects: { account_id: account.id })
+        .where(goal: decision.proposal_context["goal"])
+        .where(status: AgentRunPatterns::Detect::DETECTION_FINISHED_STATUSES)
+        .where(completed_at: decision.applied_at..window_end(decision))
+
+      [ failure_count(scope, decision), scope.count ]
+    end
+
+    def legacy_post_remediation_counts(decision)
+      count = legacy_pattern_counts.fetch(decision.fingerprint, 0)
+      [ count, count ]
+    end
+
+    def legacy_pattern_counts
+      @legacy_pattern_counts ||= AgentRunPatterns::Detect.call(account: account).each_with_object({}) do |pattern, counts|
+        counts[pattern.details[:fingerprint].to_s] = pattern_failure_count(pattern)
       end
     end
 
-    def failure_count(pattern)
+    def pattern_failure_count(pattern)
       pattern.details[:streak_length] ||
         pattern.details[:failure_count] ||
         pattern.details[:occurrence_count] ||
         0
     end
 
-    def post_remediation_counts(decision)
-      scope = AgentRun.joins(:project)
-        .where(projects: { account_id: account.id })
-        .where(goal: decision.proposal_context["goal"])
-        .where(completed_at: decision.applied_at..)
+    def failure_count(scope, decision)
+      failures = scope.where(status: AgentRun::FAILURE_STATUSES)
+      return failures.count unless decision.proposal_context["pattern_type"] == "error_cluster"
 
-      [ scope.where(status: AgentRun::FAILURE_STATUSES).count, scope.count ]
+      failures.count { |run| matching_error_pattern?(run, decision) }
+    end
+
+    def matching_error_pattern?(run, decision)
+      error_pattern = decision.proposal_context["error_pattern"]
+      return true if error_pattern.blank?
+
+      AgentRunPatterns::Detect.normalize_error(run.error_message.to_s) == error_pattern
+    end
+
+    def window_end(decision)
+      decision.applied_at + window_hours(decision).hours
+    end
+
+    def window_hours(decision)
+      hours = decision.proposal_context.fetch("window_hours", AgentRunPatterns::Detect::DEFAULT_WINDOW_HOURS).to_i
+      hours.positive? ? hours : AgentRunPatterns::Detect::DEFAULT_WINDOW_HOURS
     end
 
     def outcome_for(decision, post_count, post_exposure)
@@ -59,6 +90,8 @@ module AgentRunPatterns
     end
 
     def comparable_exposure?(decision, post_exposure)
+      return true if decision.proposal_context["goal"].blank?
+
       baseline = decision.pre_remediation_exposure_count.to_i
       baseline.positive? && post_exposure >= baseline
     end

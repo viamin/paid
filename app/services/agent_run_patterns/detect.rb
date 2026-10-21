@@ -24,6 +24,15 @@ module AgentRunPatterns
       new(...).call
     end
 
+    def self.normalize_error(message)
+      message
+        .gsub(%r{https?://\S+}, "<URL>")
+        .gsub(/\/[\w\/]+/, "<PATH>")
+        .gsub(/\b(?:[0-9a-f]{8,}|(?=[A-Za-z0-9_-]{8,}\b)(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]+)\b/i, "<ID>")
+        .gsub(/\b\d+(?:\.\d+)?[a-z]*\b/i, "<N>")
+        .truncate(200)
+    end
+
     def initialize(account:, window_hours: DEFAULT_WINDOW_HOURS)
       @account = account
       @window_hours = window_hours
@@ -201,12 +210,7 @@ module AgentRunPatterns
     end
 
     def normalize_error(message)
-      message
-        .gsub(%r{https?://\S+}, "<URL>")
-        .gsub(/\/[\w\/]+/, "<PATH>")
-        .gsub(/\b(?:[0-9a-f]{8,}|(?=[A-Za-z0-9_-]{8,}\b)(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]+)\b/i, "<ID>")
-        .gsub(/\b\d+(?:\.\d+)?[a-z]*\b/i, "<N>")
-        .truncate(200)
+      self.class.normalize_error(message)
     end
 
     def build_evidence_bundle(runs)
