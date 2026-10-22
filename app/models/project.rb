@@ -213,7 +213,7 @@ class Project < ApplicationRecord
     { label: "Auto-Add Labels", attribute: :auto_add_labels_enabled,
      description: "Automatically add the generated label to PRs and issues created by Paid." }.freeze,
     { label: "Automation on Label", attribute: :automation_on_label_enabled,
-     description: "Automatically create agent runs when the automation label is detected on issues or PRs." }.freeze,
+     description: "Automatically create agent runs when the automation label is detected on PRs." }.freeze,
     { label: "Auto-Pick Issues", attribute: :auto_pick_enabled,
      description: "Automatically start working on unblocked issues when no agent runs are active." }.freeze,
     { label: "Quiet Mode", attribute: :quiet_mode,
