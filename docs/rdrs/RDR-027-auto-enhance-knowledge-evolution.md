@@ -4,11 +4,10 @@
 
 ## Metadata
 
-- **Related Issues**: #1416, #1417, #1418, #1419, #1420, #1421, #2711, #3184
-
 - **Date**: 2026-04-23
 - **Status**: Implemented
 - **Type**: Architecture
+- **Related Issues**: #1416, #1417, #1418, #1419, #1420, #1421, #2711, #3184
 - **Priority**: High
 - **Related RDRs**: [RDR-009](RDR-009-prompt-evolution.md) (Prompt Evolution), [RDR-021](RDR-021-knowledge-base.md) (Knowledge Base), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization)
 - **Related Tests**: `spec/temporal/activities/analyze_issue_activity_spec.rb`, `spec/services/knowledge/usage_stats_spec.rb`, `spec/temporal/workflows/knowledge_evolution_workflow_spec.rb`

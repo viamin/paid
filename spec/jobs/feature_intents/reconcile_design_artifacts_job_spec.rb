@@ -53,7 +53,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
   end
 
-  it "does not treat draft, deferred, or superseded RDRs without links as missing" do
+  it "does not treat draft, deferred, superseded, or historical RDRs without links as missing" do
     [ "Draft", "Deferred", "Superseded", "Historical" ].each do |status|
       artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
         path: "docs/rdrs/RDR-#{status.downcase}.md",
