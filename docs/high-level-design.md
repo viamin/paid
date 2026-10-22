@@ -29,7 +29,9 @@ have moved elsewhere:
 - **Coverage truth.** Safety automation is only trustworthy when its operator
   surfaces distinguish a completed check from an unavailable one. Polling
   failures, disabled checks, and stale evidence must remain visible rather
-  than being represented as a healthy empty result.
+  than being represented as a healthy empty result. Agent-reported verification
+  is distinct from commit-bound, recorder-owned execution evidence; neither an
+  artifact nor a reported pass alone establishes arbitrary acceptance coverage.
 - **Design traceability.** Repository design records, tracked delivery work,
   and Paid's local links must be reconciled from explicit evidence. A failed
   repository read is unknown coverage, never proof that no work exists.
@@ -344,6 +346,11 @@ HLD is the universal floor. LLDs and EARS specs are added as new features are
 built and as existing subsystems are mapped over time; not all existing code is
 traced yet, which is expected for brownfield adoption. When you build or change
 a component, add (or update) its segment under `docs/intent/`.
+
+The canonical agent instruction entry point is a concise navigation map, not a
+second handbook. It makes universal boundaries visible and routes detailed
+procedures to their owning design and operational documents; see
+`docs/intent/agent-instruction-navigation/`.
 
 ## References
 

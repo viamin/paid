@@ -576,6 +576,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "runner_credential_show" ])
     end
 
+    it "maps chat diagram partials to the chat session screenshot target" do
+      targets = described_class.call(changed_files: [ "app/views/chat_diagrams/_diagram.html.erb" ])
+
+      expect(targets.map(&:slug)).to eq([ "chat_session_show" ])
+    end
+
     it "raises UnmappedUiChangeError for unmapped controllers" do
       expect {
         described_class.call(changed_files: [ "app/controllers/unknown_controller.rb" ])

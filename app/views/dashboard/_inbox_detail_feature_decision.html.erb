@@ -64,7 +64,7 @@
         <% design_prs.each do |design_pr| %>
           <li class="flex items-center justify-between gap-3 rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm">
             <div>
-              <%= link_to "##{design_pr.pull_request_number}", design_pr.github_url, target: "_blank", rel: "noopener", class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+              <%= link_to "##{design_pr.pull_request_number}", design_pr.github_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-500" %>
               <span class="ml-2 text-xs text-gray-500"><%= design_pr.design_pr_kind.tr("_", " ").upcase %></span>
               <% unless design_pr.required? %>
                 <span class="ml-2 text-xs text-gray-400">optional</span>
@@ -96,7 +96,7 @@
         <% issue_links.each do |issue_link| %>
           <% issue = issue_link.issue %>
           <li class="text-sm text-gray-600">
-            <%= link_to "##{issue.github_number} #{issue.title}", issue.github_url, target: "_blank", rel: "noopener", class: "text-indigo-600 hover:text-indigo-500" %>
+            <%= link_to "##{issue.github_number} #{issue.title}", issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-500" %>
             <% if (link_hold = FeatureIntents::IssueHold.call(issue: issue, feature: feature_intent)) %>
               <span class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800" data-testid="feature-intent-hold" title="<%= link_hold.code %>">
                 <%= link_hold.message %>

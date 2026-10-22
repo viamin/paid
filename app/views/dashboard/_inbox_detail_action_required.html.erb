@@ -28,7 +28,9 @@
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to "Open linked action",
             entry.action_url,
-            data: { turbo_frame: "_top" },
+            target: entry.action_url.start_with?("http") ? "_blank" : nil,
+            rel: entry.action_url.start_with?("http") ? "noopener noreferrer" : nil,
+            data: entry.action_url.start_with?("http") ? {} : { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
       <% if entry.issue %>
         <%= link_to inbox_issue_link_label(entry.issue),
