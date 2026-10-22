@@ -49,12 +49,10 @@ scope, and the 79/80 boundary. It must report false readiness, unnecessary
 clarification, human corrections, cost, and downstream rework with corpus,
 rubric/model, and input revisions.
 
-On 2026-10-22 the closeout attempted to create this focused child through the
-required GitHub API proxy. The proxy returned HTTP 422 with
-`links/0/schema: nil is not an object` for every creation payload, including a
-minimal title/body request. The required gap therefore remains unfiled due to
-that external write failure. Rerun the filing request once the proxy accepts
-issue creation; add the resulting child issue as a final-acceptance dependency.
+The focused child issue is [#4573](https://github.com/viamin/paid/issues/4573).
+Closeout [#4323](https://github.com/viamin/paid/issues/4323) explicitly
+depends on it for final acceptance, so merging this audit cannot close the
+closeout while the required corpus remains outstanding.
 
 ## Rollout guard and verification
 

@@ -13,8 +13,9 @@
   (open; final acceptance remains with the umbrella); closeout
   [#4323](https://github.com/viamin/paid/issues/4323); delivery dependencies
   [#4316](https://github.com/viamin/paid/issues/4316) and
-  [#4318](https://github.com/viamin/paid/issues/4318); and the assessment
-  corpus gap recorded in
+  [#4318](https://github.com/viamin/paid/issues/4318); and final-acceptance
+  dependency [#4573](https://github.com/viamin/paid/issues/4573) for the
+  assessment corpus gap recorded in
   [`audit-report-2026-10-22-rdr-070.md`](audit-report-2026-10-22-rdr-070.md).
 
 ## Implementation Status
@@ -173,11 +174,11 @@ Closeout [#4323](https://github.com/viamin/paid/issues/4323) compared every
 RDR-070 acceptance criterion with current source and focused specs. The
 evidence supports **Partially Implemented**: core behavior is shipped, while a
 versioned corpus with false-readiness, clarification, correction, cost, and
-rework measurements is still required. The closeout attempted to file that
-focused child through the GitHub API proxy, but the proxy rejected creation
-with `links/0/schema: nil is not an object`; the audit records the precise
-scope and rerun condition. It does not recreate the already-shipped approval
-policy or treat closed historical issues as evidence.
+rework measurements is still required. Focused child
+[#4573](https://github.com/viamin/paid/issues/4573) owns that gap, and
+[#4323](https://github.com/viamin/paid/issues/4323) depends on it for final
+acceptance. The audit does not recreate the already-shipped approval policy or
+treat closed historical issues as evidence.
 
 The rollout guard has progressed from shadow-only assessment to the RDR-071
 gated release path: confidence release remains contingent on complete scoped
