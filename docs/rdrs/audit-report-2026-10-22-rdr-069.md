@@ -15,12 +15,11 @@ live test run. Closed-issue state is not treated as delivery evidence. The
 merged code and specs of #4311, #4312, #4313 and #4316 were read and run
 instead.
 
-All twelve delivery children #4310–#4321 are now closed on GitHub. That is
-recorded as a fact about GitHub, not as delivery evidence: #4317 (P08) is
-closed **as completed** yet shipped no investigation surface at all, which this
-audit verified in code (see `010` below) and re-owned by filing
-[#4568](https://github.com/viamin/paid/issues/4568). The other children's
-claimed behaviors were each confirmed by running their specs.
+All twelve delivery children #4310–#4321 are closed on GitHub. That is recorded
+as a fact about GitHub, not as delivery evidence: #4317 (P08) closed without
+shipping any investigation surface at all, which this audit verified in code
+(see `010` below). The other children's claimed behaviors were each confirmed
+by reading their merged code and running their specs.
 
 ## Acceptance evidence
 
@@ -35,7 +34,7 @@ claimed behaviors were each confirmed by running their specs.
 | `007` — project/tenant access and actor attribution on transcript, message, diagram, subscription and tool operations | Shipped | `app/policies/chat_session_policy.rb:104`, `app/policies/chat_message_policy.rb`, `app/channels/chat_channel.rb`, `app/controllers/chat_diagram_comments_controller.rb:14`. Coverage: `spec/policies/chat_session_policy_spec.rb`, `spec/policies/chat_message_policy_spec.rb`, `spec/channels/chat_channel_spec.rb`, `spec/requests/chat_diagram_comments_spec.rb`, `spec/integration/question_exploration_journey_spec.rb` (collaborator allowed, outsider denied). |
 | `008` — investigate available facts first; ask how to investigate when the method is unclear | Shipped as prompt-level guidance; no runtime investigation | `app/services/chat_sessions/build_system_prompt.rb:231`. Coverage: `spec/services/chat_sessions/build_system_prompt_spec.rb`. The bounded-investigation runtime that would execute the advice is the `010` gap. |
 | `009` — validate the typed description, escape untrusted content, never execute generated script | Shipped | `app/models/chat_diagram.rb:35`, `app/views/chat_diagrams/_diagram.html.erb`. Coverage: `spec/models/chat_diagram_spec.rb`, `spec/views/chat_diagrams/diagram_partial_spec.rb`. |
-| `010` — budget and execution-policy enforcement, authorization before overage, progress and cancellation for long work | **Gap** | No investigation primitive, budget check, progress surface, or cancellation path exists in the repository: no investigation tool in `app/mcp/tools/`, no investigation table in `db/schema.rb` (`chat_diagrams`, `chat_diagram_comments`, `chat_messages`, `chat_session_projects`, `chat_sessions` are the only chat-side tables), and no `bounded_investigation`, `investigation_budget`, `investigation_progress`, or `investigation_cancel` identifier anywhere in `app/`, `lib/`, `config/`, or `spec/`. Its former owner [#4317](https://github.com/viamin/paid/issues/4317) is closed as completed, so this audit filed [#4568](https://github.com/viamin/paid/issues/4568) to re-own the scope. |
+| `010` — budget and execution-policy enforcement, authorization before overage, progress and cancellation for long work | **Gap** | No investigation primitive, budget check, progress surface, or cancellation path exists in the repository: no investigation tool in `app/mcp/tools/`, no investigation table in `db/schema.rb` (`chat_diagrams`, `chat_diagram_comments`, `chat_messages`, `chat_session_projects`, `chat_sessions` are the only chat-side tables), and no `bounded_investigation`, `investigation_budget`, `investigation_progress`, or `investigation_cancel` identifier anywhere in `app/`, `lib/`, `config/`, or `spec/`. Two open issues claim this scope — [#4317](https://github.com/viamin/paid/issues/4317) (labelled `planning`, so auto-pick cannot reach it) and the focused [#4568](https://github.com/viamin/paid/issues/4568) — and neither has shipped any of it. |
 | `011` — diagram interaction is exploration, not a preference or confidence increase | Shipped | `app/services/chat_sessions/build_system_prompt.rb:231`, `app/services/explicit_preferences/persist.rb`, `app/javascript/controllers/diagram_controller.js:4`. Coverage: `spec/services/chat_sessions/build_system_prompt_spec.rb`, `spec/services/explicit_preferences/`, `spec/system/chat_diagrams_spec.rb`. |
 | `012` — authorized API/tool parity and consistent message context across HTML, Cable and SSE | Shipped for conversation, message and diagram actions; investigation slice missing | `app/controllers/api/v1/chat_diagram_comments_controller.rb`, `app/controllers/api/v1/chat_messages_controller.rb:215`, `app/services/chat_diagrams/serializer.rb`, `app/services/chat_diagrams/comment_serializer.rb`, `app/mcp/tools/present_chat_diagram.rb`, `app/models/chat_diagram.rb:82` (`diagram_created` Cable broadcast with rendered card HTML). Coverage: `spec/requests/api/v1/chat_diagram_comments_spec.rb`, `spec/requests/chat_diagram_comments_spec.rb`, `spec/requests/api/v1/chat_messages_spec.rb`, `spec/requests/api/v1/inbox_spec.rb`, `spec/channels/chat_channel_spec.rb`. There is no chat SSE transport in this application (the only SSE endpoint is the MCP client stream), so parity is HTML, ActionCable, and the mobile JSON API. The remaining investigation-action parity belongs to `010`/#4568. |
 | `013` — archive preserves answers and evidence; reopen restores progress without discarded diagrams | Shipped (evidence restore completed by this audit) | `app/services/chat_sessions/archive.rb:56` (soft archive), `app/services/chat_sessions/build_system_prompt.rb:302`. Coverage: `spec/services/clarifying_questions/save_progress_spec.rb`, `spec/services/chat_sessions/build_system_prompt_spec.rb`, `spec/integration/question_exploration_journey_spec.rb`. |
@@ -124,24 +123,31 @@ The investigations still missing under #4568 must land behind the same setting.
 
 ## Remaining gaps
 
-One unmet acceptance criterion remains. Its former owner is closed, so this
-audit filed a new focused owner rather than leaving the gap unowned:
+One unmet acceptance criterion remains. Two issues currently claim it, so
+this audit records the verified state instead of asserting ownership:
 
-| Gap | Owner | Why a new issue was filed |
+| Gap | Claimed by | Verified state on 2026-10-22 |
 | --- | --- | --- |
-| `QUESTION-EXPLORATION-010` plus the investigation slice of `012`: budget and execution-policy enforcement, authorization before exceeding either, progress and cancellation for long-running work, and the API/tool parity those actions need | [#4568](https://github.com/viamin/paid/issues/4568) (open, P1, under epic #4309) | [#4317](https://github.com/viamin/paid/issues/4317) is closed as completed but shipped none of this scope, verified in code and by the coherence check. A closed issue cannot own a gap, and re-picking #4317 would resurrect finished bookkeeping. |
+| `QUESTION-EXPLORATION-010` plus the investigation slice of `012`: budget and execution-policy enforcement, authorization before exceeding either, progress and cancellation for long-running work, and the API/tool parity those actions need | [#4317](https://github.com/viamin/paid/issues/4317) (P08, under epic #4309) | **Open**, carrying the `planning` label, so it stays out of the auto-pick queue while the gap is unimplemented. |
+| same | [#4568](https://github.com/viamin/paid/issues/4568) (focused follow-up) | **Open**, labelled `enhancement` and `P1` only, so auto-pick can reach it. Filed on the premise that #4317 "is closed as completed"; that premise does not match #4317's current GitHub state, which is open. |
 
-The gap issue carries `enhancement` and `P1` only — none of
-`planning`, `research`, `waiting`, `tracking`, or `needs-manual-setup` — so
-auto-pick can reach it. No other `QUESTION-EXPLORATION-*` gap remains:
-`012`'s conversation, message, and diagram-action parity ships, and its
-investigation slice is the same work #4568 owns.
+The repository evidence is the same under either owner: no investigation tool
+in `app/mcp/tools/`, no investigation table in `db/schema.rb`, and no
+`bounded_investigation` / `investigation_budget` / `investigation_progress` /
+`investigation_cancel` identifier anywhere in `app/`, `lib/`, `config/`, or
+`spec/`. #4317's `planning` label is why the focused, skip-label-free #4568
+exists at all. Reconciling which of the two owns the implementation is left to
+the umbrella's P01 (#4310), which the epic already assigns reconciliation of
+remaining overlaps; the closeout's requirement holds either way — the gap has a
+focused owner and must ship before #4322 can close. No other
+`QUESTION-EXPLORATION-*` gap remains: `012`'s conversation, message, and
+diagram-action parity ships, and its investigation slice is the same work.
 
 ## Closure decision
 
 Do **not** close #4322. `QUESTION-EXPLORATION-010` and the investigation slice
 of `QUESTION-EXPLORATION-012` are unimplemented, so the closeout's own
-acceptance is not met. #4322 records an explicit dependency on #4568 and keeps
-`Tracks #4309` language; per the closeout checklist, only the umbrella's own
-final acceptance audit may close #4309, and only after #4568 ships with code and
-passing tests.
+acceptance is not met. #4322 records an explicit dependency on the gap issue
+and keeps `Tracks #4309` language; per the closeout checklist, only the
+umbrella's own final acceptance audit may close #4309, and only after
+bounded investigations ship with code and passing tests.

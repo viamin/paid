@@ -9,7 +9,7 @@
 - **Related RDRs**: [RDR-028](RDR-028-interactive-chat.md), [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-070](RDR-070-facet-confidence-and-clarification.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)
 - **Intent**: [Question exploration](../intent/question-exploration/question-exploration-design.md)
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
-- **Related Issues**: Epic [#4309](https://github.com/viamin/paid/issues/4309); closeout [#4322](https://github.com/viamin/paid/issues/4322); gaps [#4311](https://github.com/viamin/paid/issues/4311) (shipped), [#4312](https://github.com/viamin/paid/issues/4312) (shipped), [#4313](https://github.com/viamin/paid/issues/4313) (shipped), [#4316](https://github.com/viamin/paid/issues/4316) (shipped), [#4317](https://github.com/viamin/paid/issues/4317) (closed without shipping the investigation surface), [#4568](https://github.com/viamin/paid/issues/4568) (open — the remaining gap)
+- **Related Issues**: Epic [#4309](https://github.com/viamin/paid/issues/4309); closeout [#4322](https://github.com/viamin/paid/issues/4322); shipped gaps [#4311](https://github.com/viamin/paid/issues/4311), [#4312](https://github.com/viamin/paid/issues/4312), [#4313](https://github.com/viamin/paid/issues/4313), [#4316](https://github.com/viamin/paid/issues/4316); remaining gap [#4317](https://github.com/viamin/paid/issues/4317) (open, `planning`) and [#4568](https://github.com/viamin/paid/issues/4568) (open, focused)
 
 ## Problem Statement
 
@@ -191,22 +191,13 @@ See the
 Bounded investigations — budget and execution-policy enforcement,
 authorization before exceeding either, progress, and cancellation
 (`QUESTION-EXPLORATION-010`, plus the investigation slice of `012`) remain the
-only unimplemented behavior, now owned by
-[#4568](https://github.com/viamin/paid/issues/4568).
-
-As of the 2026-10-22 closeout, the diagram-card, durable-progress, and
-adaptive-clarification slices also ship: typed collapsible diagram cards with
-an accessible summary, keyboard-reachable element selection and a comment
-input (`QUESTION-EXPLORATION-003`, `009`, `011`); human diagram comments that
-carry their element text, render in the card, and reach both the assistant's
-exploration context and the JSON transport (`QUESTION-EXPLORATION-004`,
-`006`); released superseded diagram source with preserved human evidence
-(`QUESTION-EXPLORATION-005`); and per-question draft answers with their
-recorded human evidence, restored on reopen (`QUESTION-EXPLORATION-002`,
-`013`). `spec/integration/question_exploration_journey_spec.rb` exercises the
-whole journey as one outcome. Bounded investigations — budget and execution
-policy enforcement, overage authorization, progress and cancellation — remain
-unimplemented under #4317, so this RDR stays **Partially Implemented**.
+only unimplemented behavior. Two issues claim that scope on 2026-10-22:
+[#4317](https://github.com/viamin/paid/issues/4317) (P08, **open**, labelled
+`planning`, so auto-pick cannot reach it) and the focused, skip-label-free
+[#4568](https://github.com/viamin/paid/issues/4568) (**open**). Whichever one
+owns the implementation, this RDR stays **Partially Implemented** until it
+ships. `spec/integration/question_exploration_journey_spec.rb` exercises the
+shipped journey end to end as one outcome.
 
 ## 2026-10-22 Closeout
 
@@ -261,65 +252,25 @@ project, writable only through the authorized settings form and the
 `update_project_settings` tool). It gates the feature-conversation entry;
 disabling it preserves existing conversations, answers, and evidence and
 changes nothing else. Nothing shipped by this closeout bypasses the guard,
-and the investigations that remain under #4317 must sit behind the same
-setting when they ship.
+and the bounded investigations that remain must sit behind the same setting
+when they ship.
 
-Still missing, and still owned by an open issue:
+Still missing, claimed by two open issues:
 
 - `QUESTION-EXPLORATION-010` and the investigation slice of
   `QUESTION-EXPLORATION-012` (budget and execution-policy enforcement,
   authorization before exceeding either, progress and cancellation for
   long-running work, and the API/tool parity those actions need) —
-  [#4317](https://github.com/viamin/paid/issues/4317), open.
+  [#4317](https://github.com/viamin/paid/issues/4317) (P08, open, labelled
+  `planning` so auto-pick cannot reach it) and
+  [#4568](https://github.com/viamin/paid/issues/4568) (open, focused, no
+  auto-pick skip label). #4568 was filed on the premise that #4317 was closed
+  as completed; that premise does not match #4317's current GitHub state.
+  Reconciling the two owners is the umbrella's P01 (#4310) assignment; either
+  way, one of them must ship before the gap closes.
 
-No new gap issue was filed: the only unmet criterion already has a focused,
-correctly-scoped open owner. Closeout issue #4322 therefore stays open with
-`Tracks #4309` language and depends on #4317; only the umbrella's own final
-acceptance audit may close #4309.
-
-## 2026-10-22 Closeout
-
-Closeout issue [#4322](https://github.com/viamin/paid/issues/4322) re-audited
-every `QUESTION-EXPLORATION-*` EARS claim in
-[`question-exploration-specs.md`](../intent/question-exploration/question-exploration-specs.md)
-against shipped code and a live `bundle exec rspec` run (3043 examples, 0
-failures, 23 pending — all `spec/system` examples skipped because Chromium is
-unavailable in that environment) rather than against closed-issue history.
-Result: **Partially Implemented**, unchanged in status but with a much smaller
-remaining surface than the 2026-10-12 closeout recorded.
-
-Shipped with running evidence: every claim except `010`. Diagram cards name
-their question and carry a text equivalent, collapse/expand and keyboard
-interaction; comments are attributed, keep the element text they were made
-against, and reach the card, the assistant, and the JSON transport; a
-replaced diagram releases its visual source without losing comments, answers,
-or evidence; an archived conversation returns its answers and their evidence on
-reopen; and the project-level rollout setting gates the entry.
-
-Corrections this closeout made rather than accepting at face value:
-
-- Human diagram comments were write-only — persisted by the HTML and API
-  endpoints and read by nothing. They now render in the card, share one payload
-  across both transports, and appear in the assistant's exploration context.
-- A saved answer's recorded evidence context was never restored. It now returns
-  with the answer.
-- The diagram card had no non-browser coverage; added
-  `spec/views/chat_diagrams/diagram_partial_spec.rb`.
-- No end-to-end journey evidence existed; added
-  `spec/integration/question_exploration_journey_spec.rb`.
-- Reading comments back introduced an N+1 across every transcript path and an
-  unbounded read in prompt assembly; both are now bounded in SQL.
-
-`#4317` (P08) claimed the investigation scope and closed as completed without
-shipping it, so this closeout filed
-[#4568](https://github.com/viamin/paid/issues/4568) to re-own
-`QUESTION-EXPLORATION-010` and the investigation slice of
-`QUESTION-EXPLORATION-012`. That issue carries no auto-pick skip label, and
-the closeout now depends on it explicitly.
-
-The Rollout Guard's project-level setting shipped with #4311 and still gates
-the entry; nothing in this closeout made guarded behavior default. Closeout
-issue #4322 remains open and keeps `Tracks #4309` language; only the umbrella's
+Closeout issue #4322 therefore stays open with `Tracks #4309` language and an
+explicit dependency on the outstanding investigation scope; only the umbrella's
 own final acceptance audit may close #4309.
 
 ## 2026-10-12 Closeout

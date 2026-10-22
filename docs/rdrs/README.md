@@ -248,8 +248,10 @@ re-audits RDR-069 against shipped code and a live run (3043 examples, 0
 failures; 23 `spec/system` examples skipped for a missing Chromium): RDR-069
 stays **Partially Implemented**, now with only bounded investigations
 (`QUESTION-EXPLORATION-010` and the investigation slice of `012`) outstanding.
-`#4317`, which claimed that scope, closed as completed without shipping it, so
-the audit filed `#4568` to re-own it; #4322 now depends on `#4568` explicitly.
+That scope is claimed by two open issues: `#4317` (P08, labelled `planning`,
+so auto-pick cannot reach it) and the focused `#4568` (no skip label), which
+was filed on the premise that `#4317` was closed — that premise does not match
+its current GitHub state. `#4322` depends on the outstanding scope explicitly.
 That audit also closed a real divergence — human diagram comments were
 persisted but read by nothing — by rendering them in the card, sharing one
 comment payload across the HTML and JSON transports, supplying them to the
