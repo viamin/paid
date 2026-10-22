@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "psych"
 
 class AgentImageBuildScript < Pathname
 end
@@ -72,6 +73,15 @@ RSpec.describe AgentImageBuildScript, :no_db do
   describe AgentImageWorkflow do
     subject(:workflow_source) { Rails.root.join(".github/workflows/agent-image.yml").read }
 
+    let(:workflow) do
+      Psych.safe_load_file(Rails.root.join(".github/workflows/agent-image.yml"), aliases: true)
+    end
+
+    def ruby_setup_steps
+      workflow.fetch("jobs").values.flat_map { |job| job.fetch("steps", []) }
+               .select { |step| step.fetch("uses", "").start_with?("ruby/setup-ruby@") }
+    end
+
     it "compares extracted lockfile contract versions instead of grepping zero-context diffs" do
       expect(workflow_source).to include('previous_bundler_version=$(extract_lockfile_bundler_version "${BASE_SHA}")')
       expect(workflow_source).to include('current_bundler_version=$(extract_lockfile_bundler_version "${HEAD_SHA}")')
@@ -94,9 +104,20 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include("env:\n      PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD: \"true\"")
     end
 
+    # The action ref is asserted as an opaque 40-character SHA instead of a
+    # hardcoded pin: Dependabot owns the GitHub Action bump, so naming the exact
+    # commit here would turn every bump into a spec edit while asserting nothing
+    # extra. What matters is that the ref stays SHA-pinned (never a floating tag)
+    # and that no job delegates Bundler caching to the action.
     it "avoids action-managed Bundler caching in the artifact-publishing job" do
-      expect(workflow_source).to include("uses: ruby/setup-ruby@651ff0d62c5c79bed6d53ec518387aae20e72c1a")
-      expect(workflow_source).not_to include("bundler-cache: true")
+      setup_steps = ruby_setup_steps
+
+      expect(setup_steps).not_to be_empty
+      setup_steps.each do |step|
+        expect(step.fetch("uses")).to match(/\Aruby\/setup-ruby@[0-9a-f]{40}\z/)
+        expect(step.fetch("with", {})).not_to have_key("bundler-cache")
+      end
+
       expect(workflow_source).to include("name: Install Ruby dependencies")
       expect(workflow_source).to include("run: bundle install --jobs 4 --retry 3")
     end
