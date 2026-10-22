@@ -83,7 +83,7 @@ RSpec.describe Projects::EnsureStandardLabels do
   def expected_definitions
     {
       "paid-generated" => { color: "0e8a16", description: "Created by Paid" },
-      "paid-automation" => { color: "1d76db", description: "Triggers Paid automation for this issue; remove to opt out." },
+      "paid-automation" => { color: "1d76db", description: "Triggers Paid automation for this issue or PR; remove to opt out." },
       "paid-needs-input" => { color: "d876e3", description: "Paid needs answers before enhancing this issue again" },
       "paid-enhanced" => { color: "0e8a16", description: "Paid has added implementation context to this issue" },
       "paid-in-full" => { color: "0052cc", description: "Activates Paid through PR for this issue; auto-merge still requires PR approval." },
@@ -182,8 +182,8 @@ RSpec.describe Projects::EnsureStandardLabels do
         )
         expect(github_client).to have_received(:create_label).with(
           "test-owner/test-repo",
-          name: "queue-paid", color: "1d76db",
-          description: "Triggers Paid automation for this issue; remove to opt out."
+          name: "queue-paid", color: "0052cc",
+          description: "Activates Paid auto-pick for this issue when the project setting is off."
         )
       end
 

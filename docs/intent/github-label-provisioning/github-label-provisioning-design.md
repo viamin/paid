@@ -47,8 +47,9 @@ contract for every GitHub label with a Paid behavioral consequence. Its
   request when the project-level setting is otherwise off
   (`paid-in-full`, `paid-enhance`, `paid-auto-merge`, `paid-scan`,
   `paid-scan-security`, `paid-fix-conflicts`, `paid-auto-release`,
-  `paid-tdd-strict`, `paid-tdd-auto`, and the reused issue-scoped
-  `paid-automation` activation).
+  `paid-tdd-strict`, `paid-tdd-auto`, and the issue-scoped auto-pick
+  activation, which reuses `paid-automation` only when its configured name
+  is the project automation label).
 - `:status` — applied by Paid as an output/status marker with no further
   automation effect (`paid-generated`, `paid-enhanced`,
   `paid-needs-input`, `paid-recommend-close`, `paid-dismiss-escalation`,
