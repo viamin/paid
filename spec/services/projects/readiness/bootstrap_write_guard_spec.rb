@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec PROJECT-READINESS-008
+# @spec PROJECT-READINESS-008 PROJECT-READINESS-012
 RSpec.describe Projects::Readiness::BootstrapWriteGuard do
   describe ".call" do
     it "allows Godot CI, harness, and test layout artifacts" do
@@ -22,6 +22,12 @@ RSpec.describe Projects::Readiness::BootstrapWriteGuard do
 
       expect(result).to be_valid
       expect(result.forbidden_files).to eq([])
+    end
+
+    it "allows the verification configuration needed by a bootstrap repair" do
+      result = described_class.call(changed_files: [ ".paid/screenshots.yml" ])
+
+      expect(result).to be_valid
     end
 
     it "rejects behavior-bearing files outside the harness class" do

@@ -12,6 +12,7 @@ module Projects
       # that never asked for TDD enforcement.
       class Tdd
         CI_MARKERS = %w[.github/workflows .circleci/config.yml .gitlab-ci.yml].freeze
+        GAP_KINDS = %w[missing_ci missing_test_directory missing_test_command].freeze
         REQUIRING_MODES = %w[strict non_strict].freeze
 
         def self.call(...)
@@ -41,7 +42,7 @@ module Projects
           return if ci_present?
 
           Gap.new(
-            kind: "missing_ci",
+            kind: GAP_KINDS.first,
             description: "tdd_mode: #{project.tdd_mode} requires a CI-capable repository " \
               "(.github/workflows/ or equivalent) to run the red/green test cycle.",
             evidence: { checked_paths: CI_MARKERS }
@@ -61,7 +62,7 @@ module Projects
           return if detector.test_directory?
 
           Gap.new(
-            kind: "missing_test_directory",
+            kind: GAP_KINDS.second,
             description: "tdd_mode: #{project.tdd_mode} requires a #{detector.ecosystem} test directory.",
             evidence: { ecosystem: detector.ecosystem, checked_paths: detector.test_directory_candidates }
           )
@@ -71,7 +72,7 @@ module Projects
           return if detector.test_command_configured?
 
           Gap.new(
-            kind: "missing_test_command",
+            kind: GAP_KINDS.third,
             description: "tdd_mode: #{project.tdd_mode} requires a runnable #{detector.ecosystem} test command.",
             evidence: { ecosystem: detector.ecosystem }
           )

@@ -45,6 +45,10 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
         test_command: [],
         mutation_command: "true"
       )
+      expect(agent_run.reload.external_metadata.fetch("quality_checks_not_executed")).to contain_exactly(
+        hash_including("check" => "test", "reason" => "database_service_unavailable", "status" => "not_executed"),
+        hash_including("check" => "mutation", "reason" => "database_service_unavailable", "status" => "not_executed")
+      )
     end
 
     it "keeps test and mutation hooks when a database container is running" do
@@ -88,6 +92,9 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
         lint_command: [ "mix credo --strict" ],
         test_command: [],
         mutation_command: "true"
+      )
+      expect(agent_run.reload.external_metadata.fetch("quality_checks_not_executed")).to contain_exactly(
+        hash_including("check" => "test", "language" => "elixir", "reason" => "database_service_unavailable", "status" => "not_executed")
       )
     end
 

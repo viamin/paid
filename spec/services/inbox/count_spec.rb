@@ -691,5 +691,17 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user:)).to eq(1)
       expect(Inbox::Queue.call(user:, kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND).map(&:project)).to eq([ project ])
     end
+
+    # @spec PROJECT-READINESS-005 @spec PROJECT-READINESS-011
+    it "counts a verification-only project with persisted setup gaps" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account:, created_by: user, tdd_mode: "off",
+        screenshot_settings: { "verification_enabled" => true },
+        readiness_gaps: [ { "description" => "Start the application." } ])
+
+      expect(described_class.call(user:)).to eq(1)
+      expect(Inbox::Queue.call(user:, kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND).map(&:project)).to eq([ project ])
+    end
   end
 end
