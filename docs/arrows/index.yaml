@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-11
+last_updated: 2026-10-21
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,15 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  agent-run-obstacle-proposals:
+    title: Agent-run Obstacle Proposals
+    path: docs/intent/agent-run-obstacle-proposals/agent-run-obstacle-proposals-design.md
+    specs: docs/intent/agent-run-obstacle-proposals/agent-run-obstacle-proposals-specs.md
+    parent: PAID
+    taxonomy: intelligence
+    status: OK
+    audited: 2026-10-21
+    next: "Reuse the bounded proposal contract in future RDR-075 maintenance scheduling without expanding repair authority."
   project-readiness:
     title: Settings-Aware Project Readiness
     path: docs/intent/project-readiness/project-readiness-design.md
@@ -61,6 +70,14 @@ arrows:
     status: OK
     audited: 2026-10-11
     next: "Evaluate contract-specific repository prerequisites before Inbox surfacing or run admission (RDR-074)"
+  agent-instruction-navigation:
+    title: Agent Instruction Navigation
+    path: docs/intent/agent-instruction-navigation/agent-instruction-navigation-design.md
+    specs: docs/intent/agent-instruction-navigation/agent-instruction-navigation-specs.md
+    parent: PAID
+    taxonomy: foundation
+    status: OK
+    next: "Keep the canonical instruction entry point concise and its task routes verifiable"
   label-integration-mode:
     title: Per-Project Label Integration Mode
     path: docs/intent/label-integration-mode/label-integration-mode-design.md
@@ -69,7 +86,7 @@ arrows:
     taxonomy: configuration
     status: OK
     audited: 2026-10-11
-    next: "Control GitHub label writes per project while retaining configured label reads"
+    next: "Ignored mode now uses local work-item control state; mode-transition import and cleanup remain"
   quiet-mode:
     title: Project Quiet Mode
     path: docs/intent/quiet-mode/quiet-mode-design.md
@@ -103,9 +120,9 @@ arrows:
     specs: docs/intent/question-exploration/question-exploration-specs.md
     parent: PAID
     taxonomy: chat
-    status: MAPPED
-    sampled: 2026-09-22
-    next: "Implement contextual chat, disposable diagrams and durable answers (RDR-069)"
+    status: PARTIAL
+    audited: 2026-10-13
+    next: "Chat-entry/reuse, final-answer submission, access control and Inbox-chat context shipped (001, 002, 007, 014-017). Remaining: diagram cards (#4312), durable per-question progress (#4313), adaptive clarification and explicit preferences (#4316), bounded investigations (#4317), conversation-open API parity and the RDR-069 rollout-guard setting (#4311)."
   facet-confidence:
     title: Facet Confidence and Adaptive Clarification
     path: docs/intent/facet-confidence/facet-confidence-design.md
@@ -114,17 +131,18 @@ arrows:
     taxonomy: intelligence
     status: MAPPED
     sampled: 2026-09-22
-    next: "Implement evidence-backed assessments and explicit preferences (RDR-070)"
+    audited: 2026-10-13
+    next: "RDR-070 remains Accepted: implement facets/evidence (#4314), assessments/corpus (#4315), explicit preferences (#4316), and scoped 80/80 readiness (#4318) before a terminal closeout."
   confidence-driven-delivery:
     title: Confidence-Driven Issue Delivery
     path: docs/intent/confidence-driven-delivery/confidence-driven-delivery-design.md
     specs: docs/intent/confidence-driven-delivery/confidence-driven-delivery-specs.md
     parent: PAID
     taxonomy: automation
-    status: MAPPED
-    sampled: 2026-09-22
+    status: PARTIAL
+    audited: 2026-10-13
     blockedBy: [facet-confidence, question-exploration]
-    next: "Implement issue readiness, policy dispatch and completion follow-ups (RDR-071)"
+    next: "Approval-gated foundations are shipped; implement policy/enrollment foundation (#4310), facets/evidence (#4314), assessments (#4315), scoped readiness (#4318), held-issue publication and release (#4319), builder dispatch (#4320), completion follow-ups (#4321), then complete the RDR-070 audit (#4323)."
   apple-verification:
     title: Apple Verification Presentation
     path: docs/intent/apple-verification/apple-verification-design.md
@@ -638,7 +656,8 @@ arrows:
     specs: docs/intent/tdd-test-review-prs/tdd-test-review-prs-specs.md
     parent: PAID
     taxonomy: runtime
-    audited: 2026-08-23
+    status: OK
+    audited: 2026-10-14
   review-verification:
     title: Independent Verification of PR Review Findings
     path: docs/intent/review-verification/review-verification-design.md
@@ -672,6 +691,16 @@ arrows:
     status: MAPPED
     sampled: 2026-10-11
     next: "Implement chat bootstrap API-key step (#4281) and onboarding chat read/write tools, persona, and product docs (#4282), tracked by umbrella #4280"
+  marketplace-tool-sidecars:
+    title: Marketplace Tool Sidecars
+    path: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-design.md
+    specs: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-10-20
+    sampled: 2026-10-20
+    next: "Run final acceptance audit (#4263) once rule-scoping predicates and EARS evidence are complete."
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.

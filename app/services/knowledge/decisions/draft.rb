@@ -439,18 +439,42 @@ module Knowledge
         DEFAULT_MODEL if provider == DEFAULT_PROVIDER
       end
 
+      # @spec KNOWLEDGE-CREDENTIAL-001
       def llm_request_options(provider)
+        credential = credential_selection_for(provider)
+        if credential.status == :invalid_credential
+          raise AgentHarness::AuthenticationError,
+            "Knowledge decision drafting needs a selected #{credential.service_type || provider} API key"
+        end
+        if unsupported_selected_credential?(credential)
+          raise AgentHarness::AuthenticationError,
+            "Knowledge decision drafting cannot use a selected API key with #{provider}: no supported API transport"
+        end
+
         options = {
           provider: RunnerSupport.harness_runner_key_for(provider).to_sym,
           timeout: TIMEOUT,
           dangerous_mode: false,
           tools: :none
         }
+        options[:provider_runtime] = AgentHarness::ProviderRuntime.new(chat_api_key: credential.api_key) if credential.status == :ready
         options[:model] = DEFAULT_MODEL if provider == DEFAULT_PROVIDER
         # Only route through text mode for Claude; other providers are not
         # required to expose HTTP text transport and fall back to CLI.
-        options.merge!(Llm::TextMode.options) if provider == DEFAULT_PROVIDER
+        options.merge!(Llm::TextMode.options(api_key: credential.api_key)) if provider == DEFAULT_PROVIDER
         options
+      end
+
+      def credential_selection_for(provider)
+        Knowledge::CredentialSelection.call(
+          owner: agent_run.project.effective_owner,
+          operation: :chat,
+          runner: provider
+        )
+      end
+
+      def unsupported_selected_credential?(credential)
+        credential.status == :unsupported_transport && effective_user_setting&.kb_chat_provider_api_key_id.present?
       end
 
       def parse_text_output(output)

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "psych"
 
 class AgentImageBuildScript < Pathname
 end
@@ -72,6 +73,15 @@ RSpec.describe AgentImageBuildScript, :no_db do
   describe AgentImageWorkflow do
     subject(:workflow_source) { Rails.root.join(".github/workflows/agent-image.yml").read }
 
+    let(:workflow) do
+      Psych.safe_load_file(Rails.root.join(".github/workflows/agent-image.yml"), aliases: true)
+    end
+
+    def ruby_setup_steps
+      workflow.fetch("jobs").values.flat_map { |job| job.fetch("steps", []) }
+               .select { |step| step.fetch("uses", "").start_with?("ruby/setup-ruby@") }
+    end
+
     it "compares extracted lockfile contract versions instead of grepping zero-context diffs" do
       expect(workflow_source).to include('previous_bundler_version=$(extract_lockfile_bundler_version "${BASE_SHA}")')
       expect(workflow_source).to include('current_bundler_version=$(extract_lockfile_bundler_version "${HEAD_SHA}")')
@@ -94,9 +104,20 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include("env:\n      PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD: \"true\"")
     end
 
+    # The action ref is asserted as an opaque 40-character SHA instead of a
+    # hardcoded pin: Dependabot owns the GitHub Action bump, so naming the exact
+    # commit here would turn every bump into a spec edit while asserting nothing
+    # extra. What matters is that the ref stays SHA-pinned (never a floating tag)
+    # and that no job delegates Bundler caching to the action.
     it "avoids action-managed Bundler caching in the artifact-publishing job" do
-      expect(workflow_source).to include("uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8")
-      expect(workflow_source).not_to include("bundler-cache: true")
+      setup_steps = ruby_setup_steps
+
+      expect(setup_steps).not_to be_empty
+      setup_steps.each do |step|
+        expect(step.fetch("uses")).to match(/\Aruby\/setup-ruby@[0-9a-f]{40}\z/)
+        expect(step.fetch("with", {})).not_to have_key("bundler-cache")
+      end
+
       expect(workflow_source).to include("name: Install Ruby dependencies")
       expect(workflow_source).to include("run: bundle install --jobs 4 --retry 3")
     end
@@ -121,7 +142,7 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include("id: image-digest")
       expect(workflow_source).to include("bundle exec ruby scripts/generate-agent-image-metadata.rb")
       expect(workflow_source).to include("VERIFIED_CHECKS: smoke_test,runner_contract_smoke_test")
-      expect(workflow_source).to include("uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1")
+      expect(workflow_source).to include("uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2")
       expect(workflow_source).to include("path: tmp/agent-image-metadata.json")
     end
   end

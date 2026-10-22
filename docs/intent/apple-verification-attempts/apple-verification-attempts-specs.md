@@ -4,6 +4,11 @@
 > Identifiers are reserved ahead of the implementation issues (RDR-068
 > Phase 0); the `Tests:` and `Code:` surfaces below are the ones those issues
 > will add.
+>
+> The attempt dispatch path invokes the source lane and transfers its validated
+> references into the guest job. APPLE-ATTEMPT-007 and APPLE-ATTEMPT-008 remain
+> active gaps for their still-unimplemented credential delivery and workspace
+> bundle-construction requirements.
 
 - [x] **APPLE-ATTEMPT-001** — When an Apple verification attempt is submitted,
   the system SHALL admit it only when the active-VM limit and the host disk,
@@ -77,8 +82,10 @@
   repository credential through Paid's credential lane, and that credential
   SHALL NOT be stored in repository configuration, artifacts, VM images, or
   host-service arguments.
-  *Tests:* `spec/services/apple_verification_attempts/committed_source_spec.rb`
-  *Code:* `AppleVerificationAttempts::CommittedSource`
+  *Tests:* `spec/services/apple_verification/source_lane/credential_lane_spec.rb`,
+  `spec/services/apple_verification/source_lane/build_spec.rb`
+  *Code:* `AppleVerification::SourceLane::CredentialLane`,
+  `AppleVerification::SourceLane::Build`
 
 - [ ] **APPLE-ATTEMPT-008** — When an attempt verifies uncommitted source, the
   system SHALL create a content-addressed workspace bundle that excludes
@@ -88,8 +95,10 @@
   host bind mount; the guest SHALL verify the bundle digest before execution,
   and the bundle SHALL be deleted after the attempt and retry window while
   its digest, safe manifest, and provenance are retained.
-  *Tests:* `spec/services/apple_verification_attempts/uncommitted_bundle_spec.rb`
-  *Code:* `AppleVerificationAttempts::UncommittedBundle`
+  *Tests:* `spec/services/apple_verification/source_lane/bundle_builder_spec.rb`,
+  `spec/services/apple_verification/source_lane/build_spec.rb`
+  *Code:* `AppleVerification::SourceLane::BundleBuilder`,
+  `AppleVerification::SourceLane::Build`
 
 - [x] **APPLE-ATTEMPT-009** — Each terminal attempt SHALL classify its failure
   within the closed taxonomy of `project_configuration`, `compile_or_link`,

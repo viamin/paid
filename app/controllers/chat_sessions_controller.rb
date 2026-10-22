@@ -50,7 +50,7 @@ class ChatSessionsController < ApplicationController
     before_id = params.require(:before)
     frame_id = request.headers["Turbo-Frame"].presence || "older_messages"
     messages = latest_messages(
-      @chat_session.messages.chronological.where("chat_messages.id < ?", before_id)
+      @chat_session.messages.chronological.includes(:chat_diagram).where("chat_messages.id < ?", before_id)
     )
 
     has_more = @chat_session.messages.where("chat_messages.id < ?", messages.first&.id).exists? if messages.any?
@@ -71,12 +71,27 @@ class ChatSessionsController < ApplicationController
     return head :bad_request if since_id.nil? || since_id.negative?
 
     messages = @chat_session.messages.chronological
+      .includes(:chat_diagram)
       .where("chat_messages.id > ?", since_id)
       .limit(MESSAGE_PAGE_SIZE)
     has_more = messages.size == MESSAGE_PAGE_SIZE &&
       @chat_session.messages.where("chat_messages.id > ?", messages.last.id).exists?
 
     render json: { messages: messages.map { |m| recent_message_payload(m) }, has_more: has_more }
+  end
+
+  # @spec CHAT-SESSION-PREFERENCES-003
+  # Serves the new-chat dialog's runner/model choices for the currently
+  # selected project so the dialog never offers a tier the project's policy
+  # rejects at create time. A blank or unknown project_id yields the same
+  # unfiltered choices the dialog renders initially, mirroring how
+  # runner_model_policy_projects resolves policy projects on create.
+  def runner_model_options
+    authorize ChatSession.new(account: current_account), :create?
+    projects = current_account.projects.where(id: params[:project_id])
+    options = ChatSessions::RunnerModelOptions.options_for(available_chat_runners, projects:)
+
+    render json: { options: options.map { |option| { label: option.label, value: option.value } } }
   end
 
   def sidebar_page
@@ -248,7 +263,11 @@ class ChatSessionsController < ApplicationController
     )
 
     respond_to do |format|
-      format.html { redirect_to chat_session_path(@chat_session, format: :html), notice: "Project cloned into the workspace." }
+      # @spec CHAT-SESSION-REOPEN-006
+      format.html do
+        redirect_to chat_session_path(@chat_session, format: :html, workspace_cloned: true),
+          notice: "Project cloned into the workspace."
+      end
       format.json { render json: result }
     end
   rescue ActiveRecord::RecordNotFound, ArgumentError => e
@@ -318,12 +337,20 @@ class ChatSessionsController < ApplicationController
 
     selection = ChatSessions::RunnerModelOptions.resolve(
       runners: available_chat_runners,
-      value: value
+      value: value,
+      projects: runner_model_policy_projects(permitted)
     )
     raise ArgumentError, "Choose a valid runner and model combination." unless selection
 
     permitted[:runner_id] = selection.runner_id
     permitted[:model] = selection.model_id
+    permitted[:metadata] = (@chat_session&.metadata || {}).merge(permitted[:metadata] || {}).merge("model_tier" => selection.tier)
+  end
+
+  def runner_model_policy_projects(permitted)
+    project_id = permitted.key?(:project_id) ? permitted[:project_id] : @chat_session&.project_id
+    linked_ids = @chat_session&.chat_session_projects&.pluck(:project_id) || []
+    current_account.projects.where(id: linked_ids << project_id).to_a
   end
 
   def normalize_legacy_create_params!(permitted)
@@ -453,8 +480,20 @@ class ChatSessionsController < ApplicationController
     end
   end
 
+  # @spec CHAT-API-024
   def latest_messages(scope, limit: MESSAGE_PAGE_SIZE)
-    scope.reorder(created_at: :desc, id: :desc).limit(limit).reverse
+    messages = scope.reorder(created_at: :desc, id: :desc).limit(limit).reverse
+    return messages unless messages.first&.groupable_tool?
+
+    leading_tool_run(scope, messages)
+  end
+
+  def leading_tool_run(scope, messages)
+    preceding = scope.where("chat_messages.id < ?", messages.first.id)
+    boundary = preceding.where.not(id: preceding.groupable_tools.select(:id)).reorder(created_at: :desc, id: :desc).first
+    tool_run = boundary ? preceding.where("chat_messages.id > ?", boundary.id) : preceding
+
+    tool_run.groupable_tools.to_a + messages
   end
 
   def create_rate_limited?
@@ -530,7 +569,7 @@ class ChatSessionsController < ApplicationController
   end
 
   def load_chat_messages
-    scope = @chat_session.messages.chronological
+    scope = @chat_session.messages.chronological.includes(:chat_diagram)
     @chat_messages = latest_messages(scope)
     @has_older_messages = scope.where("chat_messages.id < ?", @chat_messages.first.id).exists? if @chat_messages.any?
   end

@@ -72,6 +72,7 @@
                 <%= turbo_frame_tag "inbox_nav_badge_desktop", loading: :lazy, src: inbox_count_path %>
               </span>
               <%= link_to "Projects", projects_path, class: nav_link_class %>
+              <%= link_to "Feature proposals", feature_intents_path, class: nav_link_class %>
               <%= link_to "Agent Runs", agent_runs_path, class: nav_link_class %>
               <%= link_to "Chat", chat_sessions_path, class: nav_link_class %>
               <% if current_account&.scheduler_paused? %>
@@ -212,6 +213,7 @@
               <%= turbo_frame_tag "inbox_nav_badge_mobile", loading: :lazy, src: inbox_count_path %>
             </div>
             <%= link_to "Projects", projects_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
+            <%= link_to "Feature proposals", feature_intents_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Agent Runs", agent_runs_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <%= link_to "Chat", chat_sessions_path, data: { action: "mobile-menu#close" }, class: mobile_link_class %>
             <% if current_account&.scheduler_paused? %>
@@ -293,6 +295,7 @@
     <% if chat_popup_available? %>
       <div class="pointer-events-none fixed inset-x-4 bottom-4 z-40 sm:inset-x-auto sm:right-6 sm:w-[26rem]"
            data-controller="chat-popup"
+           data-action="chat:navigate@window->chat-popup#followNavigation"
            data-chat-popup-account-id-value="<%= current_account.id %>"
            data-chat-popup-create-url-value="<%= chat_sessions_path %>"
            data-chat-popup-panel-url-template-value="<%= chat_session_path("__SESSION_ID__") %>?display=popup"

@@ -6,15 +6,14 @@ prefix: LIVE-PREVIEW
 # Low-Level Design: Live Web App Preview
 
 > Companion to the high-level design (`docs/high-level-design.md`). This
-> segment covers the shipped preview and verification foundations from RDR-045
-> and the still-open end-to-end wiring gaps reconciled on August 4, 2026.
+> segment covers the shipped preview and verification capabilities from
+> RDR-045, including the August 2026 end-to-end closeout.
 
 ## Purpose
 
-RDR-045 is no longer a pure future design. The repository now ships real
-preview/session/browser foundations, but the user-facing preview and
-verification flows are still incomplete. This segment records the split between
-what already works underneath and what still needs implementation coverage.
+RDR-045 is implemented. The repository ships real preview/session/browser
+infrastructure together with the user-facing lifecycle and verification-result
+flows that consume it.
 
 ## Shipped Foundations
 
@@ -26,15 +25,41 @@ The repo now includes substantial runtime infrastructure:
 - Playwright trace production plus trace-viewer UI components
 - verification browser sidecar provisioning and playwright-mcp MCP attachment
   for agent runs that enable verification
+- asynchronous preview lifecycle handling from queued provisioning through
+  ready, failure, stopping, and cleanup
+- persisted interactive-verification outcomes, app-log tails, and artifact
+  metadata for review flows
 
 These are real execution surfaces, not placeholders.
 
-## Active Gap
+## Interactive Verification Result Contract
 
-The remaining work is end-to-end wiring and lifecycle correctness:
+After the agent executes, `AgentRuns::VerificationResultRecorder` reads the
+agent-written verification result, normalizes it, and persists the outcome on
+the `AgentRun` before commit bookkeeping. It also retains app-log and artifact
+metadata so review flows can distinguish what the agent verified from merely
+having provisioned a browser sidecar. This runs for both successful and
+non-zero runner exits, preserving verification evidence when the run fails.
 
-- agent verification still stops at provisioning the browser sidecar instead of
-  driving the changed app and persisting a verification outcome
+### Reported outcome versus observed evidence
+
+Interactive JSON is agent-authored reporting, not an execution attestation.
+The recorder therefore retains its status, browser steps, and criterion claims
+as `reported_*` data while separately recording recorder-owned facts: the
+tested commit when one is available, normalized runtime configuration, bounded
+app-log retention, artifact provenance, and evidence freshness. A claimed
+criterion is `unverified` unless a recorder-owned assertion supports it;
+reported failures, skips, and not-run states remain explicit. Screenshots and
+app logs are useful artifacts but never prove arbitrary behavior merely by
+existing.
+
+Reported artifact paths are only assessed relative to the repository and are
+never promoted into trusted object-storage keys. Recorder-created app logs are
+retained under the existing project object-storage namespace when available;
+missing, inaccessible, oversized, and untrusted artifacts remain visible as
+explicit states. Evidence becomes stale when its commit differs from the run's
+reviewed commit. This supplements RDR-076's shared evidence contract; it does
+not create merge authority or a separate acceptance model.
 
 ## Trace Artifact Contract
 
@@ -55,8 +80,6 @@ agent-run trace artifact path above.
 - **Not the polyglot runtime segment.** Phoenix support here is preview-specific
   foundation work; the shared language/runtime contract lives in
   `polyglot-test-execution`.
-- **Not a claim that the current preview buttons expose a real live app.** They
-  are precisely one of the still-open gaps this segment records.
 - **Not a production-data bridge.** Preview sessions remain intended for local
   or seeded data only.
 - **Not a host-credential bridge.** Setup and app startup commands executed

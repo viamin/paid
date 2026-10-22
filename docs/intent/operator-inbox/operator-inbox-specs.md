@@ -27,6 +27,45 @@
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/merge_approval.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002K** — When an open ready PR belongs to an authorized
+  project with auto-merge off, the system SHALL surface the same
+  `merge_approval` lane without relying on permission to execute an automatic
+  merge: approval-only current-head failures SHALL say whether review or
+  re-approval is needed, and a fully clear assessment SHALL say that a manual
+  merge decision is needed. CI, dependency, conflict, review-feedback, and
+  unevaluated policy signals SHALL keep the PR out of the actionable lane
+  rather than implying merge readiness. The queue, badge, filter availability,
+  API serializer, and supported GitHub action SHALL share that predicate;
+  test-review, escalation, and structured hold lanes retain their existing
+  precedence and no automatic merge is enabled by visibility alone. A trusted
+  per-PR auto-merge activation excludes the PR from this manual-action lane even
+  when the project mode is `off`, because it authorizes the scanner's automatic
+  merge path; a structured hold remains visible and blocks that path.
+  Guidance SHALL be derived from the structured hold, approval freshness,
+  remaining blockers, and effective per-PR auto-merge activation state — never
+  from a rendered summary. When a recorded approval is stale, the Inbox SHALL
+  say that commits were added after it even if GitHub still displays Approved,
+  and show approved/current revisions, assessment time, and a comparison link
+  when the scan captured that evidence. Each blocking approval (owner and any
+  configured manual reviewer, evaluated independently — see AUTO-MERGE-006)
+  that failed freshness SHALL be surfaced with its approver login and
+  per-approver comparison link, so a fresh owner re-approval does not mask a
+  stale configured manual reviewer approval (#4519). With automatic merge
+  inactive, guidance SHALL direct the operator to review the current changes
+  and make the manual merge decision on GitHub; re-approval alone SHALL NOT
+  be described as triggering a Paid merge. With automatic merge active, it
+  SHALL say that current-revision approval causes a later scan to reevaluate
+  subject to remaining checks and policy, not promise a merge. The web
+  detail, API, chat context, and displayed blocker next actions SHALL use
+  the same guidance.
+  *Code:* `app/services/inbox/merge_approval.rb`, `app/services/inbox/queue.rb`,
+  `app/services/inbox/count.rb`, `app/services/inbox/availability.rb`,
+  `app/views/dashboard/_inbox_detail_merge_approval.html.erb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  `spec/services/inbox/availability_spec.rb`, `spec/requests/inbox_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002B** — When a visible notification is active and
   `blocking: true`, the system SHALL expose it as an `action_required` inbox
   entry until the notification resolves or is dismissed, reusing notification
@@ -38,8 +77,14 @@
   guidance. Informational status/history notifications, including automatic
   code-scanning verification waits, SHALL remain outside this lane and its
   badge; credential and configuration notifications that require an operator
-  correction remain blocking entries.
-  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`.
+  correction remain blocking entries. The detail pane's full-page
+  destinations — the linked action URL (`notification.action_url`) and the
+  "View Agent Run" link for `AgentRun` subjects — SHALL opt out of the
+  `inbox-detail` Turbo frame (`data-turbo-frame="_top"`) so they navigate the
+  full page instead of leaving a "Content missing" placeholder in the pane
+  (#4501); external GitHub links keep their `target="_blank"` behavior.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/views/dashboard/_inbox_detail_action_required.html.erb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
 
@@ -47,13 +92,11 @@
   `escalated` and its project is within the operator's authorized Inbox
   visibility (`INBOX-FOUNDATION-006` — account isolation plus owner
   visibility, independent of automatic work-selection eligibility; the same
-  scope every other inbox kind uses — this is a deliberate divergence from
-  the dashboard's account-wide Blocked PRs panel, so the two surfaces are not
-  expected to agree on counts), the system SHALL
+  scope every other inbox kind uses), the system SHALL
   expose that pull request as an `escalated_pr` inbox entry showing the
   escalation reason, how long it has been stopped (`pr_escalation_started_at`,
   falling back to `updated_at`), and the tripped counters computed by
-  `Dashboard::BlockedPullRequests` (reused, not reimplemented), including its
+  `Inbox::EscalatedPullRequests` (reused, not reimplemented), including its
   operator-paused indicator when the pull request is both escalated and
   paused. The entry SHALL offer the `unblock_escalation` clearing action for
   every reason except `awaiting_approval`, for which the entry SHALL instead
@@ -141,17 +184,15 @@
   installation token lacks a required permission) and its project is within
   the operator's authorized Inbox visibility (`INBOX-FOUNDATION-006` —
   account isolation plus owner visibility, independent of automatic
-  work-selection eligibility; the same scope every other inbox kind uses — a
-  deliberate divergence from the dashboard's account-wide Retry-Limited card,
-  the same divergence `escalated_pr` and `manual_review` already record,
-  `OPERATOR-INBOX-002C` / `002D`), the system
-  SHALL expose that record as a `retry_limited` inbox entry showing why
+  work-selection eligibility; the same scope every other inbox kind uses), the
+  system SHALL expose retry-abandoned records only through the Inbox, not a
+  duplicate Dashboard panel, showing why
   automation stopped (`runner_retry_abandon_reason`) and how long it has
   been stopped (`runner_retry_abandoned_at`). The entry SHALL distinguish
   `push_permission_abandoned?` (the GitHub App lacked a required permission —
   prefixed `Push rejected:`) from the runner-retry-cap case in both the list
-  and detail views via the Push Blocked vs Retry Cap badge split the dashboard
-  card already shows, so operators can pick the right remediation (re-grant
+  and detail views via the Push Blocked vs Retry Cap badge split, so operators
+  can pick the right remediation (re-grant
   the GitHub App permission vs. clear the retry-cap flag and queue a manual
   run). The entry SHALL clear when `clear_runner_retry_abandonment!` runs
   (called by `RunAgentActivity#clear_issue_runner_retry_abandonment` after a
@@ -181,6 +222,7 @@
   SHALL accept `retry_limited` alongside the existing kinds.
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
   `app/models/issue.rb`,
+  `app/controllers/dashboard_controller.rb`, `app/views/dashboard/show.html.erb`,
   `app/controllers/projects/agent_runs_controller.rb`,
   `app/views/dashboard/_inbox_list.html.erb`,
   `app/views/dashboard/_inbox_detail.html.erb`,
@@ -188,7 +230,8 @@
   `app/views/inbox/index.html.erb`,
   `config/routes.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
-  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+  `spec/requests/dashboard_spec.rb`, `spec/requests/inbox_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002F** — When an issue or pull request re-enters the
   `retry_limited` Inbox lane after its retry abandonment has been cleared, the
@@ -308,7 +351,12 @@
   shared pane proportions, breakpoint, gap, pane chrome, empty state, or
   active-row treatment lands in one place. The Inbox's mobile master-detail
   flow (`inbox-master-detail` controller, route-based member pane) is
-  feature-specific; the shared pattern encodes layout only.
+  feature-specific; the shared pattern encodes layout only. Selecting a queue
+  row SHALL target the `inbox-detail` Turbo Frame and advance browser history,
+  so only detail content is replaced, the list retains its DOM and scroll
+  position, and the existing controller applies the selected-row treatment.
+  A direct member-route visit SHALL continue to render the complete page for
+  deep links and mobile navigation.
   *Code:* `app/controllers/inbox_controller.rb`,
   `app/views/inbox/index.html.erb`,
   `app/views/dashboard/_inbox_list.html.erb`,
@@ -429,8 +477,8 @@
   alongside the answer form: the "Current Context" section plus the prose
   that introduced the `## Clarifying questions` heading (the "preamble").
   The context SHALL be surfaced via `ClarifyingQuestions::Load#context_markdown`
-  reusing the same `issue_comments` list the queue already loads (no extra
-  GitHub API call), SHALL flow through `Inbox::Queue::Entry#context_markdown`,
+  in a separate lazy Turbo Frame, fetching comments once per supplementary
+  request, SHALL flow through `Inbox::Queue::Entry#context_markdown`,
   and SHALL be exposed through `shared/markdown_text` rendered in block
   mode so paragraphs and lists keep their structure. On `lg+` viewports
   the context SHALL sit in a two-column grid beside the questions; below
@@ -551,3 +599,63 @@
   `app/views/inbox/index.html.erb`, `app/controllers/projects/change_intents_controller.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`,
   `spec/services/inbox/count_spec.rb`, `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-015** — When a signed-in operator requests the
+  `inbox-detail` Turbo Frame, the system SHALL resolve only the requested
+  entry using its lane's current visibility, admission, and active filters,
+  render only the detail frame, and avoid building other lanes or filter
+  availability. Missing, malformed, resolved, or unauthorized entries SHALL
+  redirect to the filtered Inbox as a full-page navigation so the queue and
+  empty state refresh without a missing-frame error. Opening an Inbox chat
+  SHALL revalidate membership with the same targeted lookup rather than
+  rebuilding other lanes. Chat creation SHALL perform exactly one targeted
+  lookup immediately before it acts, so an entry that leaves the queue cannot
+  open or resume a chat and the controller does not repeat the lookup.
+  *Test:* `spec/requests/inbox_spec.rb`,
+  `spec/services/inbox/open_interactive_chat_spec.rb`,
+  `spec/services/inbox/queue_spec.rb`.
+
+- [x] **OPERATOR-INBOX-016** — When the system renders an unfiltered Inbox,
+  it SHALL derive filter availability from the entries already built for
+  that request and reuse a partial-closeout entry's computed status and
+  evidence when rendering its detail and assessment. Closeout candidate
+  discovery SHALL batch visible projects, eligibility checks SHALL restrict
+  their scope to closeout candidates without bypassing admission guards,
+  prerequisites SHALL be read once per status, and assessment reads SHALL
+  exclude unrelated agent-run payloads such as transcripts.
+  *Test:* `spec/services/inbox/availability_spec.rb`,
+  `spec/services/issues/stalled_closeouts_spec.rb`,
+  `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/partial_closeouts/assessment_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+
+- [x] **OPERATOR-INBOX-017** — When an Inbox detail needs GitHub-only
+  context or an enhancement-comment link, the system SHALL load that
+  supplementary content in a separate lazy Turbo Frame so the queue and
+  local detail actions render without waiting for GitHub. The supplementary
+  request SHALL recheck entry visibility and lane membership and render an
+  empty frame if the entry is no longer available.
+  *Test:* `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-018** — When reconciliation leaves an open
+  traceability finding after structural matching, the Inbox SHALL explain in
+  plain language whether it is missing linkage, potentially missing/partial
+  work, stale metadata, deliberate deferral, or unavailable coverage. It
+  SHALL show the pinned artifact/revision, last successful coverage, cited
+  evidence and a direct GitHub link, and SHALL state that missing links do
+  not prove missing implementation and closed work does not prove delivery.
+  An authorized operator SHALL be able to link an existing project issue,
+  repair stale document links through a focused design PR, defer, dismiss/not-applicable, or recheck with a required reason where a
+  decision is made. The write SHALL verify the pinned revision and project
+  ownership, retain actor/provenance, remove the item from the unassigned
+  queue without claiming a repair, and remain pending until reconciliation
+  verifies resolution. Unavailable coverage SHALL offer access/retry guidance
+  instead of a new-implementation recommendation. Chat is optional and does
+  not substitute for the decision workflow. The API SHALL expose the same
+  authorized resolution operation and resulting decision state.
+  *Code:* `DesignArtifactFindings::Resolve`,
+  `DesignArtifactFindingsController`,
+  `Api::V1::DesignArtifactFindingsController`,
+  `app/views/dashboard/_inbox_detail_traceability_gap.html.erb`.
+  *Test:* `spec/services/design_artifact_findings/resolve_spec.rb`,
+  `spec/requests/inbox_spec.rb`.

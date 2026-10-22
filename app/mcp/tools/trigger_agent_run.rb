@@ -21,6 +21,7 @@ module Tools
       run_agent_available_to?(user:)
     end
 
+    # @spec CHAT-API-020
     def self.input_schema
       {
         type: "object",
@@ -36,12 +37,7 @@ module Tools
           },
           confirmed: { type: "boolean", description: "Must be true to execute this write operation" }
         },
-        required: %w[project_id confirmed],
-        anyOf: [
-          { required: %w[issue_id] },
-          { required: %w[custom_prompt] },
-          { required: %w[plan_docs goal], properties: { goal: { const: "lid_planning" } } }
-        ]
+        required: %w[project_id confirmed]
       }
     end
 
@@ -71,6 +67,11 @@ module Tools
 
       external_metadata = named_plan_docs.any? ? { "plan_docs" => named_plan_docs } : {}
       external_metadata["feature_brief"] = feature_brief if feature_brief
+
+      # @spec LABEL-CONTROL-007 — In ignored mode the MCP trigger marks the
+      # targeted issue/PR as paid-activated, mirroring the controller path
+      # so a chat-triggered run is indistinguishable from a UI-triggered one.
+      Issues::ActivatePaid.call(project: project, issue: issue)
 
       run = AgentRun.create!(
         project: project,

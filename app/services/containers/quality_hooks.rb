@@ -10,15 +10,23 @@ module Containers
     # Ruby (Rails/ActiveRecord) and Elixir (Phoenix/Ecto) both fail
     # unconditionally without PostgreSQL, which would trap the agent in a
     # commit loop. Their test hooks are no-op'd when no DB container is running.
-    DB_DEPENDENT_TEST_LANGUAGES = %w[ruby elixir].freeze
+    # Mirrors {Prompts::LanguageCommands::DB_DEPENDENT_TEST_LANGUAGES} so the
+    # pre-commit hook and the prompt agree on which suites are runnable
+    # (POLYGLOT-TEST-011).
+    DB_DEPENDENT_TEST_LANGUAGES = Prompts::LanguageCommands::DB_DEPENDENT_TEST_LANGUAGES
 
-    def install_quality_hooks(git_ops, agent_run) # @spec QUALITY-LOOPS-004 # @spec POLYGLOT-TEST-003
+    def install_quality_hooks(git_ops, agent_run) # @spec QUALITY-LOOPS-004 # @spec POLYGLOT-TEST-003 # @spec POLYGLOT-TEST-011 # @spec TDD-GUARD-009 # @spec TDD-GUARD-010
       languages = Prompts::LanguageCommands.test_languages(agent_run.project)
-      db_available = agent_run.project.has_running_database_container?
+      db_available = Prompts::ServiceContainerSections.has_database_container?(
+        project: agent_run.project,
+        agent_run: agent_run
+      )
 
       lint_commands, test_commands = resolve_commands(languages, db_available)
       mutation_cmd = resolve_mutation_command(agent_run.project, agent_run.settings_user, languages)
+      configured_mutation_cmd = mutation_cmd
       mutation_cmd = nil if ruby_db_gated?(languages, db_available)
+      record_database_skips(agent_run, languages, configured_mutation_cmd) if db_dependent_languages(languages).any? && !db_available
       # RDR-056 (Strict TDD): mutation checks run after green, not during the
       # red test-review phase — a test_writing run has no implementation to
       # mutate yet, and running mutant against approved tests here would only
@@ -31,6 +39,7 @@ module Containers
         test_command: test_commands,
         mutation_command: mutation_cmd || "true"
       }
+      install_args[:test_failure_behavior] = :permit if test_writing_phase?(agent_run)
       pre_commit_guard = tdd_write_guard_script(agent_run)
       install_args[:pre_commit_guard] = pre_commit_guard if pre_commit_guard.present?
 
@@ -44,6 +53,10 @@ module Containers
       return unless requirement
 
       MutantResultsReader.with_results_dir(requirement.command)
+    end
+
+    def test_writing_phase?(agent_run)
+      agent_run.tdd_test_writing_phase?
     end
 
     def resolve_scheduled_mutation_command(project, user, languages)
@@ -83,6 +96,24 @@ module Containers
     # hook is itself gated out by a missing database container.
     def ruby_db_gated?(languages, db_available)
       languages.include?("ruby") && db_dependent_test_language?("ruby") && !db_available
+    end
+
+    # A no-op hook prevents an infrastructure-only commit loop; it is not a
+    # passing quality result. Keep the explicit outcome on the run for the
+    # later quality/recovery surfaces.
+    # @spec QUALITY-LOOPS-004
+    def record_database_skips(agent_run, languages, mutation_command)
+      checks = db_dependent_languages(languages).map do |language|
+        { "check" => "test", "language" => language, "status" => "not_executed", "reason" => "database_service_unavailable" }
+      end
+      checks << { "check" => "mutation", "status" => "not_executed", "reason" => "database_service_unavailable" } if mutation_command
+      return if checks.empty?
+
+      agent_run.update!(external_metadata: agent_run.external_metadata.merge("quality_checks_not_executed" => checks))
+    end
+
+    def db_dependent_languages(languages)
+      languages.select { |language| db_dependent_test_language?(language) }
     end
 
     def resolve_mutation_requirement(project, user)

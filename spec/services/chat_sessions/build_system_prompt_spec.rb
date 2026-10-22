@@ -19,6 +19,22 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
   describe "#call" do
     subject(:prompt) { described_class.new(chat_session: chat_session).call }
 
+    # @spec FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
+    it "presents persisted facet scores and evidence reasoning without assessing during render" do
+      project = create(:project, account: account)
+      chat_session.update!(project: project)
+      facet = create(:feature_intent_facet, feature_intent: create(:feature_intent, project: project))
+      direction = create(:feature_intent_facet_direction, feature_intent_facet: facet)
+      create(:feature_intent_facet_assessment, feature_intent_facet_direction: direction, account: account,
+        evidence_revision: facet.evidence_revision, status: "completed", intent_score: 85, technical_score: 70,
+        explanation: "An explicit requirement is clear; prototype coverage is limited.", evidence_references: [ "chat-1" ])
+      allow(AgentHarness).to receive(:send_message)
+
+      expect(prompt).to include("Facet Confidence", "Intent certainty: 85/100", "Technical confidence: 70/100",
+        "Expressed intent evidence: chat-1", "Inferred fit: assessment interpretation")
+      expect(AgentHarness).not_to have_received(:send_message)
+    end
+
     describe "base identity" do
       subject(:prompt) { prompt_builder.call }
 
@@ -42,6 +58,12 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("use the available tools")
         expect(prompt).to include("prefer configuration profiles")
         expect(prompt).to include("Be concise and technical")
+      end
+
+      # @spec CHAT-API-025
+      it "instructs the assistant how to link users to Paid pages" do
+        expect(prompt).to include("root-relative Paid link")
+        expect(prompt).to include("/provider_api_keys/new#api-key-form")
       end
 
       # @spec FEATURE-CREATION-007
@@ -205,6 +227,42 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
       it "includes preferences section" do
         expect(prompt).to include("Preferences")
         expect(prompt).to include("concise, technical responses")
+      end
+
+      # @spec FACET-CONFIDENCE-007
+      it "includes the owner's matching explicit preferences" do
+        project = create(:project, account: account)
+        matching_preference = create(:explicit_preference, account: account, user: user, recorded_by: user,
+          scope: "project", project: project, statement: "Use PostgreSQL for this project.")
+        create(:explicit_preference, account: account, user: user, recorded_by: user,
+          scope: "project", project: create(:project, account: account), statement: "Do not include this preference.")
+        scoped_session = create(:chat_session, account: account, created_by: user, project: project)
+
+        prompt = described_class.call(chat_session: scoped_session)
+
+        expect(prompt).to include("Explicit Preferences")
+        expect(prompt).to include(matching_preference.statement)
+        expect(prompt).not_to include("Do not include this preference.")
+      end
+
+      # @spec FACET-CONFIDENCE-007
+      it "includes a feature-scoped preference for a linked clarifying issue" do
+        project = create(:project, account: account)
+        feature_intent = create(:feature_intent, project: project)
+        issue = create(:issue, :needs_input, project: project)
+        create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+        preference = create(:explicit_preference, account: account, user: user, recorded_by: user,
+          scope: "feature", project: project, feature_intent: feature_intent,
+          statement: "Use the approved delivery path.")
+        session = create(:chat_session, account: account, created_by: user, project: project,
+          clarifying_question_issue: issue, metadata: {
+            "clarifying_question_issue_id" => issue.id,
+            "clarifying_questions" => issue.needs_input_questions
+          })
+
+        prompt = described_class.call(chat_session: session)
+
+        expect(prompt).to include(preference.statement)
       end
     end
 
@@ -438,6 +496,54 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("submit_clarifying_answers")
       end
 
+      describe "feature conversations" do
+        let(:feature) { create(:feature_intent, project: project, title: "Inbox redesign") }
+        let(:focused_issue) do
+          create(:issue, :needs_input, project: project, github_number: 8, title: "Focus question",
+            needs_input_questions: [ "Which storage backend?" ])
+        end
+
+        before do
+          create(:feature_intent_issue, feature_intent: feature, issue: issue)
+          create(:feature_intent_issue, feature_intent: feature, issue: focused_issue)
+        end
+
+        # @spec QUESTION-EXPLORATION-018
+        it "names the shared feature and renders the focused issue's questions" do
+          chat_session.update!(
+            feature_intent: feature,
+            metadata: {
+              "clarifying_question_issue_id" => issue.id,
+              "clarifying_questions" => focused_issue.needs_input_questions,
+              "exploration_focus" => { "issue_id" => focused_issue.id }
+            }
+          )
+
+          expect(prompt).to include("Feature Conversation: Inbox redesign")
+          expect(prompt).to include("Clarifying Questions for Issue #8: Focus question")
+          expect(prompt).to include("1. Which storage backend?")
+          expect(prompt).not_to include("Clarifying Questions for Issue #7")
+        end
+      end
+
+      # @spec QUESTION-EXPLORATION-008 QUESTION-EXPLORATION-011 FACET-CONFIDENCE-006 FACET-CONFIDENCE-007
+      it "grounds adaptive clarification and keeps exploration separate from durable preferences" do
+        expect(prompt).to include("Before asking for facts, inspect available repository and Inbox context")
+        expect(prompt).to include("both, neither, conditions, and free-text alternatives")
+        expect(prompt).to include("Do not treat a diagram click, selection, collapse, trial edit, or an assessment inference as a durable preference")
+        expect(prompt).to include("explicitly states a preference and explicitly chooses or clarifies its scope")
+      end
+
+      # @spec QUESTION-EXPLORATION-013
+      it "restores a saved partial answer without treating it as a final submission" do
+        ClarifyingQuestions::SaveProgress.call(
+          chat_session: chat_session, position: 1, answer: "Show the error inline.", actor: user
+        )
+
+        expect(prompt).to include("Saved draft answer: Show the error inline.")
+        expect(prompt).to include("does not post to GitHub or resolve the inbox item")
+      end
+
       it "labels a linked pull request as a PR" do
         pull_request = create(:issue, :needs_input, :pull_request, project: project, github_number: 9,
           title: "Ship it", needs_input_questions: [ "What should happen after approval?" ])
@@ -483,7 +589,9 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
           "clarifying_questions" => [ question ]
         })
 
-        rendered_lines = prompt.lines.map(&:chomp).select { |line| line.match?(/\A\s*-\s+/) && line.include?("(") }
+        rendered_lines = prompt.lines.map(&:chomp).select do |line|
+          line.match?(/\A\s*-\s+/) && line.match?(/SQLite|Postgres/)
+        end
 
         aggregate_failures do
           rendered_lines.each do |line|

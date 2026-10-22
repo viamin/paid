@@ -14,6 +14,151 @@ class ChatPopupControllerNodeHarness
 
     const ChatPopupController = new Function(transformed)();
 
+    function localStorageWith(values = {}) {
+      const entries = new Map(Object.entries(values));
+
+      return {
+        getItem(key) {
+          return entries.get(key) || null;
+        },
+        setItem(key, value) {
+          entries.set(key, value);
+        }
+      };
+    }
+
+    function renderTargets() {
+      const classes = new Set();
+
+      return {
+        button: {
+          attributes: {},
+          setAttribute(name, value) {
+            this.attributes[name] = value;
+          }
+        },
+        panel: {
+          classList: {
+            toggle(name, present) {
+              if (present) classes.add(name);
+              else classes.delete(name);
+            },
+            contains(name) {
+              return classes.has(name);
+            }
+          }
+        },
+        keepOpenButton: {
+          attributes: {},
+          textContent: "",
+          setAttribute(name, value) {
+            this.attributes[name] = value;
+          }
+        }
+      };
+    }
+
+    // @spec CHAT-API-021
+    function runNavigationPersistenceCase() {
+      const targets = renderTargets();
+      const localStorage = localStorageWith({
+        "paid:chat-popup:7": JSON.stringify({ open: true, sessionId: 42, keepOpen: true })
+      });
+      const controller = Object.create(ChatPopupController.prototype);
+      let loadedSession = false;
+
+      global.window = { console: { error() {} }, localStorage };
+      controller.accountIdValue = 7;
+      controller.buttonTarget = targets.button;
+      controller.panelTarget = targets.panel;
+      controller.keepOpenButtonTarget = targets.keepOpenButton;
+      controller.hasKeepOpenButtonTarget = true;
+      controller.loadPanel = () => { loadedSession = true; };
+
+      controller.connect();
+
+      if (controller.state.open !== true || controller.state.sessionId !== 42) {
+        throw new Error(`Expected navigation to restore the open popup session, saw ${JSON.stringify(controller.state)}`);
+      }
+
+      if (!loadedSession || targets.panel.classList.contains("hidden") || targets.button.attributes["aria-expanded"] !== "true") {
+        throw new Error("Expected navigation to reopen and load the persisted chat popup");
+      }
+
+      if (targets.keepOpenButton.attributes["aria-pressed"] !== "true" || targets.keepOpenButton.textContent !== "Chat Stays Open") {
+        throw new Error("Expected the keep-open control to reflect the persisted preference");
+      }
+
+      controller.toggleKeepOpen();
+      const disabledPreference = JSON.parse(localStorage.getItem("paid:chat-popup:7"));
+
+      if (disabledPreference.keepOpen !== false || disabledPreference.open !== true) {
+        throw new Error(`Expected disabling keep-open to persist the preference without closing the popup, saw ${JSON.stringify(disabledPreference)}`);
+      }
+
+      const nextPageTargets = renderTargets();
+      const nextPageController = Object.create(ChatPopupController.prototype);
+      let reopenedAfterDisabling = false;
+
+      nextPageController.accountIdValue = 7;
+      nextPageController.buttonTarget = nextPageTargets.button;
+      nextPageController.panelTarget = nextPageTargets.panel;
+      nextPageController.loadPanel = () => { reopenedAfterDisabling = true; };
+      nextPageController.connect();
+
+      if (nextPageController.state.open !== false || reopenedAfterDisabling || !nextPageTargets.panel.classList.contains("hidden")) {
+        throw new Error("Expected a navigation after disabling keep-open to leave the popup closed");
+      }
+
+      controller.toggleKeepOpen();
+
+      controller.close();
+      const persisted = JSON.parse(localStorage.getItem("paid:chat-popup:7"));
+
+      if (persisted.open !== false || persisted.sessionId !== 42 || persisted.keepOpen !== true) {
+        throw new Error(`Expected explicit dismissal to persist a closed popup without losing its session, saw ${JSON.stringify(persisted)}`);
+      }
+
+      if (!targets.panel.classList.contains("hidden") || targets.button.attributes["aria-expanded"] !== "false") {
+        throw new Error("Expected explicit dismissal to hide the popup");
+      }
+    }
+
+    // @spec CHAT-API-025
+    function runExplicitNavigationHandoffCase() {
+      const localStorage = localStorageWith({
+        "paid:chat-popup:7": JSON.stringify({ open: false, sessionId: 11, keepOpen: false })
+      });
+      const controller = Object.create(ChatPopupController.prototype);
+
+      global.window = { console: { error() {} }, localStorage };
+      controller.accountIdValue = 7;
+      controller.state = controller.readState();
+      controller.followNavigation({ detail: { sessionId: 42 } });
+
+      const pending = JSON.parse(localStorage.getItem("paid:chat-popup:7"));
+      if (!pending.open || !pending.followNavigation || pending.sessionId !== 42 || pending.keepOpen) {
+        throw new Error(`Expected an explicit navigation to stage session 42 without changing keep-open, saw ${JSON.stringify(pending)}`);
+      }
+
+      const targets = renderTargets();
+      const destination = Object.create(ChatPopupController.prototype);
+      let loaded = false;
+      destination.accountIdValue = 7;
+      destination.buttonTarget = targets.button;
+      destination.panelTarget = targets.panel;
+      destination.loadPanel = () => { loaded = true; };
+      destination.connect();
+
+      const consumed = JSON.parse(localStorage.getItem("paid:chat-popup:7"));
+      if (!loaded || !destination.state.open || destination.state.sessionId !== 42 || targets.panel.classList.contains("hidden")) {
+        throw new Error("Expected the destination to open the handed-off chat session");
+      }
+      if (consumed.followNavigation || consumed.keepOpen || !consumed.open || consumed.sessionId !== 42) {
+        throw new Error(`Expected the one-navigation handoff to be consumed without enabling keep-open, saw ${JSON.stringify(consumed)}`);
+      }
+    }
+
     async function runNewChatSuccessCase() {
       const writes = [];
       const fetchCalls = [];
@@ -187,6 +332,12 @@ class ChatPopupControllerNodeHarness
         console: { error() {} }
       };
 
+      if (process.argv[1] === "navigation") {
+        runNavigationPersistenceCase();
+        runExplicitNavigationHandoffCase();
+        return;
+      }
+
       await runNewChatSuccessCase();
       await runNewChatFailureCase();
       await runArchiveAndNewChatSuccessCase();
@@ -199,12 +350,25 @@ class ChatPopupControllerNodeHarness
     });
   JAVASCRIPT
 
-  def self.run
-    Open3.capture3("node", "-e", SCRIPT, chdir: Rails.root.to_s)
+  def self.run(scenario = "sessions")
+    Open3.capture3("node", "-e", SCRIPT, scenario, chdir: Rails.root.to_s)
   end
 end
 
 RSpec.describe ChatPopupControllerNodeHarness, :no_db do
+  # @spec CHAT-API-021
+  it "restores popup state and session after navigation, then honors dismissal" do
+    stdout, stderr, status = described_class.run("navigation")
+
+    expect(status.success?).to be(true), <<~MESSAGE
+      Node regression harness failed.
+      stdout:
+      #{stdout}
+      stderr:
+      #{stderr}
+    MESSAGE
+  end
+
   it "replaces popup state only after a fresh session is created" do
     stdout, stderr, status = described_class.run
 

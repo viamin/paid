@@ -21,7 +21,10 @@ RSpec.describe IntentConformance::VerifyAtMerge do
   end
 
   before do
-    project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+    project.account.tenant_setting!.update!(features: {
+      "approved_intent_amendments" => true,
+      "intent_conformance_enforcement" => true
+    })
   end
 
   # @spec INTENT-MERGE-GUARD-001
@@ -32,13 +35,25 @@ RSpec.describe IntentConformance::VerifyAtMerge do
   end
 
   # @spec INTENT-MERGE-GUARD-001
-  context "when the project has not opted into the rollout flag" do
+  context "when the project has not opted into complete enforcement" do
     before do
       create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
       project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => false })
     end
 
     it "is a no-op even without a verdict" do
+      expect(call).to be_nil
+    end
+  end
+
+  # @spec INTENT-MERGE-GUARD-001
+  context "when only the amendment flow is enabled" do
+    before do
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+      project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+    end
+
+    it "does not apply the final merge guard without enforcement" do
       expect(call).to be_nil
     end
   end
@@ -226,6 +241,20 @@ RSpec.describe IntentConformance::VerifyAtMerge do
 
         expect(result.reason_code).to eq(described_class::REASON_VERDICT_STALE)
       end
+    end
+  end
+
+  # @spec CONFIDENCE-DELIVERY-010
+  context "when the issue belongs to a confidence-driven feature" do
+    let(:confidence_feature) { create(:feature_intent, :confidence_driven, project: project, status: "revising") }
+
+    before do
+      create(:feature_intent_issue, feature_intent: confidence_feature, issue: issue)
+      create(:design_amendment_pause, design_amendment: create(:design_amendment, project: project, feature_intent: confidence_feature), issue: issue)
+    end
+
+    it "does not impose approval-gated amendment or verdict blockers" do
+      expect(call).to be_nil
     end
   end
 end

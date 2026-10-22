@@ -14,12 +14,30 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
   let(:issue) do
     double(
       github_number: 1964,
-      needs_input?: false
+      needs_input?: false,
+      body: "Human-written issue context"
     )
   end
 
   before do
-    allow(github_client).to receive(:add_comment).and_return(double(html_url: "https://github.com/test"))
+    allow(github_client).to receive_messages(
+      add_comment: double(html_url: "https://github.com/test"),
+      issue_comments: []
+    )
+  end
+
+  def remote_body(content, questions = [ "Q1?" ])
+    ClarifyingQuestions::DescriptionSection.replace_questions_section(body: content, questions: questions)
+  end
+
+  def awaiting_input_issue
+    double(
+      github_number: 1964,
+      needs_input?: true,
+      has_label?: true,
+      labels: [ "paid-needs-input" ],
+      body: "Stale local description"
+    )
   end
 
   describe ".call" do
@@ -76,6 +94,30 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
           a_string_matching(/\*\*Q1: What is X\?\*\*/)
             .and(a_string_matching(/\*\*A1:\*\* X is Y/))
         )
+      end
+
+      # @spec QUESTION-EXPLORATION-002
+      it "does not post a duplicate comment when a matching answer was already accepted" do
+        answer = "Return a 404 error"
+        existing_comment = Struct.new(:body).new(
+          [
+            ClarifyingQuestions::Load::ANSWER_MARKER,
+            "",
+            "## Clarifying question answers",
+            "",
+            "**Q1: What is the expected behavior?**",
+            "**A1:** #{answer}"
+          ].join("\n")
+        )
+        allow(github_client).to receive(:issue_comments).and_return([ existing_comment ])
+
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: [ { question: "What is the expected behavior?", answer: answer } ]
+        )
+
+        expect(github_client).not_to have_received(:add_comment)
       end
     end
 
@@ -145,17 +187,87 @@ RSpec.describe ClarifyingQuestions::SubmitAnswers, :no_db do
     context "when quiet mode is enabled" do
       before { allow(project).to receive(:quiet_mode?).and_return(true) }
 
-      it "rejects answers before they can be silently suppressed" do
-        # @spec QUIET-MODE-006
+      it "writes answers into the description without posting a comment" do # @spec QUIET-MODE-010
+        allow(github_client).to receive(:issue).and_return(Struct.new(:body).new(remote_body("Human-written issue context")))
+        allow(github_client).to receive(:update_issue)
+        allow(issue).to receive(:update!)
+
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
+        )
+
+        expect(github_client).to have_received(:update_issue).with(
+          project.full_name,
+          issue.github_number,
+          body: a_string_including(
+            "Human-written issue context",
+            "<!-- paid:clarifying-answers -->",
+            "**Q1: Q1?**",
+            "**A1:** A1"
+          )
+        )
+        expect(github_client).not_to have_received(:add_comment)
+      end
+
+      it "preserves a human edit made after the issue was last synced" do # @spec QUIET-MODE-010
+        allow(github_client).to receive(:issue).and_return(Struct.new(:body).new(remote_body("Human-edited remote description")))
+        allow(github_client).to receive(:update_issue)
+        allow(issue).to receive(:update!)
+
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
+        )
+
+        expect(github_client).to have_received(:update_issue).with(
+          project.full_name,
+          issue.github_number,
+          body: a_string_including("Human-edited remote description", "<!-- paid:clarifying-answers -->")
+        )
+      end
+
+      it "rebuilds answers from a human edit that arrives before the write" do # @spec QUIET-MODE-010
+        first_body = Struct.new(:body).new(remote_body("First human edit"))
+        second_body = Struct.new(:body).new(remote_body("Second human edit"))
+        allow(github_client).to receive(:issue).and_return(first_body, second_body)
+        updated_bodies = []
+        allow(github_client).to receive(:update_issue) do |_repo, _number, body:|
+          updated_bodies << body
+        end
+        allow(issue).to receive(:update!)
+
+        described_class.call(
+          project: project,
+          issue: issue,
+          questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
+        )
+
+        expect(updated_bodies).to contain_exactly(a_string_including("Second human edit"))
+      end
+
+      it "rejects answers when the remote questions changed before submission" do # @spec QUIET-MODE-010 @spec QUIET-MODE-011
+        replacement_questions_body = remote_body("", [ "What should Q2 do?" ])
+        pending_issue = awaiting_input_issue
+        allow(project).to receive(:enhance_issue_needs_input_label_name).and_return("paid-needs-input")
+        allow(github_client).to receive(:issue).and_return(Struct.new(:body).new(replacement_questions_body))
+        allow(github_client).to receive(:update_issue)
+        allow(github_client).to receive(:remove_label_from_issue)
+        allow(pending_issue).to receive(:update!)
+
         expect {
           described_class.call(
             project: project,
-            issue: issue,
-            questions_and_answers: [ { question: "Q1?", answer: "A1" } ]
+            issue: pending_issue,
+            questions_and_answers: [ { question: "What should Q1 do?", answer: "Answer for Q1" } ]
           )
-        }.to raise_error(ArgumentError, /cannot be submitted while quiet mode is enabled/)
+        }.to raise_error(ClarifyingQuestions::SubmitAnswers::StaleQuestionsError, /changed/)
 
-        expect(github_client).not_to have_received(:add_comment)
+        expect(github_client).not_to have_received(:update_issue)
+        expect(github_client).not_to have_received(:remove_label_from_issue)
+        expect(pending_issue).not_to have_received(:update!)
       end
     end
 

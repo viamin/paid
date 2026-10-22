@@ -58,6 +58,7 @@ module Prompts
       Keep iterating until the commit succeeds. Do not leave uncommitted changes.
 
       {{already_addressed_instruction}}
+      {{commit_message_guidance}}
 
       When you're done, commit all your changes. Do not push.
 
@@ -83,12 +84,12 @@ module Prompts
       @pr_number = pr_number
       @github_client = github_client
       @rebase_succeeded = rebase_succeeded
+      @agent_run = agent_run
       @lint_command = lint_command || detected_lint_command
       @test_command = test_command || detected_test_command
       @issue = issue
       @prompt_version = prompt_version
       @focus = focus.presence || "general"
-      @agent_run = agent_run
       @prompt_builder = prompt_builder.to_s
     end
 
@@ -96,9 +97,10 @@ module Prompts
       new(...).build
     end
 
-    def self.service_environment_section_render_for(project:, include_setup_instruction: false)
+    def self.service_environment_section_render_for(project:, agent_run: nil, include_setup_instruction: false)
       ServiceContainerSections.service_environment_section_render_for(
         project: project,
+        agent_run: agent_run,
         include_setup_instruction: include_setup_instruction
       )
     end
@@ -203,7 +205,18 @@ module Prompts
     end
 
     def legacy_injected_section?(section)
+      # The legacy string builder renders `{{commit_message_guidance}}` from
+      # the seeded instructions template; emitting the explicit section here
+      # would duplicate the body. A custom or pinned prompt version can omit
+      # that interpolation, though, so retain the required section in that
+      # case. PromptAssembly always emits the section instead.
+      return quiet_mode_guidance_rendered? if section.key == :quiet_mode_commit_message
+
       [ :style_guides, :project_conventions, :lid_workflow ].include?(section.key)
+    end
+
+    def quiet_mode_guidance_rendered?
+      instructions_and_rules_shell.content.include?(quiet_mode_commit_message_body)
     end
 
     # Resolves the assembly profile from project/account/global config.
@@ -227,6 +240,7 @@ module Prompts
     def build_sections
       [
         task_section,
+        (tdd_test_revision_section if tdd_test_revision?),
         (issue_requirements_section if include_issue_requirements_section?),
         (merge_conflicts_section if include_merge_conflicts_section?),
         (ci_failures_section if include_ci_failures_section?),
@@ -236,6 +250,7 @@ module Prompts
         *conversation_section_with_excluded,
         other_issues_section,
         instructions_and_rules_shell,
+        (quiet_mode_commit_message_section if quiet_mode?),
         service_environment_section,
         style_guides_section,
         project_conventions_section,
@@ -249,6 +264,7 @@ module Prompts
         setup_database_instruction: setup_database_instruction,
         review_scan_instruction: review_scan_instruction,
         already_addressed_instruction: already_addressed_instruction,
+        commit_message_guidance: commit_message_guidance,
         lint_command: lint_command,
         test_command: test_command
       }
@@ -263,20 +279,46 @@ module Prompts
           fallback: -> { Prompts::Render.interpolate(FALLBACK_PROMPT, vars) }
         )
       end
+      # Strip the inline rules suffix from the rendered shell so the
+      # database-aware safety rules section can render it back with the
+      # variant that matches the actual database availability (POLYGLOT-TEST-011).
+      stripped_content = PromptAssembly::Sections::SafetyRules
+        .strip_legacy_suffix(content.to_s)
+        .rstrip
+
+      rendered = [ stripped_content, safety_rules_body ].compact.reject(&:empty?).join("\n\n")
 
       PromptAssembly::Section.new(
         key: :instructions_and_rules,
         source: :instructions_and_rules,
-        content: content.to_s,
+        content: rendered,
         trust_level: :trusted,
         required: true,
         inclusion_reason: "core instructions and rules shell"
       )
     end
 
+    # Mirrors {PromptAssembly::Sections::SafetyRules}'s body selection so a
+    # PR follow-up run does not embed the unconditional "tests MUST pass"
+    # rule when no database is provisioned — the prompt and the pre-commit
+    # hook must agree on whether database-dependent verification is
+    # available (#4305, POLYGLOT-TEST-011).
+    def safety_rules_body
+      if database_unavailable?
+        PromptAssembly::Sections::SafetyRules::NO_DATABASE_SAFETY_RULES
+      else
+        PromptAssembly::Sections::SafetyRules::SAFETY_RULES
+      end
+    end
+
+    def database_unavailable?
+      !database_available?
+    end
+
     def service_environment_section
       content = ServiceContainerSections.service_environment_section_for(
         project: project,
+        agent_run: agent_run,
         include_setup_instruction: false
       )
 
@@ -323,6 +365,7 @@ module Prompts
 
     def dynamic_priority_list
       priorities = []
+      priorities << "Revise the proposed tests using the rejected test-review feedback" if tdd_test_revision?
       priorities << "Resolve merge conflicts" if merge_conflicts_present?
       priorities << "Fix CI failures" if ci_failures_present?
       priorities << "Close implementation gaps against the linked issue" if issue_requirements_present?
@@ -403,7 +446,15 @@ module Prompts
 
         Automatic rebase against `#{base_branch}` failed due to conflicts.
         Run `git merge origin/#{base_branch}` and resolve all conflicts.
-        Ensure the merged result compiles and passes all tests.
+
+        Repair scope is limited to integrating `#{base_branch}` and resolving
+        the resulting conflicts within this pull request's existing task and
+        approved intent. Do not add unrelated dependencies, tooling, product
+        work, or opportunistic cleanup. If resolving a conflict would require
+        work outside that scope, stop and report the specific path and reason
+        for human direction rather than broadening this pull request.
+
+        Ensure the merged result compiles and passes the relevant checks.
       SECTION
 
       PromptAssembly::Section.new(
@@ -747,6 +798,72 @@ module Prompts
         "containing exactly `#{ALREADY_ADDRESSED_MARKER}`."
     end
 
+    # Quiet mode (`Project#quiet_mode`) silently routes agent commentary into
+    # commit messages instead of issue/PR comments. The agent still writes a
+    # descriptive message either way; in quiet mode the body must explicitly
+    # cover what review feedback was addressed so the Git log stays the
+    # project's authoritative review-tracking surface (#4232).
+    # @spec QUIET-MODE-008
+    def commit_message_guidance
+      return "" unless quiet_mode?
+      # The PromptAssembly path emits the body as its own section via
+      # `quiet_mode_commit_message_section`. Leaving the seed-template slot
+      # empty here stops the same text from being rendered twice when the
+      # assembler composes `instructions_and_rules` from the seed template.
+      return "" if prompt_assembly?
+
+      "\n\n#{quiet_mode_commit_message_body}"
+    end
+
+    def quiet_mode?
+      return false unless project
+
+      project.respond_to?(:quiet_mode?) && project.quiet_mode?
+    end
+
+    # Section-form variant of `commit_message_guidance`, used by
+    # PromptAssembly callers that compose this section outside the legacy
+    # seed-template interpolation path (e.g. when BuildForPr is invoked via
+    # `prompt_assembly` and the seed is rendered as a separate Section).
+    def quiet_mode_commit_message_section
+      return nil unless quiet_mode?
+
+      PromptAssembly::Section.new(
+        key: :quiet_mode_commit_message,
+        source: :quiet_mode_commit_message,
+        content: quiet_mode_commit_message_body,
+        trust_level: :trusted,
+        required: true,
+        inclusion_reason: "quiet mode routes commentary into commit messages"
+      )
+    end
+
+    def quiet_mode_commit_message_body
+      <<~SECTION
+        # Commit Message Is The Commentary Channel
+
+        Quiet mode is enabled for this project: Paid does NOT post a summary
+        comment after this push. The commit message is the only record of what
+        this run changed and why. Every commit on this branch MUST therefore
+        carry the reviewer-facing explanation in its message body.
+
+        Subject line: conventional-commit style, ≤ 72 characters — for example
+        `Address review: extract runner selection into AgentRun#select_runner`
+        rather than `fix review feedback`.
+
+        Commit body (one or more wrapped paragraphs):
+        - What changed (the substantive code shape, not a list of file names).
+        - Why it changed (which review comment, CI failure, or follow-up
+          request it satisfies).
+        - Anything the reviewer should know that the diff alone does not show.
+
+        When this run is addressing a review-fix follow-up, the commit body
+        MUST include a short note on which review feedback was addressed; the
+        example above names the reviewer concern it satisfies. Git push must
+        still succeed; do not push commentary-only commits with no diff.
+      SECTION
+    end
+
     def include_section?(section) # @spec FOCUSED-RUN-003
       return true if general_or_label_action_focus?
 
@@ -810,6 +927,7 @@ module Prompts
 
     def focused_priority_section_present?
       {
+        "tdd_test_revision" => tdd_test_revision?,
         "ci_fix" => include_ci_failures_section?,
         "review_feedback" => includes_review_threads?,
         "merge_conflict" => include_merge_conflicts_section?,
@@ -825,6 +943,7 @@ module Prompts
 
     def focused_priority_item
       {
+        "tdd_test_revision" => "Revise the proposed tests using the rejected test-review feedback",
         "ci_fix" => "Fix the failing CI checks on this PR",
         "review_feedback" => "Address the unresolved code review comments on this PR",
         "merge_conflict" => "Resolve the merge conflicts on this PR",
@@ -833,6 +952,50 @@ module Prompts
         "issue_implementation" => "Close implementation gaps against the linked issue for this PR",
         "label_action" => "Handle the actionable labels on this PR"
       }.fetch(focus, "Complete the scoped task for this PR")
+    end
+
+    # @spec TDD-PR-007
+    def tdd_test_revision?
+      focus == "tdd_test_revision" && tdd_review_feedback.present?
+    end
+
+    def tdd_review_feedback
+      metadata = agent_run&.external_metadata
+      return {} unless metadata.is_a?(Hash)
+
+      metadata["tdd_review_feedback"].to_h
+    end
+
+    def tdd_test_revision_section
+      reviews = Array(tdd_review_feedback["reviews"])
+      threads = Array(tdd_review_feedback["threads"])
+      review_text = reviews.map { |review| "- **#{review["author"]}** (review ##{review["review_id"]}): #{review["body"]}" }
+      thread_text = threads.flat_map do |thread|
+        Array(thread["comments"]).map do |comment|
+          location = [ comment["path"], comment["line"] ].compact.join(":")
+          "- **#{comment["author"]}**#{" (#{location})" if location.present?}: #{comment["body"]}"
+        end
+      end
+
+      PromptAssembly::Section.new(
+        key: :tdd_test_revision,
+        source: :tdd_test_review,
+        content: <<~SECTION,
+          # Rejected Test Review: Revise Tests Only
+
+          The following trusted review evidence caused the current TDD test-review rejection:
+
+          #{(review_text + thread_text).join("\n")}
+
+          Revise the proposed tests to address this feedback. Do not implement
+          production behavior in this run. Completion means the updated tests
+          are pushed and this PR is returned to the TDD test-review gate for a
+          fresh verdict; it does not mean implementation may begin.
+        SECTION
+        trust_level: :trusted,
+        required: true,
+        inclusion_reason: "trusted current TDD test-review rejection snapshot"
+      )
     end
 
     def deferred_issue_descriptions
@@ -1058,11 +1221,22 @@ module Prompts
     end
 
     def detected_lint_command
-      LanguageCommands.format_for_prompt(LanguageCommands.lint_commands_for(project))
+      LanguageCommands.format_for_prompt(LanguageCommands.lint_commands_for(project, db_available: database_available?))
     end
 
     def detected_test_command
-      LanguageCommands.format_for_prompt(LanguageCommands.test_commands_for(project))
+      LanguageCommands.format_for_prompt(LanguageCommands.test_commands_for(project, db_available: database_available?))
+    end
+
+    # Whether the agent's runtime environment has a usable database service
+    # container. The prompt and the pre-commit hook must agree on this so a
+    # PR follow-up run does not contradict itself by running services that
+    # weren't actually provisioned (#4305, POLYGLOT-TEST-011).
+    def database_available?
+      @database_available ||= Prompts::ServiceContainerSections.has_database_container?(
+        project: project,
+        agent_run: agent_run
+      )
     end
   end
 end

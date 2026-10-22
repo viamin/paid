@@ -67,24 +67,24 @@ RSpec.describe Prompts::LanguageCommands do # @spec POLYGLOT-TEST-003
       expect(described_class.detected_language(project)).to eq("python")
     end
 
-    it "defaults to ruby when project does not respond to detected_language" do
+    it "leaves a project with no detected language unset" do # @spec POLYGLOT-TEST-012
       project = create(:project)
 
-      expect(described_class.detected_language(project)).to eq("ruby")
+      expect(described_class.detected_language(project)).to be_nil
     end
 
-    it "defaults to ruby when detected_language is blank" do
+    it "leaves the language unset when detected_language is blank" do # @spec POLYGLOT-TEST-012
       project = create(:project)
       project.define_singleton_method(:detected_language) { "" }
 
-      expect(described_class.detected_language(project)).to eq("ruby")
+      expect(described_class.detected_language(project)).to be_nil
     end
 
-    it "defaults to ruby when detected_language is nil" do
+    it "leaves the language unset when detected_language is nil" do # @spec POLYGLOT-TEST-012
       project = create(:project)
       project.define_singleton_method(:detected_language) { nil }
 
-      expect(described_class.detected_language(project)).to eq("ruby")
+      expect(described_class.detected_language(project)).to be_nil
     end
   end
 
@@ -116,6 +116,14 @@ RSpec.describe Prompts::LanguageCommands do # @spec POLYGLOT-TEST-003
   end
 
   describe ".test_commands_for and .lint_commands_for" do
+    it "does not invent Ruby commands when the repository language is unknown" do # @spec POLYGLOT-TEST-012
+      project = create(:project)
+      project.define_singleton_method(:detected_language) { nil }
+
+      expect(described_class.test_commands_for(project)).to eq([ described_class::NO_TEST_COMMAND ])
+      expect(described_class.lint_commands_for(project)).to eq([ described_class::NO_LINT_COMMAND ])
+    end
+
     it "resolves a single command for a single-language project" do
       project = create(:project)
       project.define_singleton_method(:detected_language) { "python" }
@@ -161,8 +169,64 @@ RSpec.describe Prompts::LanguageCommands do # @spec POLYGLOT-TEST-003
     end
   end
 
-  describe "DEFAULT_LANGUAGE" do
-    it "is ruby" do
+  describe ".test_commands_for db_available gate" do # @spec POLYGLOT-TEST-011
+    it "drops the Ruby test command when db_available: false for a Ruby project" do
+      project = create(:project)
+      project.define_singleton_method(:detected_language) { "ruby" }
+
+      expect(described_class.test_commands_for(project, db_available: false)).to eq(
+        [ described_class::NO_TEST_COMMAND ]
+      )
+    end
+
+    it "keeps the Ruby test command when db_available: true" do
+      project = create(:project)
+      project.define_singleton_method(:detected_language) { "ruby" }
+
+      expect(described_class.test_commands_for(project, db_available: true)).to eq(
+        [ "bundle exec rspec" ]
+      )
+    end
+
+    it "drops the Elixir test command when db_available: false for an Elixir project" do
+      project = create(:project, repo_profile: { "test_languages" => [ "elixir" ] })
+
+      expect(described_class.test_commands_for(project, db_available: false)).to eq(
+        [ described_class::NO_TEST_COMMAND ]
+      )
+    end
+
+    it "keeps a non-DB-dependent language command even when db_available: false" do
+      project = create(:project, repo_profile: { "test_languages" => [ "go" ] })
+
+      expect(described_class.test_commands_for(project, db_available: false)).to eq([ "go test ./..." ])
+    end
+
+    it "keeps non-DB commands and drops DB-dependent commands in a polyglot project without a database" do
+      project = create(:project, repo_profile: { "test_languages" => [ "ruby", "elixir", "go" ] })
+
+      expect(described_class.test_commands_for(project, db_available: false)).to eq([ "go test ./..." ])
+    end
+
+    it "preserves every command for a polyglot project with a database" do
+      project = create(:project, repo_profile: { "test_languages" => [ "ruby", "elixir", "go" ] })
+
+      expect(described_class.test_commands_for(project, db_available: true)).to eq(
+        [ "bundle exec rspec", "mix test", "go test ./..." ]
+      )
+    end
+
+    it "always returns lint commands regardless of db_available" do
+      project = create(:project, repo_profile: { "test_languages" => [ "ruby", "go" ] })
+
+      expect(described_class.lint_commands_for(project, db_available: false)).to eq(
+        [ "bundle exec rubocop", "golangci-lint run" ]
+      )
+    end
+  end
+
+  describe "legacy caller compatibility" do
+    it "keeps Ruby as the fallback for callers without a project language" do
       expect(described_class::DEFAULT_LANGUAGE).to eq("ruby")
     end
   end

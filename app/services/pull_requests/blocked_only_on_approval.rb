@@ -39,7 +39,7 @@ module PullRequests
       pr_data = fetch_pull_request
       return false if pr_data.nil?
       return false if draft?(pr_data) || closed?(pr_data)
-      return false if skip_auto_merge_label?(pr_data)
+      return false if skip_auto_merge?(pr_data)
       return false unless mergeable?(pr_data)
 
       checks = fetch_check_runs(pr_data)
@@ -76,7 +76,7 @@ module PullRequests
         @project.owner_reviewer_login.present? &&
         @issue.github_state == "open" &&
         @issue.ready_phase? &&
-        !@issue.has_label?(SKIP_AUTO_MERGE_LABEL)
+        !@issue.auto_merge_skipped?
     end
 
     def collector
@@ -140,8 +140,8 @@ module PullRequests
         blocking_reviews_complete: blocking_reviews_complete,
         reviews_fresh: reviews_fresh,
         dependencies_resolved: dependencies_resolved,
-        skip_auto_merge: skip_auto_merge_label?(pr_data),
-        hold_for_review: hold_for_review_label?(pr_data),
+        skip_auto_merge: skip_auto_merge?(pr_data),
+        hold_for_review: hold_for_review?(pr_data),
         intent_conformance_ok: IntentConformance::Signal.ok?(
           project: @project, issue: @issue, head_sha: pr_data.head_sha
         )
@@ -157,11 +157,23 @@ module PullRequests
       Array(pr_data.labels).include?(SKIP_AUTO_MERGE_LABEL)
     end
 
+    def skip_auto_merge?(pr_data)
+      return @issue.skip_auto_merge if @issue.local_control_state?
+
+      skip_auto_merge_label?(pr_data)
+    end
+
     # Reads the hold-for-review label from the freshly fetched PR data for
     # the same race-window protection as the skip-auto-merge label.
     # @spec AUTO-MERGE-009
     def hold_for_review_label?(pr_data)
       Array(pr_data.labels).include?(HOLD_FOR_REVIEW_LABEL)
+    end
+
+    def hold_for_review?(pr_data)
+      return @issue.hold_for_review if @issue.local_control_state?
+
+      hold_for_review_label?(pr_data)
     end
 
     # Mirrors the scan's blocked_only_on_approval? gate signal-for-signal:

@@ -101,10 +101,44 @@ RSpec.describe Prompts::BuildForIssue do
       expect(prompt).to include("Fix forward")
     end
 
-    it "includes test command for ruby projects" do
-      prompt = described_class.call(issue: issue, project: project)
+    it "includes test command for ruby projects when a database is available" do
+      pg_container = OpenStruct.new(image: "postgres:16", name: "postgres", port: 5432)
+      pg_running_scope = OpenStruct.new(to_a: [ pg_container ], where: OpenStruct.new(exists?: true))
+      configured_containers_with_db = [ pg_container ]
+      relation = OpenStruct.new(running: pg_running_scope, to_a: configured_containers_with_db)
+      project_with_db = project.dup
+      project_with_db.service_containers = relation
+
+      prompt = described_class.call(issue: issue, project: project_with_db)
 
       expect(prompt).to include("bundle exec rspec")
+    end
+
+    it "drops the database-dependent test command when no database is available" do
+      prompt = described_class.call(issue: issue, project: project)
+
+      expect(prompt).not_to include("bundle exec rspec")
+      expect(prompt).to include("No test command configured")
+    end
+
+    it "uses an agent run's empty service list instead of the project's configured database" do # @spec POLYGLOT-TEST-011
+      real_project = create(:project)
+      postgres_container = create(:service_container, account: real_project.account, status: "running")
+      create(:project_service_container, project: real_project, service_container: postgres_container)
+      agent_run = create(:agent_run, project: real_project, service_container_ids: [])
+
+      prompt = described_class.call(issue: issue, project: real_project, agent_run: agent_run)
+
+      expect(prompt).not_to include("bundle exec rspec")
+      expect(prompt).to include("No test command configured")
+      expect(prompt).to include("Report skipped database-dependent tests")
+    end
+
+    it "agrees with the pre-commit hook gate on no-database runs and requires reporting skipped suite" do
+      prompt = described_class.call(issue: issue, project: project)
+
+      expect(prompt).to include("Report skipped database-dependent tests")
+      expect(prompt).to include("Do NOT provision or install missing services")
     end
 
     it "includes lint command for ruby projects" do
@@ -120,6 +154,26 @@ RSpec.describe Prompts::BuildForIssue do
       expect(prompt).to include("Commit subjects: Guidance")
       expect(prompt).to include("PR titles: Guidance")
       expect(prompt).to include("Depends on #123")
+    end
+
+    # @spec QUIET-MODE-008
+    it "omits the quiet mode commit-message guidance by default" do
+      prompt = described_class.call(issue: issue, project: project)
+
+      expect(prompt).not_to include("Commit Message Is The Commentary Channel")
+    end
+
+    # @spec QUIET-MODE-008
+    it "injects the quiet mode commit-message guidance when the project has quiet mode enabled" do
+      quiet_project = project.tap do |p|
+        p.quiet_mode = true
+        p.define_singleton_method(:quiet_mode?) { quiet_mode == true }
+      end
+
+      prompt = described_class.call(issue: issue, project: quiet_project)
+
+      expect(prompt).to include("Commit Message Is The Commentary Channel")
+      expect(prompt).to include("Implement: extract runner selection into AgentRun#select_runner")
     end
 
     context "when the project is LID-configured" do
@@ -301,10 +355,34 @@ RSpec.describe Prompts::BuildForIssue do
         end
       end
 
-      it "lists every language's test command in sequence" do
-        prompt = described_class.call(issue: issue, project: polyglot_project)
+      it "lists every language's test command in sequence when a database is available" do
+        pg_container = OpenStruct.new(image: "postgres:16", name: "postgres", port: 5432)
+        pg_running_scope = OpenStruct.new(to_a: [ pg_container ], where: OpenStruct.new(exists?: true))
+        relation = OpenStruct.new(running: pg_running_scope, to_a: [ pg_container ])
+        polyglot_project_with_db = OpenStruct.new(
+          full_name: "owner-1/repo-1",
+          allowed_github_usernames: [ "viamin" ],
+          service_containers: relation,
+          detected_language: "ruby",
+          repo_profile: { "test_languages" => [ "ruby", "elixir" ] }
+        ).tap do |p|
+          def p.trusted_github_user?(login)
+            return false if login.nil?
+            allowed_github_usernames.any? { |u| u.downcase == login.downcase }
+          end
+        end
+
+        prompt = described_class.call(issue: issue, project: polyglot_project_with_db)
 
         expect(prompt).to include("bundle exec rspec, then mix test")
+      end
+
+      it "drops DB-dependent test commands in a polyglot project without a database" do
+        prompt = described_class.call(issue: issue, project: polyglot_project)
+
+        expect(prompt).not_to include("bundle exec rspec")
+        expect(prompt).not_to include("mix test")
+        expect(prompt).to include("No test command configured")
       end
 
       it "lists every language's lint command in sequence" do
@@ -334,6 +412,32 @@ RSpec.describe Prompts::BuildForIssue do
 
         expect(prompt).to include("No test command configured")
         expect(prompt).to include("No lint command configured")
+      end
+    end
+
+    context "when the target is a Godot project" do
+      let(:project_with_language) do
+        OpenStruct.new(
+          full_name: "owner-1/repo-1",
+          allowed_github_usernames: [ "viamin" ],
+          service_containers: service_containers_relation,
+          detected_language: "gdscript"
+        ).tap do |p|
+          def p.trusted_github_user?(login)
+            return false if login.nil?
+
+            allowed_github_usernames.any? { |u| u.downcase == login.downcase }
+          end
+        end
+      end
+
+      it "does not ask an agent to install Ruby tooling" do # @spec POLYGLOT-TEST-012
+        prompt = described_class.call(issue: issue, project: project_with_language)
+
+        expect(prompt).to include("No test command configured")
+        expect(prompt).to include("No lint command configured")
+        expect(prompt).not_to include("bundle exec rspec")
+        expect(prompt).not_to include("bundle exec rubocop")
       end
     end
 
@@ -494,19 +598,19 @@ RSpec.describe Prompts::BuildForIssue do
         OpenStruct.new(running: running_scope, to_a: all_scope)
       end
 
-      it "treats configured containers as available for the run" do
+      it "does not expose stopped configured containers to the run" do
         prompt = described_class.call(issue: issue, project: project)
 
-        expect(prompt).to include("Available Services")
-        expect(prompt).to include("DATABASE_URL")
-        expect(prompt).not_to include("Environment Constraints")
+        expect(prompt).not_to include("Available Services")
+        expect(prompt).not_to include("DATABASE_URL")
+        expect(prompt).to include("Environment Constraints")
       end
     end
 
     context "when a project-specific service environment prompt override exists" do
       it "renders the override through Prompts::Render" do
         real_project = create(:project, allowed_github_usernames: [ "viamin" ])
-        service_container = create(:service_container, account: real_project.account)
+        service_container = create(:service_container, account: real_project.account, status: "running")
         create(:project_service_container, project: real_project, service_container: service_container)
 
         prompt = create(
@@ -1038,7 +1142,7 @@ RSpec.describe Prompts::BuildForIssue do
 
     it "uses project-scoped prompt overrides" do
       real_project = create(:project)
-      service_container = create(:service_container, account: real_project.account)
+      service_container = create(:service_container, account: real_project.account, status: "running")
       create(:project_service_container, project: real_project, service_container: service_container)
 
       prompt = create(

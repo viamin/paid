@@ -18,10 +18,10 @@ class ReleaseEscalationSetAutoContinuePause < ActiveRecord::Migration[8.1]
     # issues carries forced tenant RLS, so a migration running without a tenant
     # context matches zero rows and silently no-ops.
     #
-    # Deliberately not touching updated_at: Dashboard::BlockedPullRequests
+    # Deliberately not touching updated_at: Inbox::EscalatedPullRequests
     # reads it as "blocked since" and orders by it, so bumping it here would
     # reset every already-blocked PR to "just now" on the deploy that ships
-    # the panel.
+    # the query.
     TenantContext.with_system_access do
       Issue.where(
         is_pull_request: true,

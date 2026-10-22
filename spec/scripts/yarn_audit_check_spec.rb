@@ -54,6 +54,28 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "parses non-ASCII advisory text under a runner locale with no LANG/LC_ALL set" do
+    # @spec REPO-DEPENDENCY-AUDIT-008
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_workspace(
+        dir,
+        allowlist: empty_allowlist,
+        yarn_output: yarn_advisory_output(
+          ghsa_id: "GHSA-xxxx-yyyy-zzzz",
+          module_name: "demo-pkg",
+          title: "Désérialisation non sécurisée"
+        ),
+        yarn_exit: 1
+      )
+
+      stdout, stderr, status = Open3.capture3(locale_free_env(dir), script_path(dir), chdir: dir)
+
+      expect(status.exitstatus).to eq(1), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stderr).not_to include("Encoding::CompatibilityError")
+      expect(stdout).to include("GHSA-xxxx-yyyy-zzzz (high) demo-pkg")
+    end
+  end
+
   it "exits zero and surfaces an accepted advisory when the allowlist covers it, even though yarn exits 1 for the advisory report" do
     # @spec REPO-DEPENDENCY-AUDIT-004
     Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
@@ -249,6 +271,23 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "retries a transient scanner failure before accepting a complete audit report" do
+    # @spec REPO-DEPENDENCY-AUDIT-002
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_transient_failure_workspace(dir)
+
+      stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("advisories reported: 0")
+      expect(stderr).to include("retrying")
+      expect(File.read(File.join(dir, "yarn-invocations.log")).lines.map(&:chomp)).to eq([
+        "audit --json",
+        "audit --json"
+      ])
+    end
+  end
+
   it "fails the run when yarn exits non-zero without emitting a JSON error event" do
     # @spec REPO-DEPENDENCY-AUDIT-002
     Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
@@ -412,7 +451,14 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
   end
 
   def env(dir)
-    { "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}" }
+    {
+      "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+      "YARN_AUDIT_RETRY_DELAY_SECONDS" => "0"
+    }
+  end
+
+  def locale_free_env(dir)
+    env(dir).merge("LANG" => "", "LANGUAGE" => "", "LC_ALL" => "")
   end
 
   def run_with_report_env(dir, report_path)
@@ -469,6 +515,27 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     File.write(File.join(dir, "yarn-stderr.txt"), yarn_stderr)
   end
 
+  def prepare_transient_failure_workspace(dir)
+    prepare_workspace(dir, allowlist: empty_allowlist, yarn_output: empty_yarn_output)
+    File.write(
+      File.join(dir, "stubbin", "yarn"),
+      <<~BASH
+        #!/usr/bin/env bash
+        count_file="#{dir}/yarn-attempt-count"
+        count=$(cat "$count_file" 2>/dev/null || echo 0)
+        count=$((count + 1))
+        printf '%s' "$count" > "$count_file"
+        printf '%s\\n' "$*" >> "#{dir}/yarn-invocations.log"
+
+        if [ "$count" -eq 1 ]; then
+          printf '%s\\n' '#{JSON.generate(type: "error", data: "temporary registry failure")}'
+        fi
+        printf '%s\\n' '#{empty_yarn_output}'
+      BASH
+    )
+    FileUtils.chmod("+x", File.join(dir, "stubbin", "yarn"))
+  end
+
   def empty_allowlist
     <<~YAML
       exceptions: []
@@ -479,7 +546,7 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     JSON.generate(type: "auditSummary", data: { vulnerabilities: {}, dependencies: 0 })
   end
 
-  def yarn_advisory_output(ghsa_id:, module_name:)
+  def yarn_advisory_output(ghsa_id:, module_name:, title: "Demo advisory")
     advisory = {
       type: "auditAdvisory",
       data: {
@@ -489,7 +556,7 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
           github_advisory_id: ghsa_id,
           module_name: module_name,
           severity: "high",
-          title: "Demo advisory",
+          title: title,
           recommendation: "Upgrade to 2.0.0",
           vulnerable_versions: "<2.0.0",
           patched_versions: ">=2.0.0"

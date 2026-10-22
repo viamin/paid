@@ -29,7 +29,12 @@ have moved elsewhere:
 - **Coverage truth.** Safety automation is only trustworthy when its operator
   surfaces distinguish a completed check from an unavailable one. Polling
   failures, disabled checks, and stale evidence must remain visible rather
-  than being represented as a healthy empty result.
+  than being represented as a healthy empty result. Agent-reported verification
+  is distinct from commit-bound, recorder-owned execution evidence; neither an
+  artifact nor a reported pass alone establishes arbitrary acceptance coverage.
+- **Design traceability.** Repository design records, tracked delivery work,
+  and Paid's local links must be reconciled from explicit evidence. A failed
+  repository read is unknown coverage, never proof that no work exists.
 - **Orchestration.** Turning a labeled issue into a merged PR is a multi-step
   workflow — plan, execute in an isolated container, open a PR, respond to
   review — that must be durable, resumable, and parallelizable.
@@ -109,7 +114,8 @@ reviewable settings plan. The mode composes with — never replaces — the
 project's independent auto-merge and TDD test-review choices.
 
 Onboarding itself is planned to become chat-led: a fresh account picks a
-provider API key first, lands in a working chat, and is walked through the
+provider API key first, lands in a working Low-tier chat with an auditable
+concrete model choice, and is walked through the
 rest of a minimal setup — an agent-run runner, a GitHub project and
 credential, optional Linear, and an operating profile — adapting to what the
 user reports using, with the existing step forms remaining as a fallback. See
@@ -221,6 +227,8 @@ The operating principles that tie the approaches above to day-to-day work:
 3. **Make agent work observable and improvable.** Capture the data — tokens,
    cost, iterations, prompt lineage, quality — that turns guesswork into
    measurement.
+   Recurring execution obstacles become reviewable, evidence-bounded proposals;
+   they never authorize a repair or a new run merely by being detected.
 4. **Stay portable across models and providers.** Swap the model or provider
    behind a component without rewriting call sites.
 5. **Run in multiple deployment models.** Managed cloud and private deployment,
@@ -300,6 +308,13 @@ agent executes against its isolated workspace and opens a PR), and back to the
 control plane
 (metrics, review, the human merge decision).
 
+Enabled capabilities declare their repository prerequisites through the
+project-readiness arrow. Checkout-backed gaps are surfaced for authorized
+operators and repaired only through an explicitly admitted bootstrap and
+target-branch re-evaluation. Runtime verification and infrastructure health
+remain bounded observations: they inform recovery without becoming a durable
+"ready" latch or silently weakening required checks.
+
 ### Directory layout
 
 ```
@@ -325,6 +340,14 @@ docs/                 # Long-form docs; docs/intent/ holds the LID arrow
 | Agent image tooling | Versions pinned from `agent_harness` contracts | Control plane and agent image stay in lockstep without separate pins. |
 | Release management | release-please + Conventional Commits | Semantic releases from conventional commit headers. |
 
+## Contributor verification
+
+CI executes the complete non-system spec suite across isolated jobs while
+retaining a stable aggregate test check and the whole-suite coverage floor.
+Performance improvements must preserve behavior, tenant isolation and mandatory
+checks. See `docs/intent/test-suite-performance/` for partitioning, coverage
+aggregation and measurement intent.
+
 ## LID adoption posture
 
 This repository adopts LID in **Full** mode on a **going-forward** basis. The
@@ -332,6 +355,11 @@ HLD is the universal floor. LLDs and EARS specs are added as new features are
 built and as existing subsystems are mapped over time; not all existing code is
 traced yet, which is expected for brownfield adoption. When you build or change
 a component, add (or update) its segment under `docs/intent/`.
+
+The canonical agent instruction entry point is a concise navigation map, not a
+second handbook. It makes universal boundaries visible and routes detailed
+procedures to their owning design and operational documents; see
+`docs/intent/agent-instruction-navigation/`.
 
 ## References
 

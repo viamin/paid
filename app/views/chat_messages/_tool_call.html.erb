@@ -9,7 +9,7 @@
 else
   "rounded-xl border border-gray-300 border-l-4 border-l-gray-400 bg-gray-50 shadow-sm shadow-gray-200/60"
 end %>
-<details class="group <%= tool_call_classes %>" <% if chat_tool_expanded_by_default?(message) %>open<% end %>>
+<details class="group <%= tool_call_classes %>" data-chat-tool-card <% if message.pending_confirmation? %>data-chat-tool-pending<% end %> <% if chat_tool_expanded_by_default?(message) %>open<% end %>>
   <summary class="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm text-gray-600 marker:hidden hover:bg-gray-50/80">
     <span class="min-w-0 truncate">
       <span class="font-medium text-gray-700"><%= tool_name %></span>

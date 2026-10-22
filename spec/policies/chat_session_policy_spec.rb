@@ -54,6 +54,54 @@ RSpec.describe ChatSessionPolicy do
     end
   end
 
+  describe "feature conversations" do
+    let(:account) { create(:account) }
+    let(:project) { create(:project, account:) }
+    let(:feature) { create(:feature_intent, project: project) }
+    let(:feature_session) do
+      create(:chat_session, account:, project:, feature_intent: feature)
+    end
+
+    # @spec QUESTION-EXPLORATION-019
+    it "does not expose feature conversations to account members without project access" do
+      create(:user, account:)
+      user = create(:user, :member, account:)
+
+      expect(described_class.new(user, feature_session)).not_to be_show
+    end
+
+    # @spec QUESTION-EXPLORATION-019
+    it "permits project collaborators to view feature conversations" do
+      create(:user, account:)
+      user = create(:user, :viewer, account:)
+      user.add_role(:project_viewer, project)
+
+      expect(described_class.new(user, feature_session)).to be_show
+    end
+
+    # @spec QUESTION-EXPLORATION-019
+    it "honors access removal for a former project collaborator" do
+      user = create(:user, :viewer, account:)
+      user.add_role(:project_viewer, project)
+      expect(described_class.new(user, feature_session)).to be_show
+
+      user.remove_role(:project_viewer, project)
+
+      expect(described_class.new(user.reload, feature_session.reload)).not_to be_show
+    end
+
+    # @spec QUESTION-EXPLORATION-019
+    it "does not turn a personal chat into a project-scoped exploration conversation" do
+      user = create(:user, :viewer, account:)
+      user.add_role(:project_viewer, project)
+      personal_chat = create(:chat_session, account:, project:, created_by: create(:user, account:))
+      feature_session
+
+      expect(personal_chat.project_scoped_exploration?).to be(false)
+      expect(feature_session.project_scoped_exploration?).to be(true)
+    end
+  end
+
   describe "Scope" do
     it "keeps another account member's interactive inbox chat and messages out of the scope" do
       # @spec QUESTION-EXPLORATION-014
@@ -95,6 +143,25 @@ RSpec.describe ChatSessionPolicy do
       visible_session = create(:chat_session, account:, project:, clarifying_question_issue: create(:issue, project:))
       hidden_project = create(:project, account:)
       hidden_session = create(:chat_session, account:, project: hidden_project, clarifying_question_issue: create(:issue, project: hidden_project))
+      user.add_role(:project_member, project)
+
+      scope = described_class::Scope.new(user, ChatSession.all).resolve
+
+      expect(scope).to include(visible_session)
+      expect(scope).not_to include(hidden_session)
+    end
+
+    it "limits account members to feature conversations in their projects" do
+      # @spec QUESTION-EXPLORATION-019
+      account = create(:account)
+      project = create(:project, account:)
+      create(:user, account:)
+      user = create(:user, :member, account:)
+      visible_session = create(:chat_session, account:, project:,
+        feature_intent: create(:feature_intent, project:))
+      hidden_project = create(:project, account:)
+      hidden_session = create(:chat_session, account:, project: hidden_project,
+        feature_intent: create(:feature_intent, project: hidden_project))
       user.add_role(:project_member, project)
 
       scope = described_class::Scope.new(user, ChatSession.all).resolve

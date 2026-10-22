@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "tmpdir"
 
 RSpec.describe "Projects::ServiceContainers" do
   let(:account) { create(:account) }
@@ -70,6 +71,63 @@ RSpec.describe "Projects::ServiceContainers" do
         expect(response).to redirect_to(root_path)
         expect(flash[:alert]).to include("not authorized")
       end
+    end
+  end
+
+  describe "readiness repair" do
+    let(:checkout_path) { Pathname.new(Dir.mktmpdir) }
+
+    before do
+      FileUtils.mkdir_p(checkout_path.join(".paid"))
+      FileUtils.mkdir_p(checkout_path.join("bin"))
+      File.write(checkout_path.join(".paid/screenshots.yml"), <<~YAML)
+        routes:
+          - path: /
+            name: Home
+        services: #{[ "postgres" ].to_json}
+      YAML
+      File.write(checkout_path.join("bin/dev"), "#!/bin/sh\n")
+    end
+
+    after { FileUtils.remove_entry(checkout_path) }
+
+    def verification_project
+      create(:project, account: account, github_token: github_token, created_by: user, tdd_mode: "off",
+        screenshot_settings: { "verification_enabled" => true })
+    end
+
+    def setup_pending_entries
+      Inbox::Queue.call(user:, kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND)
+    end
+
+    # @spec PROJECT-READINESS-006, PROJECT-READINESS-011
+    it "re-evaluates readiness after the missing verification service is associated" do
+      sign_in user
+      service = create(:service_container, account: account, name: "postgres")
+      project = verification_project
+
+      Projects::Readiness::Record.call(project:, repo_path: checkout_path)
+      expect(project.reload.readiness_gaps.map { |gap| gap["kind"] }).to eq([ "missing_verification_service" ])
+      expect(setup_pending_entries.map(&:project)).to eq([ project ])
+
+      expect {
+        post project_project_service_containers_path(project), params: { service_container_id: service.id }
+      }.to have_enqueued_job(EvaluateProjectReadinessJob).with(project.id)
+
+      Projects::Readiness::Record.call(project:, repo_path: checkout_path)
+      expect(project.reload.readiness_gaps).to be_empty
+      expect(setup_pending_entries).to be_empty
+    end
+
+    it "re-evaluates readiness after a service association is removed" do
+      sign_in user
+      service = create(:service_container, account: account, name: "postgres")
+      project = verification_project
+      association = create(:project_service_container, project: project, service_container: service)
+
+      expect {
+        delete project_project_service_container_path(project, association)
+      }.to have_enqueued_job(EvaluateProjectReadinessJob).with(project.id)
     end
   end
 

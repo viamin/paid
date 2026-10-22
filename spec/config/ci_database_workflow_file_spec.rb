@@ -9,7 +9,7 @@ end
 RSpec.describe CiDatabaseWorkflowFile, :no_db do
   workflow_expectations = {
     ".github/workflows/ci.yml" => {
-      "test" => {
+      "test-shards" => {
         "db_username" => "postgres",
         "db_password" => "postgres",
         "database_url" => "postgres://postgres:postgres@localhost:5432/paid_test",

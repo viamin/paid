@@ -91,7 +91,20 @@ module Automation
               .exists?
           end
 
-          def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: []) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 AUTO-PICK-QUEUE-013 @spec PARTIAL-CLOSEOUT-004
+          # Label holds are shared by automatic enhancement admission and the
+          # normal auto-pick candidate scope. Ignored-mode projects deliberately
+          # use their local control state instead of upstream labels.
+          # @spec ISSUE-ENHANCEMENT-018 LABEL-CONTROL-008
+          def effective_skip_label_hold?(project, issue_id)
+            issue_scope = project.issues.where(id: issue_id)
+            if project.label_integration_mode == "ignored"
+              return issue_scope.where.not(auto_pick_excluded_reason: [ nil, "" ]).exists?
+            end
+
+            exclude_effective_skip_labels(issue_scope, project).none?
+          end
+
+          def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: [], issue_ids: nil) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 AUTO-PICK-QUEUE-013 @spec PARTIAL-CLOSEOUT-004
             epic_ids = epic_issue_ids(project)
             base = without_open_non_pr_subissues(
               base_scope(
@@ -101,6 +114,7 @@ module Automation
                 continuation_authorized_issue_ids: continuation_authorized_issue_ids
               )
             )
+            base = base.where(id: issue_ids) if issue_ids
             scope = apply_issue_analysis_backoff(Issue.auto_pick_eligible_paid_state_scope(base), project)
 
             # @spec INTENT-AMENDMENT-009 — branches held by a design
@@ -108,19 +122,26 @@ module Automation
             held_ids = DesignAmendmentPause.held_issue_ids(project)
             scope = scope.where.not(id: held_ids) if held_ids.present?
 
-            # @spec FEATURE-APPROVAL-023 — a linked feature tree stays out
-            # of every automatic selection path until its release transaction
-            # has recorded a repository revision.
+            # @spec FEATURE-APPROVAL-023 — approval-gated trees retain their
+            # original whole-feature release rule. Confidence-driven links use
+            # their own reconciled release state instead.
             held_feature_issue_ids = FeatureIntentIssue.joins(:feature_intent)
               .where(feature_intents: { project_id: project.id })
+              .where(feature_intents: { delivery_policy: "approval_gated" })
               .where.not(feature_intents: { status: "released" })
               .select(:issue_id)
             scope = scope.where.not(id: held_feature_issue_ids)
 
             missing_revision_issue_ids = FeatureIntentIssue.joins(:feature_intent)
-              .where(feature_intents: { project_id: project.id, status: "released", approved_design_revision: nil })
+              .where(feature_intents: { project_id: project.id, delivery_policy: "approval_gated", status: "released", approved_design_revision: nil })
               .select(:issue_id)
             scope = scope.where.not(id: missing_revision_issue_ids)
+
+            unreleased_confidence_issue_ids = FeatureIntentIssue.joins(:feature_intent)
+              .where(feature_intents: { project_id: project.id, delivery_policy: "confidence_driven" })
+              .where.not(release_state: "released")
+              .select(:issue_id)
+            scope = scope.where.not(id: unreleased_confidence_issue_ids)
 
             # @spec AUTO-PICK-QUEUE-011 — issues whose latest model
             # selection pins a tier no configured runner can satisfy stay
@@ -291,12 +312,24 @@ module Automation
               base = base.where("LOWER(issues.github_creator_login) IN (?)", trusted_usernames)
             end
 
-            needs_input_excluded = project.needs_input_labels.reduce(base) do |scope, label|
-              scope.where.not("labels @> ?::jsonb", [ label ].to_json)
-            end
+            if project.label_integration_mode == "ignored"
+              # @spec LABEL-CONTROL-007 — In ignored mode auto-pick must only
+              # operate on issues the user has explicitly marked as Paid's to
+              # work on (the activation label has no analog); excluded issues
+              # and the rest of the eligibility filters still apply.
+              base.where(paid_activation_state: "activated", auto_pick_excluded_reason: nil)
+            else
+              needs_input_excluded = project.needs_input_labels.reduce(base) do |scope, label|
+                scope.where.not("labels @> ?::jsonb", [ label ].to_json)
+              end
 
-            project.effective_auto_pick_skip_labels.reduce(needs_input_excluded) do |scope, label|
-              scope.where.not("labels @> ?::jsonb", [ label ].to_json)
+              exclude_effective_skip_labels(needs_input_excluded, project)
+            end
+          end
+
+          def exclude_effective_skip_labels(scope, project)
+            project.effective_auto_pick_skip_labels.reduce(scope) do |candidate_scope, label|
+              candidate_scope.where.not("labels @> ?::jsonb", [ label ].to_json)
             end
           end
 
@@ -430,7 +463,9 @@ module Automation
             end
           end
 
-          def epic_issue_ids(project)
+          def epic_issue_ids(project) # @spec LABEL-CONTROL-003
+            return [] if project.label_integration_mode == "ignored"
+
             Issue.where(project: project, is_pull_request: false, github_state: "open")
               .where("labels @> ?::jsonb", [ EPIC_LABEL ].to_json)
               .pluck(:id)
@@ -623,6 +658,17 @@ module Automation
           # first, so P1-labeled issues beat P2/P3/unlabeled, P2 beats
           # P3/unlabeled, and P3 beats unlabeled.
           def priority_label_order_node(project)
+            if project.label_integration_mode == "ignored"
+              return Arel.sql(<<~SQL.squish)
+                CASE issues.control_priority
+                WHEN 'P1' THEN 1
+                WHEN 'P2' THEN 2
+                WHEN 'P3' THEN 3
+                ELSE 4
+                END
+              SQL
+            end
+
             effective = project.effective_priority_labels
             priority_case = Arel::Nodes::Case.new
             configured_tiers = 0

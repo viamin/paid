@@ -52,6 +52,14 @@ module Activities
           validate_tdd_write_guard!(agent_run, client)
         end
 
+        # Bootstrap has its own narrow harness boundary. It does not alter the
+        # TDD phase guard because later red/green runs must retain their exact
+        # test_writing/test_fixing/refactor semantics.
+        # @spec PROJECT-READINESS-008
+        if agent_run.bootstrap_readiness_goal?
+          validate_bootstrap_write_guard!(agent_run, client)
+        end
+
         pr_body = nil
 
         if existing_pr
@@ -141,6 +149,11 @@ module Activities
     # create_feature runs and `lid_planning` for chained lid_planning
     # runs; everything else is a no-op so the same activity code can run
     # without goal-specific gates.
+    #
+    # @spec FEATURE-APPROVAL-019 — the same choke point materializes the
+    # run's explicitly emitted questions and [inferred] decisions into
+    # FeatureIntentDecision rows, so the Inbox decision sections render
+    # what the run actually raised (never a fabricated default).
     def attach_to_feature_intent!(agent_run, pr)
       design_pr_kind = design_pr_kind_for(agent_run)
       return unless design_pr_kind
@@ -155,6 +168,7 @@ module Activities
         head_sha: pr.head&.sha.to_s,
         design_pr_kind: design_pr_kind
       )
+      FeatureIntents::RecordRunDecisions.call(feature_intent: feature_intent, agent_run: agent_run)
     rescue => e
       logger.warn(
         message: "agent_execution.feature_intent_attach_failed",
@@ -514,8 +528,11 @@ module Activities
       else
         best_effort(agent_run_id, context: "sync_created_pull_request") { sync_pull_request_record(client, project, pr.number) }
       end
+      best_effort(agent_run_id, context: "publish_tdd_test_revision") do
+        publish_tdd_test_revision(agent_run, pr.number) if agent_run.tdd_test_writing_phase? && pr_action != "reused"
+      end
       best_effort(agent_run_id, context: "add_pr_labels") do
-        add_pr_labels(client, project, pr.number, agent_run, issue: issue) if project.upstream_feature_enabled?(:upstream_issue_labeling)
+        add_pr_labels(client, project, pr.number, issue: issue)
       end
       best_effort(agent_run_id, context: "log_pr_action") { agent_run.log!("system", "PR #{pr_action}: #{pr.html_url}") }
 
@@ -1147,6 +1164,28 @@ module Activities
       raise "TDD write guard violation (#{result.phase}): #{result.forbidden_files.join(', ')}"
     end
 
+    # @spec PROJECT-READINESS-008
+    def validate_bootstrap_write_guard!(agent_run, client)
+      changed_files = fetch_changed_files(agent_run, client)
+      raise "Bootstrap write guard validation requires changed file data (missing client or commit SHAs)" if changed_files.nil?
+
+      result = Projects::Readiness::BootstrapWriteGuard.call(changed_files: changed_files)
+      return if result.valid?
+
+      logger.error(
+        message: "agent_execution.bootstrap_write_guard_violation",
+        agent_run_id: agent_run.id,
+        forbidden_files: result.forbidden_files,
+        total_changed: changed_files.size
+      )
+      agent_run.log!(
+        "system",
+        "Bootstrap write guard violation: #{result.reason}. " \
+        "Forbidden files: #{result.forbidden_files.to_sentence}. The run is aborted."
+      )
+      raise "Bootstrap write guard violation: #{result.forbidden_files.join(', ')}"
+    end
+
     def create_feature_pr_title(agent_run)
       brief = agent_run.external_metadata&.dig("feature_brief") || {}
       title = brief["title"].presence || "New feature specification"
@@ -1185,12 +1224,15 @@ module Activities
     end
 
     # @spec TDD-PR-001
-    def add_pr_labels(client, project, pr_number, agent_run, issue: nil)
+    def add_pr_labels(client, project, pr_number, issue: nil)
+      if project.label_integration_mode == "ignored"
+        return
+      end
+
       # @spec UPSTREAM-GATE-006
       return unless project.upstream_feature_enabled?(:upstream_issue_labeling)
 
       labels = []
-      labels << Tdd::ReturnToTestReview::TESTS_READY_FOR_REVIEW_LABEL if agent_run.tdd_test_writing_phase?
       if project.auto_add_labels_enabled?
         labels << project.generated_label_name
         labels << project.automation_label_name
@@ -1201,6 +1243,19 @@ module Activities
 
       client.add_labels_to_issue(project.full_name, pr_number, labels)
       merge_local_pr_labels(project, pr_number, labels)
+    end
+
+    # @spec TDD-PR-007
+    def publish_tdd_test_revision(agent_run, pr_number)
+      result = Tdd::PublishTestRevision.call(agent_run: agent_run, pull_request_number: pr_number)
+      return if result.success?
+
+      logger.warn(
+        message: "tdd.publish_test_revision_failed",
+        agent_run_id: agent_run.id,
+        pull_request_number: pr_number,
+        reason: result.error
+      )
     end
 
     # @spec TDD-PR-001

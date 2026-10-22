@@ -159,6 +159,47 @@ RSpec.describe Activities::MergePullRequestActivity do
       end
     end
 
+    context "when an ignored-mode merge control changes during the provider fetch" do
+      let(:pr_data) do
+        Automation::Providers::Data::PullRequest.new(
+          number: 42, title: "Test", body: nil, state: :open, draft: false,
+          merged: false, mergeable: true, head_sha: "abc", head_ref: "feature",
+          base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+          updated_at: Time.current, merged_at: nil, url: "https://example.com/pr/42",
+          raw_state: "open"
+        )
+      end
+
+      before do
+        project.update!(label_integration_mode: "ignored")
+        allow(provider).to receive(:merge_pull_request)
+      end
+
+      it "observes a newly persisted review hold" do # @spec LABEL-CONTROL-004
+        allow(provider).to receive(:fetch_pull_request) do
+          issue.update_column(:hold_for_review, true)
+          pr_data
+        end
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(provider).not_to have_received(:merge_pull_request)
+      end
+
+      it "observes a newly persisted auto-merge skip" do # @spec LABEL-CONTROL-004
+        allow(provider).to receive(:fetch_pull_request) do
+          issue.update_column(:skip_auto_merge, true)
+          pr_data
+        end
+
+        result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(result).to include(merged: false, skipped: true)
+        expect(provider).not_to have_received(:merge_pull_request)
+      end
+    end
+
     context "when PR is not yet merged" do
       let(:pr_data) do
         Automation::Providers::Data::PullRequest.new(
@@ -248,7 +289,7 @@ RSpec.describe Activities::MergePullRequestActivity do
     # @spec INTENT-MERGE-GUARD-003 @spec INTENT-MERGE-GUARD-004
     # @spec INTENT-MERGE-GUARD-005 @spec INTENT-MERGE-GUARD-006
     # @spec INTENT-MERGE-GUARD-008
-    context "when the PR belongs to a feature under the intent-conformance rollout flag" do
+    context "when the PR belongs to a feature under complete intent-conformance enforcement" do
       let(:feature_intent) do
         create(:feature_intent, project: project, status: "released", approved_design_revision: "rev1")
       end
@@ -266,7 +307,10 @@ RSpec.describe Activities::MergePullRequestActivity do
       end
 
       before do
-        project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
+        project.account.tenant_setting!.update!(features: {
+          "approved_intent_amendments" => true,
+          "intent_conformance_enforcement" => true
+        })
         create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
         allow(provider).to receive(:fetch_pull_request)
           .with(repo: project.full_name, number: 42)

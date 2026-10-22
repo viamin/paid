@@ -3,7 +3,7 @@
 class ProjectsController < ApplicationController
   include AuditLogging
 
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :refresh_code_scanning_availability, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_paid_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview, :start_lid, :start_setup_chat, :finish_setup ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :update_issue_control_state, :refresh_code_scanning_availability, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_paid_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview, :start_lid, :start_setup_chat, :finish_setup ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -41,7 +41,7 @@ class ProjectsController < ApplicationController
     AgentRun.preload_created_issue_records(@recent_agent_runs)
     settings = current_user.settings
     open_items = @project.issues.where(github_state: "open").order(github_number: :desc)
-    @issues = open_items.issues_only.includes(:sub_issues).limit(settings.max_issues_per_page)
+    @issues = open_items.issues_only.includes(:sub_issues, feature_intent_issues: :feature_intent).limit(settings.max_issues_per_page)
     @issue_lifecycle_statuses = Issue.lifecycle_statuses(@issues)
     @paid_prs_by_issue_id = Issue.open_paid_generated_prs_by_issue_id(
       project: @project, issue_ids: @issues.map(&:id)
@@ -311,6 +311,19 @@ class ProjectsController < ApplicationController
       end
       format.html { redirect_to @project }
     end
+  end
+
+  # @spec LABEL-CONTROL-002
+  def update_issue_control_state
+    authorize @project, :update?
+
+    Issues::UpdateControlState.call(
+      issue: @project.issues.find(params.require(:issue_id)), actor: current_user,
+      action: params.require(:control_action), priority: params[:priority], reason: params[:reason]
+    )
+    redirect_to @project, notice: "Local control state updated."
+  rescue ArgumentError, ActiveRecord::RecordInvalid => e
+    redirect_to @project, alert: e.message
   end
 
   def start_lid
@@ -681,9 +694,12 @@ class ProjectsController < ApplicationController
       :owner_reviewer_login, :merge_method, :max_draft_review_rounds, :auto_pick_enabled, :auto_merge_mode,
       :quiet_mode,
       :max_pr_auto_continue_tokens,
+      :intent_threshold, :technical_threshold,
       :pr_approval_escalation_hours,
       :allow_bot_authored_pr_auto_merge, :auto_fix_merge_conflicts, :auto_scan_security,
       :lid_mode, :tdd_mode,
+      :new_feature_delivery_policy, :confidence_delivery_enrollment_enabled,
+      :question_exploration_enabled,
       :generated_label_name, :automation_label_name,
       :label_integration_mode,
         :enhance_issue_needs_input_label_name, :enhance_issue_enhanced_label_name,

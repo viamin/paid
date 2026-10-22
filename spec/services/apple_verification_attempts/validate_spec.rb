@@ -25,6 +25,26 @@ RSpec.describe AppleVerificationAttempts::Validate do
     )
   end
 
+  def shell_capture_configuration
+    <<~YAML
+      version: 1
+      profiles:
+        ios-app:
+          platform: ios
+          worker:
+            simulator: iPhone 17
+          xcode:
+            project: App.xcodeproj
+            scheme: App
+            bundle_id: dev.paid.app
+          captures:
+            - id: login
+              required: true
+              flow:
+                - tap: { id: login, command: "echo hi" }
+    YAML
+  end
+
   it "returns valid without mutating an eligible queued attempt" do
     subject = attempt
 
@@ -102,6 +122,50 @@ RSpec.describe AppleVerificationAttempts::Validate do
 
     expect(result.classification).to eq("project_configuration")
     expect(result.reason).to eq("commit sha is invalid")
+    expect(subject.reload).to have_attributes(status: "failed", failure_classification: "project_configuration")
+  end
+
+  it "marks the attempt failed with project_configuration when the revision content no longer matches its digest" do
+    subject = attempt
+    subject.apple_verification_workflow_revision.update_column(:configuration_content, "version: 1\nprofiles: {}\n")
+
+    result = described_class.call(attempt: subject)
+
+    expect(result).to have_attributes(valid: false, classification: "project_configuration", reason: "workflow configuration digest does not match approved revision")
+    expect(subject.reload).to have_attributes(status: "failed", failure_classification: "project_configuration")
+  end
+
+  it "marks the attempt failed with project_configuration for a bound configuration missing its scheme" do
+    subject = attempt
+    content = <<~YAML
+      version: 1
+      profiles:
+        ios-app:
+          platform: ios
+          xcode:
+            project: App.xcodeproj
+    YAML
+    subject.apple_verification_workflow_revision.update_columns(
+      configuration_content: content,
+      content_digest: "sha256:#{Digest::SHA256.hexdigest(content)}"
+    )
+
+    result = described_class.call(attempt: subject)
+
+    expect(result).to have_attributes(valid: false, classification: "project_configuration", reason: "profile ios-app xcode.scheme is required")
+  end
+
+  it "marks the attempt failed with project_configuration for shell text in a capture flow" do
+    subject = attempt
+    content = shell_capture_configuration
+    subject.apple_verification_workflow_revision.update_columns(
+      configuration_content: content,
+      content_digest: "sha256:#{Digest::SHA256.hexdigest(content)}"
+    )
+
+    result = described_class.call(attempt: subject)
+
+    expect(result).to have_attributes(valid: false, classification: "project_configuration", reason: "guest operations cannot contain shell text")
     expect(subject.reload).to have_attributes(status: "failed", failure_classification: "project_configuration")
   end
 

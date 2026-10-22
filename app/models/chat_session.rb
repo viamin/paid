@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class ChatSession < ApplicationRecord
+  has_many :chat_diagrams, dependent: :destroy
   include TenantScoped
   self.ignored_columns += [ "mode" ]
 
@@ -58,6 +59,7 @@ class ChatSession < ApplicationRecord
 
   belongs_to :project, optional: true
   belongs_to :clarifying_question_issue, class_name: "Issue", optional: true
+  belongs_to :feature_intent, optional: true
   belongs_to :runner, -> { with_discarded }, optional: true
   belongs_to :provider, -> { with_discarded }, class_name: "Provider", foreign_key: :runner_id, optional: true
   belongs_to :created_by, class_name: "User", optional: true
@@ -66,6 +68,10 @@ class ChatSession < ApplicationRecord
   has_many :token_usages, dependent: :destroy
   has_many :api_usage_attempts, dependent: :destroy
   has_many :change_intents, dependent: :nullify
+  # Destroyed before clarifying_question_progresses: chat_investigations hold a
+  # null:false FK onto the progress records, so the dependents must fall first.
+  has_many :chat_investigations, dependent: :destroy
+  has_many :clarifying_question_progresses, dependent: :destroy
   has_many :chat_session_projects, dependent: :destroy
   has_many :projects, through: :chat_session_projects
 
@@ -75,6 +81,7 @@ class ChatSession < ApplicationRecord
   validate :runner_must_belong_to_same_account
   validate :project_must_belong_to_same_account
   validate :clarifying_question_issue_must_belong_to_project
+  validate :feature_intent_must_belong_to_project
 
   def provider_id
     runner_id
@@ -137,6 +144,45 @@ class ChatSession < ApplicationRecord
   def interactive_inbox_chat?
     inbox_item_key.present?
   end
+
+  # @spec QUESTION-EXPLORATION-018 QUESTION-EXPLORATION-019
+  # True for shared exploration conversations whose context is scoped to a
+  # project: a standalone linked-issue chat or a feature conversation. These
+  # broadcast on the project sidebar stream and require project exploration
+  # access; personal chats stay account-scoped.
+  def project_scoped_exploration?
+    clarifying_question_issue.present? || feature_intent.present?
+  end
+
+  # @spec QUESTION-EXPLORATION-018
+  # The Inbox issue this exploration conversation currently focuses on: the
+  # linked standalone issue, or — for a feature conversation — the issue named
+  # by the latest focus snapshot, falling back to the linked issue when the
+  # focus is absent or names an issue outside the feature.
+  def exploration_issue
+    feature = feature_intent
+    return clarifying_question_issue unless feature
+
+    focus_issue_id = exploration_focus&.dig("issue_id")
+    focus_issue = focused_feature_issue(feature, focus_issue_id) if focus_issue_id
+    focus_issue || clarifying_question_issue
+  end
+
+  # @spec QUESTION-EXPLORATION-018
+  # Focus snapshot written by every feature-conversation open: the focused
+  # issue, its pending questions, the focusing actor, and the time.
+  def exploration_focus
+    focus = metadata["exploration_focus"] if metadata.is_a?(Hash)
+    focus.is_a?(Hash) ? focus : nil
+  end
+
+  def focused_feature_issue(feature, issue_id)
+    issues = feature.issues
+    return issues.find_by(id: issue_id) unless issues.loaded?
+
+    issues.find { |issue| issue.id.to_s == issue_id.to_s }
+  end
+  private :focused_feature_issue
 
   # @spec CHAT-API-019
   def llm_policy_projects
@@ -342,6 +388,13 @@ class ChatSession < ApplicationRecord
     errors.add(:clarifying_question_issue, "must belong to the chat project")
   end
 
+  def feature_intent_must_belong_to_project
+    return unless feature_intent
+    return if project && feature_intent.project_id == project_id
+
+    errors.add(:feature_intent, "must belong to the chat project")
+  end
+
   def broadcast_sidebar_prepend
     Turbo::StreamsChannel.broadcast_remove_to(
       sidebar_broadcast_stream,
@@ -375,7 +428,7 @@ class ChatSession < ApplicationRecord
   end
 
   def broadcast_sidebar_append_empty_state(status:)
-    return if clarifying_question_issue.present?
+    return if project_scoped_exploration?
     return unless self.class.where(account_id: account_id).public_send(status == "archived" ? :archived_only : :visible).none?
 
     Turbo::StreamsChannel.broadcast_append_to(
@@ -388,7 +441,7 @@ class ChatSession < ApplicationRecord
 
   def sidebar_broadcast_stream
     # @spec QUESTION-EXPLORATION-007
-    clarifying_question_issue.present? ? [ project, :chat_sessions ] : [ account, :chat_sessions ]
+    project_scoped_exploration? ? [ project, :chat_sessions ] : [ account, :chat_sessions ]
   end
 
   def handle_container_capability_transition

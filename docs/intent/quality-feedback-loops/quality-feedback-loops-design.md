@@ -68,7 +68,10 @@ from the effective pre-commit requirements.
 For DB-dependent languages such as Ruby, when no database service container is
 running the test and mutation hooks are replaced with no-ops. This avoids an
 inescapable commit loop where hooks reject every commit for infrastructure the
-agent cannot provision mid-run.
+agent cannot provision mid-run. Each replacement is recorded on the run as a
+`not_executed` check with reason `database_service_unavailable`; it is never
+treated as a passing test or mutation result, and does not relax a separately
+required policy.
 
 ## Quality-Gate Admission
 

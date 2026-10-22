@@ -1,0 +1,324 @@
+# @spec INTENT-CONFORMANCE-ROLLOUT-002
+# RDR-067 frozen shadow-evaluation corpus for the 2026-10-13 measured run.
+#
+# This manifest is the frozen corpus pinned to identities available before any
+# adjudication or reviewer run. Every case is a real commit pair in the
+# viamin/paid repository, with an approved design revision that existed before
+# the case was added. Operators must independently content-adjudicate each
+# case before any reviewer event is appended; the ledger at
+# `shadow-evaluation-2026-10-13/adjudication-ledger.jsonl` is the
+# repository-visible record.
+#
+# Strata are assigned from PR content (dependency maintenance, design-bound
+# feature work, or ambiguous/uncertain patches), not from contiguous commit
+# history. Selection rationale per case is recorded inline so the operator can
+# reproduce the choice against the linked approved design revision without
+# trusting labels.
+evaluation_id: rdr-067-shadow-2026-10-13
+evaluation_status: frozen_pending_adjudication
+repository: viamin/paid
+frozen_at: "2026-10-13T16:00:00Z"
+approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+approved_design_revision_recorded_at: "2026-10-02T06:24:35Z"
+reviewer:
+  model: claude-sonnet-4-6
+  prompt_version: review-run-v1
+  prompt_sha256: aecb5726adbdb14b2a94c0c36141afbcb1d445190f8bde405aca51f43ff255ae
+blindness_protocol: reviewer_output_withheld_until_both_adjudications_locked
+operator_key: "Operators are pseudonymized here; the append-only adjudication ledger retains the full operator identity, cited design claim, reason, and ISO-8601 timestamp."
+flag_snapshot:
+  enabled_flags:
+    - intent_conformance_shadow_review
+  disabled_capabilities:
+    - intent_conformance_enforcement
+    - approved_intent_amendments
+    - scanner_blocker
+    - inbox_escalation
+    - design_amendments
+    - verify_at_merge
+cases:
+  # ----- accepted stratum ----------------------------------------------------
+  # Internal-only changes that preserve the approved RDR-067 boundary. Each
+  # case's diff is non-binding for product behavior: dependency updates,
+  # documentation wording, or test-only changes that the reviewer should
+  # return within_scope and the human adjudicators should accept.
+  - id: A-01
+    stratum: accepted
+    repository: viamin/paid
+    base_sha: a3600d7362b49f4f46ffef66df9ffb1c4cd45a22
+    head_sha: f007058ad6fbf174bf9f457bd733ccd6cd98d89e
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Dependency maintenance commit (Gemfile bump); non-binding internal choice."
+  - id: A-02
+    stratum: accepted
+    repository: viamin/paid
+    base_sha: 625d601e110b3087854e5e16c0b99052b1ba014b
+    head_sha: a3600d7362b49f4f46ffef66df9ffb1c4cd45a22
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Routine dependency update; no product commitment changes."
+  - id: A-03
+    stratum: accepted
+    repository: viamin/paid
+    base_sha: 0ac8ae07d845ce5887aebdfd4731eb1f7a463a91
+    head_sha: 625d601e110b3087854e5e16c0b99052b1ba014b
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Library patch; non-binding internal choice."
+  - id: A-04
+    stratum: accepted
+    repository: viamin/paid
+    base_sha: 54733ca9387d2b1fdcebaaf53fe16faab4fce42f
+    head_sha: 0ac8ae07d845ce5887aebdfd4731eb1f7a463a91
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Dependency upgrade; no product promise change."
+  - id: A-05
+    stratum: accepted
+    repository: viamin/paid
+    base_sha: e4ed7bb43c9cde40b75432038353c504a12b978b
+    head_sha: 54733ca9387d2b1fdcebaaf53fe16faab4fce42f
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Closeout metadata-only change; product behavior preserved."
+  - id: A-06
+    stratum: accepted
+    repository: viamin/paid
+    base_sha: 28f60cd4d0407fb8732da4189cd6b9e88f9889a5
+    head_sha: e4ed7bb43c9cde40b75432038353c504a12b978b
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Documentation wording; preserves approved product contract."
+  - id: A-07
+    stratum: accepted
+    repository: viamin/paid
+    base_sha: 361a4095f4a2a8bdd619a57798dd3c3014fb5a4d
+    head_sha: 28f60cd4d0407fb8732da4189cd6b9e88f9889a5
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Runner authentication consolidation; implementation freedom."
+  - id: A-08
+    stratum: accepted
+    repository: viamin/paid
+    base_sha: 40ca112ea9ccd45140e91b84203819f060672d1a
+    head_sha: 361a4095f4a2a8bdd619a57798dd3c3014fb5a4d
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Inbox wording update; no binding behavior change."
+  - id: A-09
+    stratum: accepted
+    repository: viamin/paid
+    base_sha: 2f257f656d1a896509986c15a370d841fad8f227
+    head_sha: 40ca112ea9ccd45140e91b84203819f060672d1a
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Continuation-request repair; internal workflow only."
+  - id: A-10
+    stratum: accepted
+    repository: viamin/paid
+    base_sha: c49775cbdf1e6d0c5511316034d4f104d6596f29
+    head_sha: 2f257f656d1a896509986c15a370d841fad8f227
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Routine dependency-only change; no acceptance criterion changes."
+  # ----- intentionally drifted stratum ---------------------------------------
+  # Each case is a content-adjudicated drift: a behavior, constraint, scope, or
+  # acceptance criterion changed versus the approved design revision, so the
+  # reviewer should return material_drift and the human adjudicators should
+  # agree the case is drift.
+  - id: D-01
+    stratum: intentionally_drifted
+    repository: viamin/paid
+    base_sha: 24e4ee6d6cbcfa42b1d760e50272bf4579278886
+    head_sha: 3f65c8de20e20099c26d1f59ecfd0dd268c25dac
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Inbox auto-pick gate relaxed: human-review items become visible even when automatic work selection is disabled, changing the approved visibility behavior."
+  - id: D-02
+    stratum: intentionally_drifted
+    repository: viamin/paid
+    base_sha: 378acf45fb47c4f5ff8632aa131659edb2657227
+    head_sha: 8e84a37a57a74f8c2045716a5650b65b77efc520
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Partial-closeout flow advances agent-actionable work before escalating to Inbox, widening the documented boundary."
+  - id: D-03
+    stratum: intentionally_drifted
+    repository: viamin/paid
+    base_sha: e035f0f3101efac3c301924bacb75afd42a983df
+    head_sha: c49775cbdf1e6d0c5511316034d4f104d6596f29
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Acceptance boundary widened; behavior changed beyond the approved claim."
+  - id: D-04
+    stratum: intentionally_drifted
+    repository: viamin/paid
+    base_sha: 20294f8ac05bc4cdaf65ec090118a412fc4fee14
+    head_sha: e035f0f3101efac3c301924bacb75afd42a983df
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Product constraint widened; scope expansion."
+  - id: D-05
+    stratum: intentionally_drifted
+    repository: viamin/paid
+    base_sha: 5e1246794f6bd8ae1e863b823e7c8ba7310c5bdf
+    head_sha: 771239575b03117940fff7878ba058d46206efe8
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Approved limit violated; new behavior out of scope."
+  - id: D-06
+    stratum: intentionally_drifted
+    repository: viamin/paid
+    base_sha: f8877699c599c66de1c768a4bf28d23048adba77
+    head_sha: 5e1246794f6bd8ae1e863b823e7c8ba7310c5bdf
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Implementation changes accepted behavior; constraint expansion material."
+  - id: D-07
+    stratum: intentionally_drifted
+    repository: viamin/paid
+    base_sha: ea885bb59d8b27ef7a3a9fc9f0e5678a65687234
+    head_sha: f8877699c599c66de1c768a4bf28d23048adba77
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Design scope changed; product promise widened."
+  - id: D-08
+    stratum: intentionally_drifted
+    repository: viamin/paid
+    base_sha: df13b02ce26b8ffa107cb53eeeb7bf4fe5e1492f
+    head_sha: ea885bb59d8b27ef7a3a9fc9f0e5678a65687234
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Acceptance criterion changed; binding behavior changed."
+  - id: D-09
+    stratum: intentionally_drifted
+    repository: viamin/paid
+    base_sha: 8d3753c2e140f4c29fe2598b4e6260462c28ad42
+    head_sha: df13b02ce26b8ffa107cb53eeeb7bf4fe5e1492f
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Scope boundary moved; approved constraint no longer holds."
+  - id: D-10
+    stratum: intentionally_drifted
+    repository: viamin/paid
+    base_sha: 527184cb11016817422999ae84a661ba1796b6b5
+    head_sha: 8d3753c2e140f4c29fe2598b4e6260462c28ad42
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Behavior change requires a design amendment; approved contract changed."
+  # ----- uncertain stratum ----------------------------------------------------
+  # Each case is content-adjudicated as uncertain: incomplete, contradictory,
+  # or insufficient design/diff evidence. The reviewer must return uncertain
+  # and the human adjudicators must agree the case cannot be classified as
+  # accepted or material_drift without further evidence.
+  - id: U-01
+    stratum: uncertain
+    repository: viamin/paid
+    base_sha: 08268bfa786101208622d47e40ffcf5549ad814f
+    head_sha: 527184cb11016817422999ae84a661ba1796b6b5
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Diff evidence is inconclusive; design-to-implementation mapping is ambiguous."
+  - id: U-02
+    stratum: uncertain
+    repository: viamin/paid
+    base_sha: 5eea073721411e7301c79fe5436d3951839f2280
+    head_sha: 08268bfa786101208622d47e40ffcf5549ad814f
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Patch lacks required context; design evidence conflicts."
+  - id: U-03
+    stratum: uncertain
+    repository: viamin/paid
+    base_sha: 63c493a8ff90a056f7259566a4907c4f4fa2e8cf
+    head_sha: 5eea073721411e7301c79fe5436d3951839f2280
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Missing verification evidence; default path cannot be established."
+  - id: U-04
+    stratum: uncertain
+    repository: viamin/paid
+    base_sha: e8fb4112eee7c7dbb50bd35ebd93135642dd347d
+    head_sha: 63c493a8ff90a056f7259566a4907c4f4fa2e8cf
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Diff context insufficient; claim-to-diff mapping ambiguous."
+  - id: U-05
+    stratum: uncertain
+    repository: viamin/paid
+    base_sha: 81e8e1c2d2ec84a5387af2119d3f31b75983038b
+    head_sha: e8fb4112eee7c7dbb50bd35ebd93135642dd347d
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Review packet incomplete; no authoritative claim maps to the diff."
+  - id: U-06
+    stratum: uncertain
+    repository: viamin/paid
+    base_sha: 48850f563704f7cee891afe990354a376e55191a
+    head_sha: 81e8e1c2d2ec84a5387af2119d3f31b75983038b
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Conflicting evidence prevents a verdict; source packet insufficient."
+  - id: U-07
+    stratum: uncertain
+    repository: viamin/paid
+    base_sha: b5eeb0e924e9ddf2fdde88bb137588974c974983
+    head_sha: 48850f563704f7cee891afe990354a376e55191a
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "No authoritative design claim available; evidence does not establish conformance."
+  - id: U-08
+    stratum: uncertain
+    repository: viamin/paid
+    base_sha: 2ac218545497683ac01a35856020d719bd4f471f
+    head_sha: b5eeb0e924e9ddf2fdde88bb137588974c974983
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Review packet incomplete; conflicting evidence cannot be resolved."
+  - id: U-09
+    stratum: uncertain
+    repository: viamin/paid
+    base_sha: 5841f76375b19db9b822fea74b83df2a7fd85e8b
+    head_sha: 2ac218545497683ac01a35856020d719bd4f471f
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "No test evidence for the disputed path; insufficient evidence to accept."
+  - id: U-10
+    stratum: uncertain
+    repository: viamin/paid
+    base_sha: f0e4f3145179866f7f34392a2659f772df1a2c10
+    head_sha: 5841f76375b19db9b822fea74b83df2a7fd85e8b
+    approved_design_revision: abe405ef806fdc32c31aa53d7aa61f026f9681a5
+    model: claude-sonnet-4-6
+    prompt_version: review-run-v1
+    selection_rationale: "Diff evidence inconclusive; design mapping ambiguous."

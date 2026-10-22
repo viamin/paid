@@ -30,6 +30,7 @@ module Activities
 
       tasks = validate_tasks!(input[:tasks])
       parent_issue_number = input[:parent_issue_number]
+      plan_revision = derived_plan_revision(tasks, parent_issue_number, input[:plan_revision])
 
       project = agent_run.project
       client = project.client
@@ -40,10 +41,8 @@ module Activities
 
       create_issues_with_partial_failure_guard(
         tasks, creation_order, index_to_github_number, created_issues,
-        client, project, agent_run, parent_issue_number
+        client, project, agent_run, parent_issue_number, plan_revision
       )
-
-      completed = complete_agent_run!(agent_run, created_issues)
 
       parent_updated = false
       if parent_issue_number && created_issues.any?
@@ -52,11 +51,15 @@ module Activities
         )
       end
 
-      # @spec FEATURE-APPROVAL-016 — link each issue the run filed to the
-      # FeatureIntent the run was attached to, so the Inbox detail view's
-      # "Proposed issue tree" lists real filed issues. Defensive: a failed
-      # attach must not block run completion.
-      attach_issues_to_feature_intent!(agent_run, created_issues)
+      completed = complete_after_tree_verification!(
+        agent_run,
+        tasks: tasks,
+        created_issues: created_issues,
+        parent_issue_number: parent_issue_number,
+        plan_revision: plan_revision,
+        parent_issue_updated: parent_updated,
+        client: client
+      )
 
       ProcessRunQueueJob.perform_later if completed
 
@@ -71,7 +74,7 @@ module Activities
 
     def create_issues_with_partial_failure_guard(
       tasks, creation_order, index_to_github_number, created_issues,
-      client, project, agent_run, parent_issue_number
+      client, project, agent_run, parent_issue_number, plan_revision
     )
       resolved = ProjectConventions::IssueDependencies.convention_value(project)
 
@@ -114,6 +117,8 @@ module Activities
       raise
     rescue StandardError => e
       raise e if created_issues.empty?
+
+      record_partial_filing(agent_run, tasks, created_issues, parent_issue_number, plan_revision)
 
       issue_numbers = created_issues.map { |i| "##{i[:github_number]}" }.join(", ")
       raise Temporalio::Error::ApplicationError.new(
@@ -246,6 +251,79 @@ module Activities
       completed
     end
 
+    # A GitHub write is not evidence that planning is complete. For feature
+    # planning, persist and verify the receipt before publishing the terminal
+    # run result; a partial sync/link failure stays visible and retryable.
+    # @spec ISSUE-TREE-001 @spec ISSUE-TREE-002
+    def complete_after_tree_verification!(agent_run, tasks:, created_issues:, parent_issue_number:,
+      plan_revision:, parent_issue_updated:, client:)
+      feature_intent = feature_intent_for(agent_run)
+      return complete_agent_run!(agent_run, created_issues) unless feature_intent
+
+      receipt = FeatureIntents::IssueTreeReceipt.record(
+        feature_intent: feature_intent,
+        tasks: tasks,
+        created_issues: created_issues,
+        parent_issue_number: parent_issue_number,
+        plan_revision: plan_revision,
+        parent_issue_updated: parent_issue_updated,
+        client: client
+      )
+      return complete_agent_run!(agent_run, created_issues) if receipt.complete?
+
+      agent_run.log!("system", "Issue-tree receipt incomplete: #{receipt.unresolved.join('; ')}")
+      false
+    end
+
+    def feature_intent_for(agent_run)
+      return unless agent_run.issue
+
+      FeatureIntent.linked_to_issue(agent_run.issue).first
+    end
+
+    # The parser supplies a revision through the workflow. Derive one here
+    # only for older callers and direct activity invocations; same plan on
+    # retry yields the same revision and a changed plan yields a different
+    # one. @spec ISSUE-TREE-003
+    def derived_plan_revision(tasks, parent_issue_number, supplied)
+      return supplied if supplied.present?
+
+      IdempotencyKey.compute("multi-issue-plan", parent_issue_number, canonical_tasks(tasks))
+    end
+
+    def canonical_tasks(tasks)
+      Array(tasks).map do |task|
+        task.to_h.symbolize_keys.slice(:index, :title, :body, :dependencies).then do |sliced|
+          deps = Array(sliced[:dependencies]).map(&:to_i)
+          sliced.merge(dependencies: deps).sort.to_h
+        end
+      end.sort_by { |task| task[:index].to_i }
+    end
+
+    # Persist what was confirmed before the failure so retries and operators
+    # retain the partial issue identities. We swallow errors here because the
+    # caller is already re-raising the original creation failure; this must
+    # never mask it. @spec ISSUE-TREE-003
+    def record_partial_filing(agent_run, tasks, created_issues, parent_issue_number, plan_revision)
+      feature_intent = feature_intent_for(agent_run)
+      return unless feature_intent
+
+      FeatureIntents::IssueTreeReceipt.record(
+        feature_intent: feature_intent,
+        tasks: tasks,
+        created_issues: created_issues,
+        parent_issue_number: parent_issue_number,
+        plan_revision: plan_revision
+      )
+    rescue StandardError => e
+      logger.warn(
+        message: "agent_execution.partial_filing_receipt_failed",
+        agent_run_id: agent_run.id,
+        project_id: agent_run.project_id,
+        error: e.message
+      )
+    end
+
     def update_parent_issue(client, project, parent_issue_number, created_issues)
       task_list = created_issues.map { |i| "- [ ] ##{i[:github_number]} — #{i[:title]}" }.join("\n")
       section = "\n\n## Sub-issues\n\n#{task_list}"
@@ -290,39 +368,6 @@ module Activities
         error: e.message
       )
       nil
-    end
-
-    # @spec FEATURE-APPROVAL-016 — wire the just-filed issues into the
-    # FeatureIntent the run is attached to. Best-effort: a failed attach
-    # is logged but does not raise, because the issues have already been
-    # filed on GitHub and the run is complete — the attachment is a
-    # bookkeeping record, not a correctness gate.
-    def attach_issues_to_feature_intent!(agent_run, created_issues)
-      brief_issue = agent_run.issue
-      return unless brief_issue
-
-      feature_intent = FeatureIntent.linked_to_issue(brief_issue).first
-      return unless feature_intent
-
-      created_issues.each do |created|
-        issue_id = created[:issue_id]
-        next unless issue_id
-
-        issue = Issue.find_by(id: issue_id)
-        next unless issue
-
-        FeatureIntents::AttachFromAgentRun.attach_issue(
-          feature_intent: feature_intent,
-          issue: issue
-        )
-      end
-    rescue => e
-      logger.warn(
-        message: "agent_execution.feature_intent_issue_attach_failed",
-        agent_run_id: agent_run.id,
-        error_class: e.class.name,
-        error: e.message
-      )
     end
   end
 end

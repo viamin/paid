@@ -13,6 +13,7 @@ RSpec.describe ApplicationJob, :no_db do
         DependabotAutoMergeJob
         DiagnoseErrorJob
         DispatchCircuitBreakerOutcomeJob
+        EvaluateProjectReadinessJob
         ExecutionControlParkCleanupJob
         FailureRecoveryDecisionJob
         GithubTokenValidationJob
@@ -40,6 +41,7 @@ RSpec.describe ApplicationJob, :no_db do
         AppleVerificationRetryJob
         AppleVerificationWithheldRunSweepJob
         AppleVerificationTimeoutJob
+        ApplyRemediationDecisionJob
         AuditEventRetentionJob
         BillingPeriodManagementJob
         DependencyBackfillJob

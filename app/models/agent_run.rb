@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class AgentRun < ApplicationRecord
+  attr_readonly :confidence_delivery_snapshot
   attribute :focus, :string, default: "general"
   attribute :execution_origin, :string, default: "paid_native"
   attribute :external_metadata, :json, default: {}
@@ -24,13 +25,13 @@ class AgentRun < ApplicationRecord
   # container-executable runner key"). When you add a runner key, add its
   # agent_type here too.
   AGENT_TYPES = %w[claude_code cursor codex copilot gemini opencode kilocode pi omp api devin factory internal_agent].freeze
-  FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation performance_regression issue_implementation label_action].freeze # @spec FOCUSED-RUN-001
+  FOCUSES = %w[general ci_fix review_feedback merge_conflict conversation performance_regression issue_implementation label_action tdd_test_revision].freeze # @spec FOCUSED-RUN-001 TDD-PR-007
   # Effective review_depth preset captured at review-run creation time. Same
   # vocabulary as Project::REVIEW_DEPTHS so a project-level preset change
   # cannot retroactively alter a run's review behavior. @spec REVIEW-DEPTH-005
   REVIEW_DEPTHS = Project::REVIEW_DEPTHS
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
-  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature].freeze
+  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness].freeze
   # RDR-056 (Strict TDD): the run-scoped write-guard phase for projects with
   # tdd_mode != "off". nil means the run is not TDD-governed (existing
   # behavior). See Tdd::WriteGuard for the enforced allowed/forbidden matrix.
@@ -253,7 +254,7 @@ class AgentRun < ApplicationRecord
     dependent: :nullify,
     inverse_of: :target_agent_run
 
-  attr_readonly :mcp_server_snapshot
+  attr_readonly :mcp_server_snapshot, :tool_sidecar_snapshot
 
   before_validation :set_initiating_user_from_current_user, on: :create
   before_validation :refresh_queue_entered_at, if: :should_refresh_queue_entered_at?
@@ -278,6 +279,7 @@ class AgentRun < ApplicationRecord
   after_commit :enqueue_failure_recovery_decision, on: :update, if: :recovery_decision_required?
   after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :real_run_just_finished?
   after_commit :close_finished_continuation_request, on: :update, if: :continuation_run_just_finished?
+  after_commit :enqueue_project_readiness_evaluation, on: :update, if: :project_readiness_refresh_needed?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -298,6 +300,7 @@ class AgentRun < ApplicationRecord
   validates :worktree_path, length: { maximum: 500 }
   validates :branch_name, length: { maximum: 255 }
   validates :base_commit_sha, length: { maximum: 40 }
+  validates :approved_design_revision, length: { maximum: 40 }
   validates :result_commit_sha, length: { maximum: 40 }
   validates :pull_request_url, length: { maximum: 500 }
   validates :review_url, length: { maximum: 500 }
@@ -444,7 +447,7 @@ class AgentRun < ApplicationRecord
   # runs without an issue or PR link. Call sites that never render context
   # (recent activity) pass extra: %w[custom_prompt].
   LIST_PAYLOAD_EXCLUDED_COLUMNS = %w[
-    streaming_turns_data external_metadata mcp_server_snapshot
+    streaming_turns_data external_metadata mcp_server_snapshot tool_sidecar_snapshot
     mcp_provisioned_servers screenshot_hints review_proxy_diagnostics
   ].freeze
 
@@ -1771,6 +1774,11 @@ class AgentRun < ApplicationRecord
     goal == "create_feature"
   end
 
+  # @spec PROJECT-READINESS-007
+  def bootstrap_readiness_goal?
+    goal == "bootstrap_readiness"
+  end
+
   def assign_default_tdd_phase
     return if tdd_phase.present?
     return unless create_pr_goal?
@@ -2555,18 +2563,30 @@ class AgentRun < ApplicationRecord
   # Returns the prompt for this run: custom_prompt if provided,
   # otherwise delegates to goal-specific prompt builders.
   #
+  # When a `custom_prompt` is set (manually supplied, materialized from a
+  # queue-time PromptVersion, or otherwise bypassing the normal issue path),
+  # the custom text is wrapped with the mandatory safety, service-environment,
+  # and TDD-phase sections through `PromptAssembly::BuildCustomPrompt` so
+  # profile suppression or template overrides cannot omit them. The
+  # code-scanning remediation path keeps its supplementary-instructions
+  # wrapping (the issue path already carries the safety and service sections).
+  #
   # When the create_pr path produced a PromptAssembly result that already
   # includes marketplace content, the marketplace injection is skipped to
   # avoid duplication. Section provenance is persisted to external_metadata.
   #
   # @return [String, nil] The prompt to send to the agent
-  # @spec GITHUB-SYNC-019
+  # @spec GITHUB-SYNC-019, PROMPT-ASSEMBLY-019, PROMPT-ASSEMBLY-020,
+  #       PROMPT-ASSEMBLY-021, PROMPT-ASSEMBLY-022
   def effective_prompt
-    if code_scanning_remediation?
-      base = prompt_for_goal
-      base = [ base, "# Supplementary run instructions\n\n#{custom_prompt}" ].compact.join("\n\n") if custom_prompt.present?
+    base = if code_scanning_remediation?
+      prompt_for_goal.then do |goal_prompt|
+        custom_prompt.present? ? [ goal_prompt, "# Supplementary run instructions\n\n#{custom_prompt}" ].join("\n\n") : goal_prompt
+      end
+    elsif custom_prompt.present?
+      assembled_custom_prompt
     else
-      base = custom_prompt.presence || prompt_for_goal
+      prompt_for_goal
     end
 
     unless prompt_assembly_marketplace_handled?
@@ -2606,6 +2626,23 @@ class AgentRun < ApplicationRecord
   # @spec PROMPT-ASSEMBLY-014
   def prompt_assembly_marketplace_handled?
     @prompt_assembly_result&.sections&.any? { |section| section.key == :marketplace_attachments }
+  end
+
+  # Assembles a `custom_prompt` through `PromptAssembly::BuildCustomPrompt`,
+  # wrapping the custom task text with the mandatory safety, service
+  # environment, and TDD-boundary sections. Memoizes the assembly result so
+  # the existing provenance-persistence path can record it.
+  #
+  # @spec PROMPT-ASSEMBLY-019, PROMPT-ASSEMBLY-020, PROMPT-ASSEMBLY-021,
+  #       PROMPT-ASSEMBLY-022
+  def assembled_custom_prompt
+    @prompt_assembly_result = PromptAssembly::BuildCustomPrompt.call(
+      custom_prompt: custom_prompt,
+      project: project,
+      agent_run: self
+    )
+    record_prompt_assembly!(@prompt_assembly_result.provenance.transform_keys(&:to_s))
+    @prompt_assembly_result.text
   end
 
   # Persists section provenance from the memoized PromptAssembly result into
@@ -4105,6 +4142,17 @@ class AgentRun < ApplicationRecord
     AgentRunResourceProfileRefreshJob.perform_later(id) if resource_profile_runner_key.present?
   end
 
+  # @spec PROJECT-READINESS-006 @spec PROJECT-READINESS-007
+  def project_readiness_refresh_needed?
+    return false if bootstrap_readiness_goal?
+
+    saved_change_to_status? && status == "completed" && result_commit_sha.present? && !synthetic_operational_run?
+  end
+
+  def enqueue_project_readiness_evaluation
+    EvaluateProjectReadinessJob.perform_later(project_id)
+  end
+
   # Records the dispatch circuit breaker outcome for every terminal run,
   # regardless of which activity completed it. Successful half-open probes
   # can finish through CreatePullRequestActivity, CompleteIssueGoalActivity,
@@ -4238,6 +4286,7 @@ class AgentRun < ApplicationRecord
 
   def recovery_decision_required?
     return false if synthetic_operational_run?
+    return false if bootstrap_readiness_goal?
 
     previous_changes.key?("status") && status.in?(recovery_decision_statuses)
   end
@@ -4333,6 +4382,8 @@ class AgentRun < ApplicationRecord
 
     admission = FeatureIntents::RunAdmission.call(issue: issue)
     self.base_commit_sha = admission.revision if admission.revision
+    self.approved_design_revision = admission.revision if admission.revision
+    self.confidence_delivery_snapshot = admission.snapshot if admission.snapshot.present?
   end
 
   def feature_intent_admission

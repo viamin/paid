@@ -34,7 +34,7 @@ module Inbox
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
         retry_limited_count + change_intent_draft_count + partial_closeout_count +
-        test_review_pending_count
+        test_review_pending_count + project_setup_pending_count + traceability_gap_count
     end
 
     def needs_input_count
@@ -48,11 +48,9 @@ module Inbox
       PlanReviewPolicy::Scope.new(user, DecompositionDecision).resolve.open_plan_reviews.count
     end
 
-    # @spec FEATURE-APPROVAL-013
+    # @spec FEATURE-APPROVAL-020
     def feature_decision_count
-      FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
-        .where(status: Inbox::Queue::FEATURE_DECISION_STATUSES)
-        .count
+      Inbox::Queue.call(user: user, kind: Inbox::Queue::FEATURE_DECISION_KIND).size
     end
 
     def merge_approval_count
@@ -108,10 +106,8 @@ module Inbox
 
     # A direct indexed count: both abandonment producers (runner-retry-cap and
     # push-permission rejection) write the same `runner_retry_abandoned_at`
-    # column, so the lane is a single WHERE NOT NULL scan. No paid_state
-    # filter — the dashboard's Retry-Limited card deliberately shows both
-    # issues and PRs regardless of paid_state, and this lane matches that
-    # surface.
+    # column, so the lane is a single WHERE NOT NULL scan with no paid_state
+    # filter.
     # @spec OPERATOR-INBOX-002E
     def retry_limited_count
       project_ids = visible_project_ids
@@ -138,6 +134,16 @@ module Inbox
       return 0 if project_ids.empty?
 
       Inbox::Queue.test_review_pending_issues(project_ids).count
+    end
+
+    # @spec PROJECT-READINESS-005
+    def project_setup_pending_count
+      Project.where(id: visible_project_ids).select(&:readiness_blocked?).count
+    end
+
+    # @spec DESIGN-RECONCILIATION-001
+    def traceability_gap_count
+      DesignArtifactFinding.open_findings.where(project_id: visible_project_ids).count
     end
 
     # Shares the exact lane computation with Inbox::Queue

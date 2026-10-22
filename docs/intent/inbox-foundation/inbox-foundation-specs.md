@@ -96,6 +96,26 @@
   *Tests:* `spec/services/inbox/queue_spec.rb`.
   *Code:* `app/services/inbox/merge_approval.rb`.
 
+- [x] **INBOX-FOUNDATION-011** — When an authorized operator can see an open,
+  ready pull request in a project with `auto_merge_mode: off`, the PR scanner
+  SHALL persist the current-head review, CI, mergeability, dependency, and
+  project-policy assessment without enabling automatic merge. `Inbox::Queue`,
+  `Inbox::Count`, and `Inbox::Availability` SHALL use the same assessment to
+  expose a `merge_approval` entry only when human review/re-approval is the
+  remaining gate or when all gates are clear and a manual merge decision is
+  required. Pending/failed machine or policy gates SHALL not be represented as
+  ready-to-merge human work, and an open PR alone SHALL not create an entry.
+  Visibility SHALL retain `INBOX-FOUNDATION-006` account and owner isolation
+  independently of auto-pick eligibility; a row shall clear when its head,
+  review, checks, dependencies, policy, or open state changes. The existing
+  `paid-hold-review` and auto-merge approval-only paths remain unchanged.
+  *Tests:* `spec/services/inbox/queue_spec.rb`,
+  `spec/services/inbox/count_spec.rb`,
+  `spec/services/inbox/availability_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
+  *Code:* `app/services/inbox/merge_approval.rb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`, `app/models/issue.rb`.
+
 - [x] **INBOX-FOUNDATION-009** — When an operator opens the Inbox, the system
   SHALL render a compact collapsed filter control. On expansion it SHALL offer
   a single type selector, a searchable selector scoped to projects currently

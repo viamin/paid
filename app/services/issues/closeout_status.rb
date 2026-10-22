@@ -66,7 +66,8 @@ module Issues
     def self.call(issue, eligible_issue_ids: nil, continuation_eligible_issue_ids: nil)
       evidence = CloseoutEvidence.call(issue)
       eligible_ids = eligible_issue_ids || admissible_issue_ids(issue)
-      blockers = admission_blockers(issue)
+      prerequisites = prerequisite_labels(issue)
+      blockers = admission_blockers(issue, prerequisites: prerequisites)
       if blockers.empty? && evidence.present?
         blockers = [ residual_eligibility_blocker(issue, continuation_eligible_issue_ids) ].compact
       end
@@ -78,7 +79,7 @@ module Issues
         open_request: IssueContinuationRequest.open_for_issue(issue),
         resolved_current_generation: issue.closeout_resolved? && issue.closeout_resolution_digest == evidence.digest,
         outcome: outcome_label(issue, evidence),
-        unresolved_prerequisites: prerequisite_labels(issue)
+        unresolved_prerequisites: prerequisites
       )
     end
 
@@ -90,8 +91,8 @@ module Issues
     # Each diagnostic interrogates the same persisted state consumed by the
     # candidate source. Keep this list additive: simultaneous guards must all
     # be visible rather than having the first one conceal the rest.
-    def self.admission_blockers(issue)
-      prerequisite_blockers(issue) + operator_pause_blockers(issue) +
+    def self.admission_blockers(issue, prerequisites: prerequisite_labels(issue))
+      prerequisite_blockers(issue, labels: prerequisites) + operator_pause_blockers(issue) +
         run_in_flight_blockers(issue) + trust_blockers(issue) + feature_hold_blockers(issue) +
         analysis_backoff_blockers(issue) + scanner_verification_blockers(issue)
     end
@@ -121,8 +122,7 @@ module Issues
       )
     end
 
-    def self.prerequisite_blockers(issue)
-      labels = prerequisite_labels(issue)
+    def self.prerequisite_blockers(issue, labels: prerequisite_labels(issue))
       return [] if labels.empty?
 
       [ Blocker.new(

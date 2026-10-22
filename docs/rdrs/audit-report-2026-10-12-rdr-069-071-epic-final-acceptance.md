@@ -1,0 +1,206 @@
+# RDR-069–071 Epic Final-Acceptance Audit — 2026-10-12 (refreshed 2026-10-14)
+
+- **Umbrella**: [#4309](https://github.com/viamin/paid/issues/4309)
+- **Result**: **Final acceptance is not yet eligible. The umbrella (#4309)
+  remains open.** All three RDRs retain focused, open delivery gaps; the
+  rollout guards for RDR-069 (project-level exploration setting), RDR-070
+  (shadow-mode-only assessment) and RDR-071 (no enrollment or automatic
+  release) remain in force.
+
+This audit applies the [RDR Closeout Checklist](closeout-checklist.md) to the
+umbrella final acceptance, using each approved RDR's Decision / Rollout Guard
+/ Implementation and Validation sections, the three LLDs and EARS in
+[`docs/intent/question-exploration/`](
+../intent/question-exploration/question-exploration-design.md),
+[`docs/intent/facet-confidence/`](../intent/facet-confidence/facet-confidence-design.md)
+and [`docs/intent/confidence-driven-delivery/`](../intent/confidence-driven-delivery/confidence-driven-delivery-design.md),
+the human-centered Inbox implementation plan, the three RDR-specific audit
+reports, and the working tree as evidence. Closed child issues are **not**
+treated as implementation evidence; only code, tests, migration state, and
+shipped documentation count.
+
+## 1. Acceptance criteria, evidence, and verdict
+
+| Epic acceptance criterion | Verdict | Evidence |
+| --- | --- | --- |
+| Open an Inbox question and reach an informed answer through contextual chat and question-specific diagrams | **Not satisfied.** The chat-entry / reuse / access control / Inbox-chat context foundation is shipped (`QUESTION-EXPLORATION-001`, `002`, `007`, `014`–`017`); the diagram-card and bounded-investigation behaviors that make the experience "question-centered" are unimplemented (`003`–`006`, `008`–`011`, `013`). No diagram-rendering code anywhere under `app/`. | [`audit-report-2026-10-12-rdr-069.md`](audit-report-2026-10-12-rdr-069.md). RDR-069 verification ran 467 examples with 0 failures on the cited specs; no diagram code/spec exists; RDR-069 status remains **Partially Implemented**. |
+| Correct an assessment and understand why scoped work can proceed | **Not satisfied.** Every `FACET-CONFIDENCE-001`–`015` claim remains `[ ]` in `docs/intent/facet-confidence/facet-confidence-specs.md`. No `Facet`, `Assessment`, `Evidence`, or `Preference` model/service/spec exists; the existing `FeatureIntentDecision` is open/resolved only and is the distinct RDR-066 approval-gated primitive. The shadow-mode rollout guard cannot be bypassed and is automatically preserved because no score exists yet. | [`audit-report-2026-10-12-rdr-070.md`](audit-report-2026-10-12-rdr-070.md). `bin/coherence-check.mjs` lists all 15 `CONFIDENCE-DELIVERY-*` and the matching `FACET-CONFIDENCE-*` entries as uncovered `[ ]` gaps. RDR-070 status remains **Accepted**, not closed out. |
+| Create completion-blocking forward work without pausing active confidence-driven work | **Not satisfied.** Every `CONFIDENCE-DELIVERY-001`–`015` claim remains `[ ]` in `docs/intent/confidence-driven-delivery/confidence-driven-delivery-specs.md`. No policy-snapshot, release-audit, completion, or follow-up tables exist in `db/schema.rb`; no confidence-driven service/job exists in `app/`; no confidence-driven spec exists in `spec/`. The reused RDR-066/067 paths remain authoritative and unchanged. The no-enrollment-without-integration requirement is automatically preserved because no enrollment switch and no confidence-driven integration is shipped. | [`audit-report-2026-10-12-rdr-071.md`](audit-report-2026-10-12-rdr-071.md). |
+| Persist only explicit preferences | **Not satisfied.** No durable explicit-preference lifecycle is shipped; `FACET-CONFIDENCE-007` remains planned. No `preference`/`exploration` related schema rows exist beyond RDR-066-era concerns (`code_scanning_remediation_attempts.evidence`, `ab_tests.confidence_threshold` — unrelated to facet confidence). | Same as RDR-070 audit. |
+| Reconcile prior RDR-066/067 implementation tasks without claiming their separate policy work complete | **Satisfied.** The RDR-066 audit (`audit-report-2026-10-10-rdr-066.md`) records the shipped attachment / admission / reconciliation work and its remaining `FEATURE-APPROVAL-019` gap. The RDR-067 audit (`audit-report-2026-10-10-rdr-067.md`) records the shipped guards but invalidated rollout evidence. Neither is falsely claimed as confidence-driven implementation. The reuse strategy is documented in the implementation plan and respected by the children: P01 reconciles, P09/P10 add only the confidence contract, P11 dispatches conformance by policy. | Existing approval-gated audits. |
+
+The epic's stated acceptance ("open an Inbox question, explore/comment on a
+diagram, correct an assessment and see why particular work can proceed. Later
+findings create completion-blocking follow-ups without pausing active work.
+Only explicit preferences persist.") is **not met end-to-end**: the diagram,
+assessment, forward-work, and preference behaviors are unimplemented and
+remain owned by focused, open children.
+
+## 2. Verification re-run
+
+This refresh re-verifies the prior RDR-specific findings against the current
+working tree. The structural checks below additionally confirm that no new
+code has shipped under the three RDRs' scope since the prior audits. The
+configured test database host (`paid-svc-a3-s1-postgres`) was not resolvable
+in this audit environment, so `bundle exec rspec` stopped before loading the
+first spec with `ActiveRecord::DatabaseConnectionError`. This audit does not
+present a database-backed green run that it could not reproduce. The prior
+focused-spec result remains historical evidence only; a terminal closeout
+must rerun it against a reachable database.
+
+```
+node bin/coherence-check.mjs       # 2026-10-13
+```
+
+Result summary: all 15 `CONFIDENCE-DELIVERY-*` claims appear as uncovered
+`[ ]` gaps, the matching `FACET-CONFIDENCE-*` and the diagram/preference/
+investigation `QUESTION-EXPLORATION-*` claims remain unchecked, and the
+arrow overlay in [`docs/arrows/index.yaml`](../arrows/index.yaml) already
+records the next-step ship list per RDR matching this audit's findings.
+Five unrelated `CREATE-FEATURE-*` / `FEAT-NAME-001` reverse orphans exist
+in `app/models/agent_run.rb`, `app/services/prompts/build_for_create_feature.rb`,
+and `app/temporal/activities/chain_lid_planning_activity.rb`; they are
+outside the RDR-069–071 scope and are not addressed here.
+
+```
+npx markdownlint \
+  docs/rdrs/audit-report-2026-10-12-rdr-069-071-epic-final-acceptance.md   # 2026-10-13
+```
+
+Result: 0 offenses detected on the audit report file. No documentation churn
+in this audit introduces style violations.
+
+```
+rg -i 'facet'     app/ db/ config/        # 0 facet-related matches
+rg -i 'diagram'   app/ db/ config/        # 0 diagram-related matches
+rg -i 'bounded[_ ]investigation|investigation_budget' app/ db/ config/  # 0
+rg -i 'question_exploration|exploration_enabled|chat_exploration' \
+                                              app/ db/ config/        # 0
+rg -in 'create_table.*(facet|exploration|investigation|diagram|confidence_driven)' \
+                                              db/schema.rb            # 0
+```
+
+Result: no facet, evidence, diagram, bounded-investigation, project-level
+exploration rollout setting, or confidence-driven policy/snapshot/release
+schema, service, job, MCP tool, controller, view, or spec ships under
+RDR-069, RDR-070, or RDR-071 beyond the reused approval-gated primitives
+recorded by the prior RDR-070 and RDR-071 audits.
+
+```
+RAILS_ENV=test bundle exec rspec \
+  spec/services/inbox/open_interactive_chat_spec.rb \
+  spec/services/clarifying_questions/open_chat_spec.rb \
+  spec/policies/chat_message_policy_spec.rb \
+  spec/services/chat_sessions/resolve_tool_call_spec.rb \
+  spec/requests/chat_sessions_spec.rb \
+  spec/requests/projects/clarifying_questions_spec.rb \
+  spec/mcp/tools/submit_clarifying_answers_spec.rb \
+  spec/models/chat_session_spec.rb \
+  spec/policies/chat_session_policy_spec.rb \
+  spec/requests/chat_messages_spec.rb \
+  spec/channels/chat_channel_spec.rb \
+  spec/jobs/chat_sessions/process_message_job_spec.rb \
+  spec/jobs/chat_sessions/resolve_tool_call_job_spec.rb \
+  spec/services/inbox/chat_context_spec.rb \
+  spec/services/clarifying_questions/choice_answers_spec.rb \
+  spec/services/chat_sessions/build_system_prompt_spec.rb \
+  spec/mcp/tools/get_inbox_chat_context_spec.rb \
+  spec/services/feature_intents/run_admission_spec.rb \
+  spec/services/feature_intents/release_spec.rb \
+  spec/services/feature_intents/reconcile_design_pull_request_spec.rb \
+  spec/services/design_amendments/evaluate_impact_spec.rb \
+  spec/services/intent_conformance/verify_at_merge_spec.rb \
+  spec/jobs/process_run_queue_job_spec.rb \
+  spec/services/agent_runs/recheck_issue_eligibility_spec.rb \
+  spec/models/agent_run_spec.rb                            # 2026-10-13
+```
+
+Historical result: **1,310 examples passed on the cited RDR-069
+chat/reuse/access-control foundation, the RDR-070 final-answer validator, and
+the RDR-071 approval-gated admission/release/conformance/spec set, with 0
+failures**. The RDR-069 count (468) differed from the 2026-10-06 number (467)
+by one example in `clarifying_questions/open_chat_spec.rb`; the other counts
+matched the per-RDR audits because no behavior changed.
+
+Current result (2026-10-14): **not reproducible in this environment**.
+`bundle exec rspec` aborts before loading specs because PostgreSQL cannot
+resolve `paid-svc-a3-s1-postgres`. This is infrastructure-blocked verification,
+not a green test result and not evidence that any RDR-069–071 behavior has
+shipped. It also does not weaken the structural evidence for the unchecked
+claims. Rerun the listed command with a reachable test database before a
+terminal closeout.
+
+The grep results, the coherence-check gap list, the existing RDR-specific
+audit reports, and the historical focused-spec result all reach the same
+conclusion: no RDR-069-070-071 claim that was `[ ]` on 2026-10-12 has shipped
+code, migration, or test evidence between then and this audit. The prior `[x]`
+markers remain valid; their runtime verification must be refreshed before a
+terminal closeout.
+
+## 3. Gap ownership and reconciliation
+
+Every unmet acceptance criterion already has a focused, open, correctly-scoped
+child issue under epic #4309:
+
+| Epic acceptance area | Open child issue(s) |
+| --- | --- |
+| Inbox question → contextual shared chat; project rollout setting | [#4311](https://github.com/viamin/paid/issues/4311) (P02), [#4312](https://github.com/viamin/paid/issues/4312) (P03), [#4313](https://github.com/viamin/paid/issues/4313) (P04), [#4316](https://github.com/viamin/paid/issues/4316) (P07), [#4317](https://github.com/viamin/paid/issues/4317) (P08) |
+| Facets, evidence, assessments, explicit preferences, scoped 80/80 readiness | [#4314](https://github.com/viamin/paid/issues/4314) (P05), [#4315](https://github.com/viamin/paid/issues/4315) (P06), [#4316](https://github.com/viamin/paid/issues/4316) (P07), [#4318](https://github.com/viamin/paid/issues/4318) (P09) |
+| Confidence-driven policy/enrollment, release, builder baseline, follow-up completion | [#4310](https://github.com/viamin/paid/issues/4310) (P01), [#4314](https://github.com/viamin/paid/issues/4314) (P05), [#4315](https://github.com/viamin/paid/issues/4315) (P06), [#4318](https://github.com/viamin/paid/issues/4318) (P09), [#4319](https://github.com/viamin/paid/issues/4319) (P10), [#4320](https://github.com/viamin/paid/issues/4320) (P11), [#4321](https://github.com/viamin/paid/issues/4321) (P12) |
+
+The per-RDR closeout records [#4322](https://github.com/viamin/paid/issues/4322)
+(C69), [#4323](https://github.com/viamin/paid/issues/4323) (C70), and
+[#4324](https://github.com/viamin/paid/issues/4324) (C71) are non-closing
+`Tracks #4309` audits, not delivery owners. No new child issue is filed: every unmet
+acceptance area already has a single-focus, independent, pickable owner. Per
+the implementation plan,
+P01 (#4310) owns the existing-work reconciliation across #3862/#3863/#3865
+and the RDR-066/067 epics and must not recreate or relabel the approval-gated
+policy. The implementation plan's September open/closed annotations are
+historical; only the shipped code and tests count as evidence, and this
+audit confirms that the cited legacy work ships the RDR-066/067 contracts
+that the new tree reuses, not the confidence-driven behavior.
+
+## 4. Rollout-guard disposition
+
+| RDR | Required guard | Disposition |
+| --- | --- | --- |
+| RDR-069 | Project-level exploration rollout setting, initially disabled for existing projects. | **Pending and preserved.** No `question_exploration` / `exploration_enabled` / `chat_exploration` configuration exists. The shipped behavior (EARS claims 001, 002, 007, 014–017) is an extension of the pre-existing, already-enabled legacy clarifying-question entry point and introduces no new diagram, investigation, or preference surface that the guard is meant to gate. #4311 explicitly owns the rollout setting. |
+| RDR-070 | Shadow-mode assessment only; readiness-driven release requires complete RDR-071 delivery. | **Pending and preserved.** No facet assessment pipeline exists, so no runtime behavior bypasses shadow mode. #4318 must keep assessments non-authoritative until the complete RDR-071 admission / review / completion wiring is available. |
+| RDR-071 | Explicit project policy selection; enrollment cannot enable confidence-driven execution before P10–P12 wiring; disabling preserves existing work. | **Pending and preserved.** No `FeatureIntent.policy`, no project confidence-driven enrollment configuration, no confidence-driven automatic-release path exists; the existing approval-gated flow remains authoritative. |
+
+No shipped behavior bypasses any of the three rollout guards.
+
+## 5. Required next steps before a terminal closeout can run
+
+A future final acceptance audit may close #4309 only after all of the
+following hold:
+
+1. The diagram-card and durable-progress behaviors (`QUESTION-EXPLORATION-003`–`006`, `008`–`011`, `013`) ship with code and tests; RDR-069's rollout setting exists and is project-scoped.
+2. Every `FACET-CONFIDENCE-001`–`015` claim is `[x]` with `@spec` annotations and passing tests; the assessment corpus records false readiness, unnecessary clarification, human corrections, cost, rework, and delivery time without tuning scores to increase throughput.
+3. Every `CONFIDENCE-DELIVERY-001`–`015` claim is `[x]` with `@spec` annotations and passing tests; mixed-policy regression fixtures exist; immutable confidence-driven builder context is exercised with contradictory late evidence at start, mid-run, and post-completion states, with and without feature-flag isolation.
+4. The three per-RDR closeouts (#4322, #4323, #4324) each run the RDR Closeout Checklist against shipped code and tests rather than against closed-issue state, and update the RDRs' `Metadata: Status` and `Implementation Status` sections accordingly.
+5. This audit's verification section can rerun against the then-current code with the project's PostgreSQL service reachable and report database-backed passing evidence for the focus areas.
+
+Until those five conditions hold, #4309 remains open and the umbrella
+cannot be closed with GitHub closing language.
+
+## 6. Closure decision
+
+**Do not close #4309.** This audit `Tracks #4309`; it is non-closing.
+The GitHub-visible outcome is:
+
+- All three RDRs' per-RDR audits already `Tracks #4309` and are non-closing.
+- This umbrella final-acceptance audit records the same conclusion with the
+  additional structural verification above.
+- [`docs/rdrs/README.md`](README.md) line 224 already points at the umbrella
+  readiness audit and continues to describe #4309 as open until the focused
+  gaps ship.
+- No closing PR reference such as `Closes #4309` is used; no
+  `paid_state`-side closure is claimed; Paid automation remains free to
+  re-pick the open children once their upstream dependencies resolve.
+
+When the required next steps in section 5 are met, a future agent may run
+this audit again with the same template, refresh the per-RDR audits to match,
+and only then apply `Closes #4309` on a PR that carries the shipped
+evidence.

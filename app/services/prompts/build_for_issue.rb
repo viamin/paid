@@ -32,6 +32,8 @@ module Prompts
       5. Run the test suite and fix any failures: `{{test_command}}`
       6. Commit your changes with a descriptive message
 
+      {{commit_message_guidance}}
+
       **Important:** Git pre-commit hooks will automatically run lint and tests when you commit.
       If the commit is rejected, read the error output carefully, fix the issues, and commit again.
       Keep iterating until the commit succeeds. Do not leave uncommitted changes.
@@ -59,16 +61,18 @@ module Prompts
       @agent_run = agent_run
     end
 
-    def self.service_environment_section_for(project:, include_setup_instruction: true)
+    def self.service_environment_section_for(project:, agent_run: nil, include_setup_instruction: true)
       ServiceContainerSections.service_environment_section_for(
         project: project,
+        agent_run: agent_run,
         include_setup_instruction: include_setup_instruction
       )
     end
 
-    def self.service_environment_section_render_for(project:, include_setup_instruction: true)
+    def self.service_environment_section_render_for(project:, agent_run: nil, include_setup_instruction: true)
       ServiceContainerSections.service_environment_section_render_for(
         project: project,
+        agent_run: agent_run,
         include_setup_instruction: include_setup_instruction
       )
     end

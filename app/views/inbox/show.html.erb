@@ -1,0 +1,7 @@
+<%# @spec OPERATOR-INBOX-015 %>
+<%= turbo_frame_tag("inbox-detail", class: "block h-full") do %>
+  <%= render "dashboard/inbox_detail",
+             entry: @selected_entry,
+             scoped_project: @scoped_project,
+             selected_kind: @selected_kind %>
+<% end %>

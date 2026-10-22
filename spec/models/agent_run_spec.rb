@@ -82,6 +82,7 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_length_of(:worktree_path).is_at_most(500) }
     it { is_expected.to validate_length_of(:branch_name).is_at_most(255) }
     it { is_expected.to validate_length_of(:base_commit_sha).is_at_most(40) }
+    it { is_expected.to validate_length_of(:approved_design_revision).is_at_most(40) }
     it { is_expected.to validate_length_of(:result_commit_sha).is_at_most(40) }
     it { is_expected.to validate_length_of(:pull_request_url).is_at_most(500) }
     it { is_expected.to validate_length_of(:temporal_workflow_id).is_at_most(255) }
@@ -99,6 +100,31 @@ RSpec.describe AgentRun do
       expect(agent_run.errors[:issue]).to include("Feature intent is not released.")
     end
 
+    it "rejects manual implementation runs with unresolved dependencies" do # @spec FEATURE-APPROVAL-023 @spec CONFIDENCE-DELIVERY-005
+      project = create(:project)
+      issue = create(:issue, project: project)
+      feature = create(:feature_intent, project: project)
+      create(:feature_intent_issue, feature_intent: feature, issue: issue)
+      blocker = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue, depends_on_issue: blocker)
+
+      agent_run = build(:agent_run, project: project, issue: issue, goal: "create_pr")
+
+      expect(agent_run).not_to be_valid
+      expect(agent_run.errors[:issue]).to include("Issue has unresolved dependencies.")
+    end
+
+    it "does not apply feature admission to an unlinked issue with dependencies" do # @spec CONFIDENCE-DELIVERY-005
+      project = create(:project)
+      issue = create(:issue, project: project)
+      blocker = create(:issue, project: project, github_state: "open")
+      create(:issue_dependency, issue: issue, depends_on_issue: blocker)
+
+      agent_run = build(:agent_run, project: project, issue: issue, goal: "create_pr")
+
+      expect(agent_run).to be_valid
+    end
+
     # @spec FEATURE-APPROVAL-024
     it "snapshots a released feature's approved revision onto an implementation run" do
       project = create(:project)
@@ -110,6 +136,44 @@ RSpec.describe AgentRun do
       agent_run = create(:agent_run, project: project, issue: issue, goal: "create_pr")
 
       expect(agent_run.base_commit_sha).to eq(revision)
+      expect(agent_run.approved_design_revision).to eq(revision)
+    end
+
+    it "snapshots the admitted confidence-delivery baseline onto an implementation run" do # @spec CONFIDENCE-DELIVERY-004
+      project = create(:project)
+      issue = create(:issue, project: project)
+      feature = create(:feature_intent, :confidence_driven, project: project)
+      mapping = {
+        "coverage" => "complete", "scope_revision" => "scope-v1",
+        "prerequisites" => [ { "id" => "scope", "assessment" => { "status" => "completed", "evidence_revision" => "e1", "intent_score" => 80, "technical_score" => 80 } } ],
+        "design_artifacts" => [ { "path" => "docs/intent/example.md", "required" => true, "merged" => true, "scope_revision" => "scope-v1", "revision" => "a" * 40 } ]
+      }
+      snapshot = FeatureIntents::ScopedReadiness.call(project:, mapping:).snapshot.merge("delivery_policy" => "confidence_driven")
+      create(:feature_intent_issue, feature_intent: feature, issue:, readiness_mapping: mapping, release_state: "released", release_snapshot: snapshot)
+
+      agent_run = create(:agent_run, project:, issue:, goal: "create_pr")
+
+      expect(agent_run.confidence_delivery_snapshot).to include("scope_revision" => "scope-v1", "delivery_policy" => "confidence_driven")
+    end
+
+    # @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-005
+    it "reconciles a ready confidence-delivery issue before creating an implementation run" do
+      project = create(:project)
+      issue = create(:issue, project: project, labels: [ "planning" ])
+      feature = create(:feature_intent, :confidence_driven, project: project)
+      mapping = {
+        "coverage" => "complete", "scope_revision" => "scope-v1",
+        "prerequisites" => [ { "id" => "scope", "assessment" => { "status" => "completed", "evidence_revision" => "e1", "intent_score" => 80, "technical_score" => 80 } } ],
+        "design_artifacts" => [ { "path" => "docs/intent/example.md", "required" => true, "merged" => true, "scope_revision" => "scope-v1", "revision" => "a" * 40 } ]
+      }
+      link = create(:feature_intent_issue, feature_intent: feature, issue:, readiness_mapping: mapping)
+      allow(project.client).to receive(:remove_label_from_issue)
+
+      agent_run = create(:agent_run, project:, issue:, goal: "create_pr")
+
+      expect(project.client).to have_received(:remove_label_from_issue).with(project.full_name, issue.github_number, "planning")
+      expect(link.reload.release_state).to eq("released")
+      expect(agent_run.confidence_delivery_snapshot).to include("scope_revision" => "scope-v1")
     end
 
     # @spec FEATURE-APPROVAL-024
@@ -4697,7 +4761,7 @@ RSpec.describe AgentRun do
     end
 
     it "defines valid GOALS" do
-      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature])
+      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness])
     end
 
     it "defines valid TRIGGER_TYPES" do
@@ -7006,6 +7070,34 @@ RSpec.describe AgentRun do
       expect(message).to eq(
         "Activity task timed out (last known analyze_issue phase: Analyze Issue Provider Attempt · provider codex · attempt 2 · budget 90s)"
       )
+    end
+  end
+
+  describe "project readiness refresh" do
+    # @spec PROJECT-READINESS-006
+    it "queues re-evaluation after a completed run with a result commit" do
+      agent_run = create(:agent_run, status: "running")
+
+      expect { agent_run.update!(status: "completed", result_commit_sha: "a" * 40) }
+        .to have_enqueued_job(EvaluateProjectReadinessJob).with(agent_run.project_id)
+    end
+
+    # @spec PROJECT-READINESS-006
+    it "does not queue re-evaluation for a completed synthetic run" do
+      agent_run = create(:agent_run, :synthetic, status: "running")
+
+      expect { agent_run.update!(status: "completed", result_commit_sha: "a" * 40) }
+        .not_to have_enqueued_job(EvaluateProjectReadinessJob)
+    end
+
+    # @spec PROJECT-READINESS-007 — bootstrap runs defer their re-evaluation to
+    # the post-merge sync so the evaluator reads merged-target evidence; the
+    # completion callback must not fire eagerly off the bootstrap PR's tip.
+    it "does not queue re-evaluation when a bootstrap_readiness run completes" do
+      agent_run = create(:agent_run, status: "running", goal: "bootstrap_readiness")
+
+      expect { agent_run.update!(status: "completed", result_commit_sha: "a" * 40) }
+        .not_to have_enqueued_job(EvaluateProjectReadinessJob)
     end
   end
 end

@@ -27,6 +27,88 @@ the system that actually shipped.
 
 ## Shipped Behavior
 
+### Knowledge credential selection
+
+Each knowledge operation resolves credentials for the project's effective owner.
+`user_settings.kb_embedding_provider_api_key_id` and
+`user_settings.kb_chat_provider_api_key_id` bind embeddings and decision
+drafting respectively to an existing `ProviderApiKey`; no secret is copied.
+The selected key must match the selected runner's API service type. That binding
+has precedence in direct embeddings, container drafting via the secrets proxy,
+and host drafting via Agent Harness `ProviderRuntime`. A new same-service key
+cannot alter a bound operation.
+
+Container drafting supplies its attempted runner to the secrets proxy before
+the run records a final runner, so the proxy can apply the same selected chat
+credential on the first attempt as it does after completion.
+
+When no binding exists, legacy installations retain their former newest-key
+behavior until the owner explicitly selects a key. If no saved key resolves,
+the platform API key (Rails credentials before environment) is the only API
+fallback for supported OpenAI/Anthropic routes. The readiness surface exposes
+only owner, service, source (`owner_api_key`, `saved_key`, or
+`platform_fallback`), and status; it never exposes secret material. An
+incompatible selected key is an actionable configuration error. A selected key
+cannot be deleted while it is bound, so an owner must choose a replacement or
+platform fallback first. API-key selection is API-billed; unconfigured host
+drafting retains its explicitly configured CLI/subscription authentication and
+is never silently converted to HTTP API billing. Conversely, a selected API-key
+binding on a runner without a supported API transport fails with an actionable
+configuration error; it never falls through to ambient CLI credentials.
+
+### Dashboard runner readiness
+
+The account dashboard retains Embedding and Decision Drafting runner health, but
+does not treat the absence of a `RunnerState` as evidence that a runner can
+execute. `Knowledge::RunnerReadiness` resolves local configuration only: a
+supported embedding transport is `ready` when its applicable owner API key or
+documented platform fallback is configured. Decision drafting resolves its API
+service from the configured runner (for example, Claude to Anthropic and Codex
+to OpenAI), then is `ready` only when its effective owner's corresponding API
+key or documented host fallback is configured, because those are the credential
+sources its containerized execution path materializes. Otherwise it is
+`missing_credential` or `unsupported_transport`. It never materializes a secret
+or contacts an upstream provider, so ready credentials are explicitly not a live
+authentication validation.
+
+Embedding candidate selection uses the same readiness result before runtime
+configuration materializes a key, so the dashboard and runtime agree on the
+safe credential-source metadata without turning a dashboard render into a
+provider probe.
+
+Dashboard aggregation follows `Project#effective_owner`, not the account
+fallback owner. Each configured runner row identifies its effective owner and
+project count, preventing one owner's credentials or circuit state from being
+presented as account-wide. Configuration readiness and operational health
+(rate-limit, circuit, and failure state) remain distinct. The short-lived
+readiness cache versions projects, owner settings, credentials, and runner
+states so ownership and credential changes are visible without a provider call.
+Projects without a resolvable effective owner are omitted from runner-health
+rows and counts because no owner's configuration can be reported truthfully.
+On a cache miss, its aggregation loads those owner-scoped records in batches,
+rather than querying once for every effective owner.
+
+### Knowledge settings and credentials
+
+User Settings exposes ordered primary and fallback runners independently for
+embedding and decision drafting. The form uses the same `RunnerReadiness`
+resolution contract as runtime and dashboard readiness: it shows each
+operation's API service type, selected safe API-key name or platform source,
+and missing/unsupported states without exposing a secret or probing a provider.
+The selected owner API key is the newest matching service key, which is also
+the key the embedding configuration materializes. Users can create or manage
+keys from that form. Settings always apply through each project's effective
+owner, including fallback ownership; an editor's own setting is not projected
+onto another owner's project.
+
+Embedding fallback endpoints must serve the configured model and dimensions.
+Changing either on a populated knowledge base requires re-embedding. Platform
+fallback credentials apply only when the host has configured one and their
+usage is billed to the platform; CLI subscription authentication belongs to
+agent runners and does not authorize knowledge API requests, which are billed
+by their selected API-key provider. Readiness is configuration-only, not live
+credential validation.
+
 ### Canonical knowledge storage
 
 Collector runs are versioned by project commit and write artifact/chunk/link

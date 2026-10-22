@@ -1,43 +1,66 @@
 <%# @spec CHAT-API-008 @spec CHAT-API-009
-    The viewport bound is applied from the controller with a measured
-    `--chat-panel-offset-top` variable instead of a fixed subtraction
-    so layout chrome above `<main>` (notably notice/alert flashes)
-    still leaves the conversation pane as the real scroll container.
-    Below `lg` the page carries no bottom padding at all (`pt-4`, no
-    `pb-*`) and `--chat-panel-bottom-space` is `0`, so the panel runs
-    flush to the viewport edge — every mobile pixel goes to the
-    transcript. At `lg`+ the page keeps symmetric `py-8` padding and
-    the panel subtracts the matching `2rem`. dvh (not vh) so the iOS
-    Safari URL bar doesn't shrink the available space.
+    Below `lg` the panel runs flush to the viewport edge — every mobile
+    pixel goes to the transcript. The viewport bound is applied from
+    the controller with a measured `--chat-panel-offset-top` variable
+    instead of a fixed subtraction so layout chrome above `<main>`
+    (notably notice/alert flashes) still leaves the conversation pane
+    as the real scroll container. The page carries no bottom padding
+    at all (`pt-4`, no `pb-*`) and `--chat-panel-bottom-space` is `0`,
+    so the height drops to `100dvh - offset-top`. dvh (not vh) so the
+    iOS Safari URL bar doesn't shrink the available space.
 
-    This must be a definite `height`, never a `max-height`, and must
-    carry no `min-h` floor. A `max-height` leaves the panel's own
-    height `auto` — indefinite — so percentage heights below it do not
-    resolve: the shared conversation partial's `h-full` root falls
-    back to its natural content height, overflows the
-    `min-h-0 flex-1 overflow-hidden` wrapper below, and the transcript
-    is clipped mid-conversation with the input unreachable and nothing
-    scrollable. A `min-height` is equally wrong here: against a height
-    already fitted to the viewport it can only clamp the panel taller
-    than the viewport, which is the document-scroll failure this bound
-    exists to prevent.
-    (@spec CHAT-API-008, CHAT-API-009, #3459, #3575, #3635) %>
+    At `lg`+ the chat show page and the inbox frame both render this
+    panel inside the shared `list-detail` shell, whose grid is bound
+    to `calc(100dvh - 12rem)` and whose detail pane wraps the panel
+    in an `lg:h-full lg:overflow-y-auto` inner wrapper. The mobile
+    `100dvh - offset-top - bottom-space` height no longer fits that
+    wrapper — the panel would extend below the grid track by ~4rem
+    and the inner wrapper would become a second scroll container in
+    front of the transcript. To stay bounded to the shared shell,
+    `--chat-panel-height` is set to `100%` by the
+    `[data-controller~="chat"]` rule at `lg`, so the panel resolves
+    to `height: 100%` (the inner wrapper, which itself resolves to
+    the grid track) and the conversation remains the only scroll
+    region the composer depends on. The media query is unconditional,
+    so this `100%` override applies to every chat panel at `lg`+ —
+    a caller rendering this partial outside the shared shell at
+    desktop still resolves to `100%`, not to the `var(...)` fallback.
+    The fallback inside `var(...)` therefore only takes effect below
+    `lg`, where the media query does not fire and the original
+    `100dvh - offset-top - bottom-space` calculation still produces
+    the intended viewport-bound height for the chat show page.
+
+    This must remain a definite `height`, never a `max-height`, and
+    must carry no `min-h` floor. A `max-height` leaves the panel's
+    own height `auto` — indefinite — so percentage heights below it
+    do not resolve: the shared conversation partial's `h-full` root
+    falls back to its natural content height, overflows the
+    `min-h-0 flex-1 overflow-hidden` wrapper below, and the
+    transcript is clipped mid-conversation with the input
+    unreachable and nothing scrollable. A `min-height` is equally
+    wrong here: against a height already fitted to the viewport it
+    can only clamp the panel taller than the viewport, which is the
+    document-scroll failure this bound exists to prevent.
+    (@spec CHAT-API-008, CHAT-API-009, #3459, #3575, #3635, #4271) %>
 <% chat_panel_bottom_space = local_assigns[:chat_panel_bottom_space] %>
 <div class="flex flex-col overflow-x-hidden"
      data-controller="chat"
+     data-action="click->chat#navigate"
+     data-chat-account-id-value="<%= current_account.id %>"
      data-chat-session-id-value="<%= chat_session.id %>"
-     style="<%= "--chat-panel-bottom-space: #{chat_panel_bottom_space};" if chat_panel_bottom_space %>height: calc(100dvh - var(--chat-panel-offset-top, 0px) - var(--chat-panel-bottom-space, 2rem));">
+     style="<%= "--chat-panel-bottom-space: #{chat_panel_bottom_space};" if chat_panel_bottom_space %>height: var(--chat-panel-height, calc(100dvh - var(--chat-panel-offset-top, 0px) - var(--chat-panel-bottom-space, 2rem)));">
   <%# The chat page is chat-first: the only always-visible chrome is a
       single compact line — the title and a "Session details" toggle —
       so the transcript and composer stay the dominant region of the
       viewport-bound panel. Everything else (project chips, updated
       timestamp, capability badge, runner/model selectors, token usage,
       archive/unarchive buttons) lives inside the closed `Session
-      details` disclosure. The `Workspace` disclosure remains a sibling
-      and keeps its existing open-by-default rule for non-inline chats
-      so the recovery path stays reachable. (@spec CHAT-API-009, #3925) %>
+      details` disclosure. Its nested `Workspace` disclosure keeps the
+      existing open-by-default rule for non-inline chats; live capability
+      transitions unfold the parent chain so recovery stays reachable.
+      (@spec CHAT-API-009, #3925) %>
   <header class="relative z-20 shrink-0 border-b border-gray-200 px-3 py-1 xl:hidden" data-chat-header="mobile">
-    <details class="group">
+    <%= tag.details class: "group", data: { chat_session_details_disclosure: true }, open: params[:workspace_cloned].present? do %>
       <summary class="flex cursor-pointer list-none items-center justify-between gap-2 [&::-webkit-details-marker]:hidden">
         <h1 class="min-w-0 truncate text-base font-semibold text-gray-900" title="<%= chat_session_title(chat_session) %>"><%= chat_session_title(chat_session) %></h1>
         <span class="flex shrink-0 items-center gap-1 text-xs font-semibold text-gray-600">
@@ -55,25 +78,25 @@
                  can_unarchive_chat_session: can_unarchive_chat_session,
                  available_runners: available_runners,
                  available_models: available_models %>
-    </details>
 
-    <%= tag.details class: "group mt-1 rounded-lg border border-gray-200 bg-gray-50",
-                    data: { chat_workspace_disclosure: true },
-                    open: !chat_session.inline_only? do %>
-      <summary class="flex cursor-pointer list-none items-center gap-1.5 px-3 py-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500 transition hover:text-gray-800 [&::-webkit-details-marker]:hidden">
-        <svg class="h-3.5 w-3.5 text-gray-400 transition group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7" />
-        </svg>
-        Workspace
-      </summary>
-      <div class="px-2 pb-1">
-        <%= render "capability_panel", chat_session: chat_session, dom_id_suffix: "_mobile" %>
-      </div>
+      <%= tag.details class: "group mt-1 rounded-lg border border-gray-200 bg-gray-50",
+                      data: { chat_workspace_disclosure: true },
+                      open: !chat_session.inline_only? do %>
+        <summary class="flex cursor-pointer list-none items-center gap-1.5 px-3 py-0.5 text-xs font-semibold uppercase tracking-wide text-gray-500 transition hover:text-gray-800 [&::-webkit-details-marker]:hidden">
+          <svg class="h-3.5 w-3.5 text-gray-400 transition group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7" />
+          </svg>
+          Workspace
+        </summary>
+        <div class="px-2 pb-1">
+          <%= render "capability_panel", chat_session: chat_session, dom_id_suffix: "_mobile" %>
+        </div>
+      <% end %>
     <% end %>
   </header>
 
   <header class="relative z-20 hidden shrink-0 border-b border-gray-200 px-4 sm:px-6 xl:block" data-chat-header="desktop">
-    <details class="group">
+    <%= tag.details class: "group", data: { chat_session_details_disclosure: true }, open: params[:workspace_cloned].present? do %>
       <summary class="flex cursor-pointer list-none items-center justify-between gap-2 py-2 [&::-webkit-details-marker]:hidden">
         <h1 class="min-w-0 truncate text-base font-semibold text-gray-900" title="<%= chat_session_title(chat_session) %>"><%= chat_session_title(chat_session) %></h1>
         <span class="flex shrink-0 items-center gap-1 text-xs font-semibold text-gray-600">
@@ -91,29 +114,24 @@
                  can_unarchive_chat_session: can_unarchive_chat_session,
                  available_runners: available_runners,
                  available_models: available_models %>
-    </details>
 
-    <%# Collapsed for inline-only chats: the capability panel's
-        cloned-repo list grows without bound, and inside a
-        viewport-bound panel an unbounded header starves the
-        transcript. Sessions that actually have a workspace render it
-        open, because the panel then holds the only controls for that
-        workspace — "Reopen with workspace" is a stopped chat's sole
-        recovery path, and folding it away leaves the chat looking
-        unrecoverable. Open by default (not on click) so it works
-        before, and without, JavaScript. (@spec CHAT-API-009) %>
-    <%= tag.details class: "group mt-1 rounded-lg border border-gray-200 bg-gray-50",
-                    data: { chat_workspace_disclosure: true },
-                    open: !chat_session.inline_only? do %>
-      <summary class="flex cursor-pointer list-none items-center gap-1.5 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 transition hover:text-gray-800 [&::-webkit-details-marker]:hidden">
-        <svg class="h-3.5 w-3.5 text-gray-400 transition group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
-          <path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7" />
-        </svg>
-        Workspace
-      </summary>
-      <div class="px-2 pb-2">
-        <%= render "capability_panel", chat_session: chat_session %>
-      </div>
+      <%# Collapsed for inline-only chats. Non-inline sessions retain the
+          nested disclosure's server-rendered open state, while its closed
+          Session details parent keeps the header chat-first. The controller
+          opens this full chain when a recovery action appears. (@spec CHAT-API-009) %>
+      <%= tag.details class: "group mt-1 rounded-lg border border-gray-200 bg-gray-50",
+                      data: { chat_workspace_disclosure: true },
+                      open: !chat_session.inline_only? do %>
+        <summary class="flex cursor-pointer list-none items-center gap-1.5 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-gray-500 transition hover:text-gray-800 [&::-webkit-details-marker]:hidden">
+          <svg class="h-3.5 w-3.5 text-gray-400 transition group-open:rotate-90" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" d="m9 5 7 7-7 7" />
+          </svg>
+          Workspace
+        </summary>
+        <div class="px-2 pb-2">
+          <%= render "capability_panel", chat_session: chat_session %>
+        </div>
+      <% end %>
     <% end %>
   </header>
 

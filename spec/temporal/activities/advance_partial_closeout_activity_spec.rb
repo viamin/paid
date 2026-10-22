@@ -28,4 +28,18 @@ RSpec.describe Activities::AdvancePartialCloseoutActivity do
       phase_key: "advance_partial_closeout", phase_group: "post", status: "completed"
     )
   end
+
+  # @spec PROJECT-READINESS-007
+  it "does not advance an issue-less bootstrap run after its PR is created" do
+    bootstrap_run = create(:agent_run, :completed, :with_custom_prompt, project: project,
+      goal: "bootstrap_readiness", pull_request_number: 12,
+      pull_request_url: "https://github.com/acme/alpha/pull/12")
+
+    result = activity.execute(agent_run_id: bootstrap_run.id)
+
+    expect(result).to include(agent_run_id: bootstrap_run.id, scheduled: false, code: "skipped_no_issue")
+    expect(AgentRunPhase.find_by(agent_run: bootstrap_run)).to have_attributes(
+      phase_key: "advance_partial_closeout", phase_group: "post", status: "completed"
+    )
+  end
 end

@@ -15,6 +15,18 @@ approved-intent segments. Policy selection is explicit, not inferred from
 which score or approval happens to pass. Enrollment is disabled until the
 admission, review and completion integrations are complete.
 
+P01 implements this boundary with `projects.new_feature_delivery_policy`,
+`projects.confidence_delivery_enrollment_enabled`, and immutable
+`feature_intents.delivery_policy`. Both project fields default to the existing
+approval-gated posture, and `FeatureIntents::AttachFromAgentRun` snapshots
+`approval_gated` whenever enrollment is disabled. Project settings updates are
+authorized by `ProjectPolicy#update?` and recorded as account activity.
+P10 replaces the admission denial with `FeatureIntents::ReleaseIssue` and
+`FeatureIntents::RunAdmission`: a passing scoped-readiness result records an
+immutable release snapshot, reconciles only Paid's planning hold, and is
+rechecked at queue and run admission. P11/P12 still own policy-specific review
+and completion enforcement; selection or enrollment alone never releases work.
+
 ## State and transitions
 
 | Work state | Meaning | Next step |
@@ -45,8 +57,16 @@ Record an immutable release snapshot: issue scope revision, feature policy,
 material facet/direction IDs, assessment/evidence revisions, thresholds and
 merged design baseline. Reconcile the workflow-owned planning label and
 dependencies without erasing unrelated human holds. No new human approval
-record is required. Queue admission consumes the same result at auto-pick,
-eager enqueue, dequeue, API/chat/manual starts and actual run creation.
+record is required. An issue may serve several designs; its planning hold
+reconciles and its admission passes only when every linked confidence
+design's scoped readiness passes — never an arbitrary single link, and
+already-released snapshots stay immutable while later links reconcile.
+Queue admission consumes the same result at auto-pick,
+eager enqueue, dequeue, API/chat/manual starts and actual run creation. When a
+direct admission encounters an unreleased confidence link, it invokes the same
+release reconciliation before denying the run; already-released links read only
+their local release evidence. The admitted snapshot is copied onto the created
+run so later scope changes cannot silently alter active work.
 
 Serialize the transition between an unstarted scope edit and run admission.
 Admission either receives the revised ready scope or the already-started run
@@ -54,10 +74,13 @@ retains its original snapshot and the change becomes follow-up work. Do not
 hold a database lock across GitHub network calls: use an idempotent pending
 operation and verify its target revision before committing readiness.
 
-External label removal requests reconciliation. Missing assessment cannot be
-interpreted as a passing result, and projection failures must be visible in
-Inbox/GitHub context. Do not let a ready-looking issue remain silently blocked
-by a second, unexplained feature gate.
+External label edits request reconciliation: a removed hold re-checks
+readiness, and an externally re-added planning hold on already-released work
+is swept off by the periodic eager-queue pass rather than silently skipping
+auto-pick (the label is itself a default skip label). Missing assessment
+cannot be interpreted as a passing result, and projection failures must be
+visible in Inbox/GitHub context. Do not let a ready-looking issue remain
+silently blocked by a second, unexplained feature gate.
 
 ## Baseline and review dispatch
 
@@ -80,6 +103,12 @@ follow-up must not depend on completion, which would make a cycle. Read back
 the remote dependency. Failed writes retain a visible pending operation and
 block a completion claim, not running implementation.
 
+An unavailable or invalid impact assessment is not itself a finding. For a
+confidence-driven feature, evaluation raises so the caller can retry before it
+creates or edits any remote forward-work artifact. This avoids turning a
+transient reviewer outage into speculative public issues while preserving the
+already admitted baseline.
+
 The completion issue depends on all implementation and follow-up work and
 verifies feature acceptance. Recheck findings/dependencies against the version
 being closed; a concurrent new finding keeps completion open. If already
@@ -99,7 +128,9 @@ fact and continue forward work without pausing active runs.
 
 ## Validation
 
-Test 79/80 and unknown results, design merge relevance, external label edits,
+Test policy snapshots, disabling enrollment with active/held work, and mixed
+approval-gated/confidence-driven features before testing 79/80 and unknown
+results, design merge relevance, external label edits,
 independent holds, GitHub failure/retry, scope-edit/admission races, mixed
 policies and loss of access. Exercise findings before start, during a run and
 after completion; ensure in-flight work is not paused with or without flags.

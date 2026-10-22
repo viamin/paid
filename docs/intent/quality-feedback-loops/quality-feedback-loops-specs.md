@@ -33,9 +33,23 @@
   container quality hooks SHALL replace that language's test and mutation
   commands with no-ops so commits are not trapped behind infrastructure-dependent
   hook failures. Non-DB languages keep their test hooks; in a polyglot repo only
-  the DB-dependent languages are gated.
-  *Code:* `app/services/containers/quality_hooks.rb`.
-  *Test:* `spec/services/containers/quality_hooks_spec.rb`.
+  the DB-dependent languages are gated. The same database-availability signal
+  SHALL drive prompt construction (issue/PR instructions, safety rules, and
+  test-command resolution) so the prompt and the pre-commit hook do not tell
+  the agent contradictory things about whether database-dependent verification
+  can run (POLYGLOT-TEST-011).
+  Each skipped test or mutation hook SHALL be recorded as `not_executed` with
+  reason `database_service_unavailable`, never as a passing check.
+  *Code:* `app/services/containers/quality_hooks.rb`,
+  `app/services/prompts/language_commands.rb`,
+  `app/services/prompts/service_container_sections.rb`,
+  `app/services/prompt_assembly/sections/issue_task.rb`,
+  `app/services/prompt_assembly/sections/safety_rules.rb`.
+  *Test:* `spec/services/containers/quality_hooks_spec.rb`,
+  `spec/services/prompts/language_commands_spec.rb`,
+  `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
+  `spec/services/prompts/build_for_issue_spec.rb`,
+  `spec/services/prompts/build_for_pr_spec.rb`.
 
 - [x] **QUALITY-LOOPS-005** — The quality-gate activity SHALL block automatic
   work when the rolling recent quality metrics breach the configured gate, but

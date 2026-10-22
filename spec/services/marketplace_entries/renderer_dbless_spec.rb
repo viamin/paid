@@ -45,6 +45,19 @@ RSpec.describe MarketplaceEntries::Renderer, :no_db do
     )
   end
 
+  it "infers tool_sidecar for tool entries" do # @spec TOOL-SIDECAR-001
+    entry = Struct.new(:provider_format, :entry_type, keyword_init: true)
+      .new(provider_format: "canonical_v1", entry_type: "tool")
+    version = Struct.new(:renderers, :canonical_artifact, keyword_init: true)
+      .new(renderers: {}, canonical_artifact: {
+        "install_type" => "tool", "image" => "acme/search:1.0", "port" => 8080
+      })
+
+    rendered = described_class.call(entry:, version:, provider_key: "codex")
+
+    expect(rendered.fetch("attachment_strategy")).to eq("tool_sidecar")
+  end
+
   def provider_renderers
     {
       "claude" => {

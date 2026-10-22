@@ -2,7 +2,12 @@ openapi: 3.0.3
 info:
   title: Paid Mobile API
   version: v1
-  description: Native inbox endpoints for Paid.
+  description: |
+    Schema-first contract for the Paid iOS companion. Clients MUST pin a
+    commit or release ref of this document, never a moving branch.
+    HTTP bearer security requirements use empty arrays as required by OpenAPI
+    3.0. `x-required-pat-scopes` declares the Paid PAT scopes required by an
+    operation for clients that need scope discovery.
 servers:
   - url: /api/v1
 paths:
@@ -38,8 +43,10 @@ paths:
     get:
       operationId: listInboxEntries
       security:
-        - bearerAuth: [inbox]
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
       parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
         - $ref: '#/components/parameters/InboxKind'
         - $ref: '#/components/parameters/InboxSort'
         - $ref: '#/components/parameters/ProjectId'
@@ -52,6 +59,11 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InboxListResponse'
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoCache'
         '304':
           description: The inbox has not changed.
         default:
@@ -60,7 +72,10 @@ paths:
     get:
       operationId: inboxCount
       security:
-        - bearerAuth: [inbox]
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      parameters:
+        - $ref: '#/components/parameters/IfNoneMatch'
       responses:
         '200':
           description: Inbox count.
@@ -73,6 +88,11 @@ paths:
                   count:
                     type: integer
                     minimum: 0
+          headers:
+            ETag:
+              $ref: '#/components/headers/ETag'
+            Cache-Control:
+              $ref: '#/components/headers/PrivateNoCache'
         '304':
           description: The inbox count has not changed.
         default:
@@ -83,7 +103,8 @@ paths:
     get:
       operationId: getInboxEntry
       security:
-        - bearerAuth: [inbox]
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
       responses:
         '200':
           description: Inbox entry detail.
@@ -103,7 +124,8 @@ paths:
     post:
       operationId: openInboxEntryChat
       security:
-        - bearerAuth: [chat]
+        - bearerAuth: []
+      x-required-pat-scopes: [chat]
       responses:
         '201':
           description: The native chat session for this entry.
@@ -117,10 +139,100 @@ paths:
                     type: integer
         default:
           $ref: '#/components/responses/Error'
+  /feature_intents/{id}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/FeatureIntentId'
+    post:
+      operationId: cancelFeatureIntent
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [cancellation_reason]
+              properties:
+                cancellation_reason:
+                  type: string
+                  enum: [already_handled, no_longer_wanted, superseded]
+                replacement_reference:
+                  type: string
+      responses:
+        '200':
+          description: Cancelled feature intent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureIntentResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /feature_intents/{id}/reopen:
+    parameters:
+      - $ref: '#/components/parameters/FeatureIntentId'
+    post:
+      operationId: reopenFeatureIntent
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: Reopened feature intent.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeatureIntentResponse'
+        default:
+          $ref: '#/components/responses/Error'
+  /projects/{project_id}/design_artifact_findings/{id}/repair_document_links:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+      - name: id
+        in: path
+        required: true
+        schema: {type: integer}
+    post:
+      operationId: repairDesignArtifactDocumentLinks
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [revision]
+              properties:
+                revision: {type: string}
+      responses:
+        '200':
+          description: Queued or reused document-link repair run.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [finding, agent_run]
+                properties:
+                  finding: {type: object}
+                  agent_run:
+                    type: object
+                    required: [id, status]
+                    properties:
+                      id: {type: integer}
+                      status: {type: string, enum: [queued, running, paused]}
+        default:
+          $ref: '#/components/responses/Error'
   /chat/sessions:
     get:
       operationId: listChatSessions
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '200':
           description: Chat sessions.
@@ -128,7 +240,8 @@ paths:
         default: {$ref: '#/components/responses/Error'}
     post:
       operationId: createChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '201':
           description: Created inline chat session.
@@ -138,25 +251,29 @@ paths:
     parameters: [{$ref: '#/components/parameters/ChatSessionId'}]
     get:
       operationId: getChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '200': {description: Chat session, content: {application/json: {schema: {$ref: '#/components/schemas/ChatSession'}}}}
         default: {$ref: '#/components/responses/Error'}
     patch:
       operationId: updateChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '200': {description: Updated chat session, content: {application/json: {schema: {$ref: '#/components/schemas/ChatSession'}}}}
         default: {$ref: '#/components/responses/Error'}
     delete:
       operationId: closeChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses: {'204': {description: Closed chat session}, default: {$ref: '#/components/responses/Error'}}
   /chat/sessions/{id}/{transition}:
     parameters: [{$ref: '#/components/parameters/ChatSessionId'}, {$ref: '#/components/parameters/ChatSessionTransition'}]
     patch:
       operationId: transitionChatSession
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '200': {description: Transitioned chat session, content: {application/json: {schema: {$ref: '#/components/schemas/ChatSession'}}}}
         default: {$ref: '#/components/responses/Error'}
@@ -164,13 +281,15 @@ paths:
     parameters: [{$ref: '#/components/parameters/ChatSessionIdAsSessionId'}, {$ref: '#/components/parameters/MessageBefore'}, {$ref: '#/components/parameters/MessageLimit'}]
     get:
       operationId: listChatMessages
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '200': {description: Cursor page of chat messages, content: {application/json: {schema: {$ref: '#/components/schemas/ChatMessageListResponse'}}}}
         default: {$ref: '#/components/responses/Error'}
     post:
       operationId: sendChatMessage
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '201': {description: Chat response, content: {application/json: {schema: {$ref: '#/components/schemas/ChatAssistantResponse'}}}}
         '200': {description: Chat SSE stream, content: {text/event-stream: {schema: {type: string}}}}
@@ -179,9 +298,63 @@ paths:
     parameters: [{$ref: '#/components/parameters/ChatSessionIdAsSessionId'}, {$ref: '#/components/parameters/MessageId'}]
     post:
       operationId: resolveChatToolCall
-      security: [{bearerAuth: [chat]}]
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
       responses:
         '200': {description: Tool resolution response or SSE stream, content: {application/json: {schema: {$ref: '#/components/schemas/ChatAssistantResponse'}}, text/event-stream: {schema: {type: string}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /chat/sessions/{session_id}/investigations:
+    parameters: [{$ref: '#/components/parameters/ChatSessionIdAsSessionId'}]
+    get:
+      operationId: listChatInvestigations
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
+      responses:
+        '200': {description: Reconnectable question investigations., content: {application/json: {schema: {type: object}}}}
+        default: {$ref: '#/components/responses/Error'}
+    post:
+      operationId: createChatInvestigation
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
+      responses:
+        '201': {description: Investigation queued or awaiting additional authorization., content: {application/json: {schema: {type: object}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /chat/sessions/{session_id}/investigations/{id}:
+    parameters: [{$ref: '#/components/parameters/ChatSessionIdAsSessionId'}, {$ref: '#/components/parameters/ChatInvestigationId'}]
+    get:
+      operationId: getChatInvestigation
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
+      responses:
+        '200': {description: Investigation status and result., content: {application/json: {schema: {type: object}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /chat/sessions/{session_id}/investigations/{id}/cancel:
+    parameters: [{$ref: '#/components/parameters/ChatSessionIdAsSessionId'}, {$ref: '#/components/parameters/ChatInvestigationId'}]
+    post:
+      operationId: cancelChatInvestigation
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
+      responses:
+        '200': {description: Cancelled investigation., content: {application/json: {schema: {type: object}}}}
+        default: {$ref: '#/components/responses/Error'}
+  /chat/sessions/{session_id}/diagrams/{diagram_id}/comments:
+    parameters: [{$ref: '#/components/parameters/ChatSessionIdAsSessionId'}, {$ref: '#/components/parameters/ChatDiagramId'}]
+    post:
+      operationId: createChatDiagramComment
+      security: [{bearerAuth: []}]
+      x-required-pat-scopes: [chat]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [body]
+              properties:
+                body: {type: string}
+                element_id: {type: string}
+      responses:
+        '201': {description: Created diagram comment, content: {application/json: {schema: {$ref: '#/components/schemas/ChatDiagramComment'}}}}
         default: {$ref: '#/components/responses/Error'}
 components:
   securitySchemes:
@@ -190,13 +363,32 @@ components:
       scheme: bearer
       bearerFormat: paid_pat
   parameters:
+    IfNoneMatch:
+      name: If-None-Match
+      in: header
+      schema: {type: string, pattern: '^"[0-9a-f]{64}"$'}
     ChatSessionId:
+      name: id
+      in: path
+      required: true
+      schema: {type: integer}
+    FeatureIntentId:
       name: id
       in: path
       required: true
       schema: {type: integer}
     ChatSessionIdAsSessionId:
       name: session_id
+      in: path
+      required: true
+      schema: {type: integer}
+    ChatInvestigationId:
+      name: id
+      in: path
+      required: true
+      schema: {type: integer}
+    ChatDiagramId:
+      name: diagram_id
       in: path
       required: true
       schema: {type: integer}
@@ -224,12 +416,17 @@ components:
       required: true
       schema:
         type: string
+        maxLength: 40
+        format: inbox-entry-id
+        pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}$'
+        description: Opaque `kind:id` queue identifier.
+        example: clarifying_questions:4241
     InboxKind:
       name: kind
       in: query
       schema:
         type: string
-        enum: [clarifying_questions, plan_review, merge_approval, action_required, escalated_pr, manual_review, intent_conformance, feature_decision, retry_limited, change_intent_draft, partial_closeout, test_review_pending]
+        enum: [clarifying_questions, plan_review, merge_approval, action_required, escalated_pr, manual_review, intent_conformance, feature_decision, retry_limited, change_intent_draft, partial_closeout, test_review_pending, project_setup_pending, traceability_gap]
     InboxSort:
       name: sort
       in: query
@@ -239,8 +436,7 @@ components:
     ProjectId:
       name: project_id
       in: query
-      schema:
-        type: integer
+      schema: {type: integer, minimum: 1, maximum: 9223372036854775807}
     InboxLimit:
       name: limit
       in: query
@@ -253,7 +449,23 @@ components:
       in: query
       schema:
         type: string
+        maxLength: 40
+        format: inbox-entry-id
+        pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}$'
   schemas:
+    ErrorEnvelope:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message, details]
+          properties:
+            code:
+              type: string
+              enum: [invalid_request, unauthorized, forbidden, not_found, conflict, validation_failed, stale_element, rate_limited, internal_error, provider_error, provider_unavailable]
+            message: {type: string}
+            details: {type: object, additionalProperties: true}
     ChatSessionListResponse:
       type: object
       required: [sessions]
@@ -277,6 +489,32 @@ components:
         role: {type: string}
         content: {type: string, nullable: true}
         tool_status: {type: string, nullable: true}
+        diagram:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/ChatDiagram'
+    ChatDiagram:
+      type: object
+      required: [id, question_key, question_title, summary, text_equivalent, description, current]
+      properties:
+        id: {type: integer}
+        question_key: {type: string}
+        question_title: {type: string}
+        summary: {type: string}
+        text_equivalent: {type: string}
+        description: {type: object, additionalProperties: true}
+        current: {type: boolean}
+    ChatDiagramComment:
+      type: object
+      required: [id, actor_id, question_key, body, created_at]
+      properties:
+        id: {type: integer}
+        actor_id: {type: integer}
+        question_key: {type: string}
+        body: {type: string}
+        element_id: {type: string, nullable: true}
+        element_context: {type: string, nullable: true}
+        created_at: {type: string, format: date-time}
     ChatMessageListResponse:
       type: object
       required: [messages]
@@ -295,6 +533,15 @@ components:
       properties:
         user_id: {type: integer}
         account_id: {type: integer}
+    FeatureIntentResponse:
+      type: object
+      required: [id, status, cancelled_at, cancellation_reason, replacement_reference]
+      properties:
+        id: {type: integer}
+        status: {type: string}
+        cancelled_at: {type: string, format: date-time, nullable: true}
+        cancellation_reason: {type: string, nullable: true}
+        replacement_reference: {type: string, nullable: true}
     InboxListResponse:
       type: object
       required: [entries]
@@ -319,6 +566,8 @@ components:
         - $ref: '#/components/schemas/ChangeIntentDraftEntry'
         - $ref: '#/components/schemas/PartialCloseoutEntry'
         - $ref: '#/components/schemas/TestReviewPendingEntry'
+        - $ref: '#/components/schemas/ProjectSetupPendingEntry'
+        - $ref: '#/components/schemas/TraceabilityGapEntry'
       discriminator:
         propertyName: kind
         mapping:
@@ -334,6 +583,8 @@ components:
           change_intent_draft: '#/components/schemas/ChangeIntentDraftEntry'
           partial_closeout: '#/components/schemas/PartialCloseoutEntry'
           test_review_pending: '#/components/schemas/TestReviewPendingEntry'
+          project_setup_pending: '#/components/schemas/ProjectSetupPendingEntry'
+          traceability_gap: '#/components/schemas/TraceabilityGapEntry'
     InboxEntry:
       oneOf:
         - $ref: '#/components/schemas/ClarifyingQuestionsEntry'
@@ -348,6 +599,8 @@ components:
         - $ref: '#/components/schemas/ChangeIntentDraftEntry'
         - $ref: '#/components/schemas/PartialCloseoutEntry'
         - $ref: '#/components/schemas/TestReviewPendingEntry'
+        - $ref: '#/components/schemas/ProjectSetupPendingEntry'
+        - $ref: '#/components/schemas/TraceabilityGapEntry'
       discriminator:
         propertyName: kind
         mapping:
@@ -363,6 +616,8 @@ components:
           change_intent_draft: '#/components/schemas/ChangeIntentDraftEntry'
           partial_closeout: '#/components/schemas/PartialCloseoutEntry'
           test_review_pending: '#/components/schemas/TestReviewPendingEntry'
+          project_setup_pending: '#/components/schemas/ProjectSetupPendingEntry'
+          traceability_gap: '#/components/schemas/TraceabilityGapEntry'
     InboxEntryBase:
       type: object
       required: [id, kind]
@@ -394,21 +649,21 @@ components:
         - type: object
           properties:
             kind: {type: string, enum: [plan_review]}
-            tasks: {type: array}
+            tasks: {type: array, items: {}}
     MergeApprovalEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
         - type: object
           properties:
             kind: {type: string, enum: [merge_approval]}
-            blockers: {type: array}
+            blockers: {type: array, items: {}}
     ActionRequiredEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
         - type: object
           properties:
             kind: {type: string, enum: [action_required]}
-            remediation_steps: {type: array}
+            remediation_steps: {type: array, items: {}}
     EscalatedPrEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
@@ -416,7 +671,7 @@ components:
           properties:
             kind: {type: string, enum: [escalated_pr]}
             reason: {type: string}
-            counters: {type: array}
+            counters: {type: array, items: {}}
             last_progress_at: {type: string, format: date-time, nullable: true}
             operator_paused: {type: boolean}
     ManualReviewListEntry:
@@ -447,7 +702,7 @@ components:
           properties:
             kind: {type: string, enum: [feature_decision]}
             ready: {type: boolean}
-            blockers: {type: array}
+            blockers: {type: array, items: {}}
     RetryLimitedEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
@@ -473,26 +728,41 @@ components:
         - type: object
           properties:
             kind: {type: string, enum: [partial_closeout]}
-            unresolved_prerequisites: {type: array}
+            unresolved_prerequisites: {type: array, items: {}}
     TestReviewPendingEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
         - type: object
           properties:
             kind: {type: string, enum: [test_review_pending]}
+    ProjectSetupPendingEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [project_setup_pending]}
+            tasks: {type: array, items: {type: string}}
+    TraceabilityGapEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          required: [artifact_path, revision, state, evidence]
+          properties:
+            kind: {type: string, enum: [traceability_gap]}
+            artifact_path: {type: string}
+            revision: {type: string}
+            state: {type: string, enum: [missing_tree, partial_tree, stale_metadata, deferred, unverifiable]}
+            evidence: {type: array, items: {type: string}}
+  headers:
+    ETag:
+      description: Strong validator for polling. Send this value as If-None-Match on the next poll.
+      schema: {type: string}
+    PrivateNoCache:
+      description: Responses are user-specific and must be revalidated before reuse.
+      schema: {type: string, example: 'private, max-age=0'}
   responses:
     Error:
       description: API error.
       content:
         application/json:
-          schema:
-            type: object
-            required: [error]
-            properties:
-              error:
-                type: object
-                required: [code, message]
-                properties:
-                  code: {type: string}
-                  message: {type: string}
-                  details: {}
+              schema: {$ref: '#/components/schemas/ErrorEnvelope'}

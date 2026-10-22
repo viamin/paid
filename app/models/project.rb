@@ -3,6 +3,8 @@
 class Project < ApplicationRecord
   include PreferredDockerHostIdentifierValidation
 
+  has_many :chat_investigations, dependent: :destroy
+
   self.ignored_columns += [ "pr_aggregation_enabled" ]
 
   EXTERNAL_ISSUE_TRACKER_LINK_LABELS = {
@@ -50,6 +52,7 @@ class Project < ApplicationRecord
   # human-led feature factory workflow is strictly opt-in, and the column is
   # the RDR's rollout-guard config gate (never silently flipped by migration).
   OPERATING_MODES = %w[standard human_led_feature_factory].freeze
+  FEATURE_DELIVERY_POLICIES = %w[approval_gated confidence_driven].freeze
   APPLE_VERIFICATION_MODES = %w[off on_demand automatic].freeze
   TDD_MODE_LABELS = {
     "off" => "Off",
@@ -212,7 +215,7 @@ class Project < ApplicationRecord
     { label: "Auto-Add Labels", attribute: :auto_add_labels_enabled,
      description: "Automatically add the generated label to PRs and issues created by Paid." }.freeze,
     { label: "Automation on Label", attribute: :automation_on_label_enabled,
-     description: "Automatically create agent runs when the automation label is detected on issues or PRs." }.freeze,
+     description: "Automatically create agent runs when the automation label is detected on PRs." }.freeze,
     { label: "Auto-Pick Issues", attribute: :auto_pick_enabled,
      description: "Automatically start working on unblocked issues when no agent runs are active." }.freeze,
     { label: "Quiet Mode", attribute: :quiet_mode,
@@ -293,6 +296,7 @@ class Project < ApplicationRecord
   has_many :project_memberships, dependent: :destroy
   has_many :members, through: :project_memberships, source: :user
   has_many :issues, dependent: :destroy
+  has_many :design_artifact_findings, dependent: :destroy
   has_many :auto_merge_attempts, dependent: :destroy
   has_many :agent_runs, dependent: :destroy
   has_many :apple_verification_waivers, dependent: :destroy
@@ -339,6 +343,7 @@ class Project < ApplicationRecord
   has_many :egress_security_events, dependent: :destroy
   has_many :chat_session_projects, dependent: :destroy
   has_many :chat_sessions, through: :chat_session_projects
+  has_many :explicit_preferences, dependent: :destroy
   has_many :api_usage_attempts, dependent: :destroy
   has_many :context_intake_questions, dependent: :destroy
   has_many :context_intake_sessions, dependent: :destroy
@@ -364,12 +369,15 @@ class Project < ApplicationRecord
   # @spec LABEL-INTEGRATION-001
   before_validation :apply_tenant_label_integration_default, on: :create
   after_update_commit :invalidate_relationship_parsing_on_trust_change
+  after_update_commit :bump_inbox_cache_for_merge_policy_change, if: :merge_policy_changed?
 
   validates :name, presence: true
   validates :owner, presence: true
   validates :repo, presence: true
   validates :github_id, presence: true, uniqueness: { scope: :account_id }
   validates :poll_interval_seconds, numericality: { greater_than_or_equal_to: 60 }
+  validates :intent_threshold, :technical_threshold,
+    numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: 100 }
   validates :max_pr_followup_runs, numericality: { greater_than_or_equal_to: 0 }
   validates :merge_method, inclusion: { in: MERGE_METHODS }
   validates :auto_merge_mode, inclusion: { in: %w[off dependabot_only all] }
@@ -383,6 +391,7 @@ class Project < ApplicationRecord
   validates :tdd_mode, inclusion: { in: TDD_MODES }
   # @spec FEATURE-APPROVAL-001
   validates :operating_mode, inclusion: { in: OPERATING_MODES }
+  validates :new_feature_delivery_policy, inclusion: { in: FEATURE_DELIVERY_POLICIES }
   validates :max_draft_review_rounds, numericality: { greater_than_or_equal_to: 0 }
   validates :generated_label_name, presence: true
   validates :automation_label_name, presence: true
@@ -459,14 +468,41 @@ class Project < ApplicationRecord
   after_update_commit :seed_eligible_issues, if: :auto_pick_just_enabled?
   after_update_commit :cancel_queued_auto_pick_runs, if: :auto_pick_just_disabled?
   after_update_commit :ensure_playwright_mcp_definition!, if: :verification_just_enabled?
+  after_update_commit :enqueue_readiness_evaluation, if: :readiness_settings_changed?
   before_update :reset_issue_sync_state, if: :will_change_issue_target_repository?
   before_update :archive_previous_target_issues, if: :will_change_issue_target_repository?
   after_update_commit :cancel_previous_target_issue_runs, if: :saved_change_to_issue_target_repository?
   after_destroy_commit :stop_github_polling
   after_destroy_commit :cleanup_qdrant_collection
 
+  def enqueue_readiness_evaluation
+    EvaluateProjectReadinessJob.perform_later(id)
+  end
+
+  def readiness_settings_changed?
+    saved_change_to_tdd_mode? || saved_change_to_screenshot_settings?
+  end
+
   def full_name
     "#{owner}/#{repo}"
+  end
+
+  # @spec PROJECT-READINESS-005 PROJECT-READINESS-011
+  def readiness_blocked?
+    active_readiness_gaps.any?
+  end
+
+  def active_readiness_gaps
+    readiness_gaps.select { |gap| readiness_gap_active?(gap) }
+  end
+
+  # @spec PROJECT-READINESS-005 PROJECT-READINESS-012
+  def active_readiness_gap_kinds
+    active_readiness_gaps.filter_map { |gap| readiness_gap_kind(gap) }
+  end
+
+  def readiness_gap_descriptions
+    active_readiness_gaps.filter_map { |gap| gap["description"] || gap[:description] }
   end
 
   # Repository where new PRs are opened for this project. For "own_repo"
@@ -665,6 +701,15 @@ class Project < ApplicationRecord
   # @spec AUTOMATION-ACTIVATION-001
   def feature_activation_label_for(feature)
     effective_feature_activation_labels[feature.to_s]
+  end
+
+  # @spec LABEL-CONTROL-007. Whether per-item activation is read from
+  # GitHub labels (read_write / read_only) or from the local
+  # +issues.paid_activation_state+ column (ignored). Activation labels
+  # themselves still exist in ignored mode for projects transitioning back
+  # to read_write, but selection and scan scope ignore them.
+  def paid_local_activation?
+    label_integration_mode == "ignored"
   end
 
   # All configured priority label names, used by queue ordering and PR inheritance.
@@ -1230,6 +1275,15 @@ class Project < ApplicationRecord
     operating_mode == "human_led_feature_factory"
   end
 
+  # @spec CONFIDENCE-DELIVERY-001 @spec CONFIDENCE-DELIVERY-015
+  # Enrollment is deliberately separate from selection. Turning it off affects
+  # only features created later; a FeatureIntent owns its immutable snapshot.
+  def feature_delivery_policy_for_new_features
+    return "approval_gated" unless confidence_delivery_enrollment_enabled?
+
+    new_feature_delivery_policy
+  end
+
   def effective_quality_gate_settings
     saved = quality_gate_settings
     saved = saved.is_a?(Hash) ? saved.deep_stringify_keys : {}
@@ -1289,6 +1343,18 @@ class Project < ApplicationRecord
 
   def verification_enabled?
     verification_enabled
+  end
+
+  def readiness_gap_active?(gap)
+    kind = readiness_gap_kind(gap)
+    return tdd_mode.in?(Projects::Readiness::Rules::Tdd::REQUIRING_MODES) if kind.in?(Projects::Readiness::Rules::Tdd::GAP_KINDS)
+    return verification_enabled? if kind.in?(Projects::Readiness::Rules::Verification::GAP_KINDS)
+
+    true
+  end
+
+  def readiness_gap_kind(gap)
+    gap["kind"] || gap[:kind]
   end
 
   # Ensures the account-scoped playwright-mcp MCP server definition exists and is
@@ -1826,6 +1892,15 @@ class Project < ApplicationRecord
   end
 
   private
+
+  # @spec INBOX-FOUNDATION-011
+  def bump_inbox_cache_for_merge_policy_change
+    Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+  end
+
+  def merge_policy_changed?
+    saved_change_to_auto_merge_mode? || saved_change_to_owner_reviewer_login?
+  end
 
   def reset_issue_sync_state # @spec UPSTREAM-ISSUE-006
     self.last_issue_sync_at = Time.at(0).utc

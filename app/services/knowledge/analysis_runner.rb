@@ -9,6 +9,7 @@ module Knowledge
   # exposed inside the container — the proxy injects them server-side.
   #
   # Used by Knowledge::Decisions::Draft to containerize decision drafting.
+  # @spec KNOWLEDGE-CREDENTIAL-001
   #
   # @example
   #   runner = Knowledge::AnalysisRunner.new(project: project, knowledge_run: knowledge_run)
@@ -91,7 +92,7 @@ module Knowledge
       raise ContainerError, "Unsupported API type for provider: #{provider}" unless SUPPORTED_API_TYPES.include?(api_type)
 
       effective_model = model || DEFAULT_MODELS.fetch(api_type)
-      env = llm_env(api_type: api_type, model: effective_model, prompt: prompt, timeout: timeout)
+      env = llm_env(api_type: api_type, model: effective_model, prompt: prompt, provider: provider, timeout: timeout)
       script = llm_script(api_type: api_type)
 
       execute([ "ruby", "-e", script ], timeout: timeout, env: env)
@@ -172,13 +173,14 @@ module Knowledge
       stdout.strip
     end
 
-    def llm_env(api_type:, model:, prompt:, timeout:)
+    def llm_env(api_type:, model:, prompt:, provider:, timeout:)
       {
         "PROXY_BASE_URL" => proxy_base_url,
         "KNOWLEDGE_RUN_ID" => knowledge_run.id.to_s,
         "PROXY_TOKEN" => knowledge_run.ensure_proxy_token!,
         "PROMPT_B64" => Base64.strict_encode64(prompt),
         "LLM_MODEL" => model,
+        "KNOWLEDGE_PROVIDER" => provider,
         "LLM_TIMEOUT" => timeout.to_s,
         "API_SERVICE_TYPE" => api_type
       }
@@ -206,6 +208,7 @@ module Knowledge
         token       = ENV.fetch("PROXY_TOKEN")
         prompt      = Base64.decode64(ENV.fetch("PROMPT_B64"))
         model       = ENV.fetch("LLM_MODEL")
+        provider    = ENV.fetch("KNOWLEDGE_PROVIDER")
         timeout     = Integer(ENV.fetch("LLM_TIMEOUT", "30"))
 
         uri = URI("#{proxy_url}/api/proxy/anthropic/v1/messages")
@@ -224,6 +227,7 @@ module Knowledge
         req["Content-Type"] = "application/json"
         req["X-Knowledge-Run-Id"] = run_id
         req["X-Proxy-Token"] = token
+        req["X-Paid-Knowledge-Provider"] = provider
         req["anthropic-version"] = "2023-06-01"
         req.body = body.to_json
 
@@ -250,6 +254,7 @@ module Knowledge
         token       = ENV.fetch("PROXY_TOKEN")
         prompt      = Base64.decode64(ENV.fetch("PROMPT_B64"))
         model       = ENV.fetch("LLM_MODEL")
+        provider    = ENV.fetch("KNOWLEDGE_PROVIDER")
         timeout     = Integer(ENV.fetch("LLM_TIMEOUT", "30"))
 
         uri = URI("#{proxy_url}/api/proxy/openai/v1/chat/completions")
@@ -267,6 +272,7 @@ module Knowledge
         req = Net::HTTP::Post.new(uri.path)
         req["Content-Type"] = "application/json"
         req["Authorization"] = "Bearer paid-knowledge-run:#{run_id}:#{token}"
+        req["X-Paid-Knowledge-Provider"] = provider
         req.body = body.to_json
 
         res = http.request(req)

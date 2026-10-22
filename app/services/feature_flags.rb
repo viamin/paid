@@ -8,6 +8,13 @@ class FeatureFlags
   InvalidPercentageError = Class.new(ArgumentError)
 
   DEFINITIONS = {
+    question_exploration: Definition.new(
+      name: :question_exploration,
+      owner: "question-exploration",
+      intent: "Gate the question-centered chat exploration surfaces required by RDR-069.",
+      rollout_plan: "Default-off; enable selected projects only after linked-chat, authorization, and durable-progress behavior are verified.",
+      cleanup_criteria: "Remove only after question exploration is the default for every project."
+    ),
     context_intake_agent_questions: Definition.new(
       name: :context_intake_agent_questions,
       owner: "context-intake",
@@ -54,7 +61,7 @@ class FeatureFlags
       name: :intent_conformance_enforcement,
       owner: "intent-conformance",
       intent: "Gate the RDR-067 intent-conformance auto-merge signal and Inbox decision lane behind a per-project rollout, standing in for the RDR-066 named feature operating mode until that mode exists.",
-      rollout_plan: "Default-off; review scheduling rides the approved_intent_amendments flag, so enforcement requires both flags enabled. Expand per tenant or project via tenant_settings.features only after #3870 records verdict accuracy against representative accepted and intentionally drifted PRs, and only for features with populated approved design-document paths.",
+      rollout_plan: "Default-off; normal review scheduling requires this flag together with approved_intent_amendments, while read-only shadow evaluation requires intent_conformance_shadow_review alone. Expand per tenant or project via tenant_settings.features only after #3870 records verdict accuracy against representative accepted and intentionally drifted PRs, and only for features with populated approved design-document paths.",
       cleanup_criteria: "Remove once RDR-066's named feature operating mode ships and conformance enforcement is wired to a project's operating mode instead of this standalone flag."
     ),
     intent_conformance_shadow_review: Definition.new(
@@ -68,7 +75,7 @@ class FeatureFlags
       name: :approved_intent_amendments,
       owner: "approved-intent-conformance",
       intent: "Gate the RDR-067 design-amendment flow (#3869): product-level drift routes through amended RDR/LID PRs, human approval, and merge, with revision-impact pause of affected feature work.",
-      rollout_plan: "Default-off; this flag owns review scheduling and the final merge guard, so full enforcement additionally requires intent_conformance_enforcement. Expand per tenant via tenant_settings.features only after #3870 records verdict accuracy and only for features with populated approved design-document paths. Folds into the RDR-066 named feature operating mode gate when #3862 lands.",
+      rollout_plan: "Default-off; this flag and intent_conformance_enforcement together enable normal review scheduling and the final merge guard. Read-only shadow evaluation instead requires intent_conformance_shadow_review alone. Expand per tenant via tenant_settings.features only after #3870 records verdict accuracy and only for features with populated approved design-document paths. Folds into the RDR-066 named feature operating mode gate when #3862 lands.",
       cleanup_criteria: "Remove once the RDR-066 operating mode setting owns the gate and every amendment-capable project is enrolled through that mode."
     ),
     apple_verification_workers: Definition.new(
@@ -77,6 +84,13 @@ class FeatureFlags
       intent: "Gate RDR-068 macOS guest verification until immutable images and the Paid-controlled network boundary pass pilot isolation checks.",
       rollout_plan: "Default-off; operators opt in selected pilot projects only after the approved worker profile, proxy, DNS, and isolation smoke tests pass.",
       cleanup_criteria: "Remove only after the RDR-068 closeout audit approves broad Apple-worker enablement."
+    ),
+    marketplace_tool_sidecars: Definition.new(
+      name: :marketplace_tool_sidecars,
+      owner: "marketplace-runtime",
+      intent: "Gate the RDR-073 third install arm on Containers::McpProvisioner so per-run hardened tool sidecars only provision behind per-tenant opt-in.",
+      rollout_plan: "Default-off; opt in per tenant via tenant_settings.features; expand after the hardened HostConfig, image gate, and PAID_SERVICE_HARDENING override path are exercised end-to-end.",
+      cleanup_criteria: "Remove once the RDR-073 closeout audit verifies the hardened provisioning path is complete, image gating is enforced, and pilot tenants have run tool-attached runs without incident."
     )
   }.freeze
 

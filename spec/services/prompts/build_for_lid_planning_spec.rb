@@ -53,6 +53,33 @@ RSpec.describe Prompts::BuildForLidPlanning do
     end
   end
 
+  describe "open-decision emission block" do
+    it "instructs the agent to emit run-raised decisions in the structured block" do # @spec FEATURE-APPROVAL-019
+      prompt = described_class.call(
+        project_name: "Paid",
+        project_description: "",
+        plan_docs: []
+      )
+
+      expect(prompt).to include("feature-decisions-start")
+      expect(prompt).to include("feature-decisions-end")
+      expect(prompt).to include('"kind": "question"')
+      expect(prompt).to include('"kind": "inferred_decision"')
+      expect(prompt).to include('"design_claim"')
+    end
+
+    it "tells the agent to omit the block when no genuine open decision exists" do # @spec FEATURE-APPROVAL-019
+      prompt = described_class.call(
+        project_name: "Paid",
+        project_description: "",
+        plan_docs: []
+      )
+
+      expect(prompt).to include("Emit the block only when at least one genuine open decision exists")
+      expect(prompt).to include("never invent decisions")
+    end
+  end
+
   describe "adoption vs refinement run-kind directives" do
     it "lists the adoption-only required outputs when adoption is true" do
       prompt = described_class.call(

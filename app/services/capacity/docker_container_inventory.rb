@@ -26,6 +26,7 @@ module Capacity
         {
           agent_container_ids: active_runs.where.not(container_id: nil).pluck(:container_id).to_set,
           mcp_sidecar_ids: active_runs.pluck(:mcp_sidecar_container_ids).flatten.compact.to_set,
+          tool_sidecar_ids: active_runs.pluck(:tool_sidecar_container_ids).flatten.compact.to_set,
           service_container_ids: ServiceContainer.running.where.not(docker_container_id: nil).pluck(:docker_container_id).to_set,
           chat_container_ids: ChatSession.active.where.not(container_id: nil).pluck(:container_id).to_set
         }
@@ -48,7 +49,7 @@ module Capacity
       labels = container_labels(container.info)
       container_id = container.id
 
-      !mcp_sidecar?(labels:, container_id:, references:) &&
+      !sidecar?(labels:, container_id:, references:) &&
         (labels["paid.agent_run_id"].present? || references.fetch(:agent_container_ids).include?(container_id))
     end
 
@@ -63,14 +64,23 @@ module Capacity
 
     def paid_agent?(labels:, container_id:, references:)
       labels["paid.agent_run_id"].present? ||
-        mcp_sidecar?(labels:, container_id:, references:) ||
+        sidecar?(labels:, container_id:, references:) ||
         labels["paid.container_pool"] == "true" ||
         references.fetch(:agent_container_ids).include?(container_id)
+    end
+
+    def sidecar?(labels:, container_id:, references:) # @spec TOOL-SIDECAR-005
+      mcp_sidecar?(labels:, container_id:, references:) || tool_sidecar?(labels:, container_id:, references:)
     end
 
     def mcp_sidecar?(labels:, container_id:, references:)
       labels["paid.mcp_sidecar"] == "true" ||
         references.fetch(:mcp_sidecar_ids).include?(container_id)
+    end
+
+    def tool_sidecar?(labels:, container_id:, references:)
+      labels["paid.tool_sidecar"] == "true" ||
+        references.fetch(:tool_sidecar_ids).include?(container_id)
     end
 
     def control_plane_container?(labels:, container_id:, references:)

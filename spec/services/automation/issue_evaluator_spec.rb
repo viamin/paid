@@ -71,6 +71,18 @@ RSpec.describe Automation::IssueEvaluator do
       expect(result.to_h).to eq(decisions: [ { type: "queue_analyze_issue_run", issue_id: issue.id } ])
     end
 
+    # @spec LABEL-CONTROL-007
+    it "queues an auto-pick run for a locally paid-activated ignored-mode issue without replaying label history" do
+      project = create(:project, label_integration_mode: "ignored", auto_pick_enabled: true, auto_enhance_enabled: false)
+      issue = create(:issue, project:, paid_state: "new", paid_activation_state: "activated")
+      allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+
+      result = described_class.new(record: issue).call
+
+      expect(result.to_h).to eq(decisions: [ { type: "queue_create_pr_run", issue_id: issue.id } ])
+      expect(Automation::LabelPolicy).not_to have_received(:trusted_user_added_label?)
+    end
+
     # @spec AUTOMATION-ACTIVATION-003
     it "ignores activation labels when automation_on_label_enabled is off" do
       project = create(:project,

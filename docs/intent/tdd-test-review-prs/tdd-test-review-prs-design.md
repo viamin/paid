@@ -20,6 +20,11 @@ and the run-scoped file boundary checks in
   runs. The label marks the PR as waiting at the red-phase gate regardless of
   whether the project uses strict or non-strict TDD; non-strict mode will later
   replace it with an automated verdict.
+- Revision reset: a successful test-writing publication replaces either prior
+  verdict with `paid-tests-ready-for-review`. This happens only after a commit
+  was actually published. If a GitHub label operation partially fails, Paid
+  leaves the local verdict unchanged and the scanner treats the older verdict
+  as stale rather than scheduling another revision for it.
 - Non-strict verdict freshness: a `paid_agent` approval or change request only
   counts for the current test revision. Returning a PR from
   `paid-tests-approved` back to `paid-tests-ready-for-review` invalidates older
@@ -32,12 +37,28 @@ and the run-scoped file boundary checks in
   review only through the existing completed-run, round, and retry limits; it
   never manufactures an unbounded pending trigger after those guards decline
   to request another review.
+- Draft-round cap: test-revision follow-ups caused by a persistent rejected
+  test verdict are subject to the same `max_draft_review_rounds` hard cap as
+  every other automatic draft follow-up, including no-change outcomes. At the
+  cap Paid escalates to the operator instead of scheduling another revision.
+  A current actionable human review thread may still take the normal
+  human-feedback path, and a test approval may still start implementation;
+  neither exception turns a persistent automated rejection into an unbounded
+  test-revision route. A configured zero limit remains disabled, and an
+  operator restart explicitly resets the normal draft attempt budget.
 - PR-body review sections derived mechanically from the run diff:
   - `## Test Outline` for any PR whose diff touches tests.
   - `## LID Phase Report` for LID-enabled projects, summarizing changed LID
     docs/spec IDs, tests-first evidence, and the captured coherence-check line.
 - Refreshing those sections on existing-PR follow-up runs so later test-writing
   passes keep the draft PR current rather than leaving stale outlines in place.
+- Rejected-test revision handoff: the scanner snapshots the trusted, current
+  review body and unresolved thread evidence that caused a rejection into the
+  follow-up run. The prompt renders that snapshot as a dedicated test-revision
+  task with the red-phase completion condition. If no trusted current evidence
+  is accessible, or a `no_changes` run has already consumed that same snapshot,
+  the scanner escalates the PR for manual review instead of queueing an empty
+  follow-up indefinitely.
 
 ## Test outline rendering
 

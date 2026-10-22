@@ -49,22 +49,28 @@ durable external VM identity.
 `AppleVerification::ConfigurationParser` reads `.paid/apple-verification.yml`
 into a typed `AppleVerification::Configuration`: one or more named profiles,
 each with a platform, an optional compatible worker constraint, an Xcode
-project or workspace with scheme and optional test plan, an optional
+project or workspace with scheme, application bundle identifier, and optional test plan, an optional
 dependency bootstrap declaration limited to Swift Package Manager, a tests
 block, and declarative UI-flow captures built from an allowlisted operation
 vocabulary. An unknown flow operation or an unsupported bootstrap system
 (CocoaPods, Carthage, Bazel, Tuist) raises a deterministic diagnostic before
-any provisioning is attempted. `AppleVerification::InferConfiguration`
+any provisioning is attempted. Capture profiles must declare an application
+bundle identifier; iOS and iPadOS capture profiles must also declare a Simulator
+destination. The approved configuration therefore determines the guest's
+`boot_simulator`, `install_app`, and `launch_app` operations without treating a
+scheme as a bundle identifier. `AppleVerification::InferConfiguration`
 derives a best-effort starting configuration from a repository file listing —
 detected `.xcodeproj`/`.xcworkspace` projects, their shared schemes and test
-plans — but the result is always advisory until a user reviews and commits
-it; inference never creates an approved revision.
+plans — but omits captures because neither a bundle identifier nor a Simulator
+destination can be safely inferred. The result is always advisory until a user
+reviews and commits it; inference never creates an approved revision.
 `AppleVerificationWorkflowRevisions::SyncFromConfiguration` parses committed
 configuration content, resolves an active worker profile compatible with
 every declared platform, Xcode version constraint, and simulator constraint,
 and creates or updates the project's current draft revision with the file's
 content digest and the required/advisory checks derived from the
-configuration. `AppleVerificationWorkers::VersionRequirement` parses Xcode
+configuration, including the exact configuration content needed to derive the
+closed guest operation manifest. `AppleVerificationWorkers::VersionRequirement` parses Xcode
 constraints such as ">= 26.0, < 27.0" and "~> 26.0"; a profile binds only
 when its advertised Xcode range falls within every declared `worker.xcode`
 constraint and each declared `worker.simulator` appears in the profile's
@@ -72,6 +78,13 @@ advertised simulator runtimes, so a constraint mismatch fails at sync time
 before any worker is provisioned. Sync only ever touches a draft; an approved
 revision's binding is immutable, so a functional change always lands in a new
 or updated draft, never in place.
+
+`AppleVerification::GuestManifest::Build` derives the guest's `build` and
+`test` operations from that approved content, carrying the selected project or
+workspace and scheme in each operation's closed payload and the optional test
+plan in the test payload.
+This preserves the administrator-approved Xcode target instead of allowing the
+guest executor to discover a different project, workspace, or test plan.
 
 The `apple_verification_workers` feature flag remains default-off. This phase
 implements the trusted host lifecycle boundary; it does not schedule project

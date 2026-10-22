@@ -84,29 +84,60 @@ automatic routers are never substitutes. The selected model is reported by
 the client and response and saved on API sessions without mutating the runner's
 agent-run tier mappings.
 
-API client construction, fallback selection, container chat plans, and
-chat-only runner tests share the selector. Mixed agent/chat runner tests retain
-the agent tier test behavior. Free chat selection is separate from automatic
-retry: existing chat runner fallback and rate-limit handling remain in force.
+API client construction, fallback selection, and chat-only runner tests share
+the selector. Mixed agent/chat runner tests retain the agent tier test
+behavior. Free chat selection is separate from automatic retry: existing chat
+runner fallback and rate-limit handling remain in force.
 
 All attached primary and reference projects constrain the pool. API clients
 revalidate selection before every request, including follow-up tool rounds,
 so newly attached project context cannot bypass those restrictions. The current
 agent-harness API transport cannot transmit OpenRouter data-collection/ZDR
 options: managed free API chat therefore rejects confidential and restricted
-context before transmission with an actionable configuration error. Container
-chat uses the most restrictive attached project's routing controls; Pi/OMP
-container chat also rejects sensitive context until those runners consume the
-routing metadata. Empty or privacy-incompatible free pools are excluded from fallback candidates so a
-later configured runner remains reachable.
+context before transmission with an actionable configuration error. The shared
+selector applies the same rejection to free `pi` and `omp` runners regardless
+of transport, because they cannot enforce that routing. Empty or
+privacy-incompatible free pools and non-free runners without a resolvable Low
+tier are excluded from fallback candidates so a later configured runner
+remains reachable. Broader container lifecycle and
+mutation behavior are owned by the RDR-037 chat segments.
 
 The API-mode chat surface is implemented and exposed across both HTML and API
 entry points.
 
+### Curated paid chat tiers
+
+API-key chat presents and resolves a bounded Low, Medium, and High policy,
+rather than exposing every catalog row or relying on a hard-coded provider
+fallback. The shared resolver applies catalog activity, operator state, tool
+support, agent-harness compatibility, and fresh runner/account availability
+evidence.
+OpenAI resolves Low/Medium/High to GPT-5.6 Luna/Terra/Sol. A missing Low tier
+is actionable and does not escalate to a higher tier. The selected concrete
+model and tier are recorded on the chat session so request and usage records
+can be explained after catalog refresh. Existing explicit session models are
+retained; legacy Automatic sessions resolve to Low when first executed.
+
 What ships today:
 
-- sessions default to inline-only (`container_capability: none`) unless the
-  caller explicitly requests workspace capability
+- The global chat popup stores its open/closed state, active session ID, and
+  an explicit "Keep Chat Open" preference in account-scoped local storage.
+  A full-page navigation restores the same persisted conversation only while
+  that preference is enabled; otherwise the popup starts closed. Explicit
+  dismissal persists closed without discarding the selected session.
+- A same-origin navigation initiated from either chat surface explicitly hands
+  its active session to the global popup for the destination load. Chat links
+  may use their normal `href` or a `data-chat-navigate-url` value; the browser
+  performs a full-page navigation so a URL fragment scrolls to the requested
+  destination element. This one-navigation handoff does not silently enable
+  the user's persistent "Keep Chat Open" preference.
+- Assistant markdown may render root-relative Paid links, but never
+  protocol-relative or arbitrary schemes. These links use the same navigation
+  handoff, and may include a fragment identifier for a relevant destination
+  section.
+- API sessions default to inline-only (`container_capability: none`); a
+  capability request is a handoff to the RDR-037 workspace lifecycle, not
+  behavior shipped by this RDR-028 coverage
 - `ChatMessagesController` supports JSON and SSE request/response flows
 - `ChatChannel` plus `ChatSessions::ProcessMessageJob` support ActionCable
   progress events for the browser UI. The client's in-flight streaming bubble
@@ -137,12 +168,20 @@ What ships today:
 - `ChatSessions::BuildLlmClient` raises the OpenAI-compatible transport
   `max_tokens` cap to 16,384 for direct-provider z.ai chat runners so GLM
   responses are not truncated by the transport default
+- chat-advertised tool schemas keep an OpenAI-compatible root object. Tool
+  descriptions may express individual property constraints, but alternative
+  argument combinations are enforced by the Paid tool's argument validation
+  rather than a root composition keyword that OpenAI rejects
 - the transcript hides leading `<think>` reasoning blocks from assistant
   messages during streaming and on reload while retaining the original
   content and escaping ordinary HTML
-- non-pending tool calls render as muted, left-railed cards so they are
-  distinguishable from assistant prose by silhouette; pending confirmations
-  retain their amber approval treatment as the transcript's strongest signal
+- consecutive non-pending tool calls render inside one closed, low-contrast
+  transcript disclosure so multi-step tool activity is skimmable; expanding it
+  preserves the existing muted left-railed individual cards. Pending
+  confirmations never join a group and retain their amber approval treatment
+  as the transcript's strongest signal. Pagination extends its message slice
+  across a leading tool-run boundary so a persisted run is always rendered in
+  one maximal disclosure, including when older transcript frames load lazily
 - MiniMax chat uses its OpenAI-compatible `/v1` endpoint; CLI runners retain
   the configured Anthropic endpoint
 - token usage for chat turns is recorded on `token_usages` and surfaced back
@@ -154,6 +193,8 @@ What ships today:
   token only when the project has no usable credential — so a single chatting
   user's personal GitHub Code Search/rate-limit quota is not exhausted ahead
   of the project's own quota bucket
+- Repository file reads label validated decoded text as UTF-8 before returning
+  it, so Unicode documentation survives JSON tool-result serialization.
 - `get_pull_request_details` includes a sanitized `auto_merge` section that
   exposes only project-scoped diagnostic facts about the latest known
   auto-merge state. Persisted merge-permission cooldown state is preferred

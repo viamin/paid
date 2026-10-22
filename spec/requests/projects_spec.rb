@@ -373,6 +373,52 @@ RSpec.describe "Projects" do
     end
   end
 
+  describe "ignored-mode pull request controls" do
+    let(:user) { create(:user, :owner, account:) }
+    let(:project) do
+      create(:project, account: account, github_token: github_token, label_integration_mode: "ignored")
+    end
+    let!(:pull_request) { create(:issue, :pull_request, project:) }
+
+    before { sign_in user }
+
+    it "renders actions to set and clear merge controls" do # @spec LABEL-CONTROL-002
+      get project_path(project)
+
+      expect(response.body).to include("Skip merge", "Hold review")
+
+      pull_request.update!(skip_auto_merge: true, hold_for_review: true)
+      get project_path(project)
+
+      expect(response.body).to include("Allow merge", "Release review hold")
+    end
+
+    it "applies the submitted control action" do # @spec LABEL-CONTROL-002
+      post update_issue_control_state_project_path(project),
+        params: { issue_id: pull_request.id, control_action: "skip_auto_merge" }
+
+      expect(response).to redirect_to(project_path(project))
+      expect(pull_request.reload.skip_auto_merge).to be(true)
+    end
+
+    it "records when an operator approves tests" do # @spec LABEL-CONTROL-005
+      post update_issue_control_state_project_path(project),
+        params: { issue_id: pull_request.id, control_action: "approve_tests" }
+
+      expect(pull_request.reload).to have_attributes(tdd_review_state: "approved", tdd_review_approved_at: be_present)
+    end
+
+    it "clears a submitted local priority when the select is blank" do # @spec LABEL-CONTROL-002
+      pull_request.update!(control_priority: "P1")
+
+      post update_issue_control_state_project_path(project),
+        params: { issue_id: pull_request.id, control_action: "set_priority", priority: "" }
+
+      expect(response).to redirect_to(project_path(project))
+      expect(pull_request.reload.control_priority).to be_nil
+    end
+  end
+
   describe "GET /projects/new" do
     context "when not authenticated" do
       it "redirects to the sign in page" do
@@ -815,6 +861,7 @@ RSpec.describe "Projects" do
     end
 
     def create_api_chat_runner
+      create(:llm_model, provider: "openrouter", model_id: "moonshotai/kimi-k2", tier: "low", supports_tools: true)
       create(:runner, :api_key, user: user, runner_key: "opencode",
         provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
         config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } })
@@ -2068,6 +2115,37 @@ RSpec.describe "Projects" do
         expect(response.body).to include('name="project[auto_scan_security]"')
       end
 
+      it "shows the confidence-driven policy selection and enrollment guard" do # @spec CONFIDENCE-DELIVERY-001 @spec CONFIDENCE-DELIVERY-014
+        project = create(:project, account: account, github_token: github_token,
+          new_feature_delivery_policy: "confidence_driven",
+          confidence_delivery_enrollment_enabled: true)
+
+        get edit_project_path(project)
+
+        expect(response.body).to include("New Feature Delivery Policy")
+        expect(response.body).to include('name="project[new_feature_delivery_policy]"')
+        expect(response.body).to include('name="project[confidence_delivery_enrollment_enabled]"')
+        expect(response.body).to include("Confidence-driven work remains held")
+      end
+
+      it "shows the question-exploration rollout setting, disabled by default" do # @spec QUESTION-EXPLORATION-019
+        project = create(:project, account: account, github_token: github_token)
+
+        expect(project.question_exploration_enabled).to be(false)
+        get edit_project_path(project)
+
+        expect(response.body).to include('name="project[question_exploration_enabled]"')
+        expect(response.body).to include("Enable question exploration conversations")
+      end
+
+      it "updates the question-exploration rollout setting through the settings form" do # @spec QUESTION-EXPLORATION-019
+        project = create(:project, account: account, github_token: github_token)
+
+        patch project_path(project), params: { project: { question_exploration_enabled: true } }
+
+        expect(project.reload.question_exploration_enabled).to be(true)
+      end
+
       # @spec GITHUB-SYNC-020
       it "explains unavailable code scanning and offers a refresh in settings" do
         project = create(:project, account: account, github_token: github_token,
@@ -2338,6 +2416,20 @@ RSpec.describe "Projects" do
         project = create(:project, account: account, github_token: github_token, active: true)
         patch project_path(project), params: { project: { active: false } }
         expect(project.reload.active).to be false
+      end
+
+      it "updates the confidence-driven enrollment policy" do # @spec CONFIDENCE-DELIVERY-001
+        project = create(:project, account: account, github_token: github_token)
+
+        patch project_path(project), params: { project: {
+          new_feature_delivery_policy: "confidence_driven",
+          confidence_delivery_enrollment_enabled: true
+        } }
+
+        expect(project.reload).to have_attributes(
+          new_feature_delivery_policy: "confidence_driven",
+          confidence_delivery_enrollment_enabled: true
+        )
       end
 
       it "allows updating auto_fix_merge_conflicts" do

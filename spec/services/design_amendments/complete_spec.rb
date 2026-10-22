@@ -54,6 +54,18 @@ RSpec.describe DesignAmendments::Complete do
     expect(DesignAmendments::EvaluateImpact).to have_received(:call).with(amendment: amendment, review: review)
   end
 
+  it "routes confidence-driven impact after committing the merged baseline" do # @spec CONFIDENCE-DELIVERY-008
+    confidence_feature = create(:feature_intent, :confidence_driven, project:, approved_design_revision: "oldrev")
+    confidence_amendment = create(:design_amendment, feature_intent: confidence_feature, project:)
+    DesignAmendments::Approve.call(amendment: confidence_amendment, actor: actor, pr_head_sha: "designhead1")
+    allow(DesignAmendments::EvaluateImpact).to receive(:call) do |amendment:, **|
+      expect(amendment.reload).to be_merged
+      expect(confidence_feature.reload).to be_released
+    end
+
+    described_class.call(amendment: confidence_amendment, merged_revision: "newrev")
+  end
+
   it "leaves the feature revising when impact evaluation is not possible yet" do
     # EvaluateImpact is invoked by Complete; a failure inside it must not
     # strand the feature in an inconsistent, silently-approved state.

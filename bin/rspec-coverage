@@ -1,0 +1,8 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+ENV["BUNDLE_GEMFILE"] ||= File.expand_path("../Gemfile", __dir__)
+require "bundler/setup"
+require_relative "../scripts/lib/rspec_coverage_shards"
+
+Paid::RspecCoverageShards.collate(files: ARGV, count: Integer(ENV.fetch("RSPEC_SHARD_COUNT")))

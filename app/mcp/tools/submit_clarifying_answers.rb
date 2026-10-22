@@ -16,7 +16,7 @@ module Tools
     end
 
     def self.available_for_chat?(user:, session:)
-      issue = session&.clarifying_question_issue
+      issue = session&.exploration_issue
       issue.present? && policy_allows?(user:, record: issue.project, query: :update?, policy_class: ProjectPolicy)
     end
 
@@ -39,10 +39,11 @@ module Tools
     def perform(answers:, confirmed: false)
       raise ArgumentError, "Confirmation required: set confirmed=true to post clarifying answers" unless confirmed
 
-      issue = session.clarifying_question_issue || raise(ArgumentError, "This chat is not linked to clarifying questions")
+      issue = session.exploration_issue || raise(ArgumentError, "This chat is not linked to clarifying questions")
       questions = ClarifyingQuestions::Load.call(project: issue.project, issue: issue)
       raise ArgumentError, "Answer every pending question before posting" unless answers.size == questions.size
       validate_choice_answers!(questions:, answers:)
+      save_progress!(questions:, answers:)
 
       ClarifyingQuestions::SubmitAnswers.call(
         project: issue.project,
@@ -61,8 +62,23 @@ module Tools
       end
     end
 
+    # Keep the durable chat record in sync before projecting the explicitly
+    # confirmed final answer to GitHub. If GitHub rejects the submission, the
+    # human's answers remain available for a later retry.
+    # @spec QUESTION-EXPLORATION-002 @spec QUESTION-EXPLORATION-013
+    def save_progress!(questions:, answers:)
+      questions.zip(answers).each_with_index do |(_question, answer), index|
+        ClarifyingQuestions::SaveProgress.call(
+          chat_session: session,
+          position: index + 1,
+          answer:,
+          actor: user
+        )
+      end
+    end
+
     def project_for_session
-      session.clarifying_question_issue&.project || session.project || raise(ArgumentError, "This chat has no project")
+      session.exploration_issue&.project || session.project || raise(ArgumentError, "This chat has no project")
     end
   end
 end

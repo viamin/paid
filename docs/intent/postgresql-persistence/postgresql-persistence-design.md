@@ -26,6 +26,17 @@ than the checked-in canonical copy. Schema dumps sort columns alphabetically
 by name in every environment, independent of their physical PostgreSQL order.
 A dump-only connection wrapper supplies sorted columns to Rails while preserving
 its rendering of definitions, constraints, and the existing `fx` integration.
+The primary and cable databases own disjoint table sets. A static regression
+check compares their checked-in schema files and rejects shared tables, so a
+dump from a contaminated database cannot silently commit cable tables into
+the primary schema.
+
+Routine `bin/dev-update` setup and migration commands consume committed schema
+artifacts without automatically dumping local database state back into them.
+They set `PAID_SKIP_AUTO_SCHEMA_DUMP=1` only for those commands. Normal migration
+development and explicit `db:schema:dump` retain Rails defaults. This prevents
+local catalog differences from becoming auto-stashed edits that conflict with
+later upstream migrations.
 
 Tenant isolation is enforced in PostgreSQL with helper functions driven by
 `paid.current_account_id` and `paid.bypass_tenant_rls`. The application also

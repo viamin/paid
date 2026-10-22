@@ -195,6 +195,404 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-024 — A live stream only learns that a run has two tool
+    // cards when the second event arrives, so it upgrades the trailing card
+    // into the same collapsed chrome as a persisted run.
+    function testConsecutiveLiveToolCardsShareCollapsedGroupAndFallbackRemovesIt() {
+      const cards = [];
+      let trailing = null;
+      let groupRemoved = false;
+      const summary = { textContent: "" };
+      const cardContainer = {
+        append(card) {
+          cards.push(card);
+          card.closest = (selector) => selector === "[data-chat-tool-group]" ? group : null;
+        }
+      };
+      const group = {
+        querySelector(selector) {
+          if (selector === "[data-chat-tool-group-cards]") return cardContainer;
+          if (selector === "[data-chat-tool-group-summary]") return summary;
+          if (selector === "[data-chat-tool-card]") return cards[0] || null;
+          return null;
+        },
+        querySelectorAll(selector) {
+          return selector === "[data-chat-tool-card]" ? cards : [];
+        },
+        remove() { groupRemoved = true; }
+      };
+      const messagesTarget = {
+        get lastElementChild() { return trailing; },
+        append(card) { trailing = card; }
+      };
+      const first = {
+        matches: () => false,
+        querySelector: (selector) => selector === "[data-chat-tool-card]:not([data-chat-tool-pending])" ? {} : null,
+        replaceWith(replacement) { trailing = replacement; },
+        remove() { cards.splice(cards.indexOf(first), 1); }
+      };
+      const second = {
+        remove() { cards.splice(cards.indexOf(second), 1); }
+      };
+      let nextCard = first;
+      const { controller } = makeController({
+        messagesTarget,
+        buildMessageElement: () => nextCard,
+        createLiveToolGroup: () => group,
+        scrollToBottom: () => {}
+      });
+
+      controller.handleMessageToolCall({ html: "first", tool_name: "search" });
+      nextCard = second;
+      controller.handleMessageToolResult({ html: "second" });
+
+      if (trailing !== group || cards.length !== 2 || summary.textContent !== "2 tool actions") {
+        throw new Error("Expected consecutive live tool cards to move into one collapsed group");
+      }
+
+      controller.removeCurrentAttemptToolCards();
+
+      if (!groupRemoved || cards.length !== 0) {
+        throw new Error("Expected fallback cleanup to remove an empty live tool group");
+      }
+    }
+
+// @spec CHAT-API-024 — Reconnect recovery replays persisted rows through
+    // handleMessageCreated, which must group tool cards without treating them
+    // as stale cards belonging to the current live attempt.
+    function testReplayedToolCardsUseTheGroupingPath() {
+      const cards = [];
+      let trailing = null;
+      const summary = { textContent: "" };
+      const cardContainer = {
+        append(card) { cards.push(card); }
+      };
+      const group = {
+        matches: (selector) => selector === "[data-chat-tool-group]",
+        querySelector(selector) {
+          if (selector === "[data-chat-tool-group-cards]") return cardContainer;
+          if (selector === "[data-chat-tool-group-summary]") return summary;
+          return null;
+        },
+        querySelectorAll: () => cards
+      };
+      const first = {
+        matches: () => false,
+        querySelector: () => ({}),
+        replaceWith(replacement) { trailing = replacement; }
+      };
+      const second = { querySelector: () => ({}) };
+      let nextCard = first;
+      const { controller } = makeController({
+        messagesTarget: {
+          get lastElementChild() { return trailing; },
+          append(card) { trailing = card; },
+          querySelector: () => null
+        },
+        buildMessageElement: () => nextCard,
+        createLiveToolGroup: () => group,
+        scrollToBottom: () => {}
+      });
+
+      controller.handleMessageCreated({ html: "first", message_id: "1" });
+      nextCard = second;
+      controller.handleMessageCreated({ html: "second", message_id: "2" });
+
+      if (trailing !== group || cards.length !== 2 || summary.textContent !== "2 tool actions") {
+        throw new Error("Expected replayed tool cards to share one collapsed group");
+      }
+      if (controller.currentAttemptToolCards) {
+        throw new Error("Expected replayed tool cards to stay out of the live fallback attempt");
+      }
+    }
+
+    // @spec CHAT-API-024 — A pending confirmation that follows an existing
+    // tool run must merge into that run when the user resolves it; otherwise
+    // the next tool result groups only with the resolved card and renders two
+    // disclosures for what is logically one run while a reload renders one.
+    function testResolvedToolCardMergesIntoPrecedingGroup() {
+      const groupChildren = [];
+      const summary = { textContent: "" };
+      const groupCardContainer = {
+        _children: groupChildren,
+        append(card) {
+          card.remove();
+          groupChildren.push(card);
+          card._parent = groupCardContainer;
+        }
+      };
+      const existingGroup = {
+        matches: (selector) => selector === "[data-chat-tool-group]",
+        querySelector(selector) {
+          if (selector === "[data-chat-tool-group-cards]") return groupCardContainer;
+          if (selector === "[data-chat-tool-group-summary]") return summary;
+          return null;
+        },
+        querySelectorAll(selector) {
+          if (selector === "[data-chat-tool-card]") return groupChildren;
+          return [];
+        }
+      };
+      const messagesChildren = [ existingGroup ];
+      const messagesTarget = {
+        _children: messagesChildren,
+        get lastElementChild() { return messagesChildren[messagesChildren.length - 1] || null; },
+        append(card) {
+          card.remove();
+          messagesChildren.push(card);
+          card._parent = messagesTarget;
+        },
+        querySelector: () => null
+      };
+      function makeCard({ pending = false } = {}) {
+        const card = {
+          matches(selector) {
+            if (selector === "[data-chat-tool-card]:not([data-chat-tool-pending])") return !pending;
+            if (selector === "[data-chat-tool-pending]") return pending;
+            return false;
+          },
+          querySelector(selector) {
+            if (selector === "[data-chat-tool-card]:not([data-chat-tool-pending])") return pending ? null : card;
+            return null;
+          },
+          // Simulate the wrapper div that contains the article. renderedMessageElement
+          // walks up via closest("details, div.flex.justify-start, ..."); in the mock
+          // the wrapper is the card itself, so closest returns the card.
+          closest(selector) {
+            if (selector.includes("div.flex.justify-start") || selector.includes("details")) return card;
+            return null;
+          },
+          remove() {
+            if (card._parent && card._parent._children) {
+              const children = card._parent._children;
+              const i = children.indexOf(card);
+              if (i >= 0) {
+                children.splice(i, 1);
+                card._parent = null;
+              }
+            }
+          },
+          replaceWith(replacement) {
+            if (card._parent && card._parent._children) {
+              const children = card._parent._children;
+              const i = children.indexOf(card);
+              if (i >= 0) {
+                children[i] = replacement;
+                replacement._parent = card._parent;
+              }
+            }
+          },
+          get previousElementSibling() {
+            if (!card._parent || !card._parent._children) return null;
+            const children = card._parent._children;
+            const i = children.indexOf(card);
+            return i > 0 ? children[i - 1] : null;
+          },
+          get parentElement() {
+            return card._parent || null;
+          }
+        };
+        return card;
+      }
+      const callCard = makeCard();
+      const resultCard = makeCard();
+      const pendingCard = makeCard({ pending: true });
+      const resolvedCard = makeCard();
+      const nextResultCard = makeCard();
+      const created = [];
+      const nextForToolCall = (html) => {
+        if (html === "call") return callCard;
+        if (html === "result") return resultCard;
+        if (html === "pending") return pendingCard;
+        if (html === "resolved") return resolvedCard;
+        if (html === "next-result") return nextResultCard;
+        return null;
+      };
+      const { controller } = makeController({
+        messagesTarget,
+        buildMessageElement: (html) => nextForToolCall(html),
+        createLiveToolGroup: () => {
+          created.push(existingGroup);
+          return existingGroup;
+        },
+        scrollToBottom: () => {},
+        streamEventMatches: () => true,
+        messageElementById: () => pendingCard,
+        element: { querySelector: () => null },
+        toggleTyping: () => {},
+        dispatchChatState: () => {}
+      });
+
+      // Pre-populate: a tool call and its result already form a group.
+      controller.handleMessageToolCall({ html: "call", tool_name: "search" });
+      controller.handleMessageToolResult({ html: "result" });
+
+      if (groupChildren.length !== 2 || summary.textContent !== "2 tool actions") {
+        throw new Error("Expected the existing tool run to start with 2 grouped cards");
+      }
+
+      // A pending confirmation card stands alone while it waits for the user.
+      controller.handleMessageToolConfirmation({ html: "pending", tool_name: "write_tool" });
+
+      if (messagesChildren.length !== 2 || messagesChildren[1] !== pendingCard) {
+        throw new Error("Expected the pending card to sit standalone after the existing group");
+      }
+      if (groupChildren.length !== 2) {
+        throw new Error("Expected the pending card not to merge into the group yet");
+      }
+
+      // Resolve merges the now non-pending card into the preceding group.
+      controller.handleMessageToolResolved({ html: "resolved", message_id: "pending-1" });
+
+      if (messagesChildren.length !== 1 || messagesChildren[0] !== existingGroup) {
+        throw new Error("Expected the resolved card to leave the trailing slot and merge into the preceding group");
+      }
+      if (groupChildren.length !== 3 || summary.textContent !== "3 tool actions") {
+        throw new Error(`Expected the resolved card to extend the preceding group (3 cards), got ${groupChildren.length} cards and summary '${summary.textContent}'`);
+      }
+
+      // The next tool result must extend the same maximal disclosure; without
+      // the merge fix it would create a separate group with just the resolved
+      // card and this result.
+      controller.handleMessageToolResult({ html: "next-result" });
+
+      if (groupChildren.length !== 4 || summary.textContent !== "4 tool actions") {
+        throw new Error(`Expected the next tool result to extend the merged group (4 cards), got ${groupChildren.length} cards`);
+      }
+      if (messagesChildren.length !== 1 || messagesChildren[0] !== existingGroup) {
+        throw new Error("Expected the next tool result to land inside the merged group, not create a second disclosure");
+      }
+      if (created.length > 0) {
+        throw new Error("Expected no new live tool group to be created during the resolve or subsequent result");
+      }
+    }
+
+    // @spec CHAT-API-024 — A single non-pending tool card precedes a resolved
+    // confirmation, so the two should land in one new group instead of leaving
+    // the resolved card standalone between the existing card and the next run.
+    function testResolvedToolCardMergesWithPrecedingSingleCard() {
+      const newGroupChildren = [];
+      const summary = { textContent: "" };
+      const newGroupCardContainer = {
+        _children: newGroupChildren,
+        append(card) {
+          card.remove();
+          newGroupChildren.push(card);
+          card._parent = newGroupCardContainer;
+        }
+      };
+      const messagesChildren = [];
+      const messagesTarget = {
+        _children: messagesChildren,
+        get lastElementChild() { return messagesChildren[messagesChildren.length - 1] || null; },
+        append(card) {
+          card.remove();
+          messagesChildren.push(card);
+          card._parent = messagesTarget;
+        },
+        querySelector: () => null
+      };
+      function makeCard({ pending = false } = {}) {
+        const card = {
+          matches(selector) {
+            if (selector === "[data-chat-tool-card]:not([data-chat-tool-pending])") return !pending;
+            if (selector === "[data-chat-tool-pending]") return pending;
+            return false;
+          },
+          querySelector(selector) {
+            if (selector === "[data-chat-tool-card]:not([data-chat-tool-pending])") return pending ? null : card;
+            return null;
+          },
+          closest(selector) {
+            if (selector.includes("div.flex.justify-start") || selector.includes("details")) return card;
+            return null;
+          },
+          remove() {
+            if (card._parent && card._parent._children) {
+              const children = card._parent._children;
+              const i = children.indexOf(card);
+              if (i >= 0) {
+                children.splice(i, 1);
+                card._parent = null;
+              }
+            }
+          },
+          replaceWith(replacement) {
+            if (card._parent && card._parent._children) {
+              const children = card._parent._children;
+              const i = children.indexOf(card);
+              if (i >= 0) {
+                children[i] = replacement;
+                replacement._parent = card._parent;
+              }
+            }
+          },
+          get previousElementSibling() {
+            if (!card._parent || !card._parent._children) return null;
+            const children = card._parent._children;
+            const i = children.indexOf(card);
+            return i > 0 ? children[i - 1] : null;
+          },
+          get parentElement() {
+            return card._parent || null;
+          }
+        };
+        return card;
+      }
+      const firstResultCard = makeCard();
+      const pendingCard = makeCard({ pending: true });
+      const resolvedCard = makeCard();
+      const { controller } = makeController({
+        messagesTarget,
+        buildMessageElement: (html) => {
+          if (html === "first-result") return firstResultCard;
+          if (html === "pending") return pendingCard;
+          if (html === "resolved") return resolvedCard;
+          return null;
+        },
+        createLiveToolGroup: () => {
+          const group = {
+            matches: (selector) => selector === "[data-chat-tool-group]",
+            querySelector(selector) {
+              if (selector === "[data-chat-tool-group-cards]") return newGroupCardContainer;
+              if (selector === "[data-chat-tool-group-summary]") return summary;
+              return null;
+            },
+            querySelectorAll(selector) {
+              if (selector === "[data-chat-tool-card]") return newGroupChildren;
+              return [];
+            }
+          };
+          return group;
+        },
+        scrollToBottom: () => {},
+        streamEventMatches: () => true,
+        messageElementById: () => pendingCard,
+        element: { querySelector: () => null },
+        toggleTyping: () => {},
+        dispatchChatState: () => {}
+      });
+
+      controller.handleMessageToolResult({ html: "first-result" });
+      controller.handleMessageToolConfirmation({ html: "pending", tool_name: "write_tool" });
+
+      if (messagesChildren.length !== 2 || messagesChildren[1] !== pendingCard) {
+        throw new Error("Expected the pending card to sit standalone after the single preceding card");
+      }
+
+      controller.handleMessageToolResolved({ html: "resolved", message_id: "pending-1" });
+
+      if (messagesChildren.length !== 1) {
+        throw new Error(`Expected the resolved card to merge with the preceding single card into one group, got ${messagesChildren.length} top-level entries`);
+      }
+      if (newGroupChildren.length !== 2 || summary.textContent !== "2 tool actions") {
+        throw new Error(`Expected the new group to hold both the preceding card and the resolved card (2 cards), got ${newGroupChildren.length}`);
+      }
+      if (messagesChildren[0].matches("[data-chat-tool-group]") !== true) {
+        throw new Error("Expected the merge to wrap the preceding single card in a fresh live tool group");
+      }
+    }
+
     function testMessageCompleteResetsStreamingState() {
       const { controller } = makeController({
         streaming: true,
@@ -484,10 +882,10 @@ class ChatControllerNodeHarness
         controller.handleEvent({
           type: "onboarding_retry",
           message: "That API key was rejected. Please try another key.",
-          redirect_url: "/onboarding?chat_api_key_error=invalid"
+          redirect_url: "/onboarding?onboarding_retry=invalid"
         });
 
-        if (redirectedTo !== "/onboarding?chat_api_key_error=invalid") {
+        if (redirectedTo !== "/onboarding?onboarding_retry=invalid") {
           throw new Error(`Expected onboarding retry redirect, got ${redirectedTo}`);
         }
         if (statusMessages[statusMessages.length - 1] !== "That API key was rejected. Please try another key.") {
@@ -501,7 +899,7 @@ class ChatControllerNodeHarness
     function testFallbackNoticeRemovesStaleToolCards() {
       const removed = [];
       const { controller, appended } = makeController({
-        buildMessageElement: (html) => html ? { outerHTML: html, remove: () => { removed.push(html); } } : null
+        buildMessageElement: (html) => html ? { outerHTML: html, remove: () => { removed.push(html); }, matches: () => false, querySelector: () => null } : null
       });
 
       controller.handleMessageStart({ message_id: "stream-1", model: "gpt-4o" });
@@ -556,7 +954,7 @@ class ChatControllerNodeHarness
     function testRegularMessageCreatedKeepsAttemptToolCards() {
       const removed = [];
       const { controller } = makeController({
-        buildMessageElement: (html) => html ? { outerHTML: html, remove: () => { removed.push(html); } } : null
+        buildMessageElement: (html) => html ? { outerHTML: html, remove: () => { removed.push(html); }, matches: () => false, querySelector: () => null } : null
       });
 
       controller.handleMessageStart({ message_id: "stream-1", model: "gpt-4o" });
@@ -1291,11 +1689,16 @@ class ChatControllerNodeHarness
       }
     }
 
-    // The reopen CTA lives inside the workspace disclosure, so un-hiding it is
-    // not enough — a chat whose workspace stops would show no way to recover.
-    function testStoppedCapabilityUnfoldsItsDisclosure() {
+    // The reopen CTA lives inside Workspace, which is nested in Session
+    // details. Un-hiding it must unfold both disclosures or the recovery path
+    // remains invisible.
+    function testStoppedCapabilityUnfoldsItsDisclosureChain() {
       const attributes = [];
-      const details = { setAttribute: (name, value) => attributes.push({ name, value }) };
+      const sessionDetails = { setAttribute: (name, value) => attributes.push({ target: "session", name, value }) };
+      const details = {
+        setAttribute: (name, value) => attributes.push({ target: "workspace", name, value }),
+        parentElement: { closest: (selector) => (selector === "details" ? sessionDetails : null) }
+      };
       const reopenForm = {
         classList: { contains: (cls) => cls === "hidden", toggle: () => {} },
         closest: (selector) => (selector === "[data-chat-workspace-disclosure]" ? details : null)
@@ -1310,8 +1713,9 @@ class ChatControllerNodeHarness
 
       controller.updateCapabilityActions("stopped");
 
-      if (!attributes.some((attr) => attr.name === "open")) {
-        throw new Error("Expected a revealed stopped-only action to open its <details> disclosure");
+      if (!attributes.some((attr) => attr.target === "workspace" && attr.name === "open") ||
+          !attributes.some((attr) => attr.target === "session" && attr.name === "open")) {
+        throw new Error("Expected a revealed stopped-only action to open its Workspace and Session details disclosures");
       }
     }
 
@@ -1836,6 +2240,79 @@ class ChatControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-025
+    function testSameOriginNavigationHandsTheSessionToThePopup() {
+      const { controller } = makeController();
+      const events = [];
+      const navigations = [];
+      const localStorage = new Map();
+      const originalWindow = globalThis.window;
+
+      globalThis.window = {
+        location: {
+          href: "https://paid.test/chat/42",
+          origin: "https://paid.test",
+          assign(url) { navigations.push(url); }
+        },
+        CustomEvent: class {
+          constructor(type, options) {
+            this.type = type;
+            this.detail = options.detail;
+          }
+        },
+        dispatchEvent(event) { events.push(event); },
+        localStorage: {
+          getItem(key) { return localStorage.get(key) || null; },
+          setItem(key, value) { localStorage.set(key, value); }
+        }
+      };
+
+      controller.accountIdValue = 7;
+      controller.hasAccountIdValue = true;
+      controller.sessionIdValue = 42;
+      const event = {
+        button: 0,
+        target: {
+          closest(selector) {
+            if (selector !== "[data-chat-navigate-url], a[href]") throw new Error(`Unexpected selector: ${selector}`);
+            return { dataset: { chatNavigateUrl: "/settings/api_keys#provider-api-keys" } };
+          }
+        },
+        preventDefault() { this.prevented = true; }
+      };
+
+      try {
+        controller.navigate(event);
+
+        const malformedEvent = {
+          button: 0,
+          target: {
+            closest() {
+              return { dataset: { chatNavigateUrl: "http://[" } };
+            }
+          }
+        };
+        if (controller.navigationUrl(malformedEvent) !== null) {
+          throw new Error("Expected malformed navigation URLs to be ignored");
+        }
+      } finally {
+        globalThis.window = originalWindow;
+      }
+
+      if (!event.prevented) throw new Error("Expected chat navigation to prevent Turbo from replacing the chat surface");
+      if (events.length !== 1 || events[0].type !== "chat:navigate" || events[0].detail.sessionId !== 42) {
+        throw new Error(`Expected chat navigation to hand session 42 to the popup, saw ${JSON.stringify(events)}`);
+      }
+      const handoff = JSON.parse(localStorage.get("paid:chat-popup:7"));
+      if (!handoff.open || !handoff.followNavigation || handoff.sessionId !== 42) {
+        throw new Error(`Expected chat navigation to persist a one-page popup handoff, saw ${JSON.stringify(handoff)}`);
+      }
+      if (navigations.join(",") !== "https://paid.test/settings/api_keys#provider-api-keys") {
+        throw new Error(`Expected fragment-preserving full-page navigation, saw ${JSON.stringify(navigations)}`);
+      }
+
+    }
+
     function run() {
       testChatSettingsAutosaveReportsResult();
       testToolCallAppendsCardAndUpdatesStatus();
@@ -1843,6 +2320,10 @@ class ChatControllerNodeHarness
       testToolCallWithMissingHtmlDoesNotAppend();
       testToolResultAppendsCard();
       testToolResultWithMissingHtmlDoesNotAppend();
+      testConsecutiveLiveToolCardsShareCollapsedGroupAndFallbackRemovesIt();
+      testReplayedToolCardsUseTheGroupingPath();
+      testResolvedToolCardMergesIntoPrecedingGroup();
+      testResolvedToolCardMergesWithPrecedingSingleCard();
       testMessageCompleteResetsStreamingState();
       testMessageCompleteRemovesStreamingBubble();
       testMessageCompleteReleasesFallbackWithoutActiveStreamId();
@@ -1885,7 +2366,7 @@ class ChatControllerNodeHarness
       testUpdateViewportHeightTracksPanelOffset();
       testUpdateViewportHeightClampsNegativeOffset();
       testUpdateViewportHeightIsScrollInvariant();
-      testStoppedCapabilityUnfoldsItsDisclosure();
+      testStoppedCapabilityUnfoldsItsDisclosureChain();
       testHiddenCapabilityActionLeavesDisclosureAlone();
       testSameStateBroadcastLeavesDisclosureAlone();
       testDisconnectMidStreamRemovesOrphanedBubbleWithContent();
@@ -1904,6 +2385,7 @@ class ChatControllerNodeHarness
       testMessageChunkForTheTrackedStreamLeavesTrackingUnchanged();
       testLateStreamEventsDoNotReplaceOrTerminateTheActiveStream();
       testLastRenderedMessageIdReturnsHighestId();
+      testSameOriginNavigationHandsTheSessionToThePopup();
     }
 
     try {

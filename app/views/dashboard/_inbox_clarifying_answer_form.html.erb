@@ -3,9 +3,9 @@
     and manual_review inbox detail panes: same submit endpoint
     (ClarifyingQuestionsController#create), same inbox redirect contract. The
     two-column lg+ layout puts the agent-authored context beside the answer
-    form (sticky sidebar) when context_markdown is present (clarifying_questions
-    entries only — see Inbox::Queue::Entry#context_loader); manual_review
-    entries render the questions alone. %>
+    form (sticky sidebar) when the supplementary frame loads context
+    (clarifying_questions entries only); manual_review entries render the
+    questions alone. %>
 <% pending_answers = flash[:inbox_pending_answers]&.dig(entry.record.id.to_s) %>
 <% pending_freeform_note = flash[:inbox_pending_freeform_notes]&.dig(entry.record.id.to_s) %>
 <%= form_with url: project_issue_clarifying_questions_path(entry.project, entry.issue),
@@ -22,28 +22,12 @@
     <%= hidden_field_tag :inbox_project_id, scoped_project.id %>
   <% end %>
 
-  <div class="<%= entry.context_markdown.present? ? "lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:items-start lg:gap-6 lg:space-y-0 space-y-4" : "space-y-4" %>">
-    <% if entry.context_markdown.present? %>
-      <details
-        open
-        class="group rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 lg:sticky lg:top-4 lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:border-gray-200 lg:bg-gray-50"
-        data-testid="inbox-clarifying-context">
-        <summary class="flex cursor-pointer items-center justify-between gap-2 text-sm font-semibold text-gray-900 lg:cursor-default">
-          <span>Context from Paid's analysis</span>
-          <svg class="h-4 w-4 text-gray-500 transition-transform group-open:rotate-180 lg:hidden"
-               xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
-               aria-hidden="true">
-            <path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" clip-rule="evenodd" />
-          </svg>
-        </summary>
-        <div class="mt-2 lg:mt-3">
-          <%= render "shared/markdown_text",
-                content: entry.context_markdown,
-                tag: :div,
-                block: true,
-                class: "prose prose-sm max-w-none text-gray-700" %>
-        </div>
-      </details>
+  <div class="space-y-4 lg:has-[[data-testid=inbox-clarifying-context]]:grid lg:has-[[data-testid=inbox-clarifying-context]]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:has-[[data-testid=inbox-clarifying-context]]:items-start lg:has-[[data-testid=inbox-clarifying-context]]:gap-6 lg:has-[[data-testid=inbox-clarifying-context]]:space-y-0"
+       data-testid="inbox-question-layout">
+    <% if entry.clarifying_questions? %>
+      <div class="block min-h-px lg:sticky lg:top-4">
+        <%= render "inbox/supplement_content", entry: entry %>
+      </div>
     <% end %>
 
     <div class="space-y-4">

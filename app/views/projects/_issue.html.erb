@@ -8,6 +8,12 @@
             rel: "noopener noreferrer",
             class: "flex-shrink-0 text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
       <span class="truncate text-sm text-gray-900"><%= issue.title %></span>
+      <% if (feature_hold = FeatureIntents::IssueHold.call(issue: issue)) %>
+        <span class="inline-flex items-center rounded-md bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-inset ring-amber-600/20"
+              data-testid="feature-intent-hold" title="<%= feature_hold.code %>">
+          <%= feature_hold.message %>
+        </span>
+      <% end %>
       <% if issue.runner_retry_abandoned? %>
         <% if issue.push_permission_abandoned? %>
           <span class="inline-flex items-center rounded-md bg-orange-50 px-2 py-0.5 text-xs font-medium text-orange-700 ring-1 ring-inset ring-orange-600/20"
@@ -50,6 +56,24 @@
     <%= paid_state_badge(issue.paid_state) %>
     <%= issue_lifecycle_badge(local_assigns.fetch(:lifecycle_status, :eligible)) %>
     <%= render "projects/issue_pause_toggle", issue: issue, project: project %>
+    <% if issue.local_control_state? && policy(project).update? %>
+      <%= form_with url: update_issue_control_state_project_path(project), method: :post, class: "inline-flex gap-1" do |form| %>
+        <%= form.hidden_field :issue_id, value: issue.id %><%= form.hidden_field :control_action, value: "set_priority" %>
+        <%= form.select :priority, Issue::CONTROL_PRIORITIES, { selected: issue.control_priority, include_blank: "Priority" }, class: "text-xs" %>
+        <%= form.submit "Set", class: "text-xs font-medium text-indigo-600" %>
+      <% end %>
+      <%= button_to(issue.auto_pick_excluded? ? "Include" : "Exclude", update_issue_control_state_project_path(project), method: :post,
+                    params: { issue_id: issue.id, control_action: issue.auto_pick_excluded? ? "clear_auto_pick_exclusion" : "exclude_from_auto_pick", reason: "Excluded from auto-pick by project operator" }, class: "text-xs font-medium text-indigo-600") %>
+      <%# @spec LABEL-CONTROL-007 — per-item Paid-activation signal the
+          ignored-mode replacement for the activation label. Toggling it
+          persists immediately so the next auto-pick tick sees the item
+          without re-reading any GitHub label. %>
+      <%= button_to(issue.paid_activated? ? "Deactivate" : "Activate for Paid",
+                    update_issue_control_state_project_path(project), method: :post,
+                    params: { issue_id: issue.id, control_action: issue.paid_activated? ? "unmark_paid_activated" : "mark_paid_activated" },
+                    class: "text-xs font-medium #{issue.paid_activated? ? 'text-gray-600' : 'text-green-700'}",
+                    title: issue.paid_activated? ? "Stop Paid auto-selecting this issue." : "Let Paid auto-pick this issue (no labels needed).") %>
+    <% end %>
     <% if issue.source == Issue::GITHUB_SOURCE %>
       <% subscription_locals = { issue: issue, project: project } %>
       <% if local_assigns.key?(:merge_notification_issue_ids) %>

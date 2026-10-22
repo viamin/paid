@@ -118,7 +118,7 @@ cycles.
 | RDR | Title | Status | Priority |
 |-----|-------|--------|----------|
 | [RDR-020](RDR-020-service-container-architecture.md) | Service Container Architecture | Implemented | High |
-| [RDR-073](RDR-073-marketplace-tool-sidecars.md) | Marketplace Tool Sidecars — Per-Run Hardened Tool Provisioning | Draft | P1 |
+| [RDR-073](RDR-073-marketplace-tool-sidecars.md) | Marketplace Tool Sidecars — Per-Run Hardened Tool Provisioning | Implemented (rollout guarded) | P1 |
 
 ### Interactive Chat
 
@@ -128,7 +128,7 @@ cycles.
 | [RDR-037](RDR-037-containerized-multi-repo-chat.md) | Containerized Multi-Repo Chat Sessions | Partially Implemented | High |
 | [RDR-044](RDR-044-configuration-profiles-chat.md) | Chat-Driven Configuration Profiles (Operating Modes) | Implemented | High |
 | [RDR-064](RDR-064-container-agent-chat-mode.md) | Container Agent Chat Mode | Draft | P1 |
-| [RDR-069](RDR-069-question-centered-chat-exploration.md) | Question-Centered Chat Exploration | Accepted | P1 |
+| [RDR-069](RDR-069-question-centered-chat-exploration.md) | Question-Centered Chat Exploration | Partially Implemented | P1 |
 
 ### Scaling & Distribution
 
@@ -160,6 +160,7 @@ cycles.
 | [RDR-056](RDR-056-strict-test-driven-development-mode.md) | Test-Driven Development Modes with Human Test Review | Implemented | P1 |
 | [RDR-063](RDR-063-operational-supervisor-delivery-health.md) | Operational Supervisor for Delivery Health | Draft | P1 |
 | [RDR-068](RDR-068-apple-platform-verification-workers.md) | Apple Platform Verification Workers | Partially Implemented | P1 |
+| [RDR-074](RDR-074-project-readiness.md) | Settings-Aware Project Readiness | Implemented | P2 |
 
 ### Cloud Execution Readiness
 
@@ -216,11 +217,57 @@ Scaling & Distribution above).
 | [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) | Feature Intent and Approval Lifecycle | Partially Implemented | P1 |
 | [RDR-067](RDR-067-approved-intent-conformance.md) | Approved Intent Conformance for Feature PRs | Partially Implemented | P1 |
 | [RDR-070](RDR-070-facet-confidence-and-clarification.md) | Facet Confidence and Adaptive Clarification | Accepted | P1 |
-| [RDR-071](RDR-071-confidence-driven-issue-delivery.md) | Confidence-Driven Issue Delivery and Feature Completion | Accepted | P1 |
+| [RDR-071](RDR-071-confidence-driven-issue-delivery.md) | Confidence-Driven Issue Delivery and Feature Completion | Partially Implemented | P1 |
+| [RDR-076](RDR-076.md) | Layered Verification of Business Intent and Implementation | Accepted | P1 |
+| [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md) | Automation Phases and Work-Item Authorization | Draft | — |
 
 RDR-069–071 form the [human-centered Inbox implementation tree](human-centered-inbox-implementation.md).
 They extend chat and introduce an explicit confidence-driven feature policy;
-RDR-066/067 continue to describe approval-gated features.
+RDR-066/067 continue to describe approval-gated features. The 2026-10-12
+audits record the current state: [RDR-069](audit-report-2026-10-12-rdr-069.md)
+and [RDR-071](audit-report-2026-10-12-rdr-071.md) are Partially Implemented
+(reused approval-gated foundations are shipped; the new RDR-specific behavior
+remains open work tracked by #4311–#4317, #4310, #4314, #4315, #4318–#4321,
+and #4323); [RDR-070](audit-report-2026-10-12-rdr-070.md) remains Accepted with
+no implementation shipped. The [epic final-acceptance readiness audit](audit-report-2026-10-12-rdr-069-071-epic.md)
+and the [refreshed umbrella final-acceptance audit (2026-10-12, refreshed
+2026-10-13)](audit-report-2026-10-12-rdr-069-071-epic-final-acceptance.md)
+confirm that #4309 remains open until those focused gaps ship and a future
+audit can rerun the structural and database-backed checks against shipped
+behavior. The [2026-10-13 umbrella final-acceptance refresh](audit-report-2026-10-13-rdr-069-071-epic-final-acceptance.md)
+re-runs every structural and database-backed check used by the prior
+audits against the current working tree (1,310 focused specs, 0 failures;
+176 tables; no facet / exploration / investigation / diagram /
+preference / confidence-driven schema), reaches the same conclusion, and
+keeps the umbrella open with non-closing `Tracks #4309` language.
+
+RDR-075 is reserved for **General Maintenance Runs**, proposed in
+[PR #4308](https://github.com/viamin/paid/pull/4308). Its
+[2026-10-15 C75 closeout audit](audit-report-2026-10-15-rdr-075.md) is
+**Blocked**: the design remains an unmerged Draft, no approved maintenance
+LLD/EARS or runtime surface has shipped, the `maintenance_runs` default-off
+tenant guard must be retained when implemented, and the separate RDR-073 tool
+guard remains authoritative. The audit tracks #4326 rather than closing it;
+its observed closed GitHub state must be reconciled before the umbrella's own
+final acceptance can legitimately close it.
+
+[RDR-076](RDR-076.md) is the consolidated **Accepted** layered-verification
+design. It covers correspondence between approved business intent and its
+representations, flexible verification selection, durable intent records,
+business validation and evidence coverage, and separate audit and repair
+operations. Initial delivery is a bounded user-directed audit, evaluated with
+and without formal models. The user accepted the design on 2026-10-14. Implementation follows LID
+planning; acceptance does not claim that the capability has shipped.
+
+The canonical tracking umbrella is
+[#4385](https://github.com/viamin/paid/issues/4385), with required replacement
+work #4431–#4438 and optional integrations #4439–#4440. The tree is
+planning-held pending accepted LID artifacts; implementation does not depend
+on closure of its own umbrella. The previous draft PRs and issue trees are
+superseded by [consolidation PR #4430](https://github.com/viamin/paid/pull/4430).
+Historical audit files retain their original names and numbering; they are
+not the current implementation contract. See
+[RDR-076's consolidation context](RDR-076.md#numbering-and-consolidation).
 
 ## Decision Summary
 

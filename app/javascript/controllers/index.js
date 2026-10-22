@@ -22,6 +22,9 @@ application.register("chat-message", ChatMessageController)
 import ChatPopupController from "./chat_popup_controller"
 application.register("chat-popup", ChatPopupController)
 
+import ChatRunnerModelOptionsController from "./chat_runner_model_options_controller"
+application.register("chat-runner-model-options", ChatRunnerModelOptionsController)
+
 import ChatSessionListController from "./chat_session_list_controller"
 application.register("chat-session-list", ChatSessionListController)
 
@@ -42,6 +45,9 @@ application.register("confirm-delete", ConfirmDeleteController)
 
 import DashboardFramesController from "./dashboard_frames_controller"
 application.register("dashboard-frames", DashboardFramesController)
+
+import DiagramController from "./diagram_controller"
+application.register("diagram", DiagramController)
 
 import DisclosureGroupController from "./disclosure_group_controller"
 application.register("disclosure-group", DisclosureGroupController)

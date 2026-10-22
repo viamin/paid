@@ -5,11 +5,11 @@
 ## Metadata
 
 - **Date**: 2026-10-10
-- **Status**: Draft
+- **Status**: Partially Implemented
 - **Type**: Architecture
 - **Priority**: P1 `[inferred — not supplied by the feature brief]`
 - **Related RDRs**: [RDR-020](RDR-020-service-container-architecture.md) (Service Container Architecture), [RDR-055](RDR-055-agent-container-egress-allowlisting.md) (Agent Container Egress Allowlisting), [RDR-058](RDR-058-execution-authority-network-and-isolation.md) (Execution Authority, Network Policy, and Isolation), [RDR-062](RDR-062-execution-network-policy-intent.md) (Provider-Neutral Execution Network Policy Intent)
-- **Related Issues**: implementation issue tree filed by the creating run (one epic, four phase issues, one closeout issue); numbers are recorded in the epic issue body.
+- **Related Issues**: #4263 (epic), #4264–#4268 (implementation and closeout), #4445 (attachment contract, shipped 2026-10-20), #4446 (rule-scoping gap), #4447 (endpoint exposure gap).
 
 ## Problem Statement
 
@@ -429,6 +429,58 @@ ships behind a feature flag:
 - **Cleanup criteria**: remove the flag once the RDR-073 closeout audit
   verifies the hardened provisioning path is complete, image gating is
   enforced, and pilot tenants have run tool-attached runs without incident.
+
+## Implementation Status
+
+**Implemented, rollout still guarded — 2026-10-22.** Hardened provisioning,
+image gating, flag-off behavior, per-run tracking, retry adoption, cleanup,
+capacity inventory, the agent-facing non-MCP endpoint runtime contract, the
+marketplace attachment contract (`TOOL-SIDECAR-001`/`002`), and the Phase 2
+rule-scoping predicates (`TOOL-SIDECAR-003`/`004`) have shipped. The rollout
+guard remains because no incident-free pilot evidence exists.
+See [the 2026-10-14 closeout audit](audit-report-2026-10-14-rdr-073.md), the
+[2026-10-20 attachment-contract audit](audit-report-2026-10-20-rdr-073.md),
+and the [2026-10-20 epic acceptance audit](audit-report-2026-10-20-rdr-073-epic-final-acceptance.md).
+
+## 2026-10-22 Rule-Scoping Predicate Update
+
+Issue #4265 (Phase 2) is closed by the shipped predicates #4446 delivered:
+`MarketplaceEntries::Resolver#rule_matches?` evaluates
+`issue_labels_includes_any` against `agent_run.issue.labels`,
+`languages_include_any` against `project.effective_repo_profile["languages"]`,
+and `repo_files_include_any` against
+`project.effective_repo_profile["marker_files"]`, each independently optional
+and conjunctive with the existing condition keys, with absent/empty arrays
+imposing no constraint. The predicates evaluate from already-loaded run data,
+so a rule check adds no query. Permanent coverage lives in
+`spec/services/marketplace_entries/resolver_spec.rb` and
+`spec/services/marketplace_entries/resolver_dbless_spec.rb`, including the
+fail-closed blank-issue and blank-repo-profile paths. The `marketplace_tool_sidecars`
+flag stays default-off until the closeout audit records pilot evidence.
+
+## 2026-10-20 Attachment Contract Update
+
+Issue #4445 shipped the Phase 1 marketplace attachment contract
+(`TOOL-SIDECAR-001`/`002`): `MarketplaceEntries::Renderer` now infers
+`tool_sidecar` for `entry_type: "tool"`, `MarketplaceEntryVersion` validates
+the canonical artifact and every provider renderer against the required
+`install_type`/`image`/`port` fields (plus optional `env`/`hardening`/`alias`
+shapes), and `MarketplaceEntries::RuntimeAttachments` contributes the
+normalized definition to `AgentRun#tool_sidecar_snapshot` (never
+`mcp_server_snapshot`) for automatic, team-default, and manual attachments
+alike. See [the attachment-contract audit](audit-report-2026-10-20-rdr-073.md)
+for file/test evidence. Status remains **Partially Implemented**: only the
+Phase 2 rule-scoping predicates (#4446) are still an open gap (superseded
+2026-10-22, when they shipped). `Tracks #4263`; this update does not close the
+epic.
+
+## 2026-10-14 Closeout
+
+Closeout #4268 validated shipped code and permanent tests rather than relying
+on issue state. It found the Phase 3 hardened provisioner implemented, but the
+RDR's end-to-end marketplace and agent outcome incomplete. Status is therefore
+**Partially Implemented**. The epic #4263 remains open for its final acceptance
+audit; this closeout does not close it.
 
 ## Implementation Plan
 

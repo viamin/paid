@@ -106,6 +106,7 @@ RSpec.describe Activities::PreparePrPromptActivity do
       expect(phase.metadata["service_environment_prompt_blocks"]).to eq(
         Prompts::BuildForPr.service_environment_section_render_for(
           project: project,
+          agent_run: agent_run,
           include_setup_instruction: false
         ).prompt_blocks.map(&:deep_stringify_keys)
       )

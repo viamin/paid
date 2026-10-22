@@ -56,7 +56,41 @@ own route-based mobile flow (`OPERATOR-INBOX-003`) and its own
 `inbox-master-detail` Stimulus controller; only the layout rules move to the
 shared pattern.
 
+## Request cost
+
+Inbox detail-frame requests resolve only the requested entry through its
+lane's existing visibility and admission rules and render only `inbox-detail`.
+They do not build filter availability or render the queue. Invalid, resolved,
+filtered-out, and unauthorized entries return to the filtered inbox with a
+full-page navigation that refreshes the list, filters, and empty state.
+Interactive-chat authorization performs one targeted lookup itself, retaining
+the current lane policy and membership checks without repeating a controller
+lookup.
+Full unfiltered renders derive filter availability from the queue already
+built for the request. Closeout entries carry their computed status through
+to the detail pane and assessment so rendering does not repeat admission or
+terminal-evidence queries.
+GitHub-only context and enhancement-comment links load in a separate lazy
+Turbo Frame after the local detail and its actions have rendered. That request
+rechecks current queue membership and returns an empty frame for stale entries.
+
 ## Entry Kinds
+
+### `traceability_gap`
+
+Durable reconciliation findings are operator decisions, not proof that an
+implementation is absent. The detail pane names whether the finding is an
+unlinked document, potentially missing or partial work, ambiguous work, stale
+metadata, a deliberate deferral, or unavailable coverage. It shows the pinned
+artifact/revision, last successful coverage, candidates/evidence, and direct
+GitHub artifact link. Operators may link verified existing work, defer, or
+dismiss with a reason; each decision is revision-checked, records its actor
+and provenance, removes the item from the unassigned queue, and remains
+pending until reconciliation verifies resolution. Unverifiable coverage asks
+for retry/access repair rather than proposing new implementation work.
+
+Chat remains an optional contextual aid. It does not replace a decision and
+does not make a repair, approve a design, or change main.
 
 ### `clarifying_questions`
 
@@ -85,8 +119,8 @@ The entry payload also carries the agent-authored context that surrounded
 the numbered questions in the latest enhancement comment — the
 "Current Context" section plus the prose that introduced the
 `## Clarifying questions` heading — as `context_markdown`, surfaced by
-`ClarifyingQuestions::Load#context_markdown` reusing the cached
-`issue_comments` list the queue already loads. The inbox detail pane
+`ClarifyingQuestions::Load#context_markdown` fetching and memoizing
+`issue_comments` in the separate supplementary request. The inbox detail pane
 (`OPERATOR-INBOX-011`) renders that markdown beside the answer form on `lg+`
 viewports (two-column grid, sticky scrollable sidebar) and inside a
 collapsible native `<details>` disclosure above the questions on smaller
@@ -128,29 +162,28 @@ remediation guidance, so every Action Required entry has meaningful context.
 
 ### `merge_approval`
 
-Backed by the PR scanner's persisted auto-merge blocker snapshot on `Issue`.
-The inbox only surfaces PRs whose failed blockers are approval-only
-(`owner_approved` and/or `reviews_fresh`) and whose `not_evaluated` blocker
-list is empty, so red CI, merge conflicts, unresolved review threads, and
-unresolved dependencies stay out of the human-approval queue. The detail pane
-reuses the standard PR badge and GitHub-link conventions and directs the
-operator to re-approve on GitHub, after which the next scan naturally removes
-the entry.
+Backed by the PR scanner's persisted current-head policy snapshot on `Issue`.
+The scanner assesses human-led projects even when automatic merging is off;
+that assessment never authorizes an automatic merge. The inbox surfaces an
+approval-only result (`owner_approved` and/or `reviews_fresh`) with no
+`not_evaluated` blockers as review/re-approval work. For auto-merge-off
+projects, it also surfaces a fully clear assessment as a manual merge decision,
+unless the pull request has a trusted per-PR auto-merge activation: that PR is
+automatically managed and must not race or misdirect an operator with a manual
+decision. The structured `paid-hold-review` lane still takes precedence.
+Red or pending CI, merge conflicts, unresolved review threads, dependencies,
+or policy checks remain machine/blocker state rather than Inbox noise. The
+detail pane reuses the standard PR badge and GitHub-link conventions and
+directs the operator to GitHub for the supported human action.
 
 ### `escalated_pr`
 
-Backed by `Dashboard::BlockedPullRequests`, the same query the dashboard's
-Blocked PRs panel uses — `Inbox::Queue` calls it and filters the result to the
+Backed by `Inbox::EscalatedPullRequests`, which `Inbox::Queue` filters to the
 operator's authorized Inbox projects rather than reimplementing the
-escalated-PR query. This is a deliberate scoping divergence: every other
-inbox kind is account+owner scoped, independent of auto-pick eligibility
-(`INBOX-FOUNDATION-006`), while the dashboard panel is account-wide, so the
-two surfaces will not agree on counts. That is intentional
-— the Inbox stays consistent with itself rather than adopting the dashboard's
-broader scope for one kind — and is recorded here so the divergence reads as a
-decision, not drift.
+escalated-PR query. Like every other Inbox kind, it is account+owner scoped
+and independent of auto-pick eligibility (`INBOX-FOUNDATION-006`).
 
-The entry payload carries the `Dashboard::BlockedPullRequests::Entry` as its
+The entry payload carries the `Inbox::EscalatedPullRequests::Entry` as its
 `record`, so the detail pane shows the same reason, tripped counters,
 `last_progress_at`, and operator-paused indicator the dashboard panel shows —
 one query, two surfaces, no duplicated blocked-PR logic. The detail pane offers
@@ -181,28 +214,23 @@ its nav badge at the exact moment it became more urgent.
 Backed by `Issue#runner_retry_abandoned_at` directly (the same column the
 runner-retry-cap path writes via `Issue#abandon_due_to_runner_retry_cap!` and
 the push-permission path writes via `Issue#abandon_due_to_push_permission_rejection!`,
-which share an abandonment gate but encode different causes). Before this kind
-existed, both abandonments were dashboard-only — visible on the
-Retry-Limited card (#2674) but absent from the Inbox and its nav badge, so
-operators only learned about the block by scrolling the dashboard, and the
-dashboard card had no action buttons. The HLD tenet "No silent stops" requires
-the system to surface *that* automation stopped, *why*, and *what clears it*
-the same way it surfaces `manual_review`; this kind closes that gap (#3902).
+which share an abandonment gate but encode different causes). The Inbox is the
+sole operator surface for these abandonments: the Dashboard does not duplicate
+the lane. The HLD tenet "No silent stops" requires the system to surface *that*
+automation stopped, *why*, and *what clears it* the same way it surfaces
+`manual_review` (#3902).
 
 The query is `paid_state`-agnostic (the abandonment gate is independent of
-`paid_state`, and the dashboard card deliberately surfaces both issues and PRs
-that hit the cap), so it filters on `runner_retry_abandoned_at IS NOT NULL` and
+`paid_state`), so it filters on `runner_retry_abandoned_at IS NOT NULL` and
 `github_state = "open"` only. It reuses the same account+owner visibility
-(`INBOX-FOUNDATION-006`), independent of auto-pick eligibility, every other
-kind uses, the same divergence from the dashboard's account-wide scope that
-`escalated_pr` and `manual_review` already record (`OPERATOR-INBOX-002C`,
-`OPERATOR-INBOX-002D`).
+(`INBOX-FOUNDATION-006`), independent of auto-pick eligibility, that every
+other Inbox kind uses.
 
 The entry payload carries `runner_retry_abandon_reason` as the summary and
 distinguishes `push_permission_abandoned?` (prefixed `Push rejected:` — the
 GitHub App installation token lacked the permission) from the runner-retry-cap
-case in the list and detail views via the same Push Blocked vs Retry Cap badge
-split the dashboard card already shows. `waiting_since` is
+case in the list and detail views via the Push Blocked vs Retry Cap badge
+split. `waiting_since` is
 `runner_retry_abandoned_at`; both producers stamp the timestamp on
 abandonment, so there are no legacy nulls to worry about. The clearing path is
 the existing `clear_runner_retry_abandonment!` (called from
@@ -211,10 +239,9 @@ flag already has — no inbox-side controller change is needed, just the cache
 invalidation that `Issue#inbox_count_cache_invalidation_needed?` adds for
 `saved_change_to_runner_retry_abandoned_at?`.
 
-The detail pane offers the same path the dashboard card implies but does not
-actually render: link to the GitHub issue/PR (the operator needs to read the
-failure surface anyway) plus a per-project "Start manual run" hint pointing at
-the project's runs page. The operator-facing action is the existing
+The detail pane offers a link to the GitHub issue/PR (the operator needs to
+read the failure surface anyway) plus a per-project "Start manual run" hint
+pointing at the project's runs page. The operator-facing action is the existing
 `clear_runner_retry_abandonment!` path on a successful manual run, so there is
 no new endpoint to introduce — the kind exists to make the abandonment
 discoverable, not to invent a new clearing workflow. The entry leaves the lane

@@ -43,6 +43,14 @@ RSpec.describe Tools::UpdateProjectSettings do
       expect(project.reload).to have_attributes(paused: true, auto_pick_enabled: true)
     end
 
+    # @spec FACET-CONFIDENCE-010
+    it "updates and returns independently configured confidence thresholds" do
+      result = call(settings: { "intent_threshold" => 70, "technical_threshold" => 90 })
+
+      expect(result).to include(intent_threshold: 70, technical_threshold: 90)
+      expect(project.reload).to have_attributes(intent_threshold: 70, technical_threshold: 90)
+    end
+
     it "updates the upstream PR target settings" do # @spec PR-TARGET-012
       result = call(settings: {
         "pr_target" => "upstream",
@@ -95,6 +103,36 @@ RSpec.describe Tools::UpdateProjectSettings do
         subject: project
       )
       expect(event.metadata["changed_fields"]).to include("paused")
+    end
+
+    it "authorizes and audits confidence-delivery enrollment changes" do # @spec CONFIDENCE-DELIVERY-001
+      expect {
+        call(settings: {
+          "new_feature_delivery_policy" => "confidence_driven",
+          "confidence_delivery_enrollment_enabled" => true
+        })
+      }.to change(AccountActivityEvent, :count).by(1)
+
+      expect(project.reload).to have_attributes(
+        new_feature_delivery_policy: "confidence_driven",
+        confidence_delivery_enrollment_enabled: true
+      )
+      expect(account.account_activity_events.last.metadata.fetch("changed_fields")).to include(
+        "new_feature_delivery_policy", "confidence_delivery_enrollment_enabled"
+      )
+    end
+
+    it "updates and audits the question-exploration rollout setting" do # @spec QUESTION-EXPLORATION-019
+      result = nil
+      expect {
+        result = call(settings: { "question_exploration_enabled" => true })
+      }.to change(AccountActivityEvent, :count).by(1)
+
+      expect(result[:question_exploration_enabled]).to be(true)
+      expect(project.reload.question_exploration_enabled).to be(true)
+      expect(account.account_activity_events.last.metadata.fetch("changed_fields")).to include(
+        "question_exploration_enabled"
+      )
     end
 
     it "does not record activity when nothing changed" do

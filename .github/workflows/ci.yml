@@ -52,13 +52,13 @@ jobs:
           persist-credentials: false
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8
+        uses: ruby/setup-ruby@824c0e29fdfc7d689c191c27acc969d2d04b7dd8
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version-file: .tool-versions
           cache: 'yarn'
@@ -68,6 +68,9 @@ jobs:
 
       - name: Install JavaScript dependencies
         run: yarn install --frozen-lockfile && bin/yarn-postinstall
+
+      - name: Lint the mobile OpenAPI contract
+        run: npx --yes @stoplight/spectral-cli@6.15.0 lint --fail-severity error docs/api/openapi.yaml
 
       - name: Prepare RuboCop cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
@@ -192,15 +195,19 @@ jobs:
           check_contains .github/workflows/pr-screenshots.yml "$workflow_client" ".github/workflows/pr-screenshots.yml must install $workflow_client"
           check_contains .github/workflows/ephemeral_tests.yml "$workflow_client" ".github/workflows/ephemeral_tests.yml must install $workflow_client"
 
-  test:
+  # @spec TEST-SUITE-003
+  test-shards:
+    name: test-shard (${{ matrix.shard }})
     if: >-
       github.event_name != 'pull_request'
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-24.04
-    # The non-system RSpec slice alone can exceed 38 minutes on a warm local
-    # run, so 45 minutes leaves too little margin for checkout, asset builds,
-    # database setup, and the performance-spec tail on slower GitHub runners.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    # Separate service containers and workspaces isolate each shard.
     timeout-minutes: 60
 
     services:
@@ -224,6 +231,8 @@ jobs:
 
     env:
       BUNDLE_FROZEN: "true"
+      RSPEC_SHARD_INDEX: ${{ matrix.shard }}
+      RSPEC_SHARD_COUNT: "4"
       RAILS_ENV: test
       SECRET_KEY_BASE: test-secret-key-base
       RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
@@ -272,13 +281,13 @@ jobs:
         run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8
+        uses: ruby/setup-ruby@824c0e29fdfc7d689c191c27acc969d2d04b7dd8
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version-file: .tool-versions
           cache: 'yarn'
@@ -388,10 +397,374 @@ jobs:
       - name: Run tests
         # System specs run in a separate workflow (.github/workflows/system_tests.yml)
         # because they need Chromium and built JS/CSS assets.
-        run: bin/rspec --exclude-pattern "spec/performance/**/*_spec.rb,spec/system/**/*_spec.rb"
+        # @spec TEST-SUITE-001 @spec TEST-SUITE-009
+        run: >-
+          bin/rspec-shard
+          --format progress --format json
+          --out tmp/rspec-shard-${{ matrix.shard }}.json
 
+      # @spec TEST-SUITE-006
       - name: Run query performance benchmarks
+        if: matrix.shard == 0
         run: COVERAGE=false bin/rspec spec/performance
+
+      - name: Upload shard coverage and timings
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rspec-shard-${{ matrix.shard }}
+          path: |
+            coverage/.resultset.json
+            tmp/rspec-shard-${{ matrix.shard }}.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
+
+  # @spec TEST-SUITE-004 @spec TEST-SUITE-005 @spec TEST-SUITE-006
+  test:
+    needs: test-shards
+    if: ${{ always() && needs.test-shards.result != 'skipped' }}
+    runs-on: ubuntu-24.04
+    env:
+      BUNDLE_FROZEN: "true"
+      RSPEC_SHARD_COUNT: "4"
+    steps:
+      - name: Require every test shard to succeed
+        env:
+          SHARD_RESULT: ${{ needs.test-shards.result }}
+        run: test "$SHARD_RESULT" = success
+
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@824c0e29fdfc7d689c191c27acc969d2d04b7dd8
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Download all shard reports
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v4
+        with:
+          pattern: rspec-shard-*
+          path: tmp/rspec-shards
+
+      - name: Check combined coverage
+        run: bin/rspec-coverage tmp/rspec-shards/rspec-shard-*/coverage/.resultset.json
+
+      - name: Upload combined coverage
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: rspec-combined-coverage
+          path: coverage/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
+
+  # @spec MOBILE-API-017
+  pact-provider-verification:
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      BUNDLE_FROZEN: "true"
+      RAILS_ENV: test
+      SECRET_KEY_BASE: test-secret-key-base
+      RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      PAID_DEVELOPMENT_DATABASE: paid_test
+      PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
+      PAID_TEST_DATABASE: paid_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
+      DB_HOST: localhost
+      PGHOST: localhost
+      PGPORT: 5432
+      DB_USERNAME: postgres
+      PGUSER: postgres
+      DB_PASSWORD: postgres
+      PGPASSWORD: postgres
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Normalize test master key
+        if: env.RAILS_TEST_KEY == ''
+        env:
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
+            delimiter="ghadelim_$(openssl rand -hex 16)"
+            {
+              echo "RAILS_TEST_KEY<<${delimiter}"
+              printf '%s\n' "$RAILS_MASTER_KEY_FALLBACK"
+              echo "${delimiter}"
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@824c0e29fdfc7d689c191c27acc969d2d04b7dd8
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Set up database
+        run: bin/rails db:create db:schema:load
+
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
+
+      - name: Create mobile API bearer token
+        run: |
+          bundle exec rails runner -e test '
+            TenantContext.with_system_access do
+              account = Account.create!(name: "Mobile contract verification")
+              user = User.create!(
+                account: account,
+                name: "Mobile contract verifier",
+                email: "mobile-contract-verifier@example.test",
+                password: "password123",
+                password_confirmation: "password123"
+              )
+              github_token = GithubToken.create!(
+                account: account,
+                created_by: user,
+                name: "CI",
+                token: "ghp_#{"a" * 36}",
+                scopes: %w[repo],
+                validation_status: "validated"
+              )
+              project = Project.create!(
+                account: account,
+                created_by: user,
+                github_token: github_token,
+                name: "Mobile API fixture",
+                github_id: 4_288,
+                owner: "paid",
+                repo: "mobile-api-fixture",
+                allowed_github_usernames: [ "mobile-contract-verifier" ]
+              )
+              issue = Issue.create!(
+                id: 4_241,
+                project: project,
+                github_issue_id: 4_241,
+                github_number: 4_241,
+                title: "Mobile API fixture",
+                github_creator_login: "mobile-contract-verifier",
+                github_state: "open",
+                paid_state: "needs_input",
+                labels: [ project.enhance_issue_needs_input_label_name ],
+                needs_input_questions: [ "What should the mobile client do?" ],
+                needs_input_since: Time.current,
+                github_created_at: Time.current,
+                github_updated_at: Time.current
+              )
+              token = PersonalAccessToken.create_for!(user: user, name: "CI")
+              File.open(ENV.fetch("GITHUB_ENV"), "a") { |file| file.puts("MOBILE_API_TOKEN=#{token.plaintext_token}") }
+            end
+          '
+
+      - name: Start Rails server
+        run: |
+          bundle exec rails server -e test -b 127.0.0.1 -p 3000 > log/mobile-api-contract.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            curl --fail --silent --show-error http://127.0.0.1:3000/up && exit 0
+            sleep 1
+          done
+          cat log/mobile-api-contract.log
+          exit 1
+
+      - name: Verify mobile consumer Pact
+        run: |
+          RUBYOPT="-rbundler/setup -r$GITHUB_WORKSPACE/lib/pact_provider_verifier_compatibility" bundle exec pact-provider-verifier \
+            docs/api/pacts/paid-mobile-api-schema.pact.json \
+            --provider-base-url=http://127.0.0.1:3000 \
+            --provider=paid-mobile-api \
+            --custom-provider-header="Authorization: Bearer $MOBILE_API_TOKEN" \
+            --fail-if-no-pacts-found
+
+  # @spec MOBILE-API-018
+  schemathesis:
+    if: >-
+      github.event_name != 'pull_request'
+      || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+      || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      BUNDLE_FROZEN: "true"
+      RAILS_ENV: test
+      SECRET_KEY_BASE: test-secret-key-base
+      RAILS_TEST_KEY: ${{ secrets.RAILS_TEST_KEY }}
+      PAID_DEVELOPMENT_DATABASE: paid_test
+      PAID_DEVELOPMENT_CABLE_DATABASE: paid_test
+      PAID_TEST_DATABASE: paid_test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/paid_test
+      DB_HOST: localhost
+      PGHOST: localhost
+      PGPORT: 5432
+      DB_USERNAME: postgres
+      PGUSER: postgres
+      DB_PASSWORD: postgres
+      PGPASSWORD: postgres
+      npm_config_cache: ${{ github.workspace }}/.cache/npm
+      PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.cache/ms-playwright
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Normalize test master key
+        if: env.RAILS_TEST_KEY == ''
+        env:
+          RAILS_MASTER_KEY_FALLBACK: ${{ secrets.RAILS_MASTER_KEY }}
+        run: |
+          if [ -n "$RAILS_MASTER_KEY_FALLBACK" ]; then
+            delimiter="ghadelim_$(openssl rand -hex 16)"
+            {
+              echo "RAILS_TEST_KEY<<${delimiter}"
+              printf '%s\n' "$RAILS_MASTER_KEY_FALLBACK"
+              echo "${delimiter}"
+            } >> "$GITHUB_ENV"
+          fi
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@824c0e29fdfc7d689c191c27acc969d2d04b7dd8
+        with:
+          ruby-version: .tool-versions
+          bundler-cache: true
+
+      - name: Set up database
+        run: bin/rails db:create db:schema:load
+
+      - name: Bootstrap test defaults
+        run: bin/rails ci:bootstrap_test_defaults
+
+      - name: Create mobile API bearer token
+        run: |
+          bundle exec rails runner -e test '
+            TenantContext.with_system_access do
+              account = Account.create!(name: "Mobile schema fuzzing")
+              user = User.create!(
+                account: account,
+                name: "Mobile schema fuzzer",
+                email: "mobile-schema-fuzzer@example.test",
+                password: "password123",
+                password_confirmation: "password123"
+              )
+              github_token = GithubToken.create!(
+                account: account,
+                created_by: user,
+                name: "CI",
+                token: "ghp_#{"a" * 36}",
+                scopes: %w[repo],
+                validation_status: "validated"
+              )
+              project = Project.create!(
+                account: account,
+                created_by: user,
+                github_token: github_token,
+                name: "Mobile API fixture",
+                github_id: 4_288,
+                owner: "paid",
+                repo: "mobile-api-fixture",
+                allowed_github_usernames: [ "mobile-schema-fuzzer" ]
+              )
+              issue = Issue.create!(
+                id: 4_241,
+                project: project,
+                github_issue_id: 4_241,
+                github_number: 4_241,
+                title: "Mobile API fixture",
+                github_creator_login: "mobile-schema-fuzzer",
+                github_state: "open",
+                paid_state: "needs_input",
+                labels: [ project.enhance_issue_needs_input_label_name ],
+                needs_input_questions: [ "What should the mobile client do?" ],
+                needs_input_since: Time.current,
+                github_created_at: Time.current,
+                github_updated_at: Time.current
+              )
+              read_token = PersonalAccessToken.create_for!(user: user, name: "CI read fuzzing")
+              mutation_token = PersonalAccessToken.create_for!(user: user, name: "CI mutation fuzzing")
+              File.open(ENV.fetch("GITHUB_ENV"), "a") do |file|
+                file.puts("MOBILE_API_READ_TOKEN=#{read_token.plaintext_token}")
+                file.puts("MOBILE_API_MUTATION_TOKEN=#{mutation_token.plaintext_token}")
+              end
+            end
+          '
+
+      - name: Start Rails server
+        run: |
+          bundle exec rails server -e test -b 127.0.0.1 -p 3000 > log/mobile-api-contract.log 2>&1 &
+          for attempt in $(seq 1 30); do
+            curl --fail --silent --show-error http://127.0.0.1:3000/up && exit 0
+            sleep 1
+          done
+          cat log/mobile-api-contract.log
+          exit 1
+
+      - name: Fuzz mobile API contract
+        run: |
+          pipx run --spec 'schemathesis==4.6.0' schemathesis run \
+            --phases examples,fuzzing \
+            --mode positive \
+            --url http://127.0.0.1:3000/api/v1 \
+            --header "Authorization: Bearer $MOBILE_API_READ_TOKEN" \
+            --include-path /inbox \
+            --include-path /inbox/count \
+            --include-path /inbox/entries/{entry_id} \
+            docs/api/openapi.yaml
+          pipx run --spec 'schemathesis==4.6.0' schemathesis run \
+            --phases examples,fuzzing \
+            --mode positive \
+            --url http://127.0.0.1:3000/api/v1 \
+            --header "Authorization: Bearer $MOBILE_API_MUTATION_TOKEN" \
+            --include-path /inbox/entries/{entry_id}/chat \
+            --exclude-operation-id sendChatMessage \
+            --exclude-operation-id resolveChatToolCall \
+            docs/api/openapi.yaml
 
   migrations:
     if: >-
@@ -457,7 +830,7 @@ jobs:
           fi
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8
+        uses: ruby/setup-ruby@824c0e29fdfc7d689c191c27acc969d2d04b7dd8
         with:
           ruby-version: .tool-versions
           bundler-cache: true
@@ -484,7 +857,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8
+        uses: ruby/setup-ruby@824c0e29fdfc7d689c191c27acc969d2d04b7dd8
         with:
           ruby-version: .tool-versions
           bundler-cache: true
@@ -565,13 +938,13 @@ jobs:
         run: mkdir -p "$TMPDIR" "$YARN_CACHE_FOLDER" "$XDG_CACHE_HOME" "$npm_config_cache" "$PLAYWRIGHT_BROWSERS_PATH"
 
       - name: Set up Ruby
-        uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8
+        uses: ruby/setup-ruby@824c0e29fdfc7d689c191c27acc969d2d04b7dd8
         with:
           ruby-version: .tool-versions
           bundler-cache: true
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v6
         with:
           node-version-file: .tool-versions
           cache: 'yarn'

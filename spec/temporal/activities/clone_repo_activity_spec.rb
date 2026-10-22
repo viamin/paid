@@ -4,7 +4,7 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe Activities::CloneRepoActivity do
-  let(:project) { create(:project) }
+  let(:project) { create(:project, primary_language: "Ruby") }
   let(:agent_run) { create(:agent_run, :running, project: project, container_id: "abc123") }
   let(:activity) { described_class.new }
   let(:container_service) { instance_double(Containers::Provision) }
@@ -75,9 +75,11 @@ RSpec.describe Activities::CloneRepoActivity do
     end
 
     context "when project has a running database container" do
+      let!(:database_container) { create(:service_container, :running, image: "postgres:16") }
+
       before do
-        sc = create(:service_container, :running, image: "postgres:16")
-        create(:project_service_container, project: project, service_container: sc)
+        create(:project_service_container, project: project, service_container: database_container)
+        agent_run.update!(service_container_ids: [ database_container.id ])
       end
 
       it "installs git hooks with both lint and test commands" do
@@ -211,9 +213,11 @@ RSpec.describe Activities::CloneRepoActivity do
       end
 
       context "when project has a running database container" do
+        let!(:database_container) { create(:service_container, :running, image: "postgres:16") }
+
         before do
-          sc = create(:service_container, :running, image: "postgres:16")
-          create(:project_service_container, project: project, service_container: sc)
+          create(:project_service_container, project: project, service_container: database_container)
+          agent_run.update!(service_container_ids: [ database_container.id ])
         end
 
         it "installs git hooks with both lint and test commands" do

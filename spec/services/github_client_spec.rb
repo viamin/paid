@@ -3,16 +3,11 @@
 require "rails_helper"
 
 RSpec.describe GithubClient do
+  include_context "with recorded HTTP retry delays"
   let(:token) { "ghp_test_token_123456789012345678901234567890" }
   let(:health_endpoint) { GithubHealthState::DEFAULT_ENDPOINT }
   let(:client) { described_class.new(token: token, health_endpoint: health_endpoint) }
   let(:api_base) { "https://api.github.com" }
-
-  before do
-    stub_const("GithubClient::RETRY_INTERVAL", 0)
-    stub_const("GithubClient::RETRY_INTERVAL_RANDOMNESS", 0)
-    stub_const("GithubClient::RETRY_BACKOFF_FACTOR", 1)
-  end
 
   describe "HTTP cache configuration" do
     let(:other_token) { "ghp_other_test_token_1234567890123456789012" }
@@ -2190,6 +2185,8 @@ RSpec.describe GithubClient do
 
       result = client.repository(repo)
       expect(result.full_name).to eq(repo)
+      expect(a_request(:get, "#{api_base}/repos/#{repo}")).to have_been_made.twice
+      expect(http_retry_delays).to contain_exactly(a_value_between(0.5, 0.75))
     end
 
     it "retries on 502 and succeeds" do
@@ -2201,6 +2198,20 @@ RSpec.describe GithubClient do
 
       result = client.repository(repo)
       expect(result.full_name).to eq(repo)
+      expect(a_request(:get, "#{api_base}/repos/#{repo}")).to have_been_made.twice
+      expect(http_retry_delays).to contain_exactly(a_value_between(0.5, 0.75))
+    end
+
+    # @spec TEST-SUITE-016
+    it "honors Retry-After without waiting in the test process" do
+      request = stub_request(:get, "#{api_base}/repos/#{repo}").to_return(
+        { status: 503, headers: { "Retry-After" => "7" } },
+        { status: 200, body: { full_name: repo }.to_json, headers: { "Content-Type" => "application/json" } }
+      )
+
+      expect(client.repository(repo).full_name).to eq(repo)
+      expect(request).to have_been_requested.twice
+      expect(http_retry_delays).to eq([ 7.0 ])
     end
   end
 
@@ -2228,6 +2239,7 @@ RSpec.describe GithubClient do
 
       result = client.review_threads(repo, 1)
       expect(result).to eq([])
+      expect(a_request(:post, "#{api_base}/graphql")).to have_been_made.twice
     end
 
     it "retries on 429 and succeeds" do
@@ -2251,13 +2263,19 @@ RSpec.describe GithubClient do
 
       result = client.review_threads(repo, 1)
       expect(result).to eq([])
+      expect(a_request(:post, "#{api_base}/graphql")).to have_been_made.twice
     end
 
     it "raises after exhausting retries" do
-      stub_request(:post, "#{api_base}/graphql")
+      request = stub_request(:post, "#{api_base}/graphql")
         .to_return(status: 502, body: "Bad Gateway")
 
       expect { client.review_threads(repo, 1) }.to raise_error(GithubClient::ApiError)
+      expect(request).to have_been_requested.times(4)
+      expect(http_retry_delays.size).to eq(3)
+      http_retry_delays.zip([ 0.5, 1.0, 2.0 ]).each do |delay, base|
+        expect(delay).to be_between(base, base + 0.25)
+      end
     end
 
     it "does not retry mutations" do
@@ -2266,6 +2284,7 @@ RSpec.describe GithubClient do
 
       expect { client.resolve_review_thread("thread_id") }.to raise_error(GithubClient::ApiError)
       expect(stub).to have_been_requested.once
+      expect(http_retry_delays).to be_empty
     end
   end
 

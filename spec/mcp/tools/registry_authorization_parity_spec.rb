@@ -99,6 +99,16 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "update_issue_control_state",
+        denied_user: -> { create(:user, :member, account: account) },
+        arguments: -> { { project_id: project.id, issue_id: issue.id, action: "pause", confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :update?, policy_class: ProjectPolicy)
+          project_record.issues.find(issue.id)
+        }
+      },
+      {
         tool_name: "trigger_agent_run",
         denied_user: -> {
           project
@@ -109,6 +119,18 @@ RSpec.describe Tools::Registry do
           project_record = Pundit.policy_scope!(user, Project).find(project.id)
           authorize_record!(user, project_record, :run_agent?, policy_class: ProjectPolicy)
           project_record.issues.find(issue.id)
+        }
+      },
+      {
+        tool_name: "trigger_readiness_bootstrap",
+        denied_user: -> {
+          project
+          create(:user, :viewer, account: account)
+        },
+        arguments: -> { { project_id: project.id, confirmed: true } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :run_agent?, policy_class: ProjectPolicy)
         }
       },
       {
@@ -248,6 +270,34 @@ RSpec.describe Tools::Registry do
         ui_call: ->(user) {
           project_record = Pundit.policy_scope!(user, Project).find(project.id)
           authorize_record!(user, project_record, :update?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "save_clarifying_answer",
+        denied_user: -> {
+          project
+          issue
+          create(:user, :member, account: account)
+        },
+        arguments: -> { { position: 1, answer: "Denied", confirmed: true } },
+        session: ->(user) {
+          build(:chat_session, account: user.account, created_by: user, project: project,
+            clarifying_question_issue: issue)
+        },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :update?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "present_chat_diagram",
+        denied_user: -> { create(:user, :viewer, account: account) },
+        arguments: -> { { question_key: "delivery", question_title: "Delivery", summary: "A summary",
+          text_equivalent: "A text equivalent", description: { "elements" => [ { "id" => "app", "label" => "App", "description" => "The application." } ], "relationships" => [] } } },
+        session: ->(user) { build(:chat_session, account: user.account, created_by: user) },
+        ui_call: ->(user) {
+          session = build(:chat_session, account: user.account, created_by: user)
+          authorize_record!(user, ChatMessage.new(chat_session: session), :create?, policy_class: ChatMessagePolicy)
         }
       },
       {
@@ -771,6 +821,63 @@ RSpec.describe Tools::Registry do
         denied_user: -> { create(:user, :viewer, account: account) },
         arguments: -> { { step: "account_profile", confirmed: true } },
         ui_call: ->(user) { authorize_record!(user, user.account, :create?, policy_class: ApplicationPolicy) }
+      },
+      {
+        tool_name: "list_explicit_preferences",
+        denied_user: -> { nil },
+        arguments: -> { {} },
+        ui_call: ->(user) { authorize_settings_edit!(user) }
+      },
+      {
+        tool_name: "save_explicit_preference",
+        denied_user: -> { nil },
+        arguments: -> { { statement: "I prefer concise responses.", scope: "user", confirmed: true } },
+        ui_call: ->(user) { authorize_settings_edit!(user) }
+      },
+      {
+        tool_name: "start_chat_investigation",
+        denied_user: -> {
+          project
+          create(:user, :viewer, account: account)
+        },
+        arguments: -> { { position: 1, kind: "research", prompt: "Compare the options", confirmed: true } },
+        session: ->(user) {
+          build(:chat_session, account: account, created_by: user, project: project, clarifying_question_issue: issue)
+        },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :explore?, policy_class: ProjectPolicy)
+        }
+      },
+      {
+        tool_name: "delete_explicit_preference",
+        denied_user: -> { nil },
+        arguments: -> { { preference_id: 0, confirmed: true } },
+        ui_call: ->(user) { authorize_settings_edit!(user) }
+      },
+      {
+        tool_name: "manage_feature_intent",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { feature_intent_id: create(:feature_intent, project: project).id, action: "cancel", cancellation_reason: "already_handled", confirmed: true } },
+        ui_call: ->(user) {
+          feature_intent = FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve.find_by!(project: project)
+          authorize_record!(user, feature_intent, :cancel?, policy_class: FeatureIntentPolicy)
+        }
+      },
+      {
+        tool_name: "challenge_facet_assessment",
+        denied_user: -> {
+          project
+          create(:user, :member, account: account)
+        },
+        arguments: -> {
+          facet = create(:feature_intent_facet, feature_intent: create(:feature_intent, project: project))
+          { facet_id: facet.id, statement: "Denied correction.", chat_message_id: 0, confirmed: true }
+        },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :update?, policy_class: ProjectPolicy)
+        }
       }
     ] + operator_tool_scenarios
   end
@@ -808,6 +915,12 @@ RSpec.describe Tools::Registry do
   end
 
   private
+
+  def authorize_settings_edit!(user)
+    raise Tools::UnauthorizedError, "Tool calls require an authenticated user" if user.blank?
+
+    authorize_record!(user, user.settings, :edit?)
+  end
 
   def operator_tool_scenarios
     [

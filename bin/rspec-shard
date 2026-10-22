@@ -1,0 +1,18 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "rbconfig"
+require_relative "../scripts/lib/rspec_shards"
+
+# @spec TEST-SUITE-001
+# @spec TEST-SUITE-002
+root = File.expand_path("..", __dir__)
+count = Integer(ENV.fetch("RSPEC_SHARD_COUNT"))
+index = Integer(ENV.fetch("RSPEC_SHARD_INDEX"))
+files = Paid::RspecShards.select(root:, count:, index:)
+if ARGV == [ "--list" ]
+  puts files
+else
+  Dir.chdir(root)
+  exec(RbConfig.ruby, File.join(root, "bin/rspec"), *files, *ARGV)
+end

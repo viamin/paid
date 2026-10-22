@@ -39,6 +39,10 @@ the `Project#tdd_mode` configuration and labels from
   pre-commit check is skipped during `test_writing` — there is no
   implementation yet to mutate, and running mutant against freshly-written
   tests before they are reviewed would only produce noise.
+- Reconciling the required prompt safety/task instructions and pre-commit
+  behavior with the persisted phase. The TDD section is required and records
+  the phase-specific completion contract in prompt provenance, so profiles and
+  template overrides cannot restore a contradictory generic instruction.
 
 ## What this segment does NOT own
 
@@ -123,3 +127,19 @@ pre-commit hook. This segment adds one additional gate:
 checks continue to run after green as before, and the existing
 approved-tests write-guard boundary already prevents a mutation-driven fix
 from touching tests outside the `ReturnToTestReview` path.
+
+## Red-phase quality checks and completion
+
+The red phase still runs lint and the project's ordinary test command, but its
+pre-commit hook reports rather than rejects a nonzero test result. This permits
+the expected assertion failures that describe unimplemented behavior without
+asking an agent to bypass hooks. It is intentionally not a classifier of test
+output: the agent-facing phase guidance requires syntax, infrastructure, and
+unrelated failures to be resolved or reported before the tests-only commit.
+The structural write guard, lint, and later-phase green-test checks remain
+authoritative.
+
+A `test_writing` run commits only tests and permitted LID docs, then finishes;
+it never transitions itself to implementation. Paid publishes the draft PR and
+the persisted label gate selects the subsequent run: an automated test-review
+verdict in non-strict mode or human `paid-tests-approved` in strict mode.

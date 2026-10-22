@@ -3,10 +3,18 @@
     its embedded panel must reserve that same 2rem of viewport space at every
     breakpoint. The chat controller measures the panel's actual document
     offset after this frame is installed; together these keep the conversation
-    scrollable and composer reachable without the full chat-page shell. %>
+    scrollable and composer reachable without the full chat-page shell. At
+    `lg`+ the panel's `--chat-panel-height` resolves to `100%` (set by the
+    `[data-controller~="chat"]` rule) so it stays bounded to the shared
+    `list-detail` grid track and the inner `lg:overflow-y-auto` wrapper does
+    not become a second scroll container in front of the transcript (#4374
+    review). The Inbox host page gives the `<turbo-frame id="inbox-detail">`
+    matching the `frame_id` local `block h-full` so the panel's `height:
+    100%` can resolve against the shared grid track through the otherwise
+    `display: inline` (content-height) turbo-frame element. %>
 <%= turbo_frame_tag frame_id do %>
   <%= turbo_stream_from current_account, :chat_sessions %>
-  <%= turbo_stream_from chat_session.project, :chat_sessions if chat_session.clarifying_question_issue.present? %>
+  <%= turbo_stream_from chat_session.project, :chat_sessions if chat_session.project_scoped_exploration? %>
   <%= render "chat_sessions/chat_panel",
              chat_session: chat_session,
              chat_messages: chat_messages,

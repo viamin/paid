@@ -32,15 +32,15 @@ module Llm
     # the call falls back to the default CLI transport.
     #
     # @return [Hash]
-    def options
-      enabled? ? { mode: :text } : {}
+    def options(api_key: nil)
+      enabled?(api_key:) ? { mode: :text } : {}
     end
 
     # @return [Boolean] whether text mode should be used for this process.
-    def enabled?
+    def enabled?(api_key: nil)
       return false if kill_switch_enabled?
 
-      api_key_present?
+      api_key.present? || api_key_present?
     end
 
     def kill_switch_enabled?

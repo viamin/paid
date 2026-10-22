@@ -24,6 +24,48 @@ blocking `action_required` notification for the project instead of a GitHub
 comment. Escalations remain load-bearing through labels and PR phase state.
 
 Clarifying-question answers currently persist only in a marker-tagged GitHub
-comment. Until #4236 provides their description-section write-back, quiet mode
-rejects answer submission before it can clear an issue's needs-input state or
-misreport a successful post.
+comment. In quiet mode, the channel moves into a marked section of the issue
+or PR description: questions are written between `<!-- paid:clarifying-questions -->`
+and `<!-- /paid:clarifying-questions -->` markers, and answers between
+`<!-- paid:clarifying-answers -->` and `<!-- /paid:clarifying-answers -->` markers, with a
+stable question-set digest embedded in both sections so `Load` can match
+them without relying on `comment.created_at`. Body editing is the permitted
+channel in quiet mode, and a single shared `ClarifyingQuestions::SubmitAnswers`
+service writes through that channel for both the inbox controller and the
+linked-chat MCP tool so per-call-site branching stays out of the request path.
+Before writing either section, the service re-fetches the description and
+rebuilds the marked replacement when it changed, retaining a human edit that
+arrived while the replacement was being prepared. GitHub does not offer a
+conditional issue-body PATCH, so the API failure remains visible rather than
+claiming a retryable conflict response that the endpoint does not provide.
+When an operator has supplied a complete answer section matching the current
+questions digest, the next enhancement run consumes its new agent output; the
+preserved questions section is not treated as an incomplete prior enhancement.
+
+## Commit-message commentary channel (#4232)
+
+When quiet mode disables the per-push summary comment that
+`Activities::CompleteExistingPrunActivity` normally posts after a successful
+push to an existing PR, the agent's narrative does not disappear — it is
+rerouted into the commit messages the agent already writes for every push.
+The agent-facing prompt is the contract for that rerouting:
+
+- `Prompts::BuildForPr` injects a `commit_message_guidance` variable into the
+  PR follow-up prompt when quiet mode is on, with a separate Section
+  (`quiet_mode_commit_message`) in the PromptAssembly path. The guidance
+  tells the agent that no summary comment will be posted and that every
+  commit on the branch must carry a reviewer-facing subject and body. The
+  legacy builder appends that Section when a custom or pinned prompt version
+  omits the `commit_message_guidance` interpolation, so customization cannot
+  remove the contract.
+- `PromptAssembly::Sections::IssueTask` appends the same guidance as a
+  required assembly section after rendering the issue template (and the legacy
+  `Prompts::BuildForIssue` fallback injects it for its path), so project
+  overrides and pinned prompt versions cannot omit the contract for initial
+  implementation commits.
+
+`Activities::CompleteExistingPrunActivity` short-circuits both the
+`summary_comments_enabled?` and `add_comment` paths as soon as quiet mode is
+detected, so neither the LLM summary generation nor the comment API call
+runs in quiet mode. Comment generation is omitted alongside the post so the
+suppression does not pay for tokens it cannot emit.

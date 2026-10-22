@@ -46,8 +46,13 @@ module Tools
       max_pr_auto_continue_tokens
       token_limit_warning_threshold
       poll_interval_seconds
+      intent_threshold
+      technical_threshold
       pr_target
       upstream_full_name
+      new_feature_delivery_policy
+      confidence_delivery_enrollment_enabled
+      question_exploration_enabled
     ].freeze
 
     def self.tool_name = "update_project_settings"

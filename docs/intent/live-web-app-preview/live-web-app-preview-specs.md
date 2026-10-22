@@ -41,10 +41,26 @@
   *Test:* `spec/middleware/previews_proxy_spec.rb`, `spec/requests/previews_spec.rb`,
   `spec/requests/projects_spec.rb`.
 
-- [ ] **LIVE-PREVIEW-005** — When an agent performs interactive verification,
+- [x] **LIVE-PREVIEW-005** — When an agent performs interactive verification,
   the system SHALL persist a verification outcome and related artifacts beyond
   browser-sidecar provisioning so review flows can see what the agent actually
   verified.
+  *Code:* `app/services/agent_runs/verification_result_recorder.rb`,
+  `app/services/agent_runs/verification_prompt.rb`.
+  *Test:* `spec/services/agent_runs/verification_result_recorder_spec.rb`,
+  `spec/services/agent_runs/verification_prompt_spec.rb`.
+
+- [x] **LIVE-PREVIEW-010** — When interactive verification records an outcome,
+  the system SHALL retain agent-reported status and browser claims separately
+  from recorder-owned commit, runtime, artifact, and freshness observations.
+  It SHALL represent passed, failed, skipped, and not-run criterion coverage
+  without treating an unobserved report, screenshot, or app log as proof of an
+  arbitrary acceptance criterion; it SHALL expose missing, inaccessible,
+  oversized, forged, and stale evidence explicitly. Recorder-retained artifacts
+  SHALL use the existing project storage namespace and run-owned provenance;
+  this evidence SHALL not grant merge authority.
+  *Code:* `app/services/agent_runs/verification_result_recorder.rb`.
+  *Test:* `spec/services/agent_runs/verification_result_recorder_spec.rb`.
 
 - [x] **LIVE-PREVIEW-006** — When a Playwright trace is recorded for a real
   agent run, the system SHALL publish it through the same durable key contract

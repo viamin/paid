@@ -15,12 +15,24 @@ RSpec.describe ChatSession do
     it { is_expected.to belong_to(:account) }
     it { is_expected.to belong_to(:project).optional }
     it { is_expected.to belong_to(:clarifying_question_issue).class_name("Issue").optional }
+    it { is_expected.to belong_to(:feature_intent).optional }
     it { is_expected.to belong_to(:runner).optional }
     it { is_expected.to belong_to(:created_by).class_name("User").optional }
     it { is_expected.to have_many(:messages).class_name("ChatMessage").dependent(:destroy) }
     it { is_expected.to have_many(:token_usages).dependent(:destroy) }
     it { is_expected.to have_many(:chat_session_projects).dependent(:destroy) }
     it { is_expected.to have_many(:projects).through(:chat_session_projects) }
+
+    # @spec QUESTION-EXPLORATION-010
+    # Investigations hold a null:false FK onto clarifying_question_progresses,
+    # so the session must destroy them before tearing down the progresses.
+    it "destroys investigations and question progress without FK violations" do
+      investigation = create(:chat_investigation)
+
+      expect { investigation.chat_session.destroy! }
+        .to change(ChatInvestigation, :count).by(-1)
+        .and change(ClarifyingQuestionProgress, :count).by(-1)
+    end
   end
 
   describe "validations" do
@@ -62,6 +74,66 @@ RSpec.describe ChatSession do
       expect(session).not_to be_valid
       expect(session.errors[:clarifying_question_issue]).to include("must belong to the chat project")
     end
+
+    # @spec QUESTION-EXPLORATION-018
+    it "requires a linked feature intent to belong to the chat project" do
+      account = create(:account)
+      session_project = create(:project, account: account)
+      feature = create(:feature_intent, project: create(:project, account: account))
+      session = build(:chat_session, account: account, project: session_project, feature_intent: feature)
+
+      expect(session).not_to be_valid
+      expect(session.errors[:feature_intent]).to include("must belong to the chat project")
+    end
+  end
+
+  describe "#exploration_issue" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:project) { create(:project, account: account) }
+    let(:issue) { create(:issue, project: project) }
+    let(:feature) { create(:feature_intent, project: project) }
+
+    before do
+      create(:feature_intent_issue, feature_intent: feature, issue: issue)
+    end
+
+    it "resolves the linked issue for a standalone conversation" do
+      chat = create(:chat_session, account: account, created_by: user, project: project,
+        clarifying_question_issue: issue)
+
+      expect(chat.exploration_issue).to eq(issue)
+    end
+
+    # @spec QUESTION-EXPLORATION-018
+    it "resolves the focused issue of a feature conversation" do
+      other_issue = create(:issue, project: project)
+      create(:feature_intent_issue, feature_intent: feature, issue: other_issue)
+      chat = create(:chat_session, account: account, created_by: user, project: project,
+        clarifying_question_issue: issue, feature_intent: feature,
+        metadata: {
+          "clarifying_question_issue_id" => issue.id,
+          "exploration_focus" => { "issue_id" => other_issue.id, "questions" => [ "Q?" ] }
+        })
+
+      expect(chat.exploration_issue).to eq(other_issue)
+    end
+
+    it "falls back to the linked issue when the focus names an issue outside the feature" do
+      stranger_issue = create(:issue, project: project)
+      chat = create(:chat_session, account: account, created_by: user, project: project,
+        clarifying_question_issue: issue, feature_intent: feature,
+        metadata: { "exploration_focus" => { "issue_id" => stranger_issue.id } })
+
+      expect(chat.exploration_issue).to eq(issue)
+    end
+
+    it "falls back to the linked issue when a feature conversation carries no focus" do
+      chat = create(:chat_session, account: account, created_by: user, project: project,
+        clarifying_question_issue: issue, feature_intent: feature)
+
+      expect(chat.exploration_issue).to eq(issue)
+    end
   end
 
   describe "linked sidebar broadcasts" do
@@ -73,6 +145,27 @@ RSpec.describe ChatSession do
 
       create(:chat_session, account: account, created_by: user, project: project,
         clarifying_question_issue: create(:issue, project: project))
+
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_prepend_to).with(
+        [ project, :chat_sessions ],
+        target: "chat_sessions_list_active",
+        partial: "chat_sessions/session_card",
+        locals: hash_including(:chat_session)
+      )
+      expect(Turbo::StreamsChannel).not_to have_received(:broadcast_prepend_to).with(
+        [ account, :chat_sessions ],
+        anything
+      )
+    end
+
+    # @spec QUESTION-EXPLORATION-018
+    it "broadcasts feature conversation cards to the project stream" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account: account)
+      feature = create(:feature_intent, project: project)
+
+      create(:chat_session, account: account, created_by: user, project: project, feature_intent: feature)
 
       expect(Turbo::StreamsChannel).to have_received(:broadcast_prepend_to).with(
         [ project, :chat_sessions ],

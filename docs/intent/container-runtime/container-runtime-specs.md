@@ -39,6 +39,15 @@
   *Tests:* `spec/services/containers/service_provisioner_spec.rb`
   *Code:* `Containers::ServiceProvisioner`
 
+- [x] **CONTAINER-RUNTIME-042** — When reconciliation finds a running service
+  container whose Docker-reported image differs from its persisted requested
+  image, or a PostgreSQL service still configured with an old Paid default, it
+  SHALL report the runtime/configuration drift and an operator remediation
+  path; it SHALL not stop, delete, or replace the container, so a stateful
+  service's persisted data and tenant-selected configuration remain intact.
+  *Tests:* `spec/jobs/service_container_reconciliation_job_spec.rb`.
+  *Code:* `ServiceContainerReconciliationJob`.
+
 - [x] **CONTAINER-RUNTIME-005** — When Paid collects Docker capacity for a
   backend, the system SHALL classify visible usage into Paid control-plane,
   Paid agent, Paid service-container, and other-Docker buckets, cache the

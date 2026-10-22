@@ -44,10 +44,14 @@ module ChatSessions
     # Lower-priority sections are dropped first when the prompt exceeds the budget.
     def build_sections
       sections = []
+      explicit_preferences_content = explicit_preferences_section
+      facet_confidence_content = facet_confidence_context if primary_project
       sections << { priority: 0, content: base_identity }
       sections << { priority: 1, content: page_context } if page_context.present?
       sections << { priority: 1, content: project_context } if primary_project
-      sections << { priority: 1, content: clarifying_questions_context } if clarifying_question_issue
+      sections << { priority: 1, content: facet_confidence_content } if facet_confidence_content.present?
+      sections << { priority: 1, content: clarifying_questions_context } if exploration_issue
+      sections << { priority: 1, content: explicit_preferences_content } if explicit_preferences_content.present?
       # @spec PROJECT-CREATION-010 — a fresh (blank) project needs its setup
       # interview surfaced in every chat started against it, so setup can also
       # happen from a plain new chat session.
@@ -95,6 +99,7 @@ module ChatSessions
       - Answering questions about codebases and project status
 
       When the user asks you to perform actions (trigger runs, list projects, etc.), use the available tools.
+      When a user needs to visit a Paid page, offer a descriptive Markdown root-relative Paid link. For example, use `[Add an API key](/provider_api_keys/new#api-key-form)` when they need to add an API key. The chat popup stays open when the user follows one of these links, so they can continue the conversation at the destination.
       For code discovery in a repo, prefer tools in this order: `search_code` first (Paid's knowledge-base search — the first choice for semantic or keyword discovery), `read_repo_file` when the file path is known, then `grep_repo` only when knowledge search is unavailable or stale, or exact GitHub Code Search behavior is needed. `grep_repo` is backed by GitHub Code Search and spends its small rate-limit bucket, so avoid it during routine exploration.
       When the user asks to create a new feature (for example, "create a new feature: add dark mode"), gather intent through adaptive questions covering problem, desired behavior, constraints, rejected alternatives, scope, and done-ness. When exploration produces useful problem framing, also record observations, supplied evidence/references, affected stakeholders, the selected framing and rationale, material alternatives, unresolved assumptions or AI hypotheses, desired outcome, and reconsideration conditions. Set `selected_framing_confirmed` to true only after the user confirms the framing; an AI-proposed framing keeps it false so the design treats it as a hypothesis. Do not present hypotheses as confirmed facts or invent evidence. Read the codebase with `search_code` / `read_repo_file` to ask targeted questions grounded in the actual project. When the feature brief is complete, trigger a `create_feature` agent run via `trigger_agent_run` with the complete structured brief serialized as JSON in the `custom_prompt` field.
       When the user explicitly asks to explore the problem or reframe this feature, offer an optional problem-exploration conversation before or during feature design. Draw on the existing conversation and repository context (via `search_code` / `read_repo_file`) to separate observed conditions, affected stakeholders, desired outcomes, and assumed causes. Reuse settled facts and preferences; never run a fixed questionnaire, and never ask the user to supply facts the repository or conversation already provides. Ask only questions whose answers could materially change the design. Where useful, compare two or three plausible problem framings and how each changes the possible response; present those framings and any causal explanations as tentative hypotheses — not established facts or user decisions — unless they are supported by evidence the user supplied, and treat repository inspection as evidence about the code, not proof of customer behavior. The user may select or revise a framing, continue with the original request, investigate first, or decide not to build. None of these choices requires an approval gate. You may suggest a small observation or experiment in chat, but do not execute or track experiments. An exploration outcome must not itself trigger a `create_feature` agent run or file implementation issues; trigger the run only when the user asks to proceed. End the exploration with a concise, user-reviewable summary in the conversation: observations and evidence, affected stakeholders, chosen framing, assumptions, desired outcome, and what would justify reconsidering the framing later.
@@ -133,6 +138,45 @@ module ChatSessions
       parts.compact.join("\n\n")
     end
 
+    # Persisted assessment state is deliberately rendered as data. Assessment
+    # work belongs to FeatureIntents::AssessFacetJob, never a chat/page read.
+    # @spec FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
+    def facet_confidence_context
+      assessments = current_facet_assessments
+      return if assessments.empty?
+
+      <<~PROMPT.strip
+        ## Facet Confidence
+        #{assessments.map { |assessment| render_facet_assessment(assessment) }.join("\n")}
+
+        Treat expressed intent evidence, inferred fit, and demonstrated feasibility as distinct. Scores are advisory shadow-mode assessments and do not authorize work release. If a user challenges an interpretation, retain their explicit correction as new evidence and request reassessment.
+      PROMPT
+    end
+
+    def current_facet_assessments
+      FeatureIntentFacetAssessment.includes(feature_intent_facet_direction: :feature_intent_facet)
+        .joins(feature_intent_facet_direction: :feature_intent_facet)
+        .where(feature_intent_facets: { feature_intent_id: FeatureIntent.where(project: primary_project).select(:id) })
+        .where(status: %w[completed unknown failed pending])
+        .order(created_at: :desc).limit(20).to_a
+        .select { |assessment| assessment.evidence_revision == assessment.feature_intent_facet_direction.feature_intent_facet.evidence_revision }
+        .uniq(&:feature_intent_facet_direction_id)
+    end
+
+    def render_facet_assessment(assessment)
+      direction = assessment.feature_intent_facet_direction
+      [
+        "- #{direction.feature_intent_facet.name} / #{direction.name}: #{assessment.status}",
+        "  - Intent certainty: #{display_score(assessment.intent_score)}",
+        "  - Technical confidence: #{display_score(assessment.technical_score)}",
+        "  - Expressed intent evidence: #{assessment.evidence_references.join(", ").presence || "none cited"}",
+        "  - Inferred fit: assessment interpretation — #{assessment.explanation}",
+        "  - Demonstrated feasibility: technical score above; verify cited technical evidence before treating it as proof."
+      ].join("\n")
+    end
+
+    def display_score(score) = score.nil? ? "unknown" : "#{score}/100"
+
     # @spec PROJECT-CREATION-010
     def project_setup_section
       "## Project Setup Needed\n\n" + Projects::BuildSetupPrompt.call(project: primary_project)
@@ -168,21 +212,37 @@ module ChatSessions
       chat_session.account.onboarding_completed_at.blank?
     end
 
-    # @spec QUESTION-EXPLORATION-001
+    # @spec QUESTION-EXPLORATION-001 @spec QUESTION-EXPLORATION-008 @spec QUESTION-EXPLORATION-013
+    # @spec QUESTION-EXPLORATION-011 @spec FACET-CONFIDENCE-006 @spec FACET-CONFIDENCE-007
     # The pending questions are snapshotted into session metadata by
     # ClarifyingQuestions::OpenChat before the session row is inserted, so
     # this section never performs GitHub I/O while ChatSessions::Create's
     # insert transaction is open.
     # @spec QUESTION-EXPLORATION-016
     def clarifying_questions_context
-      issue = clarifying_question_issue
+      issue = exploration_issue
       questions = Array(chat_session.metadata&.dig("clarifying_questions"))
+      progress_by_position = progress_by_position_for(questions)
       <<~PROMPT.strip
+        #{feature_conversation_header}
         ## Clarifying Questions for #{issue.is_pull_request? ? "PR" : "Issue"} ##{issue.github_number}: #{issue.title}
-        #{questions.each_with_index.map { |question, index| render_pending_question(question, index:) }.join("\n")}
+        #{questions.each_with_index.map { |question, index| render_pending_question(question, index:, progress: progress_by_position[index + 1]) }.join("\n")}
 
-        Help the user explore these questions and ask focused follow-ups when needed. Once every question has a final answer, call `submit_clarifying_answers` with the answers in the displayed order. For a choice question, answer with one selection per line: the option's displayed text (extra rationale may follow), its number, or its letter, or an `Other: <description>` line when no option fits. That action posts the answers to GitHub and resolves this inbox item, so ask for confirmation through the tool rather than claiming it has been posted.
+        Help the user explore these questions and ask focused follow-ups when needed. Before asking for facts, inspect available repository and Inbox context with the read-only tools. Choose the aid that the evidence makes useful; if the useful method is unclear, ask how the user wants to investigate. The user can redirect that method at any time. Use A/B questions only to distinguish plausible directions: always accept either direction, both, neither, conditions, and free-text alternatives. Do not treat a diagram click, selection, collapse, trial edit, or an assessment inference as a durable preference. A contextual answer applies only to its current question unless the user explicitly states a preference and explicitly chooses or clarifies its scope.
+
+        A confirmed answer to one question can be saved with `save_clarifying_answer` and remains a draft: it does not post to GitHub or resolve the inbox item. Include useful human context from a temporary diagram or research finding when saving it. Once every question has a final answer, call `submit_clarifying_answers` with the answers in the displayed order. For a choice question, answer with one selection per line: the option's displayed text (extra rationale may follow), its number, or its letter, or an `Other: <description>` line when no option fits. That action posts the answers to GitHub and resolves this inbox item, so ask for confirmation through the tool rather than claiming it has been posted.
       PROMPT
+    end
+
+    # @spec QUESTION-EXPLORATION-018
+    # A feature conversation names the feature whose issues share it, so the
+    # assistant keeps the shared context in mind while answering the focused
+    # issue's questions.
+    def feature_conversation_header
+      return "" unless chat_session.feature_intent
+
+      "## Feature Conversation: #{chat_session.feature_intent.title}\n" \
+        "All issues linked to this feature share this conversation.\n\n"
     end
 
     # @spec QUESTION-EXPLORATION-016
@@ -190,15 +250,26 @@ module ChatSessions
     # folded `- ( ) Label) text` marker form stored in the snapshot) so the
     # assistant can echo a selectable string exactly as the validator accepts
     # it. Free-text questions render unchanged.
-    def render_pending_question(question, index:)
+    def render_pending_question(question, index:, progress: nil)
       choices = ClarifyingQuestions::Choices.call(question: question)
-      return "#{index + 1}. #{question}" if choices.nil?
-
-      prose = question.split(ClarifyingQuestions::Choices::ANY_MARKER).first.to_s.strip
-      option_lines = choices[:options].map do |option|
-        "   - #{ClarifyingQuestions::ChoiceAnswers.option_line(label: option[:label], text: option[:text])}"
+      rendered = if choices.nil?
+        "#{index + 1}. #{question}"
+      else
+        prose = question.split(ClarifyingQuestions::Choices::ANY_MARKER).first.to_s.strip
+        option_lines = choices[:options].map do |option|
+          "   - #{ClarifyingQuestions::ChoiceAnswers.option_line(label: option[:label], text: option[:text])}"
+        end
+        ([ "#{index + 1}. #{prose}" ] + option_lines).join("\n")
       end
-      ([ "#{index + 1}. #{prose}" ] + option_lines).join("\n")
+      return rendered if progress&.answer.blank?
+
+      "#{rendered}\n   - Saved draft answer: #{progress.answer}"
+    end
+
+    def progress_by_position_for(questions)
+      digest = ClarifyingQuestions::SaveProgress.question_digest(questions)
+      exploration_issue.clarifying_question_progresses
+        .answered.where(question_digest: digest).ordered.index_by(&:position)
     end
 
     def cross_project_context
@@ -226,6 +297,12 @@ module ChatSessions
         ## Preferences
         Prefer concise, technical responses. Show code when relevant. Ask before making destructive changes.
       PROMPT
+    end
+
+    # @spec FACET-CONFIDENCE-007
+    def explicit_preferences_section
+      statements = explicit_preferences.map { |preference| "- #{preference.statement}" }
+      "## Explicit Preferences\n\n#{statements.join("\n")}".strip
     end
 
     # --- Section helpers ---
@@ -310,8 +387,21 @@ module ChatSessions
       @primary_project ||= chat_session.project
     end
 
-    def clarifying_question_issue
-      chat_session.clarifying_question_issue
+    def explicit_preferences
+      return ExplicitPreference.none unless chat_session.created_by
+
+      @explicit_preferences ||= ExplicitPreferences::Context.call(
+        owner: chat_session.created_by,
+        project: primary_project,
+        feature_intent: chat_session.feature_intent || exploration_issue&.feature_intent
+      )
+    end
+
+    # @spec QUESTION-EXPLORATION-018
+    # Resolves the issue the conversation currently focuses on: the linked
+    # standalone issue, or the focus issue of a feature conversation.
+    def exploration_issue
+      chat_session.exploration_issue
     end
 
     def reference_projects

@@ -18,6 +18,7 @@ RSpec.describe Tools::Registry do
   let(:write_tool_names) do
     %w[
       trigger_agent_run
+      trigger_readiness_bootstrap
       cancel_agent_run
       request_issue_continuation
       resolve_issue_closeout
@@ -28,6 +29,7 @@ RSpec.describe Tools::Registry do
       update_user_settings
       update_tenant_settings
       update_project_settings
+      update_issue_control_state
       apply_configuration_profile
       create_provider_api_key
       create_runner
@@ -53,9 +55,16 @@ RSpec.describe Tools::Registry do
       edit_issue
       set_labels
       submit_clarifying_answers
+      save_clarifying_answer
+      start_chat_investigation
+      present_chat_diagram
+      save_explicit_preference
+      challenge_facet_assessment
+      delete_explicit_preference
       verify_apple_project
       capture_apple_screenshot
       stop_apple_verification
+      manage_feature_intent
     ]
   end
 
@@ -226,7 +235,7 @@ RSpec.describe Tools::Registry do
       names = definitions.map { |definition| definition[:name] }
 
       expect(names).to include("list_projects", "get_project", "operator_console_inventory")
-      expect(names).not_to include("trigger_agent_run", "operator_suspend_account")
+      expect(names).not_to include("trigger_agent_run", "present_chat_diagram", "operator_suspend_account")
     end
   end
 
@@ -265,6 +274,16 @@ RSpec.describe Tools::Registry do
 
       expect(schema[:properties]).not_to have_key(:confirmed)
       expect(schema[:required]).not_to include("confirmed")
+    end
+
+    # @spec CHAT-API-020
+    it "advertises OpenAI-compatible parameter-schema roots" do
+      schemas = described_class.chat_definitions_for(user: user, session: chat_session).map { |definition| definition[:inputSchema] }
+
+      schemas.each do |schema|
+        expect(schema[:type]).to eq("object")
+        expect(schema).not_to include(:oneOf, :anyOf, :allOf, :enum, :const, :not)
+      end
     end
 
     it "leaves read-only tool schemas untouched" do

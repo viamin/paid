@@ -212,25 +212,27 @@ module Api
       return unless @knowledge_run
 
       runner_key = resolved_knowledge_run_runner_key
+      return if performed?
+
       return knowledge_run_provider_api_key(provider.to_s) unless runner_key
 
-      config = Runner::DIRECT_OUTBOUND_API_PROVIDERS[runner_key]
-      unless config
+      service_type = knowledge_run_service_type(runner_key)
+      unless service_type
         log_error("secrets_proxy.invalid_knowledge_runner", "Unknown knowledge runner #{runner_key}")
         render json: { error: "Knowledge runner is not available for this run" }, status: :forbidden
         return nil
       end
 
-      unless compatible_proxy_route?(provider, runner_key)
+      unless compatible_proxy_route?(provider, service_type)
         log_error("secrets_proxy.invalid_knowledge_runner_route", "Runner #{runner_key} is incompatible with #{provider}")
         render json: { error: "Knowledge runner is not compatible with this proxy route" }, status: :forbidden
         return nil
       end
 
-      key = knowledge_run_provider_api_key(config.fetch(:service_type))
+      key = knowledge_run_provider_api_key(service_type, runner: runner_key)
       return key if key.present?
 
-      return nil if runner_key == "openai"
+      return nil if service_type == "openai"
 
       log_error("secrets_proxy.missing_knowledge_runner_key", "No API key configured for knowledge runner #{runner_key}")
       render json: { error: "API key not configured for knowledge runner #{runner_key}" }, status: :service_unavailable
@@ -242,7 +244,7 @@ module Api
       request_path = (params[:path] || "").sub(%r{\A/+}, "")
       return { base_url: "https://api.openai.com", path: request_path } unless runner_key && @knowledge_run
 
-      config = Runner::DIRECT_OUTBOUND_API_PROVIDERS[runner_key]
+      config = Runner::DIRECT_OUTBOUND_API_PROVIDERS[runner_key] if @knowledge_run.operation_type == "embedding"
       return { base_url: "https://api.openai.com", path: request_path } unless config
 
       uri = URI.parse(config.fetch(:base_url))
@@ -265,24 +267,44 @@ module Api
       nil
     end
 
-    def compatible_proxy_route?(provider, runner_key)
+    def compatible_proxy_route?(provider, service_type)
       case provider.to_sym
       when :openai
-        Runner::OPENAI_COMPATIBLE_DIRECT_OUTBOUND_API_PROVIDER_KEYS.include?(runner_key)
+        openai_compatible_service_types.include?(service_type)
       when :anthropic
-        runner_key == "anthropic"
+        service_type == "anthropic"
       else
         false
       end
     end
 
-    def knowledge_run_provider_api_key(service_type)
-      @knowledge_run.project.effective_owner
-        &.provider_api_keys
-        &.for_api_service_type(service_type)
-        &.order(created_at: :desc, id: :desc)
-        &.first
-        &.api_key
+    def knowledge_run_service_type(runner_key)
+      if @knowledge_run.operation_type == "embedding"
+        Runner::DIRECT_OUTBOUND_API_PROVIDERS.dig(runner_key, :service_type)
+      else
+        RunnerSupport.api_service_type_for(runner_key)
+      end
+    end
+
+    def openai_compatible_service_types
+      @openai_compatible_service_types ||= Runner::OPENAI_COMPATIBLE_DIRECT_OUTBOUND_API_PROVIDER_KEYS.filter_map do |key|
+        Runner::DIRECT_OUTBOUND_API_PROVIDERS.dig(key, :service_type)
+      end
+    end
+
+    def knowledge_run_provider_api_key(service_type, runner: nil)
+      selected_runner = runner || @knowledge_run.final_runner
+      selection = Knowledge::CredentialSelection.call(
+        owner: @knowledge_run.project.effective_owner,
+        operation: @knowledge_run.operation_type == "embedding" ? :embedding : :chat,
+        runner: selected_runner
+      )
+      return selection.api_key if selection.status == :ready && selection.service_type == service_type
+      return unless selection.status == :invalid_credential
+
+      log_error("secrets_proxy.missing_knowledge_credential", "No selected API key configured for #{service_type}")
+      render json: { error: "Select a #{service_type} API key for this knowledge operation" }, status: :service_unavailable
+      nil
     end
 
     # @spec RUNNER-USAGE-005 — the fallback flag never unlocks agent-run key

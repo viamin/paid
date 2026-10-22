@@ -87,6 +87,7 @@ RSpec.describe DockerHosts::SetupActionRunner do
       result = described_class.call(
         host: host,
         action: "generate_server_material",
+        key_size: 1024,
         params: ActionController::Parameters.new(
           server_common_name: "docker.example.test",
           server_sans: "docker.example.test,100.113.201.1",
@@ -114,6 +115,7 @@ RSpec.describe DockerHosts::SetupActionRunner do
       result = described_class.call(
         host: host,
         action: "generate_server_material",
+        key_size: 1024,
         params: ActionController::Parameters.new(
           server_common_name: "docker.example.test",
           server_sans: "docker.example.test,100.113.201.1",
@@ -485,10 +487,12 @@ RSpec.describe DockerHosts::SetupActionRunner do
     end
   end
 
+  # @spec TEST-SUITE-007
   def generate_client_bundle
     described_class.call(
       host: host,
       action: "generate_client_bundle",
+      key_size: 1024,
       params: ActionController::Parameters.new(client_common_name: "paid-client")
     )
   end
@@ -505,6 +509,7 @@ RSpec.describe DockerHosts::SetupActionRunner do
     described_class.call(
       host: host,
       action: "generate_server_material",
+      key_size: 1024,
       params: ActionController::Parameters.new(
         server_common_name: "docker.example.test",
         server_sans: "docker.example.test,100.113.201.1",

@@ -70,6 +70,21 @@ RSpec.describe Activities::CreatePullRequestActivity do
     )
   end
 
+  # Records an explicit feature-decisions emission block on the run's stdout
+  # so FEATURE-APPROVAL-019 attachment materializes real rows.
+  def log_decision_emissions(run)
+    run.log!("stdout", <<~TEXT)
+      Opened the RDR PR.
+
+      <!-- feature-decisions-start -->
+      [
+        {"kind": "question", "design_claim": "Dark mode applies to the settings UI", "prompt": "Should dark mode apply to the marketing pages too?"},
+        {"kind": "inferred_decision", "design_claim": "Theme persistence is per user", "prompt": "Persisting the theme per user account."}
+      ]
+      <!-- feature-decisions-end -->
+    TEXT
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
     allow(github_client).to receive_messages(
@@ -105,6 +120,37 @@ RSpec.describe Activities::CreatePullRequestActivity do
         required: true
       )
       expect(feature_intent.reload.status).to eq("design_open")
+    end
+
+    it "materializes run-emitted decisions when attaching a create-feature design PR" do # @spec FEATURE-APPROVAL-019
+      agent_run.update!(goal: "create_feature")
+      feature_intent = create(:feature_intent, project: project, status: "discovering")
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+      log_decision_emissions(agent_run)
+      pull_request = OpenStruct.new(number: 42, head: OpenStruct.new(sha: "a" * 40))
+
+      activity.send(:attach_to_feature_intent!, agent_run, pull_request)
+
+      decisions = feature_intent.reload.feature_intent_decisions
+      expect(decisions.count).to eq(2)
+      expect(decisions.questions.open_decisions.map(&:prompt))
+        .to include("Should dark mode apply to the marketing pages too?")
+      expect(decisions.inferred_decisions.open_decisions.map(&:prompt))
+        .to include("[inferred] Persisting the theme per user account.")
+      expect(feature_intent.status).to eq("needs_decision")
+    end
+
+    it "records no decisions when the run emitted none" do # @spec FEATURE-APPROVAL-019
+      agent_run.update!(goal: "create_feature")
+      feature_intent = create(:feature_intent, project: project, status: "discovering")
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+      agent_run.log!("stdout", "Opened the RDR PR. No open questions.")
+      pull_request = OpenStruct.new(number: 42, head: OpenStruct.new(sha: "a" * 40))
+
+      activity.send(:attach_to_feature_intent!, agent_run, pull_request)
+
+      expect(feature_intent.reload.feature_intent_decisions).to be_empty
+      expect(feature_intent.status).to eq("design_open")
     end
 
     it "rejects a source-linked branch after reconciling a reserved PR" do # @spec EAGER-QUEUE-010
@@ -519,6 +565,29 @@ RSpec.describe Activities::CreatePullRequestActivity do
       expect(github_client).to have_received(:add_labels_to_issue).with(
         project.full_name, 42, include("paid-tests-ready-for-review")
       )
+    end
+
+    it "marks ignored-mode upstream test-writing PRs ready without label capability" do # @spec LABEL-CONTROL-005
+      project.update!(
+        label_integration_mode: "ignored", pr_target: "upstream",
+        upstream_full_name: "stenolabs/stenoai", auto_add_labels_enabled: false,
+        inherit_priority_labels: false
+      )
+      agent_run.update!(
+        tdd_phase: "test_writing",
+        base_commit_sha: "def123def456789012345678901234567890abcd",
+        result_commit_sha: "abc123def456789012345678901234567890abcd"
+      )
+      allow(github_client).to receive(:repository)
+        .with("stenolabs/stenoai")
+        .and_return(OpenStruct.new(default_branch: "main"))
+      allow(github_client).to receive(:compare_changed_files).and_return([ "spec/models/widget_spec.rb" ])
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      pull_request = project.issues.pull_requests_only.find_by!(github_number: 42)
+      expect(pull_request.tdd_review_state).to eq("ready_for_review")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
     end
 
     it "marks the agent run as completed with PR details" do
@@ -1358,6 +1427,35 @@ RSpec.describe Activities::CreatePullRequestActivity do
     end
 
     # @spec TDD-GUARD-006
+    # @spec PROJECT-READINESS-008
+    context "when the run is a readiness bootstrap" do
+      let(:bootstrap_run) do
+        create(:agent_run, :with_git_context, project: project, goal: "bootstrap_readiness", issue: nil,
+          custom_prompt: "Establish the missing test harness prerequisites.")
+      end
+
+      before do
+        bootstrap_run.update!(result_commit_sha: "abc123def456789012345678901234567890abcd")
+      end
+
+      it "allows harness artifacts" do
+        allow(github_client).to receive(:compare_changed_files)
+          .and_return([ ".github/workflows/gdunit.yml", "project.godot", "tests/.gitkeep" ])
+
+        expect { activity.execute(agent_run_id: bootstrap_run.id) }.not_to raise_error
+      end
+
+      it "reports behavior-bearing files outside the harness boundary" do
+        allow(github_client).to receive(:compare_changed_files)
+          .and_return([ ".github/workflows/gdunit.yml", "scripts/player.gd" ])
+
+        expect {
+          activity.execute(agent_run_id: bootstrap_run.id)
+        }.to raise_error(RuntimeError, /Bootstrap write guard violation.*scripts\/player.gd/)
+        expect(bootstrap_run.reload.agent_run_logs.where(log_type: "system").pluck(:content).join("\n")).to include("scripts/player.gd")
+      end
+    end
+
     context "when the run is TDD-governed" do
       let(:tdd_phase) { "refactor" }
       let(:tdd_agent_run) do
@@ -2070,6 +2168,27 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(result[:pull_request_number]).to eq(99)
         expect(agent_run.reload.status).to eq("completed")
         expect(agent_run.pull_request_url).to eq("https://github.com/#{project.full_name}/pull/99")
+      end
+
+      it "preserves an operator-set ignored-mode TDD verdict when a test-writing activity retries against a reused PR" do # @spec LABEL-CONTROL-005
+        project.update!(label_integration_mode: "ignored")
+        agent_run.update!(
+          tdd_phase: "test_writing",
+          base_commit_sha: "def123def456789012345678901234567890abcd",
+          result_commit_sha: "abc123def456789012345678901234567890abcd"
+        )
+        create(:issue, :pull_request, project: project, github_issue_id: 9999, github_number: existing_pr.number,
+          github_state: "open", parent_issue_id: nil, tdd_review_state: "approved")
+        allow(github_client).to receive_messages(
+          pull_requests: [ existing_pr ],
+          compare_changed_files: [ "spec/models/widget_spec.rb" ]
+        )
+
+        activity.execute(agent_run_id: agent_run.id)
+
+        pull_request = project.issues.pull_requests_only.find_by!(github_number: existing_pr.number)
+        expect(pull_request.tdd_review_state).to eq("approved")
+        expect(github_client).not_to have_received(:add_labels_to_issue)
       end
 
       it "still marks the run completed when post-processing raises" do

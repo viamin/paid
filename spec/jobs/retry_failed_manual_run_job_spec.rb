@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec MANUAL-RUN-RETRY-001 MANUAL-RUN-RETRY-005
+# @spec MANUAL-RUN-RETRY-001 MANUAL-RUN-RETRY-005 PROJECT-READINESS-007
 RSpec.describe RetryFailedManualRunJob do
   let(:project) { create(:project) }
 
@@ -105,6 +105,16 @@ RSpec.describe RetryFailedManualRunJob do
     it "does nothing when the project toggle has since been disabled" do
       original = create(:agent_run, :failed, :manual, :with_custom_prompt, project: project, goal: "create_pr")
       project.update!(retry_failed_manual_runs: false)
+
+      expect {
+        described_class.new.perform(original.id, 1)
+      }.not_to change(AgentRun, :count)
+
+      expect(original.reload.status).to eq("failed")
+    end
+
+    it "does not retry a bootstrap run that failed before producing output" do
+      original = create(:agent_run, :failed, :manual, :with_custom_prompt, project: project, goal: "bootstrap_readiness")
 
       expect {
         described_class.new.perform(original.id, 1)

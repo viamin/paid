@@ -8,7 +8,7 @@
 - **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: N/A (foundational decision)
+- **Related Issues**: #4, #3180 (original implementation and subsequent LID backfill; historical linkage, not a new acceptance audit)
 - **Related Tests**: Integration tests for Rails controllers, Hotwire functionality
 
 ## Implementation Status

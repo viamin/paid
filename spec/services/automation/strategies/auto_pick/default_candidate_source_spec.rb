@@ -5,6 +5,16 @@ require "rails_helper"
 RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
   let(:project) { create(:project, auto_pick_enabled: true) }
 
+  # @spec OPERATOR-INBOX-016
+  it "limits closeout eligibility checks to supplied candidates without bypassing guards" do
+    eligible = create(:issue, project: project, github_state: "open")
+    held = create(:issue, project: project, github_state: "open")
+    held.update_columns(paused: true)
+    create(:issue, project: project, github_state: "open")
+
+    expect(described_class.eligible_scope(project, issue_ids: [ eligible.id, held.id ]).pluck(:id)).to eq([ eligible.id ])
+  end
+
   describe ".next_candidate" do
     it "returns the top-ranked eligible issue for the project" do
       issue = create(:issue, project: project, github_state: "open")
@@ -23,6 +33,15 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
       p1 = create(:issue, project: project, github_number: 2, labels: [ "P1" ])
 
       expect(described_class.next_candidate(project)).to eq(p1)
+    end
+
+    it "uses local priority instead of labels in ignored mode" do # @spec LABEL-CONTROL-003 LABEL-CONTROL-007
+      project.update!(label_integration_mode: "ignored")
+      _labeled = create(:issue, project:, github_number: 1, labels: [ "P1" ], control_priority: "P3",
+        paid_activation_state: "activated")
+      local = create(:issue, project:, github_number: 2, control_priority: "P1", paid_activation_state: "activated")
+
+      expect(described_class.next_candidate(project)).to eq(local)
     end
 
     it "matches configured priority labels case-insensitively" do
@@ -64,6 +83,18 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
   end
 
   describe ".eligible_scope" do
+    it "includes a confidence-driven issue only after its planning hold is reconciled" do # @spec CONFIDENCE-DELIVERY-005
+      issue = create(:issue, project: project, github_state: "open")
+      feature = create(:feature_intent, :confidence_driven, project: project)
+      link = create(:feature_intent_issue, feature_intent: feature, issue: issue)
+
+      expect(described_class.eligible_scope(project)).not_to include(issue)
+
+      link.update!(release_state: "released")
+
+      expect(described_class.eligible_scope(project)).to include(issue)
+    end
+
     it "keeps a scanner-verification-failed finding out of automatic remediation" do # @spec EAGER-QUEUE-013
       issue = create(:issue, project: project, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
       create(:code_scanning_remediation_attempt, issue:, status: "verification_failed")
@@ -104,6 +135,28 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
 
       expect(described_class.eligible_scope(project)).to contain_exactly(eligible)
       expect(described_class.eligible_scope(project)).not_to include(skipped)
+    end
+
+    it "uses a local exclusion reason instead of skip labels in ignored mode" do # @spec LABEL-CONTROL-003
+      project.update!(label_integration_mode: "ignored", auto_pick_skip_labels: [ "category-hold" ])
+      excluded = create(:issue, project:, paid_activation_state: "activated", auto_pick_excluded_reason: "operator hold")
+      labeled = create(:issue, project:, paid_activation_state: "activated", labels: [ "category-hold" ])
+
+      expect(described_class.eligible_scope(project)).to contain_exactly(labeled)
+      expect(described_class.eligible_scope(project)).not_to include(excluded)
+    end
+
+    it "uses local exclusion instead of needs-input labels in ignored mode" do # @spec LABEL-CONTROL-003
+      project.update!(
+        label_integration_mode: "ignored",
+        enhance_issue_needs_input_label_name: "paid-enhance-needs-input",
+        label_mappings: { "needs_input" => "paid-stage-needs-input" }
+      )
+      labeled = create(:issue, project:, paid_activation_state: "activated", labels: [ "paid-stage-needs-input" ])
+      excluded = create(:issue, project:, paid_activation_state: "activated", auto_pick_excluded_reason: "operator hold")
+
+      expect(described_class.eligible_scope(project)).to contain_exactly(labeled)
+      expect(described_class.eligible_scope(project)).not_to include(excluded)
     end
 
     it "allows an epic under the built-in defaults" do # @spec AUTO-PICK-QUEUE-009
@@ -965,6 +1018,19 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         child.update!(github_state: "closed", github_updated_at: Time.current)
 
         expect(described_class.eligible_scope(project)).to include(epic)
+      end
+    end
+
+    it "does not use an upstream epic label to re-audit an ignored-mode issue" do # @spec LABEL-CONTROL-003
+      project.update!(label_integration_mode: "ignored")
+
+      travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
+        epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
+          no_code_required_at: 2.hours.ago)
+        create(:issue, :closed, project: project, parent_issue: epic,
+          parent_issue_linked_at: 1.hour.ago, closed_at: 1.hour.ago)
+
+        expect(described_class.eligible_scope(project)).not_to include(epic)
       end
     end
 

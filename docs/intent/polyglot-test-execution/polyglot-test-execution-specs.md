@@ -129,3 +129,42 @@
 - [D] **POLYGLOT-TEST-005** — Swift support SHALL remain limited to
   Linux-capable Swift Package Manager projects; iOS-only Xcode targets are out
   of scope for this segment.
+
+- [x] **POLYGLOT-TEST-011** — The system SHALL resolve prompt-level test and
+  lint command lists (`Prompts::LanguageCommands.test_commands_for` /
+  `.lint_commands_for`) using the same database-availability decision the
+  container quality hooks apply: when an `agent_run` (or the build-time
+  service-container availability check it delegates to) reports no running
+  database service container, the resolver SHALL drop the test command (and
+  mutation hook) for every `DB_DEPENDENT_TEST_LANGUAGES` language and keep
+  non-DB-dependent language commands intact; lint commands SHALL always
+  resolve unchanged. The issue-implementation prompt, the PR follow-up
+  prompt, the issue-task section, the safety-rules section, and the
+  pre-commit hook installation SHALL agree on that decision; the prompt SHALL
+  NOT demand all tests pass when the test command was dropped for missing
+  infrastructure, and SHALL tell the agent to report the skipped
+  database-dependent verification explicitly.
+  *Code:* `app/services/prompts/language_commands.rb`,
+  `app/services/prompts/service_container_sections.rb`,
+  `app/services/prompt_assembly/sections/issue_task.rb`,
+  `app/services/prompt_assembly/sections/safety_rules.rb`,
+  `app/services/containers/quality_hooks.rb`,
+  `app/services/prompts/build_for_issue.rb`,
+  `app/services/prompts/build_for_pr.rb`.
+  *Test:* `spec/services/prompts/language_commands_spec.rb`,
+  `spec/services/prompts/service_container_sections_spec.rb`,
+  `spec/services/prompt_assembly/build_issue_prompt_spec.rb`,
+  `spec/services/prompts/build_for_issue_spec.rb`,
+  `spec/services/prompts/build_for_pr_spec.rb`,
+  `spec/services/containers/quality_hooks_spec.rb`.
+
+- [x] **POLYGLOT-TEST-012** — When a project has no supported detected or
+  explicitly configured repository language, the verification-command resolver
+  SHALL report no configured lint or test command and SHALL NOT fall back to
+  Ruby/Bundler commands. Prompt assembly and pre-commit hook installation SHALL
+  consume that same empty resolution so an unrelated dependency manifest or
+  toolchain is never required merely to satisfy an inherited default.
+  *Code:* `app/services/prompts/language_commands.rb`,
+  `app/services/containers/quality_hooks.rb`.
+  *Test:* `spec/services/prompts/language_commands_spec.rb`,
+  `spec/services/containers/quality_hooks_spec.rb`.

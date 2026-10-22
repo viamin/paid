@@ -11,8 +11,8 @@ RSpec.describe AppleVerification::GuestProtocol do # @spec APPLE-VERIFY-003, APP
           { "type" => "materialize_source", "payload" => { "digest" => "sha256:source" } },
           { "type" => "resolve_swift_packages", "payload" => {} },
           { "type" => "inspect_xcode", "payload" => { "scheme" => "App" } },
-          { "type" => "build", "payload" => { "scheme" => "App" } },
-          { "type" => "test", "payload" => { "scheme" => "App" } },
+          { "type" => "build", "payload" => { "project" => "App.xcodeproj", "scheme" => "App" } },
+          { "type" => "test", "payload" => { "project" => "App.xcodeproj", "scheme" => "App", "test_plan" => "App.xctestplan" } },
           { "type" => "boot_simulator", "payload" => { "destination" => "iPhone 17" } },
           { "type" => "launch_app", "payload" => { "bundle_id" => "test.App" } },
           { "type" => "ui_action", "payload" => { "action" => "tap", "accessibility_id" => "continue" } },
@@ -23,6 +23,18 @@ RSpec.describe AppleVerification::GuestProtocol do # @spec APPLE-VERIFY-003, APP
       }
 
       expect(described_class.validate!(manifest)).to eq(manifest)
+    end
+
+    it "rejects an Xcode operation that names both a project and workspace" do
+      manifest = {
+        "version" => 1,
+        "operations" => [
+          { "type" => "test", "payload" => { "project" => "App.xcodeproj", "workspace" => "App.xcworkspace", "scheme" => "App" } }
+        ]
+      }
+
+      expect { described_class.validate!(manifest) }
+        .to raise_error(described_class::InvalidManifestError, "Xcode operation must not contain both project and workspace")
     end
 
     it "rejects unsupported protocol versions, operations, malformed payloads, and shell text" do

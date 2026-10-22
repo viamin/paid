@@ -6,16 +6,11 @@ class Account < ApplicationRecord
   MAX_SLUG_GENERATION_ATTEMPTS = 10
   PLANS = %w[trial free professional enterprise].freeze
   TRIAL_DURATION = 14.days
-  REMEDIATION_POLICY_MODES = %w[notify_only auto_apply disabled].freeze
-  DEFAULT_REMEDIATION_POLICY_ENTRY = {
-    "mode" => "notify_only",
-    "minimum_confidence" => 0.8,
-    "filing_threshold" => 1
-  }.freeze
 
   enum :status, { active: 0, suspended: 1, deactivated: 2 }
 
   before_destroy :destroy_apple_verification_records
+  before_destroy :destroy_chat_records
 
   has_many :users, dependent: :destroy
   has_many :account_memberships, dependent: :destroy
@@ -57,6 +52,9 @@ class Account < ApplicationRecord
   has_many :service_containers, dependent: :destroy
   has_many :egress_allowlist_entries, dependent: :destroy
   has_many :chat_sessions, dependent: :destroy
+  has_many :chat_investigations, dependent: :destroy
+  has_many :clarifying_question_progresses, dependent: :destroy
+  has_many :explicit_preferences, dependent: :destroy
   has_many :api_usage_attempts, dependent: :destroy
   has_many :quality_thresholds, dependent: :destroy
   has_many :exception_incidents, dependent: :destroy
@@ -73,10 +71,8 @@ class Account < ApplicationRecord
     format: { with: /\A[a-z0-9-]+\z/, message: "can only contain lowercase letters, numbers, and hyphens" }
   validates :default_max_tokens_per_run,
     numericality: { only_integer: true, greater_than_or_equal_to: 1, less_than_or_equal_to: 2_147_483_647 }
-  validate :remediation_policy_must_be_valid
 
   before_validation :generate_slug, on: :create
-  before_validation :normalize_remediation_policy!
 
   def save(**options)
     super
@@ -206,20 +202,6 @@ class Account < ApplicationRecord
     primary_owner_membership&.user
   end
 
-  def effective_remediation_policy
-    actions = defined?(RemediationDecision) ? RemediationDecision::PROPOSED_ACTIONS : []
-
-    actions.index_with do |action|
-      DEFAULT_REMEDIATION_POLICY_ENTRY.merge(
-        normalized_remediation_policy.fetch(action, {})
-      )
-    end
-  end
-
-  def remediation_policy_for(action)
-    effective_remediation_policy.fetch(action.to_s, DEFAULT_REMEDIATION_POLICY_ENTRY)
-  end
-
   private
 
   # Runs before the `users` association's dependent: :destroy so that approvers
@@ -233,67 +215,23 @@ class Account < ApplicationRecord
     apple_verification_workflow_revisions.destroy_all
   end
 
-  def normalized_remediation_policy
-    (remediation_policy.is_a?(Hash) ? remediation_policy : {})
-      .deep_stringify_keys
-      .slice(*(defined?(RemediationDecision) ? RemediationDecision::PROPOSED_ACTIONS : []))
+  # Chat-domain teardown ordering. Chat records reference users and issues, but
+  # the dependent-destroy cascade reaches `users` and `projects` (which destroys
+  # issues) long before the chat associations declared further down:
+  #
+  # * User#chat_investigations uses dependent: :restrict_with_exception, so a
+  #   surviving investigation raises DeleteRestrictionError when its author is
+  #   destroyed.
+  # * clarifying_question_progresses.answered_by_id and
+  #   chat_sessions.clarifying_question_issue_id are foreign keys that block
+  #   deleting the referenced user or issue.
+  #
+  # Clearing the chat domain up front lets the rest of the cascade proceed.
+  def destroy_chat_records
+    chat_investigations.destroy_all
+    clarifying_question_progresses.destroy_all
+    chat_sessions.destroy_all
   end
-
-  def normalize_remediation_policy!
-    self.remediation_policy = normalized_remediation_policy.each_with_object({}) do |(action, settings), result|
-      next unless settings.is_a?(Hash)
-
-      normalized = settings.deep_stringify_keys.slice("mode", "minimum_confidence", "filing_threshold")
-      normalized["mode"] = normalized["mode"].to_s if normalized.key?("mode")
-
-      if normalized.key?("minimum_confidence")
-        normalized["minimum_confidence"] = normalized["minimum_confidence"].to_f
-      end
-
-      if normalized.key?("filing_threshold")
-        normalized["filing_threshold"] = normalized["filing_threshold"].to_i
-      end
-
-      result[action] = normalized
-    end
-  end
-
-  def remediation_policy_must_be_valid
-    return if remediation_policy.blank?
-    return errors.add(:remediation_policy, "must be a hash keyed by remediation action") unless remediation_policy.is_a?(Hash)
-
-    unknown_actions = remediation_policy.keys.map(&:to_s) - RemediationDecision::PROPOSED_ACTIONS
-    if unknown_actions.any?
-      errors.add(:remediation_policy, "contains unknown action(s): #{unknown_actions.join(', ')}")
-    end
-
-    normalized_remediation_policy.each do |action, settings|
-      unless settings.is_a?(Hash)
-        errors.add(:remediation_policy, "#{action} must be a hash of mode and thresholds")
-        next
-      end
-
-      mode = settings["mode"]
-      if mode.present? && !REMEDIATION_POLICY_MODES.include?(mode)
-        errors.add(:remediation_policy, "#{action} mode must be one of: #{REMEDIATION_POLICY_MODES.join(', ')}")
-      end
-
-      if settings.key?("minimum_confidence")
-        confidence = settings["minimum_confidence"]
-        unless confidence.is_a?(Numeric) && confidence.between?(0.0, 1.0)
-          errors.add(:remediation_policy, "#{action} minimum_confidence must be between 0.0 and 1.0")
-        end
-      end
-
-      if settings.key?("filing_threshold")
-        threshold = settings["filing_threshold"]
-        unless threshold.is_a?(Integer) && threshold.positive?
-          errors.add(:remediation_policy, "#{action} filing_threshold must be a positive integer")
-        end
-      end
-    end
-  end
-
   def generate_slug
     return if slug.present?
     return if name.blank?

@@ -98,11 +98,11 @@ Implement the policy/enrollment foundation without enabling automatic release.
 
 **Acceptance criteria:**
 
-- [ ] Record shipped code/test evidence and reuse or revise overlapping tasks; no duplicate record models or contradictory run-admission tasks remain in the filed plan.
-- [ ] Project selection and feature policy snapshot are authorized and audited; existing features retain their established policy.
-- [ ] Enrollment cannot enable confidence-driven execution before P10–P12 wiring is present; a settings-only UI is insufficient.
-- [ ] Disabling enrollment preserves active work, held issues and existing feature policies.
-- [ ] Update the older RDR/intent scope links and add mixed-policy regression fixtures.
+- [x] Record shipped code/test evidence and reuse or revise overlapping tasks; no duplicate record models or contradictory run-admission tasks remain in the filed plan. RDR-066's shipped `FeatureIntent`, `AttachFromAgentRun`, and `RunAdmission` contracts remain the approval-gated foundation; P01 extends those records rather than recreating #3862/#3863/#3865.
+- [x] Project selection and feature policy snapshot are authorized and audited; existing features retain their established policy. `Projects::Update` and `Tools::UpdateProjectSettings` use `ProjectPolicy#update?`; the tool records `project.settings_changed`; `FeatureIntent#delivery_policy` snapshots the selected policy.
+- [x] Enrollment cannot enable confidence-driven execution before P10–P12 wiring is present; a settings-only UI is insufficient. `FeatureIntents::RunAdmission` explicitly fails closed for `confidence_driven` until P10–P12 replace that denial with unified readiness, review, and completion enforcement.
+- [x] Disabling enrollment preserves active work, held issues and existing feature policies. It changes only policy selection for subsequently attached features.
+- [x] Update the older RDR/intent scope links and add mixed-policy regression fixtures. `spec/models/feature_intent_spec.rb`, `spec/services/feature_intents/attach_from_agent_run_spec.rb`, and `spec/services/feature_intents/run_admission_spec.rb` cover approval-gated and confidence-driven records in one project.
 
 **Intent:** `CONFIDENCE-DELIVERY-001`, `014`, `015`.
 **Likely touchpoints:** `Project`, `FeatureIntent`, configuration profiles,

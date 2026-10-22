@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_21_040449) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -282,6 +282,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
   create_table "agent_runs", force: :cascade do |t|
     t.string "adoption_mode_snapshot", comment: "Project adoption mode captured when an external execution was ingested."
     t.string "agent_type", limit: 50, null: false
+    t.string "approved_design_revision", comment: "Approved feature design revision that admitted this implementation run."
     t.string "auth_provider", limit: 50
     t.jsonb "authority_grants", default: {}, null: false, comment: "Secret-free execution authority grant snapshot for the run"
     t.boolean "auto_pick", default: false, null: false
@@ -292,6 +293,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.bigint "blocked_by_issue_ids", default: [], comment: "IDs of issues/PRs that block the created issue from being picked up for work.", array: true
     t.string "branch_name", limit: 255
     t.datetime "completed_at"
+    t.jsonb "confidence_delivery_snapshot", default: {}, null: false, comment: "Immutable confidence-delivery scope, evidence, thresholds, and merged-design baseline admitted for this run."
     t.bigint "configuration_bundle_id", comment: "Configuration bundle assigned to the run before execution."
     t.string "configuration_bundle_selection_context", comment: "Primary optimization context used for bundle routing, such as task or project."
     t.string "configuration_bundle_selection_mode", comment: "Whether configuration bundle routing favored exploitative or exploratory selection for this run."
@@ -371,11 +373,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.string "token_limit_status", limit: 50
     t.integer "tokens_input", default: 0
     t.integer "tokens_output", default: 0
+    t.jsonb "tool_sidecar_container_ids", default: [], null: false, comment: "Docker container IDs of marketplace tool sidecars provisioned for this run"
+    t.jsonb "tool_sidecar_endpoints", default: [], null: false, comment: "Run-scoped endpoint manifest for provisioned marketplace tool sidecars"
+    t.jsonb "tool_sidecar_snapshot", default: [], null: false, comment: "Marketplace tool sidecar definitions snapshotted when the run attaches entries"
     t.string "trigger_type", limit: 50, default: "automatic", null: false
     t.integer "turns_completed", default: 0, null: false, comment: "Number of agent turns completed, tracked via streaming JSONL progress events"
     t.datetime "updated_at", null: false
     t.jsonb "verification_result", default: {}, null: false, comment: "Persisted interactive self-verification outcome and related artifacts for verification-enabled agent runs."
     t.string "worktree_path", limit: 500
+    t.index ["approved_design_revision"], name: "index_agent_runs_on_approved_design_revision"
     t.index ["configuration_bundle_id"], name: "index_agent_runs_on_configuration_bundle_id"
     t.index ["continuation_request_id"], name: "index_agent_runs_on_continuation_request_id", where: "(continuation_request_id IS NOT NULL)"
     t.index ["created_at"], name: "index_agent_runs_on_created_at"
@@ -394,6 +400,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.index ["project_id", "status", "completed_at"], name: "index_agent_runs_on_project_status_completed_at"
     t.index ["project_id", "status", "created_at"], name: "idx_agent_runs_project_status_created_at_desc", order: { created_at: :desc }
     t.index ["project_id", "status"], name: "index_agent_runs_on_project_id_and_status"
+    t.index ["project_id"], name: "idx_agent_runs_unique_active_bootstrap_readiness", unique: true, where: "(((goal)::text = 'bootstrap_readiness'::text) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text, ('rate_limited'::character varying)::text])))"
     t.index ["project_id"], name: "idx_agent_runs_unique_active_lid_planning", unique: true, where: "(((goal)::text = 'lid_planning'::text) AND ((status)::text = ANY (ARRAY[('queued'::character varying)::text, ('rate_limited'::character varying)::text, ('running'::character varying)::text, ('paused'::character varying)::text])))"
     t.index ["project_id"], name: "index_agent_runs_on_project_id"
     t.index ["prompt_version_id"], name: "index_agent_runs_on_prompt_version_id"
@@ -566,6 +573,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.bigint "apple_worker_profile_id", null: false
     t.datetime "approved_at"
     t.bigint "approved_by_id", comment: "Project administrator that approved this revision."
+    t.text "configuration_content", comment: "Committed Apple verification configuration bound to the workflow digest."
     t.string "content_digest", null: false, comment: "SHA-256 digest of committed workflow content."
     t.datetime "created_at", null: false
     t.string "lifecycle_gate", null: false
@@ -740,6 +748,63 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.index ["superseded_by_id"], name: "index_change_intents_on_superseded_by_id"
   end
 
+  create_table "chat_diagram_comments", comment: "Human comments with durable diagram context", force: :cascade do |t|
+    t.bigint "actor_id", null: false, comment: "User who made the comment"
+    t.text "body", null: false
+    t.bigint "chat_diagram_id", null: false
+    t.datetime "created_at", null: false
+    t.text "element_context", comment: "Selected element text copied at comment time"
+    t.string "element_id", comment: "Selected element identity, if any"
+    t.string "question_key", null: false, comment: "Question identity copied from the diagram"
+    t.datetime "updated_at", null: false
+    t.index ["actor_id"], name: "index_chat_diagram_comments_on_actor_id"
+    t.index ["chat_diagram_id", "created_at"], name: "index_chat_diagram_comments_on_chat_diagram_id_and_created_at"
+    t.index ["chat_diagram_id"], name: "index_chat_diagram_comments_on_chat_diagram_id"
+  end
+
+  create_table "chat_diagrams", comment: "Typed, temporary diagrams rendered in chat", force: :cascade do |t|
+    t.bigint "chat_message_id", comment: "Optional transcript message that introduced the diagram"
+    t.bigint "chat_session_id", null: false
+    t.datetime "created_at", null: false
+    t.boolean "current", default: true, null: false, comment: "Whether this is the active diagram for its question"
+    t.jsonb "description", default: {}, null: false, comment: "Validated element and relationship description"
+    t.string "question_key", null: false, comment: "Stable question identity supplied with the diagram"
+    t.string "question_title", null: false, comment: "Human-readable question shown with the diagram"
+    t.text "summary", null: false, comment: "Short collapsed-card summary"
+    t.text "text_equivalent", null: false, comment: "Accessible textual equivalent of the diagram"
+    t.datetime "updated_at", null: false
+    t.index ["chat_message_id"], name: "index_chat_diagrams_on_chat_message_id"
+    t.index ["chat_session_id", "question_key"], name: "index_chat_diagrams_one_current_per_question", unique: true, where: "current"
+    t.index ["chat_session_id"], name: "index_chat_diagrams_on_chat_session_id"
+  end
+
+  create_table "chat_investigations", comment: "Bounded research or isolated experiment work requested from a chat question.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "cancelled_at", comment: "When a collaborator cancelled the investigation."
+    t.bigint "chat_session_id", null: false
+    t.bigint "clarifying_question_progress_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", null: false
+    t.integer "estimated_cost_cents", default: 0, null: false, comment: "Maximum cost checked before dispatch."
+    t.datetime "finished_at", comment: "When the investigation reached a terminal state."
+    t.string "kind", null: false, comment: "Investigation mode: research or experiment."
+    t.jsonb "metadata", default: {}, null: false, comment: "Non-secret progress and isolated runtime metadata."
+    t.bigint "project_id", null: false
+    t.text "prompt", null: false, comment: "Question-scoped request, never executable application-origin HTML."
+    t.integer "reserved_cost_cents", default: 0, null: false, comment: "Budget held while this investigation is active."
+    t.text "result", comment: "Reconnectable textual result or failure explanation."
+    t.datetime "started_at", comment: "When durable execution began."
+    t.string "status", default: "queued", null: false, comment: "Lifecycle state, including authorization and cancellation outcomes."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_chat_investigations_on_account_id"
+    t.index ["chat_session_id"], name: "index_chat_investigations_on_chat_session_id"
+    t.index ["clarifying_question_progress_id", "created_at"], name: "idx_on_clarifying_question_progress_id_created_at_25dd030c72"
+    t.index ["clarifying_question_progress_id"], name: "index_chat_investigations_on_clarifying_question_progress_id"
+    t.index ["created_by_id"], name: "index_chat_investigations_on_created_by_id"
+    t.index ["project_id", "status"], name: "index_chat_investigations_on_project_id_and_status"
+    t.index ["project_id"], name: "index_chat_investigations_on_project_id"
+  end
+
   create_table "chat_messages", force: :cascade do |t|
     t.bigint "chat_session_id", null: false
     t.text "content"
@@ -787,6 +852,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.uuid "external_id", default: -> { "gen_random_uuid()" }, null: false
+    t.bigint "feature_intent_id", comment: "Feature whose related issues share this exploration conversation."
     t.datetime "idle_timeout_at"
     t.string "inbox_item_key", comment: "Stable Inbox::Queue entry key that this interactive chat session was opened from."
     t.jsonb "inbox_item_metadata", default: {}, null: false, comment: "Audit snapshot of the linked inbox item's queue metadata at chat open time."
@@ -808,12 +874,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.index ["created_by_id", "inbox_item_key", "status"], name: "index_chat_sessions_inbox_history", where: "(inbox_item_key IS NOT NULL)"
     t.index ["created_by_id"], name: "index_chat_sessions_on_created_by_id"
     t.index ["external_id"], name: "index_chat_sessions_on_external_id", unique: true
+    t.index ["feature_intent_id"], name: "index_chat_sessions_on_feature_intent_id"
+    t.index ["feature_intent_id"], name: "index_chat_sessions_one_open_feature_chat", unique: true, where: "((feature_intent_id IS NOT NULL) AND ((status)::text <> 'archived'::text))"
     t.index ["idle_timeout_at"], name: "index_chat_sessions_on_idle_timeout_at"
     t.index ["project_id"], name: "index_chat_sessions_on_project_id"
     t.index ["proxy_token"], name: "index_chat_sessions_on_proxy_token", unique: true
     t.index ["rate_limited_until"], name: "index_chat_sessions_on_rate_limited_until"
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
+  end
+
+  create_table "clarifying_question_progresses", comment: "Durable per-question exploration progress and attributable answer evidence.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.text "answer", comment: "Latest draft or final human answer; nil means unresolved."
+    t.datetime "answered_at", comment: "When the latest answer was explicitly recorded."
+    t.bigint "answered_by_id"
+    t.bigint "chat_session_id", null: false
+    t.datetime "created_at", null: false
+    t.string "design_claim", comment: "Optional canonical design claim identifier supported by this answer."
+    t.text "evidence_context", comment: "Human-readable context retained when temporary exploration material is removed."
+    t.bigint "issue_id", null: false
+    t.integer "position", null: false, comment: "One-based question position within the digested question set."
+    t.bigint "project_id", null: false
+    t.text "question", null: false, comment: "The exact pending-question text this progress addresses."
+    t.string "question_digest", null: false, comment: "Digest of the ordered question set that produced this record."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_clarifying_question_progresses_on_account_id"
+    t.index ["answered_by_id"], name: "index_clarifying_question_progresses_on_answered_by_id"
+    t.index ["chat_session_id"], name: "index_clarifying_question_progresses_on_chat_session_id"
+    t.index ["issue_id", "question_digest", "position"], name: "index_clarifying_question_progresses_identity", unique: true
+    t.index ["issue_id"], name: "index_clarifying_question_progresses_on_issue_id"
+    t.index ["project_id"], name: "index_clarifying_question_progresses_on_project_id"
   end
 
   create_table "code_scanning_remediation_attempts", comment: "Durable scanner-verification evidence for merged code-scanning remediation PRs.", force: :cascade do |t|
@@ -1306,6 +1397,49 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.index ["status"], name: "index_design_amendments_on_status"
   end
 
+  create_table "design_artifact_associations", comment: "Evidence-backed local reconciliation links between a design artifact revision and synchronized GitHub work.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "artifact_path", limit: 2048, null: false
+    t.string "artifact_revision", limit: 255, null: false
+    t.datetime "created_at", null: false
+    t.string "issue_identity", limit: 512, null: false, comment: "Repository-qualified synchronized issue identity."
+    t.string "issue_revision", limit: 255, comment: "Synchronized issue revision assessed for this association."
+    t.bigint "project_id", null: false
+    t.string "provenance", limit: 255, null: false, comment: "Structural evidence that established the local association."
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_design_artifact_associations_on_account_id"
+    t.index ["project_id", "artifact_path", "artifact_revision", "issue_identity"], name: "idx_design_artifact_associations_identity", unique: true
+    t.index ["project_id"], name: "index_design_artifact_associations_on_project_id"
+  end
+
+  create_table "design_artifact_findings", comment: "Durable issue-tree traceability gaps found while reconciling repository design artifacts.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "artifact_path", limit: 2048, null: false
+    t.datetime "covered_at", null: false, comment: "When the GitHub issue coverage used for this finding was read."
+    t.datetime "created_at", null: false
+    t.jsonb "evidence", default: [], null: false
+    t.string "fingerprint", limit: 64, null: false, comment: "Stable reconciliation finding identity for one artifact, revision, and state."
+    t.bigint "project_id", null: false
+    t.bigint "resolution_actor_id", comment: "User who last made the recorded finding decision."
+    t.bigint "resolution_issue_id", comment: "Authorized existing or newly filed issue assigned to resolve this finding."
+    t.jsonb "resolution_metadata", default: {}, null: false, comment: "Decision provenance, including cited revision and idempotency marker."
+    t.text "resolution_reason", comment: "Required operator explanation for a non-automatic finding decision."
+    t.string "resolution_state", comment: "Operator decision: assigned, deferred, dismissed, or verified."
+    t.datetime "resolved_at"
+    t.string "revision", limit: 255, null: false
+    t.string "state", limit: 32, null: false, comment: "missing_tree, partial_tree, stale_metadata, deferred, or unverifiable."
+    t.string "status", limit: 16, default: "open", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_design_artifact_findings_on_account_id"
+    t.index ["project_id", "fingerprint"], name: "index_design_artifact_findings_on_project_id_and_fingerprint", unique: true
+    t.index ["project_id", "status"], name: "index_design_artifact_findings_on_project_id_and_status"
+    t.index ["project_id"], name: "index_design_artifact_findings_on_project_id"
+    t.index ["resolution_actor_id"], name: "index_design_artifact_findings_on_resolution_actor_id"
+    t.index ["resolution_issue_id"], name: "index_design_artifact_findings_on_resolution_issue_id"
+    t.check_constraint "state::text = ANY (ARRAY['missing_tree'::character varying::text, 'partial_tree'::character varying::text, 'stale_metadata'::character varying::text, 'deferred'::character varying::text, 'unverifiable'::character varying::text])", name: "chk_design_artifact_findings_state"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'assigned'::character varying::text, 'deferred'::character varying::text, 'dismissed'::character varying::text, 'resolved'::character varying::text])", name: "chk_design_artifact_findings_status"
+  end
+
   create_table "dispatch_circuit_breakers", comment: "Account-level dispatch circuit breaker that halts scheduling when all providers fail simultaneously", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Account this circuit breaker belongs to"
     t.datetime "circuit_opened_at", comment: "When the circuit was last opened"
@@ -1627,6 +1761,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.check_constraint "termination_reason::text = ANY (ARRAY['completed'::character varying::text, 'cancelled'::character varying::text, 'timed_out'::character varying::text, 'failed'::character varying::text, 'evicted'::character varying::text])", name: "chk_execution_usages_termination_reason_valid"
   end
 
+  create_table "explicit_preferences", comment: "Explicit user statements retained for their confirmed scope; never inferred from interaction data.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Tenant that owns this preference."
+    t.bigint "chat_session_id", comment: "Exploration conversation that supplied the statement, when applicable."
+    t.datetime "created_at", null: false
+    t.bigint "feature_intent_id", comment: "Feature target when the user explicitly chose feature scope."
+    t.bigint "project_id", comment: "Project target when the user explicitly chose project or feature scope."
+    t.bigint "recorded_by_id", null: false, comment: "Collaborator who confirmed the statement and scope."
+    t.string "scope", limit: 20, null: false, comment: "Confirmed scope: user, project, or feature."
+    t.text "statement", null: false, comment: "Verbatim explicit preference statement supplied by the user."
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false, comment: "User whose explicit preference this is."
+    t.index ["account_id", "user_id", "scope"], name: "index_explicit_preferences_on_account_id_and_user_id_and_scope"
+    t.index ["account_id"], name: "index_explicit_preferences_on_account_id"
+    t.index ["chat_session_id"], name: "index_explicit_preferences_on_chat_session_id"
+    t.index ["feature_intent_id"], name: "index_explicit_preferences_on_feature_intent_id"
+    t.index ["project_id", "scope"], name: "index_explicit_preferences_on_project_id_and_scope"
+    t.index ["project_id"], name: "index_explicit_preferences_on_project_id"
+    t.index ["recorded_by_id"], name: "index_explicit_preferences_on_recorded_by_id"
+    t.index ["user_id"], name: "index_explicit_preferences_on_user_id"
+    t.check_constraint "scope::text = ANY (ARRAY['user'::character varying::text, 'project'::character varying::text, 'feature'::character varying::text])", name: "explicit_preferences_scope"
+  end
+
   create_table "external_connector_events", comment: "Events ingested from external connectors (Jira, Linear, Slack, etc.) for coexistence workflows.", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Account this connector event belongs to."
     t.string "connector_key", null: false, comment: "Connector source key from Interop::Catalog (e.g. jira, linear, slack)."
@@ -1687,6 +1843,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.index ["feature_intent_id"], name: "index_feature_intent_approval_revisions_on_feature_intent_id"
   end
 
+  create_table "feature_intent_completions", comment: "Completion-cycle state and remote-write receipts for confidence-driven feature delivery.", force: :cascade do |t|
+    t.datetime "completed_at"
+    t.bigint "completion_issue_id"
+    t.datetime "created_at", null: false
+    t.integer "cycle", default: 1, null: false, comment: "Monotonic completion cycle, incremented when a post-completion finding reopens work."
+    t.bigint "feature_intent_id", null: false
+    t.integer "findings_generation", default: 0, null: false
+    t.jsonb "pending_operations", default: {}, null: false, comment: "Durable remote-write intents that block a completion claim until read back."
+    t.jsonb "release_readiness", default: {}, null: false, comment: "Acceptance, isolation, and release-authorization evidence for the current cycle."
+    t.string "status", default: "pending", null: false, comment: "pending while forward work or remote writes remain; complete only after a verified closeout."
+    t.datetime "updated_at", null: false
+    t.index ["completion_issue_id"], name: "index_feature_intent_completions_on_completion_issue_id"
+    t.index ["feature_intent_id"], name: "index_feature_intent_completions_on_feature_intent_id", unique: true
+    t.check_constraint "cycle > 0", name: "chk_feature_intent_completions_cycle"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'complete'::character varying::text])", name: "chk_feature_intent_completions_status"
+  end
+
   create_table "feature_intent_decisions", comment: "RDR-066 open product decisions for a feature intent: clarifying questions and AI-inferred decisions awaiting human confirmation.", force: :cascade do |t|
     t.text "answer", comment: "Human's answer or confirmation note."
     t.datetime "created_at", null: false
@@ -1696,17 +1869,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.text "prompt", null: false, comment: "The question text, or the inferred decision's stated assumption."
     t.datetime "resolved_at"
     t.bigint "resolved_by_id"
+    t.bigint "source_agent_run_id", comment: "Agent run whose recorded output explicitly emitted this decision; grounds recording and makes re-recording on a retried run a no-op."
     t.string "status", default: "open", null: false, comment: "open or resolved. For inferred_decision, resolved means human-confirmed."
     t.datetime "updated_at", null: false
     t.index ["feature_intent_id", "status"], name: "index_feature_intent_decisions_on_feature_intent_id_and_status"
     t.index ["feature_intent_id"], name: "index_feature_intent_decisions_on_feature_intent_id"
     t.index ["resolved_by_id"], name: "index_feature_intent_decisions_on_resolved_by_id"
+    t.index ["source_agent_run_id"], name: "index_feature_intent_decisions_on_source_agent_run_id"
     t.index ["status"], name: "index_feature_intent_decisions_on_status"
   end
 
   create_table "feature_intent_design_prs", comment: "RDR-066 design PRs (RDR and/or LID Planning) linked to a feature intent, tracked for staleness and required-artifact checks.", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "design_pr_kind", null: false, comment: "rdr or lid_planning."
+    t.boolean "draft", comment: "GitHub pull request draft state from the most recent synchronization."
     t.bigint "feature_intent_id", null: false
     t.string "head_sha", null: false, comment: "Most recently synced PR head SHA."
     t.datetime "merged_at"
@@ -1719,13 +1895,158 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.index ["pull_request_number"], name: "index_feature_intent_design_prs_on_pull_request_number"
   end
 
+  create_table "feature_intent_facet_assessments", comment: "Versioned agent assessments of candidate directions against facet evidence.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "assessed_at"
+    t.datetime "created_at", null: false
+    t.jsonb "evidence_references", default: [], null: false
+    t.integer "evidence_revision", null: false
+    t.text "explanation", default: "", null: false
+    t.bigint "feature_intent_facet_direction_id", null: false
+    t.integer "intent_score"
+    t.string "model_version", null: false
+    t.string "rubric_version", null: false
+    t.string "status", default: "unknown", null: false
+    t.integer "technical_score"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_feature_intent_facet_assessments_on_account_id"
+    t.index ["feature_intent_facet_direction_id", "evidence_revision"], name: "index_facet_assessments_direction_revision"
+    t.index ["feature_intent_facet_direction_id"], name: "idx_on_feature_intent_facet_direction_id_3af4455063"
+    t.check_constraint "intent_score >= 0 AND intent_score <= 100 OR intent_score IS NULL", name: "facet_assessments_intent_bounds"
+    t.check_constraint "status::text = ANY (ARRAY['unknown'::character varying::text, 'pending'::character varying::text, 'completed'::character varying::text, 'failed'::character varying::text, 'superseded'::character varying::text])", name: "facet_assessment_status"
+    t.check_constraint "technical_score >= 0 AND technical_score <= 100 OR technical_score IS NULL", name: "facet_assessments_technical_bounds"
+  end
+
+  create_table "feature_intent_facet_directions", comment: "Candidate directions for a facet; scores belong to a direction.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.text "description", null: false
+    t.bigint "feature_intent_facet_id", null: false
+    t.jsonb "log_data"
+    t.string "name", null: false
+    t.string "status", default: "active", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_feature_intent_facet_directions_on_account_id"
+    t.index ["feature_intent_facet_id", "name"], name: "idx_on_feature_intent_facet_id_name_f5a6e56431", unique: true
+    t.index ["feature_intent_facet_id"], name: "idx_on_feature_intent_facet_id_b98fb4f64a"
+    t.check_constraint "status::text = ANY (ARRAY['active'::character varying::text, 'superseded'::character varying::text])", name: "facet_direction_status"
+  end
+
+  create_table "feature_intent_facet_evidence", comment: "Attributable evidence retained independently of temporary visual artifacts.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "actor_id"
+    t.datetime "created_at", null: false
+    t.integer "evidence_revision", null: false
+    t.bigint "feature_intent_decision_id"
+    t.bigint "feature_intent_facet_direction_id"
+    t.bigint "feature_intent_facet_id", null: false
+    t.string "idempotency_key", null: false
+    t.datetime "occurred_at", null: false
+    t.string "source_reference", null: false
+    t.string "source_type", null: false
+    t.text "statement", null: false
+    t.bigint "superseded_by_id"
+    t.text "textual_context"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "idempotency_key"], name: "index_facet_evidence_idempotency", unique: true
+    t.index ["account_id"], name: "index_feature_intent_facet_evidence_on_account_id"
+    t.index ["actor_id"], name: "index_feature_intent_facet_evidence_on_actor_id"
+    t.index ["feature_intent_decision_id"], name: "idx_on_feature_intent_decision_id_6fef7ea51c"
+    t.index ["feature_intent_facet_direction_id"], name: "idx_on_feature_intent_facet_direction_id_01061c090f"
+    t.index ["feature_intent_facet_id", "evidence_revision"], name: "idx_on_feature_intent_facet_id_evidence_revision_06283b242e"
+    t.index ["feature_intent_facet_id"], name: "index_feature_intent_facet_evidence_on_feature_intent_facet_id"
+    t.index ["superseded_by_id"], name: "index_feature_intent_facet_evidence_on_superseded_by_id"
+  end
+
+  create_table "feature_intent_facets", comment: "Named tenant-owned feature or issue aspects assessed independently.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.text "design_claim", null: false
+    t.integer "evidence_revision", default: 0, null: false
+    t.bigint "feature_intent_decision_id"
+    t.bigint "feature_intent_id", null: false
+    t.bigint "issue_id"
+    t.jsonb "log_data"
+    t.string "name", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "feature_intent_id"], name: "idx_on_account_id_feature_intent_id_22e10796a9"
+    t.index ["account_id"], name: "index_feature_intent_facets_on_account_id"
+    t.index ["feature_intent_decision_id"], name: "index_feature_intent_facets_on_feature_intent_decision_id"
+    t.index ["feature_intent_id", "issue_id"], name: "index_feature_intent_facets_on_feature_intent_id_and_issue_id"
+    t.index ["feature_intent_id"], name: "index_feature_intent_facets_on_feature_intent_id"
+    t.index ["issue_id"], name: "index_feature_intent_facets_on_issue_id"
+  end
+
+  create_table "feature_intent_forward_work_items", comment: "Idempotent findings routed to an unstarted issue or a completion-blocking follow-up.", force: :cascade do |t|
+    t.bigint "affected_issue_id"
+    t.datetime "created_at", null: false
+    t.bigint "feature_intent_completion_id", null: false
+    t.jsonb "finding", default: {}, null: false
+    t.string "fingerprint", limit: 64, null: false, comment: "Stable finding identity supplied by the assessment pipeline."
+    t.bigint "follow_up_issue_id"
+    t.string "status", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.index ["affected_issue_id"], name: "index_feature_intent_forward_work_items_on_affected_issue_id"
+    t.index ["feature_intent_completion_id", "fingerprint"], name: "index_forward_work_on_completion_and_fingerprint", unique: true
+    t.index ["feature_intent_completion_id"], name: "index_forward_work_on_completion"
+    t.index ["follow_up_issue_id"], name: "index_feature_intent_forward_work_items_on_follow_up_issue_id"
+    t.check_constraint "status::text = ANY (ARRAY['pending'::character varying::text, 'applied'::character varying::text])", name: "chk_forward_work_items_status"
+  end
+
+  create_table "feature_intent_issue_dependencies", comment: "Snapshot of dependency edges between issues in one approved feature tree.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "depends_on_feature_intent_issue_id", null: false
+    t.bigint "feature_intent_issue_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["depends_on_feature_intent_issue_id"], name: "idx_on_depends_on_feature_intent_issue_id_b2b58b0492"
+    t.index ["feature_intent_issue_id", "depends_on_feature_intent_issue_id"], name: "idx_feature_intent_issue_dependencies_unique", unique: true
+    t.index ["feature_intent_issue_id"], name: "idx_on_feature_intent_issue_id_32c718a1ab"
+  end
+
+  create_table "feature_intent_issue_prerequisite_mappings", comment: "Audited coverage and design baseline for one linked issue's prerequisites.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "coverage_assessment", default: "unknown", null: false
+    t.text "coverage_rationale", default: "", null: false
+    t.datetime "created_at", null: false
+    t.bigint "feature_intent_issue_id", null: false
+    t.jsonb "log_data"
+    t.jsonb "relevant_design_documents", default: [], null: false
+    t.string "scope_revision"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_feature_intent_issue_prerequisite_mappings_on_account_id"
+    t.index ["feature_intent_issue_id"], name: "idx_on_feature_intent_issue_id_9dd9dd3e25", unique: true
+    t.check_constraint "coverage_assessment::text = ANY (ARRAY['unknown'::character varying::text, 'incomplete'::character varying::text, 'complete'::character varying::text])", name: "issue_prerequisite_mapping_coverage"
+  end
+
+  create_table "feature_intent_issue_prerequisites", comment: "Material facet directions required before a linked issue can become ready.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "feature_intent_facet_direction_id"
+    t.bigint "feature_intent_facet_id", null: false
+    t.bigint "feature_intent_issue_prerequisite_mapping_id", null: false
+    t.jsonb "log_data"
+    t.text "materiality_rationale", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_feature_intent_issue_prerequisites_on_account_id"
+    t.index ["feature_intent_facet_direction_id"], name: "idx_on_feature_intent_facet_direction_id_1cd66b5f10"
+    t.index ["feature_intent_facet_id"], name: "idx_on_feature_intent_facet_id_5eef7ee3f6"
+    t.index ["feature_intent_issue_prerequisite_mapping_id", "feature_intent_facet_id", "feature_intent_facet_direction_id"], name: "index_issue_prerequisites_unique_mapping", unique: true
+    t.index ["feature_intent_issue_prerequisite_mapping_id"], name: "idx_on_feature_intent_issue_prerequisite_mapping_id_d60e1156f7"
+  end
+
   create_table "feature_intent_issues", comment: "Links feature intent records to their issue trees (implementation issues and PR issues).", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.bigint "feature_intent_id", null: false
     t.bigint "issue_id", null: false
+    t.jsonb "readiness_mapping", default: {}, null: false, comment: "Agent-authored current scope, facet prerequisites, and relevant design baseline for confidence delivery."
+    t.text "release_error", comment: "Most recent GitHub planning-hold reconciliation failure, retained for visible retry."
+    t.jsonb "release_snapshot", default: {}, null: false, comment: "Immutable readiness evidence recorded when Paid releases the workflow-owned planning hold."
+    t.string "release_state", default: "held", null: false, comment: "Confidence-delivery projection state: held, pending, released, or reconciliation_failed."
+    t.datetime "released_at", comment: "When the workflow-owned planning hold was reconciled successfully."
     t.datetime "updated_at", null: false
     t.index ["feature_intent_id"], name: "index_feature_intent_issues_on_feature_intent_id"
-    t.index ["issue_id"], name: "index_feature_intent_issues_on_issue_id", unique: true
+    t.index ["issue_id"], name: "index_feature_intent_issues_on_issue_id"
+    t.index ["release_state"], name: "index_feature_intent_issues_on_release_state"
   end
 
   create_table "feature_intents", comment: "RDR-066 feature intent: links a feature's approved design revision to its issue tree.", force: :cascade do |t|
@@ -1735,16 +2056,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.jsonb "approved_pr_heads", default: {}, null: false, comment: "Design PR number => head SHA snapshot the human approved; a later commit on any key makes the approval stale."
     t.datetime "approved_revision_recorded_at", comment: "When the approved design revision was recorded."
     t.text "brief", comment: "Feature brief the design was researched from."
+    t.string "cancellation_reason", comment: "Why the feature proposal was declined."
+    t.datetime "cancelled_at", comment: "When the feature proposal was declined."
+    t.bigint "cancelled_by_id", comment: "User who declined the feature proposal."
     t.datetime "created_at", null: false
     t.datetime "criteria_clarity_evaluated_at", comment: "When criteria_clarity_state was last computed."
     t.text "criteria_clarity_explanation", comment: "Human-facing explanation of the criteria_clarity_state verdict."
     t.string "criteria_clarity_state", default: "pending", null: false, comment: "Cached AI clarity judgment for acceptance criteria: pending, clear, or vague. Computed by FeatureIntents::EvaluateCriteriaClarity, not on Inbox render, so listing entries never makes a live LLM call per feature."
+    t.string "delivery_policy", default: "approval_gated", null: false, comment: "Immutable delivery-policy snapshot selected when the feature was enrolled."
     t.jsonb "design_document_paths", default: [], null: false, comment: "Repository paths (RDR plus required LID artifacts) that constitute this feature's approved design, read at approved_design_revision by the intent-conformance reviewer."
+    t.jsonb "issue_tree_manifest", default: {}, null: false, comment: "Planned issue-tree receipt keyed by stable task identity, including expected relationships and qualified remote identities."
+    t.jsonb "issue_tree_verification", default: {}, null: false, comment: "Latest structural issue-tree verification result, revision, time, filing progress, and unresolved work."
     t.bigint "project_id", null: false
+    t.string "replacement_reference", comment: "Optional issue, pull request, or feature reference that supersedes this proposal."
     t.string "status", default: "design_open", null: false, comment: "Lifecycle status: discovering, design_open, needs_decision, ready_for_approval, approved_waiting_for_merge, released, revising, cancelled."
     t.string "title", null: false, comment: "Human-readable feature name."
     t.datetime "updated_at", null: false
     t.index ["approved_by_id"], name: "index_feature_intents_on_approved_by_id"
+    t.index ["cancelled_by_id"], name: "index_feature_intents_on_cancelled_by_id"
     t.index ["project_id", "status"], name: "index_feature_intents_on_project_id_and_status"
     t.index ["project_id"], name: "index_feature_intents_on_project_id"
     t.index ["status"], name: "index_feature_intents_on_status"
@@ -2063,6 +2392,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.boolean "auto_continue_paused", default: false, null: false
     t.jsonb "auto_merge_blockers", comment: "Latest authoritative auto-merge blocker snapshot from the PR scanner. Stores failed blockers separately from checks that were not evaluated because an earlier gate already failed."
     t.datetime "auto_merge_evaluated_at", comment: "When the latest authoritative auto-merge blocker snapshot was recorded by the PR scanner."
+    t.text "auto_pick_excluded_reason", comment: "Human-provided reason this issue is excluded from automatic selection in ignored label mode."
     t.datetime "awaiting_approval_since", comment: "When the scan first observed this PR green and blocked only on owner approval; cleared whenever a non-approval blocker appears. Drives the awaiting_approval escalation ceiling."
     t.text "body"
     t.datetime "ci_action_dispatched_at"
@@ -2074,6 +2404,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.string "code_scanning_disposition", comment: "Latest explicit upstream code-scanning disposition (for example fixed or dismissed)."
     t.jsonb "code_scanning_disposition_evidence", comment: "Bounded upstream evidence supporting the latest code-scanning disposition."
     t.text "code_scanning_disposition_reason", comment: "Reason GitHub supplied for the latest code-scanning disposition."
+    t.string "control_priority", comment: "Local P1/P2/P3 priority used in ignored label mode."
     t.datetime "created_at", null: false
     t.datetime "deployed_at"
     t.integer "draft_review_count", default: 0, null: false
@@ -2085,6 +2416,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.integer "github_number", null: false
     t.string "github_state", null: false
     t.datetime "github_updated_at", null: false
+    t.boolean "hold_for_review", default: false, null: false, comment: "Local per-PR human-review hold used in ignored label mode."
     t.boolean "is_pull_request", default: false, null: false
     t.datetime "issue_analysis_backoff_set_at", comment: "When the current automatic analyze_issue provider-exhaustion backoff window was recorded."
     t.datetime "issue_analysis_next_attempt_at", comment: "When automatic analyze_issue retries become eligible again after provider exhaustion."
@@ -2106,6 +2438,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.datetime "operational_failure_reset_at"
     t.datetime "orphaned_needs_input_label_evaluated_at", comment: "When the historical questionless needs-input label reconciliation last evaluated this issue. Cleared labels do not need a later backfill scan; labels added after the evaluation are handled directly by the GitHub sync delta."
     t.string "owner_review_requested_sha", limit: 40, comment: "PR HEAD commit SHA the last owner re-review request was issued for. Prevents re-requesting review from the owner on every poll cycle once auto-merge is blocked only by a stale owner approval for the same commit."
+    t.datetime "paid_activated_at", comment: "Timestamp this issue/PR was most recently marked paid-activated. Distinct from updated_at so unrelated sync metadata cannot clear the activation signal."
+    t.string "paid_activation_state", comment: "Paid-local per-item activation state for ignored label mode. Set to 'activated' when a user marks this issue/PR as Paid's to work on; auto-pick, auto-enhance, and PR-scan scope read this column instead of GitHub labels in ignored mode."
     t.string "paid_state", default: "new", null: false
     t.bigint "parent_issue_id"
     t.datetime "parent_issue_linked_at", comment: "When this issue was most recently linked to its current parent issue. Distinct from updated_at so unrelated sync metadata cannot re-arm an epic acceptance audit."
@@ -2114,7 +2448,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.text "partial_completion_reason", comment: "Operator-visible evidence for the latest partial-completion assessment."
     t.boolean "paused", default: false, null: false, comment: "When true, mirrors the paid-paused GitHub label and excludes the issue from auto-pick. PR review/escalation automation is not yet gated by this flag."
     t.datetime "paused_at", comment: "Sync epoch: records when the pause state last transitioned (from UI or GitHub) to resolve bidirectional sync ordering."
-    t.datetime "pr_auto_continue_token_limit_overridden_at", comment: "When set, owner dismissed a PR token-cap escalation and allowed this PR to exceed the automatic PR token cap."
+    t.datetime "pr_auto_continue_token_limit_overridden_at", comment: "When the owner last dismissed a PR token-cap escalation; timestamp-only legacy records grant no allowance."
+    t.bigint "pr_auto_continue_token_limit_override_allowance", comment: "Additional automatic PR token allowance granted by the owner's latest token-cap dismissal."
+    t.bigint "pr_auto_continue_token_limit_override_usage", comment: "Recorded automatic PR token usage when the owner granted the current bounded override."
     t.string "pr_escalation_reason", comment: "Machine-readable cause for the current PR escalation so only operational outages can auto-dismiss."
     t.datetime "pr_escalation_started_at", comment: "Timestamp when this PR entered the escalated phase. Bounds the paid-escalated label-event replay so an unlabeled event from a prior escalation cycle cannot read as a fresh owner dismissal."
     t.integer "pr_followup_count", default: 0, null: false
@@ -2131,8 +2467,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.datetime "runner_retry_abandoned_at", comment: "When non-null, the issue was abandoned because every available provider reached the per-issue retry cap. Excluded from auto-pick until cleared (e.g. by a successful run)."
     t.integer "runner_retry_abandonment_count", default: 0, null: false, comment: "Number of times this item has entered retry-limited abandonment."
     t.datetime "runner_retry_failure_window_reset_at", comment: "Lower bound for per-provider failure-count windowing (IssueRunnerFailureHistory). Set to the current time whenever clear_runner_retry_abandonment! runs, so agent runs created before the most recent clear are excluded from the retry-cap failure counts and the issue-aware runner ordering. Without this, lifting the retry cap (including an operator's explicit clear) would be immediately undone by stale failures re-tripping the cap on the next dispatch."
+    t.boolean "skip_auto_merge", default: false, null: false, comment: "Local per-PR automatic-merge exclusion used in ignored label mode."
     t.string "source", default: "github", null: false
     t.integer "stuck_confirmation_count", default: 0, null: false, comment: "Number of consecutive scans that observed this PR in an escalation-eligible stuck state. Replaces the wall-clock no-progress window so Paid downtime (which produces no scans) cannot drive false escalations."
+    t.datetime "tdd_review_approved_at", comment: "Time the local TDD test-review gate was most recently approved in ignored label mode."
+    t.string "tdd_review_state", comment: "Local TDD test-review gate state used in ignored label mode."
     t.string "title", limit: 1000, null: false
     t.datetime "updated_at", null: false
     t.index ["closeout_resolved_by_id"], name: "index_issues_on_closeout_resolved_by_id", where: "(closeout_resolved_by_id IS NOT NULL)"
@@ -2143,10 +2482,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.index ["needs_input_since"], name: "index_issues_needs_input_since_active", where: "((paid_state)::text = 'needs_input'::text)"
     t.index ["parent_issue_id"], name: "index_issues_on_parent_issue_id"
     t.index ["partial_completion_at"], name: "index_issues_on_partial_completion_at", where: "(partial_completion_at IS NOT NULL)"
+    t.index ["project_id", "auto_pick_excluded_reason"], name: "index_issues_on_auto_pick_exclusion", where: "(auto_pick_excluded_reason IS NOT NULL)"
+    t.index ["project_id", "control_priority"], name: "index_issues_on_project_id_and_control_priority"
     t.index ["project_id", "github_issue_id"], name: "index_issues_on_project_id_and_github_issue_id", unique: true
     t.index ["project_id", "github_number"], name: "index_issues_on_project_id_and_github_number"
     t.index ["project_id", "is_pull_request", "pr_review_phase", "github_updated_at"], name: "idx_issues_project_pr_phase_updated_at_desc", order: { github_updated_at: :desc }
     t.index ["project_id", "orphaned_needs_input_label_evaluated_at"], name: "index_issues_pending_orphaned_needs_input_label_evaluation", where: "(orphaned_needs_input_label_evaluated_at IS NULL)"
+    t.index ["project_id", "paid_activation_state"], name: "index_issues_on_project_id_and_paid_activation_state"
     t.index ["project_id", "paid_state"], name: "index_issues_on_project_id_and_paid_state"
     t.index ["project_id", "paused"], name: "index_issues_on_project_id_and_paused"
     t.index ["project_id", "pr_review_phase"], name: "idx_issues_pr_review_phase", where: "((is_pull_request = true) AND ((github_state)::text = 'open'::text))"
@@ -2957,6 +3299,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.string "code_scanning_scan_error_kind", comment: "Current code-scanning coverage failure classification: not_configured, permission, rate_limited, or transient."
     t.string "code_scanning_scan_error_reason", comment: "Sanitized explanation of the current code-scanning coverage failure."
     t.integer "completed_agent_runs_count", default: 0, null: false, comment: "Counter cache for completed agent runs"
+    t.boolean "confidence_delivery_enrollment_enabled", default: false, null: false, comment: "Permits newly created features to snapshot the selected confidence-driven policy; does not release work."
     t.datetime "created_at", null: false
     t.bigint "created_by_id"
     t.string "creation_origin", default: "connected", null: false, comment: "How the project came to be: connected (existing repo) or blank (repo created by Paid)."
@@ -2975,6 +3318,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.bigint "github_installation_id", comment: "GitHub App installation for repo auth; mutually exclusive with github_token_id"
     t.bigint "github_token_id"
     t.boolean "inherit_priority_labels", default: true, null: false
+    t.integer "intent_threshold", default: 80, null: false, comment: "Minimum intent certainty (0-100) for each mapped facet prerequisite."
     t.jsonb "interop_settings", default: {}, null: false, comment: "Project-level coexistence settings for gradual adoption, imports, connectors, and external execution sources."
     t.boolean "knowledge_evolution_enabled", default: false, null: false
     t.string "knowledge_status", limit: 50, default: "pending", null: false
@@ -3003,6 +3347,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.string "merge_method", default: "squash", null: false
     t.jsonb "model_preferences", default: {}, null: false
     t.string "name", null: false
+    t.string "new_feature_delivery_policy", default: "approval_gated", null: false, comment: "Selected delivery policy for newly enrolled features; existing feature snapshots are unaffected."
     t.datetime "next_code_scanning_scan_at", comment: "Earliest time a failed code-scanning fetch may be retried."
     t.string "operating_mode", default: "standard", null: false, comment: "Feature operating mode (RDR-066): standard | human_led_feature_factory"
     t.string "owner", null: false
@@ -3019,7 +3364,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.jsonb "quality_gate_settings", default: {}, null: false
     t.jsonb "quality_pause_metadata", default: {}, null: false
     t.datetime "quality_paused_at"
+    t.boolean "question_exploration_enabled", default: false, null: false, comment: "RDR-069 rollout gate for question-centered exploration conversations; initially disabled for every project."
     t.boolean "quiet_mode", default: false, null: false, comment: "When true, Paid suppresses all issue/PR comment posting for this project (PR description writes are unaffected)."
+    t.datetime "readiness_evaluated_at", comment: "When the current project-readiness snapshot was evaluated against a checkout."
+    t.jsonb "readiness_gaps", default: [], null: false, comment: "Latest deterministic project-readiness gaps used by the operator Inbox."
     t.string "repo", null: false
     t.jsonb "repo_profile", default: {}, null: false, comment: "Persisted repo-derived language/framework profile used by prompts, hooks, and preview/runtime consumers."
     t.boolean "retry_failed_manual_runs", default: true, null: false, comment: "When true, a failed manual agent run with no issue/PR attachment and no observable work is automatically re-queued with backoff, up to AgentRun::MAX_MANUAL_RETRY_ATTEMPTS."
@@ -3031,6 +3379,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.jsonb "security_alert_types", default: ["dependabot", "code_scanning"], null: false
     t.string "setup_status", comment: "Blank-project bootstrap state: pending, in_progress, or completed. Null when setup is not required."
     t.string "tdd_mode", default: "off", null: false, comment: "Project-level TDD mode from RDR-056: off | non_strict | strict"
+    t.integer "technical_threshold", default: 80, null: false, comment: "Minimum technical confidence (0-100) for each mapped facet prerequisite."
     t.integer "token_budget_max_input_tokens", comment: "Per-run input token budget; runs exceeding it without output are terminated early (nil = defer to provider/global default)"
     t.integer "token_limit_warning_threshold", default: 80, null: false
     t.bigint "total_cost_cents", default: 0, null: false
@@ -3055,6 +3404,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.index ["setup_status"], name: "index_projects_on_setup_status", where: "(setup_status IS NOT NULL)"
     t.check_constraint "apple_verification_mode::text = ANY (ARRAY['off'::character varying::text, 'on_demand'::character varying::text, 'automatic'::character varying::text])", name: "chk_projects_apple_verification_mode"
     t.check_constraint "github_token_id IS NOT NULL AND github_installation_id IS NULL OR github_token_id IS NULL AND github_installation_id IS NOT NULL", name: "chk_projects_exactly_one_github_credential"
+    t.check_constraint "intent_threshold >= 0 AND intent_threshold <= 100", name: "projects_intent_threshold_bounds"
+    t.check_constraint "technical_threshold >= 0 AND technical_threshold <= 100", name: "projects_technical_threshold_bounds"
   end
 
   create_table "prompt_versions", force: :cascade do |t|
@@ -3257,13 +3608,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.datetime "created_at", null: false
     t.integer "diagnosis_attempt_count_on_day", default: 1, null: false, comment: "How many diagnosis attempts for this fingerprint consumed budget on diagnosis_attempted_on."
     t.date "diagnosis_attempted_on", comment: "UTC day when this fingerprint last consumed diagnosis budget."
+    t.text "dismissal_reason", comment: "Operator rationale retained when a recurring proposal is dismissed."
+    t.datetime "dismissed_at", comment: "When the operator dismissed this proposal."
     t.jsonb "evidence_pointers", default: [], null: false, comment: "Pointers into the sanitized evidence bundle that support the diagnosis."
     t.string "fingerprint", null: false, comment: "Stable pattern fingerprint used to dedupe recurring diagnoses."
     t.datetime "last_diagnosis_attempt_at", comment: "Timestamp of the most recent diagnosis attempt recorded for this audit row."
+    t.string "obstacle_kind", default: "unknown", null: false, comment: "Semantic classification: infrastructure_configuration, implementation, or unknown."
     t.integer "occurrence_count", default: 1, null: false, comment: "How many detections collapsed into this deduped decision row."
     t.string "outcome", comment: "Evaluation result for the remediation: improved, unchanged, or regressed."
+    t.integer "post_remediation_exposure_count", comment: "Comparable run exposure after an accepted correction."
     t.integer "post_remediation_failure_count", comment: "Observed failure count for the fingerprint after remediation evaluation."
+    t.integer "pre_remediation_exposure_count", comment: "Comparable run exposure in the detector window before a correction."
     t.integer "pre_remediation_failure_count", comment: "Observed failure count for the fingerprint before remediation was proposed."
+    t.jsonb "proposal_context", default: {}, null: false, comment: "Bounded affected scope, evidence snapshot, validation plan, and uncertainty."
     t.string "proposed_action", null: false, comment: "Frozen action enum proposed by the diagnosis pipeline."
     t.jsonb "revert_data", default: {}, null: false, comment: "Structured data needed to reverse an applied remediation unambiguously."
     t.text "root_cause", null: false, comment: "Human-readable diagnosis summary shown in notifications and audits."
@@ -3835,7 +4192,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
   create_table "user_settings", force: :cascade do |t|
     t.integer "agent_timeout_seconds", default: 5400, null: false
     t.string "agent_update_comment_mode", default: "off", null: false, comment: "Controls whether existing-PR agent followups post no comment or generate a paid summary comment."
-    t.jsonb "allowed_service_images", default: ["postgres:16.13", "redis:7-alpine", "selenium/standalone-chromium:latest"]
+    t.jsonb "allowed_service_images", default: ["postgres:16.15", "redis:7-alpine", "selenium/standalone-chromium:latest"]
     t.jsonb "auto_pick_skip_labels", comment: "Optional user-level override for labels that make auto-pick skip an issue. Null means inherit tenant or built-in defaults."
     t.boolean "auto_weight_enabled", default: false, null: false, comment: "Whether automated runner weights are recalculated from observed remaining quota instead of edited manually."
     t.integer "circuit_breaker_failure_threshold", default: 5, null: false
@@ -3866,10 +4223,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.integer "issue_goal_idle_timeout_seconds", default: 120, null: false
     t.integer "issue_goal_timeout_seconds", default: 600, null: false
     t.jsonb "kb_chat_fallback_runners", default: [], null: false
+    t.bigint "kb_chat_provider_api_key_id"
     t.string "kb_chat_runner", default: "claude", null: false
     t.integer "kb_embedding_dimensions", default: 3072, null: false, comment: "Vector dimensions to request from the embedding model. Must match what the chosen kb_embedding_model emits; changing this on a populated knowledge base requires re-embedding."
     t.jsonb "kb_embedding_fallback_runners", default: [], null: false
     t.string "kb_embedding_model", default: "text-embedding-3-large", null: false, comment: "User-configurable embedding model id. Defaults to text-embedding-3-large; users may pick any model from the provider catalog the configured embedding runner serves."
+    t.bigint "kb_embedding_provider_api_key_id"
     t.string "kb_embedding_runner", default: "openai", null: false
     t.jsonb "log_data"
     t.boolean "marketplace_auto_attach_enabled", default: false, null: false, comment: "Whether this user opts their own agent runs into automatic and team-default marketplace attachments."
@@ -3896,6 +4255,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
     t.integer "token_validation_stale_minutes", default: 2, null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
+    t.index ["kb_chat_provider_api_key_id"], name: "index_user_settings_on_kb_chat_provider_api_key_id"
+    t.index ["kb_embedding_provider_api_key_id"], name: "index_user_settings_on_kb_embedding_provider_api_key_id"
     t.index ["user_id"], name: "index_user_settings_on_user_id", unique: true
     t.check_constraint "max_issues_per_page >= 5 AND max_issues_per_page <= 200", name: "chk_max_issues_per_page_bounds"
     t.check_constraint "max_prs_per_page >= 5 AND max_prs_per_page <= 200", name: "chk_max_prs_per_page_bounds"
@@ -4032,14 +4393,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
   add_foreign_key "change_intents", "chat_sessions", on_delete: :nullify
   add_foreign_key "change_intents", "issues", on_delete: :nullify
   add_foreign_key "change_intents", "projects", on_delete: :cascade
+  add_foreign_key "chat_diagram_comments", "chat_diagrams"
+  add_foreign_key "chat_diagram_comments", "users", column: "actor_id"
+  add_foreign_key "chat_diagrams", "chat_messages"
+  add_foreign_key "chat_diagrams", "chat_sessions"
+  add_foreign_key "chat_investigations", "accounts"
+  add_foreign_key "chat_investigations", "chat_sessions"
+  add_foreign_key "chat_investigations", "clarifying_question_progresses"
+  add_foreign_key "chat_investigations", "projects"
+  add_foreign_key "chat_investigations", "users", column: "created_by_id"
   add_foreign_key "chat_messages", "chat_sessions"
   add_foreign_key "chat_session_projects", "chat_sessions"
   add_foreign_key "chat_session_projects", "projects"
   add_foreign_key "chat_sessions", "accounts"
+  add_foreign_key "chat_sessions", "feature_intents", validate: false
   add_foreign_key "chat_sessions", "issues", column: "clarifying_question_issue_id", validate: false
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "clarifying_question_progresses", "accounts"
+  add_foreign_key "clarifying_question_progresses", "chat_sessions"
+  add_foreign_key "clarifying_question_progresses", "issues"
+  add_foreign_key "clarifying_question_progresses", "projects"
+  add_foreign_key "clarifying_question_progresses", "users", column: "answered_by_id"
   add_foreign_key "code_scanning_remediation_attempts", "agent_runs"
   add_foreign_key "code_scanning_remediation_attempts", "issues"
   add_foreign_key "collector_runs", "project_versions"
@@ -4092,6 +4468,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
   add_foreign_key "design_amendments", "feature_intents"
   add_foreign_key "design_amendments", "projects"
   add_foreign_key "design_amendments", "users", column: "approved_by_id"
+  add_foreign_key "design_artifact_associations", "accounts", on_delete: :cascade
+  add_foreign_key "design_artifact_associations", "projects", on_delete: :cascade
+  add_foreign_key "design_artifact_findings", "accounts", on_delete: :cascade
+  add_foreign_key "design_artifact_findings", "issues", column: "resolution_issue_id"
+  add_foreign_key "design_artifact_findings", "projects", on_delete: :cascade
+  add_foreign_key "design_artifact_findings", "users", column: "resolution_actor_id"
   add_foreign_key "dispatch_circuit_breakers", "accounts"
   add_foreign_key "dispatch_circuit_breakers", "agent_runs", column: "last_probe_run_id", on_delete: :nullify, validate: false
   add_foreign_key "docker_hosts", "accounts"
@@ -4124,19 +4506,54 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
   add_foreign_key "execution_resources", "agent_runs", on_delete: :nullify
   add_foreign_key "execution_resources", "projects", on_delete: :nullify
   add_foreign_key "execution_usages", "agent_runs", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "accounts", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "chat_sessions", on_delete: :nullify
+  add_foreign_key "explicit_preferences", "feature_intents", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "projects", on_delete: :cascade
+  add_foreign_key "explicit_preferences", "users", column: "recorded_by_id", on_delete: :restrict
+  add_foreign_key "explicit_preferences", "users", on_delete: :cascade
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade
   add_foreign_key "failure_classifications", "projects", on_delete: :cascade
   add_foreign_key "feature_intent_approval_revisions", "feature_intents"
   add_foreign_key "feature_intent_approval_revisions", "users", column: "approved_by_id"
+  add_foreign_key "feature_intent_completions", "feature_intents"
+  add_foreign_key "feature_intent_completions", "issues", column: "completion_issue_id"
+  add_foreign_key "feature_intent_decisions", "agent_runs", column: "source_agent_run_id", validate: false
   add_foreign_key "feature_intent_decisions", "feature_intents"
   add_foreign_key "feature_intent_decisions", "users", column: "resolved_by_id"
   add_foreign_key "feature_intent_design_prs", "feature_intents"
+  add_foreign_key "feature_intent_facet_assessments", "accounts", on_delete: :cascade
+  add_foreign_key "feature_intent_facet_assessments", "feature_intent_facet_directions", on_delete: :cascade
+  add_foreign_key "feature_intent_facet_directions", "accounts", on_delete: :cascade
+  add_foreign_key "feature_intent_facet_directions", "feature_intent_facets", on_delete: :cascade
+  add_foreign_key "feature_intent_facet_evidence", "accounts", on_delete: :cascade
+  add_foreign_key "feature_intent_facet_evidence", "feature_intent_decisions", on_delete: :nullify
+  add_foreign_key "feature_intent_facet_evidence", "feature_intent_facet_directions", on_delete: :nullify
+  add_foreign_key "feature_intent_facet_evidence", "feature_intent_facet_evidence", column: "superseded_by_id", on_delete: :nullify
+  add_foreign_key "feature_intent_facet_evidence", "feature_intent_facets", on_delete: :cascade
+  add_foreign_key "feature_intent_facet_evidence", "users", column: "actor_id", on_delete: :nullify
+  add_foreign_key "feature_intent_facets", "accounts", on_delete: :cascade
+  add_foreign_key "feature_intent_facets", "feature_intent_decisions", on_delete: :nullify
+  add_foreign_key "feature_intent_facets", "feature_intents", on_delete: :cascade
+  add_foreign_key "feature_intent_facets", "issues", on_delete: :cascade
+  add_foreign_key "feature_intent_forward_work_items", "feature_intent_completions"
+  add_foreign_key "feature_intent_forward_work_items", "issues", column: "affected_issue_id"
+  add_foreign_key "feature_intent_forward_work_items", "issues", column: "follow_up_issue_id"
+  add_foreign_key "feature_intent_issue_dependencies", "feature_intent_issues", column: "depends_on_feature_intent_issue_id", on_delete: :cascade
+  add_foreign_key "feature_intent_issue_dependencies", "feature_intent_issues", on_delete: :cascade
+  add_foreign_key "feature_intent_issue_prerequisite_mappings", "accounts", on_delete: :cascade
+  add_foreign_key "feature_intent_issue_prerequisite_mappings", "feature_intent_issues", on_delete: :cascade
+  add_foreign_key "feature_intent_issue_prerequisites", "accounts", on_delete: :cascade
+  add_foreign_key "feature_intent_issue_prerequisites", "feature_intent_facet_directions", on_delete: :restrict
+  add_foreign_key "feature_intent_issue_prerequisites", "feature_intent_facets", on_delete: :restrict
+  add_foreign_key "feature_intent_issue_prerequisites", "feature_intent_issue_prerequisite_mappings", on_delete: :cascade
   add_foreign_key "feature_intent_issues", "feature_intents"
   add_foreign_key "feature_intent_issues", "issues"
   add_foreign_key "feature_intents", "projects"
   add_foreign_key "feature_intents", "users", column: "approved_by_id"
+  add_foreign_key "feature_intents", "users", column: "cancelled_by_id"
   add_foreign_key "github_installations", "accounts"
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
@@ -4325,6 +4742,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
   add_foreign_key "token_usages", "knowledge_runs", on_delete: :cascade
   add_foreign_key "tracker_configurations", "integration_credentials"
   add_foreign_key "tracker_configurations", "users", column: "created_by_id"
+  add_foreign_key "user_settings", "provider_api_keys", column: "kb_chat_provider_api_key_id", on_delete: :restrict
+  add_foreign_key "user_settings", "provider_api_keys", column: "kb_embedding_provider_api_key_id", on_delete: :restrict
   add_foreign_key "user_settings", "users"
   add_foreign_key "users", "accounts"
   add_foreign_key "workflow_states", "projects"
@@ -5187,6 +5606,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_11_044701) do
 
   create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
       CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
+  SQL
+
+  create_trigger :logidze_on_feature_intent_facet_directions, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_feature_intent_facet_directions BEFORE INSERT OR UPDATE ON public.feature_intent_facet_directions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_feature_intent_facets, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_feature_intent_facets BEFORE INSERT OR UPDATE ON public.feature_intent_facets FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_feature_intent_issue_prerequisite_mappings, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_feature_intent_issue_prerequisite_mappings BEFORE INSERT OR UPDATE ON public.feature_intent_issue_prerequisite_mappings FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
+  SQL
+
+  create_trigger :logidze_on_feature_intent_issue_prerequisites, sql_definition: <<-SQL
+      CREATE TRIGGER logidze_on_feature_intent_issue_prerequisites BEFORE INSERT OR UPDATE ON public.feature_intent_issue_prerequisites FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
 
   create_trigger :logidze_on_github_tokens, sql_definition: <<-SQL

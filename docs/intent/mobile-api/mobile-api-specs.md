@@ -194,25 +194,29 @@
   validating requests and responses against it — strict in the test
   environment so request specs assert conformance, warn-and-log elsewhere.
   The schema SHALL express the polymorphic inbox envelope as `oneOf` per
-  entry kind with `kind` discriminators.
+  entry kind with `kind` discriminators. HTTP bearer security requirements
+  SHALL use empty arrays, with required Paid PAT scopes exposed through the
+  documented `x-required-pat-scopes` operation extension.
   *Tests:* `spec/requests/api/v1/*` (behind committee middleware).
   *Code:* `config/initializers/committee.rb`, `docs/api/openapi.yaml`.
 
-- [ ] **MOBILE-API-017** — CI SHALL verify the mobile consumer Pact against
-  the running app with provider responses validated against the same
+- [x] **MOBILE-API-017** — CI SHALL verify the OpenAPI-derived mobile Pact
+  against the running app with provider responses validated against the same
   `openapi.yaml`, so Pact verification and schema validation cannot drift
-  apart.
-  *Tests:* `spec/pact/providers/*` (CI job).
+  apart. The iOS consumer Pact SHALL replace this interim contract when it is
+  published.
+  *Tests:* `spec/config/ci_workflow_file_spec.rb` (CI job).
   *Code:* `.github/workflows` Pact job.
 
-- [ ] **MOBILE-API-018** — CI SHALL run Schemathesis fuzzing against the
+- [x] **MOBILE-API-018** — CI SHALL run Schemathesis fuzzing against the
   running app from `openapi.yaml`: full property-based fuzzing on read
   endpoints and request-conformance checks on mutation endpoints without
   executing real chat sends.
-  *Tests:* CI Schemathesis job.
+  *Tests:* `spec/config/ci_workflow_file_spec.rb` (CI Schemathesis job).
   *Code:* `.github/workflows` Schemathesis job.
 
-- [ ] **MOBILE-API-019** — The OpenAPI document SHALL carry the SSE event
+- [D] **MOBILE-API-019** — When the chat routes in MOBILE-API-011 through
+  MOBILE-API-014 land, the OpenAPI document SHALL carry the SSE event
   catalog as an `x-sse-events` schema extension on the send and resolve
   operations, enumerating each event name from the CHAT-API catalog
   (`message_start`, `message_chunk`, `message_created`,
@@ -220,7 +224,7 @@
   `message_tool_resolved`, `message_complete`, `error`) with its payload
   schema, so client codegen and server tests share one machine-checkable
   catalog owned by `api-mode-chat`.
-  *Tests:* `spec/lib/api/v1/openapi_sse_catalog_spec.rb`.
+  *Tests:* `spec/lib/committee/drivers_mobile_inbox_contract_spec.rb`.
   *Code:* `docs/api/openapi.yaml`.
 
 ## Non-goals (pinned)

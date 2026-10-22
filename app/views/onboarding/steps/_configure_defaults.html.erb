@@ -36,7 +36,10 @@
           <tbody>
             <% posture_plan.changes.each do |change| %>
               <tr>
-                <td class="py-1 pr-4 font-medium text-gray-700"><%= Configuration::Profiles::Settings.fetch(change.key).label %></td>
+                <%# Fully qualified so ActiveLinkTo::Configuration (included into
+                    ActionView::Base by the active_link_to gem) cannot shadow the
+                    app's top-level Configuration module in compiled templates. %>
+                <td class="py-1 pr-4 font-medium text-gray-700"><%= ::Configuration::Profiles::Settings.fetch(change.key).label %></td>
                 <td class="py-1"><%= change.from.inspect %> &rarr; <%= change.to.inspect %></td>
               </tr>
             <% end %>

@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 module AgentRunPatterns
+  # @spec RUN-OBSTACLE-001
+  # @spec RUN-OBSTACLE-003
   class RecordRemediationDecision
     DEDUPE_WINDOW = 24.hours
     DEDUPE_PROTECTED_FIELDS = %i[
@@ -13,6 +15,10 @@ module AgentRunPatterns
       revert_data
       outcome
       post_remediation_failure_count
+      pre_remediation_exposure_count
+      post_remediation_exposure_count
+      dismissal_reason
+      dismissed_at
     ].freeze
 
     def self.call(...)
@@ -29,13 +35,7 @@ module AgentRunPatterns
       recorded_at = Time.current
 
       RemediationDecision.transaction do
-        existing = RemediationDecision
-          .where(dedupe_scope)
-          .where(status: "proposed")
-          .where("created_at >= ?", DEDUPE_WINDOW.ago)
-          .order(created_at: :desc)
-          .lock
-          .first
+        existing = dismissed_decision || recent_proposed_decision
 
         if existing
           update_existing_decision(existing, recorded_at)
@@ -48,6 +48,20 @@ module AgentRunPatterns
     private
 
     attr_reader :account, :diagnosis, :pattern
+
+    def dismissed_decision
+      RemediationDecision.where(dedupe_scope).where(status: "dismissed").order(created_at: :desc).lock.first
+    end
+
+    def recent_proposed_decision
+      RemediationDecision
+        .where(dedupe_scope)
+        .where(status: "proposed")
+        .where("created_at >= ?", DEDUPE_WINDOW.ago)
+        .order(created_at: :desc)
+        .lock
+        .first
+    end
 
     def update_existing_decision(decision, recorded_at)
       decision.assign_attributes(
@@ -73,8 +87,11 @@ module AgentRunPatterns
         action_target_id: target["id"],
         action_target_metadata: target.except("type", "id"),
         status: "proposed",
+        obstacle_kind: diagnosis.obstacle_kind,
+        proposal_context: proposal_context,
         revert_data: {},
         pre_remediation_failure_count: failure_count,
+        pre_remediation_exposure_count: exposure_count,
         post_remediation_failure_count: nil,
         outcome: nil,
         occurrence_count: 1,
@@ -112,6 +129,31 @@ module AgentRunPatterns
         pattern.details[:failure_count] ||
         pattern.details[:occurrence_count] ||
         0
+    end
+
+    def exposure_count
+      pattern.details[:total_runs] ||
+        pattern.details[:total_count] ||
+        pattern.details.dig(:evidence_bundle, :aggregate_stats, :run_count) ||
+        0
+    end
+
+    def proposal_context
+      {
+        "goal" => pattern.goal,
+        "pattern_type" => pattern.type.to_s,
+        "error_pattern" => pattern.details[:error_pattern],
+        "window_hours" => AgentRunPatterns::Detect::DEFAULT_WINDOW_HOURS,
+        "affected_scope" => affected_scope,
+        "evidence_bundle" => pattern.details[:evidence_bundle],
+        "validation_plan" => diagnosis.validation_plan,
+        "uncertainty" => diagnosis.uncertainty
+      }
+    end
+
+    def affected_scope
+      evidence = pattern.details[:evidence_bundle].to_h
+      evidence.fetch(:aggregate_stats, evidence.fetch("aggregate_stats", {}))
     end
 
     def fingerprint

@@ -29,6 +29,17 @@ RSpec.describe Inbox::Count do
   end
 
   describe ".call" do
+    # @spec DESIGN-RECONCILIATION-001
+    it "counts open traceability gaps and invalidates after resolution" do
+      finding = create(:design_artifact_finding, project: project, account: account)
+
+      expect(described_class.call(user: user)).to eq(1)
+
+      finding.resolve!
+
+      expect(described_class.call(user: user)).to eq(0)
+    end
+
     it "counts needs_input candidates, merge approvals, and open plan reviews" do
       create(:issue, :needs_input, project: project)
       create(:issue, :needs_input, project: project)
@@ -444,12 +455,13 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(1)
     end
 
-    it "excludes ready PRs on projects with auto-merge disabled" do
+    # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    it "counts a clear ready PR awaiting a manual merge decision when auto-merge is disabled" do
       disabled_project = create(
         :project,
         account: account,
         created_by: user,
-        auto_pick_enabled: true,
+        auto_pick_enabled: false,
         active: true,
         auto_merge_mode: "off",
         owner_reviewer_login: "viamin",
@@ -461,10 +473,27 @@ RSpec.describe Inbox::Count do
         :pull_request,
         project: disabled_project,
         auto_merge_evaluated_at: Time.current,
-        auto_merge_blockers: approval_only_snapshot
+        auto_merge_blockers: { "failed" => [], "not_evaluated" => [] }
       )
 
-      expect(described_class.call(user: user)).to eq(0)
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
+    # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    it "refreshes the cached count when auto-merge is turned off for a clear PR" do
+      create(
+        :issue,
+        :pull_request,
+        project: project,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: { "failed" => [], "not_evaluated" => [] }
+      )
+      first = described_class.call(user: user)
+
+      project.update!(auto_merge_mode: "off")
+
+      expect(first).to eq(0)
+      expect(described_class.call(user: user)).to eq(1)
     end
 
     it "bumps the cache automatically when a PR enters or leaves the merge-approval queue" do
@@ -650,5 +679,29 @@ RSpec.describe Inbox::Count do
       } ],
       "not_evaluated" => []
     }
+  end
+  describe "project setup pending Inbox count" do
+    # @spec PROJECT-READINESS-005
+    it "counts the same authorized auto-pick-disabled project as the queue" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account:, created_by: user, auto_pick_enabled: false, tdd_mode: "strict",
+        readiness_gaps: [ { "description" => "CI is required." } ])
+
+      expect(described_class.call(user:)).to eq(1)
+      expect(Inbox::Queue.call(user:, kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND).map(&:project)).to eq([ project ])
+    end
+
+    # @spec PROJECT-READINESS-005 @spec PROJECT-READINESS-011
+    it "counts a verification-only project with persisted setup gaps" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account:, created_by: user, tdd_mode: "off",
+        screenshot_settings: { "verification_enabled" => true },
+        readiness_gaps: [ { "description" => "Start the application." } ])
+
+      expect(described_class.call(user:)).to eq(1)
+      expect(Inbox::Queue.call(user:, kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND).map(&:project)).to eq([ project ])
+    end
   end
 end

@@ -28,6 +28,9 @@
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to "Open linked action",
             entry.action_url,
+            target: entry.action_url.start_with?("http") ? "_blank" : nil,
+            rel: entry.action_url.start_with?("http") ? "noopener noreferrer" : nil,
+            data: entry.action_url.start_with?("http") ? {} : { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
       <% if entry.issue %>
         <%= link_to inbox_issue_link_label(entry.issue),
@@ -38,6 +41,7 @@
       <% elsif notification.subject.is_a?(AgentRun) %>
         <%= link_to "View Agent Run",
               project_agent_run_path(notification.subject.project, notification.subject),
+              data: { turbo_frame: "_top" },
               class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
       <% end %>
     </div>
@@ -53,6 +57,7 @@
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to "View Agent Run",
             project_agent_run_path(notification.subject.project, notification.subject),
+            data: { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
   <% end %>

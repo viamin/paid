@@ -287,7 +287,8 @@ module Activities
       no_progress_stuck = no_progress_stuck?(project, issue, progress_state)
       failure_limit = failure_streak_limit_reached?(project, issue, progress_state)
       retry_escalation = review_goal_retry_limit_requires_escalation?(project, issue, progress_state:)
-      token_limit_breach = pr_auto_continue_token_limit_breach(project, issue)
+      token_limit_budget = pr_auto_continue_token_limit_budget(project, issue)
+      token_limit_breach = pr_auto_continue_token_limit_breach(project, issue, budget: token_limit_budget)
 
       reason, reason_key = if op_breaker
         [ operational_failure_reason, Issue::PR_ESCALATION_REASON_OPERATIONAL_FAILURES ]
@@ -306,8 +307,9 @@ module Activities
         active_run_exists: active_run_exists?(project, issue),
         operational_failure_breaker: op_breaker,
         pr_auto_continue_token_limit_reached: token_limit_breach.present?,
-        pr_auto_continue_tokens_used: token_limit_breach&.fetch(:used, nil).to_i,
-        pr_auto_continue_token_limit: token_limit_breach&.fetch(:limit, nil).to_i,
+        pr_auto_continue_tokens_used: token_limit_budget[:used],
+        pr_auto_continue_token_limit: token_limit_budget[:limit],
+        pr_auto_continue_token_limit_remaining: token_limit_budget[:remaining],
         no_progress_stuck: no_progress_stuck,
         failure_streak_limit_reached: failure_limit,
         review_goal_retry_limit_requires_escalation: retry_escalation,
@@ -348,7 +350,7 @@ module Activities
       }.compact
     end
 
-    # @spec PR-ESCALATION-003
+    # @spec PR-ESCALATION-003 @spec LABEL-CONTROL-007
     def find_paid_prs(project)
       return upstream_conflict_fix_prs(project) if upstream_conflict_scan?(project)
 
@@ -390,13 +392,16 @@ module Activities
         .where(github_state: "open")
     end
 
-    # @spec AUTOMATION-ACTIVATION-003 @spec AUTO-MERGE-008
-    # With the project-level scan setting on, the scan set is exactly what it
-    # was before activation labels existed: open PRs carrying the project's
-    # automation label (Paid applies it to every PR it creates), so an
-    # activation label never widens scanning for on-projects. The
-    # activation-label path applies only when the setting is off.
+    # @spec AUTOMATION-ACTIVATION-003 @spec AUTO-MERGE-008 LABEL-CONTROL-006
+    # @spec LABEL-CONTROL-007 — Ignored-mode projects use Paid-local PR and
+    # parent activation state together with Paid-run linkage, never labels.
     def activation_scannable_prs(project, candidate_prs)
+      if project.label_integration_mode == "ignored"
+        return ignored_mode_scannable_prs(project, candidate_prs) if project.auto_scan_prs
+
+        return candidate_prs.none
+      end
+
       if project.auto_scan_prs
         return candidate_prs.where("labels @> ?", [ project.automation_label_name ].to_json)
       end
@@ -413,13 +418,65 @@ module Activities
       end.or(candidate_prs.where(parent_issue_id: catchall_parent_issue_ids(project, candidate_prs)))
     end
 
+    # Explicit PR activation admits externally opened PRs. A paid-activated
+    # parent admits its child PRs, and Paid-run linkage preserves existing
+    # generated-PR scanning. Explicit deactivation wins over all three paths.
+    # @spec LABEL-CONTROL-007
+    def ignored_mode_scannable_prs(project, candidate_prs)
+      activated_parent_ids = project.issues.paid_activated.select(:id)
+      activated_prs = candidate_prs.paid_activated
+      parent_activated_prs = candidate_prs.where(parent_issue_id: activated_parent_ids)
+
+      paid_linked_scannable_prs(project, candidate_prs)
+        .or(activated_prs)
+        .or(parent_activated_prs)
+        .where("issues.paid_activation_state IS NULL OR issues.paid_activation_state != ?", "deactivated")
+    end
+
+    # Scoped to PRs a Paid agent run already linked back to the project.
+    # A parent_issue_id alone is user-declared GitHub content and is not
+    # Paid-work evidence; parent-linked PRs are instead admitted by the
+    # separately scoped paid-activated-parent path above. An agent run's
+    # pull_request_number is stamped when the PR is published, so a just-
+    # published PR is in scope before sync arrives.
+    # @spec LABEL-CONTROL-007
+    def paid_linked_scannable_prs(project, candidate_prs)
+      agent_run_pr_numbers = AgentRun
+        .where(project_id: project.id)
+        .where.not(pull_request_number: nil)
+        .select(:pull_request_number)
+
+      candidate_prs.where(
+        "issues.github_number IN (?)",
+        agent_run_pr_numbers
+      )
+    end
+
     def dependabot_auto_merge_prs(candidate_prs)
       candidate_prs.where("LOWER(github_creator_login) IN (?)", DEPENDABOT_AUTO_MERGE_AUTHORS.map(&:downcase))
     end
 
+    # @spec LABEL-CONTROL-007 — A local activation is an authorized operator
+    # decision. Parent activation carries that decision to its child PRs.
     def authorized_for_automation_scan?(project, issue)
       return true if project.trusted_github_author?(issue.github_creator_login)
       return true if dependency_update_bot_author?(issue.github_creator_login)
+
+      if project.paid_local_activation?
+        return true if issue.paid_activated?
+        return true if trusted_issue_catchall_for_pr?(project, issue)
+
+        Rails.logger.warn(
+          message: "pr_scanner.untrusted_pr_blocked",
+          project_id: project.id,
+          issue_id: issue.id,
+          pr_number: issue.github_number,
+          creator: issue.github_creator_login,
+          reason: "ignored_mode_untrusted_author"
+        )
+        return false
+      end
+
       # Setting-on projects build their scan set from the automation label, so
       # a trusted-added automation label must still authorize an untrusted
       # creator there — activation labels are additive-only (#3804 rule 3) and
@@ -444,6 +501,8 @@ module Activities
 
     # @spec AUTOMATION-ACTIVATION-006
     def trusted_pr_activation?(project, issue)
+      return false if project.paid_local_activation?
+
       %w[auto_scan_prs auto_merge auto_fix_merge_conflicts].any? do |feature|
         label = project.feature_activation_label_for(feature)
         label.present? && issue.has_label?(label) && trusted_user_added_label?(project, issue, label)
@@ -451,9 +510,15 @@ module Activities
     end
 
     # @spec AUTOMATION-ACTIVATION-003 @spec AUTOMATION-ACTIVATION-006
+    # @spec LABEL-CONTROL-007 — In ignored mode the catchall label has no
+    # analog on parent issues; the activation signal is paid_activation_state.
     def trusted_issue_catchall_for_pr?(project, issue)
       parent_issue = issue.parent_issue
       return false unless parent_issue
+
+      if project.paid_local_activation?
+        return parent_issue.paid_activated?
+      end
 
       label = project.feature_activation_label_for("paid_in_full")
       label.present? && parent_issue.has_label?(label) && trusted_user_added_label?(project, parent_issue, label)
@@ -799,18 +864,18 @@ module Activities
       return :not_applicable unless tdd_mode.in?(%w[strict non_strict])
       return :not_applicable unless tdd_test_review_pr?(issue)
 
-      if issue.has_label?(TDD_TESTS_APPROVED_LABEL) &&
+      review_state = effective_tdd_review_state_for_current_revision(project, issue)
+
+      if review_state == "approved" &&
           tdd_implementation_started_for_current_revision?(project, issue)
         return :not_applicable
       end
 
       return tdd_followup_trigger(issue,
         type: "tdd_tests_approved",
-        details: "Test review approved; implementation may begin") if issue.has_label?(TDD_TESTS_APPROVED_LABEL)
+        details: "Test review approved; implementation may begin") if review_state == "approved"
 
-      return tdd_followup_trigger(issue,
-        type: "tdd_test_changes_requested",
-        details: "Test review requested changes before implementation") if issue.has_label?(TDD_TEST_CHANGES_REQUESTED_LABEL)
+      return tdd_rejection_trigger(project, client, issue, pr_data:) if review_state == "changes_requested"
 
       return nil if tdd_mode == "strict"
 
@@ -835,9 +900,7 @@ module Activities
 
       if tdd_review_rejected?(status_triggers)
         sync_tdd_test_review_verdict!(client, project, issue, TDD_TEST_CHANGES_REQUESTED_LABEL)
-        return tdd_followup_trigger(issue,
-          type: "tdd_test_changes_requested",
-          details: "Automated test review requested changes before implementation")
+        return tdd_rejection_trigger(project, client, issue, reviews:, unresolved_threads:, pr_data:)
       end
 
       latest_paid_agent_review = latest_allowed_bot_review(reviews, tdd_paid_agent_review_logins)
@@ -903,16 +966,39 @@ module Activities
       timestamp >= baseline.completed_at
     end
 
+    # @spec TDD-PR-007
+    def effective_tdd_review_state_for_current_revision(project, issue)
+      state = issue.effective_tdd_review_state
+      return state unless state.in?(%w[approved changes_requested])
+      return state if issue.local_control_state?
+
+      verdict_label = state == "approved" ? TDD_TESTS_APPROVED_LABEL : TDD_TEST_CHANGES_REQUESTED_LABEL
+      return state if tdd_verdict_current_for_revision?(project, issue, verdict_label)
+
+      "ready_for_review"
+    end
+
+    def tdd_verdict_current_for_revision?(project, issue, verdict_label)
+      revision = latest_completed_tdd_test_revision_run(project, issue)
+      return true unless revision&.completed_at
+
+      applied_at = latest_label_applied_at(project, issue, verdict_label)
+      return true unless applied_at
+
+      applied_at >= revision.completed_at
+    end
+
     def latest_completed_tdd_test_revision_run(project, issue)
       pr_run_history_scope(project, issue)
-        .where(goal: "create_pr")
+        .where(goal: "create_pr", tdd_phase: [ nil, "test_writing" ])
+        .where.not(result_commit_sha: nil)
         .completed
         .order(completed_at: :desc)
         .first
     end
 
     def tdd_implementation_started_for_current_revision?(project, issue)
-      approved_at = latest_label_applied_at(project, issue, TDD_TESTS_APPROVED_LABEL)
+      approved_at = tdd_tests_approved_at(project, issue)
       return false unless approved_at
 
       pr_run_history_scope(project, issue)
@@ -920,6 +1006,12 @@ module Activities
         .where.not(status: "retried")
         .where(created_at: approved_at..)
         .exists?
+    end
+
+    def tdd_tests_approved_at(project, issue)
+      return issue.tdd_review_approved_at if issue.local_control_state?
+
+      latest_label_applied_at(project, issue, TDD_TESTS_APPROVED_LABEL)
     end
 
     def latest_label_applied_at(project, issue, label)
@@ -949,6 +1041,8 @@ module Activities
     end
 
     def tdd_test_review_pr?(issue)
+      return issue.tdd_review_state.present? if issue.local_control_state?
+
       tdd_review_labels(issue).any?
     end
 
@@ -966,14 +1060,87 @@ module Activities
       end
     end
 
-    def tdd_followup_trigger(issue, type:, details:)
-      log_triggers(issue.project, issue, [ { type: type, details: details } ])
+    # @spec TDD-PR-007
+    def tdd_rejection_trigger(project, client, issue, reviews: nil, unresolved_threads: nil, pr_data: nil)
+      return tdd_draft_review_limit_result(project, client, issue) if draft_review_limit_reached?(project, issue)
+
+      feedback = tdd_rejection_feedback(project, client, issue, reviews:, unresolved_threads:, pr_data:)
+      return escalate_trigger(issue, reason: "TDD test review requested changes, but no trusted current feedback is accessible") if feedback.blank?
+      return escalate_trigger(issue, reason: "TDD test revision reported no changes for the same unresolved feedback") if repeated_tdd_no_changes?(project, issue, feedback)
+
+      tdd_followup_trigger(issue,
+        type: "tdd_test_changes_requested",
+        details: "Test review requested changes before implementation",
+        feedback: feedback)
+    end
+
+    # A rejected test verdict is an automatic draft follow-up just like CI or
+    # review-bot feedback. Let real human threads fall through to the normal
+    # draft scan, but never let a persistent TDD verdict bypass the hard cap.
+    def tdd_draft_review_limit_result(project, client, issue)
+      unresolved_threads = fetch_unresolved_threads(client, project, issue)
+      return :skipped if unresolved_threads.nil?
+      return :not_applicable if human_review_thread_triggers(project, unresolved_threads).any?
+
+      escalate_trigger(issue)
+    end
+
+    def tdd_rejection_feedback(project, client, issue, reviews: nil, unresolved_threads: nil, pr_data: nil)
+      reviews ||= fetch_reviews(client, project, issue)
+      unresolved_threads ||= fetch_unresolved_threads(client, project, issue)
+      return if reviews.nil? || unresolved_threads.nil?
+
+      reviews = reviews.select { |review| tdd_review_current_for_revision?(project, issue, review, pr_data:) }
+      review_feedback = reviews.filter_map do |review|
+        next unless trusted_tdd_feedback_author?(project, review[:user_login])
+        next if review[:body].blank?
+
+        { "review_id" => review[:id], "author" => review[:user_login], "body" => review[:body], "submitted_at" => review[:submitted_at] }
+      end
+      thread_feedback = unresolved_threads.filter_map do |thread|
+        comments = thread[:comments].filter_map do |comment|
+          next unless trusted_tdd_feedback_author?(project, comment[:author])
+          next unless tdd_thread_comment_current_for_revision?(project, issue, comment, pr_data:)
+          next if comment[:body].blank?
+
+          { "author" => comment[:author], "body" => comment[:body], "path" => comment[:path], "line" => comment[:line] }
+        end
+        next if comments.empty?
+
+        { "thread_id" => thread[:id], "comments" => comments }
+      end
+      return if review_feedback.empty? && thread_feedback.empty?
+
+      payload = { "reviews" => review_feedback, "threads" => thread_feedback }
+      payload["fingerprint"] = Digest::SHA256.hexdigest(tdd_feedback_fingerprint_payload(payload).to_json)
+      payload
+    end
+
+    def tdd_feedback_fingerprint_payload(payload)
+      payload.merge("reviews" => payload.fetch("reviews").map { |review| review.except("submitted_at") })
+    end
+
+    def trusted_tdd_feedback_author?(project, login)
+      PromptAssembly::Trust.human_trusted?(project, login) || tdd_paid_agent_review_logins.include?(login.to_s.downcase)
+    end
+
+    def repeated_tdd_no_changes?(project, issue, feedback)
+      run = pr_run_history_scope(project, issue)
+        .where(goal: "create_pr", tdd_phase: "test_writing", status: "no_output", error_message: "no_changes")
+        .order(completed_at: :desc)
+        .first
+      run&.external_metadata&.dig("tdd_review_feedback", "fingerprint") == feedback["fingerprint"]
+    end
+
+    def tdd_followup_trigger(issue, type:, details:, feedback: nil)
+      trigger = { type: type, details: details, feedback: feedback }.compact
+      log_triggers(issue.project, issue, [ trigger ])
 
       {
-        focus: "general",
+        focus: feedback ? "tdd_test_revision" : "general",
         issue_id: issue.id,
         pr_number: issue.github_number,
-        triggers: [ { type: type, details: details } ],
+        triggers: [ trigger ],
         phase: issue.pr_review_phase,
         labels_to_remove: [],
         current_draft_review_count: issue.draft_review_count
@@ -981,6 +1148,12 @@ module Activities
     end
 
     def sync_tdd_test_review_verdict!(client, project, issue, verdict_label)
+      if issue.local_control_state?
+        return issue.approve_tdd_tests! if verdict_label == TDD_TESTS_APPROVED_LABEL
+
+        return issue.update!(tdd_review_state: tdd_review_state_for(verdict_label))
+      end
+
       labels_to_remove = [
         TDD_TESTS_READY_FOR_REVIEW_LABEL,
         TDD_TESTS_APPROVED_LABEL,
@@ -993,6 +1166,12 @@ module Activities
       client.add_labels_to_issue(project.full_name, issue.github_number, [ verdict_label ]) unless issue.has_label?(verdict_label)
 
       issue.update!(labels: (issue.labels - labels_to_remove + [ verdict_label ]).uniq)
+    end
+
+    def tdd_review_state_for(label)
+      return "approved" if label == TDD_TESTS_APPROVED_LABEL
+
+      "changes_requested"
     end
 
     # Returns the paid_agent_review_pending trigger when present, or nil.
@@ -1068,6 +1247,7 @@ module Activities
 
       reviews = fetch_reviews(client, project, issue)
       unresolved_threads = fetch_unresolved_threads(client, project, issue)
+      automatic_merge_active = auto_merge_active?(project, issue)
 
       auto_merge_evaluation = analyze_auto_merge(project, client, issue,
         pr_data: pr_data,
@@ -1076,7 +1256,7 @@ module Activities
         unresolved_threads: unresolved_threads,
         progress_state: progress_state)
 
-      if auto_merge_evaluation&.analysis&.eligible?
+      if automatic_merge_active && auto_merge_evaluation&.analysis&.eligible?
         track_approval_wait!(project, issue, blocked_only_on_approval: false)
         return owner_approved_trigger(issue)
       end
@@ -1088,7 +1268,9 @@ module Activities
       return :skipped if triggers.nil?
 
       if triggers.empty?
-        stale_owner_review_trigger = owner_approval_stale_trigger(project, issue, pr_data, client:, reviews:)
+        stale_owner_review_trigger = if automatic_merge_active
+          owner_approval_stale_trigger(project, issue, pr_data, client:, reviews:)
+        end
         unless stale_owner_review_trigger.nil?
           track_approval_wait!(project, issue, blocked_only_on_approval: false)
           return stale_owner_review_trigger
@@ -1097,7 +1279,8 @@ module Activities
         # No actionable signal and not auto-merge eligible. When the *only*
         # thing between this PR and a merge is the owner's approval, that
         # wait is tracked and — past the project ceiling — escalated.
-        blocked_only_on_approval = blocked_only_on_approval?(project, client, issue, signals)
+        blocked_only_on_approval = automatic_merge_active &&
+          blocked_only_on_approval?(project, client, issue, signals)
         track_approval_wait!(project, issue, blocked_only_on_approval: blocked_only_on_approval)
 
         if blocked_only_on_approval && approval_wait_exceeds_ceiling?(project, issue) # @spec PR-ESCALATION-024
@@ -1635,6 +1818,7 @@ module Activities
     # result is memoized per scan pass (reset in #execute).
     # @spec PR-ESCALATION-009 @spec PR-ESCALATION-019
     def escalation_label_removed_by_owner?(issue)
+      return false if issue.local_control_state?
       return false if issue.has_label?(PAID_ESCALATED_LABEL)
       return @escalation_label_removals[issue.id] if @escalation_label_removals.key?(issue.id)
       return @escalation_label_removals[issue.id] = false if issue.pr_escalation_started_at.blank?
@@ -1654,6 +1838,7 @@ module Activities
     # so a failure is retried on the next scan instead of being papered over.
     # @spec PR-ESCALATION-021
     def reapply_escalation_label_if_missing(project, client, issue)
+      return if issue.local_control_state?
       return if issue.has_label?(PAID_ESCALATED_LABEL)
       return if escalation_label_removed_by_owner?(issue)
 
@@ -1812,15 +1997,16 @@ module Activities
         .exists?
     end
 
-    def pr_auto_continue_token_limit_breach(project, issue)
-      return if issue.respond_to?(:pr_auto_continue_token_limit_overridden_at) &&
-        issue.pr_auto_continue_token_limit_overridden_at.present?
+    def pr_auto_continue_token_limit_breach(project, issue, budget: pr_auto_continue_token_limit_budget(project, issue))
+      budget if budget[:used] >= budget[:limit]
+    end
 
-      limit = project.max_pr_auto_continue_tokens.to_i
+    # @spec PR-ESCALATION-007
+    def pr_auto_continue_token_limit_budget(project, issue)
       used = pr_auto_continue_tokens_used(project, issue)
-      return if used < limit
+      limit = issue.pr_auto_continue_token_limit_effective_limit(project.max_pr_auto_continue_tokens)
 
-      { used: used, limit: limit }
+      { used: used, limit: limit, remaining: [ limit - used, 0 ].max }
     end
 
     def pr_auto_continue_tokens_used(project, issue)
@@ -3151,23 +3337,32 @@ module Activities
     # after the relevant reviewer's latest approval AND the post-approval
     # range contains content attributable to the PR author; :not_evaluated
     # when the post-approval range could not be classified; :fresh
+    # Pairs the aggregate review-freshness state for HEAD with the list of
+    # blocking approvals that actually failed freshness. Callers persist the
+    # list alongside the snapshot so the Inbox can show evidence for the
+    # approval(s) that triggered the stale state, not just the owner
+    # approval — important when the manual review method is enabled and a
+    # fresh owner re-approval coexists with a stale manual reviewer
+    # approval (#4519).
+    ReviewFreshnessResult = Data.define(:state, :stale_approvals)
+
     # otherwise. Clean base-branch merges (see AUTO-MERGE-006) carry no
     # author-side content and keep the approval fresh. Each blocking
     # signal is checked individually so that an owner re-approval cannot
     # mask a stale manual review from the configured reviewer.
     # @spec AUTO-MERGE-006
-    def review_freshness_for_head(client, project, issue, pr_data, reviews)
-      return :fresh if reviews.nil?
+    def freshness_for_head(client, project, issue, pr_data, reviews)
+      return ReviewFreshnessResult.new(state: :fresh, stale_approvals: []) if reviews.nil?
 
       head_committed_at = fetch_head_commit_date(client, project, issue, pr_data)
-      return :fresh if head_committed_at.nil?
+      return ReviewFreshnessResult.new(state: :fresh, stale_approvals: []) if head_committed_at.nil?
 
       blocking_approvals = blocking_approvals_for(project, reviews)
-      return :fresh if blocking_approvals.empty?
+      return ReviewFreshnessResult.new(state: :fresh, stale_approvals: []) if blocking_approvals.empty?
 
       head_sha = pr_data&.head&.sha
       base_branch = pr_data&.base_ref
-      return :stale if head_sha.blank? || base_branch.blank?
+      return ReviewFreshnessResult.new(state: :stale, stale_approvals: blocking_approvals) if head_sha.blank? || base_branch.blank?
 
       collector = pull_request_collector(project, client:)
 
@@ -3178,21 +3373,27 @@ module Activities
       # the post-approval range must consist entirely of content-free
       # base merges for the approval to remain fresh. Any approval that
       # fails the check keeps the PR stale.
-      freshness_states = blocking_approvals.map do |approval|
-        freshness_state_for_approval(
+      evaluated = blocking_approvals.map do |approval|
+        [ approval, freshness_state_for_approval(
           approval: approval,
           head_committed_at: head_committed_at,
           head_sha: head_sha,
           base_branch: base_branch,
           issue: issue,
           collector: collector
-        )
+        ) ]
       end
 
-      return :stale if freshness_states.include?(:stale)
-      return :not_evaluated if freshness_states.include?(:not_evaluated)
+      stale_approvals = evaluated.select { |_, state| state == :stale }.map(&:first)
+      state = if stale_approvals.any?
+        :stale
+      elsif evaluated.any? { |_, state| state == :not_evaluated }
+        :not_evaluated
+      else
+        :fresh
+      end
 
-      :fresh
+      ReviewFreshnessResult.new(state:, stale_approvals:)
     end
 
     def fetch_head_commit_date(client, project, issue, pr_data)
@@ -3271,10 +3472,11 @@ module Activities
       :stale
     end
 
-    # Returns the most recent submitted_at timestamp and matching commit_id
-    # among APPROVED reviews from trusted non-bot users matching the given
-    # block filter. +nil+ when no approval matches — callers fall back to
-    # their default (e.g. no owner approval recorded yet).
+    # Returns the most recent submitted_at timestamp, matching commit_id,
+    # and the approving user's login among APPROVED reviews from trusted
+    # non-bot users matching the given block filter. +nil+ when no approval
+    # matches — callers fall back to their default (e.g. no owner approval
+    # recorded yet).
     def latest_approval_for(project, reviews, trust_required: true)
       approvals = reviews.select do |r|
         r[:state] == "APPROVED" &&
@@ -3287,7 +3489,11 @@ module Activities
       return nil if latest.nil?
 
       matching = approvals.find { |r| r[:submitted_at] == latest }
-      { submitted_at: latest, commit_id: matching&.dig(:commit_id) }
+      {
+        submitted_at: latest,
+        commit_id: matching&.dig(:commit_id),
+        user_login: matching&.dig(:user_login)
+      }
     end
 
     def approval_login_allowed?(project, login, trust_required:)
@@ -3608,7 +3814,7 @@ module Activities
     # and the strategy's evaluation of them, so callers can reuse both
     # without re-running the signal gates.
     AutoMergeEvaluation = Data.define(:signals, :analysis)
-    AutoMergeSignalBuild = Data.define(:signals, :review_freshness)
+    AutoMergeSignalBuild = Data.define(:signals, :review_freshness, :approval_evidence)
 
     # Evaluates human-authored PR merge eligibility via the AutoMerge
     # strategy. Collects signals from provider data, persists the blocker
@@ -3616,17 +3822,20 @@ module Activities
     # @spec AUTO-MERGE-005
     def auto_merge_eligible?(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
       progress_state: nil)
-      analyze_auto_merge(project, client, issue,
+      evaluation = analyze_auto_merge(project, client, issue,
         pr_data: pr_data, checks: checks, reviews: reviews, unresolved_threads: unresolved_threads,
-        progress_state: progress_state)&.analysis&.eligible? || false
+        progress_state: progress_state)
+      auto_merge_active?(project, issue) && evaluation&.analysis&.eligible? || false
     end
 
     # Runs the full auto-merge analysis once and returns the
-    # {AutoMergeEvaluation} (signals + analysis), or nil when auto-merge is
-    # disabled or the PR data is missing. Callers that need both the
-    # eligibility decision and the underlying signals must use this instead
-    # of calling auto_merge_eligible? followed by build_auto_merge_signals,
-    # which would evaluate the expensive GitHub gates twice.
+    # {AutoMergeEvaluation} (signals + analysis), or nil when PR data is
+    # missing. The assessment is persisted for manual-merge projects too, but
+    # callers must still check `auto_merge_active?` before acting on
+    # eligibility. Callers that need both the eligibility decision and the
+    # underlying signals must use this instead of calling
+    # auto_merge_eligible? followed by build_auto_merge_signals, which would
+    # evaluate the expensive GitHub gates twice.
     def analyze_auto_merge(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
       progress_state: nil)
       signal_build = build_auto_merge_signals(project, client, issue,
@@ -3639,18 +3848,26 @@ module Activities
       log_skip_auto_merge(project, issue) if signals.skip_auto_merge?
 
       analysis = evaluate_auto_merge(project, signals)
-      stage_auto_merge_snapshot(issue, analysis, review_freshness: signal_build.review_freshness, head_sha: pr_head_sha(pr_data))
+      stage_auto_merge_snapshot(
+        issue,
+        analysis,
+        review_freshness: signal_build.review_freshness,
+        approval_evidence: signal_build.approval_evidence,
+        head_sha: pr_head_sha(pr_data)
+      )
       AutoMergeEvaluation.new(signals:, analysis:)
     end
 
     # Collects the provider-neutral auto-merge preconditions for a
     # human-authored PR into an {Automation::Strategies::AutoMerge::Signals}.
-    # Returns nil when auto-merge is disabled or the PR data is missing, so
-    # callers can distinguish "not gated by auto-merge" from "gated and
-    # failing" — the distinction the awaiting_approval escalation keys on.
+    # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    # Returns nil when PR data is missing. This policy assessment deliberately
+    # runs while auto-merge is off so the Inbox can distinguish manual review
+    # and merge decisions from pending machine work without render-time GitHub
+    # calls; it does not itself authorize automatic execution.
     def build_auto_merge_signals(project, client, issue, pr_data:, checks:, reviews:, unresolved_threads: nil,
       progress_state: nil)
-      return nil unless pr_data.present? && auto_merge_active?(project, issue)
+      return nil unless pr_data.present? && (auto_merge_active?(project, issue) || project.auto_merge_mode == "off")
 
       owner_approved = owner_approved_or_self_authored?(project, reviews, pr_data)
       checks_green = !checks.nil? && all_checks_green?(checks)
@@ -3662,7 +3879,9 @@ module Activities
       blocking_reviews_complete = all_blocking_review_methods_complete?(
         project, issue, reviews, checks: checks, pr_data: pr_data, progress_state: progress_state
       )
-      review_freshness = review_freshness_for_head(client, project, issue, pr_data, reviews)
+      review_freshness_result = freshness_for_head(client, project, issue, pr_data, reviews)
+      review_freshness = review_freshness_result.state
+      stale_approvals = review_freshness_result.stale_approvals
       reviews_fresh = review_freshness == :fresh
       dependencies_resolved = if human_dependency_check_required?(
         owner_approved: owner_approved,
@@ -3676,8 +3895,8 @@ module Activities
         false
       end
 
-      skip_label = issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
-      hold_for_review = issue.has_label?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+      skip_label = issue.auto_merge_skipped?
+      hold_for_review = issue.held_for_review?
       # @spec INTENT-CONFORMANCE-007
       intent_conformance_ok = IntentConformance::Signal.ok?(
         project: project, issue: issue, head_sha: pr_head_sha(pr_data)
@@ -3698,7 +3917,11 @@ module Activities
         intent_conformance_ok: intent_conformance_ok
       )
 
-      AutoMergeSignalBuild.new(signals:, review_freshness:)
+      AutoMergeSignalBuild.new(
+        signals:,
+        review_freshness:,
+        approval_evidence: approval_evidence_for(project, pr_data, stale_approvals: stale_approvals)
+      )
     end
 
     # Evaluates bot-authored PR merge eligibility via the AutoMerge
@@ -3720,8 +3943,8 @@ module Activities
         false
       end
 
-      skip_label = issue.has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
-      hold_for_review = issue.has_label?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+      skip_label = issue.auto_merge_skipped?
+      hold_for_review = issue.held_for_review?
 
       signals = Automation::Strategies::AutoMerge::Signals.build(
         issue_id: issue.id,
@@ -3794,8 +4017,7 @@ module Activities
     # enables auto-merge for that pull request even when the project-level
     # setting is off.
     def auto_merge_active?(project, issue)
-      project.auto_merge_enabled? ||
-        Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: issue, feature: "auto_merge")
+      Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(project:, pull_request: issue)
     end
 
     def evaluate_auto_merge(project, signals)
@@ -3839,6 +4061,7 @@ module Activities
         attributes[:last_scanned_head_sha] = head_sha if head_sha.present?
       end
       issue.update_columns(attributes)
+      Dashboard::CacheVersion.bump(issue.project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE) if staged_this_pass
     end
 
     def auto_merge_snapshots
@@ -3849,16 +4072,46 @@ module Activities
       @auto_merge_head_shas ||= {}
     end
 
-    def stage_auto_merge_snapshot(issue, analysis, review_freshness: :fresh, head_sha: nil)
+    def stage_auto_merge_snapshot(issue, analysis, review_freshness: :fresh, approval_evidence: {}, head_sha: nil)
       snapshot = {
         "failed" => analysis.failed_blockers.map(&:to_h).map(&:stringify_keys),
         "not_evaluated" => analysis.not_evaluated_blockers.map(&:to_h).map(&:stringify_keys)
       }
 
       remap_review_freshness_failure!(snapshot) if review_freshness == :not_evaluated
+      attach_approval_evidence!(snapshot, approval_evidence) if review_freshness == :stale
 
       auto_merge_snapshots[issue.id] = snapshot
       auto_merge_head_shas[issue.id] = head_sha if head_sha.present?
+    end
+
+    # Persist revision evidence for each blocking approval that actually
+    # failed freshness, so the Inbox explanation matches the policy
+    # decision. Inbox renderers must not make a fresh GitHub call merely to
+    # explain why an approval GitHub still displays is no longer fresh for
+    # Paid's policy; when the manual review method is enabled, a fresh
+    # owner re-approval can coexist with a stale configured manual reviewer
+    # approval, and showing only the owner's SHA/time would mis-attribute
+    # the staleness (#4519).
+    # @spec OPERATOR-INBOX-002K
+    def approval_evidence_for(project, pr_data, stale_approvals: [])
+      current_revision = pr_head_sha(pr_data)
+      entries = stale_approvals.map do |approval|
+        {
+          "approver_login" => approval[:user_login],
+          "approved_revision" => approval[:commit_id],
+          "approved_at" => approval[:submitted_at]&.iso8601,
+          "current_revision" => current_revision
+        }.compact
+      end
+      return {} if entries.empty?
+
+      { "stale_approvals" => entries }
+    end
+
+    def attach_approval_evidence!(snapshot, approval_evidence)
+      blocker = Array(snapshot["failed"]).find { |candidate| candidate["signal"] == "reviews_fresh" }
+      blocker["approval_evidence"] = approval_evidence if blocker && approval_evidence.present?
     end
 
     def remap_review_freshness_failure!(snapshot)

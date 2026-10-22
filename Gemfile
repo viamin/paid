@@ -30,13 +30,13 @@ gem "devise"
 
 # Authorization [https://github.com/varvet/pundit]
 gem "pundit"
-gem "avo", "4.2.11"
+gem "avo", "4.3.2"
 
 # json 3.0.0 changed JSON.parse/dump options to keyword-only arguments.
 # Rails 8.1.4's ActiveSupport::JSON.decode (lib/active_support/json/decoding.rb:25)
 # already calls JSON.parse(json, **options), so the 3.x line is safe here;
 # this constraint just keeps the major version bump deliberate.
-gem "json", "~> 3.0"
+gem "json", "~> 3.1"
 
 # Docker API's transitive MultiJson dependency is selected by Sawyer/Octokit.
 # 1.21.2 forwards parser options as keywords, as required by json 3.x.
@@ -81,10 +81,10 @@ gem "aws-sdk-s3", require: false
 # #366, #367): OpenCode arm64 binary selection, Codex model-catalog parsing of
 # the "max" reasoning level plus ChatGPT-auth model compatibility, and Claude
 # "Not logged in" responses raising AuthenticationError.
-# 0.44.9 includes viamin/agent-harness#472, which preserves a provider's
-# classified error when ChatTransport fails. Paid relies on this for the
-# rate-limit pause/recovery path (fixes #4217).
-gem "agent-harness", "0.44.9"
+# 0.44.22 includes viamin/agent-harness#499 and #500: OpenAI Responses
+# protocol support for reasoning models with function tools, plus allowlisted
+# actionable provider diagnostics (fixes #4546).
+gem "agent-harness", "0.44.22"
 
 
 # Runtime model registry for canonical model metadata, pricing, and capabilities.
@@ -157,6 +157,13 @@ group :development, :test do
 end
 
 group :test do
+  # Pact provider verification is intentionally held to the 1.x line: its
+  # verifier CLI is the provider-side contract entry point until iOS pacts
+  # are published to the broker.
+  gem "pact-provider-verifier", "~> 1.39", require: false
+  # Pact permits rack-proxy 0.x, but its pre-1.0 releases have a response
+  # smuggling vulnerability. Keep provider verification on the fixed release.
+  gem "rack-proxy", ">= 1.0.3", require: false
   gem "simplecov", require: false
   gem "capybara"
   gem "ferrum", path: "vendor/ferrum"
@@ -184,10 +191,10 @@ group :development do
   gem "herb", require: false
 end
 
-gem "good_job", "~> 4.20"
+gem "good_job", "~> 4.22"
 
 # Pagination [https://github.com/ddnexus/pagy]
-gem "pagy", "~> 43.7"
+gem "pagy", "~> 43.8"
 
 # PDF text extraction for knowledge imports
 gem "pdf-reader"

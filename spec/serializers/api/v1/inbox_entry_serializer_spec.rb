@@ -42,14 +42,15 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload).to include(tasks: [ { "title" => "Do the thing" } ])
     end
 
-    it "serializes merge_approval with the issue's failed auto-merge blockers" do
+    it "serializes merge_approval with its normalized guidance" do
       issue = create(:issue, :pull_request, project: project,
         auto_merge_blockers: { "failed" => [ { "signal" => "owner_approved" } ], "not_evaluated" => [] })
-      entry = build_entry(Inbox::Queue::MERGE_APPROVAL_KIND, issue: issue, record: issue)
+      guidance = { heading: "Manual merge decision on GitHub", blockers: [ { "signal" => "owner_approved", "next_action" => "Make the manual decision." } ] }
+      entry = build_entry(Inbox::Queue::MERGE_APPROVAL_KIND, issue: issue, record: issue, guidance: guidance)
 
       payload = described_class.render(entry)
 
-      expect(payload).to include(blockers: [ { "signal" => "owner_approved" } ])
+      expect(payload).to include(blockers: guidance.fetch(:blockers), guidance: guidance)
     end
 
     it "serializes action_required with its remediation steps" do
@@ -62,9 +63,9 @@ RSpec.describe Api::V1::InboxEntrySerializer do
 
     it "serializes escalated_pr with the reason, counters, last progress, and operator-pause state" do
       pull_request = create(:issue, :pull_request, project: project)
-      counters = [ Dashboard::BlockedPullRequests::Counter.new(name: :draft_review_count, value: 3, limit: 3) ]
+      counters = [ Inbox::EscalatedPullRequests::Counter.new(name: :draft_review_count, value: 3, limit: 3) ]
       last_progress_at = 2.days.ago
-      blocked = Dashboard::BlockedPullRequests::Entry.new(
+      blocked = Inbox::EscalatedPullRequests::Entry.new(
         pull_request: pull_request,
         reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
         blocked_since: 1.day.ago,
@@ -186,6 +187,31 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       payload = described_class.render(entry)
 
       expect(payload.keys).to match_array(%i[id kind waiting_since project title summary action_url])
+    end
+
+    it "serializes project_setup_pending with its task descriptions" do
+      entry = build_entry(Inbox::Queue::PROJECT_SETUP_PENDING_KIND, tasks: [ "CI is required." ])
+
+      payload = described_class.render(entry)
+
+      expect(payload).to include(tasks: [ "CI is required." ])
+    end
+
+    # @spec DESIGN-RECONCILIATION-001
+    it "serializes traceability_gap with the finding's actionable evidence" do
+      finding = create(:design_artifact_finding, project: project,
+        artifact_path: "docs/rdrs/RDR-123.md", revision: "abc123", state: "partial_tree",
+        evidence: [ "Missing linked issue acme/widgets#42" ])
+      entry = build_entry(Inbox::Queue::TRACEABILITY_GAP_KIND, record: finding, tasks: finding.evidence)
+
+      payload = described_class.render(entry)
+
+      expect(payload).to include(
+        artifact_path: "docs/rdrs/RDR-123.md",
+        revision: "abc123",
+        state: "partial_tree",
+        evidence: [ "Missing linked issue acme/widgets#42" ]
+      )
     end
 
     it "raises for an unrecognized kind rather than silently returning an empty payload" do

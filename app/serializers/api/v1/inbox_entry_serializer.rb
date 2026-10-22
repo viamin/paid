@@ -69,6 +69,8 @@ module Api
         when Inbox::Queue::CHANGE_INTENT_DRAFT_KIND then change_intent_draft_payload
         when Inbox::Queue::PARTIAL_CLOSEOUT_KIND then { unresolved_prerequisites: entry.tasks }
         when Inbox::Queue::TEST_REVIEW_PENDING_KIND then {}
+        when Inbox::Queue::PROJECT_SETUP_PENDING_KIND then { tasks: entry.tasks }
+        when Inbox::Queue::TRACEABILITY_GAP_KIND then traceability_gap_payload
         else
           raise ArgumentError, "Unknown inbox entry kind: #{entry.kind}"
         end
@@ -80,15 +82,14 @@ module Api
         kind_payload
       end
 
-      # entry.record is the Issue for merge_approval (not the transient
-      # Inbox::MergeApproval::Snapshot), same object the web detail partial
-      # reads `auto_merge_blockers` from directly.
+      # The queue carries the normalized guidance computed from the persisted
+      # assessment, so API clients do not have to infer policy from copy.
       def merge_approval_payload
-        { blockers: entry.record.auto_merge_blockers&.fetch("failed", []) || [] }
+        { blockers: entry.guidance&.fetch(:blockers, []) || [], guidance: entry.guidance }
       end
 
-      # entry.record is Dashboard::BlockedPullRequests::Entry (see
-      # app/services/dashboard/blocked_pull_requests.rb) — the reason,
+      # entry.record is Inbox::EscalatedPullRequests::Entry (see
+      # app/services/inbox/escalated_pull_requests.rb) — the reason,
       # tripped counters, last-progress timestamp, and operator-pause state
       # the web detail pane renders.
       def escalated_pr_payload
@@ -167,6 +168,19 @@ module Api
           constraints: change_intent.constraints,
           decisions_made: change_intent.decisions_made,
           requested_changes_reason: change_intent.requested_changes_reason
+        }
+      end
+
+      # @spec DESIGN-RECONCILIATION-001
+      def traceability_gap_payload
+        finding = entry.record
+        {
+          artifact_path: finding.artifact_path,
+          revision: finding.revision,
+          state: finding.state,
+          evidence: finding.evidence,
+          covered_at: finding.covered_at.iso8601,
+          recommended_action: finding.state == "unverifiable" ? "Restore coverage access and recheck." : "Record an explicit owner or disposition."
         }
       end
     end

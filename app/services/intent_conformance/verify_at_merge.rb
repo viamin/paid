@@ -8,8 +8,8 @@ module IntentConformance
   # No fallback interprets a missing or stale verdict as approval.
   #
   # A no-op (returns +nil+) for any issue not linked to a FeatureIntent, or
-  # when the project has not opted into the +approved_intent_amendments+
-  # rollout flag: existing projects and non-feature PRs are unaffected.
+  # when the project has not opted into the complete enforcement pair:
+  # existing projects, partial rollouts, and non-feature PRs are unaffected.
   # @spec INTENT-MERGE-GUARD-001
   # @spec INTENT-MERGE-GUARD-002
   # @spec INTENT-MERGE-GUARD-003
@@ -60,7 +60,12 @@ module IntentConformance
     attr_reader :project, :issue, :pr_head_sha
 
     def applicable?
-      feature_intent.present? && FeatureFlags.enabled?(:approved_intent_amendments, project: project)
+      feature_intent.present? && feature_intent.approval_gated? && enforcement_enabled?
+    end
+
+    def enforcement_enabled?
+      FeatureFlags.enabled?(:approved_intent_amendments, project: project) &&
+        FeatureFlags.enabled?(:intent_conformance_enforcement, project: project)
     end
 
     def feature_intent

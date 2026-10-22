@@ -19,7 +19,7 @@ record types and ordinary CI/security/quality checks remain reusable.
 - **Priority**: P1
 - **Related RDRs**: [RDR-022](RDR-022-auto-merge-pr-strategy.md) (Auto-Merge), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-056](RDR-056-strict-test-driven-development-mode.md) (TDD Modes), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) (Feature Intent and Approval Lifecycle)
 - **Related Intent**: `docs/high-level-design.md`, `docs/intent/auto-merge-strategy/`, `docs/intent/operator-inbox/`, and new feature-approval/conformance segments
-- **Related Issues**: [#3861](https://github.com/viamin/paid/issues/3861) (epic), #3866–#3870 (review, enforcement, amendment, evaluation), #3871 (closeout), and [#4050](https://github.com/viamin/paid/issues/4050) (shipped review scheduling). The design was approved and merged in [#3859](https://github.com/viamin/paid/pull/3859); implementation issues remain held by the `planning` label until the finalized decisions are on the default branch.
+- **Related Issues**: [#3861](https://github.com/viamin/paid/issues/3861) (epic), #3866–#3870 (review, enforcement, amendment, evaluation), #3871 (closeout), and [#4050](https://github.com/viamin/paid/issues/4050) (shipped review scheduling). The design was approved and merged in [PR 3859](https://github.com/viamin/paid/pull/3859); implementation issues remain held by the `planning` label until the finalized decisions are on the default branch.
 - **Related Tests**: `spec/models/intent_conformance_verdict_spec.rb`, `spec/services/intent_conformance/verify_at_merge_spec.rb`, `spec/services/intent_conformance/review_run_spec.rb`, `spec/temporal/activities/merge_pull_request_activity_spec.rb`, `spec/models/intent_conformance_resolution_spec.rb`, `spec/services/intent_resolutions/record_spec.rb`, `spec/services/design_amendments/*_spec.rb`
 
 ## Implementation Status
@@ -214,3 +214,19 @@ them, and its cost, human-time, rework, and resolution figures have no
 repository-visible inputs. It is not evidence of reviewer quality, blinded
 adjudication, or a promotion outcome. The RDR remains **Partially Implemented**;
 operators must repeat the run with an event-backed, post-event frozen corpus.
+
+## 2026-10-13 Shadow Evaluation Provenance Gap
+
+Issue [#4205](https://github.com/viamin/paid/issues/4205) recorded a frozen
+30-case corpus (`docs/intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-13.yml`,
+freeze commit `5ccf04bd0…`). Its prior ledger does not establish independent
+human adjudication: every purported operator event was introduced under the
+same `Paid Agent <paid-agents@paid-agents.com>` identity. Operator labels and
+event ordering alone cannot prove two blinded human reviews.
+
+The re-audit in
+[`audit-report-2026-10-13-rdr-067.md`](audit-report-2026-10-13-rdr-067.md)
+and the [2026-10-13 worksheet](../intent/intent-conformance-rollout/shadow-evaluation-worksheet-2026-10-13.md)
+therefore record the adjudication criterion and every derived measure as
+unmet. Two independently authenticated humans must adjudicate the frozen
+corpus before an operator records reviewer runs. Enforcement remains disabled.

@@ -7,8 +7,9 @@
 
 - [x] **INTENT-MERGE-GUARD-001** — For approval-gated features, the final-merge guard SHALL apply only when
   the merging issue is linked to a `FeatureIntent` and the project has the
-  `approved_intent_amendments` flag enabled; otherwise it SHALL be a no-op and
-  every existing merge precondition SHALL be unaffected.
+  complete enforcement pair (`approved_intent_amendments` and
+  `intent_conformance_enforcement`) enabled; otherwise it SHALL be a no-op
+  and every existing merge precondition SHALL be unaffected.
   *Code:* `app/services/intent_conformance/verify_at_merge.rb`.
   *Test:* `spec/services/intent_conformance/verify_at_merge_spec.rb`.
 

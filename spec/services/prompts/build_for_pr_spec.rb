@@ -70,7 +70,7 @@ RSpec.describe Prompts::BuildForPr do
     expect(priority_list).to eq(expected_lines.join("\n"))
   end
 
-  let(:project) { create(:project, allowed_github_usernames: [ "trusteduser" ]) }
+  let(:project) { create(:project, primary_language: "Ruby", allowed_github_usernames: [ "trusteduser" ]) }
   let(:github_client) { instance_double(GithubClient) }
   let(:user_settings) { OpenStruct.new(max_prompt_comments: 20, max_comment_length: 2000) }
 
@@ -186,8 +186,55 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("bundle exec rubocop")
     end
 
-    it "includes language-specific test command for ruby" do
-      expect(prompt).to include("bundle exec rspec")
+    it "includes language-specific test command for ruby when a database is available" do
+      pg_container = create(:service_container, account: project.account, status: "running")
+      create(:project_service_container, project: project, service_container: pg_container)
+      agent_run_with_db = create(:agent_run, project: project, service_container_ids: [ pg_container.id ])
+
+      configured_prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        agent_run: agent_run_with_db
+      )
+
+      expect(configured_prompt).to include("bundle exec rspec")
+    end
+
+    it "agrees with the pre-commit hook gate on no-database runs and requires reporting skipped suite" do
+      no_db_agent_run = create(:agent_run, project: project, service_container_ids: [])
+
+      no_db_prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        agent_run: no_db_agent_run
+      )
+
+      expect(no_db_prompt).not_to include("bundle exec rspec")
+      expect(no_db_prompt).to include("No test command configured")
+      expect(no_db_prompt).to include("Report skipped database-dependent tests")
+      expect(no_db_prompt).not_to include("- **Lint and tests MUST pass before every commit.**")
+    end
+
+    it "uses the agent run before resolving default test commands" do
+      postgres_container = create(:service_container, account: project.account, image: "postgres:16", status: "running")
+      redis_container = create(:service_container, :redis, account: project.account, status: "running")
+      create(:project_service_container, project: project, service_container: postgres_container)
+      agent_run_without_db = create(:agent_run, project: project, service_container_ids: [ redis_container.id ])
+
+      configured_prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        agent_run: agent_run_without_db
+      )
+
+      expect(configured_prompt).not_to include("bundle exec rspec")
+      expect(configured_prompt).to include("Report skipped database-dependent tests")
     end
 
     it "omits merge conflicts section when rebase succeeded" do
@@ -483,6 +530,9 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Merge Conflicts")
       expect(prompt).to include("git merge origin/main")
       expect(prompt).to include("resolve all conflicts")
+      expect(prompt).to include("Repair scope is limited to integrating `main` and resolving")
+      expect(prompt).to include("Do not add unrelated dependencies, tooling, product")
+      expect(prompt).to include("stop and report the specific path and reason")
     end
   end
 
@@ -1096,7 +1146,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     context "when project has configured database containers" do
-      let!(:service_container) { create(:service_container, account: project.account) }
+      let!(:service_container) { create(:service_container, account: project.account, status: "running") }
 
       before do
         project.service_containers << service_container
@@ -1127,7 +1177,7 @@ RSpec.describe Prompts::BuildForPr do
     end
 
     context "when project has configured non-database service containers" do
-      let!(:redis_container) { create(:service_container, :redis, account: project.account) }
+      let!(:redis_container) { create(:service_container, :redis, account: project.account, status: "running") }
 
       before do
         project.service_containers << redis_container
@@ -1784,6 +1834,114 @@ RSpec.describe Prompts::BuildForPr do
       expect(result.skipped).to include(
         hash_including(key: :review_thread, trust_level: :excluded, reason: "author_not_in_allowlist")
       )
+    end
+  end
+
+  # @spec QUIET-MODE-008
+  describe "quiet mode commit-message guidance (#4232)" do
+    it "omits the quiet mode commit-message guidance by default" do
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+      expect(prompt).not_to include("Commit Message Is The Commentary Channel")
+    end
+
+    it "injects the quiet mode commit-message guidance via the seed-template interpolation path" do
+      project.update!(quiet_mode: true)
+
+      prompt = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true
+      )
+
+expect(prompt).to include("Commit Message Is The Commentary Channel")
+      expect(prompt).to include("Subject line: conventional-commit style, ≤ 72 characters")
+      expect(prompt).to include("Address review: extract runner selection into AgentRun#select_runner")
+      expect(prompt).to include("do not push commentary-only commits with no diff")
+
+      # The seed-template interpolation path renders the body exactly once via
+      # `{{commit_message_guidance}}`; the explicit PromptAssembly section is
+      # suppressed here because the legacy string builder concatenates sections.
+      occurrences = prompt.scan(/# Commit Message Is The Commentary Channel/).length
+      expect(occurrences).to eq(1)
+    end
+
+    # @spec QUIET-MODE-008
+    it "appends guidance when a custom legacy prompt omits its interpolation" do
+      project.update!(quiet_mode: true)
+      prompt = create(:prompt, :global, slug: "test.#{SecureRandom.hex(8)}")
+      prompt_version = prompt.create_version!(template: "Custom instructions", variables: [])
+
+      rendered = described_class.call(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        prompt_version: prompt_version
+      )
+
+      expect(rendered).to include("Custom instructions")
+      expect(rendered).to include("Commit Message Is The Commentary Channel")
+      expect(rendered.scan(/# Commit Message Is The Commentary Channel/).length).to eq(1)
+    end
+
+    it "adds a quiet_mode_commit_message section to the PromptAssembly result when quiet mode is on" do
+      project.update!(quiet_mode: true)
+
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        prompt_builder: described_class::PROMPT_ASSEMBLY_BUILDER
+      )
+      result = builder.build_result
+
+      quiet_section = result.sections.find { |s| s.key == :quiet_mode_commit_message }
+      expect(quiet_section).to be_present
+      expect(quiet_section.trust_level).to eq(:trusted)
+      expect(quiet_section.required?).to be(true)
+      expect(quiet_section.content).to include("Commit Message Is The Commentary Channel")
+    end
+
+    it "does not add a quiet_mode_commit_message section when quiet mode is off" do
+      builder = described_class.new(
+        project: project,
+        pr_number: 42,
+        github_client: github_client,
+        rebase_succeeded: true,
+        prompt_builder: described_class::PROMPT_ASSEMBLY_BUILDER
+      )
+      result = builder.build_result
+
+      expect(result.sections.map(&:key)).not_to include(:quiet_mode_commit_message)
+    end
+  end
+
+  describe "TDD test-review revisions" do
+    it "renders the trusted rejection snapshot and red-phase completion condition" do # @spec TDD-PR-007
+      run = create(:agent_run, :existing_pr, project: project, source_pull_request_number: 42,
+        focus: "tdd_test_revision", tdd_phase: "test_writing", external_metadata: {
+          "tdd_review_feedback" => {
+            "fingerprint" => "feedback-digest",
+            "reviews" => [ { "review_id" => 9, "author" => "paid-code-reviewer[bot]", "body" => "Add the nil edge case." } ],
+            "threads" => [ { "thread_id" => "thread-9", "comments" => [ { "author" => "trusteduser", "body" => "Cover timeout.", "path" => "spec/foo_spec.rb", "line" => 12 } ] } ]
+          }
+        })
+
+      prompt = described_class.call(project: project, pr_number: 42, github_client: github_client,
+        rebase_succeeded: true, agent_run: run, focus: run.focus)
+
+      expect(prompt).to include("Revise the proposed tests using the rejected test-review feedback")
+      expect(prompt).to include("Add the nil edge case.", "Cover timeout.")
+      expect(prompt).to include("Do not implement\nproduction behavior in this run.")
+      expect(prompt).to include("returned to the TDD test-review gate")
     end
   end
 end

@@ -79,3 +79,15 @@
   phases SHALL retain the normal mutation-command resolution.
   *Code:* `app/services/containers/quality_hooks.rb`.
   *Test:* `spec/services/containers/quality_hooks_spec.rb`.
+
+- [x] **TDD-GUARD-010** — During `test_writing`, the generated pre-commit
+  hook SHALL still run and report the project's ordinary test commands, but
+  SHALL permit their nonzero result so expected red assertion failures do not
+  require bypassing hooks. Lint, write-boundary checks, and every non-red
+  phase's normal test failure behavior SHALL remain enforced; the prompt SHALL
+  require agents to resolve or report infrastructure, syntax, and unrelated
+  test failures before committing.
+  *Code:* `app/services/containers/quality_hooks.rb`,
+  `app/services/containers/git_operations.rb`.
+  *Test:* `spec/services/containers/quality_hooks_spec.rb`,
+  `spec/services/containers/git_operations_spec.rb`.

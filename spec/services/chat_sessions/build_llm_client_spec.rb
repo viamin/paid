@@ -106,6 +106,18 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
     end
   end
 
+  def openai_chat_client(chat_session:, chat_transport:)
+    ChatSessions::BuildLlmClient::HttpClient.new(
+      chat_session:,
+      provider: :openai,
+      protocol: :chat_completions,
+      endpoint: "https://api.openai.com/v1",
+      api_key: "sk-openai-test",
+      model: "gpt-4o",
+      chat_transport:
+    )
+  end
+
   describe ".call" do
     context "with an Anthropic API key runner" do
       it "returns an HttpClient with TextTransport" do
@@ -126,6 +138,25 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
     end
 
     context "with an OpenAI-compatible API key runner" do
+      # @spec CHAT-SESSION-PREFERENCES-003
+      it "moves a legacy Automatic session to the curated Low model without replacing explicit selections" do
+        api_key_record = create(:provider_api_key, user: user, api_key: "sk-openai-test", api_service_type: "openai")
+        runner = create(:runner, :api_key, user: user, runner_key: "opencode", provider_api_key: api_key_record,
+          config: { "opencode" => { "api_provider" => "openai", "model" => "gpt-5.6-luna" } })
+        model = LlmModel.find_or_initialize_by(model_id: "gpt-5.6-luna")
+        model.assign_attributes(display_name: "GPT-5.6 Luna", provider: "openai", category: "coding",
+          tier: "low", capability_score: 9.0, pricing_tier: "paid", catalog_source: "seeded",
+          supports_tools: true, active: true)
+        model.save!
+        automatic = create(:chat_session, account: account, created_by: user, runner: runner, model: nil)
+        explicit = create(:chat_session, account: account, created_by: user, runner: runner, model: "gpt-4o")
+
+        expect(described_class.call(chat_session: automatic).model).to eq("gpt-5.6-luna")
+        expect(automatic.reload.metadata).to include("model_tier" => "low")
+        expect(described_class.call(chat_session: explicit).model).to eq("gpt-4o")
+        expect(explicit.reload.model).to eq("gpt-4o")
+      end
+
       it "returns an HttpClient with OpenAICompatibleTransport" do
         api_key_record = create(:provider_api_key, user: user, api_key: "sk-or-test-key", api_service_type: "openrouter")
         runner = create(:runner, :api_key,
@@ -145,6 +176,8 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       # @spec ONBOARD-CHAT-002
       it "routes a Google API-key runner to Gemini's OpenAI-compatible endpoint" do
         api_key_record = create(:provider_api_key, user: user, api_key: "gemini-test-key", api_service_type: "google")
+        create(:llm_model, provider: "google", model_id: "gemini-2.5-flash-lite", tier: "low",
+          capability_score: 7.0, supports_tools: true)
         runner = create(:runner, :api_key,
           user: user,
           runner_key: "gemini",
@@ -153,11 +186,11 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         chat_session = create(:chat_session, account: account, created_by: user, runner: runner)
 
         client = described_class.call(chat_session: chat_session)
-        chat_transport = stub_chat_transport(client, result: succeeded_result(model: "gemini-2.5-flash"))
+        chat_transport = stub_chat_transport(client, result: succeeded_result(model: "gemini-2.5-flash-lite"))
 
         client.call([ { role: "user", content: "What did you find?" } ])
 
-        expect(client.model).to eq("gemini-2.5-flash")
+        expect(client.model).to eq("gemini-2.5-flash-lite")
         expect(chat_transport).to have_received(:call) do |request|
           expect(request[:candidates].first[:endpoint]).to eq("https://generativelanguage.googleapis.com/v1beta/openai")
         end
@@ -196,6 +229,27 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
 
         expect(chat_transport).to have_received(:call) do |request|
           expect(request[:candidates].first[:endpoint]).to eq("https://api.minimax.io/v1")
+        end
+      end
+
+      # @spec API-CONVERSATION-DELEGATION-007
+      it "selects Responses for OpenAI reasoning chat with function tools" do
+        api_key_record = create(:provider_api_key, user: user, api_key: "sk-openai-test-key", api_service_type: "openai")
+        runner = build_openai_runner(
+          user: user,
+          credential_source: { provider_api_key: api_key_record, integration_credential: nil },
+          service_type: "openai",
+          model: "gpt-5.6-luna"
+        )
+        chat_session = create(:chat_session, account: account, created_by: user, runner: runner, model: "gpt-5.6-luna")
+        client = described_class.call(chat_session: chat_session)
+        chat_transport = stub_chat_transport(client, result: succeeded_result(model: "gpt-5.6-luna"))
+
+        client.call([ { role: "user", content: "Find the issue" } ], tools: [ { name: "search", inputSchema: { type: "object" } } ])
+
+        expect(chat_transport).to have_received(:call) do |request|
+          expect(request[:candidates].first).to include(provider: :openai, protocol: :responses)
+          expect(request[:tools]).to include(hash_including(name: "search", input_schema: { type: "object" }))
         end
       end
 
@@ -287,6 +341,11 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
           provider_api_key: api_key_record,
           config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2" } }
         )
+        model = LlmModel.find_or_initialize_by(model_id: "moonshotai/kimi-k2")
+        model.assign_attributes(display_name: "Kimi K2", provider: "openrouter", category: "coding",
+          tier: "low", capability_score: 8.0, pricing_tier: "paid", catalog_source: "manual",
+          supports_tools: true, active: true)
+        model.save!
 
         client = described_class.call(chat_session: chat_session)
 
@@ -447,6 +506,27 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       expect(result[:tokens_output]).to eq(10)
     end
 
+    # @spec CHAT-API-020
+    it "sends Paid chat tool definitions through an OpenAI request without a schema error" do
+      project = create(:project, account: account)
+      create(:project_membership, :member, user: user, project: project)
+      session = create(:chat_session, account: account, created_by: user, project: project)
+      openai_client = openai_chat_client(chat_session: session, chat_transport: chat_transport)
+      definitions = Tools::Registry.chat_definitions_for(user: user, session: session)
+      allow(chat_transport).to receive(:call).and_return(succeeded_result.merge(model: "gpt-4o"))
+
+      result = openai_client.call([ { role: "user", content: "Start work" } ], tools: definitions)
+
+      expect(result[:content]).to eq("I'm doing well!")
+      expect(chat_transport).to have_received(:call) do |request|
+        expect(request[:candidates].first).to include(provider: :openai, protocol: :chat_completions)
+        request[:tools].each do |tool|
+          expect(tool[:input_schema][:type]).to eq("object")
+          expect(tool[:input_schema]).not_to include(:oneOf, :anyOf, :allOf, :enum, :const, :not)
+        end
+      end
+    end
+
     it "persists every reported attempt with the live chat attribution" do
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
       runner = create(:runner, :api_key, user: user, provider_api_key: api_key)
@@ -565,6 +645,34 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       result = client.call(conversation)
 
       expect(result[:tool_calls]).to eq([ { id: "tc_1", name: "search", arguments: '{"q":"test"}' } ])
+    end
+
+    # @spec API-CONVERSATION-DELEGATION-007
+    it "returns opaque Responses continuation state without exposing it in content" do
+      response_state = { protocol: :responses, output: [ { "type" => "function_call", "call_id" => "provider-call-1" } ] }
+      allow(chat_transport).to receive(:call).and_return(succeeded_result.merge(provider_state: response_state))
+      responses_client = described_class.new(chat_session: chat_session, provider: :openai, protocol: :responses,
+        endpoint: "https://api.openai.com/v1", api_key: "sk-openai-test", model: "gpt-5.6-luna", chat_transport: chat_transport)
+
+      result = responses_client.call(conversation, tools: tool_definitions)
+
+      expect(result).to include(provider_state: response_state)
+      expect(result[:content]).to eq("I'm doing well!")
+    end
+
+    # @spec API-CONVERSATION-DELEGATION-007
+    it "persists an allowlisted harness diagnostic with its failed attempt and raises it for presentation" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      runner = create(:runner, :api_key, user: user, provider_api_key: api_key)
+      session = create(:chat_session, account: account, created_by: user, runner: runner)
+      message = create(:chat_message, chat_session: session, role: "user")
+      diagnostic = "Function tools with reasoning_effort are not supported for gpt-5.6-luna in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'."
+      report = attempt_report(attempt_id: "actionable-diagnostic", status: :failed).merge(error: { code: :invalid_request, message: diagnostic })
+      allow(chat_transport).to receive(:call).and_return(status: :failed, attempts: [ report ], error: { code: :invalid_request, message: diagnostic })
+
+      expect { attributed_client(chat_session: session, message:).call(conversation) }
+        .to raise_error(AgentHarness::ProviderError, diagnostic)
+      expect(ApiUsageAttempt.find_by!(attempt_id: "actionable-diagnostic").metadata).to include("error" => include("message" => diagnostic))
     end
 
     it "raises AgentHarness::RateLimitError with a computed reset_time for a rate-limited failure" do

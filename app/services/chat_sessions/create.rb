@@ -16,11 +16,12 @@ module ChatSessions
   class Create
     attr_reader :account, :user, :container_capability, :runner_id, :model,
       :project_id, :system_prompt, :title, :metadata, :auto_approve,
-      :inbox_item_key, :inbox_item_metadata, :opened_at, :clarifying_question_issue
+      :inbox_item_key, :inbox_item_metadata, :opened_at, :clarifying_question_issue, :feature_intent
 
     def initialize(account:, user:, container_capability: nil, runner_id: nil, provider_id: nil, model: nil,
       project_id: nil, system_prompt: nil, title: nil, metadata: nil, auto_approve: nil,
-      inbox_item_key: nil, inbox_item_metadata: nil, opened_at: nil, clarifying_question_issue: nil)
+      inbox_item_key: nil, inbox_item_metadata: nil, opened_at: nil, clarifying_question_issue: nil,
+      feature_intent: nil)
       @account = account
       @user = user
       @container_capability = container_capability.presence || "none"
@@ -35,6 +36,7 @@ module ChatSessions
       @inbox_item_metadata = inbox_item_metadata
       @opened_at = opened_at
       @clarifying_question_issue = clarifying_question_issue
+      @feature_intent = feature_intent
     end
 
     def self.call(...)
@@ -79,11 +81,12 @@ module ChatSessions
         model: resolved_model,
         project_id: project_id,
         clarifying_question_issue: clarifying_question_issue,
+        feature_intent: feature_intent,
         system_prompt: system_prompt,
         title: title,
         status: "active",
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now,
-        metadata: metadata.presence || {},
+        metadata: session_metadata,
         auto_approve: auto_approve || false,
         inbox_item_key: inbox_item_key,
         inbox_item_metadata: inbox_item_metadata.presence || {},
@@ -173,12 +176,32 @@ module ChatSessions
     end
 
     def resolved_model
+      # @spec CHAT-API-018
+      # @spec CHAT-API-026
       return model if model.present?
 
       runner = resolved_runner
       return nil unless runner
+      return nil if runner.free_model_policy?
 
-      LlmModel.active.by_provider(runner.runner_key).by_capability.first&.model_id
+      curated_model_for(runner).model_id
+    end
+
+    def session_metadata
+      return metadata.presence || {} if model.present? || resolved_runner.nil?
+      return metadata.presence || {} if resolved_runner.free_model_policy?
+
+      (metadata.presence || {}).merge("model_tier" => curated_model_for(resolved_runner).tier)
+    end
+
+    def curated_model_for(runner)
+      # @spec CHAT-API-026
+      CuratedModelOptions.resolve(runner:, projects: policy_projects) ||
+        raise(ArgumentError, "No compatible Low chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy.")
+    end
+
+    def policy_projects
+      @policy_projects ||= account.projects.where(id: project_id).to_a
     end
 
     def default_runner_for_user

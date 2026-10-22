@@ -16,7 +16,7 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
   let(:activity) { described_class.new }
   let(:github_client) { instance_double(GithubClient) }
   let(:pr_head) { double("pr_head", ref: "fix-branch") } # rubocop:disable RSpec/VerifiedDoubles
-  let(:pr_data) { double("pr_data", number: 42, html_url: "https://github.com/#{project.full_name}/pull/42", head: pr_head, body: "## Summary\n\nExisting draft body") } # rubocop:disable RSpec/VerifiedDoubles
+  let(:pr_data) { double("pr_data", number: 42, html_url: "https://github.com/#{project.full_name}/pull/42", head: pr_head, base: double("pr_base", sha: "base-branch-sha"), body: "## Summary\n\nExisting draft body") } # rubocop:disable RSpec/VerifiedDoubles
   let(:summary_response) do
     instance_double(
       AgentHarness::Response,
@@ -46,6 +46,8 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       .with(project.full_name, 42)
       .and_return(pr_data)
     allow(github_client).to receive(:add_comment)
+    allow(github_client).to receive(:add_labels_to_issue)
+    allow(github_client).to receive(:remove_label_from_issue)
     allow(github_client).to receive(:update_pull_request)
     allow(github_client).to receive(:issue).with(project.full_name, 42).and_return(
       OpenStruct.new(
@@ -118,6 +120,103 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
         usage: hash_including(metadata: { operation: "agent_update_summary" }),
         enforce_guardrails: false
       )
+    end
+
+    it "accepts an in-scope repair and reports separate base-import and repair evidence" do # @spec AUTO-MERGE-010
+      agent_run.update!(focus: "merge_conflict", external_metadata: {
+        "pre_run_head_sha" => "fedcba9876543210012345678901234567890abc"
+      })
+      allow_conflict_repair_comparisons(base_files: [ "docs/base.md" ], result_files: [ "docs/base.md", "app/models/provider.rb" ])
+      allow_scope_assessment(approved: true, base_paths: [ "docs/base.md" ], repair_paths: [ "app/models/provider.rb" ])
+
+      expect(github_client).to receive(:add_comment) do |_repository, _number, body|
+        expect(body).to include(
+          "## Automatic conflict repair",
+          "automatic rebase against the base branch found conflicts",
+          "Compare the repair range on GitHub",
+          "classified 1 base-import path and 1 repair-authored path",
+          "repair was accepted as in scope",
+          "freshness check classifies the range as content-preserving"
+        )
+      end
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "persists distinct base-import and repair-authored evidence" do # @spec AUTO-MERGE-010
+      agent_run.update!(focus: "merge_conflict", external_metadata: {
+        "pre_run_head_sha" => "fedcba9876543210012345678901234567890abc"
+      })
+      allow_conflict_repair_comparisons(base_files: [ "docs/base.md" ], result_files: [ "docs/base.md", "app/models/provider.rb" ])
+      allow_scope_assessment(approved: true, base_paths: [ "docs/base.md" ], repair_paths: [ "app/models/provider.rb" ])
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(agent_run.reload.external_metadata.fetch("conflict_repair_scope_assessment")).to include(
+        "status" => "approved",
+        "base_imported_paths" => [ "docs/base.md" ],
+        "repair_authored_paths" => [ "app/models/provider.rb" ]
+      )
+    end
+
+    it "rejects unrelated tooling changes before accepting the pushed repair" do # @spec AUTO-MERGE-010
+      agent_run.update!(focus: "merge_conflict", external_metadata: { "pre_run_head_sha" => "pre-run-sha" })
+      allow_conflict_repair_comparisons(base_files: [ "docs/base.md" ], result_files: [ "docs/base.md", "Gemfile" ])
+      allow_scope_assessment(approved: false, base_paths: [ "docs/base.md" ], repair_paths: [ "Gemfile" ], explanation: "Gemfile is unrelated tooling")
+
+      expect(github_client).to receive(:add_comment) { |_repository, _number, body|
+        expect(body).to include("repair was rejected and requires human review")
+      }
+
+      expect { activity.execute(agent_run_id: agent_run.id) }
+        .to raise_error(Temporalio::Error::ApplicationError, /requires human review/)
+
+      expect(agent_run.reload).to be_running
+      expect(agent_run.external_metadata.dig("conflict_repair_scope_assessment", "repair_authored_paths")).to eq([ "Gemfile" ])
+    end
+
+    it "fails closed when repair evidence is unavailable" do # @spec AUTO-MERGE-010
+      agent_run.update!(focus: "merge_conflict", external_metadata: { "pre_run_head_sha" => "pre-run-sha" })
+      allow(github_client).to receive(:compare_summary).and_raise(GithubClient::ApiError.new("unavailable", status: 503))
+
+      expect { activity.execute(agent_run_id: agent_run.id) }
+        .to raise_error(Temporalio::Error::ApplicationError, /requires human review/)
+
+      expect(agent_run.reload.external_metadata.dig("conflict_repair_scope_assessment", "status")).to eq("unavailable")
+    end
+
+    # @spec QUIET-MODE-007
+    it "skips the summary comment when the project has quiet mode enabled" do
+      project.update!(quiet_mode: true)
+      enable_summary_comments
+
+      expect(github_client).not_to receive(:add_comment)
+      # Quiet mode skips summary generation as well — no LLM tokens are spent
+      # on building a comment body the suppression layer would drop anyway.
+      expect(AgentHarness).not_to receive(:send_message)
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(agent_run.reload.status).to eq("completed")
+    end
+
+    # @spec QUIET-MODE-007
+    it "skips the duplicate-aware post before the API call when quiet mode is on" do
+      project.update!(quiet_mode: true)
+
+      expect(github_client).not_to receive(:issue_comments)
+      expect(github_client).not_to receive(:add_comment)
+
+      activity.execute(agent_run_id: agent_run.id)
+    end
+
+    it "still posts the summary comment when quiet mode is off (default)" do
+      project.update!(quiet_mode: false)
+      enable_summary_comments
+
+      expect(github_client).to receive(:add_comment).once
+
+      activity.execute(agent_run_id: agent_run.id)
     end
 
     it "summarizes only the new push when a pre-run PR head SHA was recorded" do
@@ -272,6 +371,19 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       )
     end
 
+    it "returns a revised test-writing commit to fresh review" do # @spec TDD-PR-007
+      agent_run.update!(tdd_phase: "test_writing")
+      issue.update!(github_number: 42, labels: [ "paid-test-changes-requested" ])
+
+      activity.execute(agent_run_id: agent_run.id)
+
+      expect(github_client).to have_received(:add_labels_to_issue)
+        .with(project.full_name, 42, [ "paid-tests-ready-for-review" ])
+      expect(github_client).to have_received(:remove_label_from_issue)
+        .with(project.full_name, 42, "paid-test-changes-requested")
+      expect(issue.reload.labels).to contain_exactly("paid-tests-ready-for-review")
+    end
+
     it "enqueues ProcessRunQueueJob" do
       expect { activity.execute(agent_run_id: agent_run.id) }
         .to have_enqueued_job(ProcessRunQueueJob)
@@ -398,6 +510,35 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       .with(project.full_name, base_sha, agent_run.result_commit_sha)
       .and_return(summary_comparison)
     allow(AgentHarness).to receive(:send_message).and_return(summary_response)
+  end
+
+  def allow_conflict_repair_comparisons(base_files:, result_files:)
+    pre_run_sha = agent_run.external_metadata.fetch("pre_run_head_sha")
+    allow(github_client).to receive(:compare_summary)
+      .with(project.full_name, pre_run_sha, pr_data.base.sha)
+      .and_return(files_payload(base_files))
+    allow(github_client).to receive(:compare_summary)
+      .with(project.full_name, pre_run_sha, agent_run.result_commit_sha)
+      .and_return(files_payload(result_files))
+  end
+
+  def files_payload(paths)
+    { files: paths.map { |path| { filename: path, patch: "@@ #{path}" } } }
+  end
+
+  def allow_scope_assessment(approved:, base_paths:, repair_paths:, explanation: "Repair is in scope")
+    allow(AgentHarness).to receive(:send_message).and_return(
+      instance_double(
+        AgentHarness::Response,
+        success?: true,
+        output: {
+          approved: approved,
+          explanation: explanation,
+          base_imported_paths: base_paths,
+          repair_authored_paths: repair_paths
+        }.to_json
+      )
+    )
   end
 
   def enable_required_completion_verification

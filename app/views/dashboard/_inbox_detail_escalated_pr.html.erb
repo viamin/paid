@@ -31,7 +31,7 @@
       <% if entry.record.counters.any? %>
         <% entry.record.counters.each do |counter| %>
           <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-            <%= escalation_counter_label(counter.name) %> <span class="font-medium"><%= counter.value %> / <%= counter.limit %></span>
+            <%= escalation_counter_label(counter.name) %> <span class="font-medium"><%= counter.value %> / <%= counter.limit %></span><%= " (#{[counter.limit - counter.value, 0].max} remaining)" if counter.name == :pr_auto_continue_tokens %>
           </li>
         <% end %>
       <% elsif entry.record.last_progress_at %>

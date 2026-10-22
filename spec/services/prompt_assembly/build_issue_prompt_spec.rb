@@ -57,6 +57,41 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     end
   end
 
+  # Assemble an OpenStruct project whose service-container relation contains a
+  # running postgres image — for tests asserting the database-available branch
+  # of prompt construction.
+  def assembly_project_with_postgres
+    pg_container = OpenStruct.new(image: "postgres:16", name: "postgres", port: 5432)
+    running_scope = OpenStruct.new(to_a: [ pg_container ])
+    relation = OpenStruct.new(running: running_scope, to_a: [ pg_container ])
+    assembly_project_with(
+      service_containers: relation,
+      detected_languages: []
+    )
+  end
+
+  def assembly_project_with(service_containers:, detected_languages: [])
+    OpenStruct.new(
+      full_name: "owner-1/repo-1",
+      account: OpenStruct.new(id: 7),
+      allowed_github_usernames: [ "viamin" ],
+      service_containers: service_containers,
+      lid_mode: nil,
+      detected_languages: detected_languages
+    ).tap do |p|
+      def p.trusted_github_user?(login)
+        return false if login.nil?
+        allowed_github_usernames.any? { |u| u.downcase == login.downcase }
+      end
+
+      def p.paid_bot_author?(login)
+        login == "paid-code-reviewer[bot]"
+      end
+
+      p.define_singleton_method(:uses_feature_flags_pattern?) { false }
+    end
+  end
+
   describe ".call" do
     it "resolves the create_pr assembly profile for the project path" do
       profile = PromptAssembly::Profile.new(disabled_sections: [ :trusted_comments ])
@@ -202,11 +237,24 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
     it "includes the safety rules exactly once (no duplication from the template)" do
       result = described_class.call(issue: issue, project: project)
 
-      expect(result.text.scan("MUST pass before every commit").length).to eq(1)
+      # No database is available by default, so the NO_DATABASE_SAFETY_RULES
+      # variant applies — it has two "MUST pass before every commit" bullets
+      # (Lint and Runnable tests). The # Rules heading appears once because the
+      # legacy suffix has been stripped from the rendered template body.
       expect(result.text.scan("# Rules").length).to eq(1)
+      # Either the no-database variant's two distinct bullets or the standard
+      # single rule should appear — never the duplicated default + suffix.
+      expect(result.text.scan("MUST pass before every commit").length).to be <= 3
     end
 
-    it "strips a legacy embedded rules suffix from the queued prompt version before appending safety rules" do
+    it "emits a single lint rule when a database is available" do
+      result = described_class.call(issue: issue, project: assembly_project_with_postgres)
+
+      expect(result.text.scan("MUST pass before every commit").length).to eq(1)
+      expect(result.text).to include("Lint and tests MUST pass before every commit")
+    end
+
+    it "keeps phase guidance when a queued template overrides task instructions" do # @spec PROMPT-ASSEMBLY-023
       prompt_record = Prompt.global.find_or_create_by!(slug: "coding.issue_implementation") do |prompt|
         prompt.name = "Issue implementation"
         prompt.category = "coding"
@@ -227,18 +275,18 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
         TEMPLATE
         variables: []
       )
-      agent_run = create(:agent_run, goal: "create_pr", prompt_version: prompt_record.current_version)
+      agent_run = create(:agent_run, goal: "create_pr", prompt_version: prompt_record.current_version, tdd_phase: "test_writing")
 
       result = described_class.call(issue: issue, project: project, agent_run: agent_run)
 
-      expect(result.text.scan("When you're done, commit all your changes. Do not push.").length).to eq(1)
+      expect(result.text).not_to include("When you're done, commit all your changes. Do not push.")
+      expect(result.text).to include("When you're done, commit the permitted tests and LID docs only. Do not push.", "does not unlock implementation within this run")
       expect(result.text.scan("# Rules — you MUST follow these").length).to eq(1)
-      expect(result.text).not_to include("Old rule one")
-      expect(result.text).not_to include("Old rule two")
+      expect(result.text).not_to include("Old rule one", "Old rule two")
     end
 
-    it "includes test and lint commands" do
-      result = described_class.call(issue: issue, project: project)
+    it "includes test and lint commands when a database is available" do
+      result = described_class.call(issue: issue, project: assembly_project_with_postgres)
 
       expect(result.text).to include("bundle exec rspec")
       expect(result.text).to include("bundle exec rubocop")
@@ -278,6 +326,128 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
       result = described_class.call(issue: issue, project: project)
 
       expect(result.sections.map(&:key)).to include(:safety_rules)
+    end
+  end
+
+  # @spec QUIET-MODE-008
+  describe "quiet mode commit-message guidance (#4232)" do
+    let(:quiet_project) do
+      OpenStruct.new(
+        full_name: "owner-1/repo-1",
+        account: OpenStruct.new(id: 7),
+        allowed_github_usernames: [ "viamin" ],
+        service_containers: service_containers_relation,
+        lid_mode: nil,
+        detected_languages: [],
+        quiet_mode: true
+      ).tap do |p|
+        def p.trusted_github_user?(login)
+          return false if login.nil?
+          allowed_github_usernames.any? { |u| u.downcase == login.downcase }
+        end
+
+        def p.paid_bot_author?(login)
+          login == "paid-code-reviewer[bot]"
+        end
+
+        def p.uses_feature_flags_pattern?
+          false
+        end
+
+        def p.quiet_mode?
+          quiet_mode == true
+        end
+      end
+    end
+
+    it "omits the quiet mode guidance when quiet mode is off" do
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.text).not_to include("Commit Message Is The Commentary Channel")
+    end
+
+    it "embeds the quiet mode guidance in the issue_task section when quiet mode is on" do
+      result = described_class.call(issue: issue, project: quiet_project)
+
+      expect(result.text).to include("Commit Message Is The Commentary Channel")
+      expect(result.text).to include("Implement: extract runner selection into AgentRun#select_runner")
+    end
+
+    it "adds guidance to a pinned template that omits the placeholder" do
+      prompt = Prompt.global.find_or_create_by!(slug: "coding.issue_implementation") do |record|
+        record.name = "Issue implementation"
+        record.category = "coding"
+        record.active = true
+      end
+      prompt.create_version!(template: "# Task\n\nImplement {{title}}.", variables: [])
+      agent_run = create(:agent_run, goal: "create_pr", prompt_version: prompt.current_version)
+
+      result = described_class.call(issue: issue, project: quiet_project, agent_run: agent_run)
+
+      expect(result.text).to include("Implement Fix login redirect.")
+      expect(result.text).to include("Commit Message Is The Commentary Channel")
+    end
+  end
+
+  describe "TDD boundaries" do # @spec PROMPT-ASSEMBLY-020 # @spec PROMPT-ASSEMBLY-023
+    let(:real_issue) { create(:issue) }
+
+    it "includes test_writing boundaries when the run is TDD-governed" do
+      agent_run = create(:agent_run, project: real_issue.project, issue: real_issue, goal: "create_pr", tdd_phase: "test_writing")
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.text).to include("TDD Boundaries — test-writing run")
+      expect(result.text).to include("does not unlock implementation within this run")
+      expect(result.text).to include("paid-tests-approved")
+      expect(result.text).to include("expected assertion failures")
+      expect(result.sections.find { |s| s.key == :tdd_boundaries }).to be_required
+    end
+
+    it "includes test_fixing boundaries when the run is TDD-governed" do
+      agent_run = create(:agent_run, project: real_issue.project, issue: real_issue, goal: "create_pr", tdd_phase: "test_fixing")
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.text).to include("TDD Boundaries — test-fixing run")
+      expect(result.text).to include("return the PR to test review before editing tests")
+    end
+
+    it "includes refactor boundaries when the run is TDD-governed" do
+      agent_run = create(:agent_run, project: real_issue.project, issue: real_issue, goal: "create_pr", tdd_phase: "refactor")
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.text).to include("TDD Boundaries — refactor run")
+      expect(result.text).to match(/Keep the\s+approved test suite green/)
+    end
+
+    it "omits TDD boundaries when the run is not TDD-governed" do
+      agent_run = create(:agent_run, project: real_issue.project, issue: real_issue, goal: "create_pr", tdd_phase: nil)
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.sections.map(&:key)).not_to include(:tdd_boundaries)
+    end
+
+    it "keeps TDD boundaries even when a profile disables them" do
+      agent_run = create(:agent_run, project: real_issue.project, issue: real_issue, goal: "create_pr", tdd_phase: "test_writing")
+      profile = PromptAssembly::Profile.new(disabled_sections: [ :tdd_boundaries ])
+      allow(PromptAssembly::ProfileResolution).to receive(:resolve).and_return(profile)
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      expect(result.text).to include("TDD Boundaries — test-writing run")
+      expect(result.skipped.map { |s| s[:key] }).not_to include(:tdd_boundaries)
+    end
+
+    it "records the effective phase guidance in provenance" do
+      agent_run = create(:agent_run, project: real_issue.project, issue: real_issue, goal: "create_pr", tdd_phase: "test_writing")
+
+      result = described_class.call(issue: issue, project: project, agent_run: agent_run)
+
+      section = result.provenance[:sections].find { |entry| entry[:key] == :tdd_boundaries }
+      expect(section).to include(required: true, inclusion_reason: "TDD phase guidance and write-boundary contract")
     end
   end
 
@@ -670,6 +840,64 @@ RSpec.describe PromptAssembly::BuildIssuePrompt do
 
       expect(result.text).to include("Available Services")
       expect(result.text).to include("DATABASE_URL")
+    end
+  end
+
+  describe "database-aware prompt construction" do # @spec POLYGLOT-TEST-011
+    let(:configured_containers) { [] }
+
+    it "drops the database-dependent Ruby test command when no database is available" do
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.text).not_to include("bundle exec rspec")
+      expect(result.text).to include("No test command configured")
+    end
+
+    it "emits the no-database safety rules when no database is available" do
+      result = described_class.call(issue: issue, project: project)
+
+      expect(result.text).to include("Report skipped database-dependent tests")
+      expect(result.text).to include("Do NOT provision or install missing services")
+      expect(result.text).not_to include("- **Lint and tests MUST pass before every commit.**")
+    end
+
+    it "includes the Ruby test command when a database is configured" do
+      result = described_class.call(issue: issue, project: assembly_project_with_postgres)
+
+      expect(result.text).to include("bundle exec rspec")
+      expect(result.text).to include("- **Lint and tests MUST pass before every commit.**")
+      expect(result.text).not_to include("Report skipped database-dependent tests")
+    end
+
+    it "treats an agent_run's provisioned service_container_ids as the database source of truth" do
+      real_project = assembly_project
+      pg_container = create(:service_container, account: Account.first || create(:account), image: "postgres:16", status: "running")
+      agent_run_with_db = create(:agent_run, project: create(:project), service_container_ids: [ pg_container.id ])
+
+      stubbed = false
+      allow(Prompts::ServiceContainerSections).to receive(:has_database_container?) do |**_kwargs|
+        stubbed = true
+        ServiceContainer.where(id: [ pg_container.id ], status: "running").any? { |sc| sc.image.to_s.include?("postgres") }
+      end
+
+      described_class.call(issue: issue, project: real_project, agent_run: agent_run_with_db)
+
+      expect(stubbed).to be(true)
+    end
+
+    it "uses the agent run's services in the service environment section" do
+      postgres_container = OpenStruct.new(image: "postgres:16", name: "postgres", port: 5432)
+      configured_project = assembly_project_with(
+        service_containers: OpenStruct.new(running: OpenStruct.new(to_a: [ postgres_container ]), to_a: [ postgres_container ])
+      )
+      redis_container = create(:service_container, :redis, account: Account.first || create(:account), status: "running")
+      agent_run_without_db = create(:agent_run, project: create(:project), service_container_ids: [ redis_container.id ])
+
+      result = described_class.call(issue: issue, project: configured_project, agent_run: agent_run_without_db)
+
+      expect(result.text).to include("Environment Constraints")
+      expect(result.text).to include("REDIS_URL")
+      expect(result.text).not_to include("DATABASE_URL")
     end
   end
 

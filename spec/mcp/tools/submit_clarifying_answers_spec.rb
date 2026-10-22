@@ -119,19 +119,47 @@ RSpec.describe Tools::SubmitClarifyingAnswers do
         project.full_name, issue.github_number, project.enhance_issue_needs_input_label_name
       )
       expect(issue.reload.paid_state).to eq("new")
+    expect(issue.clarifying_question_progresses.ordered.pluck(:answer)).to eq([ "X is a feature", "Yes, by default" ])
       expect(result).to eq(posted: true, issue_id: issue.id, issue_number: issue.github_number)
     end
 
-    it "rejects quiet-mode answers without clearing the inbox item" do
-      # @spec QUIET-MODE-006
+  # @spec QUESTION-EXPLORATION-002 @spec QUESTION-EXPLORATION-013
+  it "keeps unrelated question progress when final answers clear this issue" do
+    other_issue = create(:issue, :needs_input, project:, needs_input_questions: [ "Other question?" ])
+    other_session = create(:chat_session, account:, created_by: user, project:, clarifying_question_issue: other_issue)
+    ClarifyingQuestions::SaveProgress.call(
+      chat_session: other_session, position: 1, answer: "Keep this draft", actor: user
+    )
+
+    tool.call(answers: [ "X is a feature", "Yes, by default" ], confirmed: true)
+
+    expect(other_issue.reload).to have_attributes(paid_state: "needs_input", needs_input_questions: [ "Other question?" ])
+    expect(other_issue.clarifying_question_progresses.find_by(position: 1).answer).to eq("Keep this draft")
+  end
+
+    it "writes quiet-mode answers to the description and clears the inbox item" do # @spec QUIET-MODE-010
       project.update!(quiet_mode: true)
+      remote_body = ClarifyingQuestions::DescriptionSection.replace_questions_section(
+        body: issue.body,
+        questions: questions
+      )
+      allow(github_client).to receive(:issue).and_return(Struct.new(:body).new(remote_body))
+      allow(github_client).to receive(:update_issue)
 
-      expect do
-        tool.call(answers: [ "X is a feature", "Yes, by default" ], confirmed: true)
-      end.to raise_error(ArgumentError, /cannot be submitted while quiet mode is enabled/)
+      result = tool.call(answers: [ "X is a feature", "Yes, by default" ], confirmed: true)
 
+      expect(github_client).to have_received(:update_issue).with(
+        project.full_name,
+        issue.github_number,
+        body: a_string_including(
+          "<!-- paid:clarifying-answers -->",
+          "**A1:** X is a feature",
+          "**A2:** Yes, by default"
+        )
+      )
       expect(github_client).not_to have_received(:add_comment)
-      expect(issue.reload.paid_state).to eq("needs_input")
+      expect(issue.reload.paid_state).to eq("new")
+      expect(result).to eq(posted: true, issue_id: issue.id, issue_number: issue.github_number)
     end
 
     # @spec QUESTION-EXPLORATION-016

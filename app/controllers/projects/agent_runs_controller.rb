@@ -256,6 +256,19 @@ module Projects
       )
     end
 
+    # @spec PROJECT-READINESS-007
+    def bootstrap_readiness
+      authorize @project, :run_agent?
+      run = Projects::Readiness::Bootstrap.call(project: @project, user: current_user)
+      audit_event("agent_run.created", metadata: { agent_run_id: run.id, project_name: @project.name, goal: run.goal })
+      redirect_to project_path(@project), notice: "Agent run queued. It will start automatically when a slot opens."
+    rescue Projects::Readiness::Bootstrap::NotReadyError,
+           Projects::Readiness::Bootstrap::ActiveRunError,
+           Projects::Readiness::Bootstrap::BudgetExceededError,
+           Projects::Readiness::Bootstrap::NoRunnableRunnerError => error
+      redirect_to inbox_path, alert: error.message
+    end
+
     def bump_priority
       authorize @project, :run_agent?
 
@@ -575,6 +588,12 @@ module Projects
 
     def retry
       authorize @agent_run
+
+      if @agent_run.bootstrap_readiness_goal?
+        redirect_to inbox_path,
+          alert: "Bootstrap attempts must be started again from the project setup Inbox entry."
+        return
+      end
 
       unless @agent_run.finished?
         redirect_to project_agent_run_path(@project, @agent_run),
@@ -913,8 +932,7 @@ module Projects
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap
     # path can abandon either), so this resolver does not narrow on
-    # is_pull_request — see OPERATOR-INBOX-002E / dashboard's
-    # Retry-Limited card. The runner_retry_abandoned_at gate is what makes
+    # is_pull_request — see OPERATOR-INBOX-002E. The runner_retry_abandoned_at gate is what makes
     # the row part of the lane in the first place; matching on it stops a
     # stale click from clearing the flag after the issue left the lane
     # (e.g. via RunAgentActivity#clear_issue_runner_retry_abandonment after
@@ -990,6 +1008,15 @@ module Projects
       external_metadata = external_metadata.merge("plan_docs" => plan_docs) if plan_docs.any?
 
       ActiveRecord::Base.transaction do
+        # @spec LABEL-CONTROL-007 — In ignored mode any manual run against a
+        # specific issue or PR marks it as Paid's to work on; auto-pick on
+        # the same project will pick it up without waiting for a label.
+        Issues::ActivatePaid.call(
+          project: @project,
+          issue: issue,
+          pull_request_number: source_pull_request_number
+        )
+
         agent_run = AgentRun.create!(
           project: @project,
           issue: issue,

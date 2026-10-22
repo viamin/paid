@@ -2,6 +2,11 @@
 ARG VARIANT=3.4-bookworm
 FROM mcr.microsoft.com/devcontainers/ruby:${VARIANT}
 
+COPY .tool-versions /tmp/paid-tool-versions
+RUN expected_ruby="$(awk '$1 == "ruby" { print $2 }' /tmp/paid-tool-versions)" \
+  && actual_ruby="$(ruby -e 'print RUBY_VERSION')" \
+  && test "$actual_ruby" = "$expected_ruby"
+
 # Switch to root for system package installation
 USER root
 

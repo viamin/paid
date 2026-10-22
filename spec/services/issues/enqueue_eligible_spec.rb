@@ -20,6 +20,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   def project_class
     @project_class ||= Struct.new(:id, :auto_pick_enabled?) do
       def auto_enhance_enabled? = false
+      def paid_local_activation? = false
       def effective_auto_pick_skip_labels = []
       def feature_activation_label_for(_feature) = nil
       def model_preferences
@@ -29,7 +30,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   end
 
   def issue_class
-    @issue_class ||= Struct.new(:id, :github_number, :labels, :paid_state, :last_analyzer_sufficient_context)
+    @issue_class ||= Struct.new(:id, :github_number, :labels, :paid_state, :last_analyzer_sufficient_context, :confidence_delivery?)
   end
 
   def run_class
@@ -39,12 +40,12 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   end
 
   let(:project) do
-    instance_double(project_class, id: 7, auto_enhance_enabled?: false,
+    instance_double(project_class, id: 7, auto_enhance_enabled?: false, paid_local_activation?: false,
       effective_auto_pick_skip_labels: [], feature_activation_label_for: nil)
   end
   let(:issue) do
     instance_double(issue_class, id: 11, github_number: 42, labels: [],
-      paid_state: "new", last_analyzer_sufficient_context: false)
+      paid_state: "new", last_analyzer_sufficient_context: false, confidence_delivery?: false)
   end
   let(:eligible_scope) { instance_double(ActiveRecord::Relation) }
   let(:issue_scope) { instance_double(ActiveRecord::Relation, exists?: true) }
@@ -95,6 +96,28 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
     )
   end
 
+  it "does not reconcile a release hold for an issue outside confidence-driven delivery" do # @spec CONFIDENCE-DELIVERY-005
+    allow(FeatureIntents::ReleaseIssue).to receive(:call)
+    allow(issue_scope).to receive(:exists?).and_return(false)
+    allow(Rails.logger).to receive(:info)
+
+    service.call
+
+    expect(FeatureIntents::ReleaseIssue).not_to have_received(:call)
+  end
+
+  it "reconciles confidence-driven delivery before enqueueing" do # @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-005
+    confidence_issue = instance_double(issue_class, id: 11, github_number: 42, labels: [],
+      paid_state: "new", last_analyzer_sufficient_context: false, confidence_delivery?: true)
+    service = described_class.new(confidence_issue, project: project)
+    release = instance_double(FeatureIntents::ReleaseIssue::Result, released?: false, reason: "Readiness is incomplete.")
+    allow(FeatureIntents::ReleaseIssue).to receive(:call).with(issue: confidence_issue).and_return(release)
+    allow(Rails.logger).to receive(:info)
+
+    expect(service.call).to be_nil
+    expect(FeatureIntents::ReleaseIssue).to have_received(:call).with(issue: confidence_issue)
+  end
+
   it "uses analyze_issue as the seeded goal when auto_enhance is enabled" do
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
     run = build_run(id: 99, previously_new_record: true)
@@ -134,7 +157,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   it "seeds create_pr directly for a completed issue with a prior sufficient-context verdict, even with auto_enhance enabled" do
     allow(project).to receive(:auto_enhance_enabled?).and_return(true)
     issue = instance_double(issue_class, id: 11, github_number: 42, labels: [],
-      paid_state: "completed", last_analyzer_sufficient_context: true)
+      paid_state: "completed", last_analyzer_sufficient_context: true, confidence_delivery?: false)
     service = described_class.new(issue, project: project)
     allow(eligible_scope).to receive(:where).with(id: issue.id).and_return(issue_scope)
     allow(service).to receive(:blocking_runs).with("create_pr").and_return(create_pr_blocking_runs)

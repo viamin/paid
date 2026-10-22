@@ -102,6 +102,27 @@ RSpec.describe ServiceContainer do
     end
   end
 
+  describe "readiness re-evaluation" do
+    # @spec PROJECT-READINESS-006
+    it "queues a readiness evaluation for associated projects when the name changes" do
+      service_container = create(:service_container)
+      project = create(:project, account: service_container.account)
+      create(:project_service_container, project: project, service_container: service_container)
+
+      expect { service_container.update!(name: "renamed-redis") }
+        .to have_enqueued_job(EvaluateProjectReadinessJob).with(project.id)
+    end
+
+    it "does not queue a readiness evaluation for unrelated updates" do
+      service_container = create(:service_container)
+      project = create(:project, account: service_container.account)
+      create(:project_service_container, project: project, service_container: service_container)
+
+      expect { service_container.update!(status: "running") }
+        .not_to have_enqueued_job(EvaluateProjectReadinessJob)
+    end
+  end
+
   describe "#capacity_inflight_agent_run_count" do
     it "counts running agent runs referencing this container" do
       service_container = create(:service_container)

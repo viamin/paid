@@ -89,6 +89,7 @@ RSpec.describe MarketplaceEntries::RerenderForRun, :no_db do
       :agent_type,
       :id,
       :mcp_server_snapshot,
+      :tool_sidecar_snapshot,
       :persisted_snapshot,
       :updated_snapshot,
       :fake_model_class,
@@ -103,6 +104,7 @@ RSpec.describe MarketplaceEntries::RerenderForRun, :no_db do
       id: 42,
       agent_type: "codex",
       mcp_server_snapshot: [ { "name" => "base-server" } ],
+      tool_sidecar_snapshot: [],
       fake_model_class: fake_model_class
     )
   end

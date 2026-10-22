@@ -51,3 +51,40 @@
   `app/controllers/api/github_proxy_controller.rb`.
   *Test:* `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
   `spec/requests/api/github_proxy_spec.rb`.
+
+- [x] **TDD-PR-007** — When a current TDD test review rejects the proposed
+  tests, the scanner SHALL queue a `test_writing` revision run only with a
+  snapshot of the trusted review body and/or unresolved trusted review-thread
+  comments that caused that rejection. The revision prompt SHALL identify the
+  review provenance and require updating only the proposed tests and returning
+  the PR to the test-review gate; it SHALL NOT treat implementation as complete.
+  Untrusted comment bodies SHALL be excluded. If no current trusted feedback is
+  available, or the latest test-writing run ended `no_changes` against the same
+  feedback snapshot, the scanner SHALL escalate the PR for manual review rather
+  than queueing another generic run. When that revision publishes a new commit,
+  Paid SHALL replace the preceding approval or changes-requested verdict with
+  `paid-tests-ready-for-review`, for both GitHub-label and local-control
+  projects. A no-output run or failed/partial remote-label transition SHALL NOT
+  claim a new local revision, and an older rejection SHALL NOT trigger another
+  test-writing run after a newer revision exists.
+  *Code:* `app/services/tdd/publish_test_revision.rb`,
+  `app/temporal/activities/complete_existing_pr_run_activity.rb`,
+  `app/temporal/activities/scan_paid_prs_activity.rb`,
+  `app/services/automation/strategies/auto_review.rb`,
+  `app/temporal/activities/queue_agent_run_activity.rb`,
+  `app/services/prompts/build_for_pr.rb`.
+  *Test:* `spec/services/tdd/publish_test_revision_spec.rb`,
+  `spec/temporal/activities/complete_existing_pr_run_activity_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`,
+  `spec/services/automation/strategies/auto_review_spec.rb`,
+  `spec/services/prompts/build_for_pr_spec.rb`.
+  When `draft_review_count` has reached a positive configured
+  `max_draft_review_rounds`, it SHALL escalate rather than schedule another
+  automatic test-revision run, whether the verdict comes from GitHub labels or
+  Paid-local control state and including repeated no-change outcomes. A current
+  actionable human review thread MAY proceed through the ordinary
+  human-feedback path, and an approved test verdict SHALL still transition to
+  implementation; neither exception SHALL permit repeated automated rejected
+  test revisions beyond the cap. A zero limit SHALL remain disabled and an
+  explicit operator restart SHALL retain its established counter-reset
+  semantics.

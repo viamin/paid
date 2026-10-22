@@ -3698,4 +3698,36 @@ RSpec.describe Project do
       expect(project.reload.scheduler_paused_at).to be_present
     end
   end
+
+  describe "project readiness" do
+    # @spec PROJECT-READINESS-005 PROJECT-READINESS-011
+    it "ignores persisted gaps for capabilities that are now disabled" do
+      project = build(:project, tdd_mode: "off", screenshot_settings: { "verification_enabled" => false }, readiness_gaps: [
+        { "kind" => "missing_ci", "description" => "CI is required." },
+        { "kind" => "app_start_command_unavailable", "description" => "Start the application." }
+      ])
+
+      expect(project).not_to be_readiness_blocked
+      expect(project.active_readiness_gaps).to be_empty
+      expect(project.readiness_gap_descriptions).to be_empty
+    end
+
+    # @spec PROJECT-READINESS-005 PROJECT-READINESS-012
+    it "reports the gap kinds of the capabilities that are still enabled" do
+      project = build(:project, tdd_mode: "off", screenshot_settings: { "verification_enabled" => true }, readiness_gaps: [
+        { "kind" => "missing_ci", "description" => "CI is required." },
+        { "kind" => "app_start_command_unavailable", "description" => "Start the application." }
+      ])
+
+      expect(project.active_readiness_gap_kinds).to eq([ "app_start_command_unavailable" ])
+    end
+
+    # @spec PROJECT-READINESS-006
+    it "queues a readiness evaluation when TDD mode changes" do
+      project = create(:project, tdd_mode: "off")
+
+      expect { project.update!(tdd_mode: "strict") }
+        .to have_enqueued_job(EvaluateProjectReadinessJob).with(project.id)
+    end
+  end
 end

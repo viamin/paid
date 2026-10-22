@@ -10,7 +10,8 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
     double(
       client: github_client,
       github_credential_present?: true,
-      full_name: "paid/app"
+      full_name: "paid/app",
+      quiet_mode?: false
     )
   end
   let(:issue) do
@@ -293,6 +294,83 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       end
     end
 
+    context "when quiet mode was disabled after description answers were recorded" do
+      let(:issue_body) do
+        <<~COMMENT
+          Original issue body
+
+          <!-- paid:clarifying-questions -->
+          ## Clarifying questions
+
+          <!-- paid:clarifying-questions-digest:#{ClarifyingQuestions::DescriptionSection.digest_for([ "What was the original scope?" ])} -->
+          1. What was the original scope?
+          <!-- /paid:clarifying-questions -->
+
+          <!-- paid:clarifying-answers -->
+          ## Clarifying question answers
+
+          <!-- paid:clarifying-answers-digest:#{ClarifyingQuestions::DescriptionSection.digest_for([ "What was the original scope?" ])} -->
+          **Q1: What was the original scope?**
+          **A1:** The old scope.
+          <!-- /paid:clarifying-answers -->
+        COMMENT
+      end
+
+      it "uses a newer enhancement comment instead of resolving stale description answers" do # @spec QUIET-MODE-011
+        enhancement_comment = double(
+          body: <<~COMMENT,
+            <!-- paid:enhance-issue -->
+
+            ## Clarifying questions
+            1. What is the current scope?
+          COMMENT
+          user: double(login: trusted_login),
+          created_at: 1.minute.ago
+        )
+        allow(github_client).to receive(:issue_comments).and_return([ enhancement_comment ])
+        expect(ClarifyingQuestions::IngestAnswers).not_to receive(:call)
+
+        expect(described_class.call(project: project, issue: issue)).to eq([ "What is the current scope?" ])
+      end
+
+      it "does not reopen answered description questions without an enhancement comment" do # @spec QUIET-MODE-011
+        allow(github_client).to receive(:issue_comments).and_return([])
+        expect(ClarifyingQuestions::IngestAnswers).not_to receive(:call)
+
+        expect(described_class.call(project: project, issue: issue)).to eq([])
+      end
+    end
+
+    context "when quiet-mode answer digest matches but answer pairs are missing" do
+      let(:issue_body) do
+        questions = [ "What should happen next?" ]
+        digest = ClarifyingQuestions::DescriptionSection.digest_for(questions)
+
+        <<~COMMENT
+          <!-- paid:clarifying-questions -->
+          ## Clarifying questions
+
+          <!-- paid:clarifying-questions-digest:#{digest} -->
+          1. What should happen next?
+          <!-- /paid:clarifying-questions -->
+
+          <!-- paid:clarifying-answers -->
+          ## Clarifying question answers
+
+          <!-- paid:clarifying-answers-digest:#{digest} -->
+          <!-- /paid:clarifying-answers -->
+        COMMENT
+      end
+
+      before { allow(project).to receive(:quiet_mode?).and_return(true) }
+
+      it "keeps the questions pending" do # @spec QUIET-MODE-011
+        expect(ClarifyingQuestions::ClearNeedsInput).not_to receive(:call)
+
+        expect(described_class.call(project: project, issue: issue)).to eq([ "What should happen next?" ])
+      end
+    end
+
     context "when only an answers comment remains" do
       before do
         answers_comment = double(
@@ -553,6 +631,27 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
       )
     end
 
+    # @spec QUIET-MODE-011
+    it "returns description prose without rendering the quiet-mode digest" do
+      allow(project).to receive(:quiet_mode?).and_return(true)
+      allow(issue).to receive(:body).and_return(<<~BODY)
+        Original issue body.
+
+        The agent needs the rollout scope before implementation.
+
+        <!-- paid:clarifying-questions -->
+        ## Clarifying questions
+
+        <!-- paid:clarifying-questions-digest:abc12345 -->
+        1. What is the original scope?
+        <!-- /paid:clarifying-questions -->
+      BODY
+
+      expect(context_loaded_load.context_markdown).to eq(
+        "Original issue body.\n\nThe agent needs the rollout scope before implementation."
+      )
+    end
+
     it "returns nil when the latest enhancement comment has no recoverable context" do
       comment_body_without_context = <<~COMMENT
         <!-- paid:enhance-issue -->
@@ -567,7 +666,7 @@ RSpec.describe ClarifyingQuestions::Load, :no_db do
     end
 
     it "returns nil when GitHub credentials are missing" do
-      credentialless = double(github_credential_present?: false)
+      credentialless = double(github_credential_present?: false, quiet_mode?: false)
       load = described_class.new(project: credentialless, issue: issue)
 
       expect(load.context_markdown).to be_nil

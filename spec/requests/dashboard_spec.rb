@@ -18,26 +18,8 @@ RSpec.describe "Dashboard" do
 
       before { sign_in user }
 
-      # @spec PR-ESCALATION-011
-      it "lists escalated pull requests in the blocked PRs panel with an unblock action" do
-        pr = create(:issue, :pull_request,
-          project: project,
-          github_number: 91,
-          title: "Fix the flaky suite",
-          pr_review_phase: "escalated",
-          pr_escalation_reason: Issue::PR_ESCALATION_REASON_FAILURE_STREAK,
-          draft_review_count: 12)
-
-        get dashboard_path
-
-        expect(response.body).to include("Blocked PRs")
-        expect(response.body).to include("##{pr.github_number}")
-        expect(response.body).to include("Unblock")
-      end
-
-      # @spec PR-ESCALATION-022
-      it "names the project in the unblock confirmation prompt" do
-        pr = create(:issue, :pull_request,
+      it "does not render escalated pull requests" do
+        create(:issue, :pull_request,
           project: project,
           github_number: 91,
           pr_review_phase: "escalated",
@@ -46,7 +28,7 @@ RSpec.describe "Dashboard" do
 
         get dashboard_path
 
-        expect(response.body).to include(CGI.escapeHTML("#{project.full_name}##{pr.github_number}"))
+        expect(response.body).not_to include("Blocked PRs")
       end
 
       it "renders the dashboard" do
@@ -78,23 +60,8 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Test Company")
       end
 
-      it "renders retry-limited issues as a neutral empty dashboard card", :aggregate_failures do
-        get dashboard_path
-
-        doc = Nokogiri::HTML(response.body)
-        card = doc.at_css("[data-testid='retry-limited-issues-card']")
-        expect(card).to be_present
-
-        heading = card.at_xpath(".//h3[normalize-space()='Retry-limited issues']")
-        expect(heading).to be_present
-
-        expect(card["class"]).to include("border-gray-200")
-        expect(card["class"]).to include("bg-white")
-        expect(heading["class"]).to include("text-gray-900")
-        expect(response.body).to include("No retry-limited issues or PRs at the moment.")
-      end
-
-      it "calls out retry-limited issues when operator action is available", :aggregate_failures do
+      # @spec OPERATOR-INBOX-002E
+      it "does not render retry-limited issues on the dashboard" do
         create(
           :issue,
           project: project,
@@ -105,17 +72,7 @@ RSpec.describe "Dashboard" do
         get dashboard_path
 
         doc = Nokogiri::HTML(response.body)
-        card = doc.at_css("[data-testid='retry-limited-issues-card']")
-        expect(card).to be_present
-
-        heading = card.at_xpath(".//h3[normalize-space()='Retry-limited issues']")
-        expect(heading).to be_present
-
-        expect(card["class"]).to include("border-orange-200")
-        expect(card["class"]).to include("bg-orange-50")
-        expect(heading["class"]).to include("text-orange-900")
-        expect(response.body).to include("Clear the flag to retry, or run them manually.")
-        expect(response.body).to include("Retry Cap")
+        expect(doc.at_css("[data-testid='retry-limited-issues-card']")).to be_nil
       end
 
       it "surfaces exception incidents from the dashboard header" do
@@ -640,13 +597,13 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("Embedding")
       end
 
-      it "shows unavailable helper copy when both runner groups are down" do
+      it "shows unavailable helper copy when no configured runner is ready" do
         create(:runner_state, :rate_limited, user: user, runner_name: user.settings.kb_embedding_runner)
         create(:runner_state, :circuit_open, user: user, runner_name: user.settings.kb_chat_runner)
 
         get dashboard_knowledge_stats_path
 
-        expect(response.body).to include("Knowledge capabilities are unavailable because both runner groups are down.")
+        expect(response.body).to include("Knowledge capabilities are unavailable because no configured runner is both ready and operational.")
         expect(response.body).not_to include("Knowledge capabilities are degraded while one runner group remains available.")
       end
 
@@ -929,6 +886,16 @@ RSpec.describe "Dashboard" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("dashboard-metrics")
       expect(response.body).to include("Run Volume")
+    end
+
+    it "formats high dollar costs with thousands separators" do
+      project = create(:project, account: account, total_cost_cents: 1_234_567_890)
+      create(:agent_run, :completed, project: project, cost_cents: 1_234_567_890, tokens_input: 1)
+
+      get dashboard_metrics_path(time_range: "7d")
+
+      expect(response.body.scan("$12,345,678.90").length).to eq(4)
+      expect(response.body).not_to include("$12345678.90")
     end
 
     it "renders the phase breakdown, chart, and knowledge widget inside the frame" do

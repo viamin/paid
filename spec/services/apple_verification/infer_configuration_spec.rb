@@ -17,7 +17,7 @@ RSpec.describe AppleVerification::InferConfiguration do
     expect(profile["xcode"]["project"]).to eq("iOS/App.xcodeproj")
     expect(profile["xcode"]["scheme"]).to eq("App")
     expect(profile["tests"]["required"]).to be(true)
-    expect(profile["captures"].first["id"]).to eq("initial-screen")
+    expect(profile).not_to have_key("captures")
   end
 
   it "derives a profile from a shared scheme in a committed Xcode workspace with a test plan" do # @spec APPLE-WORKER-012

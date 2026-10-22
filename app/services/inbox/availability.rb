@@ -4,14 +4,12 @@ module Inbox
   # Which Inbox kinds and projects currently have >=1 matching item, so the
   # filters dialog only offers selections that cannot yield an empty list.
   #
-  # Mirrors Inbox::Count's per-kind scopes (cheap SQL counts/signal checks on
+  # Unfiltered page renders supply their already-built entries. Filtered
+  # renders mirror Inbox::Count's per-kind scopes (SQL counts/signal checks on
   # the same visibility rules every inbox lane uses) rather than
   # Inbox::Queue's full entry build, and caches the per-user matrix behind
-  # the same Dashboard::CacheVersion key + short TTL the nav badge uses — so
-  # every /inbox render (index, show, open_chat all build availability in
-  # load_inbox) pays one cache read instead of re-running all twelve lanes,
-  # and the dialog counts stay inside the badge's cache window so the two
-  # cannot drift apart mid-window.
+  # the same Dashboard::CacheVersion key + short TTL the nav badge uses.
+  # Detail-only and supplementary requests do not build availability.
   # @spec INBOX-FOUNDATION-010
   class Availability
     CACHE_TTL = 90.seconds
@@ -20,10 +18,11 @@ module Inbox
       new(...).call
     end
 
-    def initialize(user:, project: nil, kind: nil)
+    def initialize(user:, project: nil, kind: nil, entries: nil)
       @user = user
       @project = project
       @kind = kind.to_s.presence
+      @entries = entries
     end
 
     def call
@@ -89,7 +88,12 @@ module Inbox
     def projects_with_items
       @projects_with_items ||= begin
         ids = kind ? matrix[kind].keys : matrix.values.flat_map(&:keys).uniq
-        Project.where(id: ids).order(:owner, :repo).to_a
+        if @entries
+          @entries.map(&:project).uniq(&:id).select { |candidate| ids.include?(candidate.id) }
+            .sort_by { |candidate| [ candidate.owner, candidate.repo ] }
+        else
+          Project.where(id: ids).order(:owner, :repo).to_a
+        end
       end
     end
 
@@ -97,6 +101,13 @@ module Inbox
     # project_counts, total_count, project_ids_for, kinds_for), so it is the
     # single thing worth caching.
     def matrix
+      # @spec OPERATOR-INBOX-016
+      if @entries
+        return @matrix ||= Inbox::Queue::KINDS.index_with do |entry_kind|
+          @entries.select { |entry| entry.kind == entry_kind }.map { |entry| entry.project.id }.tally
+        end
+      end
+
       @matrix ||= Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) do
         Inbox::Queue::KINDS.index_with { |k| count_by_project(k) }
       end
@@ -116,6 +127,8 @@ module Inbox
       when Inbox::Queue::CHANGE_INTENT_DRAFT_KIND then change_intent_draft_by_project
       when Inbox::Queue::PARTIAL_CLOSEOUT_KIND then partial_closeout_by_project
       when Inbox::Queue::TEST_REVIEW_PENDING_KIND then test_review_pending_by_project
+      when Inbox::Queue::PROJECT_SETUP_PENDING_KIND then project_setup_pending_by_project
+      when Inbox::Queue::TRACEABILITY_GAP_KIND then traceability_gap_by_project
       end
     end
 
@@ -177,9 +190,9 @@ module Inbox
     end
 
     def feature_decision_by_project
-      FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
-        .where(status: Inbox::Queue::FEATURE_DECISION_STATUSES)
-        .group(:project_id).count
+      Inbox::Queue.call(user: user, kind: Inbox::Queue::FEATURE_DECISION_KIND)
+        .group_by { |entry| entry.project.id }
+        .transform_values(&:size)
     end
 
     def retry_limited_by_project
@@ -209,6 +222,18 @@ module Inbox
       return {} if visible_project_ids.empty?
 
       Inbox::Queue.test_review_pending_issues(visible_project_ids).group(:project_id).count
+    end
+
+    # @spec PROJECT-READINESS-005
+    def project_setup_pending_by_project
+      Project.where(id: visible_project_ids).select(&:readiness_blocked?).to_h { |project| [ project.id, 1 ] }
+    end
+
+    # @spec DESIGN-RECONCILIATION-001
+    def traceability_gap_by_project
+      return {} if visible_project_ids.empty?
+
+      DesignArtifactFinding.open_findings.where(project_id: visible_project_ids).group(:project_id).count
     end
 
     def preload_runner_users(notifications)

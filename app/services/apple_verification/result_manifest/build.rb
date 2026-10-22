@@ -25,7 +25,7 @@ module AppleVerification
         new(...).call
       end
 
-      def initialize(attempt:, artifact_references: [], audit_event_references: [], ledger_entry_references: [], required_checks: [], advisory_checks: [], screenshot_metadata: [], timings: {})
+      def initialize(attempt:, artifact_references: [], audit_event_references: [], ledger_entry_references: [], required_checks: [], advisory_checks: [], screenshot_metadata: [], timings: {}, status: nil, failure_classification: nil)
         @attempt = attempt
         @artifact_references = Array(artifact_references)
         @audit_event_references = Array(audit_event_references)
@@ -34,6 +34,8 @@ module AppleVerification
         @advisory_checks = Array(advisory_checks)
         @screenshot_metadata = Array(screenshot_metadata)
         @timings = timings || {}
+        @status = status
+        @failure_classification = failure_classification
       end
 
       def call
@@ -49,7 +51,7 @@ module AppleVerification
       private
 
       attr_reader :attempt, :artifact_references, :audit_event_references, :ledger_entry_references,
-                  :required_checks, :advisory_checks, :screenshot_metadata, :timings
+                  :required_checks, :advisory_checks, :screenshot_metadata, :timings, :status, :failure_classification
 
       def attempt_section
         {
@@ -64,10 +66,10 @@ module AppleVerification
 
       def result_section
         {
-          "status" => attempt.status,
+          "status" => status || attempt.status,
           "timings" => timings_payload,
           "retry_lineage" => retry_lineage,
-          "failure_classification" => attempt.failure_classification,
+          "failure_classification" => failure_classification || attempt.failure_classification,
           "required_checks" => required_checks.map(&:to_s),
           "advisory_checks" => advisory_checks.map(&:to_s),
           "screenshot_metadata" => screenshot_metadata.map(&:to_s),

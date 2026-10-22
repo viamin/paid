@@ -70,3 +70,16 @@
   same database SHALL be identical.
   *Tests:* `spec/config/schema_column_order_spec.rb`.
   *Code:* `config/initializers/schema_column_order.rb`.
+
+- [x] **POSTGRESQL-PERSISTENCE-010** — The checked-in primary and cable schema
+  artifacts SHALL define disjoint table sets. CI SHALL reject a table appearing
+  in both artifacts, independent of migration replay or live database state.
+  *Tests:* `spec/config/schema_database_isolation_spec.rb`.
+  *Code:* `db/schema.rb`, `db/cable_schema.rb`.
+
+- [x] **POSTGRESQL-PERSISTENCE-011** — When `bin/dev-update` runs setup or
+  migrations, it SHALL disable automatic schema dumping for those commands
+  without discarding local edits. Normal migration commands SHALL retain
+  automatic dumping, and explicit schema dumps SHALL remain available.
+  *Tests:* `spec/config/active_record_automatic_schema_dump_spec.rb`, `spec/lib/dev_update_spec.rb`.
+  *Code:* `config/initializers/automatic_schema_dump.rb`, `bin/dev-update`.

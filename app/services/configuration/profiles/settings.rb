@@ -64,7 +64,17 @@ module Configuration
       ].freeze
       EXCLUDED_ATTRIBUTE_COLUMNS = {
         "auto_pick_skip_labels" => "label override, not an automation toggle",
-        "git_push_pat_fallback_enabled" => "credential fallback, not an automation toggle"
+        "git_push_pat_fallback_enabled" => "credential fallback, not an automation toggle",
+        # @spec CONFIDENCE-DELIVERY-001 @spec CONFIDENCE-DELIVERY-015
+        # Feature-policy enrollment is intentionally selected in project
+        # settings. Applying an unrelated operating profile must not disable
+        # enrollment for subsequently attached features.
+        "confidence_delivery_enrollment_enabled" => "feature-policy enrollment, not an operating-mode posture",
+        # @spec QUESTION-EXPLORATION-019
+        # The exploration rollout setting is deliberately selected in project
+        # settings. An operating profile must not silently flip which
+        # conversations Inbox opens select.
+        "question_exploration_enabled" => "exploration rollout selection, not an operating-mode posture"
       }.freeze
 
       def enum(values)

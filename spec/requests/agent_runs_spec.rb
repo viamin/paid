@@ -3,10 +3,8 @@
 require "rails_helper"
 
 RSpec.describe "AgentRuns" do
-  let(:account) { create(:account) }
-  let(:user) { create(:user, account: account) }
-  let(:github_token) { create(:github_token, account: account, created_by: user) }
-  let(:project) { create(:project, account: account, github_token: github_token, created_by: user) }
+  # @spec TEST-SUITE-017
+  include_context "with stable agent run request project"
 
   describe "GET /agent_runs" do
     context "when not authenticated" do
@@ -2218,6 +2216,70 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(project_path(project))
         follow_redirect!
         expect(response.body).to include("already queued or in progress")
+      end
+    end
+  end
+
+  describe "POST /projects/:project_id/agent_runs/bootstrap_readiness" do
+    # @spec PROJECT-READINESS-007
+    context "when authenticated" do
+      before do
+        sign_in user
+        project.update!(tdd_mode: "strict", readiness_gaps: [
+          { "kind" => "missing_ci", "description" => "CI is required.", "evidence" => {} }
+        ])
+      end
+
+      it "queues one explicit bootstrap run with the readiness evidence" do
+        expect {
+          post bootstrap_readiness_project_agent_runs_path(project)
+        }.to change(AgentRun, :count).by(1)
+
+        run = AgentRun.last
+        expect(run).to have_attributes(goal: "bootstrap_readiness", trigger_type: "manual", status: "queued")
+        expect(run.custom_prompt).to include("CI is required.")
+      end
+
+      it "does not queue a second unfinished bootstrap attempt" do
+        create(:agent_run, project: project, goal: "bootstrap_readiness", status: "running")
+
+        expect {
+          post bootstrap_readiness_project_agent_runs_path(project)
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(inbox_path)
+      end
+
+      it "allows a new explicit attempt after failure" do
+        create(:agent_run, :failed, project: project, goal: "bootstrap_readiness")
+
+        expect {
+          post bootstrap_readiness_project_agent_runs_path(project)
+        }.to change(AgentRun, :count).by(1)
+      end
+
+      it "does not use the generic manual retry path after failure" do
+        failed_run = create(:agent_run, :failed, project: project, goal: "bootstrap_readiness")
+
+        expect {
+          post retry_project_agent_run_path(project, failed_run)
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(inbox_path)
+      end
+
+      it "does not queue a bootstrap attempt while a rate-limited attempt recovers" do
+        # A rate-limited run remains dedup-blocking while its recovery window
+        # is pending, even though it is not in UNFINISHED_STATUSES.
+        create(:agent_run, project: project, goal: "bootstrap_readiness", status: "rate_limited")
+
+        expect {
+          post bootstrap_readiness_project_agent_runs_path(project)
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(inbox_path)
+        follow_redirect!
+        expect(response.body).to include("A bootstrap attempt is already in progress")
       end
     end
   end

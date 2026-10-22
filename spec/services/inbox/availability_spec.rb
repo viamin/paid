@@ -40,6 +40,23 @@ RSpec.describe Inbox::Availability do
   end
 
   describe "#kind_counts and #available_kinds" do
+    # @spec OPERATOR-INBOX-016
+    it "derives counts and projects from supplied entries without database queries" do
+      create(:issue, :needs_input, project: project_a, body: questions_body)
+      entries = Inbox::Queue.call(user: user)
+      queries = []
+      subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+      ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+        availability = described_class.call(user: user, entries: entries)
+        expect(availability.available_projects.map(&:id)).to eq([ project_a.id ])
+        expect(availability.kind_counts["clarifying_questions"]).to eq(1)
+        expect(availability.total_count).to eq(entries.size)
+      end
+
+      expect(queries).to be_empty
+    end
+
     it "counts entries per kind across visible projects and hides kinds with nothing waiting" do
       create(:issue, :needs_input, project: project_a, body: questions_body)
       create(:issue, :needs_input, project: project_b, body: questions_body)
@@ -87,6 +104,15 @@ RSpec.describe Inbox::Availability do
       expect(availability.kind_counts[Inbox::Queue::CHANGE_INTENT_DRAFT_KIND]).to eq(1)
     end
 
+    # @spec DESIGN-RECONCILIATION-001
+    it "counts open traceability gaps" do
+      create(:design_artifact_finding, project: project_a, account: account)
+
+      availability = described_class.call(user: user)
+
+      expect(availability.kind_counts[Inbox::Queue::TRACEABILITY_GAP_KIND]).to eq(1)
+    end
+
     # @spec OPERATOR-INBOX-002A
     it "counts merge-approval candidates via the shared signal check" do
       create(
@@ -94,6 +120,28 @@ RSpec.describe Inbox::Availability do
         auto_merge_evaluated_at: Time.current, awaiting_approval_since: 2.hours.ago,
         auto_merge_blockers: {
           "failed" => [ { "signal" => "owner_approved", "status" => "failed" } ],
+          "not_evaluated" => []
+        }
+      )
+
+      availability = described_class.call(user: user)
+
+      expect(availability.kind_counts[Inbox::Queue::MERGE_APPROVAL_KIND]).to eq(1)
+    end
+
+    # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    it "includes clear manual-merge decisions but excludes PRs awaiting checks" do
+      project_a.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      create(
+        :issue, :pull_request, project: project_a, github_number: 42,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: { "failed" => [], "not_evaluated" => [] }
+      )
+      create(
+        :issue, :pull_request, project: project_a, github_number: 43,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: {
+          "failed" => [ { "signal" => "checks_green", "status" => "failed" } ],
           "not_evaluated" => []
         }
       )
@@ -214,6 +262,43 @@ RSpec.describe Inbox::Availability do
       other_user = create(:user, account: account)
 
       expect(described_class.call(user: other_user).total_count).to eq(0)
+    end
+  end
+
+  describe "project setup pending Inbox availability" do
+    around do |example|
+      original_store = Rails.cache
+      Rails.cache = ActiveSupport::Cache::MemoryStore.new
+      example.run
+    ensure
+      Rails.cache = original_store
+    end
+
+    # @spec PROJECT-READINESS-005
+    it "uses the same project-backed readiness lane as the queue and count" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account:, created_by: user, auto_pick_enabled: false, tdd_mode: "strict",
+        readiness_gaps: [ { "description" => "CI is required." } ])
+
+      availability = described_class.call(user: user)
+
+      expect(availability.kind_counts[Inbox::Queue::PROJECT_SETUP_PENDING_KIND]).to eq(1)
+      expect(availability.project_counts[project.id]).to eq(1)
+    end
+
+    # @spec PROJECT-READINESS-005 @spec PROJECT-READINESS-011
+    it "includes verification-only projects with persisted setup gaps" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account:, created_by: user, tdd_mode: "off",
+        screenshot_settings: { "verification_enabled" => true },
+        readiness_gaps: [ { "description" => "Start the application." } ])
+
+      availability = described_class.call(user: user)
+
+      expect(availability.kind_counts[Inbox::Queue::PROJECT_SETUP_PENDING_KIND]).to eq(1)
+      expect(availability.project_counts[project.id]).to eq(1)
     end
   end
 end

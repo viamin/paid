@@ -780,6 +780,8 @@ RSpec.describe Containers::Provision do
   end
 
   describe "#provision" do
+    include_context "with stable provisioning project"
+
     context "when successful" do
       it "creates and starts a container" do
         expect(Docker::Container).to receive(:create).and_return(mock_container)
@@ -1196,6 +1198,27 @@ RSpec.describe Containers::Provision do
             "OPENAI_API_KEY=paid-run:#{agent_run.id}:#{agent_run.proxy_token}",
             "PAID_CLAUDE_SUBSCRIPTION_AUTH=0", "PAID_CODEX_SUBSCRIPTION_AUTH=0",
             "PAID_GEMINI_SUBSCRIPTION_AUTH=0", "PAID_COPILOT_SUBSCRIPTION_AUTH=0"
+          )
+          mock_container
+        end
+
+        service.provision
+      end
+
+      # @spec TOOL-SIDECAR-007
+      it "passes the provisioned tool endpoint manifest through the run environment" do
+        agent_run.update!(tool_sidecar_endpoints: [
+          {
+            "name" => "code-search",
+            "hostname" => "paid-tool-code-search-run#{agent_run.id}",
+            "port" => 8080,
+            "url" => "http://paid-tool-code-search-run#{agent_run.id}:8080"
+          }
+        ])
+
+        expect(Docker::Container).to receive(:create) do |config|
+          expect(config["Env"]).to include(
+            "PAID_TOOL_SIDECAR_ENDPOINTS=[{\"name\":\"code-search\",\"hostname\":\"paid-tool-code-search-run#{agent_run.id}\",\"port\":8080,\"url\":\"http://paid-tool-code-search-run#{agent_run.id}:8080\"}]"
           )
           mock_container
         end

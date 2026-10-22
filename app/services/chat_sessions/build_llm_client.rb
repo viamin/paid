@@ -13,15 +13,6 @@ module ChatSessions
       new(chat_session: chat_session, actor: actor, message: message).call
     end
 
-    # Default outbound model for a provider service type. Shared with
-    # ChatSessions::FallbackRunners so a runner switch picks the same default.
-    def self.default_model_for_service_type(service_type)
-      return ANTHROPIC_DEFAULT_MODEL if service_type == ANTHROPIC_SERVICE_TYPE
-      return GOOGLE_DEFAULT_MODEL if service_type == GOOGLE_SERVICE_TYPE
-
-      "gpt-4o"
-    end
-
     def self.usable_runner?(runner)
       runner&.enabled_for_chat? && runner.api_key? && runner.effective_api_secret.present?
     end
@@ -64,12 +55,12 @@ module ChatSessions
       # A runner fallback can also invalidate a provider-specific saved model
       # (for example, Claude -> OpenAI-compatible), so persist the corrected
       # runner/model pair together before building the client.
-      chat_session.update!(runner: fallback_runner, model: default_model_for(fallback_runner))
+      persist_curated_model!(fallback_runner)
       fallback_runner
     end
 
     def anthropic_client(api_key)
-      model = chat_session.model || ANTHROPIC_DEFAULT_MODEL
+      model = chat_session.model || persist_curated_model!(resolved_runner)
 
       HttpClient.new(
         chat_session: chat_session,
@@ -94,7 +85,7 @@ module ChatSessions
       HttpClient.new(
         chat_session: chat_session,
         provider: :openai,
-        protocol: :chat_completions,
+        protocol: openai_protocol_for(service_type),
         endpoint: base_url,
         api_key: api_key,
         model: model,
@@ -105,13 +96,18 @@ module ChatSessions
       )
     end
 
+    # @spec API-CONVERSATION-DELEGATION-007
+    def openai_protocol_for(service_type)
+      service_type == "openai" ? :responses : :chat_completions
+    end
+
     def missing_runner_message
       "Chat requires a configured API-key runner. Add a chat-enabled runner with an API key and select it for this session."
     end
 
     # @spec CHAT-API-018, MODEL-POLICY-013
     def chat_model_for(runner)
-      return chat_session.model || default_model_for(runner) unless runner.free_model_policy?
+      return chat_session.model || persist_curated_model!(runner) unless runner.free_model_policy?
 
       model = FreeModels::SelectChatModel.for_session(runner: runner, chat_session: chat_session).model_id
       chat_session.update!(model: model) if chat_session.model != model
@@ -127,20 +123,22 @@ module ChatSessions
       provider.provider_api_key&.api_service_type || provider.required_api_service_type
     end
 
-    def default_model_for(provider)
-      return FreeModels::SelectChatModel.for_session(runner: provider, chat_session: chat_session).model_id if provider.free_model_policy?
+    def persist_curated_model!(runner)
+      # @spec CHAT-API-026
+      option = CuratedModelOptions.resolve(runner:, projects: chat_session.llm_policy_projects)
+      unless option
+        raise LlmClientConfigurationError,
+          "No compatible Low chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy."
+      end
 
-      provider.direct_outbound_model_id.presence || default_model_for_service_type(provider_service_type(provider))
+      chat_session.update!(runner:, model: option.model_id, metadata: chat_session.metadata.merge("model_tier" => option.tier))
+      option.model_id
     end
 
     def default_openai_base_url(service_type)
       return GOOGLE_OPENAI_BASE_URL if service_type == GOOGLE_SERVICE_TYPE
 
       "https://api.openai.com/v1"
-    end
-
-    def default_model_for_service_type(service_type)
-      self.class.default_model_for_service_type(service_type)
     end
 
     class HttpClient
@@ -234,7 +232,8 @@ module ChatSessions
           model: result[:model] || model,
           tokens_input: result.dig(:usage, :input_tokens),
           tokens_output: result.dig(:usage, :output_tokens),
-          tool_calls: format_inbound_tool_calls(result[:tool_calls])
+          tool_calls: format_inbound_tool_calls(result[:tool_calls]),
+          provider_state: result[:provider_state]
         }
       end
 

@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "ostruct"
 
 RSpec.describe "Inbox" do
   let(:account) { create(:account) }
@@ -55,6 +56,93 @@ RSpec.describe "Inbox" do
 
   def entry_id(entry_kind, record)
     "#{entry_kind}:#{record.id}"
+  end
+
+  # @spec OPERATOR-INBOX-017
+  it "renders selected context in the detail response without a nested Turbo request" do
+    issue = create(:issue, :needs_input, project: project, body: questions_body)
+    expect(github_client).to receive(:issue_comments).once.and_return([])
+
+    get inbox_entry_path(entry_id("clarifying_questions", issue)), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css("turbo-frame#inbox-supplement")).to be_nil
+    expect(document.at_css("textarea[data-testid='inbox-answer-0']")).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-015
+  it "loads only the selected detail without querying unrelated lanes or rendering the queue" do
+    issue = create(:issue, :needs_input, project: project, title: "Selected question", body: questions_body)
+    create(:issue, :needs_input, project: project, title: "Other question", body: questions_body)
+    queries = []
+    subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
+        headers: { "Turbo-Frame" => "inbox-detail" }
+    end
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include('id="inbox-detail"', "Selected question")
+    expect(response.body).not_to include("Other question", "Filters and sort", 'id="inbox-list"')
+    expect(queries.grep(/FROM "(?:decomposition_decisions|feature_intents|change_intents|issue_continuation_requests)"/)).to be_empty
+  end
+
+  # @spec OPERATOR-INBOX-015
+  it "rejects a detail frame selection excluded by the kind filter" do
+    issue = create(:issue, :needs_input, project: project, body: questions_body)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue), kind: "plan_review"),
+      headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to redirect_to(inbox_path(kind: "plan_review"))
+  end
+
+  # @spec OPERATOR-INBOX-015 @spec OPERATOR-INBOX-017
+  it "does not expose another owner's entry in detail or supplementary frames" do
+    hidden_project = create(:project, account: account, created_by: create(:user, account: account))
+    hidden_issue = create(:issue, :needs_input, project: hidden_project, body: questions_body)
+    key = entry_id("clarifying_questions", hidden_issue)
+    expect(github_client).not_to receive(:issue_comments)
+
+    get inbox_entry_path(key), headers: { "Turbo-Frame" => "inbox-detail" }
+    expect(response).to redirect_to(inbox_path)
+
+    get inbox_entry_supplement_path(key), headers: { "Turbo-Frame" => "inbox-supplement" }
+    expect(response).to have_http_status(:ok)
+    expect(Nokogiri::HTML(response.body).at_css("turbo-frame#inbox-supplement").text.strip).to be_empty
+  end
+
+  # @spec OPERATOR-INBOX-015
+  it "honors the project filter on selected detail requests" do
+    issue = create(:issue, :needs_input, project: project, body: questions_body)
+
+    get inbox_entry_path(entry_id("clarifying_questions", issue), project_id: second_project.id),
+      headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to redirect_to(inbox_path(project_id: second_project.id))
+  end
+
+  # @spec OPERATOR-INBOX-015
+  it "redirects malformed and resolved detail selections" do
+    issue = create(:issue, :needs_input, project: project, body: questions_body, github_state: "closed")
+    [ "clarifying_questions:invalid", "invalid:#{issue.id}", "clarifying_questions:#{issue.id}" ].each do |key|
+      get inbox_entry_path(key), headers: { "Turbo-Frame" => "inbox-detail" }
+      expect(response).to redirect_to(inbox_path)
+    end
+  end
+
+  # @spec OPERATOR-INBOX-015
+  it "promotes a stale detail redirect to a full-page visit even when the inbox is empty" do
+    issue = create(:issue, :needs_input, project: project, body: questions_body, github_state: "closed")
+
+    get inbox_entry_path(entry_id("clarifying_questions", issue)), headers: { "Turbo-Frame" => "inbox-detail" }
+    follow_redirect!(headers: { "Turbo-Frame" => "inbox-detail" })
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Inbox clear")
+    expect(Nokogiri::HTML(response.body).at_css('meta[name="turbo-visit-control"]')&.[]("content")).to eq("reload")
   end
 
   def create_inbox_entries
@@ -154,6 +242,128 @@ RSpec.describe "Inbox" do
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("The configured review method could not complete its check.")
     expect(response.body).not_to include("A human action is required before work can continue.")
+  end
+
+  # @spec OPERATOR-INBOX-002B
+  # Regression for #4501: internal GET links inside the inbox-detail frame
+  # navigate the frame unless they opt out, and no target page carries a
+  # matching "inbox-detail" frame — Turbo then replaces the pane with
+  # "Content missing". The action links must target the full page.
+  it "renders the action_required 'Open linked action' link with turbo_frame=_top so it navigates out of the inbox-detail frame" do
+    notification = create_action_required_notification
+    notification.update!(action_url: project_path(project))
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    link = document.at_css(%(a[href="#{project_path(project)}"]))
+
+    expect(link).to be_present
+    expect(link.text).to eq("Open linked action")
+    expect(link["data-turbo-frame"]).to eq("_top")
+  end
+
+  # @spec OPERATOR-INBOX-002B
+  # Regression for #4501: both "View Agent Run" branches (alongside an action
+  # URL, and as the sole action) must opt out of the inbox-detail frame.
+  it "renders every action_required 'View Agent Run' link with turbo_frame=_top so it navigates out of the inbox-detail frame" do
+    run = create(:agent_run, :failed, :with_custom_prompt, project: project)
+    with_action_url = create_action_required_notification(subject: run, source: "agent_run_action_url")
+    with_action_url.update!(action_url: project_path(project))
+    sole_action = create_action_required_notification(subject: run, source: "agent_run_sole_action")
+
+    [ with_action_url, sole_action ].each do |notification|
+      get inbox_entry_path(
+        entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+        kind: Inbox::Queue::ACTION_REQUIRED_KIND
+      )
+
+      expect(response).to have_http_status(:ok)
+      document = Nokogiri::HTML(response.body)
+      link = document.at_css(%(a[href="#{project_agent_run_path(project, run)}"]))
+
+      expect(link).to be_present
+      expect(link.text).to eq("View Agent Run")
+      expect(link["data-turbo-frame"]).to eq("_top")
+    end
+  end
+
+  # @spec PROJECT-READINESS-007
+  it "renders the latest failed bootstrap run with its failure reason and details link" do
+    project.update!(tdd_mode: "strict", readiness_gaps: [
+      { "kind" => "missing_ci", "description" => "CI is required.", "evidence" => {} }
+    ])
+    older_run = create(:agent_run, :failed, project:, goal: "bootstrap_readiness",
+      error_message: "Older bootstrap failure", completed_at: 2.hours.ago)
+    failed_run = create(:agent_run, :failed, project:, goal: "bootstrap_readiness",
+      error_message: "Bootstrap write guard rejected app/models/user.rb", completed_at: 1.hour.ago)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::PROJECT_SETUP_PENDING_KIND, project),
+      kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Bootstrap run failed", failed_run.error_message)
+    expect(response.body).to include(project_agent_run_path(project, failed_run))
+    expect(response.body).not_to include(older_run.error_message)
+  end
+
+  # @spec PROJECT-READINESS-005 @spec PROJECT-READINESS-011
+  it "describes verification-only setup gaps without attributing them to TDD" do
+    project.update!(tdd_mode: "off", screenshot_settings: { "verification_enabled" => true }, readiness_gaps: [
+      { "kind" => "app_start_command_unavailable", "description" => "Start the application.", "evidence" => {} }
+    ])
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::PROJECT_SETUP_PENDING_KIND, project),
+      kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Interactive verification is enabled")
+    expect(response.body).not_to include("TDD mode is enabled")
+  end
+
+  # @spec PROJECT-READINESS-005 @spec PROJECT-READINESS-011
+  it "describes a verification gap correctly when TDD is also enabled" do
+    project.update!(tdd_mode: "strict", screenshot_settings: { "verification_enabled" => true }, readiness_gaps: [
+      { "kind" => "app_start_command_unavailable", "description" => "Start the application.", "evidence" => {} }
+    ])
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::PROJECT_SETUP_PENDING_KIND, project),
+      kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND
+    )
+
+    expect(response.body).to include("Interactive verification is enabled")
+    expect(response.body).not_to include("TDD mode is enabled")
+  end
+
+  # @spec PROJECT-READINESS-010
+  it "targets project setup pending actions at the top-level page" do
+    project.update!(tdd_mode: "strict", readiness_gaps: [
+      { "kind" => "missing_ci", "description" => "CI is required.", "evidence" => {} }
+    ])
+    failed_run = create(:agent_run, :failed, project:, goal: "bootstrap_readiness")
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::PROJECT_SETUP_PENDING_KIND, project),
+      kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND
+    ), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    document = Nokogiri::HTML(response.body)
+    bootstrap_form = document.at_css(%(form[action="#{bootstrap_readiness_project_agent_runs_path(project)}"]))
+    settings_link = document.at_css(%(a[href="#{edit_project_path(project)}"]))
+    run_link = document.at_css(%(a[href="#{project_agent_run_path(project, failed_run)}"]))
+
+    expect(bootstrap_form["data-turbo-frame"]).to eq("_top")
+    expect(settings_link["data-turbo-frame"]).to eq("_top")
+    expect(run_link["data-turbo-frame"]).to eq("_top")
   end
 
   # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-007
@@ -371,15 +581,21 @@ RSpec.describe "Inbox" do
     expect(master_detail["data-inbox-master-detail-detail-open-value"]).to eq("false")
   end
 
-  it "opens the current user's canonical interactive chat for an inbox entry" do
+  it "opens the current user's canonical interactive chat with one targeted queue lookup" do
     # @spec QUESTION-EXPLORATION-001 @spec QUESTION-EXPLORATION-014
     issue = create(:issue, :needs_input, project:, title: "Alpha question", body: questions_body)
+    queries = []
+    subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
 
-    post inbox_interactive_chat_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
-      as: :json
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      post inbox_interactive_chat_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
+        as: :json
+    end
 
     expect(response).to have_http_status(:created)
     expect(ChatSession.last).to have_attributes(created_by: user, inbox_item_key: "clarifying_questions:#{issue.id}")
+    targeted_queue_queries = queries.grep(/FROM "issues" INNER JOIN "projects"/)
+    expect(targeted_queue_queries.count).to eq(1)
   end
 
   # @spec OPERATOR-INBOX-002F
@@ -430,7 +646,8 @@ RSpec.describe "Inbox" do
     expect(response).to have_http_status(:see_other)
   end
 
-  it "marks list rows with the inbox-master-detail row target and member hrefs" do
+  # @spec OPERATOR-INBOX-003
+  it "targets row navigation at the inbox detail frame while advancing history" do
     issue = create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     get inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
@@ -444,10 +661,12 @@ RSpec.describe "Inbox" do
 
     expect(link).to be_present
     expect(link["data-inbox-master-detail-target"]).to eq("row")
+    expect(link["data-turbo-frame"]).to eq("inbox-detail")
+    expect(link["data-turbo-action"]).to eq("advance")
   end
 
-  it "wires the shared list-detail shell's list and detail panes to the inbox master-detail targets" do
-    # @spec LIST-DETAIL-001 @spec LIST-DETAIL-005
+  it "wires the shared independently scrollable shell panes to the inbox master-detail targets" do
+    # @spec LIST-DETAIL-001 @spec LIST-DETAIL-005 @spec LIST-DETAIL-007
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
     get inbox_path(project_id: project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND)
@@ -458,8 +677,10 @@ RSpec.describe "Inbox" do
 
     expect(list).to be_present
     expect(list["data-inbox-master-detail-target"]).to eq("list")
+    expect(list.element_children.first["class"]).to include("lg:overflow-y-auto")
     expect(detail).to be_present
     expect(detail["data-inbox-master-detail-target"]).to eq("detailSection")
+    expect(detail.element_children.first["class"]).to include("lg:overflow-y-auto")
   end
 
   it "supports project scoping" do
@@ -599,18 +820,64 @@ RSpec.describe "Inbox" do
     expect(master_detail["data-inbox-master-detail-detail-open-value"]).to eq("true")
   end
 
-  it "renders merge-approval detail with the PR action and blocker summary" do
-    pr = create_merge_approval_pr(title: "Approval blocked PR")
+  it "renders stale manual-merge guidance with approval evidence and no automatic-merge promise" do
+    project.update!(auto_merge_mode: "off")
+    snapshot = stale_approval_snapshot
+    snapshot.fetch("failed").first["approval_evidence"] = {
+      "stale_approvals" => [ stale_entry("viamin", "approved123", "current456", 2.hours.ago) ]
+    }
+    pr = create_merge_approval_pr(title: "Approval blocked PR", snapshot: snapshot)
 
-    get inbox_entry_path(
-      entry_id(Inbox::Queue::MERGE_APPROVAL_KIND, pr),
-      project_id: project.id,
-      kind: Inbox::Queue::MERGE_APPROVAL_KIND
-    )
+    visit_merge_approval_entry(pr)
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Merge Approval", "PR", "Re-approve on GitHub", "View PR")
-    expect(response.body).to include("Waiting for owner re-approval on the current HEAD commit")
+    expect(response.body).to include("Merge Approval", "PR", "Approval is stale for the current revision", "View PR")
+    expect(response.body).to include("Commits were added after the recorded approval", "GitHub still shows Approved")
+    expect(response.body).to include("manual merge decision", "Re-approval alone will not cause Paid to merge it")
+    expect(response.body).to include("approved123", "current456", "Compare viamin and current revisions on GitHub")
+    expect(response.body).not_to include("so Paid can merge it on the next PR scan")
+  end
+
+  # @spec OPERATOR-INBOX-002K
+  # Regression for #4519: when both the owner and the configured manual
+  # reviewer approvals are stale (or when the manual reviewer's stale
+  # approval coexists with a fresh owner re-approval), the Inbox detail
+  # must surface every approver that failed freshness and link the
+  # comparison from THAT approver's recorded revision.
+  it "renders each stale approver separately when multiple approvals are stale" do
+    project.update!(auto_merge_mode: "off")
+    snapshot = stale_approval_snapshot
+    snapshot.fetch("failed").first["approval_evidence"] = {
+      "stale_approvals" => [
+        stale_entry("reviewer", "manual123", "current999", 3.hours.ago),
+        stale_entry("viamin", "owner456", "current999", 30.minutes.ago)
+      ]
+    }
+    pr = create_merge_approval_pr(title: "Both stale", snapshot: snapshot)
+
+    visit_merge_approval_entry(pr)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("manual123", "owner456", "current999")
+    expect(response.body).to include("Compare", "viamin", "current revisions on GitHub")
+    expect(response.body.scan("Approver:").length).to eq(2)
+  end
+
+  # @spec OPERATOR-INBOX-002K
+  it "renders legacy flat-shaped approval evidence written before the array schema" do
+    project.update!(auto_merge_mode: "off")
+    snapshot = stale_approval_snapshot
+    snapshot.fetch("failed").first["approval_evidence"] = {
+      "approved_revision" => "legacy123",
+      "approved_at" => 2.hours.ago.iso8601,
+      "current_revision" => "legacy456"
+    }
+    pr = create_merge_approval_pr(title: "Legacy evidence", snapshot: snapshot)
+
+    visit_merge_approval_entry(pr)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("legacy123", "legacy456", "Compare approved and current revisions on GitHub")
   end
 
   # @spec INTENT-CONFORMANCE-006
@@ -1069,6 +1336,88 @@ RSpec.describe "Inbox" do
     expect(response.body).to include(pr.title)
   end
 
+  # @spec DESIGN-RECONCILIATION-001
+  it "surfaces traceability gaps in the inbox filter and detail pane" do
+    finding = create(:design_artifact_finding, project: project, account: project.account,
+      artifact_path: "docs/rdrs/RDR-063-example.md", evidence: [ "No explicit qualified issue links were found" ])
+
+    get inbox_path
+
+    document = Nokogiri::HTML(response.body)
+    option = document.at_css("input[name='kind'][value='#{Inbox::Queue::TRACEABILITY_GAP_KIND}']")
+    expect(option).to be_present
+
+    get inbox_entry_path(entry_id(Inbox::Queue::TRACEABILITY_GAP_KIND, finding), kind: Inbox::Queue::TRACEABILITY_GAP_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("No explicit qualified issue links were found")
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
+  it "links traceability-gap pull request artifacts to GitHub pull requests" do
+    finding = create(:design_artifact_finding, project: project, account: project.account,
+      artifact_path: "pull/100")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::TRACEABILITY_GAP_KIND, finding), kind: Inbox::Queue::TRACEABILITY_GAP_KIND)
+
+    document = Nokogiri::HTML(response.body)
+
+    expect(document.at_css(%(a[href="#{project.github_url}/pull/100"]))).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "exposes a file-issue action so operators can establish ownership when no issue covers the artifact" do
+    finding = create(:design_artifact_finding, project: project, account: project.account)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::TRACEABILITY_GAP_KIND, finding), kind: Inbox::Queue::TRACEABILITY_GAP_KIND)
+
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css(%(form[action="#{resolve_design_artifact_finding_path(finding)}"]))).to be_present
+    expect(document.at_css(%(form[action="#{file_issue_design_artifact_finding_path(finding)}"]))).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "exposes a design-PR document-link repair action for stale metadata" do
+    finding = create(:design_artifact_finding, project: project, account: project.account, state: "stale_metadata")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::TRACEABILITY_GAP_KIND, finding), kind: Inbox::Queue::TRACEABILITY_GAP_KIND)
+
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css(%(form[action="#{repair_document_links_design_artifact_finding_path(finding)}"]))).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "rejects an unverified file-issue submit with a stale revision" do
+    finding = create(:design_artifact_finding, project: project, account: project.account)
+
+    expect do
+      post file_issue_design_artifact_finding_path(finding), params: {
+        filing: { revision: "stale", title: "Repair", body: "Cite repair." }
+      }
+    end.not_to change(Issue, :count)
+
+    expect(finding.reload.status).to eq("open")
+    expect(response).to be_redirect
+  end
+
+  # @spec OPERATOR-INBOX-018
+  it "redirects a filed traceability gap to its durable issue location" do
+    finding = create(:design_artifact_finding, project: project, account: project.account)
+    remote = OpenStruct.new(
+      id: 2_000_001, number: 42, title: "Repair traceability", body: "Cite repair.", state: "open", labels: [],
+      user: nil, created_at: Time.current, updated_at: Time.current,
+      html_url: "https://github.com/acme/alpha/issues/42", pull_request: nil
+    )
+    allow(github_client).to receive_messages(search_issues: Data.define(:items).new([]), create_issue: remote)
+
+    post file_issue_design_artifact_finding_path(finding), params: {
+      filing: { revision: finding.revision, title: "Repair traceability", body: "Cite repair." }
+    }
+
+    issue = finding.reload.resolution_issue
+    expect(response).to redirect_to(project_path(project, anchor: "issue_#{issue.id}"))
+  end
+
   # @spec OPERATOR-INBOX-002J
   it "links the test_review_pending detail pane to the pull request" do
     pr = create_tdd_test_review_pr(title: "Red-phase tests for CSV export", github_number: 518)
@@ -1103,11 +1452,16 @@ RSpec.describe "Inbox" do
 
   # @spec OPERATOR-INBOX-002D
   it "links the manual_review detail pane to the enhancement comment when it can be resolved" do
+    project.update!(github_token: nil, github_installation: create(:github_installation, :covering_project, account: account, project: project))
+    allow(Github::AppInstallation).to receive(:token_for).and_return("installation-token")
     parked = create_manual_review_issue(title: "Parked issue", github_number: 516)
     comment_url = "#{parked.github_url}#issuecomment-1"
-    allow(Inbox::ManualReviewCommentLink).to receive(:call).and_return(comment_url)
+    allow(github_client).to receive(:issue_comments).and_return([
+      double(body: IssueEnhancements::StopForManualReview::COMMENT_MARKER,
+        html_url: comment_url, user: double(login: Github::AppRegistry.bot_login))
+    ])
 
-    get inbox_entry_path(
+    get inbox_entry_supplement_path(
       entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
       kind: Inbox::Queue::MANUAL_REVIEW_KIND
     )
@@ -1268,7 +1622,7 @@ RSpec.describe "Inbox" do
     it "renders the context panel inside a details disclosure with the preamble + Current context body wired into markdown-text" do
       issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
 
-      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+      get inbox_entry_supplement_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Context from Paid")
@@ -1287,15 +1641,15 @@ RSpec.describe "Inbox" do
 
       get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
-      grid = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-clarifying-context']").parent
-      expect(grid["class"]).to include("lg:grid")
-      expect(grid["class"]).to include("lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")
+      grid = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-question-layout']")
+      expect(grid["class"]).to include("lg:has-[[data-testid=inbox-clarifying-context]]:grid")
+      expect(grid["class"]).to include("grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")
     end
 
     it "does not collapse the disclosure on lg+ so the operator does not have to tap to read context" do
       issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
 
-      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+      get inbox_entry_supplement_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
       panel = Nokogiri::HTML(response.body).at_css("[data-testid='inbox-clarifying-context']")
       # OPERATOR-INBOX-011 expects the context to be visible by default on lg+
@@ -1304,14 +1658,13 @@ RSpec.describe "Inbox" do
       # Nokogiri represents a present boolean attribute as `""`, so we look
       # for the attribute itself rather than a truthy string value.
       expect(panel.attribute("open")).not_to be_nil
-      expect(panel["class"]).to include("lg:sticky")
       expect(panel.at_css("summary")["class"]).to include("lg:cursor-default")
     end
 
     it "escapes the fallback text so it never renders as raw HTML before JS runs" do
       issue = create(:issue, :needs_input, project: project, title: "Context question", body: questions_body)
 
-      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+      get inbox_entry_supplement_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
 
       # The comment contains a markdown backtick, so the fallback should ship
       # the escaped raw string — never a live <code> tag — until the JS
@@ -1351,9 +1704,9 @@ RSpec.describe "Inbox" do
       expect(response).to have_http_status(:ok)
       expect(response.body).not_to include("Context from Paid")
       expect(response.body).not_to include("data-testid=\"inbox-clarifying-context\"")
-      # The two-column grid wrapper is only emitted when context_markdown
-      # is present, so absence here is the signal that we fell back cleanly.
-      expect(response.body).not_to include("lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]")
+      get inbox_entry_supplement_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
+      expect(response.body).not_to include("data-testid=\"inbox-clarifying-context\"")
+      get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue))
       # Existing form + View Issue link remain so the operator can still
       # answer the question and consult GitHub directly.
       expect(response.body).to include("View Issue")
@@ -1626,5 +1979,22 @@ RSpec.describe "Inbox" do
       } ],
       "not_evaluated" => []
     }
+  end
+
+  def stale_entry(approver_login, approved_revision, current_revision, approved_at)
+    {
+      "approver_login" => approver_login,
+      "approved_revision" => approved_revision,
+      "approved_at" => approved_at.iso8601,
+      "current_revision" => current_revision
+    }
+  end
+
+  def visit_merge_approval_entry(pr)
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MERGE_APPROVAL_KIND, pr),
+      project_id: project.id,
+      kind: Inbox::Queue::MERGE_APPROVAL_KIND
+    )
   end
 end

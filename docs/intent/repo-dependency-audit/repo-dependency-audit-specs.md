@@ -19,8 +19,9 @@
 - [x] **REPO-DEPENDENCY-AUDIT-002** — When `bin/audit` runs `yarn audit`
   and Yarn itself fails to complete (registry error, network error,
   invalid response, or any other non-zero exit that is not a clean
-  advisory report), the wrapper SHALL exit non-zero with a message that
-  distinguishes the scanner failure from a vulnerability finding. A
+  advisory report), the wrapper SHALL retry the audit up to three total
+  attempts with bounded increasing delays, then exit non-zero with a message
+  that distinguishes the scanner failure from a vulnerability finding. A
   scanner failure SHALL NOT be reported as "All security checks passed."
   *Tests:* `spec/scripts/audit_spec.rb`, `spec/scripts/yarn_audit_check_spec.rb`.
   *Code:* `bin/audit`, `bin/yarn-audit-check`.
@@ -63,6 +64,18 @@
   as it already fails on a non-zero exit from `bin/brakeman` or
   `bin/bundler-audit`.
   *Code:* `.github/workflows/security.yml`.
+
+## Output Handling
+
+- [x] **REPO-DEPENDENCY-AUDIT-008** — Regardless of the invoking shell's
+  locale (including a runner with no `LANG`/`LC_ALL` set, where Ruby's
+  `Encoding.default_external` is `US-ASCII`), the wrapper SHALL correctly
+  parse `yarn audit --json` output containing non-ASCII bytes (e.g.
+  advisory text with accented author names) without raising an encoding
+  error. A locale-dependent crash SHALL NOT be reported as a scanner
+  failure that masks the real advisory data.
+  *Tests:* `spec/scripts/yarn_audit_check_spec.rb`.
+  *Code:* `bin/yarn-audit-check`.
 
 ## Package Manager
 

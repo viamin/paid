@@ -8,6 +8,18 @@ class Issue < ApplicationRecord
     "Issue was reopened after closure. An operator must validate its current intent before it can be completed again."
   NON_BLOCKING_OPEN_DEPENDENCY_STATES = %w[recommend_close completed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
+  CONTROL_PRIORITIES = %w[P1 P2 P3].freeze
+  TDD_REVIEW_STATES = %w[ready_for_review approved changes_requested].freeze
+  # @spec LABEL-CONTROL-007. The Paid-local per-item activation state used in
+  # ignored label mode (#4253). A deactivation is persisted, rather than
+  # cleared, so it can override eligibility inherited from a linked run or
+  # a paid-activated parent issue.
+  PAID_ACTIVATION_STATES = %w[activated deactivated].freeze
+  # The marker string FeatureActivation returns to label-read callers when an
+  # issue/PR is paid-activated in ignored mode (instead of consulting the
+  # activation label name). Callers use it to select Paid-local authorization
+  # rather than attempting to replay a GitHub label event.
+  PAID_ACTIVATION_SENTINEL = "__paid_activated__"
   # The first four reasons denote agent failure. `awaiting_approval` denotes
   # an unanswered human gate: the PR is green, blocked only on owner
   # approval, and has waited past the project ceiling. It must stay
@@ -80,11 +92,30 @@ class Issue < ApplicationRecord
   has_many :issue_merge_subscriptions, dependent: :destroy
   has_many :intent_conformance_verdicts, dependent: :destroy
   has_many :intent_conformance_decisions, dependent: :destroy
+  has_many :clarifying_question_progresses, dependent: :destroy
 
-  # @spec INTENT-AMENDMENT-003 — feature intent linkage; an
-  # issue belongs to at most one feature tree (unique index on the join).
-  has_one :feature_intent_issue, dependent: :destroy
+  # @spec INTENT-AMENDMENT-003 — feature intent linkage. An issue may serve
+  # several designs (the join's issue_id index is not unique), so this
+  # association resolves only one link; code that must consider every linked
+  # design evaluates the FeatureIntentIssue set directly (see
+  # FeatureIntents::RunAdmission and FeatureIntents::ReleaseIssue). The
+  # collection owns deletion so cleanup removes every link, not just the
+  # singular compatibility accessor's first match.
+  has_many :feature_intent_issues, dependent: :destroy
+  has_one :feature_intent_issue
   has_one :feature_intent, through: :feature_intent_issue
+  has_many :completion_cycles, class_name: "FeatureIntentCompletion", foreign_key: :completion_issue_id,
+                              dependent: :nullify, inverse_of: :completion_issue
+
+  # An issue may serve more than one design. Automatic enqueue uses this
+  # predicate to invoke the confidence-release contract only when at least one
+  # linked design opted into that delivery policy.
+  # @spec CONFIDENCE-DELIVERY-005
+  def confidence_delivery?
+    feature_intent_issues.joins(:feature_intent)
+      .where(feature_intents: { delivery_policy: "confidence_driven" })
+      .exists?
+  end
 
   has_many :issue_dependencies, dependent: :destroy
   has_many :dependencies, through: :issue_dependencies, source: :depends_on_issue
@@ -111,8 +142,11 @@ class Issue < ApplicationRecord
   before_save :sync_closed_at, if: :will_save_change_to_github_state?
   validates :source, presence: true, inclusion: { in: VALID_SOURCES }
   validates :pr_review_phase, inclusion: { in: PR_REVIEW_PHASES }, if: :is_pull_request?
+  validates :control_priority, inclusion: { in: CONTROL_PRIORITIES }, allow_nil: true
+  validates :tdd_review_state, inclusion: { in: TDD_REVIEW_STATES }, allow_nil: true
   validates :pr_escalation_reason, inclusion: { in: PR_ESCALATION_REASONS }, allow_nil: true
   validates :enhance_issue_rounds, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :paid_activation_state, inclusion: { in: PAID_ACTIVATION_STATES }, allow_nil: true
   validate :parent_issue_belongs_to_same_project, if: -> { parent_issue.present? }
 
   after_commit :broadcast_current_section, on: [ :create, :destroy ]
@@ -174,6 +208,9 @@ class Issue < ApplicationRecord
   scope :issues_only, -> { where(is_pull_request: false) }
   scope :pull_requests_only, -> { where(is_pull_request: true) }
   scope :local_repository, -> { where(source: GITHUB_SOURCE) }
+  # @spec LABEL-CONTROL-007. Issue/PR scope over rows a user has marked as
+  # Paid's to work on (the ignored-mode replacement for the activation label).
+  scope :paid_activated, -> { where(paid_activation_state: "activated") }
   # List surfaces (blocked PRs, retry-limited issues, recent activity) never
   # render the issue body; skipping it keeps the largest TEXT column off
   # list queries. Raises MissingAttributeError if a view starts using body —
@@ -463,6 +500,74 @@ class Issue < ApplicationRecord
     pr_review_phase == "merged"
   end
 
+  # @spec LABEL-CONTROL-001
+  def local_control_state?
+    project.label_integration_mode == "ignored"
+  end
+
+  # @spec LABEL-CONTROL-007 — Paid-local per-item activation signal for
+  # ignored label mode. True when the user (via UI, chat, or MCP) has marked
+  # this issue/PR as Paid's to work on. In read_write/read_only modes the
+  # equivalent signal is a trusted activation label, so this flag is normally
+  # nil; it is only consulted by the activation gates that opt into ignored
+  # mode.
+  def paid_activated?
+    paid_activation_state == "activated"
+  end
+
+  def paid_deactivated?
+    paid_activation_state == "deactivated"
+  end
+
+  # Idempotent: re-applying the same state keeps the original timestamp.
+  # @spec LABEL-CONTROL-007
+  def paid_activate!(time: Time.current)
+    return true if paid_activated?
+
+    update!(paid_activation_state: "activated", paid_activated_at: time)
+  end
+
+  def paid_deactivate!
+    return true if paid_deactivated?
+
+    update!(paid_activation_state: "deactivated", paid_activated_at: nil)
+  end
+
+  # @spec LABEL-CONTROL-003
+  def auto_pick_excluded?
+    local_control_state? && auto_pick_excluded_reason.present?
+  end
+
+  # @spec LABEL-CONTROL-004
+  def auto_merge_skipped?
+    return skip_auto_merge if local_control_state?
+
+    has_label?(Automation::Strategies::AutoMerge::SKIP_AUTO_MERGE_LABEL)
+  end
+
+  # @spec LABEL-CONTROL-004
+  def held_for_review?
+    return hold_for_review if local_control_state?
+
+    has_label?(Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL)
+  end
+
+  # @spec LABEL-CONTROL-005
+  def effective_tdd_review_state
+    return tdd_review_state if local_control_state?
+
+    return "approved" if has_label?("paid-tests-approved")
+    return "changes_requested" if has_label?("paid-test-changes-requested")
+    "ready_for_review" if has_label?("paid-tests-ready-for-review")
+  end
+
+  # @spec LABEL-CONTROL-005
+  def approve_tdd_tests!
+    return if tdd_review_state == "approved" && tdd_review_approved_at.present?
+
+    update!(tdd_review_state: "approved", tdd_review_approved_at: Time.current)
+  end
+
   # Releases the escalation hold and returns the PR to an automation-managed
   # phase. Owner-initiated clearings also restart the attempt counters: they
   # measure attempts since the owner last looked, and escalation is the moment
@@ -482,9 +587,23 @@ class Issue < ApplicationRecord
       ci_retry_requested_at: nil
     }
     attrs.merge!(escalation_counter_reset_attributes) if reset_counters
-    attrs[:pr_auto_continue_token_limit_overridden_at] = Time.current if token_limit_override
+    attrs.merge!(token_limit_override_attributes) if token_limit_override
 
     update!(attrs)
+  end
+
+  # @spec PR-ESCALATION-007
+  def pr_auto_continue_token_limit_override?
+    pr_auto_continue_token_limit_override_usage.present? &&
+      pr_auto_continue_token_limit_override_allowance.present?
+  end
+
+  # @spec PR-ESCALATION-007
+  def pr_auto_continue_token_limit_effective_limit(project_limit)
+    return project_limit.to_i unless pr_auto_continue_token_limit_override?
+
+    pr_auto_continue_token_limit_override_usage.to_i +
+      pr_auto_continue_token_limit_override_allowance.to_i
   end
 
   def ready_to_work?
@@ -876,7 +995,7 @@ class Issue < ApplicationRecord
   # github_state transitions already bump through
   # merge_approval_candidate_state_changed? (OPERATOR-INBOX-002J).
   def test_review_label_state_changed?
-    is_pull_request? && saved_change_to_labels?
+    is_pull_request? && (saved_change_to_labels? || saved_change_to_tdd_review_state?)
   end
 
   # Every counter an escalation accumulated, plus the markers that tell
@@ -891,6 +1010,20 @@ class Issue < ApplicationRecord
       stuck_confirmation_count: 0,
       review_goal_retry_reset_at: reset_at,
       operational_failure_reset_at: reset_at
+    }
+  end
+
+  def token_limit_override_attributes
+    usage = AgentRun.pr_auto_continue_tokens_used(
+      project: project,
+      issue: self,
+      pr_number: github_number
+    )
+
+    {
+      pr_auto_continue_token_limit_overridden_at: Time.current,
+      pr_auto_continue_token_limit_override_usage: usage,
+      pr_auto_continue_token_limit_override_allowance: project.max_pr_auto_continue_tokens.to_i
     }
   end
 

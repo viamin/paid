@@ -7,6 +7,7 @@ class ChatMessage < ApplicationRecord
   before_validation :set_external_id, on: :create
 
   belongs_to :chat_session
+  has_one :chat_diagram, dependent: :nullify
   has_many :api_usage_attempts, dependent: :nullify
 
   validates :role, inclusion: { in: ROLES }
@@ -19,6 +20,16 @@ class ChatMessage < ApplicationRecord
   scope :pending_tool_confirmations, -> { where.not(tool_status: nil).where(tool_status: "pending") }
   scope :system, -> { where(role: "system") }
   scope :container_capability_notices, -> { system.where("metadata ->> 'container_capability_notice' = 'true'") }
+  scope :groupable_tools, -> {
+    where(<<~SQL.squish)
+      (role = 'tool' OR NULLIF(BTRIM(tool_name), '') IS NOT NULL)
+      AND (tool_status IS NULL OR tool_status <> 'pending')
+      AND COALESCE(metadata -> 'token_limit_error', 'false'::jsonb) <> 'true'::jsonb
+      AND COALESCE(metadata -> 'rate_limit_paused', 'false'::jsonb) <> 'true'::jsonb
+      AND COALESCE(metadata -> 'provider_error_notice', 'false'::jsonb) <> 'true'::jsonb
+      AND COALESCE(metadata -> 'pending_confirmation_notice', 'false'::jsonb) <> 'true'::jsonb
+    SQL
+  }
 
   def pending_confirmation?
     tool_status == "pending"
@@ -76,6 +87,15 @@ class ChatMessage < ApplicationRecord
   # conversational "yes" can never read as an executed action.
   def pending_confirmation_notice?
     metadata.is_a?(Hash) && metadata["pending_confirmation_notice"] == true
+  end
+
+  # @spec CHAT-API-024
+  def groupable_tool?
+    (tool_name.present? || role == "tool") && !pending_confirmation? && !transcript_notice?
+  end
+
+  def transcript_notice?
+    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice?
   end
 
   private

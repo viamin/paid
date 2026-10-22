@@ -3,13 +3,42 @@
 ## Metadata
 
 - **Date**: 2026-09-22
-- **Status**: Accepted
+- **Status**: Partially Implemented (see [2026-10-12 Closeout](#2026-10-12-closeout))
 - **Type**: Product workflow and orchestration
 - **Priority**: P1
 - **Related RDRs**: [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-067](RDR-067-approved-intent-conformance.md), [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-070](RDR-070-facet-confidence-and-clarification.md)
+- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open; P09, P10, P11, P12, C71 unimplemented)
 - **Intent**: [Confidence-driven delivery](../intent/confidence-driven-delivery/confidence-driven-delivery-design.md)
 - **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (shared umbrella), [#4324](https://github.com/viamin/paid/issues/4324) (RDR-071 closeout); implementation tasks are linked in the shared tree
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
+- **Related Issues**: Epic [#4309](https://github.com/viamin/paid/issues/4309); closeout [#4324](https://github.com/viamin/paid/issues/4324); gaps [#4310](https://github.com/viamin/paid/issues/4310), [#4314](https://github.com/viamin/paid/issues/4314), [#4315](https://github.com/viamin/paid/issues/4315), [#4318](https://github.com/viamin/paid/issues/4318), [#4319](https://github.com/viamin/paid/issues/4319), [#4320](https://github.com/viamin/paid/issues/4320), [#4321](https://github.com/viamin/paid/issues/4321), [#4323](https://github.com/viamin/paid/issues/4323)
+
+## Implementation Status
+
+Partially Implemented as of 2026-10-12 (see
+[2026-10-12 Closeout](#2026-10-12-closeout)). The approval-gated
+feature lifecycle, admission recheck, and amendment/conformance guards
+that this RDR deliberately reuses are shipped with passing tests; the
+new confidence-driven policy is only partially implemented:
+`CONFIDENCE-DELIVERY-001`, `014`, and `015` now have the P01 policy and
+enrollment foundation. `db/schema.rb` carries the project selection and
+immutable feature-policy snapshot; `FeatureIntents::RunAdmission` fails
+closed for that policy until the complete delivery path is installed.
+Release-audit, completion, and follow-up records remain unimplemented.
+The existing approval-gated policy and its review guards
+(`IntentConformance::VerifyAtMerge`, `DesignAmendments::EvaluateImpact`,
+`FeatureIntents::Release`, `FeatureIntents::RunAdmission`) remain the
+authority for approval-gated features. The rollout guard remains in force:
+enrollment does not enable execution because confidence-driven admission is
+explicitly denied pending the later integrations. The umbrella children that
+will deliver the remaining RDR-071 behavior are P09 (scoped readiness with
+80/80 thresholds), P10
+(publish held issues and one automatic release contract), P11 (carry
+admitted intent to builders and dispatch conformance by policy), P12
+(forward-work follow-ups and completion), and C71 (final closeout
+audit). This audit does not introduce or flip a flag. See
+[`audit-report-2026-10-12-rdr-071.md`](audit-report-2026-10-12-rdr-071.md)
+for the criterion-by-criterion evidence.
 
 ## Problem Statement
 
@@ -170,3 +199,25 @@ Earlier issue execution accepts more follow-up work and requires honest
 completion accounting. Flags reduce exposure but are not universally available.
 Policy snapshots add an explicit boundary while approval-gated features exist;
 they prevent accidental release or pausing caused by mixing incompatible rules.
+
+## 2026-10-12 Closeout
+
+Closeout issue [#4324](https://github.com/viamin/paid/issues/4324) compared
+every `CONFIDENCE-DELIVERY-*` EARS claim and the RDR validation scenarios with
+the application and its tests. Result: **Partially Implemented**. The reused
+approval-gated foundations are verified and retained; the new confidence-driven
+policy has no shipped EARS claim and remains blocked on the focused
+policy/enrollment foundation [#4310](https://github.com/viamin/paid/issues/4310) (P01);
+facets and prerequisite mapping [#4314](https://github.com/viamin/paid/issues/4314) (P05);
+assessments and explanations [#4315](https://github.com/viamin/paid/issues/4315) (P06);
+scoped readiness and 80/80 thresholds [#4318](https://github.com/viamin/paid/issues/4318) (P09);
+held-issue publication and the unified release contract [#4319](https://github.com/viamin/paid/issues/4319) (P10);
+immutable builder context and policy-specific review [#4320](https://github.com/viamin/paid/issues/4320) (P11);
+completion-blocking follow-ups [#4321](https://github.com/viamin/paid/issues/4321) (P12);
+and the independent facet-confidence closeout [#4323](https://github.com/viamin/paid/issues/4323) (C70)
+work.
+
+The rollout guard remains in force: automatic confidence-driven release is not
+enabled, and no settings-only enrollment surface exists. This closeout tracks
+[#4309](https://github.com/viamin/paid/issues/4309) and does not close it; E01's
+own final acceptance audit decides closure from shipped evidence.

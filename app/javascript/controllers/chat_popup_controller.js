@@ -1,7 +1,7 @@
 import { Controller } from "@hotwired/stimulus"
 
 export default class extends Controller {
-  static targets = ["button", "content", "panel"]
+  static targets = ["button", "content", "keepOpenButton", "panel"]
   static values = {
     accountId: Number,
     context: Object,
@@ -10,13 +10,17 @@ export default class extends Controller {
   }
 
   connect() {
+    // @spec CHAT-API-021
     this.state = this.readState()
+    const followsNavigation = this.state.followNavigation === true
+    if (!this.state.keepOpen && !followsNavigation) this.state.open = false
+    this.state.followNavigation = false
+    if (followsNavigation) this.writeState()
+
     this.loading = false
     this.renderState()
 
-    if (this.state.open) {
-      this.loadPanel()
-    }
+    if (this.state.open) this.loadPanel()
   }
 
   toggle() {
@@ -33,6 +37,34 @@ export default class extends Controller {
     this.state.open = false
     this.writeState()
     this.renderState()
+  }
+
+  // @spec CHAT-API-025
+  // Internal assistant links need continuity even if the user did not opt in
+  // to persistence beforehand: following one is an explicit request to carry
+  // this conversation to the destination page.
+  navigate(event) {
+    if (event.defaultPrevented || event.button !== 0 || this.modifiedClick(event)) return
+
+    this.state.open = true
+    this.state.keepOpen = true
+    this.writeState()
+  }
+
+  toggleKeepOpen() {
+    // @spec CHAT-API-021
+    this.state.keepOpen = !this.state.keepOpen
+    this.writeState()
+    this.renderState()
+  }
+
+  // @spec CHAT-API-025
+  followNavigation(event) {
+    const sessionId = event.detail?.sessionId
+    if (!sessionId) return
+
+    this.state = { ...this.state, open: true, sessionId, followNavigation: true }
+    this.writeState()
   }
 
   async loadPanel() {
@@ -173,6 +205,7 @@ export default class extends Controller {
     if (!response.ok) throw new Error(`Panel request failed with ${response.status}`)
 
     this.contentTarget.innerHTML = await response.text()
+    this.renderState()
   }
 
   jsonHeaders() {
@@ -197,18 +230,24 @@ export default class extends Controller {
     return `paid:chat-popup:${this.accountIdValue}`
   }
 
+  modifiedClick(event) {
+    return event.metaKey || event.ctrlKey || event.shiftKey || event.altKey
+  }
+
   readState() {
     try {
       const rawState = window.localStorage.getItem(this.storageKey())
-      if (!rawState) return { open: false, sessionId: null }
+      if (!rawState) return { keepOpen: false, open: false, sessionId: null }
 
       const parsed = JSON.parse(rawState)
       return {
+        keepOpen: parsed.keepOpen === true,
         open: parsed.open === true,
-        sessionId: parsed.sessionId || null
+        sessionId: parsed.sessionId || null,
+        followNavigation: parsed.followNavigation === true
       }
     } catch {
-      return { open: false, sessionId: null }
+      return { keepOpen: false, open: false, sessionId: null }
     }
   }
 
@@ -220,6 +259,11 @@ export default class extends Controller {
     const open = this.state.open
     this.panelTarget.classList.toggle("hidden", !open)
     this.buttonTarget.setAttribute("aria-expanded", open ? "true" : "false")
+
+    if (this.hasKeepOpenButtonTarget) {
+      this.keepOpenButtonTarget.setAttribute("aria-pressed", this.state.keepOpen ? "true" : "false")
+      this.keepOpenButtonTarget.textContent = this.state.keepOpen ? "Chat Stays Open" : "Keep Chat Open"
+    }
   }
 
   loadingMarkup() {

@@ -8,6 +8,7 @@ RSpec.describe Issue do
     it { is_expected.to belong_to(:parent_issue).class_name("Issue").optional }
     it { is_expected.to have_many(:sub_issues).class_name("Issue").with_foreign_key(:parent_issue_id).dependent(:nullify) }
     it { is_expected.to have_many(:agent_runs).dependent(:nullify) }
+    it { is_expected.to have_many(:feature_intent_issues).dependent(:destroy) }
     it { is_expected.to have_many(:issue_dependencies).dependent(:destroy) }
     it { is_expected.to have_many(:dependencies).through(:issue_dependencies) }
     it { is_expected.to have_many(:reverse_issue_dependencies).class_name("IssueDependency").dependent(:destroy) }
@@ -52,6 +53,18 @@ RSpec.describe Issue do
 
         expect(issue).to be_valid
       end
+    end
+  end
+
+  describe "feature intent links" do
+    it "destroys every design link when an issue serves multiple designs" do # @spec INTENT-AMENDMENT-003
+      issue = create(:issue)
+      feature_intents = create_list(:feature_intent, 2, project: issue.project)
+      links = feature_intents.map { |feature_intent| create(:feature_intent_issue, issue:, feature_intent:) }
+
+      issue.destroy!
+
+      expect(FeatureIntentIssue.where(id: links)).to be_empty
     end
   end
 
@@ -922,14 +935,20 @@ RSpec.describe Issue do
       end
 
       # @spec PR-ESCALATION-007
-      it "records a standing token-cap override when clearing a token-cap escalation" do
+      it "records a bounded token-cap allowance when clearing a token-cap escalation" do
         escalated_pr.update!(pr_escalation_reason: Issue::PR_ESCALATION_REASON_PR_AUTO_CONTINUE_TOKEN_LIMIT)
+        escalated_pr.project.update!(max_pr_auto_continue_tokens: 50_000)
+        create(:agent_run, project: escalated_pr.project, issue: escalated_pr,
+          source_pull_request_number: escalated_pr.github_number,
+          trigger_type: "automatic", tokens_input: 55_000)
 
         freeze_time do
           escalated_pr.clear_escalation!(draft: false)
 
           expect(escalated_pr.reload.pr_auto_continue_token_limit_overridden_at)
             .to be_within(1.second).of(Time.current)
+          expect(escalated_pr.pr_auto_continue_token_limit_override_usage).to eq(55_000)
+          expect(escalated_pr.pr_auto_continue_token_limit_override_allowance).to eq(50_000)
         end
       end
 
@@ -2844,6 +2863,45 @@ RSpec.describe Issue do
       issue = build(:issue, merge_permission_rejected_at: (Issue::MERGE_PERMISSION_RETRY_COOLDOWN + 1.minute).ago)
 
       expect(issue.merge_permission_retry_due?).to be(true)
+    end
+  end
+
+  describe "#paid_activate!" do
+    # @spec LABEL-CONTROL-007
+    it "persists activation at the supplied time" do
+      issue = create(:issue)
+      activated_at = Time.zone.parse("2026-10-13 10:00:00")
+
+      issue.paid_activate!(time: activated_at)
+
+      issue.reload
+      expect(issue).to be_paid_activated
+      expect(issue.paid_activated_at).to eq(activated_at)
+    end
+
+    # @spec LABEL-CONTROL-007
+    it "keeps the original activation timestamp when reapplied" do
+      issue = create(:issue)
+      activated_at = Time.zone.parse("2026-10-13 10:00:00")
+
+      issue.paid_activate!(time: activated_at)
+      issue.paid_activate!(time: activated_at + 1.hour)
+
+      expect(issue.reload.paid_activated_at).to eq(activated_at)
+    end
+  end
+
+  describe "#paid_deactivate!" do
+    # @spec LABEL-CONTROL-007
+    it "persists deactivation so it overrides inherited PR scan eligibility" do
+      issue = create(:issue, paid_activation_state: "activated", paid_activated_at: Time.current)
+
+      issue.paid_deactivate!
+
+      issue.reload
+      expect(issue).to be_paid_deactivated
+      expect(issue).not_to be_paid_activated
+      expect(issue.paid_activated_at).to be_nil
     end
   end
 end

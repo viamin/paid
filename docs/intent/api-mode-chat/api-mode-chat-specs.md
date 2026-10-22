@@ -1,5 +1,24 @@
 # EARS Specs: API-Mode Interactive Chat
 
+- [x] **CHAT-API-026** — When non-free-policy API-key chat creates a session,
+  executes a legacy Automatic session, or switches to a fallback runner, Paid
+  SHALL use the same curated Low/Medium/High resolver. It SHALL default new and
+  legacy Automatic sessions to Low, retain an explicit existing model, record
+  the effective tier and concrete model, and reject an unavailable Low tier
+  with actionable feedback rather than escalating cost. Fallback candidate
+  selection SHALL skip a non-free runner whose Low tier cannot resolve
+  (catalog gap, fresh unavailability evidence, or policy exclusion) so later
+  usable fallbacks remain reachable, mirroring the CHAT-API-019 free-pool
+  skip. Free-policy runners remain unpinned at creation so CHAT-API-018
+  remains authoritative. OpenAI
+  Low, Medium, and High SHALL resolve to GPT-5.6 Luna, Terra, and Sol
+  respectively.
+  *Tests:* `spec/services/chat_sessions/create_spec.rb`,
+  `spec/services/chat_sessions/build_llm_client_spec.rb`,
+  `spec/services/chat_sessions/fallback_runners_spec.rb`.
+  *Code:* `ChatSessions::CuratedModelOptions`, `ChatSessions::Create`,
+  `ChatSessions::BuildLlmClient`, `ChatSessions::FallbackRunners`.
+
 - [x] **CHAT-API-018** — When building a chat client for a free-policy
   OpenRouter runner, Paid SHALL select from the current synced free catalog,
   requiring active, unexpired, text-output models with tools and at least
@@ -17,11 +36,28 @@
   and reference project currently attached to the chat. While the API
   transport cannot enforce OpenRouter data-collection and ZDR routing, Paid
   SHALL reject confidential or restricted project context before sending it.
-  Container chat SHALL apply the most restrictive attached project's routing
-  or reject sensitive context when its runner cannot enforce those controls.
+  The shared free-model selector SHALL apply the same rejection for free `pi`
+  and `omp` runners regardless of transport, because those runners likewise
+  cannot enforce the required privacy routing.
   An unavailable free-model fallback SHALL be skipped so later configured
   usable fallbacks can be tried without changing the session to the unusable
-  runner.
+  runner. Broader container lifecycle and mutation behavior remain owned by
+  the RDR-037 chat segments.
+  *Test:* `spec/services/free_models/select_chat_model_spec.rb`.
+  *Code:* `FreeModels::SelectChatModel.for_session`.
+
+- [x] **CHAT-API-020** — When API-mode chat sends Paid tool definitions to an
+  OpenAI-compatible provider, every advertised tool parameter schema SHALL
+  have an object root and SHALL NOT use a root-level `oneOf`, `anyOf`,
+  `allOf`, `enum`, `const`, or `not` keyword. `trigger_agent_run` SHALL retain
+  its alternatives (an issue, a custom prompt, or `lid_planning` plan docs)
+  through Paid argument validation before an agent run is created.
+  *Tests:* `spec/mcp/tools/trigger_agent_run_spec.rb`,
+  `spec/mcp/tools/registry_spec.rb`,
+  `spec/services/chat_sessions/build_llm_client_spec.rb`.
+  *Code:* `Tools::TriggerAgentRun.input_schema`,
+  `Tools::TriggerAgentRun#perform`, `Tools::Registry.chat_definitions_for`,
+  `ChatSessions::BuildLlmClient::HttpClient#format_tools`.
 
 > Testable claims for the shipped API-mode portion of interactive chat. Status
 > markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
@@ -208,27 +244,31 @@
   the header badge added no information.
 
   The workspace capability panel — whose cloned-repo list grows without
-  bound — SHALL sit behind its own `<details>` disclosure. On the desktop /
-  wide page header, that disclosure SHALL render **open in the server
-  response** for any session that has a workspace (`container_capability`
-  other than `none`), and collapsed only for inline-only chats. The same
-  rule applies on the mobile page header. When a live `capability_changed`
-  broadcast *reveals* one of the actions inside the capability panel —
-  i.e. the action transitions from hidden to shown — the controller SHALL
-  unfold the surrounding `<details>` with it, since un-hiding a control
-  inside a collapsed disclosure reveals nothing; it SHALL NOT unfold the
-  disclosure when it is hiding an action or when the action was already
-  visible before the toggle, or same-state snapshot broadcasts (e.g. a
-  `clone_manifest` rebroadcast that still carries `container_capability:
-  "ready"`) would fight a user who intentionally collapsed the disclosure.
+  bound — SHALL sit behind its own nested `Workspace` `<details>` disclosure
+  inside `Session details`, on both headers. The outer `Session details`
+  disclosure SHALL remain closed in the server response, so workspace content
+  is not visible until the user expands session details. The nested Workspace
+  disclosure SHALL render **open in the server response** for any session that
+  has a workspace (`container_capability` other than `none`), and collapsed
+  only for inline-only chats. When a live `capability_changed` broadcast
+  *reveals* one of the actions inside the capability panel — i.e. the action
+  transitions from hidden to shown — the controller SHALL unfold the Workspace
+  `<details>` and every enclosing `<details>` through Session details, since
+  un-hiding a control inside a closed disclosure chain reveals nothing; it
+  SHALL NOT unfold the chain when it is hiding an action or when the action
+  was already visible before the toggle, or same-state snapshot broadcasts
+  (e.g. a `clone_manifest` rebroadcast that still carries
+  `container_capability: "ready"`) would fight a user who intentionally
+  collapsed the disclosure.
 
   Below `xl`, the page SHALL switch to a compact header pattern that keeps
   the transcript as the dominant region: the compact single-line chrome
-  described above plus the two disclosures (`Session details` and
-  `Workspace`). Runner / model selectors, title editing, token usage, and
-  archive controls remain reachable inside the `Session details`
-  disclosure. A workspace's status and recovery action remain visible in its
-  open `Workspace` disclosure; on mobile, its potentially tall clone
+  described above plus the `Session details` disclosure containing its nested
+  `Workspace` disclosure. Runner / model selectors, title editing, token
+  usage, archive controls, and the workspace's status and recovery action
+  remain reachable inside `Session details`; the nested Workspace disclosure
+  stays open by default for a non-inline session once its parent is expanded.
+  On mobile, its potentially tall clone
   configuration and cloned-repository list SHALL sit in a nested, initially
   closed `Workspace options` disclosure so they remain reachable without
   consuming the transcript before the user asks for them. On a 390×844
@@ -242,7 +282,8 @@
   No `max-height` cap SHALL be applied to the desktop or mobile header:
   the always-visible chrome is a single compact line by design, so
   unbounded growth only happens when the user explicitly opens the
-  `Session details` or `Workspace` disclosures, and that is a user choice.
+  `Session details` disclosure (and optionally its nested `Workspace`
+  disclosure), and that is a user choice.
   Clipping content the user just chose to expand is worse than a
   temporarily shorter transcript, and collapsing it again reclaims the
   space.
@@ -255,13 +296,14 @@
   "places runner/model/token-usage/archive controls inside the desktop
   session-details disclosure", "does not render the redundant
   Active/Inline status badges in the desktop chat header", "collapses the
-  workspace disclosure for an inline-only chat", "renders the desktop
-  workspace disclosure open when the chat has a workspace", "uses a
-  compact mobile page header so the transcript remains usable"),
+  workspace disclosure for an inline-only chat", "nests an open desktop
+  workspace disclosure inside closed session details when the chat has a
+  workspace", "uses a compact mobile page header so the transcript remains
+  usable"),
   `spec/system/chat_layout_spec.rb`,
   `spec/system/chat_workspace_reopen_spec.rb`,
   `spec/lib/chat_controller_node_harness_spec.rb`
-  ("testStoppedCapabilityUnfoldsItsDisclosure",
+  ("testStoppedCapabilityUnfoldsItsDisclosureChain",
   "testHiddenCapabilityActionLeavesDisclosureAlone",
   "testSameStateBroadcastLeavesDisclosureAlone").
   *Code:* `app/views/chat_sessions/show.html.erb` (panel header),
@@ -280,6 +322,36 @@
   *Tests:* `spec/views/chat_messages/tool_call_partial_spec.rb`.
   *Code:* `app/views/chat_messages/_tool_call.html.erb`.
 
+- [x] **CHAT-API-021** — The global chat popup SHALL offer a "Keep Chat Open"
+  control that toggles an account-scoped browser-local preference alongside its
+  open state and active chat-session ID. When the preference is enabled and
+  the popup is open, a subsequent full-page navigation SHALL restore the open
+  popup and reload that same session so its persisted conversation remains
+  available. When the preference is disabled, a subsequent full-page
+  navigation SHALL leave the popup closed. When the user explicitly dismisses
+  the popup, Paid SHALL persist the closed state without discarding its active
+  session ID.
+  *Tests:* `spec/lib/chat_popup_controller_node_harness_spec.rb`.
+  *Code:* `app/javascript/controllers/chat_popup_controller.js`.
+
+- [x] **CHAT-API-025** — When a user follows a same-origin navigation from a
+  popup or full-page chat, Paid SHALL hand that chat session to the global
+  popup and open it on the destination page, without changing the user's
+  persistent "Keep Chat Open" preference. The navigation SHALL accept a
+  normal link `href` or a `data-chat-navigate-url` value and SHALL preserve a
+  URL fragment so the browser scrolls to the specified destination section.
+  Assistant markdown SHALL retain root-relative Paid links and reject
+  protocol-relative and unsafe-scheme URLs.
+  *Tests:* `spec/lib/chat_controller_node_harness_spec.rb`,
+  `spec/lib/chat_popup_controller_node_harness_spec.rb`,
+  `spec/lib/chat_message_controller_node_harness_spec.rb`,
+  `spec/services/chat_sessions/build_system_prompt_spec.rb`.
+  *Code:* `app/javascript/controllers/chat_controller.js`,
+  `app/javascript/controllers/chat_popup_controller.js`,
+  `app/views/layouts/application.html.erb`,
+  `app/javascript/lib/safe_markdown.js`,
+  `app/services/chat_sessions/build_system_prompt.rb`.
+
 - [x] **CHAT-API-010** — When a chat repo-read tool (`grep_repo`,
   `read_repo_file`, `list_repo_tree`, `search_issues`) resolves a GitHub
   client for a project, the system SHALL prefer the project's own credential
@@ -290,7 +362,10 @@
   be built for it. A single chatting user's personal GitHub API/Code Search
   quota SHALL NOT be preferred ahead of the project's own quota bucket for
   routine repo reads.
-  *Tests:* `spec/mcp/tools/repo_read_client_resolver_spec.rb`.
+  Repository file reads SHALL return validated UTF-8 text that remains intact
+  through JSON serialization, and reject binary or invalid UTF-8 content.
+  *Tests:* `spec/mcp/tools/repo_read_client_resolver_spec.rb`,
+  `spec/mcp/tools/read_repo_file_spec.rb`.
   *Code:* `Tools::RepoReadClientResolver#resolve`,
   `Tools::RepoReadClientResolver#resolve_project_client`,
   `Tools::RepoReadClientResolver#resolve_user_client`.
@@ -479,3 +554,37 @@
   `#handleConnected`, `#resyncTranscript`, `#fetchRecentMessages`,
   `#lastRenderedMessageId`, `#lastAssistantTextResponse`, `#handleMessageChunk`,
   `ChatSessionsController#recent_messages`.
+
+- [x] **CHAT-API-024** — When two or more consecutive persisted or live
+  transcript rows are non-pending tool calls or results, the transcript SHALL
+  render them in one initially closed, low-contrast disclosure with a count
+  summary. Its expanded contents SHALL retain each existing individual,
+  initially closed tool card and its current styling. A pending confirmation,
+  a non-tool row, or a token-limit, rate-limit, provider-error, or pending-
+  confirmation notice SHALL end the run; pending confirmation cards SHALL
+  remain standalone, open, and retain their amber Approve/Deny treatment. A
+  paginated persisted transcript SHALL extend a page across its leading
+  groupable-tool boundary, so lazy older-message loading renders every
+  consecutive run in one maximal disclosure rather than splitting it between
+  frames. A
+  runner-fallback cleanup SHALL remove an emptied live disclosure together with
+  its stale cards. Grouping SHALL NOT make tool cards eligible as "Jump to
+  latest" response anchors. When a user resolves a pending confirmation that
+  sat standalone after a tool run, the now-non-pending card SHALL merge into
+  the preceding group (or wrap with a preceding single non-pending tool card)
+  so the live view matches the persisted, maximal-disclosure rendering after
+  a reload (#4270).
+  *Tests:* `spec/views/chat_messages/tool_call_partial_spec.rb`,
+  `spec/requests/chat_sessions_spec.rb` (`GET /chat/:id/older_messages`),
+  `spec/lib/chat_controller_node_harness_spec.rb`
+  (`testConsecutiveLiveToolCardsShareCollapsedGroupAndFallbackRemovesIt`,
+  `testResolvedToolCardMergesIntoPrecedingGroup`,
+  `testResolvedToolCardMergesWithPrecedingSingleCard`),
+  `spec/lib/chat_controller_node_harness_spec.rb` (existing
+  `lastAssistantTextResponse` anchor tests).
+  *Code:* `ChatSessionsHelper#each_chat_transcript_segment`,
+  `#chat_tool_run?`, `app/views/chat_sessions/_conversation.html.erb`,
+  `app/views/chat_sessions/_older_messages.html.erb`,
+  `app/views/chat_messages/_tool_call_group.html.erb`,
+  `app/javascript/controllers/chat_controller.js#appendToolCard`,
+  `#mergeResolvedCardIntoAdjacentRun`.

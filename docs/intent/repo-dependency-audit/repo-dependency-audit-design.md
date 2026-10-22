@@ -110,17 +110,26 @@ The wrapper script `bin/audit` runs `yarn audit --json` and processes the
 JSON stream itself rather than trusting the exit code alone. The script:
 
 1. Captures the JSON output, ignoring progress noise, and reads every
-   `auditAdvisory` event into an in-memory list of findings.
+   `auditAdvisory` event into an in-memory list of findings. Captured
+   stdout/stderr are retagged as UTF-8 (Yarn's actual output encoding)
+   before parsing, since `Open3.capture3` otherwise tags them with
+   `Encoding.default_external`, which is US-ASCII on a runner with no
+   `LANG` set — non-ASCII advisory text (author names, descriptions)
+   would then raise `Encoding::CompatibilityError` instead of being
+   parsed (REPO-DEPENDENCY-AUDIT-008).
 2. Validates the allowlist: each entry has `id`, `module`, `reason`,
    `owner`, `expires_on`, `tracking_issue`; each `expires_on` is a parseable
    ISO 8601 date and is not in the past; each `id` is unique; each `id`
    matches `^GHSA-[0-9a-z-]+$`. Any malformed or expired entry fails the
    run before findings are evaluated, so a stale exception cannot quietly
    keep a run green.
-3. Classifies the run: error events and unparseable output fail the run
-   as scanner failures, as does a non-zero exit that produced no advisory
-   report. A non-zero exit with advisory events is a normal report, not a
-   scanner failure — yarn exits 1 whenever it reports advisories.
+3. Classifies the run: error events and unparseable output are scanner
+   failures, as is a non-zero exit that produced no advisory report. The
+   wrapper retries a scanner failure up to three total attempts with bounded
+   increasing delays before failing the run, so a transient registry outage
+   does not make the audit flaky. A non-zero exit with advisory events is a
+   normal report, not a scanner failure — yarn exits 1 whenever it reports
+   advisories.
    Advisory findings are accepted only when both their advisory ID and
    affected module match an unexpired allowlist entry; everything else fails
    the run.

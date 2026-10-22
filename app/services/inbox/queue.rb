@@ -14,6 +14,8 @@ module Inbox
     CHANGE_INTENT_DRAFT_KIND = "change_intent_draft"
     PARTIAL_CLOSEOUT_KIND = "partial_closeout"
     TEST_REVIEW_PENDING_KIND = "test_review_pending"
+    PROJECT_SETUP_PENDING_KIND = "project_setup_pending"
+    TRACEABILITY_GAP_KIND = "traceability_gap"
     DEFAULT_SORT = "oldest"
     SORTS = {
       DEFAULT_SORT => "Oldest first",
@@ -31,13 +33,17 @@ module Inbox
       RETRY_LIMITED_KIND,
       CHANGE_INTENT_DRAFT_KIND,
       PARTIAL_CLOSEOUT_KIND,
-      TEST_REVIEW_PENDING_KIND
+      TEST_REVIEW_PENDING_KIND,
+      PROJECT_SETUP_PENDING_KIND,
+      TRACEABILITY_GAP_KIND
     ].freeze
     KIND_LABELS = KINDS.to_h { |kind| [ kind, kind.titleize ] }.merge(
       ESCALATED_PR_KIND => "Blocked PRs",
       RETRY_LIMITED_KIND => "Retry-limited",
       CHANGE_INTENT_DRAFT_KIND => "CIR Drafts",
-      PARTIAL_CLOSEOUT_KIND => "Partial closeouts"
+      PARTIAL_CLOSEOUT_KIND => "Partial closeouts",
+      PROJECT_SETUP_PENDING_KIND => "Project setup",
+      TRACEABILITY_GAP_KIND => "Traceability gaps"
     ).freeze
 
     # The TDD red-phase gate label (RDR-056): test-writing runs apply it to
@@ -51,11 +57,6 @@ module Inbox
     TEST_REVIEW_PR_PHASES = %w[draft restarted].freeze
     TEST_REVIEW_PENDING_SUMMARY = "TDD red-phase gate: waiting for a human test-review verdict on the proposed tests."
 
-    # Statuses shown in the Inbox: the feature is not yet released, and not
-    # abandoned. Included even while `approved_waiting_for_merge`, since a
-    # stale design-PR head after approval invalidates it and the Inbox must
-    # keep explaining what holds the feature (RDR-066).
-    FEATURE_DECISION_STATUSES = (FeatureIntent::STATUSES - %w[released revising cancelled]).freeze
 
     Entry = Struct.new(
       :id,
@@ -77,6 +78,8 @@ module Inbox
       :summary_text,
       :title_text,
       :action_url,
+      :guidance,
+      :closeout_status,
       keyword_init: true
     ) do
       def to_param
@@ -133,6 +136,38 @@ module Inbox
         kind == TEST_REVIEW_PENDING_KIND
       end
 
+      # @spec PROJECT-READINESS-005
+      def project_setup_pending?
+        kind == PROJECT_SETUP_PENDING_KIND
+      end
+
+      # @spec DESIGN-RECONCILIATION-001
+      def traceability_gap?
+        kind == TRACEABILITY_GAP_KIND
+      end
+
+      # This stays lazy because only the selected Inbox entry renders its
+      # detail pane. The readiness gap remains actionable after a failure, but
+      # the operator also needs the most recent failed bootstrap attempt to
+      # diagnose it before starting another one.
+      # @spec PROJECT-READINESS-007
+      def latest_failed_bootstrap_readiness_run
+        return unless project_setup_pending?
+
+        project.agent_runs.where(goal: "bootstrap_readiness", status: "failed")
+          .order(completed_at: :desc, id: :desc).first
+      end
+
+      # @spec PROJECT-READINESS-012
+      def latest_verification_setup_observation
+        return unless project_setup_pending?
+
+        LatestVerificationSetupObservation.call(
+          project:,
+          reasons: project.active_readiness_gap_kinds
+        )
+      end
+
       def title
         title_text.presence || issue&.title || record.try(:title)
       end
@@ -141,7 +176,7 @@ module Inbox
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
           intent_conformance? || feature_decision? || retry_limited? || change_intent_draft? || partial_closeout? ||
-          test_review_pending?
+          test_review_pending? || project_setup_pending? || traceability_gap?
 
         "#{tasks.size} proposed tasks"
       end
@@ -187,6 +222,16 @@ module Inbox
       new(...).call
     end
 
+    # @spec OPERATOR-INBOX-015
+    def self.find_entry(user:, entry_id:, project: nil, kind: nil)
+      entry_kind, record_id = entry_id.to_s.split(":", 2)
+      return unless KINDS.include?(entry_kind) && record_id&.match?(/\A[0-9]+\z/)
+      return if kind.present? && kind != entry_kind
+
+      call(user: user, project: project, kind: entry_kind, record_id: record_id)
+        .find { |entry| entry.id == entry_id.to_s }
+    end
+
     # Questionless rows are invalid and repaired during sync, so keep them out
     # of every queue consumer until reconciliation clears the stale state.
     # @spec INBOX-FOUNDATION-010
@@ -206,21 +251,28 @@ module Inbox
     # Inbox::Count uses for the paid-hold-review label. `paid_state`-free on
     # purpose — the gate is the label, not the state (OPERATOR-INBOX-002J).
     def self.test_review_pending_issues(project_ids)
-      Issue
+      base = Issue
         .where(
           project_id: project_ids,
           is_pull_request: true,
           github_state: "open",
           pr_review_phase: TEST_REVIEW_PR_PHASES
         )
+      label_gated = base.joins(:project)
+        .where.not(projects: { label_integration_mode: "ignored" })
         .where("labels @> ?::jsonb", [ TDD_TESTS_READY_FOR_REVIEW_LABEL ].to_json)
+      local_gated = base.joins(:project)
+        .where(projects: { label_integration_mode: "ignored" }, tdd_review_state: "ready_for_review")
+
+      label_gated.or(local_gated)
     end
 
-    def initialize(user:, project: nil, kind: nil, sort: DEFAULT_SORT)
+    def initialize(user:, project: nil, kind: nil, sort: DEFAULT_SORT, record_id: nil)
       @user = user
       @project = project
       @kind = kind.to_s.presence
       @sort = SORTS.key?(sort) ? sort : DEFAULT_SORT
+      @record_id = record_id
     end
 
     # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-009 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
@@ -238,12 +290,19 @@ module Inbox
       entries.concat(change_intent_draft_entries) if include_kind?(CHANGE_INTENT_DRAFT_KIND)
       entries.concat(partial_closeout_entries) if include_kind?(PARTIAL_CLOSEOUT_KIND)
       entries.concat(test_review_pending_entries) if include_kind?(TEST_REVIEW_PENDING_KIND)
+      entries.concat(project_setup_pending_entries) if include_kind?(PROJECT_SETUP_PENDING_KIND)
+      entries.concat(traceability_gap_entries) if include_kind?(TRACEABILITY_GAP_KIND)
       sort_entries(entries)
     end
 
     private
 
     attr_reader :kind, :project, :sort, :user
+
+    # @spec OPERATOR-INBOX-015
+    def only_record(scope)
+      @record_id ? scope.where(id: @record_id) : scope
+    end
 
     def include_kind?(entry_kind)
       kind.blank? || kind == entry_kind
@@ -304,6 +363,7 @@ module Inbox
           .joins(:project)
           .includes(:project)
           .where(project_id: ids, paid_state: "needs_input", github_state: "open")
+          .then { |scope| only_record(scope) }
           .order(Arel.sql("issues.needs_input_since ASC NULLS LAST"))
           .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
       end
@@ -345,7 +405,7 @@ module Inbox
       scope = PlanReviewPolicy::Scope.new(user, DecompositionDecision).resolve
       scope = scope.where(project: project) if project
 
-      scope.open_plan_reviews.includes(:project, :issue).map do |review|
+      only_record(scope.open_plan_reviews).includes(:project, :issue).map do |review|
         tasks = Array(review.plan_data&.dig("tasks"))
 
         Entry.new(
@@ -380,7 +440,8 @@ module Inbox
           tasks: [],
           summary_text: snapshot.summary,
           title_text: nil,
-          action_url: nil
+          action_url: nil,
+          guidance: snapshot.guidance
         )
       end
     end
@@ -413,9 +474,7 @@ module Inbox
         ids = scoped_projects.map(&:id)
         return Issue.none if ids.empty?
 
-        Issue
-          .includes(:project)
-          .where(project_id: ids, is_pull_request: true, github_state: "open", pr_review_phase: "ready")
+        only_record(Inbox::MergeApproval.candidates(ids))
       end
     end
 
@@ -446,24 +505,19 @@ module Inbox
         ids = scoped_projects.map(&:id)
         return Issue.none if ids.empty?
 
-        Issue
-          .includes(:project)
-          .where(project_id: ids, is_pull_request: true, github_state: "open", pr_review_phase: "ready")
-          .where.not(auto_merge_blockers: nil)
+        only_record(Inbox::IntentConformance.candidates(ids))
       end
     end
 
-    # Reuses Dashboard::BlockedPullRequests (PR-ESCALATION-011/012/013) rather
-    # than reimplementing the escalated-PR query, then narrows the account-wide
-    # result to the operator's authorized Inbox projects, the same scope every
-    # other inbox kind uses. That is a deliberate divergence from the
-    # dashboard panel's account-wide scope (see operator-inbox-design.md).
+    # Reuses Inbox::EscalatedPullRequests rather than reimplementing the
+    # escalated-PR query, then narrows the account-wide result to the operator's
+    # authorized Inbox projects, the same scope every other inbox kind uses.
     # @spec OPERATOR-INBOX-002C
     def escalated_pr_entries
       ids = scoped_projects.map(&:id)
       return [] if ids.empty?
 
-      Dashboard::BlockedPullRequests.call(account: user.account)
+      EscalatedPullRequests.call(account: user.account, pull_request_id: @record_id)
         .select { |blocked| ids.include?(blocked.pull_request.project_id) }
         .map { |blocked| escalated_pr_entry(blocked) }
     end
@@ -528,6 +582,7 @@ module Inbox
         .joins(:project)
         .includes(:project)
         .where(project_id: ids, paid_state: "manual_review", github_state: "open")
+        .then { |scope| only_record(scope) }
         .order(Arel.sql("issues.manual_review_started_at ASC NULLS LAST"))
         .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
     end
@@ -537,17 +592,28 @@ module Inbox
     # `scoped_projects`'s owner-scoped visibility: RDR-066 requires these
     # entries stay visible to any project member with Inbox access, not just
     # the project's owner.
-    # @spec FEATURE-APPROVAL-013
+    # The action Inbox is not a status report. A feature enters this lane only
+    # when a member can approve it now, answer a recorded human decision, or
+    # re-review a stale approved design PR; discovery and pending automated
+    # assessments belong to background progress.
+    # @spec FEATURE-APPROVAL-013 @spec FEATURE-APPROVAL-020
     def feature_decision_entries
       scope = FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
-        .where(status: FEATURE_DECISION_STATUSES)
+        .where.not(status: FeatureIntent::TERMINAL_STATUSES)
       scope = scope.where(project: project) if project
 
       # approved_by is loaded too because FeatureDecisionSummary reads the
       # approver's email for approved_waiting_for_merge entries.
-      scope.includes(:project, :approved_by, :feature_intent_decisions, :feature_intent_design_prs)
+      only_record(scope).includes(:project, :approved_by, :feature_intent_decisions, :feature_intent_design_prs)
         .order(:created_at, :id)
+        .select { |feature_intent| feature_action_required?(feature_intent) }
         .map { |feature_intent| feature_decision_entry(feature_intent) }
+    end
+
+    def feature_action_required?(feature_intent)
+      FeatureIntents::ApprovalReadiness.call(feature_intent: feature_intent).ready? ||
+        feature_intent.feature_intent_decisions.any?(&:open?) ||
+        feature_intent.feature_intent_design_prs.any? { |design_pr| design_pr.required? && design_pr.stale? }
     end
 
     def feature_decision_entry(feature_intent)
@@ -571,9 +637,7 @@ module Inbox
     # via Issue#abandon_due_to_push_permission_rejection!) write the same two
     # columns — runner_retry_abandoned_at + runner_retry_abandon_reason — so the
     # inbox lane derives from those columns directly rather than from
-    # paid_state (the dashboard's Retry-Limited card deliberately shows both
-    # issues and PRs regardless of paid_state, the same surface this lane
-    # matches). The push_permission_abandoned? split is preserved via
+    # paid_state. The push_permission_abandoned? split is preserved via
     # summary_text and the entry's underlying issue, so the list/detail views
     # can render the Push Blocked vs Retry Cap badge split (#3902).
     # @spec OPERATOR-INBOX-002E
@@ -604,6 +668,7 @@ module Inbox
         .includes(:project)
         .where(project_id: ids, github_state: "open")
         .where.not(runner_retry_abandoned_at: nil)
+        .then { |scope| only_record(scope) }
         .order(runner_retry_abandoned_at: :desc)
         .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
     end
@@ -616,7 +681,7 @@ module Inbox
       scope = ChangeIntentPolicy::Scope.new(user, ChangeIntent).resolve.pending_review
       scope = scope.where(project: project) if project
 
-      scope.includes(:project, :issue).order(:created_at, :id).map do |change_intent|
+      only_record(scope).includes(:project, :issue).order(:created_at, :id).map do |change_intent|
         change_intent_draft_entry(change_intent)
       end
     end
@@ -653,7 +718,7 @@ module Inbox
     # prerequisites, and the authorized recovery actions (#4120).
     # @spec PARTIAL-CLOSEOUT-002 @spec OPERATOR-INBOX-002H
     def partial_closeout_entries
-      Issues::StalledCloseouts.call(scoped_projects).map do |pair|
+      Issues::StalledCloseouts.call(scoped_projects, issue_id: @record_id).map do |pair|
         status = pair.status
         Entry.new(
           id: "#{PARTIAL_CLOSEOUT_KIND}:#{pair.issue.id}",
@@ -661,6 +726,7 @@ module Inbox
           project: pair.issue.project,
           issue: pair.issue,
           record: pair.issue,
+          closeout_status: status,
           waiting_since: status.evidence.terminal_at,
           questions: [],
           tasks: status.unresolved_prerequisites,
@@ -708,6 +774,7 @@ module Inbox
         return Issue.none if ids.empty?
 
         self.class.test_review_pending_issues(ids)
+          .then { |scope| only_record(scope) }
           .joins(:project)
           .includes(:project)
           .order("issues.github_updated_at ASC")
@@ -715,9 +782,55 @@ module Inbox
       end
     end
 
+    # Project-backed readiness snapshots are populated outside Inbox rendering;
+    # this query intentionally never acquires a checkout or re-runs rules.
+    # @spec PROJECT-READINESS-005
+    def project_setup_pending_entries
+      scoped_projects.select { |candidate| !@record_id || candidate.id.to_s == @record_id.to_s }
+        .select(&:readiness_blocked?).map do |candidate|
+        gap_descriptions = candidate.readiness_gap_descriptions
+        Entry.new(
+          id: "#{PROJECT_SETUP_PENDING_KIND}:#{candidate.id}",
+          kind: PROJECT_SETUP_PENDING_KIND,
+          project: candidate,
+          issue: nil,
+          record: candidate,
+          waiting_since: candidate.readiness_evaluated_at,
+          questions: [],
+          tasks: gap_descriptions,
+          summary_text: "#{gap_descriptions.size} setup prerequisite(s) need attention.",
+          title_text: "Set up #{candidate.full_name}",
+          action_url: Rails.application.routes.url_helpers.edit_project_path(candidate)
+        )
+      end
+    end
+
+    # Findings are durable reconciliation output, so queue rendering only
+    # reads the stored evidence and never re-contacts GitHub.
+    # @spec DESIGN-RECONCILIATION-001
+    def traceability_gap_entries
+      scope = project ? project.design_artifact_findings : DesignArtifactFinding.where(project: scoped_projects)
+
+      only_record(scope.open_findings.includes(:project).order(:created_at, :id)).map do |finding|
+        Entry.new(
+          id: "#{TRACEABILITY_GAP_KIND}:#{finding.id}",
+          kind: TRACEABILITY_GAP_KIND,
+          project: finding.project,
+          issue: nil,
+          record: finding,
+          waiting_since: finding.created_at,
+          questions: [],
+          tasks: finding.evidence,
+          summary_text: finding.state.humanize,
+          title_text: "Traceability gap: #{finding.artifact_path}",
+          action_url: nil
+        )
+      end
+    end
+
     def visible_blocking_notifications
       @visible_blocking_notifications ||= begin
-        notifications = NotificationPolicy::Scope.new(user, Notification).resolve
+        notifications = only_record(NotificationPolicy::Scope.new(user, Notification).resolve)
           .active
           .blocking
           .includes(:subject)

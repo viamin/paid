@@ -40,6 +40,49 @@ RSpec.describe Inbox::Queue do
   # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-004 @spec INBOX-FOUNDATION-009
   # @spec INBOX-FOUNDATION-005 @spec INBOX-FOUNDATION-006
   describe ".call" do
+    # @spec DESIGN-RECONCILIATION-001
+    it "returns open design artifact findings as traceability-gap entries" do
+      finding = create(:design_artifact_finding, project:, account: account, artifact_path: "docs/rdrs/RDR-063-example.md",
+        evidence: [ "No explicit qualified issue links were found" ], covered_at: 2.hours.ago)
+
+      entry = described_class.call(user: user, kind: described_class::TRACEABILITY_GAP_KIND).sole
+
+      expect(entry).to have_attributes(
+        id: "#{described_class::TRACEABILITY_GAP_KIND}:#{finding.id}",
+        kind: described_class::TRACEABILITY_GAP_KIND,
+        project: project,
+        issue: nil,
+        record: finding,
+        waiting_since: finding.created_at,
+        tasks: finding.evidence,
+        title: "Traceability gap: docs/rdrs/RDR-063-example.md"
+      )
+    end
+
+    # @spec DESIGN-RECONCILIATION-001 @spec INBOX-FOUNDATION-006
+    it "excludes resolved and unauthorized traceability gaps" do
+      resolved = create(:design_artifact_finding, project:, account: account, status: "resolved", resolved_at: Time.current)
+      other_user = create(:user, account: create(:account))
+      hidden = create(:project, account: other_user.account, created_by: other_user)
+      hidden_finding = create(:design_artifact_finding, project: hidden, account: hidden.account)
+
+      entries = described_class.call(user: user, kind: described_class::TRACEABILITY_GAP_KIND)
+
+      expect(entries.map(&:record)).not_to include(resolved, hidden_finding)
+    end
+
+    # @spec OPERATOR-INBOX-015
+    it "restricts a lane lookup to the requested record while enforcing membership" do
+      selected = create_needs_input(body: questions_body)
+      create_needs_input(body: questions_body)
+
+      entries = described_class.call(user: user, kind: "clarifying_questions", record_id: selected.id)
+
+      expect(entries.map(&:record)).to eq([ selected ])
+      selected.update!(github_state: "closed")
+      expect(described_class.call(user: user, kind: "clarifying_questions", record_id: selected.id)).to be_empty
+    end
+
     it "orders entries newest-waiting-first when requested" do
       older = create_needs_input(body: questions_body)
       newer = create_needs_input(body: questions_body)
@@ -89,6 +132,176 @@ RSpec.describe Inbox::Queue do
         summary_text: "Human review requested before merging",
         waiting_since: pr.github_updated_at
       )
+    end
+
+    # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    it "surfaces a manual merge decision for a clear PR when auto-merge and auto-pick are off" do
+      project.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [], not_evaluated: [])
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry).to have_attributes(issue: pr, summary_text: "Manual merge decision required")
+    end
+
+    # @spec AUTO-MERGE-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    it "excludes a clear PR with a trusted auto-merge activation" do
+      project.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        labels: [ project.feature_activation_label_for("auto_merge") ],
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [], not_evaluated: [])
+      )
+      allow(Automation::LabelPolicy).to receive(:trusted_user_added_label?)
+        .with(project, pr, project.feature_activation_label_for("auto_merge")).and_return(true)
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries).to be_empty
+    end
+
+    # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    it "excludes a human PR when only Dependabot auto-merge is enabled" do
+      project.update!(auto_merge_mode: "dependabot_only", auto_pick_enabled: false)
+      create(
+        :issue,
+        :pull_request,
+        project: project,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [ blocker(signal: "owner_approved", reason_code: "owner_approval_missing") ], not_evaluated: [])
+      )
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries).to be_empty
+    end
+
+    # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
+    it "distinguishes review, re-approval, and machine blockers for auto-merge-off PRs" do
+      project.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      review_required = create(
+        :issue, :pull_request, project: project, github_number: 42,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [ blocker(signal: "owner_approved", reason_code: "owner_approval_missing") ], not_evaluated: [])
+      )
+      reapproval_required = create(
+        :issue, :pull_request, project: project, github_number: 43,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [ blocker(signal: "reviews_fresh", reason_code: "stale_approval") ], not_evaluated: [])
+      )
+      checks_pending = create(
+        :issue, :pull_request, project: project, github_number: 44,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [ blocker(signal: "checks_green", reason_code: "checks_not_green") ], not_evaluated: [])
+      )
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries.find { |entry| entry.issue == review_required }.summary).to eq("Human review required before manual merge")
+      expect(entries.find { |entry| entry.issue == reapproval_required }.summary).to eq("Approval is stale for the current revision")
+      expect(entries.map(&:issue)).not_to include(checks_pending)
+    end
+
+    # @spec OPERATOR-INBOX-002K
+    it "explains stale approval as a manual merge decision when automatic merge is inactive" do
+      project.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      create(
+        :issue, :pull_request, project: project,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [ blocker(signal: "reviews_fresh", reason_code: "stale_approval") ], not_evaluated: [])
+      )
+
+      guidance = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole.guidance
+
+      expect(guidance).to include(
+        heading: "Approval is stale for the current revision",
+        automatic_merge_active: false,
+        stale_approval: true
+      )
+      expect(guidance.fetch(:instruction)).to include(
+        "GitHub still shows Approved",
+        "manual merge decision",
+        "Re-approval alone will not cause Paid to merge it"
+      )
+    end
+
+    # @spec OPERATOR-INBOX-002K
+    it "explains a stale approval as a later automatic reevaluation when auto-merge is active" do
+      project.update!(auto_merge_mode: "all", auto_pick_enabled: false)
+      create(
+        :issue, :pull_request, project: project,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [ blocker(signal: "reviews_fresh", reason_code: "stale_approval") ], not_evaluated: [])
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry.guidance).to include(automatic_merge_active: true, stale_approval: true)
+      expect(entry.guidance.fetch(:instruction)).to include("reevaluate", "subject to all remaining checks and policy")
+      expect(entry.guidance.fetch(:instruction)).not_to include("manual merge decision")
+    end
+
+    # @spec OPERATOR-INBOX-002K
+    it "explains a review hold as a manual merge decision when automatic merge is inactive" do
+      project.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      create(
+        :issue, :pull_request, project: project,
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ]
+      )
+
+      guidance = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole.guidance
+
+      expect(guidance).to include(automatic_merge_active: false)
+      expect(guidance.fetch(:instruction)).to include("manual merge decision", "will not merge this pull request automatically")
+      expect(guidance.fetch(:instruction)).not_to include("remove the hold")
+    end
+
+    it "returns a merge-approval Inbox entry for an ignored-mode local review hold without a blocker snapshot" do # @spec LABEL-CONTROL-004
+      project.update!(label_integration_mode: "ignored")
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 42,
+        hold_for_review: true,
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+        .find { |candidate| candidate.issue == pr }
+
+      expect(entry).to have_attributes(
+        kind: described_class::MERGE_APPROVAL_KIND,
+        summary_text: "Human review requested before merging",
+        waiting_since: pr.github_updated_at
+      )
+    end
+
+    it "does not use a hold label for an ignored-mode PR without a local review hold" do # @spec LABEL-CONTROL-004
+      project.update!(label_integration_mode: "ignored")
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 43,
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries.map(&:issue)).not_to include(pr)
     end
 
     # @spec OPERATOR-INBOX-002B @spec NOTIFICATION-SEVERITY-008
@@ -377,7 +590,7 @@ RSpec.describe Inbox::Queue do
     end
 
     # @spec OPERATOR-INBOX-002C
-    it "returns typed entries for escalated pull requests, reusing Dashboard::BlockedPullRequests" do
+    it "returns typed entries for escalated pull requests" do
       pr = create_escalated_pr(
         github_number: 91,
         draft_review_count: 12,
@@ -395,7 +608,7 @@ RSpec.describe Inbox::Queue do
         issue: pr
       )
       expect(entry.waiting_since).to be_within(1.second).of(2.days.ago)
-      expect(entry.record).to be_a(Dashboard::BlockedPullRequests::Entry)
+      expect(entry.record).to be_a(Inbox::EscalatedPullRequests::Entry)
       expect(entry.record.counters.map(&:name)).to contain_exactly(:draft_review_count, :pr_followup_count)
       expect(entry.summary).to eq("Failure streak")
     end
@@ -483,6 +696,35 @@ RSpec.describe Inbox::Queue do
       entries = described_class.call(user: user)
       entry = entries.find { |candidate| candidate.issue == pr }
       expect(entry.kind).to eq(described_class::ESCALATED_PR_KIND)
+    end
+
+    # @spec FEATURE-APPROVAL-020
+    it "excludes discovering work that is awaiting an automated clarity assessment" do
+      create(:feature_intent, project: project, status: "discovering", criteria_clarity_state: "pending")
+
+      entries = described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+
+      expect(entries).to be_empty
+    end
+
+    # @spec FEATURE-APPROVAL-020
+    it "keeps an intent with an open human decision in the action Inbox" do
+      feature_intent = create(:feature_intent, project: project, status: "discovering", criteria_clarity_state: "pending")
+      create(:feature_intent_decision, feature_intent: feature_intent, kind: "question")
+
+      entries = described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+
+      expect(entries.map(&:record)).to include(feature_intent)
+    end
+
+    # @spec FEATURE-APPROVAL-013
+    it "keeps an approved intent with a stale required design PR in the action Inbox" do
+      feature_intent = create(:feature_intent, :approved_waiting_for_merge, project: project)
+      create(:feature_intent_design_pr, :stale, feature_intent: feature_intent)
+
+      entries = described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
+
+      expect(entries.map(&:record)).to include(feature_intent)
     end
 
     # @spec FEATURE-APPROVAL-013
@@ -1370,6 +1612,20 @@ RSpec.describe Inbox::Queue do
     )
   end
 
+  # An agent run carrying the recorder-owned verification setup observation the
+  # setup Inbox detail renders (PROJECT-READINESS-012).
+  def create_run_with_setup_observation(project:, reason:, revision:, observed_at:, created_at:)
+    run = create(:agent_run, project:, status: "failed", created_at:)
+    observation = {
+      "reason" => reason,
+      "agent_run_id" => run.id,
+      "checkout_revision" => revision,
+      "observed_at" => observed_at
+    }
+    run.update!(verification_result: { "reason" => reason, "readiness_observation" => observation })
+    run
+  end
+
   # An open issue with a merged partial PR (no closing reference) linked via
   # parent_issue_id — the canonical partial-closeout stall from #4120.
   def create_partial_closeout_issue(github_number:, merged_pr_number: 14, **attrs)
@@ -1486,5 +1742,46 @@ RSpec.describe Inbox::Queue do
       waiting_since: pr.awaiting_approval_since
     )
     expect(approval_entry.summary).to eq("Waiting for owner approval")
+  end
+  describe "project setup pending Inbox lane" do
+    # @spec PROJECT-READINESS-005
+    it "shows a strict-TDD project with its persisted gaps even when auto-pick is disabled" do
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account:, created_by: user, auto_pick_enabled: false, tdd_mode: "strict",
+        readiness_gaps: [ { "kind" => "missing_ci", "description" => "CI is required.", "evidence" => { "checked_paths" => [ ".github/workflows" ] } } ],
+        readiness_evaluated_at: 1.hour.ago)
+
+      entry = described_class.call(user:, kind: described_class::PROJECT_SETUP_PENDING_KIND).sole
+
+      expect(entry).to have_attributes(project:, issue: nil, record: project, tasks: [ "CI is required." ])
+      expect(entry).to be_project_setup_pending
+      expect(entry.action_url).to eq(Rails.application.routes.url_helpers.edit_project_path(project))
+    end
+
+    it "does not show a satisfied project" do
+      account = create(:account)
+      user = create(:user, account: account)
+      create(:project, account:, created_by: user, tdd_mode: "strict", readiness_gaps: [])
+
+      expect(described_class.call(user:, kind: described_class::PROJECT_SETUP_PENDING_KIND)).to be_empty
+    end
+
+    it "surfaces the newest matching verification setup observation" do # @spec PROJECT-READINESS-012
+      account = create(:account)
+      user = create(:user, account: account)
+      project = create(:project, account:, created_by: user, tdd_mode: "off",
+        screenshot_settings: { "verification_enabled" => true },
+        readiness_gaps: [ { "kind" => "app_start_command_unavailable", "description" => "Start the app." } ])
+      create_run_with_setup_observation(project:, reason: "app_start_command_unavailable", revision: "stale-sha",
+        observed_at: 1.hour.ago.iso8601, created_at: 1.hour.ago)
+      newest = create_run_with_setup_observation(project:, reason: "app_start_command_unavailable",
+        revision: "target-sha", observed_at: Time.current.iso8601, created_at: 3.hours.ago)
+
+      entry = described_class.call(user:, kind: described_class::PROJECT_SETUP_PENDING_KIND).sole
+
+      expect(entry.latest_verification_setup_observation)
+        .to include("checkout_revision" => "target-sha", "agent_run_id" => newest.id)
+    end
   end
 end
