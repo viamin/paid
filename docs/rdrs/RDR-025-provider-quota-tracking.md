@@ -8,7 +8,7 @@
 - **Status**: Superseded
 - **Type**: Architecture
 - **Priority**: Medium
-- **Related Issues**: TBD
+- **Related Issues**: #1296, #1297
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md) (agent-harness), [RDR-008](RDR-008-model-selection.md) (model selection), [RDR-006](RDR-006-secrets-proxy.md) (secrets proxy)
 
 ## Implementation Status

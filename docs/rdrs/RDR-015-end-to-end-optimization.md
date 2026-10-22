@@ -8,7 +8,7 @@
 - **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: Medium
-- **Related Issues**: N/A (future enhancement)
+- **Related Issues**: #2705, #3183
 - **Related RDRs**: RDR-009 (Prompt Evolution), RDR-014 (Learned Orchestration)
 
 ## Implementation Status

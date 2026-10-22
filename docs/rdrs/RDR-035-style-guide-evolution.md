@@ -8,7 +8,7 @@
 - **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: #2254, #2249
+- **Related Issues**: #2254, [PR 2249](https://github.com/viamin/paid/pull/2249)
 - **Related RDRs**: [RDR-009](RDR-009-prompt-evolution.md) (Prompt Evolution)
 - **Related Tests**: `spec/services/style_guides/inject_into_prompt_spec.rb`, `spec/services/style_guide_evolution/mutate_spec.rb`, `spec/services/style_guide_ab_tests/{analyze,record_result,promote_winner}_spec.rb`, `spec/jobs/style_guide_evolution_job_spec.rb`, `spec/temporal/activities/sample_style_guide_runs_activity_spec.rb`
 

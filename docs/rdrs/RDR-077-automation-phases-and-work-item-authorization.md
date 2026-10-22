@@ -5,6 +5,7 @@
 - **Date**: 2026-10-17
 - **Status**: Draft
 - **Type**: Architecture + Automation + Inbox UX
+- **Related Issues**: #4509, #4510, #4511, #4512, #4513, #4514, #4515, #4516, #4517, #4518 (planning work; implementation remains subject to design and release gates)
 - **Related RDRs**: [RDR-023](RDR-023-automation-modularization-architecture.md), [RDR-053](RDR-053-new-feature-creation.md), [RDR-063](RDR-063-operational-supervisor-delivery-health.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md), [RDR-074](RDR-074-project-readiness.md), [RDR-076](RDR-076.md).
 - **Implementation status**: Proposal only. No runtime changes or implementation issues are created by this document.
 

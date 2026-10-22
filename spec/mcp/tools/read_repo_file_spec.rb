@@ -18,6 +18,19 @@ RSpec.describe Tools::ReadRepoFile do
   end
 
   describe "#call" do
+    # @spec CHAT-API-010
+    it "returns Unicode repository text that can be serialized into a tool result" do
+      content = "# RDRs — implementation → evidence\n"
+      file_data = Struct.new(:path, :type, :content, :size).new(
+        "docs/rdrs/README.md", "file", Base64.strict_encode64(content), content.bytesize
+      )
+      allow(github_client).to receive(:contents).and_return(file_data)
+
+      result = tool.call(project_id: project.id, path: file_data.path)
+
+      expect(JSON.parse(JSON.generate(result)).fetch("content")).to eq(content)
+    end
+
     it "prefers the chatting user's matching GitHub token" do
       file_data = Struct.new(:path, :type, :content, :size).new(
         "app/models/foo.rb", "file", Base64.strict_encode64("class Foo; end"), 16

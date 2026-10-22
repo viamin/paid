@@ -8,7 +8,7 @@
 - **Status**: Superseded
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: N/A (foundational decision)
+- **Related Issues**: #24, #3182 (original implementation and subsequent LID backfill; historical linkage, not a new acceptance audit)
 - **Related Tests**: Worktree service tests, cleanup job tests
 
 ## Implementation Status
