@@ -21,13 +21,23 @@ module Api
 
     # @spec APP-DIAGNOSTICS-004
     def capture
-      AgentRuns::CaptureApplicationLog.call(agent_run: @agent_run, content: request.raw_post)
+      AgentRuns::CaptureApplicationLog.call(agent_run: @agent_run, content: bounded_request_body)
       head :no_content
     rescue AgentRuns::CaptureApplicationLog::TooLargeError => e
       render json: { error: e.message }, status: :payload_too_large
     end
 
     private
+
+    def bounded_request_body
+      max_bytes = AgentRuns::CaptureApplicationLog::MAX_LOG_BYTES
+      raise AgentRuns::CaptureApplicationLog::TooLargeError, "application log exceeds #{max_bytes} bytes" if request.content_length.to_i > max_bytes
+
+      content = request.body.read(max_bytes + 1)
+      raise AgentRuns::CaptureApplicationLog::TooLargeError, "application log exceeds #{max_bytes} bytes" if content.bytesize > max_bytes
+
+      content
+    end
 
     # @spec APP-DIAGNOSTICS-004
     def check_capture_rate_limit

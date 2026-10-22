@@ -59,12 +59,17 @@ module AgentRuns
         )
       end
 
-      def self.redact_text(text)
+      def self.redact_text(text, agent_run: nil)
+        new.redact_text(text, agent_run:)
+      end
+
+      def redact_text(text, agent_run: nil)
         normalized = text.to_s
         clean = Knowledge::Redaction::Redactor.call(text: normalized).clean_text
-        candidates = redaction_targets(clean)
+        clean = redact_known_secrets(clean, agent_run) if agent_run
+        candidates = self.class.redaction_targets(clean)
           .flat_map { |target| target.scan(HIGH_ENTROPY_CANDIDATE) }
-          .select { |candidate| high_entropy?(candidate) }
+          .select { |candidate| self.class.high_entropy?(candidate) }
           .uniq
           .sort_by { |candidate| -candidate.length }
 
@@ -136,6 +141,12 @@ module AgentRuns
 
       def exact_known_secret(agent_run, text)
         known_secrets(agent_run).find { |secret| secret.present? && text.include?(secret) }
+      end
+
+      def redact_known_secrets(text, agent_run)
+        known_secrets(agent_run)
+          .sort_by { |secret| -secret.length }
+          .reduce(text) { |redacted, secret| redacted.gsub(secret, "[REDACTED:known_secret]") }
       end
 
       def known_secrets(agent_run)

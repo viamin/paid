@@ -38,7 +38,7 @@ module AgentRuns
     end
 
     def application_log
-      @application_log ||= ApplicationLog.redact_and_bound(@content)
+      @application_log ||= ApplicationLog.redact_and_bound(@content, agent_run: @agent_run)
     end
   end
 end

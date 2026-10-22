@@ -9,16 +9,16 @@ module AgentRuns
 
     Bounded = Data.define(:content, :truncated)
 
-    def self.redact_and_bound(content)
-      redacted = redact(content)
+    def self.redact_and_bound(content, agent_run: nil)
+      redacted = redact(content, agent_run:)
       bounded = truncate(redacted)
 
       Bounded.new(content: bounded, truncated: bounded.bytesize < redacted.bytesize)
     end
 
-    def self.redact(content)
+    def self.redact(content, agent_run:)
       normalized = content.to_s.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "")
-      AgentRuns::Research::SecretGuard.redact_text(normalized)
+      AgentRuns::Research::SecretGuard.redact_text(normalized, agent_run:)
     end
     private_class_method :redact
 

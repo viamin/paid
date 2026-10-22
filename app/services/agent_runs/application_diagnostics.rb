@@ -43,7 +43,7 @@ module AgentRuns
       tail = verification["app_log_tail"].to_s
       return unavailable("application log was not captured by verification") if tail.blank?
 
-      application_log = ApplicationLog.redact_and_bound(tail)
+      application_log = ApplicationLog.redact_and_bound(tail, agent_run: @agent_run)
       { "status" => "available", "entries" => [ {
         "timestamp" => verification["app_log_recorded_at"] || verification["recorded_at"],
         "content" => application_log.content,

@@ -522,7 +522,7 @@ module AgentRuns
       # the buffer does not end with a newline; that is faithful redaction of
       # the buffer we just read, not extra truncation, so it does not flip the
       # flag.
-      application_log = ApplicationLog.redact_and_bound(lines.join)
+      application_log = ApplicationLog.redact_and_bound(lines.join, agent_run: @agent_run)
       { content: application_log.content.presence, truncated: truncated || application_log.truncated }
     end
 

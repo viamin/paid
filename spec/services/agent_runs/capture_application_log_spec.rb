@@ -16,6 +16,18 @@ RSpec.describe AgentRuns::CaptureApplicationLog do
   end
 
   # @spec APP-DIAGNOSTICS-004
+  it "redacts active account credentials before persistence" do
+    agent_run = create(:agent_run, :running)
+    credential = create(:integration_credential, account: agent_run.project.account, secret: "stagingpassword")
+
+    described_class.call(agent_run:, content: "upstream denied credential: #{credential.secret}")
+
+    persisted_log = agent_run.reload.verification_result.fetch("app_log_tail")
+    expect(persisted_log).to include("[REDACTED:known_secret]")
+    expect(persisted_log).not_to include(credential.secret)
+  end
+
+  # @spec APP-DIAGNOSTICS-004
   it "preserves a verification result finalized after the run was loaded" do
     agent_run = create(:agent_run, :running)
     stale_agent_run = AgentRun.find(agent_run.id)

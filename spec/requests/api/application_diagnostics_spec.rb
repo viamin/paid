@@ -39,6 +39,23 @@ RSpec.describe "Application diagnostics proxy" do
   end
 
   # @spec APP-DIAGNOSTICS-004
+  it "rejects an oversized declared payload without reading it" do
+    agent_run = create(:agent_run, :running)
+    agent_run.update!(verification_result: { "app_log_tail" => "retained" })
+    headers = {
+      "X-Agent-Run-Id" => agent_run.id.to_s,
+      "X-Proxy-Token" => agent_run.ensure_proxy_token!,
+      "CONTENT_LENGTH" => (AgentRuns::ApplicationLog::MAX_BYTES + 1).to_s,
+      "CONTENT_TYPE" => "text/plain"
+    }
+
+    put "/api/proxy/application-diagnostics", params: "", headers: headers
+
+    expect(response).to have_http_status(:payload_too_large)
+    expect(agent_run.reload.verification_result.fetch("app_log_tail")).to eq("retained")
+  end
+
+  # @spec APP-DIAGNOSTICS-004
   it "treats a blank captured log as a no-capture and preserves retained evidence" do
     agent_run = create(:agent_run, :running)
     agent_run.update!(verification_result: { "app_log_tail" => "retained prior tail" })

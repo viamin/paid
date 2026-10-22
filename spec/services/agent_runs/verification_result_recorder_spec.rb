@@ -304,6 +304,19 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(agent_run.reload.verification_result.fetch("app_log_tail")).to include("[REDACTED")
   end
 
+  # @spec APP-DIAGNOSTICS-001
+  it "redacts active account credentials from the final app log tail" do
+    credential = create(:integration_credential, account: agent_run.project.account, secret: "stagingpassword")
+    File.write(result_path, JSON.generate(status: "passed"))
+    File.write(log_path, "upstream denied credential: #{credential.secret}\n")
+
+    described_class.call(agent_run:, repo_path:)
+
+    persisted_log = agent_run.reload.verification_result.fetch("app_log_tail")
+    expect(persisted_log).to include("[REDACTED:known_secret]")
+    expect(persisted_log).not_to include(credential.secret)
+  end
+
   # @spec APP-DIAGNOSTICS-004
   it "retains the active-run captured log when the final log file is unavailable" do
     agent_run.update!(verification_result: {

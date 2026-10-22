@@ -18,6 +18,17 @@ RSpec.describe AgentRuns::ApplicationDiagnostics do
     expect(result.fetch("provenance")).to include("agent_run_id" => agent_run.id, "project_id" => agent_run.project_id)
   end
 
+  # @spec APP-DIAGNOSTICS-001
+  it "redacts active account credentials from retained log evidence" do
+    credential = create(:integration_credential, account: agent_run.project.account, secret: "stagingpassword")
+    agent_run.update!(verification_result: { "app_log_tail" => "upstream denied credential: #{credential.secret}" })
+
+    content = described_class.call(agent_run:).dig("logs", "entries").first.fetch("content")
+
+    expect(content).to include("[REDACTED:known_secret]")
+    expect(content).not_to include(credential.secret)
+  end
+
   # @spec APP-DIAGNOSTICS-002
   it "bounds redacted log content returned from retained evidence" do
     agent_run.update!(verification_result: { "app_log_tail" => "a@b.co " * (AgentRuns::ApplicationLog::MAX_BYTES / 7) })
