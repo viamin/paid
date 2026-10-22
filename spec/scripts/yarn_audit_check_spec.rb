@@ -271,6 +271,23 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     end
   end
 
+  it "retries a transient scanner failure before accepting a complete audit report" do
+    # @spec REPO-DEPENDENCY-AUDIT-002
+    Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
+      prepare_transient_failure_workspace(dir)
+
+      stdout, stderr, status = Open3.capture3(env(dir), script_path(dir), chdir: dir)
+
+      expect(status.success?).to be(true), -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("advisories reported: 0")
+      expect(stderr).to include("retrying")
+      expect(File.read(File.join(dir, "yarn-invocations.log")).lines.map(&:chomp)).to eq([
+        "audit --json",
+        "audit --json"
+      ])
+    end
+  end
+
   it "fails the run when yarn exits non-zero without emitting a JSON error event" do
     # @spec REPO-DEPENDENCY-AUDIT-002
     Dir.mktmpdir("yarn-audit-check-spec", exec_tmpdir) do |dir|
@@ -434,7 +451,10 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
   end
 
   def env(dir)
-    { "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}" }
+    {
+      "PATH" => "#{File.join(dir, 'stubbin')}:#{ENV.fetch('PATH')}",
+      "YARN_AUDIT_RETRY_DELAY_SECONDS" => "0"
+    }
   end
 
   def locale_free_env(dir)
@@ -493,6 +513,27 @@ RSpec.describe "bin/yarn-audit-check" do # rubocop:disable RSpec/DescribeClass
     FileUtils.chmod("+x", File.join(dir, "stubbin", "yarn"))
     File.write(File.join(dir, "yarn-output.txt"), yarn_output)
     File.write(File.join(dir, "yarn-stderr.txt"), yarn_stderr)
+  end
+
+  def prepare_transient_failure_workspace(dir)
+    prepare_workspace(dir, allowlist: empty_allowlist, yarn_output: empty_yarn_output)
+    File.write(
+      File.join(dir, "stubbin", "yarn"),
+      <<~BASH
+        #!/usr/bin/env bash
+        count_file="#{dir}/yarn-attempt-count"
+        count=$(cat "$count_file" 2>/dev/null || echo 0)
+        count=$((count + 1))
+        printf '%s' "$count" > "$count_file"
+        printf '%s\\n' "$*" >> "#{dir}/yarn-invocations.log"
+
+        if [ "$count" -eq 1 ]; then
+          printf '%s\\n' '#{JSON.generate(type: "error", data: "temporary registry failure")}'
+        fi
+        printf '%s\\n' '#{empty_yarn_output}'
+      BASH
+    )
+    FileUtils.chmod("+x", File.join(dir, "stubbin", "yarn"))
   end
 
   def empty_allowlist

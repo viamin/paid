@@ -46,6 +46,28 @@ The missing product surface is the shared model RDR-046 describes:
 - multi-language test/lint command selection beyond Ruby defaults
 - runtime/image resolution for non-Ruby project combinations
 
+### Verification command resolution
+
+Prompt and hook verification commands resolve from a persisted project's
+repository-language signals in this order:
+
+1. A persisted `repo_profile` language list is authoritative. Every supported
+   language in that list contributes its configured test and lint command;
+   unsupported languages contribute no command.
+2. When no profile language list is persisted, the project's detected primary
+   language supplies the command set.
+3. When neither source identifies a supported language, verification is
+   unavailable. The resolver returns its explicit no-command result, and
+   prompts and hooks surface that absence rather than requiring a Ruby or
+   Bundler command.
+
+This policy prevents Paid's own Ruby stack from becoming an implicit
+verification requirement for an unrelated target repository. The Ruby default
+is retained only for lightweight callers that predate the persisted `Project`
+language contract and therefore cannot expose `detected_language`; it does not
+apply to persisted projects, including projects with an empty profile and no
+detected language. See POLYGLOT-TEST-003 and POLYGLOT-TEST-012.
+
 ## Agent Image Resolution
 
 `Containers::ImageResolver` translates a project's persisted language profile

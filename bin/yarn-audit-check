@@ -34,6 +34,9 @@ module Security
     ALLOWLIST_PATH = File.expand_path("../config/security/yarn-audit-allowlist.yml", __dir__)
     ACCEPTED_REPORT_ENV_KEY = "YARN_AUDIT_ACCEPTED_REPORT"
     SCANNER_ERROR_TYPES = %w[error].freeze
+    MAX_SCANNER_ATTEMPTS = 3
+    RETRY_DELAY_ENV_KEY = "YARN_AUDIT_RETRY_DELAY_SECONDS"
+    DEFAULT_RETRY_DELAY_SECONDS = 1
 
     Result = Struct.new(:exit_status, :summary, keyword_init: true)
 
@@ -47,17 +50,7 @@ module Security
 
     def run
       allowlist = load_allowlist!
-      begin
-        raw_events, stderr, status = run_yarn_audit
-      rescue SystemCallError => e
-        return scanner_failure("could not run yarn audit: #{e.message}")
-      end
-
-      # Parse before looking at the exit status: yarn audit exits 1 on its
-      # normal advisory-report path, so a non-zero status with advisory
-      # events is a report to classify, not a scanner failure.
-      findings, scanner_error = parse_events(raw_events)
-      return scanner_failure(process_failure_detail(stderr, status)) if failure_without_report?(status, findings)
+      findings, scanner_error = audit_findings
       return scanner_failure(scanner_error) if scanner_error
 
       accepted, blocking = classify(findings, allowlist)
@@ -67,6 +60,36 @@ module Security
     end
 
     private
+
+    def audit_findings
+      attempt = 1
+
+      loop do
+        findings, scanner_error = audit_attempt
+        return [ findings, nil ] unless scanner_error
+        return [ nil, scanner_error ] if attempt == MAX_SCANNER_ATTEMPTS
+
+        $stderr.puts "yarn audit scanner failed on attempt #{attempt}/#{MAX_SCANNER_ATTEMPTS}; retrying"
+        sleep(retry_delay_seconds * attempt)
+        attempt += 1
+      end
+    end
+
+    def retry_delay_seconds
+      value = Float(ENV.fetch(RETRY_DELAY_ENV_KEY, DEFAULT_RETRY_DELAY_SECONDS))
+      value.finite? && value >= 0 ? value : DEFAULT_RETRY_DELAY_SECONDS
+    rescue ArgumentError
+      DEFAULT_RETRY_DELAY_SECONDS
+    end
+
+    def audit_attempt
+      raw_events, stderr, status = run_yarn_audit
+      findings, scanner_error = parse_events(raw_events)
+      scanner_error = process_failure_detail(stderr, status) if failure_without_report?(status, findings)
+      [ findings, scanner_error ]
+    rescue SystemCallError => e
+      [ nil, "could not run yarn audit: #{e.message}" ]
+    end
 
     def load_allowlist!
       unless File.exist?(ALLOWLIST_PATH)

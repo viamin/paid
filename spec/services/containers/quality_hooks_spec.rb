@@ -27,8 +27,17 @@ RSpec.describe Containers::QualityHooks do # @spec QUALITY-LOOPS-003 # @spec QUA
     let(:git_ops) { instance_double(Containers::GitOperations, install_git_hooks: nil) }
     let(:agent_run) { create(:agent_run, project: project) }
 
+    it "does not install inherited Ruby hooks for a Godot project" do # @spec POLYGLOT-TEST-012
+      allow(project).to receive(:detected_language).and_return("gdscript")
+      stub_database_availability(false)
+
+      host.install_quality_hooks(git_ops, agent_run)
+
+      expect(git_ops).not_to have_received(:install_git_hooks)
+    end
+
     it "disables DB-dependent test and mutation hooks when no database container is running" do
-      allow(project).to receive(:test_languages).and_return(%w[ruby])
+      allow(project).to receive(:detected_language).and_return("ruby")
       stub_database_availability(false)
       create(
         :pre_commit_requirement,
