@@ -517,7 +517,7 @@ GEM
       logger (< 2.0)
       rainbow (~> 3.1.1)
       string_pattern (~> 2.0)
-    pagy (43.8.0)
+    pagy (43.8.1)
       json
       uri
       yaml
@@ -1070,7 +1070,7 @@ CHECKSUMS
   pact-mock_service (3.12.4) sha256=e1a727d41102d98b316cc2652d5e45e8c77704c35eb0b37f5e9c0fa9481f8eac
   pact-provider-verifier (1.39.0) sha256=47d64866b4d5567c6a85b36767b67e040fb67de05ffce8b0d794f07694c8726c
   pact-support (1.21.7) sha256=1fa9114df45019480b72b0b97e858e4197dcd10c2707f573d30eaee974854bf8
-  pagy (43.8.0) sha256=a95068f494b79aebf4fc0665a5957dc6e039bffd4fbc4a00df814f59ff41c016
+  pagy (43.8.1) sha256=8f136a4bded93b04c87bc385e8be24c8b5adbaab1c0fac1c4c0c63eddae9c2ff
   parallel (2.1.0) sha256=b35258865c2e31134c5ecb708beaaf6772adf9d5efae28e93e99260877b09356
   parser (3.3.12.0) sha256=21a6d7f755d5a24dfbdc6e6b772e4e879a52e7631a88bc5a3a134606052c9828
   parslet (2.0.0) sha256=d45130695d39b43d7e6a91f4d2ec66b388a8d822bae38de9b4de9a5fbde1f606
