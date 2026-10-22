@@ -1,7 +1,7 @@
 # RDR-071 Closeout Audit — 2026-10-22
 
 - **RDR**: [RDR-071: Confidence-Driven Issue Delivery and Feature Completion](RDR-071-confidence-driven-issue-delivery.md)
-- **Closeout issue**: [#4324](https://github.com/viamin/paid/issues/4324) (C71)
+- **Tracks #4324** (C71; this audit does not close it)
 - **Epic**: [#4309](https://github.com/viamin/paid/issues/4309) (E01) — **Tracks #4309; this audit does not close it.**
 - **Follows**: [RDR Closeout Checklist](closeout-checklist.md)
 - **Status decision**: **Partially Implemented**

@@ -247,9 +247,9 @@ runs and records the exact evidence in
 
 ## 2026-10-22 C71 Closeout
 
-Closeout issue [#4324](https://github.com/viamin/paid/issues/4324) (C71) ran
-its own RDR-071-scoped audit, re-executing the focused suite directly in this
-session against a reachable database (292 examples, 0 failures). Every
+This audit **Tracks #4324** (C71) and ran its own RDR-071-scoped audit,
+re-executing the focused suite directly in this session against a reachable
+database (292 examples, 0 failures). Every
 `CONFIDENCE-DELIVERY-*` claim except `002` and `013` has concrete code/spec
 evidence; the reused RDR-066/067 approval-gated suite (`release_spec.rb`,
 `mark_approved_spec.rb`, `approval_readiness_spec.rb`) passes unchanged and is
