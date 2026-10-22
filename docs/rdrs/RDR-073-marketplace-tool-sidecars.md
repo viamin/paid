@@ -432,15 +432,31 @@ ships behind a feature flag:
 
 ## Implementation Status
 
-**Partially Implemented — 2026-10-20.** Hardened provisioning, image gating,
-flag-off behavior, per-run tracking, retry adoption, cleanup, capacity
-inventory, the agent-facing non-MCP endpoint runtime contract, and the
-marketplace attachment contract (`TOOL-SIDECAR-001`/`002`) have shipped. Only
-the rule-scoping predicates (`TOOL-SIDECAR-003`/`004`, #4446) remain a verified
-gap. The rollout guard remains because no incident-free pilot evidence exists.
+**Implemented, rollout still guarded — 2026-10-22.** Hardened provisioning,
+image gating, flag-off behavior, per-run tracking, retry adoption, cleanup,
+capacity inventory, the agent-facing non-MCP endpoint runtime contract, the
+marketplace attachment contract (`TOOL-SIDECAR-001`/`002`), and the Phase 2
+rule-scoping predicates (`TOOL-SIDECAR-003`/`004`) have shipped. The rollout
+guard remains because no incident-free pilot evidence exists.
 See [the 2026-10-14 closeout audit](audit-report-2026-10-14-rdr-073.md), the
 [2026-10-20 attachment-contract audit](audit-report-2026-10-20-rdr-073.md),
-and the follow-up issue #4446.
+and the [2026-10-20 epic acceptance audit](audit-report-2026-10-20-rdr-073-epic-final-acceptance.md).
+
+## 2026-10-22 Rule-Scoping Predicate Update
+
+Issue #4265 (Phase 2) is closed by the shipped predicates #4446 delivered:
+`MarketplaceEntries::Resolver#rule_matches?` evaluates
+`issue_labels_includes_any` against `agent_run.issue.labels`,
+`languages_include_any` against `project.effective_repo_profile["languages"]`,
+and `repo_files_include_any` against
+`project.effective_repo_profile["marker_files"]`, each independently optional
+and conjunctive with the existing condition keys, with absent/empty arrays
+imposing no constraint. The predicates evaluate from already-loaded run data,
+so a rule check adds no query. Permanent coverage lives in
+`spec/services/marketplace_entries/resolver_spec.rb` and
+`spec/services/marketplace_entries/resolver_dbless_spec.rb`, including the
+fail-closed blank-issue and blank-repo-profile paths. The `marketplace_tool_sidecars`
+flag stays default-off until the closeout audit records pilot evidence.
 
 ## 2026-10-20 Attachment Contract Update
 
@@ -454,8 +470,9 @@ normalized definition to `AgentRun#tool_sidecar_snapshot` (never
 `mcp_server_snapshot`) for automatic, team-default, and manual attachments
 alike. See [the attachment-contract audit](audit-report-2026-10-20-rdr-073.md)
 for file/test evidence. Status remains **Partially Implemented**: only the
-Phase 2 rule-scoping predicates (#4446) are still an open gap. `Tracks #4263`;
-this update does not close the epic.
+Phase 2 rule-scoping predicates (#4446) are still an open gap (superseded
+2026-10-22, when they shipped). `Tracks #4263`; this update does not close the
+epic.
 
 ## 2026-10-14 Closeout
 
