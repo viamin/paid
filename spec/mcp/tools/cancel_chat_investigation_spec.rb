@@ -25,6 +25,14 @@ RSpec.describe Tools::CancelChatInvestigation do
     }.to raise_error(ArgumentError, /Confirmation required/)
   end
 
+  it "cancels an existing investigation after the exploration rollout is disabled" do
+    FeatureFlags.disable!(:question_exploration, project:)
+
+    result = described_class.new(user:, session:).call(investigation_id: investigation.id, confirmed: true)
+
+    expect(result).to include(investigation_id: investigation.id, status: "cancelled")
+  end
+
   it "does not expose cancellation while the exploration rollout is disabled" do
     FeatureFlags.disable!(:question_exploration, project:)
 

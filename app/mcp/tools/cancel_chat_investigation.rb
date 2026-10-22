@@ -29,7 +29,6 @@ module Tools
     end
 
     def perform(investigation_id:, confirmed: false)
-      raise ArgumentError, "Question exploration is not enabled for this project" unless StartChatInvestigation.exploration_enabled?(session)
       raise ArgumentError, "Confirmation required: set confirmed=true to cancel an investigation" unless confirmed
 
       investigation = session.chat_investigations.find(investigation_id)
