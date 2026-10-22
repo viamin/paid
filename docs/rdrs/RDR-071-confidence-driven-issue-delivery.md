@@ -23,7 +23,9 @@ new confidence-driven policy is only partially implemented:
 enrollment foundation. `db/schema.rb` carries the project selection and
 immutable feature-policy snapshot; `FeatureIntents::RunAdmission` fails
 closed for that policy until the complete delivery path is installed.
-Release-audit, completion, and follow-up records remain unimplemented.
+Release-audit, completion, and follow-up records now implement the
+completion-blocking forward-work protocol; held-issue publication and
+activation/isolation reporting remain incomplete.
 The existing approval-gated policy and its review guards
 (`IntentConformance::VerifyAtMerge`, `DesignAmendments::EvaluateImpact`,
 `FeatureIntents::Release`, `FeatureIntents::RunAdmission`) remain the
@@ -220,3 +222,22 @@ The rollout guard remains in force: automatic confidence-driven release is not
 enabled, and no settings-only enrollment surface exists. This closeout tracks
 [#4309](https://github.com/viamin/paid/issues/4309) and does not close it; E01's
 own final acceptance audit decides closure from shipped evidence.
+
+## 2026-10-22 Final Acceptance Audit
+
+The umbrella audit verified the current delivery implementation rather than
+the child issue states. `FeatureIntents::ReleaseIssue` and `RunAdmission`
+release only Paid's planning hold from a passing, scoped snapshot and apply
+the same contract at admission. `CompleteForwardWork` records forward work,
+reads back completion dependencies, blocks completion for pending writes or
+open work, and reopens a completed cycle for a later finding. Accordingly,
+`CONFIDENCE-DELIVERY-011` and `012` are now marked implemented alongside the
+previously shipped release, admission, baseline, and forward-work claims.
+
+This RDR remains **Partially Implemented**. Coherent-but-not-ready issue
+publication (`CONFIDENCE-DELIVERY-002`) and activation/isolation reporting
+(`CONFIDENCE-DELIVERY-013`) still lack shipped evidence. Those gaps prevent
+the RDR-070 shadow-mode guard from being treated as fully satisfied and prevent
+closing #4309. The audit preserves the existing policy snapshots and active
+runs and records the exact evidence in
+[`audit-report-2026-10-22-human-centered-inbox-epic.md`](audit-report-2026-10-22-human-centered-inbox-epic.md).

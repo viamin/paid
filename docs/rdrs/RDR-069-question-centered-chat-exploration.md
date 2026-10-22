@@ -209,3 +209,17 @@ may close #4309.
 > conversation-open/focus slice of `QUESTION-EXPLORATION-012` and the
 > project-level exploration rollout setting) have since shipped; see
 > Implementation Status. The other listed gaps remain open.
+
+## 2026-10-22 Final Acceptance Audit
+
+The final umbrella audit verified the current diagram, comment, progress,
+access, explicit-preference, and question-focus implementation with its
+focused specs. The remaining unmet acceptance is bounded investigation:
+`QUESTION-EXPLORATION-010` is still open, and the investigation portion of
+`QUESTION-EXPLORATION-012` cannot be complete until it has equivalent,
+authorized UI/API/tool transport, budget reservation, progress, cancellation,
+and reconnect behavior. The project-level exploration setting remains
+preserved as the RDR rollout guard. This RDR therefore remains **Partially
+Implemented** and the umbrella remains open. See
+[`audit-report-2026-10-22-human-centered-inbox-epic.md`](audit-report-2026-10-22-human-centered-inbox-epic.md)
+for code/test evidence and gap ownership.
