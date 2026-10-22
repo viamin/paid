@@ -7,21 +7,31 @@
 - **Date**: 2026-10-11
 - **Status**: Draft
 - **Type**: Architecture
-- **Priority**: Unassigned
+- **Priority**: —
 - **Related RDRs**: [RDR-073](RDR-073-marketplace-tool-sidecars.md), [RDR-031](RDR-031-focused-agent-runs.md), [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md), [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-054](RDR-054-prompt-assembly-service.md)
 - **Related Issues**: [#4326](https://github.com/viamin/paid/issues/4326) (umbrella), [#4327](https://github.com/viamin/paid/issues/4327) (planning/tool handoff), [#4334](https://github.com/viamin/paid/issues/4334) (closeout)
-- **Blocked on**: RDR-073 implementation and final acceptance, tracked by [#4263](https://github.com/viamin/paid/issues/4263) and its [closeout #4268](https://github.com/viamin/paid/issues/4268)
+- **Blocked on**: Validating the batch-analyzer checkout-access and
+  batch-invocation contract against RDR-073's shipped attachment lifecycle
+  (Critical assumption 2), owned by [#4327](https://github.com/viamin/paid/issues/4327)
 
 ## Dependencies
 
-Depends on viamin/paid#4263.
+RDR-073's implementation and closeout are complete: [#4263](https://github.com/viamin/paid/issues/4263)
+and its [closeout #4268](https://github.com/viamin/paid/issues/4268) are
+closed, and the [2026-10-20 final-acceptance audit](audit-report-2026-10-20-rdr-073-epic-final-acceptance.md)
+found all four delivery phases shipped against every RDR-073 validation
+criterion. RDR-073's own rollout guard (`marketplace_tool_sidecars`) stays
+default-off pending pilot evidence; that guard, not an open RDR-073 issue,
+remains authoritative for tool admission.
 
-This document may be drafted and reviewed while RDR-073 is in progress.
-Implementation of RDR-075 remains blocked until RDR-073's implementation,
-closeout, and umbrella final acceptance are complete, with no required gaps.
-Acceptance of its design or completion of an individual phase does not release
-this dependency. Future RDR-075 planning and implementation issues must carry
-the explicit dependency above; a bare RDR reference does not block auto-pick.
+Implementation of RDR-075 remains blocked on Critical assumption 2: RDR-073's
+service-oriented image/port contract does not by itself establish checkout
+access or batch invocation for maintenance analyzers, so that handoff must be
+validated against the shipped attachment contract before implementation
+proceeds past planning. Acceptance of this design does not release that
+dependency. Future RDR-075 planning and implementation issues must carry the
+explicit dependency on [#4327](https://github.com/viamin/paid/issues/4327)'s
+validation outcome; a bare RDR reference does not block auto-pick.
 
 ## Problem Statement
 
@@ -265,8 +275,8 @@ gaps. Budgets bound investigation cost, and limits appear in the report.
 
 This draft is documentation only. Runtime implementation ships behind a
 `maintenance_runs` feature flag, default off, with tenant opt-in through
-`tenant_settings.features`. Phase 1 owns its registration in
-`FeatureFlags::DEFINITIONS` and runtime checks through
+`tenant_settings.features`. Implementation Plan step 2 (#4328, M01) owns its
+registration in `FeatureFlags::DEFINITIONS` and runtime checks through
 `FeatureFlags.enabled?(:maintenance_runs, project:)` for UI/API admission
 and scheduled dispatch. RDR-073's own guard remains authoritative for tools.
 
@@ -303,9 +313,10 @@ Recurring schedules remain explicitly opt-in after rollout.
 The implementation issue tree is filed under the linked umbrella. Planned
 implementation remains held until the design and required LID artifacts are
 finalized and merged. The umbrella, planning task, and each child explicitly
-depend on viamin/paid#4263, with phase dependencies controlling sequencing.
-Closeout tracks the umbrella with non-closing language; only its final audit
-closes it.
+depend on viamin/paid#4263 (closed; satisfied) and on #4327's Critical
+assumption 2 validation outcome, with phase dependencies controlling
+sequencing beyond planning. Closeout tracks the umbrella with non-closing
+language; only its final audit closes it.
 
 ### Filed issue tree
 
