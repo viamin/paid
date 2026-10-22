@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Date**: 2026-09-22
-- **Status**: Accepted
+- **Status**: Partially Implemented (see [2026-10-22 Final Acceptance Audit](#2026-10-22-final-acceptance-audit))
 - **Type**: Intent modeling and agent judgment
 - **Priority**: P1
 - **Related RDRs**: [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)
@@ -19,17 +19,12 @@
 
 ## Implementation Status
 
-Not implemented as of 2026-10-12. No RDR-070 acceptance criterion has
-shipped code or test evidence in the working tree. Facets, evidence,
-assessment pipeline, adaptive clarification, explicit-preference
-persistence, and readiness handoff all remain in their current
-non-feature state. The audit checks the codebase rather than relying on
-issue-closure state: `app/models/` carries no facet or evidence table,
-`app/services/` carries no RDR-070-specific facet-confidence assessment or
-adaptive-clarification service, and `spec/` carries no facet-confidence
-assessment spec. The audit records the
-unimplemented scope and files it against the umbrella's open children.
-The umbrella remains open; the audit does not claim implementation.
+The facet/evidence, assessment, adaptive-clarification, explicit-preference,
+and scoped-readiness contracts are now implemented with linked tests. The
+umbrella remains open because the RDR's representative assessment corpus and
+the remaining RDR-071 delivery/activation integration are not yet evidenced.
+See the 2026-10-22 final acceptance audit for the current criterion-level
+reconciliation.
 
 ### 2026-10-12 Implementation progress audit
 
@@ -214,3 +209,23 @@ contract. It also does not call the RDR Abandoned or Superseded: the accepted
 design remains the active intent and its focused implementation work is open.
 The required shadow-mode rollout guard remains in force; no confidence score
 may release work until the complete RDR-071 delivery path ships.
+
+## 2026-10-22 Final Acceptance Audit
+
+The final umbrella audit rechecked the accepted RDR against the current
+models, services, and focused tests rather than the historical issue state.
+`FeatureIntentFacet*` records retain attributable evidence and independent
+scores; `FeatureIntents::AssessFacet`, `ChallengeFacetAssessment`, and
+`ScopedReadiness` supply assessment, correction, and 80/80 readiness behavior;
+and `ExplicitPreferences` preserves only explicit, scoped statements. The
+current EARS ledger marks `FACET-CONFIDENCE-001` through `015` implemented.
+
+This is nevertheless **Partially Implemented**, not Implemented: the required
+versioned representative assessment corpus and its false-readiness,
+clarification, correction, cost, and rework measurements have not been run or
+recorded. In addition, automatic release remains contingent on the still-open
+confidence-delivery publication and activation-isolation work. The shadow-mode
+guard therefore remains a release-policy constraint; this audit does not
+broaden enrollment or change an active run. Evidence and the remaining-gap
+disposition are recorded in
+[`audit-report-2026-10-22-human-centered-inbox-epic.md`](audit-report-2026-10-22-human-centered-inbox-epic.md).
