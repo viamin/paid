@@ -182,8 +182,8 @@ RSpec.describe Projects::EnsureStandardLabels do
         )
         expect(github_client).to have_received(:create_label).with(
           "test-owner/test-repo",
-          name: "queue-paid", color: "1d76db",
-          description: "Triggers Paid automation for this issue or PR; remove to opt out."
+          name: "queue-paid", color: "0052cc",
+          description: "Activates Paid auto-pick for this issue when the project setting is off."
         )
       end
 
