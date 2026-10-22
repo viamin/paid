@@ -49,6 +49,59 @@ RSpec.describe ChatSessions::AgentLoop do
     )
   end
 
+  def mixed_responses_tool_client(state)
+    Class.new do
+      define_method(:initialize) { |provider_state| @provider_state = provider_state }
+
+      define_method(:call) do |_conversation, tools: nil|
+        {
+          content: "Looking, then acting.",
+          tool_calls: [
+            { id: "read", name: "search", arguments: { "q" => "x" } },
+            { id: "write", name: "trigger_agent_run", arguments: {} }
+          ],
+          provider_state: @provider_state,
+          tokens_input: 5, tokens_output: 5, model: "gpt-5.6-luna"
+        }
+      end
+    end.new(state)
+  end
+
+  def mixed_responses_state
+    {
+      protocol: :responses,
+      output: [
+        { type: "reasoning", encrypted_content: "encrypted-reasoning" },
+        { type: "function_call", call_id: "provider-read" },
+        { type: "function_call", call_id: "provider-write" }
+      ]
+    }
+  end
+
+  def continuation_client(&callback)
+    Class.new do
+      define_method(:initialize) { |continuation| @continuation = continuation }
+
+      define_method(:call) do |conversation, tools: nil|
+        @continuation.call(conversation)
+        { content: "Done.", tool_calls: [], tokens_input: 2, tokens_output: 1, model: "gpt-5.6-luna" }
+      end
+    end.new(callback)
+  end
+
+  def expect_mixed_responses_continuation(conversation)
+    responses_turns = conversation.select do |entry|
+      entry[:role] == "assistant" && entry.dig(:provider_state, :protocol) == "responses"
+    end
+    expect(responses_turns).to contain_exactly(
+      include(tool_calls: [
+        { id: "read", name: "search", arguments: { "q" => "x" } },
+        { id: "write", name: "trigger_agent_run", arguments: {} }
+      ])
+    )
+    expect(conversation.select { |entry| entry[:role] == "tool" }.pluck(:tool_call_id)).to eq([ "read", "write" ])
+  end
+
   describe "#run" do
     context "when the model requests a write tool" do
       let(:llm_client) do
@@ -225,6 +278,29 @@ RSpec.describe ChatSessions::AgentLoop do
         expect(read_result.tool_result).to eq({ "status" => "ok" })
 
         expect(chat_session.messages.find_by(tool_call_id: "write", tool_status: "pending")).to be_present
+      end
+
+      # @spec API-CONVERSATION-DELEGATION-004
+      # @spec API-CONVERSATION-DELEGATION-007
+      it "continues a mixed Responses tool batch as one assistant turn after confirmation" do
+        continuation = nil
+        allow(Tools::Registry).to receive_messages(
+          chat_definitions_for: tool_definitions,
+          dispatch: { "status" => "ok" },
+          post_dispatch_confirmation?: false
+        )
+
+        described_class.new(chat_session: chat_session, llm_client: mixed_responses_tool_client(mixed_responses_state)).run
+        pending_tool = chat_session.messages.find_by!(tool_call_id: "write", tool_status: "pending")
+
+        ChatSessions::ResolveToolCall.call(
+          chat_session: chat_session,
+          tool_call_message: pending_tool,
+          decision: :approve,
+          llm_client: continuation_client { |conversation| continuation = conversation }
+        )
+
+        expect_mixed_responses_continuation(continuation)
       end
     end
 
