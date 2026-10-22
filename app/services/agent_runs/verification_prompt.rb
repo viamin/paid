@@ -46,7 +46,7 @@ module AgentRuns
     private
 
     def verification_applicable?
-      @agent_run.create_pr_goal? && @agent_run.project.verification_enabled? && @repo_path.present?
+      @agent_run.verification_applicable? && @repo_path.present?
     end
 
     def render_section(runtime_plan, fallback_result:)

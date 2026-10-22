@@ -3,9 +3,13 @@
 require "rails_helper"
 
 RSpec.describe "Application diagnostics proxy" do
+  def verification_eligible_agent_run(**traits)
+    create(:agent_run, :running, **traits).tap { |agent_run| agent_run.project.update!(verification_enabled: true) }
+  end
+
   # @spec APP-DIAGNOSTICS-004
   it "makes a bounded captured log available to the active authenticated run" do
-    agent_run = create(:agent_run, :running)
+    agent_run = verification_eligible_agent_run
     headers = {
       "X-Agent-Run-Id" => agent_run.id.to_s,
       "X-Proxy-Token" => agent_run.ensure_proxy_token!,
@@ -24,7 +28,7 @@ RSpec.describe "Application diagnostics proxy" do
 
   # @spec APP-DIAGNOSTICS-004
   it "rejects an oversized captured log without changing retained evidence" do
-    agent_run = create(:agent_run, :running)
+    agent_run = verification_eligible_agent_run
     agent_run.update!(verification_result: { "app_log_tail" => "retained" })
     headers = {
       "X-Agent-Run-Id" => agent_run.id.to_s,
@@ -40,7 +44,7 @@ RSpec.describe "Application diagnostics proxy" do
 
   # @spec APP-DIAGNOSTICS-004
   it "rejects an oversized declared payload without reading it" do
-    agent_run = create(:agent_run, :running)
+    agent_run = verification_eligible_agent_run
     agent_run.update!(verification_result: { "app_log_tail" => "retained" })
     headers = {
       "X-Agent-Run-Id" => agent_run.id.to_s,
@@ -57,7 +61,7 @@ RSpec.describe "Application diagnostics proxy" do
 
   # @spec APP-DIAGNOSTICS-004
   it "treats a blank captured log as a no-capture and preserves retained evidence" do
-    agent_run = create(:agent_run, :running)
+    agent_run = verification_eligible_agent_run
     agent_run.update!(verification_result: { "app_log_tail" => "retained prior tail" })
     headers = {
       "X-Agent-Run-Id" => agent_run.id.to_s,
@@ -73,7 +77,7 @@ RSpec.describe "Application diagnostics proxy" do
 
   # @spec APP-DIAGNOSTICS-004
   it "rejects captures beyond the per-run budget without changing retained evidence" do
-    agent_run = create(:agent_run, :running)
+    agent_run = verification_eligible_agent_run
     agent_run.update!(verification_result: { "app_log_tail" => "retained" })
     headers = {
       "X-Agent-Run-Id" => agent_run.id.to_s,
@@ -86,6 +90,39 @@ RSpec.describe "Application diagnostics proxy" do
     put "/api/proxy/application-diagnostics", params: "one capture too many", headers: headers
 
     expect(response).to have_http_status(:too_many_requests)
+    expect(agent_run.reload.verification_result.fetch("app_log_tail")).to eq("retained")
+  end
+
+  # @spec APP-DIAGNOSTICS-004
+  it "rejects a capture from an active run that is not eligible for interactive verification" do
+    agent_run = create(:agent_run, :running, :review_goal)
+    agent_run.project.update!(verification_enabled: true)
+    agent_run.update!(verification_result: { "app_log_tail" => "retained" })
+    headers = {
+      "X-Agent-Run-Id" => agent_run.id.to_s,
+      "X-Proxy-Token" => agent_run.ensure_proxy_token!,
+      "CONTENT_TYPE" => "text/plain"
+    }
+
+    put "/api/proxy/application-diagnostics", params: "an unauthorized capture attempt", headers: headers
+
+    expect(response).to have_http_status(:forbidden)
+    expect(agent_run.reload.verification_result.fetch("app_log_tail")).to eq("retained")
+  end
+
+  # @spec APP-DIAGNOSTICS-004
+  it "rejects a capture when the project has not enabled verification" do
+    agent_run = create(:agent_run, :running)
+    agent_run.update!(verification_result: { "app_log_tail" => "retained" })
+    headers = {
+      "X-Agent-Run-Id" => agent_run.id.to_s,
+      "X-Proxy-Token" => agent_run.ensure_proxy_token!,
+      "CONTENT_TYPE" => "text/plain"
+    }
+
+    put "/api/proxy/application-diagnostics", params: "an unauthorized capture attempt", headers: headers
+
+    expect(response).to have_http_status(:forbidden)
     expect(agent_run.reload.verification_result.fetch("app_log_tail")).to eq("retained")
   end
 

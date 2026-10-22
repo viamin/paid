@@ -50,6 +50,16 @@ RSpec.describe AgentRuns::ApplicationDiagnostics do
     expect(result.dig("metrics", "metric_names")).to include("pids_count")
   end
 
+  # @spec APP-DIAGNOSTICS-002
+  it "falls back to the maximum bound instead of raising on a non-scalar parameter" do
+    create(:container_metric, agent_run:, recorded_at: 2.minutes.ago)
+
+    result = described_class.call(agent_run:, lookback_seconds: [ "100" ], limit: [ "1" ])
+
+    expect(result.dig("provenance", "lookback_seconds")).to eq(AgentRuns::ApplicationDiagnostics::MAX_LOOKBACK_SECONDS)
+    expect(result.dig("metrics", "samples").size).to eq(1)
+  end
+
   it "reports unavailable evidence instead of treating missing telemetry as success" do
     result = described_class.call(agent_run:)
 

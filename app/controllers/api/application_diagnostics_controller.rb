@@ -9,6 +9,7 @@ module Api
     CAPTURE_RATE_LIMIT_MAX_REQUESTS = 20
     CAPTURE_RATE_LIMIT_PERIOD = 1.hour
 
+    before_action :ensure_verification_in_progress, only: :capture
     before_action :check_capture_rate_limit, only: :capture
 
     def show
@@ -28,6 +29,13 @@ module Api
     end
 
     private
+
+    # @spec APP-DIAGNOSTICS-004
+    def ensure_verification_in_progress
+      return if @agent_run.active? && @agent_run.verification_applicable?
+
+      render json: { error: "Application log capture is only available while interactive verification is in progress" }, status: :forbidden
+    end
 
     def bounded_request_body
       max_bytes = AgentRuns::CaptureApplicationLog::MAX_LOG_BYTES

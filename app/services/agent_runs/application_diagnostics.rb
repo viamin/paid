@@ -76,7 +76,8 @@ module AgentRuns
     end
 
     def bounded(value, maximum)
-      [ value.presence&.to_i || maximum, maximum ].min.clamp(1, maximum)
+      numeric = value.is_a?(String) || value.is_a?(Numeric) ? value.presence&.to_i : nil
+      [ numeric || maximum, maximum ].min.clamp(1, maximum)
     end
 
     def unavailable(reason)
