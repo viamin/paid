@@ -8,7 +8,7 @@
 - **Status**: Implemented
 - **Type**: Architecture
 - **Related RDRs**: [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-056](RDR-056-strict-test-driven-development-mode.md)
-- **Related Issues**: #4255, #4256, #4257, #4258, #4325, #4338, #4463, #4464
+- **Related Issues**: #4255 (umbrella), #4256 (evaluation), #4257 (Inbox), #4258 (bootstrap), #4325 (closeout), #4338, #4463, #4464
 
 ## Decision
 
