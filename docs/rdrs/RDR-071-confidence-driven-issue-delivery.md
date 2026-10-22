@@ -3,11 +3,11 @@
 ## Metadata
 
 - **Date**: 2026-09-22
-- **Status**: Partially Implemented (see [2026-10-12 Closeout](#2026-10-12-closeout))
+- **Status**: Partially Implemented (see [2026-10-22 Final Acceptance Audit](#2026-10-22-final-acceptance-audit))
 - **Type**: Product workflow and orchestration
 - **Priority**: P1
 - **Related RDRs**: [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-067](RDR-067-approved-intent-conformance.md), [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-070](RDR-070-facet-confidence-and-clarification.md)
-- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open; P09, P10, P11, P12, C71 unimplemented)
+- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open; blocked on `CONFIDENCE-DELIVERY-002` and `013`, see [2026-10-22 Final Acceptance Audit](#2026-10-22-final-acceptance-audit))
 - **Intent**: [Confidence-driven delivery](../intent/confidence-driven-delivery/confidence-driven-delivery-design.md)
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
 - **Related Issues**: Epic [#4309](https://github.com/viamin/paid/issues/4309); closeout [#4324](https://github.com/viamin/paid/issues/4324); gaps [#4310](https://github.com/viamin/paid/issues/4310), [#4314](https://github.com/viamin/paid/issues/4314), [#4315](https://github.com/viamin/paid/issues/4315), [#4318](https://github.com/viamin/paid/issues/4318), [#4319](https://github.com/viamin/paid/issues/4319), [#4320](https://github.com/viamin/paid/issues/4320), [#4321](https://github.com/viamin/paid/issues/4321), [#4323](https://github.com/viamin/paid/issues/4323)
@@ -29,17 +29,19 @@ activation/isolation reporting remain incomplete.
 The existing approval-gated policy and its review guards
 (`IntentConformance::VerifyAtMerge`, `DesignAmendments::EvaluateImpact`,
 `FeatureIntents::Release`, `FeatureIntents::RunAdmission`) remain the
-authority for approval-gated features. The rollout guard remains in force:
-enrollment does not enable execution because confidence-driven admission is
-explicitly denied pending the later integrations. The umbrella children that
-will deliver the remaining RDR-071 behavior are P09 (scoped readiness with
-80/80 thresholds), P10
-(publish held issues and one automatic release contract), P11 (carry
-admitted intent to builders and dispatch conformance by policy), P12
-(forward-work follow-ups and completion), and C71 (final closeout
-audit). This audit does not introduce or flip a flag. See
+authority for approval-gated features. The rollout guard has narrowed since
+this audit: P09 (scoped readiness with 80/80 thresholds), P10 (publish held
+issues and one automatic release contract), P11 (carry admitted intent to
+builders and dispatch conformance by policy), and P12 (forward-work
+follow-ups and completion) have since shipped, so `RunAdmission` no longer
+denies confidence-driven admission outright. `RunAdmission#confidence_admission`
+now reconciles an unreleased confidence-driven link through `ReleaseIssue`
+and permits the run once a passing, scoped snapshot is released
+(`app/services/feature_intents/run_admission.rb`). See the
+[2026-10-22 Final Acceptance Audit](#2026-10-22-final-acceptance-audit) for
+the current evidence and remaining gaps. See
 [`audit-report-2026-10-12-rdr-071.md`](audit-report-2026-10-12-rdr-071.md)
-for the criterion-by-criterion evidence.
+for the criterion-by-criterion evidence as of that earlier date.
 
 ## Problem Statement
 
