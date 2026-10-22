@@ -94,6 +94,30 @@ RSpec.describe "Application diagnostics proxy" do
   end
 
   # @spec APP-DIAGNOSTICS-004
+  it "atomically initializes the capture budget before incrementing it" do
+    agent_run = verification_eligible_agent_run
+    headers = {
+      "X-Agent-Run-Id" => agent_run.id.to_s,
+      "X-Proxy-Token" => agent_run.ensure_proxy_token!,
+      "CONTENT_TYPE" => "text/plain"
+    }
+    allow(Rails.cache).to receive(:increment).and_return(nil, 1)
+
+    expect(Rails.cache).to receive(:write)
+      .with(
+        "agent_run:#{agent_run.id}:application_log_capture_count",
+        0,
+        expires_in: Api::ApplicationDiagnosticsController::CAPTURE_RATE_LIMIT_PERIOD,
+        unless_exist: true
+      )
+      .and_return(true)
+
+    put "/api/proxy/application-diagnostics", params: "first capture", headers: headers
+
+    expect(response).to have_http_status(:no_content)
+  end
+
+  # @spec APP-DIAGNOSTICS-004
   it "rejects a capture from an active run that is not eligible for interactive verification" do
     agent_run = create(:agent_run, :running, :review_goal)
     agent_run.project.update!(verification_enabled: true)

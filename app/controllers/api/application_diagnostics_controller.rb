@@ -58,8 +58,13 @@ module Api
     end
 
     def initialize_capture_rate_limit_count
-      Rails.cache.write(capture_rate_limit_key, 1, expires_in: CAPTURE_RATE_LIMIT_PERIOD)
-      1
+      Rails.cache.write(
+        capture_rate_limit_key,
+        0,
+        expires_in: CAPTURE_RATE_LIMIT_PERIOD,
+        unless_exist: true
+      )
+      Rails.cache.increment(capture_rate_limit_key, 1, expires_in: CAPTURE_RATE_LIMIT_PERIOD) || 1
     end
 
     def capture_rate_limit_key
