@@ -50,7 +50,7 @@ class ChatSessionsController < ApplicationController
     before_id = params.require(:before)
     frame_id = request.headers["Turbo-Frame"].presence || "older_messages"
     messages = latest_messages(
-      @chat_session.messages.chronological.includes(chat_diagram: :comments).where("chat_messages.id < ?", before_id)
+      @chat_session.messages.chronological.includes(chat_diagram: { comments: :actor }).where("chat_messages.id < ?", before_id)
     )
 
     has_more = @chat_session.messages.where("chat_messages.id < ?", messages.first&.id).exists? if messages.any?
@@ -71,7 +71,7 @@ class ChatSessionsController < ApplicationController
     return head :bad_request if since_id.nil? || since_id.negative?
 
     messages = @chat_session.messages.chronological
-      .includes(chat_diagram: :comments)
+      .includes(chat_diagram: { comments: :actor })
       .where("chat_messages.id > ?", since_id)
       .limit(MESSAGE_PAGE_SIZE)
     has_more = messages.size == MESSAGE_PAGE_SIZE &&
@@ -569,7 +569,7 @@ class ChatSessionsController < ApplicationController
   end
 
   def load_chat_messages
-    scope = @chat_session.messages.chronological.includes(chat_diagram: :comments)
+    scope = @chat_session.messages.chronological.includes(chat_diagram: { comments: :actor })
     @chat_messages = latest_messages(scope)
     @has_older_messages = scope.where("chat_messages.id < ?", @chat_messages.first.id).exists? if @chat_messages.any?
   end

@@ -27,7 +27,7 @@
           </button>
         <% end %>
       </div>
-      <% comments = diagram.comments.chronological.includes(:actor).to_a %>
+      <% comments = diagram.comments.to_a %>
       <% if comments.any? %>
         <ul class="space-y-2" aria-label="Comments on this diagram">
           <%# @spec QUESTION-EXPLORATION-004 — the comment carries the element text it was made

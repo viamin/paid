@@ -17,7 +17,7 @@ module ChatDiagrams
 
     # @spec QUESTION-EXPLORATION-004
     def self.comments(diagram)
-      diagram.comments.chronological.map { |comment| CommentSerializer.call(comment) }
+      diagram.comments.map { |comment| CommentSerializer.call(comment) }
     end
     private_class_method :comments
   end
