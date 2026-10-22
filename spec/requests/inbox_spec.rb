@@ -313,6 +313,37 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include(older_run.error_message)
   end
 
+  # @spec PROJECT-READINESS-005 @spec PROJECT-READINESS-011
+  it "describes verification-only setup gaps without attributing them to TDD" do
+    project.update!(tdd_mode: "off", screenshot_settings: { "verification_enabled" => true }, readiness_gaps: [
+      { "kind" => "app_start_command_unavailable", "description" => "Start the application.", "evidence" => {} }
+    ])
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::PROJECT_SETUP_PENDING_KIND, project),
+      kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Interactive verification is enabled")
+    expect(response.body).not_to include("TDD mode is enabled")
+  end
+
+  # @spec PROJECT-READINESS-005 @spec PROJECT-READINESS-011
+  it "describes a verification gap correctly when TDD is also enabled" do
+    project.update!(tdd_mode: "strict", screenshot_settings: { "verification_enabled" => true }, readiness_gaps: [
+      { "kind" => "app_start_command_unavailable", "description" => "Start the application.", "evidence" => {} }
+    ])
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::PROJECT_SETUP_PENDING_KIND, project),
+      kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND
+    )
+
+    expect(response.body).to include("Interactive verification is enabled")
+    expect(response.body).not_to include("TDD mode is enabled")
+  end
+
   # @spec PROJECT-READINESS-010
   it "targets project setup pending actions at the top-level page" do
     project.update!(tdd_mode: "strict", readiness_gaps: [

@@ -6,7 +6,7 @@ module Projects
     # collects the gaps they report. Adding a new settings-aware rule means
     # appending it to RULES — this class does not branch on settings itself.
     class Evaluate
-      RULES = [ Rules::Tdd ].freeze
+      RULES = [ Rules::Tdd, Rules::Verification ].freeze
 
       def self.call(...)
         new(...).call

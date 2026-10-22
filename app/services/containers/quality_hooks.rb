@@ -24,7 +24,9 @@ module Containers
 
       lint_commands, test_commands = resolve_commands(languages, db_available)
       mutation_cmd = resolve_mutation_command(agent_run.project, agent_run.settings_user, languages)
+      configured_mutation_cmd = mutation_cmd
       mutation_cmd = nil if ruby_db_gated?(languages, db_available)
+      record_database_skips(agent_run, languages, configured_mutation_cmd) if db_dependent_languages(languages).any? && !db_available
       # RDR-056 (Strict TDD): mutation checks run after green, not during the
       # red test-review phase — a test_writing run has no implementation to
       # mutate yet, and running mutant against approved tests here would only
@@ -94,6 +96,24 @@ module Containers
     # hook is itself gated out by a missing database container.
     def ruby_db_gated?(languages, db_available)
       languages.include?("ruby") && db_dependent_test_language?("ruby") && !db_available
+    end
+
+    # A no-op hook prevents an infrastructure-only commit loop; it is not a
+    # passing quality result. Keep the explicit outcome on the run for the
+    # later quality/recovery surfaces.
+    # @spec QUALITY-LOOPS-004
+    def record_database_skips(agent_run, languages, mutation_command)
+      checks = db_dependent_languages(languages).map do |language|
+        { "check" => "test", "language" => language, "status" => "not_executed", "reason" => "database_service_unavailable" }
+      end
+      checks << { "check" => "mutation", "status" => "not_executed", "reason" => "database_service_unavailable" } if mutation_command
+      return if checks.empty?
+
+      agent_run.update!(external_metadata: agent_run.external_metadata.merge("quality_checks_not_executed" => checks))
+    end
+
+    def db_dependent_languages(languages)
+      languages.select { |language| db_dependent_test_language?(language) }
     end
 
     def resolve_mutation_requirement(project, user)

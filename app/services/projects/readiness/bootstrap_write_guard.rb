@@ -26,6 +26,7 @@ module Projects
         eslint.config.mjs
         jest.config.js
         vitest.config.js
+        .paid/screenshots.yml
       ].freeze
       ALLOWED_PREFIXES = %w[
         .github/workflows/

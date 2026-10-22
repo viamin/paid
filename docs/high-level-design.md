@@ -306,6 +306,13 @@ agent executes against its isolated workspace and opens a PR), and back to the
 control plane
 (metrics, review, the human merge decision).
 
+Enabled capabilities declare their repository prerequisites through the
+project-readiness arrow. Checkout-backed gaps are surfaced for authorized
+operators and repaired only through an explicitly admitted bootstrap and
+target-branch re-evaluation. Runtime verification and infrastructure health
+remain bounded observations: they inform recovery without becoming a durable
+"ready" latch or silently weakening required checks.
+
 ### Directory layout
 
 ```
