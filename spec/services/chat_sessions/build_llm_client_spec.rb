@@ -232,6 +232,27 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         end
       end
 
+      # @spec API-CONVERSATION-DELEGATION-007
+      it "selects Responses for OpenAI reasoning chat with function tools" do
+        api_key_record = create(:provider_api_key, user: user, api_key: "sk-openai-test-key", api_service_type: "openai")
+        runner = build_openai_runner(
+          user: user,
+          credential_source: { provider_api_key: api_key_record, integration_credential: nil },
+          service_type: "openai",
+          model: "gpt-5.6-luna"
+        )
+        chat_session = create(:chat_session, account: account, created_by: user, runner: runner, model: "gpt-5.6-luna")
+        client = described_class.call(chat_session: chat_session)
+        chat_transport = stub_chat_transport(client, result: succeeded_result(model: "gpt-5.6-luna"))
+
+        client.call([ { role: "user", content: "Find the issue" } ], tools: [ { name: "search", inputSchema: { type: "object" } } ])
+
+        expect(chat_transport).to have_received(:call) do |request|
+          expect(request[:candidates].first).to include(provider: :openai, protocol: :responses)
+          expect(request[:tools]).to include(hash_including(name: "search", input_schema: { type: "object" }))
+        end
+      end
+
       %w[zai zai_coding].each do |service_type|
         it "raises the z.ai chat output cap above the transport default for #{service_type} runners" do
           # @spec CHAT-API-007
@@ -624,6 +645,34 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       result = client.call(conversation)
 
       expect(result[:tool_calls]).to eq([ { id: "tc_1", name: "search", arguments: '{"q":"test"}' } ])
+    end
+
+    # @spec API-CONVERSATION-DELEGATION-007
+    it "returns opaque Responses continuation state without exposing it in content" do
+      response_state = { protocol: :responses, output: [ { "type" => "function_call", "call_id" => "provider-call-1" } ] }
+      allow(chat_transport).to receive(:call).and_return(succeeded_result.merge(provider_state: response_state))
+      responses_client = described_class.new(chat_session: chat_session, provider: :openai, protocol: :responses,
+        endpoint: "https://api.openai.com/v1", api_key: "sk-openai-test", model: "gpt-5.6-luna", chat_transport: chat_transport)
+
+      result = responses_client.call(conversation, tools: tool_definitions)
+
+      expect(result).to include(provider_state: response_state)
+      expect(result[:content]).to eq("I'm doing well!")
+    end
+
+    # @spec API-CONVERSATION-DELEGATION-007
+    it "persists an allowlisted harness diagnostic with its failed attempt and raises it for presentation" do
+      api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      runner = create(:runner, :api_key, user: user, provider_api_key: api_key)
+      session = create(:chat_session, account: account, created_by: user, runner: runner)
+      message = create(:chat_message, chat_session: session, role: "user")
+      diagnostic = "Function tools with reasoning_effort are not supported for gpt-5.6-luna in /v1/chat/completions. To use function tools, use /v1/responses or set reasoning_effort to 'none'."
+      report = attempt_report(attempt_id: "actionable-diagnostic", status: :failed).merge(error: { code: :invalid_request, message: diagnostic })
+      allow(chat_transport).to receive(:call).and_return(status: :failed, attempts: [ report ], error: { code: :invalid_request, message: diagnostic })
+
+      expect { attributed_client(chat_session: session, message:).call(conversation) }
+        .to raise_error(AgentHarness::ProviderError, diagnostic)
+      expect(ApiUsageAttempt.find_by!(attempt_id: "actionable-diagnostic").metadata).to include("error" => include("message" => diagnostic))
     end
 
     it "raises AgentHarness::RateLimitError with a computed reset_time for a rate-limited failure" do

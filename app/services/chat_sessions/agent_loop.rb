@@ -92,13 +92,14 @@ module ChatSessions
         conversation << {
           role: "assistant",
           content: response[:content],
-          tool_calls: response[:tool_calls]
+          tool_calls: response[:tool_calls],
+          provider_state: response[:provider_state]
         }
 
         read_only_calls, write_calls = partition_tool_calls(response[:tool_calls])
 
         read_only_calls.each do |tool_call|
-          tool_result = process_tool_call(tool_call)
+          tool_result = process_tool_call(tool_call, provider_state: response[:provider_state])
 
           conversation << {
             role: "tool",
@@ -108,7 +109,7 @@ module ChatSessions
           }
         end
 
-        executed_write_results, paused_for_confirmation = process_write_tool_calls(write_calls)
+        executed_write_results, paused_for_confirmation = process_write_tool_calls(write_calls, provider_state: response[:provider_state])
         executed_write_results.each do |tool_call, tool_result|
           conversation << {
             role: "tool",
@@ -211,8 +212,8 @@ module ChatSessions
     # Executes a single tool call: persists the request row, dispatches the tool,
     # and persists the result. Shared by the inline (read-only) path and the
     # read-only portion of a mixed batch that pauses for write confirmation.
-    def process_tool_call(tool_call)
-      persist_tool_call_message(tool_call)
+    def process_tool_call(tool_call, provider_state: nil)
+      persist_tool_call_message(tool_call, provider_state:)
 
       tool_result = dispatch_tool(name: tool_call[:name], arguments: parse_tool_arguments(tool_call))
       persist_tool_result_message(tool_call, tool_result)
@@ -227,28 +228,28 @@ module ChatSessions
       tool_calls.partition { |tool_call| !Tools::Registry.write_tool?(tool_call[:name]) }
     end
 
-    def process_write_tool_calls(write_calls)
+    def process_write_tool_calls(write_calls, provider_state: nil)
       # @spec CHAT-API-003
       executed_results = []
       paused_for_confirmation = false
 
       auto_approved, manual_confirmation = partition_auto_approved(write_calls)
-      executed_results.concat(auto_approve_write_tool_calls(auto_approved))
+      executed_results.concat(auto_approve_write_tool_calls(auto_approved, provider_state:))
 
       manual_confirmation.each do |tool_call|
         if Tools::Registry.post_dispatch_confirmation?(tool_call[:name])
           tool_result = dispatch_tool(name: tool_call[:name], arguments: parse_tool_arguments(tool_call))
 
           if ready_for_post_dispatch_confirmation?(tool_result)
-            persist_pending_tool_call_message(tool_call, tool_result:)
+            persist_pending_tool_call_message(tool_call, tool_result:, provider_state:)
             paused_for_confirmation = true
           else
-            persist_tool_call_message(tool_call)
+            persist_tool_call_message(tool_call, provider_state:)
             persist_tool_result_message(tool_call, tool_result)
             executed_results << [ tool_call, tool_result ]
           end
         else
-          persist_pending_tool_call_message(tool_call)
+          persist_pending_tool_call_message(tool_call, provider_state:)
           paused_for_confirmation = true
         end
       end
@@ -285,19 +286,19 @@ module ChatSessions
     # ResolveToolCall#rollback_to_pending) so the failed draft is retriable
     # instead of being stranded behind an `approved` row this service will
     # never touch again.
-    def auto_approve_write_tool_calls(write_calls)
+    def auto_approve_write_tool_calls(write_calls, provider_state: nil)
       write_calls.map do |tool_call|
         tool_result = dispatch_auto_approved_tool(tool_call)
-        persist_auto_approved_tool_call(tool_call, tool_result)
+        persist_auto_approved_tool_call(tool_call, tool_result, provider_state:)
         [ tool_call, tool_result ]
       end
     end
 
-    def persist_auto_approved_tool_call(tool_call, tool_result)
+    def persist_auto_approved_tool_call(tool_call, tool_result, provider_state: nil)
       if Tools::Registry.post_dispatch_confirmation?(tool_call[:name]) && error_result?(tool_result)
-        persist_pending_tool_call_message(tool_call, tool_result: tool_result)
+        persist_pending_tool_call_message(tool_call, tool_result: tool_result, provider_state:)
       else
-        persist_tool_call_message(tool_call, status: "approved")
+        persist_tool_call_message(tool_call, status: "approved", provider_state:)
         persist_tool_result_message(tool_call, tool_result)
       end
     end
@@ -484,7 +485,7 @@ module ChatSessions
       )
     end
 
-    def persist_tool_call_message(tool_call, status: nil, tool_result: nil)
+    def persist_tool_call_message(tool_call, status: nil, tool_result: nil, provider_state: nil)
       tool_call_message = chat_session.messages.create!(
         role: "assistant",
         content: nil,
@@ -492,7 +493,8 @@ module ChatSessions
         tool_arguments: parse_tool_arguments(tool_call),
         tool_call_id: tool_call[:id],
         tool_status: status,
-        tool_result: tool_result
+        tool_result: tool_result,
+        metadata: provider_state ? { "provider_state" => provider_state } : {}
       )
 
       track_created_message(tool_call_message)
@@ -504,8 +506,8 @@ module ChatSessions
       tool_call_message
     end
 
-    def persist_pending_tool_call_message(tool_call, tool_result: nil)
-      persist_tool_call_message(tool_call, status: "pending", tool_result:)
+    def persist_pending_tool_call_message(tool_call, tool_result: nil, provider_state: nil)
+      persist_tool_call_message(tool_call, status: "pending", tool_result:, provider_state:)
     end
 
     def persist_tool_result_message(tool_call, tool_result)
@@ -596,12 +598,18 @@ module ChatSessions
 
       assistant_entry[:tool_calls] ||= []
       assistant_entry[:tool_calls] << tool_call
+      provider_state = provider_state_for(message)
+      assistant_entry[:provider_state] ||= provider_state if provider_state
     end
 
     def attachable_assistant_entry?(entry)
       entry&.dig(:role) == "assistant" &&
         entry[:tool_call_id].blank? &&
         entry[:tool_name].blank?
+    end
+
+    def provider_state_for(message)
+      message.metadata["provider_state"]&.deep_symbolize_keys
     end
 
     def stamp_aggregate_tokens(assistant_message, aggregate_tokens, model)

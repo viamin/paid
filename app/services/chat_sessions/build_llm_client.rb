@@ -85,7 +85,7 @@ module ChatSessions
       HttpClient.new(
         chat_session: chat_session,
         provider: :openai,
-        protocol: :chat_completions,
+        protocol: openai_protocol_for(service_type),
         endpoint: base_url,
         api_key: api_key,
         model: model,
@@ -94,6 +94,11 @@ module ChatSessions
         actor: actor,
         message: message
       )
+    end
+
+    # @spec API-CONVERSATION-DELEGATION-007
+    def openai_protocol_for(service_type)
+      service_type == "openai" ? :responses : :chat_completions
     end
 
     def missing_runner_message
@@ -227,7 +232,8 @@ module ChatSessions
           model: result[:model] || model,
           tokens_input: result.dig(:usage, :input_tokens),
           tokens_output: result.dig(:usage, :output_tokens),
-          tool_calls: format_inbound_tool_calls(result[:tool_calls])
+          tool_calls: format_inbound_tool_calls(result[:tool_calls]),
+          provider_state: result[:provider_state]
         }
       end
 

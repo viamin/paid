@@ -130,3 +130,20 @@
   `spec/services/chat_sessions/send_message_spec.rb`.
   *Code:* `ChatSessions::AgentLoop`, `ChatSessions::ResolveToolCall`,
   `ChatSessions::FallbackLoop`.
+
+- [x] **API-CONVERSATION-DELEGATION-007** — When an OpenAI API-key chat uses
+  a reasoning-capable model with function tools, Paid SHALL explicitly select
+  the released agent-harness Responses protocol, preserve the harness's opaque
+  provider continuation state with the persisted assistant tool-call turn, and
+  reuse its stable tool-call IDs and arguments when submitting tool results.
+  Third-party OpenAI-compatible endpoints SHALL remain explicit Chat
+  Completions candidates. When the harness reports an allowlisted actionable
+  provider diagnostic, Paid SHALL present that diagnostic through its normal
+  chat error surface and persist it only in the associated attempt metadata;
+  it SHALL NOT disable reasoning or remove tools as a workaround.
+  *Tests:* `spec/services/chat_sessions/build_llm_client_spec.rb`,
+  `spec/services/chat_sessions/agent_loop_spec.rb`,
+  `spec/requests/chat_messages_spec.rb`.
+  *Code:* `ChatSessions::BuildLlmClient#openai_compatible_client`,
+  `ChatSessions::BuildLlmClient::HttpClient`, `ChatSessions::AgentLoop`,
+  `ChatSessions::RecordTransportAttempt`.

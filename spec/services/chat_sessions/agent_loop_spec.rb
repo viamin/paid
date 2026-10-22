@@ -23,6 +23,32 @@ RSpec.describe ChatSessions::AgentLoop do
     end.new
   end
 
+  def responses_tool_continuation_client(state, &continuation)
+    Class.new do
+      define_method(:initialize) { |provider_state, callback| @provider_state = provider_state; @callback = callback; @turn = 0 }
+      define_method(:call) do |conversation, tools: nil|
+        @turn += 1
+        return tool_response unless @turn > 1
+
+        @callback.call(conversation)
+        { content: "Done.", tool_calls: [], tokens_input: 2, tokens_output: 1, model: "gpt-5.6-luna" }
+      end
+
+      define_method(:tool_response) do
+        { content: nil, tool_calls: [ { id: "call_1", name: "search", arguments: { "query" => "test" } } ],
+          provider_state: @provider_state, tokens_input: 3, tokens_output: 2, model: "gpt-5.6-luna" }
+      end
+    end.new(state, continuation)
+  end
+
+  def expect_responses_continuation(conversation, state)
+    expect(conversation).to include(
+      hash_including(role: "assistant", provider_state: state,
+        tool_calls: [ { id: "call_1", name: "search", arguments: { "query" => "test" } } ]),
+      { role: "tool", content: { "status" => "ok" }, tool_call_id: "call_1", tool_name: "search" }
+    )
+  end
+
   describe "#run" do
     context "when the model requests a write tool" do
       let(:llm_client) do
@@ -77,6 +103,40 @@ RSpec.describe ChatSessions::AgentLoop do
         expect(pending_message.tool_name).to eq("trigger_agent_run")
         expect(pending_message.tool_call_id).to eq("call_1")
         expect(pending_message.tool_arguments).to eq("project_id" => 1, "issue_id" => 2)
+      end
+
+      # @spec API-CONVERSATION-DELEGATION-007
+      it "retains opaque Responses continuation state with the persisted tool-call turn" do
+        responses_client = Class.new do
+          def call(_conversation, tools: nil)
+            {
+              content: "I'll kick off an agent run.",
+              tool_calls: [ { id: "call_1", name: "trigger_agent_run", arguments: {} } ],
+              provider_state: { protocol: :responses, output: [ { type: "function_call", call_id: "provider-call-1" } ] },
+              tokens_input: 50, tokens_output: 20, model: "gpt-5.6-luna"
+            }
+          end
+        end.new
+
+        described_class.new(chat_session: chat_session, llm_client: responses_client).run
+
+        pending_message = chat_session.messages.find_by(tool_status: "pending")
+        expect(pending_message.metadata).to include(
+          "provider_state" => include("protocol" => "responses", "output" => [ include("call_id" => "provider-call-1") ])
+        )
+      end
+
+      # @spec API-CONVERSATION-DELEGATION-007
+      it "continues a Responses tool turn with its stable call identity and opaque state" do
+        state = { protocol: :responses, output: [ { type: "function_call", call_id: "provider-call-1" } ] }
+        continuation = nil
+        client = responses_tool_continuation_client(state) { |conversation| continuation = conversation }
+        allow(Tools::Registry).to receive_messages(chat_definitions_for: tool_definitions, dispatch: { "status" => "ok" })
+
+        result = described_class.new(chat_session: chat_session, llm_client: client).run
+
+        expect(result.content).to eq("Done.")
+        expect_responses_continuation(continuation, state)
       end
 
       it "notifies the pending tool call so the UI can render a confirmation" do
