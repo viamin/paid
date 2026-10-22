@@ -43,10 +43,11 @@ module AgentRuns
       tail = verification["app_log_tail"].to_s
       return unavailable("application log was not captured by verification") if tail.blank?
 
+      application_log = ApplicationLog.redact_and_bound(tail)
       { "status" => "available", "entries" => [ {
         "timestamp" => verification["app_log_recorded_at"] || verification["recorded_at"],
-        "content" => redact(tail),
-        "truncated" => truthy?(verification["app_log_truncated"])
+        "content" => application_log.content,
+        "truncated" => truthy?(verification["app_log_truncated"]) || application_log.truncated
       } ] }
     end
 
@@ -80,10 +81,6 @@ module AgentRuns
 
     def unavailable(reason)
       { "status" => "unavailable", "reason" => reason }
-    end
-
-    def redact(text)
-      AgentRuns::Research::SecretGuard.redact_text(text)
     end
   end
 end

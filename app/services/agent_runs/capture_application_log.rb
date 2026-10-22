@@ -4,7 +4,7 @@ module AgentRuns
   # Persists one redacted, bounded log observation while its agent can act on it.
   # @spec APP-DIAGNOSTICS-004
   class CaptureApplicationLog
-    MAX_LOG_BYTES = 32 * 1024
+    MAX_LOG_BYTES = ApplicationLog::MAX_BYTES
 
     class TooLargeError < StandardError; end
 
@@ -31,14 +31,14 @@ module AgentRuns
 
     def verification_result
       @agent_run.verification_result.to_h.merge(
-        "app_log_tail" => redacted_content,
-        "app_log_recorded_at" => Time.current.iso8601
+        "app_log_tail" => application_log.content,
+        "app_log_recorded_at" => Time.current.iso8601,
+        "app_log_truncated" => application_log.truncated
       )
     end
 
-    def redacted_content
-      content = @content.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "")
-      AgentRuns::Research::SecretGuard.redact_text(content)
+    def application_log
+      @application_log ||= ApplicationLog.redact_and_bound(@content)
     end
   end
 end

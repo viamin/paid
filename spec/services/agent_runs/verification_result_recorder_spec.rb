@@ -264,6 +264,18 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     )
   end
 
+  # @spec APP-DIAGNOSTICS-001
+  it "bounds redacted content that expands beyond the log byte cap" do
+    File.write(result_path, JSON.generate(status: "passed"))
+    File.write(log_path, "a@b.co " * (described_class::LOG_TAIL_MAX_BYTES / 7))
+
+    described_class.call(agent_run:, repo_path:)
+
+    result = agent_run.reload.verification_result
+    expect(result.fetch("app_log_tail").bytesize).to be <= described_class::LOG_TAIL_MAX_BYTES
+    expect(result).to include("app_log_truncated" => true)
+  end
+
   # @spec APP-DIAGNOSTICS-004
   it "falls back to the agent-captured `app_log_truncated` marker when no on-disk log is readable" do
     agent_run.update!(verification_result: {

@@ -11,7 +11,7 @@ module AgentRuns
     MAX_RETAINED_ARTIFACT_BYTES = 512.kilobytes
     LOG_TAIL_LINES = 40
     LOG_TAIL_CHUNK_BYTES = 4096
-    LOG_TAIL_MAX_BYTES = 32 * 1024
+    LOG_TAIL_MAX_BYTES = ApplicationLog::MAX_BYTES
 
     def self.call(...)
       new(...).call
@@ -522,8 +522,8 @@ module AgentRuns
       # the buffer does not end with a newline; that is faithful redaction of
       # the buffer we just read, not extra truncation, so it does not flip the
       # flag.
-      redacted = AgentRuns::Research::SecretGuard.redact_text(lines.join).presence
-      { content: redacted, truncated: truncated }
+      application_log = ApplicationLog.redact_and_bound(lines.join)
+      { content: application_log.content.presence, truncated: truncated || application_log.truncated }
     end
 
     def cleanup_transient_files

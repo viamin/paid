@@ -19,6 +19,17 @@ RSpec.describe AgentRuns::ApplicationDiagnostics do
   end
 
   # @spec APP-DIAGNOSTICS-002
+  it "bounds redacted log content returned from retained evidence" do
+    agent_run.update!(verification_result: { "app_log_tail" => "a@b.co " * (AgentRuns::ApplicationLog::MAX_BYTES / 7) })
+
+    result = described_class.call(agent_run:)
+
+    entry = result.dig("logs", "entries").first
+    expect(entry.fetch("content").bytesize).to be <= AgentRuns::ApplicationLog::MAX_BYTES
+    expect(entry).to include("truncated" => true)
+  end
+
+  # @spec APP-DIAGNOSTICS-002
   it "advertises every container metric even when the oldest sample omits pids" do
     create(:container_metric, agent_run:, recorded_at: 2.minutes.ago, pids_count: nil)
     create(:container_metric, agent_run:, recorded_at: 1.minute.ago, pids_count: 3)

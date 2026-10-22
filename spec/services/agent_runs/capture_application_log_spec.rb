@@ -40,6 +40,18 @@ RSpec.describe AgentRuns::CaptureApplicationLog do
   end
 
   # @spec APP-DIAGNOSTICS-004
+  it "bounds redacted content that expands beyond the log byte cap" do
+    agent_run = create(:agent_run, :running)
+    content = "a@b.co " * (described_class::MAX_LOG_BYTES / 7)
+
+    described_class.call(agent_run:, content:)
+
+    result = agent_run.reload.verification_result
+    expect(result.fetch("app_log_tail").bytesize).to be <= described_class::MAX_LOG_BYTES
+    expect(result).to include("app_log_truncated" => true)
+  end
+
+  # @spec APP-DIAGNOSTICS-004
   it "treats a blank payload as a no-capture and does not overwrite retained evidence" do
     agent_run = create(:agent_run, :running)
     agent_run.update!(verification_result: {
