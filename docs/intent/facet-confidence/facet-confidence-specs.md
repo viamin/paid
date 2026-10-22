@@ -44,3 +44,5 @@ implements `009` through `012`.
 - [x] **FACET-CONFIDENCE-015** — For confidence-driven features, when project thresholds or facet evidence change after a run starts, Paid SHALL route resulting findings through the confidence-driven delivery policy without using this change alone to pause that run.
   *Tests:* `spec/services/design_amendments/evaluate_impact_spec.rb`, `spec/services/feature_intents/admitted_intent_context_spec.rb`.
   *Code:* `app/services/design_amendments/evaluate_impact.rb`, `app/services/feature_intents/admitted_intent_context.rb`.
+- [ ] **FACET-CONFIDENCE-016** — When evaluating facet-confidence assessment quality, Paid SHALL run a versioned representative corpus and report false readiness, unnecessary clarification, human corrections, cost, and downstream rework without treating 80/80 defaults as calibrated probabilities or tuning scores solely to increase throughput.
+  *Gap:* `docs/rdrs/audit-report-2026-10-22-rdr-070.md` records the unfiled corpus-work scope and GitHub proxy filing failure.
