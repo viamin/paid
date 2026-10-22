@@ -13,7 +13,7 @@ class ChatMessagesController < ApplicationController
     only: %i[create resolve]
 
   def index
-    messages = policy_scope(ChatMessage).includes(:chat_diagram)
+    messages = policy_scope(ChatMessage).includes(chat_diagram: :comments)
       .where(chat_session: @chat_session)
 
     messages = messages.where(role: params[:role]) if params[:role].present?

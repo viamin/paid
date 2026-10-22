@@ -544,6 +544,32 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("does not post to GitHub or resolve the inbox item")
       end
 
+      # @spec QUESTION-EXPLORATION-004
+      # A diagram comment is human discussion context. Without it in the
+      # exploration section the assistant cannot answer the question the
+      # person actually asked on the element.
+      it "supplies diagram comments as discussion context with the element text they were made against" do
+        diagram = create(:chat_diagram, chat_session: chat_session, question_key: "expected-behavior")
+        create(:chat_diagram_comment, chat_diagram: diagram, actor: user, body: "Does this retry forever?",
+          element_id: "app", element_context: "Application: The Paid application.")
+
+        expect(prompt).to include("Does this retry forever?")
+        expect(prompt).to include("Application: The Paid application.")
+      end
+
+      # @spec QUESTION-EXPLORATION-013
+      # The evidence a person attached to a draft answer is human input, not a
+      # preference. Reopening must restore it with the answer.
+      it "restores a saved draft answer together with its human evidence context" do
+        ClarifyingQuestions::SaveProgress.call(
+          chat_session: chat_session, position: 1, answer: "Show the error inline.", actor: user,
+          evidence_context: "Operator comment on the error-state diagram."
+        )
+
+        expect(prompt).to include("Saved draft answer: Show the error inline.")
+        expect(prompt).to include("Operator comment on the error-state diagram.")
+      end
+
       it "labels a linked pull request as a PR" do
         pull_request = create(:issue, :needs_input, :pull_request, project: project, github_number: 9,
           title: "Ship it", needs_input_questions: [ "What should happen after approval?" ])

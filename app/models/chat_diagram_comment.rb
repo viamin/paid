@@ -9,6 +9,8 @@ class ChatDiagramComment < ApplicationRecord
   validates :body, presence: true, length: { maximum: 12_000 }
   validate :selected_element_has_context
 
+  scope :chronological, -> { order(:created_at, :id) }
+
   private
 
   def selected_element_has_context

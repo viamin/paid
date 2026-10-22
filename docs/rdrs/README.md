@@ -224,12 +224,14 @@ Scaling & Distribution above).
 RDR-069–071 form the [human-centered Inbox implementation tree](human-centered-inbox-implementation.md).
 They extend chat and introduce an explicit confidence-driven feature policy;
 RDR-066/067 continue to describe approval-gated features. The 2026-10-12
-audits record the current state: [RDR-069](audit-report-2026-10-12-rdr-069.md)
-and [RDR-071](audit-report-2026-10-12-rdr-071.md) are Partially Implemented
-(reused approval-gated foundations are shipped; the new RDR-specific behavior
-remains open work tracked by #4311–#4317, #4310, #4314, #4315, #4318–#4321,
-and #4323); [RDR-070](audit-report-2026-10-12-rdr-070.md) remains Accepted with
-no implementation shipped. The [epic final-acceptance readiness audit](audit-report-2026-10-12-rdr-069-071-epic.md)
+audits recorded the state at that date: [RDR-069](audit-report-2026-10-12-rdr-069.md)
+and [RDR-071](audit-report-2026-10-12-rdr-071.md) were Partially Implemented
+with the new RDR-specific behavior outstanding, and
+[RDR-070](audit-report-2026-10-12-rdr-070.md) was Accepted with no
+implementation shipped. Their delivery children #4310–#4321 have since closed;
+closed state is not delivery evidence, so each RDR's current status comes from
+its own re-audit against shipped code and running tests rather than from the
+2026-10-12 snapshot. The [epic final-acceptance readiness audit](audit-report-2026-10-12-rdr-069-071-epic.md)
 and the [refreshed umbrella final-acceptance audit (2026-10-12, refreshed
 2026-10-13)](audit-report-2026-10-12-rdr-069-071-epic-final-acceptance.md)
 confirm that #4309 remains open until those focused gaps ship and a future
@@ -240,6 +242,20 @@ audits against the current working tree (1,310 focused specs, 0 failures;
 176 tables; no facet / exploration / investigation / diagram /
 preference / confidence-driven schema), reaches the same conclusion, and
 keeps the umbrella open with non-closing `Tracks #4309` language.
+
+The [2026-10-22 RDR-069 closeout refresh](audit-report-2026-10-22-rdr-069.md)
+re-audits RDR-069 against shipped code and a live run (3043 examples, 0
+failures; 23 `spec/system` examples skipped for a missing Chromium): RDR-069
+stays **Partially Implemented**, now with only bounded investigations
+(`QUESTION-EXPLORATION-010` and the investigation slice of `012`) outstanding.
+`#4317`, which claimed that scope, closed as completed without shipping it, so
+the audit filed `#4568` to re-own it; #4322 now depends on `#4568` explicitly.
+That audit also closed a real divergence — human diagram comments were
+persisted but read by nothing — by rendering them in the card, sharing one
+comment payload across the HTML and JSON transports, supplying them to the
+assistant's exploration context, and restoring a saved answer's recorded
+evidence on reopen. #4322 stays open and keeps `Tracks #4309` language; only
+the umbrella's own final acceptance audit may close #4309.
 
 RDR-075 is reserved for **General Maintenance Runs**, proposed in
 [PR #4308](https://github.com/viamin/paid/pull/4308). Its
