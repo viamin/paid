@@ -112,29 +112,6 @@ RSpec.describe "Accounts" do
       expect(event.metadata["changed_fields"]).to include("name", "default_max_tokens_per_run")
     end
 
-    it "persists remediation policy settings" do
-      patch account_path, params: {
-        account: {
-          remediation_policy: {
-            mark_runner_unavailable: {
-              mode: "auto_apply",
-              minimum_confidence: "0.9",
-              filing_threshold: "2"
-            }
-          }
-        }
-      }
-
-      expect(response).to redirect_to(account_path)
-      expect(account.reload.remediation_policy).to include(
-        "mark_runner_unavailable" => {
-          "mode" => "auto_apply",
-          "minimum_confidence" => 0.9,
-          "filing_threshold" => 2
-        }
-      )
-    end
-
     it "rolls back the account update when activity recording fails" do
       allow(Accounts::RecordActivity).to receive(:call).and_raise(ActiveRecord::RecordInvalid.new(AccountActivityEvent.new))
 
@@ -427,7 +404,6 @@ RSpec.describe "Accounts" do
   def account_page_sections
     [
       "Account Administration",
-      "Self-Heal Policy",
       "Team",
       "Tenant Limits and Usage",
       "ROI, Evals & Benchmarking",

@@ -21,7 +21,10 @@ RSpec.describe AgentRunPatterns::RecordRemediationDecision do
       confidence: 0.9,
       proposed_action: "mark_runner_unavailable",
       action_target: { "type" => "runner", "id" => "42" },
-      evidence_pointers: [ "runner_attempts[0].error_message" ]
+      evidence_pointers: [ "runner_attempts[0].error_message" ],
+      obstacle_kind: "infrastructure_configuration",
+      validation_plan: "Observe the same goal after the authorized correction.",
+      uncertainty: "The quota source is inferred from bounded run evidence."
     )
   end
 
@@ -37,10 +40,23 @@ RSpec.describe AgentRunPatterns::RecordRemediationDecision do
       action_target_id: "42",
       status: "proposed",
       occurrence_count: 1,
+      obstacle_kind: "infrastructure_configuration",
       pre_remediation_failure_count: 3,
       diagnosis_attempted_on: Date.current,
       diagnosis_attempt_count_on_day: 1
     )
+    expect(decision.proposal_context).to include(
+      "goal" => "enhance_issue",
+      "validation_plan" => "Observe the same goal after the authorized correction.",
+      "uncertainty" => "The quota source is inferred from bounded run evidence."
+    )
+  end
+
+  # @spec RUN-OBSTACLE-001
+  it "records the affected scope with a proposal" do
+    decision = described_class.call(account: account, pattern: pattern, diagnosis: diagnosis)
+
+    expect(decision.proposal_context).to have_key("affected_scope")
   end
 
   it "dedupes the same fingerprint within 24 hours and increments occurrence_count" do
@@ -131,5 +147,36 @@ RSpec.describe AgentRunPatterns::RecordRemediationDecision do
       proposed_action: "mark_runner_unavailable"
     )
     expect(decision.reload).to have_attributes(status: "applied", occurrence_count: 1)
+  end
+
+  # @spec RUN-OBSTACLE-003
+  it "preserves a reasoned dismissal when the same finding recurs" do
+    decision = described_class.call(account: account, pattern: pattern, diagnosis: diagnosis)
+    decision.update!(status: "dismissed", dismissal_reason: "Known upstream outage", dismissed_at: Time.current)
+
+    repeated = described_class.call(account: account, pattern: pattern, diagnosis: diagnosis)
+
+    expect(repeated).to have_attributes(
+      id: decision.id,
+      status: "dismissed",
+      dismissal_reason: "Known upstream outage",
+      occurrence_count: 2
+    )
+  end
+
+  # @spec RUN-OBSTACLE-003
+  it "preserves a reasoned dismissal after the proposed-decision dedupe window" do
+    decision = described_class.call(account: account, pattern: pattern, diagnosis: diagnosis)
+    decision.update!(status: "dismissed", dismissal_reason: "Known upstream outage", dismissed_at: Time.current)
+    decision.update_columns(created_at: 25.hours.ago)
+
+    repeated = described_class.call(account: account, pattern: pattern, diagnosis: diagnosis)
+
+    expect(repeated).to have_attributes(
+      id: decision.id,
+      status: "dismissed",
+      dismissal_reason: "Known upstream outage",
+      occurrence_count: 2
+    )
   end
 end

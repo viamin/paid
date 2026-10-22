@@ -24,6 +24,38 @@ module AgentRunPatterns
       new(...).call
     end
 
+    def self.normalize_error(message)
+      message
+        .gsub(%r{https?://\S+}, "<URL>")
+        .gsub(/\/[\w\/]+/, "<PATH>")
+        .gsub(/\b(?:[0-9a-f]{8,}|(?=[A-Za-z0-9_-]{8,}\b)(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]+)\b/i, "<ID>")
+        .gsub(/\b\d+(?:\.\d+)?[a-z]*\b/i, "<N>")
+        .truncate(200)
+    end
+
+    def self.error_pattern_for(run, provider_failure_categories:)
+      message = run.error_message
+      return if message.blank?
+
+      return normalize_error(message) unless analyze_issue_provider_exhaustion?(run, message)
+
+      exhaustion_error_pattern(provider_failure_categories[run.id])
+    end
+
+    def self.analyze_issue_provider_exhaustion?(run, message)
+      run.goal == "analyze_issue" && message.start_with?(ANALYZE_ISSUE_PROVIDER_EXHAUSTION_PREFIX)
+    end
+
+    # Stable cluster key for provider-exhaustion failures: the exhaustion
+    # prefix plus the run's sorted distinct failure categories. Provider names
+    # and attempt counts never participate, so exhaustion incidents cluster on
+    # the structured category regardless of which — or how many — providers
+    # were attempted.
+    def self.exhaustion_error_pattern(category_counts)
+      categories = category_counts.to_h.keys.map(&:to_s).reject(&:blank?).sort
+      [ ANALYZE_ISSUE_PROVIDER_EXHAUSTION_PREFIX, categories.join(", ").presence ].compact.join(": ")
+    end
+
     def initialize(account:, window_hours: DEFAULT_WINDOW_HOURS)
       @account = account
       @window_hours = window_hours
@@ -137,6 +169,7 @@ module AgentRunPatterns
             error_pattern: normalized_msg,
             occurrence_count: error_runs.size,
             total_failures: failed_runs.size,
+            total_count: runs.size,
             sample_messages: error_runs.map(&:error_message).compact.uniq.first(3),
             evidence_bundle: build_evidence_bundle(error_runs),
             run_ids: error_run_ids,
@@ -154,7 +187,7 @@ module AgentRunPatterns
     # exhaustion failures pay no extra query.
     def load_provider_failure_categories_by_run(failed_runs)
       exhaustion_run_ids = failed_runs
-        .select { |run| analyze_issue_provider_exhaustion?(run, read_attribute(run, :error_message).to_s) }
+        .select { |run| self.class.analyze_issue_provider_exhaustion?(run, read_attribute(run, :error_message).to_s) }
         .filter_map { |run| read_attribute(run, :id) }
       return {} if exhaustion_run_ids.empty?
 
@@ -162,26 +195,7 @@ module AgentRunPatterns
     end
 
     def error_pattern_for(run, provider_failure_categories:)
-      message = read_attribute(run, :error_message)
-      return if message.blank?
-
-      return normalize_error(message) unless analyze_issue_provider_exhaustion?(run, message)
-
-      exhaustion_error_pattern(provider_failure_categories[read_attribute(run, :id)])
-    end
-
-    def analyze_issue_provider_exhaustion?(run, message)
-      read_attribute(run, :goal) == "analyze_issue" && message.start_with?(ANALYZE_ISSUE_PROVIDER_EXHAUSTION_PREFIX)
-    end
-
-    # Stable cluster key for provider-exhaustion failures: the exhaustion
-    # prefix plus the run's sorted distinct failure categories. Provider names
-    # and attempt counts never participate, so exhaustion incidents cluster on
-    # the structured category regardless of which — or how many — providers
-    # were attempted.
-    def exhaustion_error_pattern(category_counts)
-      categories = category_counts.to_h.keys.map(&:to_s).reject(&:blank?).sort
-      [ ANALYZE_ISSUE_PROVIDER_EXHAUSTION_PREFIX, categories.join(", ").presence ].compact.join(": ")
+      self.class.error_pattern_for(run, provider_failure_categories: provider_failure_categories)
     end
 
     # Attaches aggregated provider-failure categories to exhaustion clusters
@@ -200,12 +214,7 @@ module AgentRunPatterns
     end
 
     def normalize_error(message)
-      message
-        .gsub(%r{https?://\S+}, "<URL>")
-        .gsub(/\/[\w\/]+/, "<PATH>")
-        .gsub(/\b(?:[0-9a-f]{8,}|(?=[A-Za-z0-9_-]{8,}\b)(?=[A-Za-z0-9_-]*\d)[A-Za-z0-9_-]+)\b/i, "<ID>")
-        .gsub(/\b\d+(?:\.\d+)?[a-z]*\b/i, "<N>")
-        .truncate(200)
+      self.class.normalize_error(message)
     end
 
     def build_evidence_bundle(runs)
