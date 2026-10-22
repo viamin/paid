@@ -25,7 +25,10 @@ RSpec.describe AgentRunPatterns::Notify do
         confidence: 1.0,
         proposed_action: "notify",
         action_target: { "type" => "account", "id" => account.id.to_s },
-        evidence_pointers: [ "legacy_messages[0]" ]
+        evidence_pointers: [ "legacy_messages[0]" ],
+        obstacle_kind: "unknown",
+        validation_plan: "Review the proposal.",
+        uncertainty: "Evidence is limited."
       )
     end
     let(:decision) { create(:remediation_decision, account: account, fingerprint: "fp-1") }

@@ -8,8 +8,9 @@ class RemediationDecision < ApplicationRecord
     clear_runner_field
     disable_runner_fallback
   ].freeze
-  STATUSES = %w[proposed approved applied skipped failed reverted].freeze
-  OUTCOMES = %w[improved unchanged regressed].freeze
+  STATUSES = %w[proposed approved applied skipped dismissed failed reverted].freeze
+  OUTCOMES = %w[improved unchanged regressed insufficient_evidence].freeze
+  OBSTACLE_KINDS = %w[infrastructure_configuration implementation unknown].freeze
 
   belongs_to :account
   belongs_to :applied_by, class_name: "User", optional: true
@@ -21,16 +22,36 @@ class RemediationDecision < ApplicationRecord
   validates :action_target_type, presence: true
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :outcome, inclusion: { in: OUTCOMES }, allow_nil: true
+  validates :obstacle_kind, inclusion: { in: OBSTACLE_KINDS }
+  validates :dismissal_reason, presence: true, if: :dismissed?
   validates :occurrence_count, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :diagnosis_attempted_on, presence: true
   validates :diagnosis_attempt_count_on_day, numericality: { only_integer: true, greater_than_or_equal_to: 1 }
   validates :last_diagnosis_attempt_at, presence: true
   validates :pre_remediation_failure_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
   validates :post_remediation_failure_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :pre_remediation_exposure_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :post_remediation_exposure_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
 
   scope :recent, -> { order(created_at: :desc, id: :desc) }
   scope :applied, -> { where(status: "applied") }
-  scope :pending_outcome, -> { applied.where(outcome: nil) }
+  # @spec RUN-OBSTACLE-005
+  scope :pending_outcome, -> {
+    applied.where(outcome: nil).or(
+      applied.where(outcome: "insufficient_evidence").where(
+        <<~SQL.squish,
+          applied_at + (
+            CASE
+            WHEN proposal_context ->> 'window_hours' ~ '^[1-9][0-9]*$'
+              THEN (proposal_context ->> 'window_hours')::integer
+            ELSE #{AgentRunPatterns::Detect::DEFAULT_WINDOW_HOURS}
+            END * INTERVAL '1 hour'
+          ) > ?
+        SQL
+        Time.current
+      )
+    )
+  }
   scope :for_runner_id, ->(runner_id) {
     where(action_target_id: runner_id.to_s, action_target_type: %w[runner runner_field])
   }
@@ -66,7 +87,28 @@ class RemediationDecision < ApplicationRecord
     applied? && revert_data.to_h["handler"].present?
   end
 
-  def auto_applied?
-    applied? && applied_by_id.nil?
+  def dismissed?
+    status == "dismissed"
+  end
+
+  def dismissable?
+    status == "proposed"
+  end
+
+  # @spec RUN-OBSTACLE-004
+  def applicable?
+    status == "proposed"
+  end
+
+  # @spec RUN-OBSTACLE-003
+  def dismiss!(reason:)
+    with_lock do
+      unless dismissable?
+        errors.add(:status, "is not proposed")
+        raise ActiveRecord::RecordInvalid.new(self)
+      end
+
+      update!(status: "dismissed", dismissal_reason: reason.to_s.strip, dismissed_at: Time.current)
+    end
   end
 end

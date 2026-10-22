@@ -227,6 +227,8 @@ The operating principles that tie the approaches above to day-to-day work:
 3. **Make agent work observable and improvable.** Capture the data — tokens,
    cost, iterations, prompt lineage, quality — that turns guesswork into
    measurement.
+   Recurring execution obstacles become reviewable, evidence-bounded proposals;
+   they never authorize a repair or a new run merely by being detected.
 4. **Stay portable across models and providers.** Swap the model or provider
    behind a component without rewriting call sites.
 5. **Run in multiple deployment models.** Managed cloud and private deployment,

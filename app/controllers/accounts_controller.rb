@@ -36,8 +36,7 @@ class AccountsController < ApplicationController
   def account_params
     params.require(:account).permit(
       :name,
-      :default_max_tokens_per_run,
-      remediation_policy: RemediationDecision::PROPOSED_ACTIONS.index_with { %i[mode minimum_confidence filing_threshold] }
+      :default_max_tokens_per_run
     )
   end
 end
