@@ -58,7 +58,7 @@ module Prompts
     # verification requirement for an unrelated repository.
     #
     # @param project [Project] The project to detect language for
-    # @return [String] The detected language identifier
+    # @return [String, nil] the detected language identifier, nil when unknown
     def self.detected_language(project)
       return project.detected_language.presence if project.respond_to?(:detected_language)
 

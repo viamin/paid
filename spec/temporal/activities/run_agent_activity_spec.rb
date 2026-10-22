@@ -15,6 +15,8 @@ RSpec.describe Activities::RunAgentActivity do
   let(:exec_failure) { Containers::Provision::Result.failure(error: "exit 1", stdout: "", stderr: "error", exit_code: 1) }
 
   before do
+    project.update!(primary_language: "Ruby")
+
     # Ensure fallback is disabled by default so tests behave like single-runner runs
     user.settings.update!(fallback_enabled: false)
 

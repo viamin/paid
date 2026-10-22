@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe MutationSweeps::Run do
   describe ".call" do
-    let(:project) { create(:project) }
+    let(:project) { create(:project, primary_language: "Ruby") }
     let(:fixture_worktree) { Rails.root.join("spec/fixtures/files/mutant/worktree_with_results").to_s }
     let(:worktree_service) { instance_double(WorktreeService) }
     let(:container_service) { instance_double(Containers::Provision) }
