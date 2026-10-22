@@ -82,6 +82,7 @@ RSpec.describe AgentRun do
     it { is_expected.to validate_length_of(:worktree_path).is_at_most(500) }
     it { is_expected.to validate_length_of(:branch_name).is_at_most(255) }
     it { is_expected.to validate_length_of(:base_commit_sha).is_at_most(40) }
+    it { is_expected.to validate_length_of(:approved_design_revision).is_at_most(40) }
     it { is_expected.to validate_length_of(:result_commit_sha).is_at_most(40) }
     it { is_expected.to validate_length_of(:pull_request_url).is_at_most(500) }
     it { is_expected.to validate_length_of(:temporal_workflow_id).is_at_most(255) }
@@ -135,6 +136,7 @@ RSpec.describe AgentRun do
       agent_run = create(:agent_run, project: project, issue: issue, goal: "create_pr")
 
       expect(agent_run.base_commit_sha).to eq(revision)
+      expect(agent_run.approved_design_revision).to eq(revision)
     end
 
     it "snapshots the admitted confidence-delivery baseline onto an implementation run" do # @spec CONFIDENCE-DELIVERY-004

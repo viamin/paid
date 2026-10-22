@@ -122,15 +122,22 @@ module FeatureIntents
     end
 
     # @spec FEATURE-APPROVAL-016
+    # The link creation and the per-edge `find_or_create_by!` calls are
+    # individually atomic, but a `RecordInvalid` on edge N (e.g. from the
+    # `endpoints_share_feature_intent` validation on
+    # `FeatureIntentIssueDependency`) would otherwise leave edges 1..N-1
+    # persisted. Both call sites discard the returned value, so the
+    # partial state would never surface to operators. The transaction
+    # rolls the whole batch back together.
     def attach_issue
       return IssueLinkResult.new(feature_intent_issue: nil) if feature_intent.nil? || issue.nil?
 
-      link = feature_intent.feature_intent_issues.find_by(issue_id: issue.id)
-      return IssueLinkResult.new(feature_intent_issue: link) if link
-
-      IssueLinkResult.new(
-        feature_intent_issue: feature_intent.feature_intent_issues.create!(issue: issue)
-      )
+      link = ActiveRecord::Base.transaction do
+        created_link = feature_intent.feature_intent_issues.find_or_create_by!(issue: issue)
+        record_in_tree_dependency_edges(created_link)
+        created_link
+      end
+      IssueLinkResult.new(feature_intent_issue: link)
     rescue ActiveRecord::RecordInvalid
       IssueLinkResult.new(feature_intent_issue: nil)
     end
@@ -178,6 +185,43 @@ module FeatureIntents
         design_pr_kind: design_pr_kind || "rdr",
         required: required.nil? ? required_for_kind : required
       )
+    end
+
+    def record_in_tree_dependency_edges(link)
+      linked_by_issue_id = feature_intent.feature_intent_issues.index_by(&:issue_id)
+      dependency_edges_for(link.issue, linked_by_issue_id).each do |dependent_link, prerequisite_link|
+        FeatureIntentIssueDependency.find_or_create_by!(
+          feature_intent_issue: dependent_link,
+          depends_on_feature_intent_issue: prerequisite_link
+        )
+      end
+    end
+
+    # A parent-reference edge — `depends_on: <dependent's own umbrella>` — is a
+    # contextual back-reference, not a prerequisite. `ready_to_work?` already
+    # excludes it via `IssueDependency::PARENT_REFERENCE_EXCLUSION_CONDITION`,
+    # so the in-tree edge must mirror that filter for both the forward
+    # dependency scan and the reverse-direction scan that picks up edges
+    # filed from the dependent's other end. The scope itself leaves the
+    # `issues` join to callers — both scans supply that join so the WHERE
+    # can resolve `issues.parent_issue_id`.
+    def dependency_edges_for(linked_issue, linked_by_issue_id)
+      current_edges = linked_issue.issue_dependencies
+        .joins(:issue)
+        .excluding_parent_references
+        .filter_map do |dependency|
+          prerequisite = linked_by_issue_id[dependency.depends_on_issue_id]
+          [ linked_by_issue_id[linked_issue.id], prerequisite ] if prerequisite
+        end
+      reverse_edges = IssueDependency
+        .where(depends_on_issue_id: linked_issue.id)
+        .joins(:issue)
+        .excluding_parent_references
+        .filter_map do |dependency|
+          dependent = linked_by_issue_id[dependency.issue_id]
+          [ dependent, linked_by_issue_id[linked_issue.id] ] if dependent
+        end
+      current_edges + reverse_edges
     end
 
     # @spec FEATURE-APPROVAL-018 — head SHA comes from GitHub. When a new

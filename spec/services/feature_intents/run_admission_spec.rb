@@ -14,7 +14,18 @@ RSpec.describe FeatureIntents::RunAdmission do
     result = described_class.call(issue: issue)
 
     expect(result).not_to be_allowed
+    expect(result.code).to eq("feature_not_released")
     expect(result.reason).to include("not released")
+  end
+
+  it "distinguishes a revising feature hold" do
+    feature = create(:feature_intent, project: project, status: "revising")
+    create(:feature_intent_issue, feature_intent: feature, issue: issue)
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_allowed
+    expect(result.code).to eq("feature_revising")
   end
 
   it "admits a released feature only at its approved repository revision" do
@@ -32,7 +43,10 @@ RSpec.describe FeatureIntents::RunAdmission do
     feature = create(:feature_intent, project: project, approved_design_revision: nil)
     create(:feature_intent_issue, feature_intent: feature, issue: issue)
 
-    expect(described_class.call(issue: issue)).not_to be_allowed
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_allowed
+    expect(result.code).to eq("no_approved_revision")
   end
 
   it "denies released work while an issue dependency remains open" do # @spec FEATURE-APPROVAL-023 @spec CONFIDENCE-DELIVERY-005
@@ -44,7 +58,26 @@ RSpec.describe FeatureIntents::RunAdmission do
     result = described_class.call(issue: issue)
 
     expect(result).not_to be_allowed
+    expect(result.code).to eq("issue_dependencies_incomplete")
     expect(result.reason).to include("unresolved dependencies")
+  end
+
+  it "holds a tree issue until its recorded in-tree prerequisite completes" do
+    feature = create(:feature_intent, project: project)
+    prerequisite_issue = create(:issue, project: project, github_state: "open")
+    prerequisite_link = create(:feature_intent_issue, feature_intent: feature, issue: prerequisite_issue)
+    link = create(:feature_intent_issue, feature_intent: feature, issue: issue)
+    create(:feature_intent_issue_dependency, feature_intent_issue: link,
+      depends_on_feature_intent_issue: prerequisite_link)
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_allowed
+    expect(result.code).to eq("in_tree_dependency_incomplete")
+
+    prerequisite_issue.update!(github_state: "closed")
+
+    expect(described_class.call(issue: issue)).to be_allowed
   end
 
   it "denies released work while a dependency is awaiting deployment" do # @spec FEATURE-APPROVAL-023 @spec CONFIDENCE-DELIVERY-005

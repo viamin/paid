@@ -11,7 +11,7 @@ module FeatureIntents
   # time: a run can be queued before a design becomes held again.
   # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024 @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-005
   class RunAdmission
-    Result = Data.define(:allowed, :revision, :reason, :snapshot) do
+    Result = Data.define(:allowed, :revision, :code, :reason, :snapshot) do
       def allowed? = allowed
     end
 
@@ -25,7 +25,7 @@ module FeatureIntents
 
     def call
       return allowed if links.empty?
-      return denied("Issue has unresolved dependencies.") unless issue.ready_to_work?
+      return denied("issue_dependencies_incomplete", "Issue has unresolved dependencies.") unless issue.ready_to_work?
 
       permits = links.map { |link| admit_link(link) }
       denial = permits.find { |result| !result.allowed? }
@@ -48,14 +48,16 @@ module FeatureIntents
     end
 
     def admit_link(link)
+      return denied("in_tree_dependency_incomplete", "Issue has incomplete in-tree dependencies.") unless in_tree_dependencies_complete?(link)
       return confidence_admission(link) if link.feature_intent.confidence_driven?
 
       approval_admission(link.feature_intent)
     end
 
     def approval_admission(feature)
-      return denied("Feature intent is not released.") unless feature.released?
-      return denied("Feature intent has no approved repository revision.") if feature.approved_design_revision.blank?
+      return denied("feature_revising", "Feature intent is revising.") if feature.revising?
+      return denied("feature_not_released", "Feature intent is not released.") unless feature.released?
+      return denied("no_approved_revision", "Feature intent has no approved repository revision.") if feature.approved_design_revision.blank?
 
       allowed(feature.approved_design_revision)
     end
@@ -64,7 +66,7 @@ module FeatureIntents
       return reconcile_confidence_admission(link) unless link.release_state == "released"
 
       readiness = ScopedReadiness.call(project: issue.project, mapping: link.current_readiness_mapping)
-      return denied(readiness.blockers.map(&:message).join(" ")) unless readiness.ready?
+      return denied("confidence_readiness_incomplete", readiness.blockers.map(&:message).join(" ")) unless readiness.ready?
       return reconcile_changed_scope(link) unless link.release_snapshot["scope_revision"] == readiness.snapshot["scope_revision"]
 
       allowed(
@@ -75,7 +77,7 @@ module FeatureIntents
 
     def reconcile_confidence_admission(link)
       result = ReleaseIssue.call(issue: issue)
-      return denied(result.reason) unless result.released?
+      return denied("confidence_release_held", result.reason) unless result.released?
 
       confidence_admission(link.reload)
     end
@@ -88,8 +90,16 @@ module FeatureIntents
       reconcile_confidence_admission(link)
     end
 
-    def allowed(revision = nil, snapshot: {}) = Result.new(allowed: true, revision: revision, reason: nil, snapshot: snapshot)
+    def in_tree_dependencies_complete?(link)
+      link.in_tree_dependencies.includes(:issue).all? { |dependency| dependency_complete?(dependency.issue) }
+    end
 
-    def denied(reason) = Result.new(allowed: false, revision: nil, reason: reason, snapshot: {})
+    def dependency_complete?(dependency_issue)
+      dependency_issue.github_state != "open" || dependency_issue.paid_state.in?(Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+    end
+
+    def allowed(revision = nil, snapshot: {}) = Result.new(allowed: true, revision: revision, code: nil, reason: nil, snapshot: snapshot)
+
+    def denied(code, reason) = Result.new(allowed: false, revision: nil, code: code, reason: reason, snapshot: {})
   end
 end
