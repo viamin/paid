@@ -227,6 +227,8 @@ The operating principles that tie the approaches above to day-to-day work:
 3. **Make agent work observable and improvable.** Capture the data — tokens,
    cost, iterations, prompt lineage, quality — that turns guesswork into
    measurement.
+   Recurring execution obstacles become reviewable, evidence-bounded proposals;
+   they never authorize a repair or a new run merely by being detected.
 4. **Stay portable across models and providers.** Swap the model or provider
    behind a component without rewriting call sites.
 5. **Run in multiple deployment models.** Managed cloud and private deployment,
@@ -305,6 +307,13 @@ management (an isolated environment is provisioned), into the agent layer (the
 agent executes against its isolated workspace and opens a PR), and back to the
 control plane
 (metrics, review, the human merge decision).
+
+Enabled capabilities declare their repository prerequisites through the
+project-readiness arrow. Checkout-backed gaps are surfaced for authorized
+operators and repaired only through an explicitly admitted bootstrap and
+target-branch re-evaluation. Runtime verification and infrastructure health
+remain bounded observations: they inform recovery without becoming a durable
+"ready" latch or silently weakening required checks.
 
 ### Directory layout
 

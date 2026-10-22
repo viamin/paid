@@ -8,7 +8,7 @@
 - **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: P1
-- **Related Issues**: TBD (file against this RDR before implementation)
+- **Related Issues**: #3186, #3188 (design/advisory scope and LID backfill; not proof of full runtime rollout)
 - **Related RDRs**: RDR-031 (Focused Agent Runs — introduced `focus` and `FOCUS_PRIORITY`, orthogonal to this change), RDR-032 (Eager Queue Seeding — removed the PR-attention seeding gate and made `max_concurrent_runs` + `QUEUE_ORDER` the sole capacity/ordering mechanism)
 
 ## Implementation Status

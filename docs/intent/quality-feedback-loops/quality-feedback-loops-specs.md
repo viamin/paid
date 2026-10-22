@@ -38,6 +38,8 @@
   test-command resolution) so the prompt and the pre-commit hook do not tell
   the agent contradictory things about whether database-dependent verification
   can run (POLYGLOT-TEST-011).
+  Each skipped test or mutation hook SHALL be recorded as `not_executed` with
+  reason `database_service_unavailable`, never as a passing check.
   *Code:* `app/services/containers/quality_hooks.rb`,
   `app/services/prompts/language_commands.rb`,
   `app/services/prompts/service_container_sections.rb`,

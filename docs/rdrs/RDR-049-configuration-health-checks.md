@@ -7,7 +7,7 @@
 - **Status**: Implemented
 - **Date**: 2026-07-29
 - **Priority**: P1
-- **Related Issues**: #3050 (tracking umbrella), #3172 (closeout audit), #3049 (RDR PR), implemented phases #3051–#3058
+- **Related Issues**: #3050 (tracking umbrella), #3172 (closeout audit), [PR 3049](https://github.com/viamin/paid/pull/3049) (RDR PR), implemented phases #3051–#3058
 - **Related RDRs**: RDR-008 (Model Selection Strategy), RDR-022 (Auto-Merge PR Strategy), RDR-023 (Automation Modularization Architecture), RDR-030 (GitHub App Bot Account), RDR-040 (Runner Model Compatibility Contracts), RDR-041 (Subscription Runner Auth Lifecycle)
 
 ## Implementation Status

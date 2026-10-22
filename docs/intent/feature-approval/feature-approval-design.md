@@ -389,7 +389,10 @@ under what keys, and from which run-supplied facts:
 - Implementation issues filed by the run are recorded via
   `FeatureIntentIssue` at creation time (or shortly after via
   `AttachFromAgentRun` syncing `cross_repo_issues`) so the Inbox detail
-  view can list the proposed tree alongside the design PR.
+  view can list the proposed tree alongside the design PR. When both ends of
+  a local issue dependency are attached, its edge is captured between their
+  `FeatureIntentIssue` rows; admission then waits for those recorded tree
+  prerequisites rather than guessing an execution order.
 - If the docs-only PR is closed unmerged (a human reviewer rejected the
   RDR/LID Planning PR), the run transitions the feature to `cancelled` and
   closes the `FeatureIntentIssue` rows it created so no runnable orphan

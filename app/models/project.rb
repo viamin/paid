@@ -213,7 +213,7 @@ class Project < ApplicationRecord
     { label: "Auto-Add Labels", attribute: :auto_add_labels_enabled,
      description: "Automatically add the generated label to PRs and issues created by Paid." }.freeze,
     { label: "Automation on Label", attribute: :automation_on_label_enabled,
-     description: "Automatically create agent runs when the automation label is detected on issues or PRs." }.freeze,
+     description: "Automatically create agent runs when the automation label is detected on PRs." }.freeze,
     { label: "Auto-Pick Issues", attribute: :auto_pick_enabled,
      description: "Automatically start working on unblocked issues when no agent runs are active." }.freeze,
     { label: "Quiet Mode", attribute: :quiet_mode,
@@ -466,7 +466,7 @@ class Project < ApplicationRecord
   after_update_commit :seed_eligible_issues, if: :auto_pick_just_enabled?
   after_update_commit :cancel_queued_auto_pick_runs, if: :auto_pick_just_disabled?
   after_update_commit :ensure_playwright_mcp_definition!, if: :verification_just_enabled?
-  after_update_commit :enqueue_readiness_evaluation, if: :saved_change_to_tdd_mode?
+  after_update_commit :enqueue_readiness_evaluation, if: :readiness_settings_changed?
   before_update :reset_issue_sync_state, if: :will_change_issue_target_repository?
   before_update :archive_previous_target_issues, if: :will_change_issue_target_repository?
   after_update_commit :cancel_previous_target_issue_runs, if: :saved_change_to_issue_target_repository?
@@ -477,17 +477,30 @@ class Project < ApplicationRecord
     EvaluateProjectReadinessJob.perform_later(id)
   end
 
+  def readiness_settings_changed?
+    saved_change_to_tdd_mode? || saved_change_to_screenshot_settings?
+  end
+
   def full_name
     "#{owner}/#{repo}"
   end
 
-  # @spec PROJECT-READINESS-005
-  def tdd_readiness_blocked?
-    tdd_mode.in?(Projects::Readiness::Rules::Tdd::REQUIRING_MODES) && readiness_gaps.any?
+  # @spec PROJECT-READINESS-005 PROJECT-READINESS-011
+  def readiness_blocked?
+    active_readiness_gaps.any?
+  end
+
+  def active_readiness_gaps
+    readiness_gaps.select { |gap| readiness_gap_active?(gap) }
+  end
+
+  # @spec PROJECT-READINESS-005 PROJECT-READINESS-012
+  def active_readiness_gap_kinds
+    active_readiness_gaps.filter_map { |gap| readiness_gap_kind(gap) }
   end
 
   def readiness_gap_descriptions
-    readiness_gaps.filter_map { |gap| gap["description"] || gap[:description] }
+    active_readiness_gaps.filter_map { |gap| gap["description"] || gap[:description] }
   end
 
   # Repository where new PRs are opened for this project. For "own_repo"
@@ -1328,6 +1341,18 @@ class Project < ApplicationRecord
 
   def verification_enabled?
     verification_enabled
+  end
+
+  def readiness_gap_active?(gap)
+    kind = readiness_gap_kind(gap)
+    return tdd_mode.in?(Projects::Readiness::Rules::Tdd::REQUIRING_MODES) if kind.in?(Projects::Readiness::Rules::Tdd::GAP_KINDS)
+    return verification_enabled? if kind.in?(Projects::Readiness::Rules::Verification::GAP_KINDS)
+
+    true
+  end
+
+  def readiness_gap_kind(gap)
+    gap["kind"] || gap[:kind]
   end
 
   # Ensures the account-scoped playwright-mcp MCP server definition exists and is

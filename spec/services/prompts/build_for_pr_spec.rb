@@ -70,7 +70,7 @@ RSpec.describe Prompts::BuildForPr do
     expect(priority_list).to eq(expected_lines.join("\n"))
   end
 
-  let(:project) { create(:project, allowed_github_usernames: [ "trusteduser" ]) }
+  let(:project) { create(:project, primary_language: "Ruby", allowed_github_usernames: [ "trusteduser" ]) }
   let(:github_client) { instance_double(GithubClient) }
   let(:user_settings) { OpenStruct.new(max_prompt_comments: 20, max_comment_length: 2000) }
 

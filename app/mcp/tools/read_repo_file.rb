@@ -40,7 +40,7 @@ module Tools
       return error_result("File exceeds #{MAX_FILE_SIZE_BYTES / 1024}KB size limit", repo_client.identity, path: path) if data.size > MAX_FILE_SIZE_BYTES
       return error_result("File is empty", repo_client.identity, path: path) unless data.content.present?
 
-      raw = Base64.decode64(data.content)
+      raw = Base64.decode64(data.content).force_encoding(Encoding::UTF_8)
       return error_result("File appears to be binary", repo_client.identity, path: path) unless utf8_text?(raw)
 
       {
@@ -59,7 +59,7 @@ module Tools
     def utf8_text?(raw)
       return false if raw.include?("\x00")
 
-      raw.dup.force_encoding("UTF-8").valid_encoding?
+      raw.valid_encoding?
     end
 
     def error_result(message, identity, path: nil)

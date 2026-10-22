@@ -8,7 +8,7 @@
 - **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: N/A (foundational decision)
+- **Related Issues**: #136, #143, #736, #3183 (original implementation and subsequent LID backfill; historical linkage, not a new acceptance audit)
 - **Related Tests**: Evolution workflow tests, A/B test analysis tests
 
 ## Implementation Status

@@ -193,6 +193,8 @@ What ships today:
   token only when the project has no usable credential — so a single chatting
   user's personal GitHub Code Search/rate-limit quota is not exhausted ahead
   of the project's own quota bucket
+- Repository file reads label validated decoded text as UTF-8 before returning
+  it, so Unicode documentation survives JSON tool-result serialization.
 - `get_pull_request_details` includes a sanitized `auto_merge` section that
   exposes only project-scoped diagnostic facts about the latest known
   auto-merge state. Persisted merge-permission cooldown state is preferred

@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe AgentRuns::VerificationResultRecorder do
-  # @spec LIVE-PREVIEW-005
+  # @spec LIVE-PREVIEW-005 PROJECT-READINESS-011 PROJECT-READINESS-012
   let(:project) { create(:project, screenshot_settings: { "verification_enabled" => true }) }
   let(:issue) { create(:issue, project: project) }
   let(:agent_run) { create(:agent_run, project: project, issue: issue) }
@@ -365,6 +365,36 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
       "status" => "skipped",
       "reason" => "app_start_command_unavailable"
     )
+  end
+
+  it "retains setup-failure evidence with the run revision and observation time" do
+    agent_run.update!(base_commit_sha: "checkout-sha")
+
+    described_class.call(
+      agent_run:,
+      repo_path:,
+      fallback_result: { "status" => "skipped", "reason" => "app_start_command_unavailable" }
+    )
+
+    evidence = agent_run.reload.verification_result.fetch("readiness_observation")
+    expect(evidence).to include(
+      "reason" => "app_start_command_unavailable",
+      "agent_run_id" => agent_run.id,
+      "checkout_revision" => "checkout-sha"
+    )
+    expect(evidence.fetch("observed_at")).to be_present
+  end
+
+  it "keeps a browser outage run-scoped rather than treating it as readiness evidence" do
+    described_class.call(
+      agent_run:,
+      repo_path:,
+      fallback_result: { "status" => "skipped", "reason" => "browser_unavailable" }
+    )
+
+    result = agent_run.reload.verification_result
+    expect(result.fetch("reason")).to eq("browser_unavailable")
+    expect(result).not_to have_key("readiness_observation")
   end
 
   it "overwrites an existing verification result when a newer result file exists" do

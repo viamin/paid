@@ -300,6 +300,7 @@ class AgentRun < ApplicationRecord
   validates :worktree_path, length: { maximum: 500 }
   validates :branch_name, length: { maximum: 255 }
   validates :base_commit_sha, length: { maximum: 40 }
+  validates :approved_design_revision, length: { maximum: 40 }
   validates :result_commit_sha, length: { maximum: 40 }
   validates :pull_request_url, length: { maximum: 500 }
   validates :review_url, length: { maximum: 500 }
@@ -4381,6 +4382,7 @@ class AgentRun < ApplicationRecord
 
     admission = FeatureIntents::RunAdmission.call(issue: issue)
     self.base_commit_sha = admission.revision if admission.revision
+    self.approved_design_revision = admission.revision if admission.revision
     self.confidence_delivery_snapshot = admission.snapshot if admission.snapshot.present?
   end
 

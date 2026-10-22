@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class AgentRunPatternDetectorJob < ApplicationJob
+  # @spec RUN-OBSTACLE-004
   include GoodJob::ActiveJobExtensions::Concurrency
 
   queue_as :maintenance
@@ -56,6 +57,7 @@ class AgentRunPatternDetectorJob < ApplicationJob
 
   private
 
+  # @spec RUN-OBSTACLE-003
   def build_diagnoses(account, patterns)
     remaining_budget = AgentRunPatterns::DailyDiagnosisBudget.remaining_for(account: account)
 
@@ -73,10 +75,9 @@ class AgentRunPatternDetectorJob < ApplicationJob
         pattern: pattern,
         diagnosis: diagnosis
       )
-      decision = AgentRunPatterns::AutoApply.call(
-        decision: decision,
-        pattern: pattern
-      )
+      # A reasoned dismissal mutes re-announcement in Notify while the
+      # decision record itself keeps accruing occurrences.
+      next if decision.dismissed?
 
       result[:diagnoses][fingerprint(pattern)] = diagnosis
       result[:decisions][fingerprint(pattern)] = decision
