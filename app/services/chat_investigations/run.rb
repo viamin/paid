@@ -133,12 +133,14 @@ module ChatInvestigations
 
     def settle!(status:, result:)
       investigation.project.with_lock do
-        investigation.reload
-        return unless investigation.status == "running"
+        investigation.with_lock do
+          investigation.reload
+          return unless investigation.status == "running"
 
-        consume_reserved_budget!
-        investigation.update!(status:, result:, finished_at: Time.current, reserved_cost_cents: 0,
-          metadata: investigation.metadata.merge("progress" => status))
+          consume_reserved_budget!
+          investigation.update!(status:, result:, finished_at: Time.current, reserved_cost_cents: 0,
+            metadata: investigation.metadata.merge("progress" => status))
+        end
       end
       ChatInvestigations::Broadcast.call(investigation)
     end
