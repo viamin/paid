@@ -43,11 +43,14 @@ module AgentRuns
       end
       return if @repo_path.blank?
 
-      persisted = build_result(apple_decision)
-      return if persisted.nil?
+      @agent_run.with_lock do
+        @previous_verification_result = nil
+        persisted = build_result(apple_decision)
+        next if persisted.nil?
 
-      @agent_run.update!(verification_result: persisted)
-      persisted
+        @agent_run.update!(verification_result: persisted)
+        persisted
+      end
     ensure
       cleanup_transient_files
     end
@@ -105,9 +108,11 @@ module AgentRuns
     end
 
     def clear_apple_only_result
-      return unless @agent_run.verification_result["apple_verification"].present?
+      @agent_run.with_lock do
+        next unless @agent_run.verification_result["apple_verification"].present?
 
-      @agent_run.update!(verification_result: {})
+        @agent_run.update!(verification_result: {})
+      end
     end
 
     def apple_gate_summary(decision)

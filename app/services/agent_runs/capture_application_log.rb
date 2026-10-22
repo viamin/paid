@@ -22,7 +22,9 @@ module AgentRuns
 
       raise TooLargeError, "application log exceeds #{MAX_LOG_BYTES} bytes" if @content.bytesize > MAX_LOG_BYTES
 
-      @agent_run.update!(verification_result: verification_result)
+      @agent_run.with_lock do
+        @agent_run.update!(verification_result: verification_result)
+      end
     end
 
     private

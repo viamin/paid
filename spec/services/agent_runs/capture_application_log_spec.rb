@@ -16,6 +16,20 @@ RSpec.describe AgentRuns::CaptureApplicationLog do
   end
 
   # @spec APP-DIAGNOSTICS-004
+  it "preserves a verification result finalized after the run was loaded" do
+    agent_run = create(:agent_run, :running)
+    stale_agent_run = AgentRun.find(agent_run.id)
+    finalized_result = { "status" => "passed", "summary" => "Verification completed" }
+    agent_run.update!(verification_result: finalized_result)
+
+    described_class.call(agent_run: stale_agent_run, content: "application started")
+
+    expect(agent_run.reload.verification_result).to include(
+      finalized_result.merge("app_log_tail" => "application started")
+    )
+  end
+
+  # @spec APP-DIAGNOSTICS-004
   it "raises when the payload exceeds the bounded log byte cap" do
     agent_run = create(:agent_run, :running)
 

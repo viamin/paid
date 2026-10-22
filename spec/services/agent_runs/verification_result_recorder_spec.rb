@@ -77,6 +77,20 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(File).not_to exist(log_path)
   end
 
+  # @spec APP-DIAGNOSTICS-004
+  it "preserves a captured application log written after the run was loaded" do
+    stale_agent_run = AgentRun.find(agent_run.id)
+    AgentRuns::CaptureApplicationLog.call(agent_run:, content: "captured while verifying")
+    File.write(result_path, JSON.generate(status: "passed"))
+
+    described_class.call(agent_run: stale_agent_run, repo_path:)
+
+    expect(agent_run.reload.verification_result).to include(
+      "status" => "passed",
+      "app_log_tail" => "captured while verifying"
+    )
+  end
+
   it "preserves structured durable artifact metadata for manifest consumers" do
     File.write(result_path, JSON.generate(
       status: "passed",
