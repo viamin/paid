@@ -43,35 +43,41 @@ module Prompts
       "swift" => "swift format lint --recursive ."
     }.freeze
 
+    # Compatibility fallback for lightweight callers that predate Project's
+    # repository-language contract. Persisted Project records always respond
+    # to #detected_language, so an unknown target repository still remains
+    # unknown rather than becoming Ruby.
     DEFAULT_LANGUAGE = "ruby"
 
     # Display fallback shown when no command is configured for a language set.
     NO_TEST_COMMAND = 'echo "No test command configured"'
     NO_LINT_COMMAND = 'echo "No lint command configured"'
 
-    # Detects the primary language for a project, defaulting to Ruby.
+    # Detects the primary language for a project. An unknown target remains
+    # unknown: defaulting it to Ruby would turn Paid's own stack into a
+    # verification requirement for an unrelated repository.
     #
     # @param project [Project] The project to detect language for
-    # @return [String] The detected language identifier
+    # @return [String, nil] the detected language identifier, nil when unknown
     def self.detected_language(project)
-      if project.respond_to?(:detected_language) && project.detected_language.present?
-        project.detected_language
-      else
-        DEFAULT_LANGUAGE
-      end
+      return project.detected_language.presence if project.respond_to?(:detected_language)
+
+      DEFAULT_LANGUAGE
     end
 
     # Returns the languages whose test/lint suites should run for a project.
     #
     # Polyglot repos expose multiple languages through the persisted
     # +repo_profile+ (see #profile_languages). When no repo profile is
-    # present, the single detected primary language is used, preserving the
-    # pre-polyglot single-language behavior.
+    # present and a primary language has been detected, that single language
+    # preserves the pre-polyglot behavior. A project without either signal
+    # intentionally resolves to no commands, which callers render as an
+    # unavailable verification capability rather than a Ruby fallback.
     #
     # @param project [Project]
-    # @return [Array<String>] one or more downcased language keys
-    def self.test_languages(project)
-      profile_languages(project).presence || [ detected_language(project) ]
+    # @return [Array<String>] zero or more downcased language keys
+    def self.test_languages(project) # @spec POLYGLOT-TEST-003 @spec POLYGLOT-TEST-012
+      profile_languages(project).presence || [ detected_language(project) ].compact
     end
 
     # Resolves the test commands for every language in the project's test set,

@@ -123,10 +123,13 @@ JSON stream itself rather than trusting the exit code alone. The script:
    matches `^GHSA-[0-9a-z-]+$`. Any malformed or expired entry fails the
    run before findings are evaluated, so a stale exception cannot quietly
    keep a run green.
-3. Classifies the run: error events and unparseable output fail the run
-   as scanner failures, as does a non-zero exit that produced no advisory
-   report. A non-zero exit with advisory events is a normal report, not a
-   scanner failure — yarn exits 1 whenever it reports advisories.
+3. Classifies the run: error events and unparseable output are scanner
+   failures, as is a non-zero exit that produced no advisory report. The
+   wrapper retries a scanner failure up to three total attempts with bounded
+   increasing delays before failing the run, so a transient registry outage
+   does not make the audit flaky. A non-zero exit with advisory events is a
+   normal report, not a scanner failure — yarn exits 1 whenever it reports
+   advisories.
    Advisory findings are accepted only when both their advisory ID and
    affected module match an unexpired allowlist entry; everything else fails
    the run.

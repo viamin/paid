@@ -4,7 +4,7 @@ require "rails_helper"
 
 # @spec PROMPT-ASSEMBLY-014
 RSpec.describe AgentRun do
-  let(:project) { create(:project, allowed_github_usernames: [ "viamin" ]) }
+  let(:project) { create(:project, primary_language: "Ruby", allowed_github_usernames: [ "viamin" ]) }
   let(:issue) do
     create(:issue, project: project, title: "Fix login redirect",
            github_number: 42, github_creator_login: "viamin",

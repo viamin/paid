@@ -4,7 +4,7 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe Activities::CloneRepoActivity do
-  let(:project) { create(:project) }
+  let(:project) { create(:project, primary_language: "Ruby") }
   let(:agent_run) { create(:agent_run, :running, project: project, container_id: "abc123") }
   let(:activity) { described_class.new }
   let(:container_service) { instance_double(Containers::Provision) }
