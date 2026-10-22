@@ -22,6 +22,17 @@ RSpec.describe ChatSession do
     it { is_expected.to have_many(:token_usages).dependent(:destroy) }
     it { is_expected.to have_many(:chat_session_projects).dependent(:destroy) }
     it { is_expected.to have_many(:projects).through(:chat_session_projects) }
+
+    # @spec QUESTION-EXPLORATION-010
+    # Investigations hold a null:false FK onto clarifying_question_progresses,
+    # so the session must destroy them before tearing down the progresses.
+    it "destroys investigations and question progress without FK violations" do
+      investigation = create(:chat_investigation)
+
+      expect { investigation.chat_session.destroy! }
+        .to change(ChatInvestigation, :count).by(-1)
+        .and change(ClarifyingQuestionProgress, :count).by(-1)
+    end
   end
 
   describe "validations" do

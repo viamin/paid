@@ -28,6 +28,7 @@ module Tools
       "Tools::GetPullRequestDetails",
       "Tools::SubmitClarifyingAnswers",
       "Tools::SaveClarifyingAnswer",
+      "Tools::StartChatInvestigation",
       "Tools::PresentChatDiagram",
       "Tools::ListExplicitPreferences",
       "Tools::SaveExplicitPreference",

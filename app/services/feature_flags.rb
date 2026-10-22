@@ -8,6 +8,13 @@ class FeatureFlags
   InvalidPercentageError = Class.new(ArgumentError)
 
   DEFINITIONS = {
+    question_exploration: Definition.new(
+      name: :question_exploration,
+      owner: "question-exploration",
+      intent: "Gate the question-centered chat exploration surfaces required by RDR-069.",
+      rollout_plan: "Default-off; enable selected projects only after linked-chat, authorization, and durable-progress behavior are verified.",
+      cleanup_criteria: "Remove only after question exploration is the default for every project."
+    ),
     context_intake_agent_questions: Definition.new(
       name: :context_intake_agent_questions,
       owner: "context-intake",

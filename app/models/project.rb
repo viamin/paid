@@ -3,6 +3,8 @@
 class Project < ApplicationRecord
   include PreferredDockerHostIdentifierValidation
 
+  has_many :chat_investigations, dependent: :destroy
+
   self.ignored_columns += [ "pr_aggregation_enabled" ]
 
   EXTERNAL_ISSUE_TRACKER_LINK_LABELS = {
