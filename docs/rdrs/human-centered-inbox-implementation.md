@@ -25,7 +25,7 @@ issue body, not optional implementation suggestions.
 
 ## Existing work and overlap
 
-Issue states checked on 2026-10-11 against GitHub bodies/comments;
+Issue states checked on 2026-10-22 against GitHub bodies/comments;
 P01 verifies shipped code/tests before reusing the earlier contracts:
 
 | Existing work | Relationship and action |
@@ -78,7 +78,10 @@ issues and complete features through forward work.
 **Children:** P01–P12, C69, C70, C71. The epic is a coordination record that
 runs a final acceptance audit after its children and dependencies resolve;
 closeout children use `Tracks` language and leave the umbrella open for that
-audit.
+audit. As of 2026-10-22, the umbrella and all 15 children are open: P01–P12
+remain held with `planning`, while closeouts C69–C71 intentionally have no
+planning/tracking exclusion label. This includes P08 and C70, which were
+reopened after premature completion so they remain live coordination records.
 
 **Acceptance:** All three RDRs have evidence-backed closeouts. A user can open
 an Inbox question, explore/comment on a diagram, correct an assessment and see
