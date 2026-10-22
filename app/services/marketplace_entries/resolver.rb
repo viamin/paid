@@ -185,11 +185,11 @@ module MarketplaceEntries
     end
 
     def languages_in_repo_profile
-      project.respond_to?(:effective_repo_profile) ? project.effective_repo_profile.fetch("languages", []) : []
+      project.effective_repo_profile.fetch("languages", [])
     end
 
     def marker_files_in_repo_profile
-      project.respond_to?(:effective_repo_profile) ? project.effective_repo_profile.fetch("marker_files", []) : []
+      project.effective_repo_profile.fetch("marker_files", [])
     end
 
     def provider_key
