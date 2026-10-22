@@ -85,14 +85,23 @@
     </div>
   <% end %>
 
-  <% issues = feature_intent.issues %>
-  <% if issues.any? %>
+  <%# Preload each issue's feature-intent links (and their features) so the
+      per-issue IssueHold projection below reads preloaded associations
+      instead of issuing one link query per tree row (FEATURE-APPROVAL-023). %>
+  <% issue_links = feature_intent.feature_intent_issues.includes(issue: { feature_intent_issues: :feature_intent }) %>
+  <% if issue_links.any? %>
     <div class="space-y-2">
       <h3 class="text-sm font-semibold text-gray-900">Proposed issue tree</h3>
       <ul class="space-y-1">
-        <% issues.each do |issue| %>
+        <% issue_links.each do |issue_link| %>
+          <% issue = issue_link.issue %>
           <li class="text-sm text-gray-600">
             <%= link_to "##{issue.github_number} #{issue.title}", issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-500" %>
+            <% if (link_hold = FeatureIntents::IssueHold.call(issue: issue, feature: feature_intent)) %>
+              <span class="ml-1 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800" data-testid="feature-intent-hold" title="<%= link_hold.code %>">
+                <%= link_hold.message %>
+              </span>
+            <% end %>
           </li>
         <% end %>
       </ul>
