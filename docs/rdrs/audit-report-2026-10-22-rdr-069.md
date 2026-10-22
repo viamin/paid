@@ -15,9 +15,9 @@ live test run. Closed-issue state is not treated as delivery evidence. The
 merged code and specs of #4311, #4312, #4313 and #4316 were read and run
 instead.
 
-All twelve delivery children #4310–#4321 are closed on GitHub. That is recorded
-as a fact about GitHub, not as delivery evidence: #4317 (P08) closed without
-shipping any investigation surface at all, which this audit verified in code
+Eleven delivery children #4310–#4321 are closed on GitHub. #4317 (P08) is
+currently open with `state_reason: reopened`; during its prior closed interval,
+it did not ship any investigation surface, which this audit verified in code
 (see `010` below). The other children's claimed behaviors were each confirmed
 by reading their merged code and running their specs.
 

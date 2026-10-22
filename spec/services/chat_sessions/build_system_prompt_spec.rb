@@ -557,6 +557,21 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("Application: The Paid application.")
       end
 
+      # @spec QUESTION-EXPLORATION-004
+      it "bounds rendered diagram comments without dropping the pending questions" do
+        diagram = create(:chat_diagram, chat_session: chat_session, question_key: "expected-behavior")
+        2.times do
+          create(:chat_diagram_comment, chat_diagram: diagram, actor: user, body: "x" * 12_000)
+        end
+
+        comment_text = prompt[/## Diagram comments\n\n(.+?)(?=\nHelp the user)/m, 1]
+
+        expect(comment_text).to be_present
+        expect(comment_text.length).to be <= described_class::DIAGRAM_COMMENTS_MAX_CHARS
+        expect(prompt).to include("1. What is the expected behavior?")
+        expect(prompt.length).to be <= described_class::MAX_PROMPT_CHARS
+      end
+
       # @spec QUESTION-EXPLORATION-013
       # The evidence a person attached to a draft answer is human input, not a
       # preference. Reopening must restore it with the answer.

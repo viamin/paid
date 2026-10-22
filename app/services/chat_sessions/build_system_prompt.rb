@@ -23,6 +23,7 @@ module ChatSessions
     RECENT_ISSUES_LIMIT = 5
     RECENT_RUNS_LIMIT = 5
     CROSS_PROJECT_SUMMARY_MAX_CHARS = 500
+    DIAGRAM_COMMENTS_MAX_CHARS = MAX_PROMPT_CHARS / 16
 
     attr_reader :chat_session
 
@@ -247,7 +248,7 @@ module ChatSessions
       <<~PROMPT.strip
         ## Diagram comments
 
-        #{comments.map { |comment| "- [#{comment.question_key}]#{diagram_comment_target(comment)} #{comment.body}" }.join("\n")}
+        #{render_diagram_comments(comments)}
       PROMPT
     end
 
@@ -261,6 +262,12 @@ module ChatSessions
 
     def diagram_comment_target(comment)
       comment.element_context.present? ? " (on #{comment.element_context})" : ""
+    end
+
+    def render_diagram_comments(comments)
+      comments.map { |comment| "- [#{comment.question_key}]#{diagram_comment_target(comment)} #{comment.body}" }
+        .join("\n")
+        .truncate(DIAGRAM_COMMENTS_MAX_CHARS, omission: "\n… [truncated]")
     end
 
     # @spec QUESTION-EXPLORATION-018
