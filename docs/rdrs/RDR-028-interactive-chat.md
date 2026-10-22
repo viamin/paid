@@ -8,7 +8,7 @@
 - **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: TBD
+- **Related Issues**: #1428, #1429, #2449, #2448, #3187
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md) (agent-harness), [RDR-004](RDR-004-container-isolation.md) (containers), [RDR-006](RDR-006-secrets-proxy.md) (secrets proxy), [RDR-025a](RDR-025a-runner-quota-tracking.md) (quota tracking)
 
 ## Implementation Status

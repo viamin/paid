@@ -8,7 +8,7 @@
 - **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: High
-- **Related Issues**: #216, #245, #246, #248
+- **Related Issues**: [PR 216](https://github.com/viamin/paid/pull/216), #245, #246, #248
 - **Related Tests**: `spec/services/containers/service_provisioner_spec.rb`, `spec/models/service_container_spec.rb`, `spec/jobs/docker_orphan_cleanup_job_spec.rb`
 
 ## Problem Statement
@@ -317,7 +317,7 @@ Use a `SERVICE_CONTAINER_ALLOWED_IMAGES` environment variable instead of databas
 
 ### Related Issues
 
-- #216 — Service container system implementation
+- [PR 216](https://github.com/viamin/paid/pull/216) — Service container system implementation
 - #245 — Admin UI for service container management
 - #246 — Lifecycle management (reconciliation, orphan cleanup)
 - #248 — Documentation (this RDR)

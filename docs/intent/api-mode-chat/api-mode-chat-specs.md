@@ -362,7 +362,10 @@
   be built for it. A single chatting user's personal GitHub API/Code Search
   quota SHALL NOT be preferred ahead of the project's own quota bucket for
   routine repo reads.
-  *Tests:* `spec/mcp/tools/repo_read_client_resolver_spec.rb`.
+  Repository file reads SHALL return validated UTF-8 text that remains intact
+  through JSON serialization, and reject binary or invalid UTF-8 content.
+  *Tests:* `spec/mcp/tools/repo_read_client_resolver_spec.rb`,
+  `spec/mcp/tools/read_repo_file_spec.rb`.
   *Code:* `Tools::RepoReadClientResolver#resolve`,
   `Tools::RepoReadClientResolver#resolve_project_client`,
   `Tools::RepoReadClientResolver#resolve_user_client`.

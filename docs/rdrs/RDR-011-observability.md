@@ -8,7 +8,7 @@
 - **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: Medium
-- **Related Issues**: N/A (foundational decision)
+- **Related Issues**: #2702, #3173, #3238, #3239, #3188
 - **Related Tests**: Metrics endpoint tests, alert rule tests
 
 ## Implementation Status

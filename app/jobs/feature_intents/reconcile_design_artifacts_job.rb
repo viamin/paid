@@ -8,7 +8,7 @@ module FeatureIntents
   class ReconcileDesignArtifactsJob < ApplicationJob
     include GoodJob::ActiveJobExtensions::Concurrency
 
-    RDR_STATUS_PATTERN = /^\s*(?:\*\*)?status(?:\*\*)?\s*:\s*(?:\*\*)?(.+?)(?:\*\*)?\s*$/i
+    RDR_STATUS_PATTERN = /^\s*(?:[-*]\s+)?(?:\*\*)?status(?:\*\*)?\s*:\s*(?:\*\*)?(.+?)(?:\*\*)?\s*$/i
     RELATIONSHIP_LINE_PATTERN = /^\s*(?:[-*]\s+)?(?:\*\*)?(?:implements|closes|fixes|resolves|tracks|depends on|blocked by|related issues?)(?:\s*:)?(?:\*\*)?\s*:?\s+(.+)$/i
     RELATIONSHIP_HEADING_PATTERN = /^\s{0,3}\#{1,6}\s+(?:\*\*)?(?:implements|closes|fixes|resolves|tracks|depends on|blocked by|related issues?)(?:\*\*)?\s*#*\s*$/i
     MARKDOWN_HEADING_PATTERN = /^\s{0,3}\#{1,6}\s+/

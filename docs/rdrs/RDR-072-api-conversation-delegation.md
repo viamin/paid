@@ -7,7 +7,7 @@
 - **Type**: Integration architecture and ownership
 - **Priority**: P2
 - **Related RDRs**: [RDR-007](RDR-007-agent-cli-abstraction.md), [RDR-028](RDR-028-interactive-chat.md), [RDR-037](RDR-037-containerized-multi-repo-chat.md), [RDR-064](RDR-064-container-agent-chat-mode.md)
-- **Related Issues**: viamin/paid#4013, #4014, #4015, #4016, #4017, #4018, #4019, #4020, #4125, #4126 — #4125 (API-CONVERSATION-DELEGATION-002 attempt-report persistence) shipped in viamin/paid#4131; #4126 (API-CONVERSATION-DELEGATION-003 request identity, bounds, and recovery) shipped in viamin/paid#4133. The 2026-10-10 acceptance audit ([`audit-report-2026-10-10-rdr-072.md`](audit-report-2026-10-10-rdr-072.md)) verified the retained scope against live code, but #4013 remains open until the required rebuilt-agent-image verification record is available.
+- **Related Issues**: viamin/paid#4013, #4014, #4015, #4016, #4017, #4018, #4019, #4020, #4125, #4126 — #4125 (API-CONVERSATION-DELEGATION-002 attempt-report persistence) shipped in [PR 4131](https://github.com/viamin/paid/pull/4131); #4126 (API-CONVERSATION-DELEGATION-003 request identity, bounds, and recovery) shipped in [PR 4133](https://github.com/viamin/paid/pull/4133). The 2026-10-10 acceptance audit ([`audit-report-2026-10-10-rdr-072.md`](audit-report-2026-10-10-rdr-072.md)) verified the retained scope against live code, but #4013 remains open until the required rebuilt-agent-image verification record is available.
 
 ## Problem Statement
 

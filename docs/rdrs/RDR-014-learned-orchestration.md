@@ -8,7 +8,7 @@
 - **Status**: Implemented
 - **Type**: Architecture
 - **Priority**: Medium
-- **Related Issues**: N/A (future enhancement)
+- **Related Issues**: #2704, #3183
 - **Related RDRs**: RDR-002 (Workflow Orchestration), RDR-009 (Prompt Evolution)
 
 ## Implementation Status

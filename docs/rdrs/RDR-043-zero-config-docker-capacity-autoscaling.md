@@ -7,6 +7,7 @@
 - **Date**: 2026-06-28
 - **Status**: Implemented
 - **Type**: Operations + Architecture
+- **Related Issues**: #2726, #2727, #2728, #2729, #2730, #2731, #2732, #3182
 - **Priority**: Medium
 - **Related RDRs**: RDR-011 (Observability), RDR-019 (Remote Container Execution), RDR-020 (Service Container Architecture), RDR-033 (Worker Pool Scaling Algorithm)
 - **Related Tests**: Container metrics tests, queue processor tests, scaling advisor tests, Docker backend tests, capacity-management system tests

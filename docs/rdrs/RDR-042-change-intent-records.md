@@ -8,7 +8,7 @@
 - **Status**: Implemented
 - **Type**: Process + Architecture
 - **Priority**: Medium
-- **Related Issues**: #3162 (closeout), #2695 (phase 1), #2696 (phase 2), #2697 (original phase 3), #2740 (phase 1 implementation), #2739 (phase 2 implementation), #2761 (phase 3 implementation claim), #3213 (remaining phase 3 issue-enhancement gap)
+- **Related Issues**: #3162 (closeout), #2695 (phase 1), #2696 (phase 2), #2697 (original phase 3), [PR 2740](https://github.com/viamin/paid/pull/2740) (phase 1 implementation), [PR 2739](https://github.com/viamin/paid/pull/2739) (phase 2 implementation), [PR 2761](https://github.com/viamin/paid/pull/2761) (phase 3 implementation claim), #3213 (remaining phase 3 issue-enhancement gap)
 - **Related Tests**: Knowledge artifact integration tests, context bundle tests, decision record collector tests
 
 ## Implementation Status

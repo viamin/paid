@@ -2,7 +2,7 @@
 
 **Status**: Implemented
 **Date**: 2026-04-17
-**Issue**: #726
+**Related Issues**: #726, #3186 (advisory algorithm, simulator, and LID backfill)
 
 > Originally numbered RDR-024. Renumbered to RDR-033 to resolve collision with RDR-024 (Multi-Tenancy Isolation Strategy).
 
