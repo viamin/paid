@@ -244,3 +244,24 @@ the RDR-070 shadow-mode guard from being treated as fully satisfied and prevent
 closing #4309. The audit preserves the existing policy snapshots and active
 runs and records the exact evidence in
 [`audit-report-2026-10-22-human-centered-inbox-epic.md`](audit-report-2026-10-22-human-centered-inbox-epic.md).
+
+## 2026-10-22 C71 Closeout
+
+Closeout issue [#4324](https://github.com/viamin/paid/issues/4324) (C71) ran
+its own RDR-071-scoped audit, re-executing the focused suite directly in this
+session against a reachable database (292 examples, 0 failures). Every
+`CONFIDENCE-DELIVERY-*` claim except `002` and `013` has concrete code/spec
+evidence; the reused RDR-066/067 approval-gated suite (`release_spec.rb`,
+`mark_approved_spec.rb`, `approval_readiness_spec.rb`) passes unchanged and is
+not claimed as RDR-071 evidence. See
+[`audit-report-2026-10-22-rdr-071.md`](audit-report-2026-10-22-rdr-071.md) for
+the criterion-by-criterion table, the behavioral-checklist results, and the
+remaining-gap ownership ([#4319](https://github.com/viamin/paid/issues/4319)
+P10, [#4321](https://github.com/viamin/paid/issues/4321) P12,
+[#4323](https://github.com/viamin/paid/issues/4323) C70).
+
+This closeout does not close #4324: C71 depends on P12, C69, and C70, and all
+three remain open with owned gaps. It also does not close #4309 — it tracks
+the epic and documents that #4309 was closed in error by
+[PR #4567](https://github.com/viamin/paid/pull/4567) on 2026-10-22, contrary
+to that PR's own bundled audit conclusion and the unresolved gaps above.
