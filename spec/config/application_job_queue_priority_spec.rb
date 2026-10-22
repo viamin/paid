@@ -41,6 +41,7 @@ RSpec.describe ApplicationJob, :no_db do
         AppleVerificationRetryJob
         AppleVerificationWithheldRunSweepJob
         AppleVerificationTimeoutJob
+        ApplyRemediationDecisionJob
         AuditEventRetentionJob
         BillingPeriodManagementJob
         DependencyBackfillJob

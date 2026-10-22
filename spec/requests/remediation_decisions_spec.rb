@@ -27,6 +27,16 @@ RSpec.describe "RemediationDecisions" do
       expect(response.body).to include("Runner #42")
       expect(response.body).to include(decision.root_cause)
     end
+
+    # @spec RUN-OBSTACLE-004
+    it "hides the apply and dismiss controls from a member who cannot update" do
+      sign_in create(:user, :member, account: account)
+
+      get remediation_decision_path(decision)
+
+      expect(response.body).not_to include(apply_remediation_decision_path(decision))
+      expect(response.body).not_to include(dismiss_remediation_decision_path(decision))
+    end
   end
 
   # @spec RUN-OBSTACLE-004

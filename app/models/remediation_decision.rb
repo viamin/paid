@@ -30,6 +30,8 @@ class RemediationDecision < ApplicationRecord
   validates :last_diagnosis_attempt_at, presence: true
   validates :pre_remediation_failure_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
   validates :post_remediation_failure_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :pre_remediation_exposure_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
+  validates :post_remediation_exposure_count, numericality: { only_integer: true, greater_than_or_equal_to: 0 }, allow_nil: true
 
   scope :recent, -> { order(created_at: :desc, id: :desc) }
   scope :applied, -> { where(status: "applied") }
