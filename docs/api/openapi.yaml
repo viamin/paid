@@ -384,6 +384,9 @@ components:
       schema: {type: integer}
     ChatInvestigationId:
       name: id
+      in: path
+      required: true
+      schema: {type: integer}
     ChatDiagramId:
       name: diagram_id
       in: path
