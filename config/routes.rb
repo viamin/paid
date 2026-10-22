@@ -34,6 +34,8 @@ Rails.application.routes.draw do
     post :mark_all_read, on: :collection
   end
   resources :remediation_decisions, only: [ :show ] do
+    post :apply, on: :member
+    post :dismiss, on: :member
     post :revert, on: :member
   end
 
@@ -415,6 +417,9 @@ Rails.application.routes.draw do
           resources :investigations, controller: "chat_investigations", only: %i[index create show] do
             post :cancel, on: :member
           end
+          resources :diagrams, controller: "chat_diagrams", only: [] do
+            resources :comments, controller: "chat_diagram_comments", only: :create
+          end
         end
       end
     end
@@ -484,6 +489,9 @@ Rails.application.routes.draw do
       member do
         post :resolve
       end
+    end
+    resources :chat_diagrams, only: [] do
+      resources :comments, controller: "chat_diagram_comments", only: :create
     end
   end
 

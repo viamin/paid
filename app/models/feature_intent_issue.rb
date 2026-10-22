@@ -9,6 +9,11 @@ class FeatureIntentIssue < ApplicationRecord
   belongs_to :feature_intent
   belongs_to :issue
   has_one :prerequisite_mapping, class_name: "FeatureIntentIssuePrerequisiteMapping", dependent: :destroy
+  has_many :feature_intent_issue_dependencies, dependent: :destroy
+  has_many :in_tree_dependencies, through: :feature_intent_issue_dependencies,
+    source: :depends_on_feature_intent_issue
+  has_many :reverse_feature_intent_issue_dependencies, class_name: "FeatureIntentIssueDependency",
+    foreign_key: :depends_on_feature_intent_issue_id, dependent: :destroy, inverse_of: :depends_on_feature_intent_issue
 
   validates :issue_id, uniqueness: { scope: :feature_intent_id }
   validates :release_state, inclusion: { in: RELEASE_STATES }

@@ -39,24 +39,32 @@ prefix: PROJECT-READINESS
   `Projects::Readiness::Detectors::Godot`.
   *Test:* `spec/services/projects/readiness_spec.rb`.
 
-- [x] **PROJECT-READINESS-005** — When an enabled TDD project's persisted
-  readiness snapshot has one or more gaps, the system SHALL surface exactly one
-  project-backed `project_setup_pending` Inbox entry to authorized operators,
-  including every stored gap's description and evidence; it SHALL not require
-  `auto_pick_enabled`, and a satisfied snapshot SHALL not appear.
+- [x] **PROJECT-READINESS-005** — When a project's enabled development or
+  verification capability has one or more persisted readiness gaps, the system
+  SHALL surface exactly one project-backed `project_setup_pending` Inbox entry
+  to authorized operators, including every stored gap's description and
+  evidence; it SHALL not require `auto_pick_enabled`, and a satisfied snapshot
+  SHALL not appear. The Inbox badge and availability filters SHALL use the
+  queue's eligibility, and the setup detail SHALL attribute the gap to its
+  actual blocking capability.
   *Code:* `Inbox::Queue`, `Inbox::Count`, `Inbox::Availability`.
-  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
-  `spec/services/inbox/availability_spec.rb`.
+  *Test:* `spec/models/project_spec.rb`, `spec/services/inbox/queue_spec.rb`,
+  `spec/services/inbox/count_spec.rb`, `spec/services/inbox/availability_spec.rb`.
 
 - [x] **PROJECT-READINESS-006** — When a readiness evaluation records a gap
   set different from the project's prior snapshot, the system SHALL persist the
   result and invalidate the Inbox cache. It SHALL queue re-evaluation after a
-  TDD-mode setting change and after a completed run with a result commit, but
-  SHALL not evaluate during Inbox polling.
+  TDD-mode or verification setting change, after a project-service-container
+  association change, after a service rename on an associated container, and
+  after a completed run with a result commit, but SHALL not evaluate during
+  Inbox polling.
   *Code:* `Projects::Readiness::Record`, `EvaluateProjectReadinessJob`,
-  `Project`, `AgentRun`.
+  `Project`, `ProjectServiceContainer`, `ServiceContainer`, `AgentRun`.
   *Test:* `spec/services/projects/readiness/record_spec.rb`,
-  `spec/models/project_spec.rb`, `spec/models/agent_run_spec.rb`.
+  `spec/models/project_spec.rb`, `spec/models/project_service_container_spec.rb`,
+  `spec/models/service_container_spec.rb`,
+  `spec/requests/projects/service_containers_spec.rb`,
+  `spec/models/agent_run_spec.rb`.
 
 - [x] **PROJECT-READINESS-007** — When an authorized operator explicitly
   triggers bootstrap from a current `project_setup_pending` Inbox entry, the
@@ -111,3 +119,28 @@ prefix: PROJECT-READINESS
   `inbox-detail` Turbo Frame.
   *Code:* `dashboard/_inbox_detail_project_setup_pending`.
   *Test:* `spec/requests/inbox_spec.rb`.
+
+- [x] **PROJECT-READINESS-011** — When interactive verification is enabled,
+  the system SHALL report checkout-backed setup gaps for invalid verification
+  configuration, an unavailable applicable start command, and configured
+  services absent from the project. It SHALL add no verification gap when the
+  capability is disabled. Browser connectivity and transient service health
+  SHALL remain run-scoped observations, never durable repository gaps.
+  *Code:* `Projects::Readiness::Rules::Verification`,
+  `AgentRuns::VerificationResultRecorder`.
+  *Test:* `spec/models/project_spec.rb`, `spec/services/projects/readiness_spec.rb`,
+  `spec/services/agent_runs/verification_result_recorder_spec.rb`.
+
+- [x] **PROJECT-READINESS-012** — When verification setup fails at runtime,
+  the system SHALL retain its reason, agent run, checkout revision, and
+  observed time and show the newest such observation — ordered by that recorded
+  observation time rather than the run's creation time — alongside the related
+  actionable setup gap. A merged authorized bootstrap PR SHALL clear
+  configuration-derived gaps only after target-branch re-evaluation; it SHALL
+  not trigger automatic bootstrap or retry.
+  *Code:* `AgentRuns::VerificationResultRecorder`,
+  `Inbox::LatestVerificationSetupObservation`, `Inbox::Queue`,
+  `dashboard/_inbox_detail_project_setup_pending`.
+  *Test:* `spec/services/agent_runs/verification_result_recorder_spec.rb`,
+  `spec/services/inbox/latest_verification_setup_observation_spec.rb`,
+  `spec/services/inbox/queue_spec.rb`, `spec/services/projects/readiness/record_spec.rb`.

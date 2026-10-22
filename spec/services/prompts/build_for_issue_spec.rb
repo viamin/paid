@@ -415,6 +415,32 @@ RSpec.describe Prompts::BuildForIssue do
       end
     end
 
+    context "when the target is a Godot project" do
+      let(:project_with_language) do
+        OpenStruct.new(
+          full_name: "owner-1/repo-1",
+          allowed_github_usernames: [ "viamin" ],
+          service_containers: service_containers_relation,
+          detected_language: "gdscript"
+        ).tap do |p|
+          def p.trusted_github_user?(login)
+            return false if login.nil?
+
+            allowed_github_usernames.any? { |u| u.downcase == login.downcase }
+          end
+        end
+      end
+
+      it "does not ask an agent to install Ruby tooling" do # @spec POLYGLOT-TEST-012
+        prompt = described_class.call(issue: issue, project: project_with_language)
+
+        expect(prompt).to include("No test command configured")
+        expect(prompt).to include("No lint command configured")
+        expect(prompt).not_to include("bundle exec rspec")
+        expect(prompt).not_to include("bundle exec rubocop")
+      end
+    end
+
     context "when issue is from an untrusted user" do
       let(:untrusted_issue) do
         OpenStruct.new(

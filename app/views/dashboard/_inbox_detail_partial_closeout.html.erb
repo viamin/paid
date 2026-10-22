@@ -126,7 +126,9 @@
     <% end %>
 
     <% if policy(entry.project).run_agent? %>
-        <%= form_with url: link_prerequisite_project_agent_runs_path(entry.project), local: true, class: "flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 sm:flex-row sm:items-end" do |form| %>
+        <%= form_with url: link_prerequisite_project_agent_runs_path(entry.project),
+              data: { turbo_frame: "_top" },
+              class: "flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 sm:flex-row sm:items-end" do |form| %>
           <%= form.hidden_field :issue_id, value: issue.id %>
           <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
           <div class="flex flex-1 flex-col gap-1">
@@ -188,7 +190,9 @@
           <li><strong>Closing the GitHub issue</strong> only happens through a final pull request a human merges.</li>
         </ul>
       </details>
-      <%= form_with url: resolve_closeout_project_agent_runs_path(entry.project), local: true, class: "flex flex-col gap-2" do |form| %>
+      <%= form_with url: resolve_closeout_project_agent_runs_path(entry.project),
+            data: { turbo_frame: "_top" },
+            class: "flex flex-col gap-2" do |form| %>
         <%= form.hidden_field :issue_id, value: issue.id %>
         <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
         <%= form.label :reason, "Completion rationale", for: "closeout_reason_#{issue.id}", class: "text-sm font-medium text-gray-700" %>
@@ -230,7 +234,9 @@
           <li><strong>human-only evaluation:</strong> only when a human decision gates the work — the run should stop and report, not wait.</li>
         </ul>
       </details>
-      <%= form_with url: request_continuation_project_agent_runs_path(entry.project), local: true, class: "flex flex-col gap-2" do |form| %>
+      <%= form_with url: request_continuation_project_agent_runs_path(entry.project),
+            data: { turbo_frame: "_top" },
+            class: "flex flex-col gap-2" do |form| %>
         <%= form.hidden_field :issue_id, value: issue.id %>
         <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
         <%= form.label :reason, "Reason for continuation", for: "continuation_reason_#{issue.id}", class: "text-sm font-medium text-gray-700" %>

@@ -9,9 +9,10 @@ module AgentRunPatterns
       new(...).call
     end
 
-    def initialize(decision:, pattern:)
+    def initialize(decision:, pattern: nil, applied_by: nil)
       @decision = decision
       @pattern = pattern
+      @applied_by = applied_by
     end
 
     def call
@@ -37,7 +38,7 @@ module AgentRunPatterns
           raise ArgumentError, "Unsupported remediation action #{decision.proposed_action.inspect}"
         end
 
-        decision.update!(status: "applied", applied_at: Time.current)
+        decision.update!(status: "applied", applied_at: Time.current, applied_by: applied_by)
         record_audit_event
       end
 
@@ -45,7 +46,7 @@ module AgentRunPatterns
     rescue => e
       decision.update!(status: "failed") if decision.persisted? && decision.status == "proposed"
       Rails.logger.warn(
-        message: "agent_run_patterns.auto_apply_failed",
+        message: "agent_run_patterns.apply_failed",
         remediation_decision_id: decision.id,
         proposed_action: decision.proposed_action,
         error_class: e.class.name,
@@ -56,7 +57,7 @@ module AgentRunPatterns
 
     private
 
-    attr_reader :decision, :pattern
+    attr_reader :decision, :pattern, :applied_by
 
     def apply_mark_runner_unavailable!
       runner = find_runner!
@@ -184,6 +185,7 @@ module AgentRunPatterns
       Audit::RecordEvent.call(
         account: decision.account,
         action: "self_heal.remediation_applied",
+        actor: applied_by,
         subject: subject,
         metadata: {
           remediation_action: decision.proposed_action,

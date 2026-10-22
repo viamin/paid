@@ -1186,6 +1186,24 @@ RSpec.describe ProcessRunQueueJob do
       expect(queued_run.error_message).to include("revision changed before dispatch")
     end
 
+    # @spec FEATURE-APPROVAL-024 — runs queued before approved_design_revision
+    # existed have it nil while base_commit_sha already carries the admitted
+    # revision; dispatch must not treat that nil as a provenance mismatch.
+    it "admits a queued run with legacy nil approved_design_revision matching the admitted revision" do
+      project = create(:project)
+      issue = create(:issue, project: project)
+      feature = create(:feature_intent, project: project, approved_design_revision: "a" * 40)
+      create(:feature_intent_issue, feature_intent: feature, issue: issue)
+      queued_run = create(:agent_run, :queued, project: project, issue: issue, goal: "create_pr")
+      expect(queued_run.base_commit_sha).to eq("a" * 40)
+      queued_run.update_columns(approved_design_revision: nil)
+
+      result = job.send(:start_claimed_run, queued_run)
+
+      expect(result).to be(true)
+      expect(queued_run.reload.status).to eq("running")
+    end
+
     # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-024
     it "admits a resumed non-feature create PR run with its prior checkout revision" do
       issue = create(:issue)

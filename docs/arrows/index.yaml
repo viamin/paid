@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-13
+last_updated: 2026-10-21
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,15 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  agent-run-obstacle-proposals:
+    title: Agent-run Obstacle Proposals
+    path: docs/intent/agent-run-obstacle-proposals/agent-run-obstacle-proposals-design.md
+    specs: docs/intent/agent-run-obstacle-proposals/agent-run-obstacle-proposals-specs.md
+    parent: PAID
+    taxonomy: intelligence
+    status: OK
+    audited: 2026-10-21
+    next: "Reuse the bounded proposal contract in future RDR-075 maintenance scheduling without expanding repair authority."
   project-readiness:
     title: Settings-Aware Project Readiness
     path: docs/intent/project-readiness/project-readiness-design.md

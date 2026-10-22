@@ -3,7 +3,7 @@
 require "rails_helper"
 require "tmpdir"
 
-# @spec PROJECT-READINESS-006
+# @spec PROJECT-READINESS-006 PROJECT-READINESS-012
 RSpec.describe Projects::Readiness::Record do
   around do |example|
     original_store = Rails.cache
@@ -40,5 +40,21 @@ RSpec.describe Projects::Readiness::Record do
 
       expect(Dashboard::CacheVersion.current(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)).to eq(first_version)
     end
+  end
+
+  it "clears a repaired verification configuration on the next checkout evaluation" do
+    project = create(:project, tdd_mode: "off", screenshot_settings: { "verification_enabled" => true })
+
+    Dir.mktmpdir do |repo_path|
+      described_class.call(project:, repo_path:)
+      FileUtils.mkdir_p(File.join(repo_path, ".paid"))
+      FileUtils.mkdir_p(File.join(repo_path, "bin"))
+      File.write(File.join(repo_path, ".paid/screenshots.yml"), "routes:\n  - path: /\n    name: Home\n")
+      File.write(File.join(repo_path, "bin/dev"), "#!/bin/sh\n")
+
+      described_class.call(project:, repo_path:)
+    end
+
+    expect(project.reload.readiness_gaps).to be_empty
   end
 end

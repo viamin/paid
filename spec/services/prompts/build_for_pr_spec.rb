@@ -70,7 +70,7 @@ RSpec.describe Prompts::BuildForPr do
     expect(priority_list).to eq(expected_lines.join("\n"))
   end
 
-  let(:project) { create(:project, allowed_github_usernames: [ "trusteduser" ]) }
+  let(:project) { create(:project, primary_language: "Ruby", allowed_github_usernames: [ "trusteduser" ]) }
   let(:github_client) { instance_double(GithubClient) }
   let(:user_settings) { OpenStruct.new(max_prompt_comments: 20, max_comment_length: 2000) }
 
@@ -530,6 +530,9 @@ RSpec.describe Prompts::BuildForPr do
       expect(prompt).to include("Merge Conflicts")
       expect(prompt).to include("git merge origin/main")
       expect(prompt).to include("resolve all conflicts")
+      expect(prompt).to include("Repair scope is limited to integrating `main` and resolving")
+      expect(prompt).to include("Do not add unrelated dependencies, tooling, product")
+      expect(prompt).to include("stop and report the specific path and reason")
     end
   end
 

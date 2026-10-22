@@ -23,7 +23,8 @@ RSpec.describe Committee::Drivers do
       "/chat/sessions/{session_id}/messages/{id}/resolve",
       "/chat/sessions/{session_id}/investigations",
       "/chat/sessions/{session_id}/investigations/{id}",
-      "/chat/sessions/{session_id}/investigations/{id}/cancel"
+      "/chat/sessions/{session_id}/investigations/{id}/cancel",
+      "/chat/sessions/{session_id}/diagrams/{diagram_id}/comments"
     ]
   end
 
@@ -87,7 +88,8 @@ RSpec.describe Committee::Drivers do
       "/chat/sessions/{session_id}/messages/{id}/resolve" => { "post" => [ "chat" ] },
       "/chat/sessions/{session_id}/investigations" => { "get" => [ "chat" ], "post" => [ "chat" ] },
       "/chat/sessions/{session_id}/investigations/{id}" => { "get" => [ "chat" ] },
-      "/chat/sessions/{session_id}/investigations/{id}/cancel" => { "post" => [ "chat" ] }
+      "/chat/sessions/{session_id}/investigations/{id}/cancel" => { "post" => [ "chat" ] },
+      "/chat/sessions/{session_id}/diagrams/{diagram_id}/comments" => { "post" => [ "chat" ] }
     }
   end
 end

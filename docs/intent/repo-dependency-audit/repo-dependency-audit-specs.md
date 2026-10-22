@@ -19,8 +19,9 @@
 - [x] **REPO-DEPENDENCY-AUDIT-002** — When `bin/audit` runs `yarn audit`
   and Yarn itself fails to complete (registry error, network error,
   invalid response, or any other non-zero exit that is not a clean
-  advisory report), the wrapper SHALL exit non-zero with a message that
-  distinguishes the scanner failure from a vulnerability finding. A
+  advisory report), the wrapper SHALL retry the audit up to three total
+  attempts with bounded increasing delays, then exit non-zero with a message
+  that distinguishes the scanner failure from a vulnerability finding. A
   scanner failure SHALL NOT be reported as "All security checks passed."
   *Tests:* `spec/scripts/audit_spec.rb`, `spec/scripts/yarn_audit_check_spec.rb`.
   *Code:* `bin/audit`, `bin/yarn-audit-check`.

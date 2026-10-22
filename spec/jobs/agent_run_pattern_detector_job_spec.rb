@@ -13,8 +13,7 @@ RSpec.describe AgentRunPatternDetectorJob, :no_db do
       allow(AgentRunPatterns::Detect).to receive(:call).and_return([])
       allow(AgentRunPatterns::Diagnose).to receive(:call)
       allow(AgentRunPatterns::DailyDiagnosisBudget).to receive(:remaining_for).and_return(5)
-      allow(AgentRunPatterns::RecordRemediationDecision).to receive(:call).and_return(double(id: 99))
-      allow(AgentRunPatterns::AutoApply).to receive(:call).and_return(double(id: 99))
+      allow(AgentRunPatterns::RecordRemediationDecision).to receive(:call).and_return(double(id: 99, dismissed?: false))
       allow(AgentRunPatterns::Notify).to receive(:call)
       allow(TenantContext).to receive(:with_system_access).and_yield
       allow(Account).to receive(:find_each).and_yield(account)
@@ -80,7 +79,10 @@ RSpec.describe AgentRunPatternDetectorJob, :no_db do
           confidence: 1.0,
           proposed_action: "file_issue",
           action_target: { "type" => "project", "id" => "7" },
-          evidence_pointers: [ "legacy_messages[0]" ]
+          evidence_pointers: [ "legacy_messages[0]" ],
+          obstacle_kind: "unknown",
+          validation_plan: "Review the proposal.",
+          uncertainty: "Evidence is limited."
         )
       end
 
@@ -99,17 +101,13 @@ RSpec.describe AgentRunPatternDetectorJob, :no_db do
         )
       end
 
-      it "records a remediation decision for each fingerprint" do
+      it "records a remediation proposal without invoking automatic repair" do
         described_class.perform_now
 
         expect(AgentRunPatterns::RecordRemediationDecision).to have_received(:call).with(
           account: account,
           pattern: pattern,
           diagnosis: diagnosis
-        )
-        expect(AgentRunPatterns::AutoApply).to have_received(:call).with(
-          decision: anything,
-          pattern: pattern
         )
       end
 
@@ -121,6 +119,20 @@ RSpec.describe AgentRunPatternDetectorJob, :no_db do
           patterns: [ pattern ],
           diagnoses: hash_including("fp-1" => diagnosis),
           decisions: hash_including("fp-1")
+        )
+      end
+
+      # @spec RUN-OBSTACLE-003
+      it "excludes dismissed decisions from the notification payload" do
+        allow(AgentRunPatterns::RecordRemediationDecision).to receive(:call).and_return(double(id: 99, dismissed?: true))
+
+        described_class.perform_now
+
+        expect(AgentRunPatterns::Notify).to have_received(:call).with(
+          account: account,
+          patterns: [ pattern ],
+          diagnoses: {},
+          decisions: {}
         )
       end
 

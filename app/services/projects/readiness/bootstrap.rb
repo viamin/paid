@@ -43,7 +43,7 @@ module Projects
       end
 
       def create_run!
-        raise NotReadyError, "This project no longer needs bootstrap setup." unless project.tdd_readiness_blocked?
+        raise NotReadyError, "This project no longer needs bootstrap setup." unless project.readiness_blocked?
         raise ActiveRunError, "A bootstrap attempt is already in progress for this project." if active_run_exists?
 
         runner_id, agent_type = AgentRuns::RunnerResolver.call(project:, goal: "bootstrap_readiness")

@@ -132,7 +132,7 @@ module AgentRuns
         "app_log_tail" => app_log_tail,
         "evidence" => evidence_for(hash),
         "recorded_at" => Time.current.iso8601
-      }.compact
+      }.compact.then { |result| add_readiness_observation(result) }
     end
 
     # Agent-authored JSON is a useful report, but it cannot attest to its own
@@ -386,6 +386,24 @@ module AgentRuns
         "skipped" => "Interactive verification was skipped.",
         "not_run" => "Interactive verification did not run."
       }.fetch(status)
+    end
+
+    # @spec PROJECT-READINESS-012
+    def add_readiness_observation(result)
+      return result unless result["reason"].in?(readiness_setup_reasons)
+
+      result.merge(
+        "readiness_observation" => {
+          "reason" => result["reason"],
+          "agent_run_id" => @agent_run.id,
+          "checkout_revision" => @agent_run.result_commit_sha.presence || @agent_run.base_commit_sha,
+          "observed_at" => result.fetch("recorded_at")
+        }.compact
+      )
+    end
+
+    def readiness_setup_reasons
+      %w[app_start_command_unavailable verification_configuration_invalid]
     end
 
     def app_log_tail

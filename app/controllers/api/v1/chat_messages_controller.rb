@@ -16,7 +16,7 @@ module Api
       # @spec MOBILE-API-012
       def index
         authorize ChatMessage.new(chat_session: @chat_session), :index?, policy_class: ChatMessagePolicy
-        messages = policy_scope(ChatMessage).where(chat_session: @chat_session)
+        messages = policy_scope(ChatMessage).where(chat_session: @chat_session).includes(:chat_diagram)
         messages = messages.where("chat_messages.id < ?", params[:before]) if params[:before].present?
         page = messages.order(created_at: :desc, id: :desc).limit(message_limit + 1).to_a
         listed = page.first(message_limit).reverse
@@ -211,7 +211,8 @@ module Api
         { id: message.id, external_id: message.external_id, role: message.role, content: message.content, model: message.model,
           tool_call_id: message.tool_call_id, tool_name: message.tool_name, tool_arguments: message.tool_arguments,
           tool_result: message.tool_result, tool_status: message.tool_status, tokens_input: message.tokens_input,
-          tokens_output: message.tokens_output, created_at: message.created_at }
+          tokens_output: message.tokens_output, created_at: message.created_at,
+          diagram: ChatDiagrams::Serializer.call(message.chat_diagram) }
       end
     end
   end

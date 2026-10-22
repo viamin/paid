@@ -226,7 +226,7 @@ module Inbox
 
     # @spec PROJECT-READINESS-005
     def project_setup_pending_by_project
-      Project.where(id: visible_project_ids).select(&:tdd_readiness_blocked?).to_h { |project| [ project.id, 1 ] }
+      Project.where(id: visible_project_ids).select(&:readiness_blocked?).to_h { |project| [ project.id, 1 ] }
     end
 
     # @spec DESIGN-RECONCILIATION-001

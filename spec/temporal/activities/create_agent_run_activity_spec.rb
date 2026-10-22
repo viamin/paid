@@ -5,7 +5,7 @@ require "ostruct"
 
 RSpec.describe Activities::CreateAgentRunActivity do
   let(:activity) { described_class.new }
-  let(:project) { create(:project) }
+  let(:project) { create(:project, primary_language: "Ruby") }
   let(:issue) { create(:issue, project: project) }
   let(:claude_runner) { project.created_by.runners.find_by!(runner_key: "claude") }
   let(:codex_runner) { create(:runner, user: project.created_by, runner_key: "codex") }

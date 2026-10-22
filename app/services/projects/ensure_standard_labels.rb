@@ -50,10 +50,11 @@ module Projects
   class EnsureStandardLabels
     LABEL_DEFINITIONS = {
       generated: { color: "0e8a16", description: "Created by Paid", kind: :status },
-      automation: { color: "1d76db", description: "Triggers Paid automation for this issue; remove to opt out.", kind: :activation },
+      automation: { color: "1d76db", description: "Triggers Paid automation for this PR; remove to opt out.", kind: :activation },
       enhance_issue_needs_input: { color: "d876e3", description: "Paid needs answers before enhancing this issue again", kind: :status },
       enhance_issue_enhanced: { color: "0e8a16", description: "Paid has added implementation context to this issue", kind: :status },
       paid_in_full: { color: "0052cc", description: "Activates Paid through PR for this issue; auto-merge still requires PR approval.", kind: :activation },
+      auto_pick: { color: "0052cc", description: "Activates Paid auto-pick for this issue when the project setting is off.", kind: :activation },
       auto_enhance: { color: "0052cc", description: "Activates issue enhancement for this item when the project setting is off.", kind: :activation },
       auto_merge_activation: { color: "0052cc", description: "Activates Paid auto-merge for this pull request when the project setting is off.", kind: :activation },
       auto_scan_prs_activation: { color: "0052cc", description: "Activates Paid PR scanning for this pull request when the project setting is off.", kind: :activation },
@@ -309,14 +310,15 @@ module Projects
 
     # Activation labels are resolved from the project's effective
     # feature_activation_labels map. By default the auto-pick entry resolves
-    # to automation_label_name — the same label configurable_labels already
-    # provisions with the :automation definition — so that entry is skipped
-    # when the names coincide, mirroring the needs_input dedupe: the label is
-    # claimed once, not reported as a cross-category collision.
+    # to automation_label_name, which configurable_labels already provisions
+    # with the issue-or-PR :automation definition. A separately configured
+    # auto-pick label instead receives the issue-only :auto_pick definition.
+    # The shared default is skipped so it is claimed once, not reported as a
+    # cross-category collision.
     def activation_label_definitions
       {
         "paid_in_full" => :paid_in_full,
-        "auto_pick" => :automation,
+        "auto_pick" => :auto_pick,
         "auto_enhance" => :auto_enhance,
         "auto_merge" => :auto_merge_activation,
         "auto_scan_prs" => :auto_scan_prs_activation,
