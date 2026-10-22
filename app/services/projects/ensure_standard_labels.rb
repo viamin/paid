@@ -50,7 +50,7 @@ module Projects
   class EnsureStandardLabels
     LABEL_DEFINITIONS = {
       generated: { color: "0e8a16", description: "Created by Paid", kind: :status },
-      automation: { color: "1d76db", description: "Triggers Paid automation for this issue or PR; remove to opt out.", kind: :activation },
+      automation: { color: "1d76db", description: "Triggers Paid automation for this PR; remove to opt out.", kind: :activation },
       enhance_issue_needs_input: { color: "d876e3", description: "Paid needs answers before enhancing this issue again", kind: :status },
       enhance_issue_enhanced: { color: "0e8a16", description: "Paid has added implementation context to this issue", kind: :status },
       paid_in_full: { color: "0052cc", description: "Activates Paid through PR for this issue; auto-merge still requires PR approval.", kind: :activation },
