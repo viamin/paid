@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe MarketplaceEntries::Resolver, :no_db do
   it "uses the preloaded rule collection instead of relation scopes for an automatically matched entry" do
-    project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -22,7 +22,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "does not auto-attach when automatic attachment is disabled" do
-    project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -38,7 +38,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "attaches automatic and team-default entries for opted-in users" do
-    project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -59,7 +59,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "does not attach unrelated team-default entries when the user also makes manual selections" do
-    project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -86,7 +86,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "upgrades to manual when the user explicitly selects an automatically matched entry" do
-    project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -103,7 +103,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "preserves explicit manual selection order when candidate entries are returned in a different order" do
-    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -121,7 +121,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "attaches an automatic entry without manual selection when auto-attach is enabled" do
-    project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -138,7 +138,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "attaches account-required automatic and team-default entries without per-entry manual selection" do
-    project = Struct.new(:id, :account_id, :full_name).new(12, 44, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -159,7 +159,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "preserves manual attachments when auto-attach is disabled" do
-    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries_with_manual
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -175,7 +175,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "treats an explicit empty manual selection as clearing manual attachments" do
-    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries_with_manual
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -190,7 +190,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "fails closed when a manually selected entry cannot be resolved for the run" do
-    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -205,7 +205,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "upgrades to manual when the user explicitly selects an entry that also matches automatic and team_default rules" do
-    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -228,7 +228,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "preserves explicit manual selection order when one selected entry already matched a rule" do
-    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -251,7 +251,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "prefers team-default over automatic when the same entry matches both rule modes" do
-    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -274,7 +274,7 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
   end
 
   it "memoizes persisted manual attachment ids when no manual ids were passed" do
-    project = Struct.new(:id, :full_name).new(12, "acme/repo")
+    project = project_double
     attachments = agent_run_marketplace_entries
     agent_run = Struct.new(:agent_type, :goal, :custom_prompt, :issue, :runner, :agent_run_marketplace_entries)
       .new("codex", "create_pr", "Implement the issue", nil, nil, attachments)
@@ -423,6 +423,26 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
       expect(resolver.call).to be_empty
     end
 
+    it "does not match when the label matches but the language condition does not" do # @spec TOOL-SIDECAR-003 # @spec TOOL-SIDECAR-004
+      conjunctive_rule = build_rule(
+        mode: "automatic",
+        enabled: true,
+        position: 0,
+        id: 16,
+        rationale: "Label and language scope",
+        conditions: { "issue_labels_includes_any" => [ "tooling" ], "languages_include_any" => [ "ruby" ] }
+      )
+      entry = build_entry(rules: [ conjunctive_rule ])
+      project = project_double(repo_profile: { "languages" => [ "javascript" ], "marker_files" => [] })
+      issue = issue_double(labels: [ "tooling" ])
+      agent_run = agent_run_for(project:, issue:)
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
+      allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+      expect(resolver.call).to be_empty
+    end
+
     it "treats an empty repo_files_include_any array as no constraint" do # @spec TOOL-SIDECAR-004
       empty_files_rule = build_rule(
         mode: "automatic",
@@ -441,19 +461,6 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
       allow(resolver).to receive(:candidate_entries).and_return([ entry ])
 
       expect(resolver.call.map(&:entry)).to eq([ entry ])
-    end
-
-    def project_double(repo_profile:)
-      Class.new do
-        def initialize(repo_profile)
-          @repo_profile = repo_profile
-        end
-
-        def account_id = 44
-        def id = 12
-        def full_name = "acme/repo"
-        def effective_repo_profile = @repo_profile
-      end.new(repo_profile)
     end
 
     def issue_double(labels:)
@@ -480,6 +487,19 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
         define_method(:runner) { nil }
       end.new
     end
+  end
+
+  def project_double(repo_profile: {})
+    Class.new do
+      def initialize(repo_profile)
+        @repo_profile = repo_profile
+      end
+
+      def account_id = 44
+      def id = 12
+      def full_name = "acme/repo"
+      def effective_repo_profile = @repo_profile
+    end.new(repo_profile)
   end
 
   def agent_run_marketplace_entries
