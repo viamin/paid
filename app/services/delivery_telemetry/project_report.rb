@@ -36,7 +36,7 @@ module DeliveryTelemetry
       return unless merged_pr
 
       create_feature_started_at = create_feature_started_at(feature)
-      approved_at = feature.feature_intent_approval_revisions.minimum(:approved_at)
+      approved_at = approval_time(feature)
       released_at = release_time(feature)
       merged_at = terminal_time(merged_pr)
 
@@ -90,16 +90,28 @@ module DeliveryTelemetry
     end
 
     def escaped_drift
-      rows = within_scope_merged_verdicts.map { |verdict| escaped_drift_row(verdict) }
+      verdicts = within_scope_merged_verdicts
+      feature_ids_by_issue = feature_ids_by_issue(verdicts)
+      amendment_times = amendment_times_for(verdicts, feature_ids_by_issue)
+      rows = verdicts.map { |verdict| escaped_drift_row(verdict, feature_ids_by_issue, amendment_times) }
       { project: aggregate_escaped_drift(rows), by_reviewer_model: escaped_drift_by_model(rows) }
     end
 
-    def escaped_drift_row(verdict)
+    def escaped_drift_row(verdict, feature_ids_by_issue, amendment_times)
       {
         reviewer_model: verdict.reviewer_model,
-        escaped: DesignAmendment.where(feature_intent_id: feature_ids_for(verdict.issue_id),
-          superseded_revision: verdict.approved_design_revision).where("created_at > ?", terminal_time(verdict.issue)).exists?
+        escaped: escaped_drift?(verdict, feature_ids_by_issue, amendment_times)
       }
+    end
+
+    def escaped_drift?(verdict, feature_ids_by_issue, amendment_times)
+      merged_at = terminal_time(verdict.issue)
+      return false unless merged_at
+
+      feature_ids_by_issue.fetch(verdict.issue_id, []).any? do |feature_id|
+        amended_at = amendment_times[[ feature_id, verdict.approved_design_revision ]]
+        amended_at && amended_at > merged_at
+      end
     end
 
     def aggregate_escaped_drift(rows)
@@ -139,12 +151,32 @@ module DeliveryTelemetry
     end
 
     def create_feature_started_at(feature)
-      AgentRun.where(project:, goal: "create_feature", issue_id: feature.issues.map(&:id)).minimum(:started_at)
+      create_feature_started_ats.fetch(feature.id, nil)
     end
 
     def release_time(feature)
-      AccountActivityEvent.where(account: project.account, action: "feature_intent.released", subject: feature).minimum(:created_at) ||
+      release_times.fetch(feature.id, nil) ||
         feature.approved_revision_recorded_at
+    end
+
+    def approval_time(feature)
+      feature.feature_intent_approval_revisions.filter_map(&:approved_at).min
+    end
+
+    def create_feature_started_ats
+      @create_feature_started_ats ||= earliest_run_starts_by_feature
+    end
+
+    def earliest_run_starts_by_feature
+      starts_by_issue = AgentRun.where(project:, goal: "create_feature", issue_id: feature_issue_ids).group(:issue_id).minimum(:started_at)
+      features.to_h do |feature|
+        [ feature.id, feature.issues.filter_map { |issue| starts_by_issue[issue.id] }.min ]
+      end
+    end
+
+    def release_times
+      @release_times ||= AccountActivityEvent.where(account: project.account, action: "feature_intent.released",
+        subject_type: "FeatureIntent", subject_id: feature_ids).group(:subject_id).minimum(:created_at)
     end
 
     def cleared_blocker_count(feature)
@@ -171,8 +203,25 @@ module DeliveryTelemetry
         .order(:issue_id, evaluated_at: :desc, id: :desc)
     end
 
-    def feature_ids_for(issue_id)
-      FeatureIntentIssue.where(issue_id:).select(:feature_intent_id)
+    def feature_ids_by_issue(verdicts)
+      FeatureIntentIssue.where(issue_id: verdicts.map(&:issue_id)).pluck(:issue_id, :feature_intent_id)
+        .group_by(&:first).transform_values { |pairs| pairs.map(&:second) }
+    end
+
+    def amendment_times_for(verdicts, feature_ids_by_issue)
+      feature_ids = feature_ids_by_issue.values.flatten
+      return {} if feature_ids.empty?
+
+      DesignAmendment.where(feature_intent_id: feature_ids, superseded_revision: verdicts.map(&:approved_design_revision))
+        .group(:feature_intent_id, :superseded_revision).maximum(:created_at)
+    end
+
+    def feature_ids
+      @feature_ids ||= features.map(&:id)
+    end
+
+    def feature_issue_ids
+      @feature_issue_ids ||= features.flat_map { |feature| feature.issues.map(&:id) }
     end
 
     def terminal_pull_requests

@@ -38,6 +38,19 @@ RSpec.describe DeliveryTelemetry::ProjectReport do
       )
     end
 
+    # @spec DELIVERY-TELEMETRY-001, DELIVERY-TELEMETRY-003
+    it "keeps cycle and escaped-drift query counts constant as feature count grows" do
+      single_feature_project = create(:project)
+      multi_feature_project = create(:project)
+      create_telemetry_feature(single_feature_project)
+      3.times { create_telemetry_feature(multi_feature_project) }
+
+      single_feature_queries = count_queries { described_class.call(project: single_feature_project) }
+      multi_feature_queries = count_queries { described_class.call(project: multi_feature_project) }
+
+      expect(multi_feature_queries).to eq(single_feature_queries)
+    end
+
     # @spec DELIVERY-TELEMETRY-003
     it "uses only the latest verdict for each merged PR" do
       project = create(:project)
@@ -93,6 +106,11 @@ RSpec.describe DeliveryTelemetry::ProjectReport do
 
     def completed_feature_with_stale_approval
       project = create(:project)
+      feature, implementation_pr = create_telemetry_feature(project)
+      [ project, feature, implementation_pr ]
+    end
+
+    def create_telemetry_feature(project)
       feature = create(:feature_intent, project:, status: "released", approved_at: 4.days.ago,
         approved_revision_recorded_at: 3.days.ago, approved_pr_heads: { "7" => "approved-head" })
       create(:feature_intent_approval_revision, feature_intent: feature, approved_at: 4.days.ago,
@@ -103,7 +121,11 @@ RSpec.describe DeliveryTelemetry::ProjectReport do
       feature.feature_intent_issues.create!(issue: implementation_pr)
       create(:agent_run, project:, issue: implementation_pr, goal: "create_feature", started_at: 6.days.ago)
       AccountActivityEvent.create!(account: project.account, action: "feature_intent.released", subject: feature, created_at: 3.days.ago)
-      [ project, feature, implementation_pr ]
+      verdict = create(:intent_conformance_verdict, project:, issue: implementation_pr, reviewer_model: "reviewer-a",
+        approved_design_revision: "approved-head", evaluated_at: 3.days.ago)
+      create(:design_amendment, feature_intent: feature, project:, superseded_revision: verdict.approved_design_revision,
+        created_at: 1.day.ago)
+      [ feature, implementation_pr ]
     end
 
     def resolve_question(feature)
