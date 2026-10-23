@@ -1,7 +1,10 @@
 # RDR-075 General Maintenance Runs — Blocked Closeout Audit — 2026-10-23
 
 - **Draft design:** [PR #4308](https://github.com/viamin/paid/pull/4308) (open, unmerged)
-- **Closeout issue:** [#4334](https://github.com/viamin/paid/issues/4334)
+- **Tracks:** [#4334](https://github.com/viamin/paid/issues/4334), which remains
+  open to own the final cross-recipe evaluation and guard-removal decision
+- **Dependency:** [#4333](https://github.com/viamin/paid/issues/4333) (M06) must
+  ship before that final evaluation can run
 - **Tracks:** [#4326](https://github.com/viamin/paid/issues/4326) — only the
   umbrella's own final acceptance audit may close it
 - **Status decision:** **Blocked.** No RDR-075 runtime behavior is shipped, so
@@ -56,7 +59,7 @@ No repository authority or runtime surface satisfies an RDR-075 criterion:
 - [`app/models/agent_run.rb:34`](../../app/models/agent_run.rb#L34) declares
   `GOALS = %w[create_pr create_issue review enhance_issue analyze_issue
   lid_planning create_feature bootstrap_readiness]`; goal inclusion validation at
-  [`app/models/agent_run.rb:287`](../../app/models/agent_run.rb#L287) accepts no
+  [`app/models/agent_run.rb:286`](../../app/models/agent_run.rb#L286) accepts no
   maintenance goal.
   [`spec/models/agent_run_spec.rb:65`](../../spec/models/agent_run_spec.rb#L65)
   and `spec/models/agent_run_spec.rb:4764` assert that closed goal set — an
@@ -76,8 +79,9 @@ No repository authority or runtime surface satisfies an RDR-075 criterion:
   capability is at
   [`app/controllers/projects/agent_runs_controller.rb:156`](../../app/controllers/projects/agent_runs_controller.rb#L156)-`222`.
 - Repository-wide search on 2026-10-23: **zero** occurrences of
-  `maintenance_runs`, `MaintenanceRun`, or `maintenance_run`. The 173 remaining
-  matches of the bare word in `app/`, `lib/`, `config/`, `db/`, and `spec/` are
+  `maintenance_runs`, `MaintenanceRun`, or `maintenance_run`. The 166 remaining
+  matches of the bare word across 160 matching lines in `app/`, `lib/`, `config/`,
+  `db/`, and `spec/` are
   pre-existing unrelated vocabulary — the GoodJob `maintenance` queue
   ([`config/initializers/good_job.rb:17`](../../config/initializers/good_job.rb#L17)),
   `maintenance_window` / `maintenance_timezone` at
@@ -125,8 +129,8 @@ Draft validation scenarios are quoted from PR #4308's `## Validation` section.
 | 8 | Recurring runs obey tenant access, budgets, non-overlap, bounded catchup; disabling stops dispatch and preserves reports | No maintenance schedule, dispatch, or budget surface exists. `ScheduledMutationSweepJob` is a distinct Ruby-only sweep and is not equivalent evidence. | Not implemented | #4332 |
 | 9 | UI and API/MCP users start, inspect, cancel, and select repair work with equivalent authorization; maintenance not admitted while its guard is off | `AgentRun::GOALS` and the MCP goal enum admit no maintenance goal, and no maintenance admission path exists for the guard to close. | Not implemented | #4328, #4332 |
 | 10 | PR audits separate new regressions from existing debt and publish through the existing review path without duplicate or stale-head findings | No maintenance evidence reuse or advisory PR-audit path exists. | Not implemented | #4333 |
-| — | Evaluate on projects beyond Paid: actionable findings, false positives, unresolved coverage, latency, token/tool cost, repeated-finding noise, repair review outcomes | No admitted capability exists to evaluate; no corpus or measured results are stored. The draft itself states these measurements guide recipe selection and do not gate the capability. | Not implemented (measurable only after #4328–#4333) | #4327 recipe selection, #4340 recipe evaluation, and this issue's rerun for the cross-recipe corpus |
-| — | Decide `maintenance_runs` guard removal from evidence; recurring schedules stay opt-in | `maintenance_runs` is not registered (see above); RDR-073's `marketplace_tool_sidecars` guard is untouched and still default-off. | **Retain** default-off; removal unsupported by evidence | #4328 registers it; this issue's rerun decides |
+| — | Evaluate on projects beyond Paid: actionable findings, false positives, unresolved coverage, latency, token/tool cost, repeated-finding noise, repair review outcomes | No admitted capability exists to evaluate; no corpus or measured results are stored. The draft itself states these measurements guide recipe selection and do not gate the capability. | Not implemented (measurable only after #4328–#4333) | #4327 recipe selection, #4340 recipe evaluation, and open #4334 after its #4333 dependency ships |
+| — | Decide `maintenance_runs` guard removal from evidence; recurring schedules stay opt-in | `maintenance_runs` is not registered (see above); RDR-073's `marketplace_tool_sidecars` guard is untouched and still default-off. | **Retain** default-off; removal unsupported by evidence | #4328 registers it; open #4334 decides after #4333 ships |
 | — | Intent-traceability recipe coverage (see next section) | Recipe absent; the shared reconciliation substrate it must reuse ships (see above). | Not implemented | #4340 |
 
 No test can be cited as passing an RDR-075 behavior: neither approved EARS
@@ -170,8 +174,8 @@ Every unmet criterion above maps to an already-filed focused issue:
 [#4333](https://github.com/viamin/paid/issues/4333) for the six delivery
 phases; [#4327](https://github.com/viamin/paid/issues/4327) for LID planning and
 the RDR-073 handoff validation; #4340 for the report-only
-intent-traceability recipe; this issue's own rerun for the cross-recipe
-external-project corpus and the guard-removal decision. Verified against the
+intent-traceability recipe; and open #4334, after its #4333 dependency ships,
+for the cross-recipe external-project corpus and guard-removal decision. Verified against the
 live issue bodies today, including the sub-criteria that the epic text names
 only implicitly:
 
@@ -187,10 +191,10 @@ only implicitly:
   [#4331](https://github.com/viamin/paid/issues/4331).
 
 **No new gap issue is filed by this audit, and none is warranted:** filing a
-duplicate would break the checklist's re-filing anti-pattern, and the only
-criterion with no dedicated issue — the cross-recipe external-project
-measurement — is owned by this closeout's rerun, which cannot run before the
-six delivery phases ship. The gaps themselves are open, not filed.
+duplicate would break the checklist's re-filing anti-pattern. Open #4334 retains
+ownership of the cross-recipe external-project measurement and guard-removal
+decision, but cannot complete either until its explicit #4333 dependency and the
+other delivery phases ship. The gaps themselves remain open, not filed.
 
 Label hygiene: #4334 carries `quality` and `P2` only — none of the effective
 auto-pick skip labels (`planning`, `research`, `waiting`, `tracking`,

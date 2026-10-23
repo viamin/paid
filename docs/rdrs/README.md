@@ -257,8 +257,8 @@ RDR-073's prerequisite has since resolved — #4263 and #4268 are closed and the
 [2026-10-20 final-acceptance audit](audit-report-2026-10-20-rdr-073-epic-final-acceptance.md)
 verified its four delivery phases — while RDR-073's own `marketplace_tool_sidecars`
 guard stays default-off and separately authoritative. Every unmet criterion is
-owned by an open focused issue (#4327–#4333, #4340, and this closeout's rerun),
-so no duplicate gap issue is warranted. The audit tracks #4326 rather than
+owned by an open focused issue (#4327–#4333, #4340, and open #4334 after its
+#4333 dependency ships), so no duplicate gap issue is warranted. The audit tracks #4326 rather than
 closing it; the umbrella's observed closed GitHub state must be reconciled
 before its own final acceptance can legitimately close it.
 
