@@ -160,6 +160,18 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(evaluation.labels).to be_empty
   end
 
+  it "never reveals the maintainer's saved label to another account member before freeze" do
+    evaluation = start_evaluation!
+    label!(evaluation, case_id: "A-01", outcome: "within_scope", claim: "quoth-the-raven-claim", reason: "nevermore-reason")
+    sign_in member
+
+    get project_shadow_evaluation_path(project, evaluation, case_id: "A-01")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).not_to include("quoth-the-raven-claim")
+    expect(response.body).not_to include("nevermore-reason")
+  end
+
   it "validates project ownership on direct links (tenant isolation)" do
     evaluation = start_evaluation!
     outsider = create(:user, :owner, account: create(:account))

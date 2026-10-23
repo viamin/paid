@@ -12,9 +12,10 @@ module IntentConformance
       BLIND_FIELDS = %w[id repository base_sha head_sha approved_design_revision].freeze
       CONTEXT_FIELDS = %w[design_document_paths context notes rationale].freeze
 
-      def initialize(evaluation:, case_id:)
+      def initialize(evaluation:, case_id:, actor:)
         @evaluation = evaluation
         @corpus_case = evaluation.corpus.find_case(case_id)
+        @actor = actor
       end
 
       def exists?
@@ -26,12 +27,20 @@ module IntentConformance
 
         payload = @corpus_case.slice(*BLIND_FIELDS)
         CONTEXT_FIELDS.each { |field| payload[field] = @corpus_case[field] if @corpus_case.key?(field) }
-        payload["label"] = own_label&.then { |label| { "state" => label.state, "outcome" => label.outcome, "cited_design_claim" => label.cited_design_claim, "reason" => label.reason } }
+        payload["label"] = actor_may_view_label? ? own_label&.then { |label| { "state" => label.state, "outcome" => label.outcome, "cited_design_claim" => label.cited_design_claim, "reason" => label.reason } } : nil
         payload
       end
 
       def own_label
         @evaluation.labels.find_by(case_id: @corpus_case.fetch("id"))
+      end
+
+      # Pre-freeze, only the declared maintainer may see saved labels — any
+      # other account member hitting this URL with a labeled case_id must
+      # not receive the outcome, citation, or reason. Post-freeze the
+      # blinding boundary is gone, so every viewer sees the same payload.
+      def actor_may_view_label?
+        @evaluation.answers_visible? || @evaluation.solo_maintainer_id == @actor&.id
       end
 
       # Next case needing attention: the first case that is neither labeled

@@ -42,7 +42,7 @@ module Projects
 
       @progress = IntentConformance::ShadowEvaluation::CaseView.progress(@evaluation)
       @next_case_id = params[:case_id].presence || IntentConformance::ShadowEvaluation::CaseView.next_pending_case_id(@evaluation)
-      @case_view = IntentConformance::ShadowEvaluation::CaseView.new(evaluation: @evaluation, case_id: @next_case_id.to_s)
+      @case_view = IntentConformance::ShadowEvaluation::CaseView.new(evaluation: @evaluation, case_id: @next_case_id.to_s, actor: current_user)
       @corpus_changed = @evaluation.answers_visible? && !@evaluation.corpus.matches_recorded_digest?
     end
 
