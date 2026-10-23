@@ -51,7 +51,9 @@ Completion logs include removed-image count, the sum of removed images' reported
 sizes as an estimate (shared layers prevent treating it as reclaimed bytes),
 Docker's actual cache bytes reclaimed, and elapsed time. A separate image-phase
 completion log preserves partial results if cache pruning fails. Failures are logged and
-re-raised for GoodJob visibility.
+re-raised for GoodJob visibility. A missing image or non-forced deletion conflict
+also emits a warning with the image ID, so persistent daemon constraints remain
+distinguishable from an empty eligible set.
 
 ## Decisions & Alternatives
 

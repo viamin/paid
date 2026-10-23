@@ -94,8 +94,14 @@ RSpec.describe Containers::PruneDockerDisk, :no_db do
     # @spec DOCKER-DISK-CLEANUP-002 DOCKER-DISK-CLEANUP-004
     it "retains an image on a deletion race (#{error})" do
       allow(connection).to receive(:delete).and_raise(error)
+      allow(Rails.logger).to receive(:warn)
 
       expect(service.call[:images_removed]).to eq(0)
+      expect(Rails.logger).to have_received(:warn).with(hash_including(
+        message: "container_manager.disk_cleanup_image_delete_skipped",
+        image_id: "sha256:old",
+        error_class: error.name
+      ))
     end
   end
 

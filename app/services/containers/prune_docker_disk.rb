@@ -58,7 +58,13 @@ module Containers
     def remove_image(id)
       connection.delete("/images/#{id}", force: false, noprune: true)
       true
-    rescue Docker::Error::ConflictError, Docker::Error::NotFoundError
+    rescue Docker::Error::ConflictError, Docker::Error::NotFoundError => e
+      Rails.logger.warn(
+        message: "container_manager.disk_cleanup_image_delete_skipped",
+        image_id: id,
+        error_class: e.class.name,
+        error: e.message
+      )
       false
     end
   end

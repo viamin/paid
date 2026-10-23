@@ -59,7 +59,7 @@ module Containers
     # @spec DOCKER-DISK-CLEANUP-002 DOCKER-DISK-CLEANUP-004
     def protected_references
       env_profiles.merge(config_profiles).flat_map do |requested_image, profile|
-        digests = profile.fetch("identities").values.map do |identity|
+        digests = identities_for(profile).values.map do |identity|
           registry = identity["registry"].presence || profile["registry"].presence || @config.fetch("registry")
           repository = identity["repository"].presence || profile["repository"].presence || @config.fetch("repository")
           "#{registry}/#{repository}@#{identity.fetch('digest')}"
@@ -79,7 +79,21 @@ module Containers
     end
 
     def config_profiles
-      @config.fetch("profiles", {})
+      profiles = @config.fetch("profiles", {})
+      raise Error, "Runtime image profiles must be an object" unless profiles.is_a?(Hash)
+
+      profiles
+    end
+
+    def identities_for(profile)
+      raise Error, "Runtime image profile must be an object" unless profile.is_a?(Hash)
+
+      identities = profile.fetch("identities", {})
+      return {} if identities.nil?
+
+      raise Error, "Runtime image identities must be an object" unless identities.is_a?(Hash)
+
+      identities
     end
 
     def env_profiles

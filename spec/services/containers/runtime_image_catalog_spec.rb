@@ -53,6 +53,30 @@ RSpec.describe Containers::RuntimeImageCatalog do
 
       expect { catalog.protected_references }.to raise_error(described_class::Error)
     end
+
+    # @spec DOCKER-DISK-CLEANUP-002 DOCKER-DISK-CLEANUP-004
+    it "retains a profile without identities while tolerating missing or blank maps" do
+      catalog = described_class.new(
+        registry: "ghcr.io", repository: "acme/agent", profiles: {
+          "paid-agent:go" => { default_reference: "go-amd64" },
+          "paid-agent:rust" => { default_reference: "rust-amd64", identities: nil }
+        }
+      )
+
+      expect(catalog.protected_references).to contain_exactly("paid-agent:go", "paid-agent:rust")
+    end
+
+    # @spec DOCKER-DISK-CLEANUP-004
+    it "fails closed with a catalog error for a malformed configuration identities map" do
+      catalog = described_class.new(
+        registry: "ghcr.io", repository: "acme/agent", profiles: {
+          "paid-agent:go" => { identities: "go-amd64" }
+        }
+      )
+
+      expect { catalog.protected_references }
+        .to raise_error(described_class::Error, "Runtime image identities must be an object")
+    end
   end
 
   describe "#identity_for" do
