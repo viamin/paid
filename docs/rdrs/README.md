@@ -219,7 +219,7 @@ Scaling & Distribution above).
 | [RDR-070](RDR-070-facet-confidence-and-clarification.md) | Facet Confidence and Adaptive Clarification | Partially Implemented | P1 |
 | [RDR-071](RDR-071-confidence-driven-issue-delivery.md) | Confidence-Driven Issue Delivery and Feature Completion | Partially Implemented | P1 |
 | [RDR-076](RDR-076.md) | Layered Verification of Business Intent and Implementation | Accepted | P1 |
-| [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md) | Automation Phases and Work-Item Authorization | Draft | — |
+| [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md) | Automation Phases and Work-Item Authorization | Accepted | P1 |
 
 RDR-069–071 form the [human-centered Inbox implementation tree](human-centered-inbox-implementation.md).
 They extend chat and introduce an explicit confidence-driven feature policy;
