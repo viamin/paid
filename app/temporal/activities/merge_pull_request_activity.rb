@@ -166,11 +166,11 @@ module Activities
     #
     # Upstream mode (#4078) overrides both paths: an upstream PR is never
     # merged, not even via activation label. @spec UPSTREAM-GATE-002
+    # @spec AUTOMATION-PHASES-002
     def auto_merge_enabled_for?(project, issue)
-      return false unless project.upstream_feature_enabled?(:auto_merge)
-
-      project.auto_merge_enabled? ||
-        Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: issue, feature: "auto_merge")
+      Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(
+        project:, pull_request: issue
+      )
     end
 
     def attempt_merge(provider, project, issue, repo, pr_number)

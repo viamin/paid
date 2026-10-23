@@ -21,6 +21,19 @@ RSpec.describe Activities::MergePullRequestActivity do
   end
 
   describe "#execute" do
+    # @spec AUTOMATION-PHASES-002
+    it "does not merge when the merge phase is disabled but auto-merge remains enabled" do
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(automation_phase_settings: {
+        "phases" => { "merge" => false }, "release" => false, "deployment" => false
+      })
+
+      result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+      expect(result).to include(merged: false, skipped: true)
+      expect(Automation::Providers::Resolver).not_to have_received(:repository_for)
+    end
+
     context "when auto_merge is disabled" do
       before { project.update!(auto_merge_mode: "off") }
 

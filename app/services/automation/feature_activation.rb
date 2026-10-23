@@ -16,7 +16,11 @@ module Automation
       phase = Automation::Phases.for_capability(capability)
       return true if phase.nil?
 
-      Automation::EffectivePolicy.call(project:, phase:, work_item:, trigger: :automatic).permitted?
+      policy = Automation::EffectivePolicy.call(project:, phase:, work_item:, trigger: :automatic)
+      return false unless policy.permitted?
+      return true unless Automation::RolloutGuard.enabled?(project)
+
+      capability.to_s != "auto_release" || Automation::PhaseSettings.call(project).release_enabled?
     end
 
     # @spec AUTOMATION-ACTIVATION-003 @spec AUTOMATION-ACTIVATION-004 @spec AUTOMATION-ACTIVATION-005 @spec AUTOMATION-ACTIVATION-006
