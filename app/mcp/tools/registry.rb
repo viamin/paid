@@ -29,6 +29,7 @@ module Tools
       "Tools::SubmitClarifyingAnswers",
       "Tools::SaveClarifyingAnswer",
       "Tools::StartChatInvestigation",
+      "Tools::CancelChatInvestigation",
       "Tools::PresentChatDiagram",
       "Tools::ListExplicitPreferences",
       "Tools::SaveExplicitPreference",
