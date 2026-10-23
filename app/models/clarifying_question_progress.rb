@@ -3,6 +3,8 @@
 class ClarifyingQuestionProgress < ApplicationRecord
   include TenantScoped
 
+  EVIDENCE_CONTEXT_MAX_CHARS = 1_000
+
   belongs_to :account
   belongs_to :project
   belongs_to :issue
@@ -12,6 +14,7 @@ class ClarifyingQuestionProgress < ApplicationRecord
   validates :question, :question_digest, :position, presence: true
   validates :position, numericality: { only_integer: true, greater_than: 0 }
   validates :position, uniqueness: { scope: [ :issue_id, :question_digest ] }
+  validates :evidence_context, length: { maximum: EVIDENCE_CONTEXT_MAX_CHARS }, allow_nil: true
   validate :issue_belongs_to_project
   validate :project_belongs_to_account
   validate :chat_belongs_to_issue

@@ -23,6 +23,7 @@ module ChatSessions
     RECENT_ISSUES_LIMIT = 5
     RECENT_RUNS_LIMIT = 5
     CROSS_PROJECT_SUMMARY_MAX_CHARS = 500
+    DIAGRAM_COMMENT_LIMIT = ChatDiagramComment::CONTEXT_LIMIT
     DIAGRAM_COMMENTS_MAX_CHARS = MAX_PROMPT_CHARS / 16
 
     attr_reader :chat_session
@@ -252,12 +253,10 @@ module ChatSessions
       PROMPT
     end
 
-    DIAGRAM_COMMENT_LIMIT = 20
-
     # @spec QUESTION-EXPLORATION-004
     def recent_diagram_comments
       ChatDiagramComment.where(chat_diagram_id: chat_session.chat_diagrams.select(:id))
-        .order(:created_at, :id).last(DIAGRAM_COMMENT_LIMIT)
+        .chronological.last(DIAGRAM_COMMENT_LIMIT)
     end
 
     def diagram_comment_target(comment)
@@ -309,7 +308,8 @@ module ChatSessions
     def saved_evidence_context(progress)
       return "" if progress.evidence_context.blank?
 
-      "\n   - Human context recorded with that answer: #{progress.evidence_context}"
+      evidence_context = progress.evidence_context.truncate(ClarifyingQuestionProgress::EVIDENCE_CONTEXT_MAX_CHARS, omission: "…")
+      "\n   - Human context recorded with that answer: #{evidence_context}"
     end
 
     def progress_by_position_for(questions)

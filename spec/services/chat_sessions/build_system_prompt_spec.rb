@@ -573,6 +573,18 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
       end
 
       # @spec QUESTION-EXPLORATION-013
+      it "bounds persisted evidence context without dropping the clarifying questions" do
+        progress = ClarifyingQuestions::SaveProgress.call(
+          chat_session: chat_session, position: 1, answer: "Show the error inline.", actor: user
+        )
+        progress.update_column(:evidence_context, "x" * (ClarifyingQuestionProgress::EVIDENCE_CONTEXT_MAX_CHARS + 1))
+
+        expect(prompt).to include("x" * (ClarifyingQuestionProgress::EVIDENCE_CONTEXT_MAX_CHARS - 1))
+        expect(prompt).not_to include("x" * (ClarifyingQuestionProgress::EVIDENCE_CONTEXT_MAX_CHARS + 1))
+        expect(prompt).to include("1. What is the expected behavior?")
+      end
+
+      # @spec QUESTION-EXPLORATION-013
       # The evidence a person attached to a draft answer is human input, not a
       # preference. Reopening must restore it with the answer.
       it "restores a saved draft answer together with its human evidence context" do

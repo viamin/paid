@@ -9,7 +9,7 @@ class ChatDiagram < ApplicationRecord
 
   belongs_to :chat_session
   belongs_to :chat_message, optional: true
-  has_many :comments, -> { order(:created_at, :id) }, class_name: "ChatDiagramComment", dependent: :destroy
+  has_many :comments, -> { chronological }, class_name: "ChatDiagramComment", dependent: :destroy
 
   validates :question_key, :question_title, :summary, :text_equivalent, presence: true
   validate :description_is_typed

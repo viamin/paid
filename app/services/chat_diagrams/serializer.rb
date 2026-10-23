@@ -7,6 +7,8 @@ module ChatDiagrams
   # @spec QUESTION-EXPLORATION-003 QUESTION-EXPLORATION-004
   # @spec QUESTION-EXPLORATION-009 QUESTION-EXPLORATION-012
   class Serializer
+    COMMENT_LIMIT = ChatDiagramComment::CONTEXT_LIMIT
+
     def self.call(diagram)
       return unless diagram
 
@@ -17,7 +19,7 @@ module ChatDiagrams
 
     # @spec QUESTION-EXPLORATION-004
     def self.comments(diagram)
-      diagram.comments.map { |comment| CommentSerializer.call(comment) }
+      diagram.comments.last(COMMENT_LIMIT).map { |comment| CommentSerializer.call(comment) }
     end
     private_class_method :comments
   end

@@ -55,4 +55,10 @@ RSpec.describe Tools::SaveClarifyingAnswer do
       described_class.new(user:, session:).call(position: 1, answer: "Draft", confirmed: false)
     }.to raise_error(ArgumentError, /Confirmation required/)
   end
+
+  it "advertises the evidence-context input bound" do
+    schema = described_class.input_schema
+
+    expect(schema.dig(:properties, :evidence_context, :maxLength)).to eq(ClarifyingQuestionProgress::EVIDENCE_CONTEXT_MAX_CHARS)
+  end
 end

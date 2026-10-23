@@ -2,6 +2,8 @@
 
 # @spec QUESTION-EXPLORATION-004 QUESTION-EXPLORATION-005 QUESTION-EXPLORATION-006
 class ChatDiagramComment < ApplicationRecord
+  CONTEXT_LIMIT = 20
+
   belongs_to :chat_diagram
   belongs_to :actor, class_name: "User"
 
