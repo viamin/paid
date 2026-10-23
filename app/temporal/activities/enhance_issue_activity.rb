@@ -154,13 +154,29 @@ module Activities
 
     # Reads recent stdout through AgentRun's provider-aware output normalizer.
     # Structured runners may wrap the final agent message in JSONL events, while
-    # text runners return the delimited payload directly.
+    # text runners return the delimited payload directly. Persisted JSONL
+    # records are individually complete even when their writers omit a trailing
+    # newline; incomplete records remain contiguous because they are stream
+    # fragments rather than event boundaries.
     # @spec ISSUE-ENHANCEMENT-006
     def collect_agent_stdout(agent_run)
-      raw = agent_run.agent_run_logs.stdout.recent.limit(STDOUT_TAIL_CHUNKS).pluck(:content).reverse.join
+      records = agent_run.agent_run_logs.stdout.recent.limit(STDOUT_TAIL_CHUNKS).pluck(:content).reverse
+      raw = reassemble_stdout_records(records)
       return raw if delimited_payload(raw)
 
       agent_run.normalized_agent_output(raw, succeeded: true)
+    end
+
+    def reassemble_stdout_records(records)
+      records.map { |record| jsonl_event_record?(record) ? "#{record}\n" : record }.join
+    end
+
+    def jsonl_event_record?(record)
+      return false if record.end_with?("\n")
+
+      JSON.parse(record).is_a?(Hash)
+    rescue JSON::ParserError
+      false
     end
 
     # Extracts the JSON payload from concatenated stdout. The agent prompt
