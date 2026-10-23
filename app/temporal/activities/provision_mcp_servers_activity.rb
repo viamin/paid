@@ -25,7 +25,8 @@ module Activities
           message: "agent_execution.mcp_servers_provisioned",
           agent_run_id: agent_run_id,
           stdio_count: result[:stdio_servers].size,
-          sidecar_count: result[:url_servers].size
+          sidecar_count: result[:url_servers].size,
+          tool_sidecar_count: agent_run.tool_sidecar_container_ids.size
         )
 
         {
