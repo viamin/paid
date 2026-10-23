@@ -28,6 +28,9 @@ application.register("chat-runner-model-options", ChatRunnerModelOptionsControll
 import ChatSessionListController from "./chat_session_list_controller"
 application.register("chat-session-list", ChatSessionListController)
 
+import ChatThinkingEffortController from "./chat_thinking_effort_controller"
+application.register("chat-thinking-effort", ChatThinkingEffortController)
+
 import ChatStreamController from "./chat_stream_controller"
 application.register("chat-stream", ChatStreamController)
 
