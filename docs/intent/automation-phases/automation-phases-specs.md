@@ -90,7 +90,7 @@
 
 - [x] **AUTOMATION-PHASES-012** — The system SHALL NOT offer a per-item
   override that stops project automation beyond the chosen endpoint.
-  *Tests:* `spec/services/automation/manual_start_plan_spec.rb`
+  *Tests:* `spec/services/automation/manual_start/plan_spec.rb`
   *Code:* `Automation::ManualStart::Plan`
 
 - [x] **AUTOMATION-PHASES-013** — The system SHALL recheck authorization
@@ -136,6 +136,6 @@
   signal source, activation policy, response scope, limits, escalation
   behavior, and handoff to other phases, and project Operations SHALL describe
   ownership and handoffs without adding autonomous remediation.
-  *Tests:* `spec/services/automation/operations_contract_spec.rb`
+  *Tests:* `spec/services/automation/operations/contract_catalog_spec.rb`
   *Code:* `Automation::Operations::ContractCatalog`,
   `docs/intent/automation-phases/operations-ownership.md`

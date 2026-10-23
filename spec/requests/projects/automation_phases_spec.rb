@@ -29,4 +29,15 @@ RSpec.describe "Project automation phases" do
     expect(settings.phase_enabled?("merge")).to be(false)
     expect(settings.release_enabled?).to be(true)
   end
+
+  it "updates phase controls posted in the API settings shape" do
+    patch project_automation_phases_path(project), params: {
+      automation_phase_settings: { phases: { "merge" => true }, deployment: true }
+    }
+
+    expect(response).to redirect_to(project_automation_phases_path(project))
+    settings = Automation::PhaseSettings.call(project.reload)
+    expect(settings.phase_enabled?("merge")).to be(true)
+    expect(settings.deployment_enabled?).to be(true)
+  end
 end

@@ -51,13 +51,11 @@ module Automation
         "Continuation is conditional authorization, not a guarantee of completing #{labels.downcase}."
     end
 
-    # Digest of everything the notice depends on, so a stale form cannot
-    # silently omit a newly permitted continuation.
+    # Digest of project policy state, so user selections do not look stale but
+    # a form cannot silently omit newly permitted continuation.
     # @spec AUTOMATION-PHASES-011
     def signature
-      Digest::SHA256.hexdigest(
-        [ phase, endpoint, continuation_selected.to_s, permitted_phases.join(",") ].join("|")
-      )
+      Digest::SHA256.hexdigest(settings.to_h.to_json)
     end
 
     def permitted_phases

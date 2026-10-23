@@ -134,7 +134,8 @@
         <%= render "dashboard/inbox_detail",
                    entry: @selected_entry,
                    scoped_project: @scoped_project,
-                   selected_kind: @selected_kind %>
+                   selected_kind: @selected_kind,
+                   selected_scope: @selected_scope %>
       <% end %>
     <% end %>
     <%= render "shared/list_detail_shell",

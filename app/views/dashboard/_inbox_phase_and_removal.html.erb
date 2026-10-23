@@ -29,7 +29,7 @@
   <% end %>
 
   <div>
-    <% if @selected_scope == Inbox::Queue::REMOVED_SCOPE || !entry.actionable? %>
+    <% if selected_scope == Inbox::Queue::REMOVED_SCOPE || !entry.actionable? %>
       <%= button_to "Restore to Inbox", inbox_entry_restore_path(entry.id), method: :post,
             class: "rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50" %>
     <% else %>

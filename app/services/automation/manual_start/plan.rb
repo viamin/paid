@@ -34,6 +34,7 @@ module Automation
 
       def call
         validate_endpoint!
+        ensure_delegation_permitted! if continuation_selected
         self
       end
 

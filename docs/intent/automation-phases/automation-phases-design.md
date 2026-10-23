@@ -117,7 +117,8 @@ Completion and revocation:
 - `notice` — an `Automation::EffectivePolicyNotice` describing the phases that
   project policy permits beyond the chosen endpoint, the settings responsible,
   and conditional-authorization wording.
-- `signature` — a digest of `(phase, endpoint, project policy, notice text)`.
+- `signature` — a digest of project policy state, independent of the user's
+  endpoint and continuation selections.
 
 `Projects::AgentRunsController#new` renders the endpoint selector and notice.
 `#create` re-plans against current policy and compares the signature with the

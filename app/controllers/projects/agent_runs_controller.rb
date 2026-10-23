@@ -242,6 +242,8 @@ module Projects
           plan_docs: plan_docs
         )
       end
+    rescue Automation::ManualStart::Plan::Error => error
+      redirect_to new_project_agent_run_path(@project, goal: goal), alert: error.message
     end
 
     def quick_create

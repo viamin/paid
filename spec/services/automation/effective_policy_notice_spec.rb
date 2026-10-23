@@ -59,10 +59,12 @@ RSpec.describe Automation::EffectivePolicyNotice do
     expect(notice(endpoint: "coding").signature).not_to eq(before_signature)
   end
 
-  it "changes with the selected endpoint" do
+  it "does not change with the user's endpoint or continuation selection" do
     configure(phases: { "coding" => true, "merge" => true })
 
-    expect(notice(endpoint: "merge").signature).not_to eq(notice(endpoint: "coding").signature)
+    signature = notice(endpoint: "coding", continuation: false).signature
+
+    expect(notice(endpoint: "merge", continuation: true).signature).to eq(signature)
   end
 
   describe "release and deployment" do

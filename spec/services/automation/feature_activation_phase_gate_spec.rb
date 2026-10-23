@@ -7,7 +7,7 @@ require "rails_helper"
 # cannot re-enable it.
 #
 # @spec AUTOMATION-PHASES-002 @spec AUTOMATION-PHASES-007
-RSpec.describe "Automation::FeatureActivation phase gate" do
+RSpec.describe Automation::FeatureActivation do
   let(:account) { create(:account) }
   let(:project) do
     create(:project, account:, auto_pick_enabled: false, auto_enhance_enabled: false,
@@ -35,26 +35,26 @@ RSpec.describe "Automation::FeatureActivation phase gate" do
     it "cannot enable a disabled coding phase for auto-pick" do
       configure({ "coding" => false })
 
-      expect(Automation::FeatureActivation.issue_auto_pick_trigger(project:, issue:)).to be_nil
+      expect(described_class.issue_auto_pick_trigger(project:, issue:)).to be_nil
     end
 
     it "cannot enable a disabled issue-preparation phase for auto-enhance" do
       configure({ "issue_preparation" => false })
 
-      expect(Automation::FeatureActivation.issue_auto_enhance_enabled?(project:, issue:)).to be(false)
+      expect(described_class.issue_auto_enhance_enabled?(project:, issue:)).to be(false)
     end
 
     it "cannot enable a disabled merge phase for auto-merge" do
       configure({ "merge" => false })
       pull_request = create(:issue, :pull_request, project:)
 
-      expect(Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(project:, pull_request:)).to be(false)
+      expect(described_class.human_pull_request_auto_merge_enabled?(project:, pull_request:)).to be(false)
     end
 
     it "keeps labels working once the phase is enabled" do
       configure({ "coding" => true })
 
-      expect(Automation::FeatureActivation.issue_auto_pick_trigger(project:, issue:)).to be_present
+      expect(described_class.issue_auto_pick_trigger(project:, issue:)).to be_present
     end
   end
 
@@ -64,8 +64,8 @@ RSpec.describe "Automation::FeatureActivation phase gate" do
       create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
       other_issue = create(:issue, project:)
 
-      expect(Automation::FeatureActivation.issue_auto_pick_trigger(project:, issue:)).to be_present
-      expect(Automation::FeatureActivation.issue_auto_pick_trigger(project:, issue: other_issue)).to be_nil
+      expect(described_class.issue_auto_pick_trigger(project:, issue:)).to be_present
+      expect(described_class.issue_auto_pick_trigger(project:, issue: other_issue)).to be_nil
     end
 
     it "authorizes merge for a granted work item whose pull request is in the chain" do
@@ -74,7 +74,7 @@ RSpec.describe "Automation::FeatureActivation phase gate" do
       pull_request = create(:issue, :pull_request, project:, parent_issue: issue,
         labels: [ project.feature_activation_label_for("auto_merge") ])
 
-      expect(Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(project:, pull_request:)).to be(true)
+      expect(described_class.human_pull_request_auto_merge_enabled?(project:, pull_request:)).to be(true)
     end
 
     it "still requires the capability's own activation signal inside a granted phase" do
@@ -82,7 +82,7 @@ RSpec.describe "Automation::FeatureActivation phase gate" do
       create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
       pull_request = create(:issue, :pull_request, project:, parent_issue: issue)
 
-      expect(Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(project:, pull_request:)).to be(false)
+      expect(described_class.human_pull_request_auto_merge_enabled?(project:, pull_request:)).to be(false)
     end
   end
 
@@ -91,7 +91,7 @@ RSpec.describe "Automation::FeatureActivation phase gate" do
       FeatureFlags.disable!(:automation_phases, project:)
       configure({ "coding" => false })
 
-      expect(Automation::FeatureActivation.issue_auto_pick_trigger(project:, issue:)).to be_present
+      expect(described_class.issue_auto_pick_trigger(project:, issue:)).to be_present
     end
   end
 end

@@ -9,7 +9,7 @@ RDR-077 §6 requires the initial implementation to inventory existing operationa
 capabilities and assign ownership **without adding autonomous remediation**.
 This document is that inventory. `Automation::Operations::ContractCatalog`
 holds the same contract data as structured records, and
-`spec/services/automation/operations_contract_spec.rb` asserts that every
+`spec/services/automation/operations/contract_catalog_spec.rb` asserts that every
 declared capability is complete and that the documented table and the code
 cannot drift.
 
