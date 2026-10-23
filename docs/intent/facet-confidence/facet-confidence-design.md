@@ -101,7 +101,9 @@ and model `claude-sonnet-4-6`, including the 79/80 threshold-boundary shape.
 `lib/facet_confidence/assessment_corpus_ledger.rb` validates the corpus,
 binds every recorded assessment run to the corpus version/digest, rubric
 version, model version, and input evidence revision, and rejects replays of
-identical case input. `lib/facet_confidence/assessment_outcome_report.rb`
+identical case input. It locks validation and append as one operation, and a
+re-run after a correction must cite that correction event as its evidence.
+`lib/facet_confidence/assessment_outcome_report.rb`
 computes false readiness, unnecessary clarification, human corrections,
 assessment cost, and downstream rework against the frozen expected bands, and
 blocks threshold/rubric tuning proposals on incomplete metrics — throughput

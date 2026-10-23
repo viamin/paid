@@ -67,16 +67,21 @@ module FacetConfidence
       raise InvalidLedger, "event_id is required" if event["event_id"].to_s.strip.empty?
       raise InvalidLedger, "recorded_at is required" if event["recorded_at"].to_s.strip.empty?
 
-      event = event.merge("corpus_version" => corpus_version_of(corpus_path), "corpus_digest" => corpus_digest(corpus_path))
-      validate_entries!(corpus_path:, entries: events(ledger_path) + [ event ])
-      File.open(ledger_path, File::WRONLY | File::APPEND | File::CREAT, 0o644, encoding: "UTF-8") { |file| file.puts(JSON.generate(event)) }
+      with_ledger_lock(ledger_path) do
+        event = event.merge("corpus_version" => corpus_version_of(corpus_path), "corpus_digest" => corpus_digest(corpus_path))
+        validate_entries!(corpus_path:, entries: events(ledger_path) + [ event ])
+        File.open(ledger_path, File::WRONLY | File::APPEND | File::CREAT, 0o644, encoding: "UTF-8") do |file|
+          file.puts(JSON.generate(event))
+          file.flush
+        end
+      end
     end
 
     # Validates the ledger and returns the per-case evaluation structure the
     # outcome report consumes: each case with its ordered runs, corrections,
     # and rework events.
     def evaluate(corpus_path:, ledger_path:)
-      validate_entries!(corpus_path:, entries: events(ledger_path))
+      with_ledger_lock(ledger_path, File::LOCK_SH) { validate_entries!(corpus_path:, entries: events(ledger_path)) }
     end
 
     def validate!(corpus_path:, ledger_path:)
@@ -88,6 +93,13 @@ module FacetConfidence
       document = read_yaml(path)
       ensure_corpus_identity!(document)
       document["corpus_version"]
+    end
+
+    def with_ledger_lock(path, mode = File::LOCK_EX)
+      File.open(File.dirname(path), File::RDONLY) do |directory|
+        directory.flock(mode)
+        yield
+      end
     end
 
     def validate_entries!(corpus_path:, entries:)
@@ -232,7 +244,7 @@ module FacetConfidence
     def validate_events!(cases, entries)
       evaluation = cases.to_h { |corpus_case| [ corpus_case.fetch("id"), { case: corpus_case, runs: [], corrections: [], rework: [] } ] }
       trackers = cases.to_h do |corpus_case|
-        [ corpus_case.fetch("id"), { baseline_revision: corpus_case.fetch("evidence_revision"), run_seen: false, last_run_revision: nil, pending_corrections: [] } ]
+        [ corpus_case.fetch("id"), { baseline_revision: corpus_case.fetch("evidence_revision"), run_seen: false, last_run_revision: nil, pending_corrections: {} } ]
       end
       entries.each { |entry| dispatch_event!(entry, evaluation, trackers) }
       evaluation
@@ -254,8 +266,9 @@ module FacetConfidence
       expected = corpus_case.fetch("expected")
       ensure_run_identity!(entry, corpus_case)
       ensure_run_scores!(entry)
-      ensure_run_references!(entry, corpus_case, expected)
-      ensure_run_revision!(entry, trackers.fetch(corpus_case.fetch("id")))
+      tracker = trackers.fetch(corpus_case.fetch("id"))
+      ensure_run_references!(entry, corpus_case, expected, correction_event_ids(tracker, entry))
+      ensure_run_revision!(entry, tracker)
       entry_state[:runs] << entry
     end
 
@@ -288,9 +301,9 @@ module FacetConfidence
       end
     end
 
-    def ensure_run_references!(entry, corpus_case, expected)
+    def ensure_run_references!(entry, corpus_case, expected, correction_event_ids)
       references = Array(entry["evidence_references"])
-      known = corpus_case.fetch("evidence").map { |item| item.fetch("reference") }
+      known = corpus_case.fetch("evidence").map { |item| item.fetch("reference") } + correction_event_ids
       must_cite = Array(expected["must_cite"])
       must_not_cite = Array(expected["must_not_cite"])
       id = corpus_case.fetch("id")
@@ -299,11 +312,18 @@ module FacetConfidence
           raise InvalidLedger, "#{id} completed assessment run must cite evidence drawn from the case"
         end
 
-        missing = must_cite - references
-        raise InvalidLedger, "#{id} assessment run must cite the correction evidence: #{missing.join(', ')}" unless missing.empty?
+        correction_event_ids.concat(must_cite)
       end
+      missing = correction_event_ids - references
+      raise InvalidLedger, "#{id} assessment run must cite the correction evidence: #{missing.join(', ')}" unless missing.empty?
       superseded = must_not_cite & references
       raise InvalidLedger, "#{id} assessment run must not cite superseded evidence: #{superseded.join(', ')}" unless superseded.empty?
+    end
+
+    def correction_event_ids(tracker, entry)
+      return [] unless tracker[:run_seen]
+
+      tracker[:pending_corrections].fetch(entry["input_revision"], []).dup
     end
 
     def ensure_run_revision!(entry, tracker)
@@ -316,7 +336,7 @@ module FacetConfidence
           raise InvalidLedger, "#{id} identical input cannot be replayed to inflate certainty at input revision #{revision}"
         end
         raise InvalidLedger, "#{id} input revisions must advance" unless revision > tracker[:last_run_revision]
-        raise InvalidLedger, "#{id} re-run requires a recorded correction at the new input revision" unless tracker[:pending_corrections].include?(revision)
+        raise InvalidLedger, "#{id} re-run requires a recorded correction at the new input revision" unless tracker[:pending_corrections].key?(revision)
       else
         raise InvalidLedger, "#{id} first assessment run must assess the frozen case input revision" unless revision == tracker[:baseline_revision]
       end
@@ -335,7 +355,8 @@ module FacetConfidence
       raise InvalidLedger, "#{id} correction must advance beyond the recorded input revision" unless revision > tracker[:last_run_revision]
       ensure_correction_reference!(entry, entry_state.fetch(:case))
 
-      tracker[:pending_corrections] << revision
+      tracker[:pending_corrections][revision] ||= []
+      tracker[:pending_corrections][revision] << entry.fetch("event_id")
       entry_state[:corrections] << entry
     end
 

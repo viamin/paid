@@ -198,6 +198,30 @@ RSpec.describe FacetConfidence::AssessmentCorpusLedger, :no_db do
         .to raise_error(described_class::InvalidLedger, /re-run requires a recorded correction/)
     end
 
+    it "requires a re-run to cite the correction event at its input revision" do
+      events = complete_events
+      events << correction_event(case_id: "FC-CORPUS-01", input_revision: 3)
+      events << events[0].merge("event_id" => "rerun-1", "input_revision" => 3, "recorded_at" => later_timestamp)
+      write_ledger!(events)
+
+      expect { described_class.validate!(corpus_path: corpus, ledger_path: ledger) }
+        .to raise_error(described_class::InvalidLedger, /must cite the correction evidence: correction-1/)
+    end
+
+    it "accepts a re-run that cites the correction event at its input revision" do
+      events = complete_events
+      events << correction_event(case_id: "FC-CORPUS-01", input_revision: 3)
+      events << events[0].merge(
+        "event_id" => "rerun-1",
+        "input_revision" => 3,
+        "recorded_at" => later_timestamp,
+        "evidence_references" => [ "correction-1" ]
+      )
+      write_ledger!(events)
+
+      expect(described_class.validate!(corpus_path: corpus, ledger_path: ledger)).to be(true)
+    end
+
     it "rejects a completed run that cites superseded evidence instead of the correction" do
       events = complete_events
       correction_run = events.find { |event| event["case_id"] == "FC-CORPUS-02" }
@@ -232,10 +256,7 @@ RSpec.describe FacetConfidence::AssessmentCorpusLedger, :no_db do
 
     it "accepts a correction recorded after a run at an advanced input revision" do
       events = complete_events
-      events << { "event_id" => "correction-1", "recorded_at" => later_timestamp, "type" => "correction",
-        "case_id" => "FC-CORPUS-01", "input_revision" => 3, "statement" => "Sync should stay manual for now.",
-        "supersedes_reference" => "sync-sketch-statement", "corpus_version" => corpus_version,
-        "corpus_digest" => described_class.corpus_digest(corpus) }
+      events << correction_event(case_id: "FC-CORPUS-01", input_revision: 3)
       write_ledger!(events)
 
       expect(described_class.validate!(corpus_path: corpus, ledger_path: ledger)).to be(true)
@@ -286,6 +307,28 @@ RSpec.describe FacetConfidence::AssessmentCorpusLedger, :no_db do
         described_class.append!(ledger_path: ledger, event: event, corpus_path: corpus)
       end.to raise_error(described_class::InvalidLedger, /event_id already exists/)
     end
+
+    it "serializes overlapping appends so only one duplicate event is accepted" do
+      event = complete_events.first.merge("event_id" => "event-1")
+      results = Queue.new
+      start = Queue.new
+      threads = 2.times.map do
+        Thread.new do
+          start.pop
+          described_class.append!(ledger_path: ledger, event: event, corpus_path: corpus)
+          results << :appended
+        rescue described_class::InvalidLedger => error
+          results << error.message
+        end
+      end
+
+      2.times { start << true }
+      threads.each(&:join)
+
+      expect(results.size).to eq(2)
+      expect(2.times.map { results.pop }).to contain_exactly(:appended, "event_id already exists")
+      expect(described_class.events(ledger).map { |entry| entry.fetch("event_id") }).to eq([ "event-1" ])
+    end
   end
 
   def corpus_version
@@ -296,6 +339,13 @@ RSpec.describe FacetConfidence::AssessmentCorpusLedger, :no_db do
 
   def write_ledger!(events)
     File.write(ledger, events.map { |event| JSON.generate(event) }.join("\n"))
+  end
+
+  def correction_event(case_id:, input_revision:)
+    { "event_id" => "correction-1", "recorded_at" => later_timestamp, "type" => "correction",
+      "case_id" => case_id, "input_revision" => input_revision, "statement" => "Sync should stay manual for now.",
+      "supersedes_reference" => "sync-sketch-statement", "corpus_version" => corpus_version,
+      "corpus_digest" => described_class.corpus_digest(corpus) }
   end
 
   def complete_events
