@@ -459,8 +459,9 @@ memoization.
 Tests-first evidence was added before the correction: the three read-count
 examples in `spec/services/marketplace_entries/resolver_dbless_spec.rb`
 failed against the previously shipped implementation (6 profile reads instead
-of 1, 1 read instead of 0 for an unscoped rule set, 2 issue-label reads instead
-of 1). Coverage gaps for the absent and empty `languages_include_any` cases
+of 1, 2 profile reads instead of 0 for an unscoped rule set, 2 issue-label
+reads instead of 1). Coverage gaps for the absent and empty
+`languages_include_any` cases
 were filled in the same file. `TOOL-SIDECAR-003`/`004` remain implemented;
 `Tracks #4263`, which this update does not close.
 
