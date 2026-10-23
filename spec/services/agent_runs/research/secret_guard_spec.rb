@@ -135,7 +135,7 @@ RSpec.describe AgentRuns::Research::SecretGuard do # @spec EGRESS-POLICY-009
       expect(redacted).not_to include(credential.secret)
     end
 
-    it "preserves short active account credentials in diagnostic text" do
+    it "redacts short active account credentials" do
       credential = create(:integration_credential, account: project.account, secret: "test")
 
       redacted = described_class.redact_text(
@@ -143,7 +143,16 @@ RSpec.describe AgentRuns::Research::SecretGuard do # @spec EGRESS-POLICY-009
         agent_run:
       )
 
-      expect(redacted).to include("application started in test mode with #{credential.secret} data")
+      expect(redacted).to include("[REDACTED:known_secret]")
+      expect(redacted).not_to include(credential.secret)
+    end
+
+    it "leaves text intact when an account has no active credential" do
+      agent_run.project.account.integration_credentials.destroy_all
+
+      redacted = described_class.redact_text("application started in test mode", agent_run:)
+
+      expect(redacted).to eq("application started in test mode")
     end
 
     it "preserves long URL paths instead of redacting them as high-entropy tokens" do

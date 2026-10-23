@@ -17,7 +17,6 @@ module AgentRuns
       # scale; including `/` would let a candidate span path segments and
       # trigger false positives on legitimate documentation URLs.
       HIGH_ENTROPY_CANDIDATE = /[A-Za-z0-9+=_-]{24,}/
-      MIN_REDACTABLE_SECRET_LENGTH = 8
       KNOWN_TOKEN_PATTERNS = [
         /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
         /\bAKIA[0-9A-Z]{16}\b/,
@@ -144,9 +143,16 @@ module AgentRuns
         known_secrets(agent_run).find { |secret| secret.present? && text.include?(secret) }
       end
 
+      # Every active account credential is redacted whatever its length. A
+      # short credential (`test`) is still a usable secret, and this text
+      # reaches persistence plus the authenticated diagnostics response, so a
+      # length floor would hand an agent a live account credential. Blank
+      # values are dropped instead: substituting them would corrupt the log.
+      # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
       def redact_known_secrets(text, agent_run)
         known_secrets(agent_run)
-          .select { |secret| secret.to_s.length >= MIN_REDACTABLE_SECRET_LENGTH }
+          .map(&:to_s)
+          .select(&:present?)
           .sort_by { |secret| -secret.length }
           .reduce(text) { |redacted, secret| redacted.gsub(secret, "[REDACTED:known_secret]") }
       end

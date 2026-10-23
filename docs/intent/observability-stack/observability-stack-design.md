@@ -139,8 +139,12 @@ the budget receive `429` without touching retained evidence. Results include ten
 cap lookback to one hour and samples to 100. Missing logs or metrics return an
 explicit `unavailable` status. The persisted log carries a `app_log_truncated`
 marker whenever the recorder hit the line or byte cap, so a caller can tell
-when the tail it reads is a bounded excerpt. This works without Prometheus/Loki;
-it does not expose Docker, files, credentials, or cross-project queries.
+when the tail it reads is a bounded excerpt. Log text is redacted against every
+active account credential the run could use, whatever its length, before
+persistence and again on retrieval; a minimum-length exemption would leak a
+valid short credential to the authenticated caller. This works without
+Prometheus/Loki; it does not expose Docker, files, credentials, or cross-project
+queries.
 
 ## What this is not
 

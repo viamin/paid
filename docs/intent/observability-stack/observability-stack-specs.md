@@ -46,8 +46,11 @@
 - [x] **OBSERVABILITY-APP-DIAGNOSTICS-001** — When an authenticated run requests application
   diagnostics, Paid SHALL return only that run's retained verification log tail
   and run container samples, with account/project/run/revision/timestamp
-  provenance and secret redaction.
-  *Code:* `AgentRuns::ApplicationDiagnostics`.
+  provenance and secret redaction. Redaction SHALL cover every active account
+  credential the run could use, whatever its length; no minimum length may
+  exempt a persisted credential from redaction.
+  *Code:* `AgentRuns::ApplicationDiagnostics`,
+  `AgentRuns::Research::SecretGuard`.
   *Test:* `spec/services/agent_runs/application_diagnostics_spec.rb`.
 
 - [x] **OBSERVABILITY-APP-DIAGNOSTICS-002** — Diagnostic retrieval SHALL be read-only and
