@@ -33,11 +33,13 @@
           <% if phase == Automation::Phases::RELEASE_DEPLOYMENT %>
             <div class="mt-3 space-y-2 border-l-2 border-gray-100 pl-4">
               <label class="flex items-center gap-2 text-sm text-gray-700">
+                <%= hidden_field_tag "project[release]", "0" %>
                 <%= check_box_tag "project[release]", "1", @phase_settings.release_enabled?,
                       class: "rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" %>
                 Allow automatic releases
               </label>
               <label class="flex items-center gap-2 text-sm text-gray-700">
+                <%= hidden_field_tag "project[deployment]", "0" %>
                 <%= check_box_tag "project[deployment]", "1", @phase_settings.deployment_enabled?,
                       class: "rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" %>
                 Allow automatic deployments

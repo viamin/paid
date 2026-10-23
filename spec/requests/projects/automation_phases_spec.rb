@@ -30,6 +30,30 @@ RSpec.describe "Project automation phases" do
     expect(settings.release_enabled?).to be(true)
   end
 
+  it "submits unchecked release and deployment controls as disabled" do
+    project.update!(
+      Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "release_deployment" => true },
+        Automation::PhaseSettings::RELEASE_KEY => true,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => true
+      }
+    )
+
+    get project_automation_phases_path(project)
+    form = Nokogiri::HTML(response.body)
+
+    expect(form.at_css('input[type="hidden"][name="project[release]"][value="0"]')).to be_present
+    expect(form.at_css('input[type="hidden"][name="project[deployment]"][value="0"]')).to be_present
+
+    patch project_automation_phases_path(project), params: {
+      project: { phases: { "release_deployment" => "1" }, release: "0", deployment: "0" }
+    }
+
+    settings = Automation::PhaseSettings.call(project.reload)
+    expect(settings.release_enabled?).to be(false)
+    expect(settings.deployment_enabled?).to be(false)
+  end
+
   it "updates phase controls posted in the API settings shape" do
     patch project_automation_phases_path(project), params: {
       automation_phase_settings: { phases: { "merge" => true }, deployment: true }

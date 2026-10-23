@@ -1124,8 +1124,6 @@ module Projects
       return unless plan&.continuation_selected
 
       work_item = continuation_work_item(agent_run)
-      return if work_item.nil?
-
       plan.build_grant(issue: work_item)
     end
 

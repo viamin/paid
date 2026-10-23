@@ -16,6 +16,8 @@ module Automation
       class PermissionDenied < Error; end
       # The requested endpoint is not offered for this action.
       class EndpointNotApplicable < Error; end
+      # Continuation must attach to a durable issue or pull-request work item.
+      class WorkItemRequired < Error; end
 
       attr_reader :continuation_selected, :endpoint, :goal, :phase, :project, :user
 
@@ -70,7 +72,8 @@ module Automation
 
       # @spec AUTOMATION-PHASES-005
       def build_grant(issue:, start_phase: phase)
-        return nil unless continuation_selected && issue
+        return nil unless continuation_selected
+        raise WorkItemRequired, "Select an issue or pull request to authorize automatic continuation." unless issue
 
         ensure_delegation_permitted!
 

@@ -2,7 +2,8 @@
 
 require "rails_helper"
 
-# @spec AUTOMATION-PHASES-004 @spec AUTOMATION-PHASES-009 @spec AUTOMATION-PHASES-012
+# @spec AUTOMATION-PHASES-004 @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-009
+# @spec AUTOMATION-PHASES-012
 RSpec.describe Automation::ManualStart::Plan do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account:) }
@@ -63,6 +64,14 @@ RSpec.describe Automation::ManualStart::Plan do
         project:, issue:, start_phase: "coding", endpoint: "merge",
         source: "manual_start", created_by: owner
       )
+    end
+
+    it "rejects requested continuation without a work item" do
+      expect { plan(continuation: true).build_grant(issue: nil) }
+        .to raise_error(
+          described_class::WorkItemRequired,
+          "Select an issue or pull request to authorize automatic continuation."
+        )
     end
 
     it "requires permission to delegate merge" do

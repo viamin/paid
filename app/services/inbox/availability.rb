@@ -137,10 +137,7 @@ module Inbox
     end
 
     def governed_project_ids
-      @governed_project_ids ||= Project
-        .where(id: visible_project_ids)
-        .select { |project| Automation::RolloutGuard.enabled?(project) }
-        .map(&:id)
+      @governed_project_ids ||= Automation::RolloutGuard.enabled_project_ids(visible_project_ids)
     end
 
     def count_by_project(entry_kind)

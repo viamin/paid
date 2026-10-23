@@ -43,6 +43,25 @@ RSpec.describe "Project agent run continuation" do
     )
   end
 
+  it "rejects continuation when the run has no work item to authorize" do
+    get new_project_agent_run_path(project, goal: "create_pr")
+    signature = rendered_signature
+
+    expect {
+      post project_agent_runs_path(project), params: {
+        goal: "create_pr",
+        custom_prompt: "Implement the requested change",
+        continuation_authorized: "1",
+        continuation_endpoint: "merge",
+        continuation_notice_signature: signature
+      }
+    }.not_to change(AgentRun, :count)
+
+    expect(WorkItemContinuationGrant.count).to eq(0)
+    expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
+    expect(flash[:alert]).to eq("Select an issue or pull request to authorize automatic continuation.")
+  end
+
   it "returns an invalid endpoint to the form without creating a run" do
     get new_project_agent_run_path(project, goal: "create_pr")
     signature = rendered_signature

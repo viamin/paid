@@ -365,10 +365,10 @@ module Inbox
     # before. Resolved once per distinct project so an ungoverned queue pays
     # no extra queries.
     def phase_governed?(entries)
-      projects = entries.filter_map(&:project).uniq(&:id)
-      return false if projects.empty?
+      project_ids = entries.filter_map { |entry| entry.project&.id }.uniq
+      return false if project_ids.empty?
 
-      projects.any? { |project| Automation::RolloutGuard.enabled?(project) }
+      Automation::RolloutGuard.enabled_project_ids(project_ids).any?
     end
 
     def build_entries

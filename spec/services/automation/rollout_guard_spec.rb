@@ -29,4 +29,14 @@ RSpec.describe Automation::RolloutGuard do
 
     expect(described_class.enabled?(project)).to be(true)
   end
+
+  it "batch-loads tenant overrides for a project collection" do
+    create(:tenant_setting, account:, features: { "automation_phases" => true })
+    projects = create_list(:project, 3, account:)
+
+    queries = capture_queries { described_class.enabled_project_ids(projects.map(&:id)) }
+
+    expect(queries.grep(/FROM \"accounts\"/).size).to eq(1)
+    expect(queries.grep(/FROM \"tenant_settings\"/).size).to eq(1)
+  end
 end

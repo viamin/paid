@@ -15,12 +15,11 @@ module Automation
       FeatureFlags.enabled?(FLAG, project:)
     end
 
-    # Flag state for every project in a scope, without N+1 flag reads when a
-    # caller already has the projects in memory.
-    def enabled_for?(project)
-      return false unless project
-
-      enabled?(project)
+    # Resolve a collection with tenant overrides preloaded, so checking many
+    # project actors does not load each account and tenant setting separately.
+    def enabled_project_ids(project_ids)
+      Project.where(id: project_ids).includes(account: :tenant_setting)
+        .filter_map { |project| project.id if enabled?(project) }
     end
   end
 end
