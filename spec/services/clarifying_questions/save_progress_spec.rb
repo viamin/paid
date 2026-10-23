@@ -48,6 +48,16 @@ RSpec.describe ClarifyingQuestions::SaveProgress do
     )
   end
 
+  # @spec QUESTION-EXPLORATION-013
+  it "bounds evidence context when saving a draft answer" do
+    progress = described_class.call(
+      chat_session:, position: 1, answer: "Keep the user on the current page.", actor: user,
+      evidence_context: "x" * (ClarifyingQuestionProgress::EVIDENCE_CONTEXT_MAX_CHARS + 1)
+    )
+
+    expect(progress.evidence_context).to eq("#{"x" * (ClarifyingQuestionProgress::EVIDENCE_CONTEXT_MAX_CHARS - 1)}…")
+  end
+
   # @spec QUESTION-EXPLORATION-018
   it "records progress for the focused issue of a feature conversation" do
     feature = create(:feature_intent, project:)
