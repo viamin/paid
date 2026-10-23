@@ -175,9 +175,15 @@ module ChatSessions
 
       # Reasoning effort stays deferred until agent-harness publishes both a
       # capability declaration and the matching candidate/request contract.
-      # The probe keeps the control fail-closed with the currently pinned
-      # release, while allowing the upstream contract—not a Paid-side
-      # provider table—to enable it when the dependency is updated.
+      # Verified during #4589 review: 0.44.22 is the newest published
+      # release (rubygems.org; `bin/update --check` reports the gem pin up
+      # to date), and its ChatTransport declares neither the capability
+      # predicate nor a candidate/request effort field — no dependency
+      # version exists yet that could carry the value to a provider, so the
+      # pin cannot be updated in this PR. Fail-closed here hides the
+      # selector and drops the parameter until a contract-carrying release
+      # is installable; the #4475 tracking issue stays open until that pin
+      # bump is verified end to end.
       # @spec CHAT-THINKING-EFFORT-008
       def self.reasoning_effort_transport_supported?
         AgentHarness::Api::ChatTransport.respond_to?(:reasoning_effort_transport_supported?) &&

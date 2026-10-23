@@ -122,4 +122,7 @@
 All CHAT-THINKING-EFFORT claims are deferred pending an explicit
 viamin/agent-harness ChatTransport capability/request dependency. Paid's
 fail-closed gate keeps the selector hidden and omits the parameter until that
-contract is installable and verified.
+contract is installable and verified. The pinned 0.44.22 is the newest
+published release, so no pin update can exercise the contract yet; the
+tracking issue stays open until a contract-carrying release is pinned and
+verified — this scaffolding alone does not deliver the capability.

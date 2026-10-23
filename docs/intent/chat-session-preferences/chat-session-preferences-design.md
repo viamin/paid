@@ -92,3 +92,11 @@ upstream `reasoning_effort_transport_supported?` declaration, but this
 feature remains deferred until agent-harness ships that declaration and its
 matching normalized candidate/request contract, then Paid updates the pin and
 verifies the end-to-end transport path.
+
+As of the #4589 review (2026-10-23), 0.44.22 is the newest published
+agent-harness release — `bin/update --check` reports the gem pin up to date —
+so no dependency update can exercise a real transport contract yet. The
+capability-tracking issue therefore stays open: landing this fail-closed
+scaffolding does not satisfy it, and it may be marked done only after the pin
+moves to a release carrying the declaration and the end-to-end effort path is
+verified against that release.

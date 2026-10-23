@@ -757,7 +757,13 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
 
     # @spec CHAT-THINKING-EFFORT-001 CHAT-THINKING-EFFORT-008
     it "keeps thinking effort unavailable until agent-harness declares its transport contract" do
-      expect(described_class.reasoning_effort_transport_supported?).to be(false)
+      aggregate_failures do
+        # Exercise the pinned release's real contract: a future pin bump that
+        # ships the declaration fails here first, forcing the enabling pass
+        # instead of silently flipping the gate open.
+        expect(AgentHarness::Api::ChatTransport).not_to respond_to(:reasoning_effort_transport_supported?)
+        expect(described_class.reasoning_effort_transport_supported?).to be(false)
+      end
     end
 
     # @spec CHAT-THINKING-EFFORT-004 CHAT-THINKING-EFFORT-008
