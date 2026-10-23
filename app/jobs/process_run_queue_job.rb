@@ -1193,6 +1193,8 @@ class ProcessRunQueueJob < ApplicationJob
       goal: agent_run.goal
     }
     workflow_input[:issue_id] = agent_run.issue_id if agent_run.issue_id
+    continuation_mode = agent_run.continuation_request&.evidence&.fetch("continuation_mode", nil)
+    workflow_input[:continuation_mode] = continuation_mode if continuation_mode.present?
     workflow_input[:custom_prompt] = agent_run.custom_prompt if agent_run.custom_prompt.present?
     workflow_input[:source_pull_request_number] = agent_run.source_pull_request_number if agent_run.source_pull_request_number
     workflow_input[:container_host] = planned_container_host if planned_container_host.present?
