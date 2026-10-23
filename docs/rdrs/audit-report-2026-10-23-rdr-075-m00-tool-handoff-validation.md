@@ -1,0 +1,288 @@
+# RDR-075 M00 — RDR-073 Tool Handoff Validation — 2026-10-23
+
+- **Draft design:** [PR #4308](https://github.com/viamin/paid/pull/4308)
+- **Issue:** [#4327](https://github.com/viamin/paid/issues/4327) (M00: plan
+  maintenance intent and validate the RDR-073 tool handoff)
+- **Umbrella:** [#4326](https://github.com/viamin/paid/issues/4326) — tracked,
+  not closed by this report
+- **Result:** Critical assumptions 1 and 2 from the draft RDR's "Critical
+  assumptions requiring validation" section are **validated** against RDR-073's
+  shipped code and a live execution of one native CLI analyzer and one
+  ESLint-equivalent native CLI analyzer. **No RDR-073 extension is required**
+  for the first delivery's native-CLI-analyzer path. RDR-075 remains Draft;
+  this report resolves the design's stated blocker but does not itself accept
+  the design or release implementation phases #4328–#4333.
+
+This is a validation audit, not a closeout. It does not change RDR-073's
+status (already final-accepted per
+[the 2026-10-20 audit](audit-report-2026-10-20-rdr-073-epic-final-acceptance.md))
+and does not promote RDR-075 out of Draft — that requires PR #4308 to merge
+with human review, per this repository's LID workflow stop-for-review
+discipline.
+
+## Prerequisite check
+
+Live GitHub state, checked 2026-10-23:
+
+| Requirement | State |
+| --- | --- |
+| RDR-073 umbrella #4263 | Closed |
+| RDR-073 closeout #4268 | Closed |
+| RDR-073 epic final-acceptance audit | Complete ([2026-10-20](audit-report-2026-10-20-rdr-073-epic-final-acceptance.md)): all 4 phases shipped against every validation criterion, 103 examples passing at that audit |
+| PR #4308 (RDR-075 design) | Open, unmerged, mergeable |
+
+RDR-073's prerequisite is satisfied, which is what unblocks this validation
+(the draft's own "Blocked on" line names this report's outcome as the
+remaining gate before implementation planning can proceed past #4327).
+
+## Critical assumption 1 — issue-less attachment, matching, and endpoint behavior
+
+**Claim to validate:** "RDR-073's completed attachment contract can expose
+useful maintenance tools to issue-less runs."
+
+**Finding: validated.** Source inspection of the full attachment pipeline
+finds zero issue-coupling outside one explicitly optional rule condition:
+
+- `MarketplaceEntries::Resolver#match_issue_labels_constraint`
+  (`app/services/marketplace_entries/resolver.rb:167-172`) returns `true`
+  (no constraint) when a rule does not declare
+  `issue_labels_includes_any`. `#issue_labels`
+  (`resolver.rb:184-186`) reads `agent_run.issue&.labels`, which safely
+  evaluates to `[]` for an issue-less manual run — it does not raise.
+- `#rule_matches?` (`resolver.rb:133-144`) combines that optional constraint
+  with `match_repo_profile_constraint` for `languages_include_any` and
+  `repo_files_include_any` (`resolver.rb:174-179`, reading
+  `project.effective_repo_profile`) and `match_text_constraint` for
+  `task_text_includes_any` (`resolver.rb:150-161`, reading
+  `agent_run.custom_prompt`). All three work from project/run state that
+  exists without an issue.
+- `grep -rn issue app/services/marketplace_entries/renderer.rb
+  app/services/marketplace_entries/attach_to_run.rb
+  app/services/marketplace_entries/runtime_attachments.rb` returns no
+  matches — the rendering, resolution, and runtime-snapshot-writing layers
+  carry no issue dependency at all.
+- `Containers::Provision#environment_variables`
+  (`app/services/containers/provision.rb:3130`) exposes
+  `PAID_TOOL_SIDECAR_ENDPOINTS` whenever `agent_run.tool_sidecar_endpoints`
+  is present, with no issue-presence check.
+
+This confirms the draft's own requirement text verbatim: "Matching must work
+for manual runs without an issue; absent issue labels cannot prevent
+language or explicit attachment selection from working" (RDR-075 draft,
+Ownership boundary with RDR-073). A manual, issue-less maintenance run can
+attach a tool through `languages_include_any`, `repo_files_include_any`, an
+explicit attachment, or a task-text match; only a rule that itself scopes to
+`issue_labels_includes_any` will correctly decline to match.
+
+**Test evidence (run 2026-10-23):**
+
+```
+bundle exec rspec \
+  spec/services/marketplace_entries/resolver_dbless_spec.rb \
+  spec/services/marketplace_entries/resolver_spec.rb \
+  spec/services/marketplace_entries/attach_to_run_spec.rb \
+  spec/services/marketplace_entries/runtime_attachments_dbless_spec.rb \
+  spec/services/marketplace_entries/renderer_dbless_spec.rb \
+  spec/services/containers/mcp_provisioner_tool_install_arm_spec.rb \
+  spec/services/containers/provision_spec.rb \
+  spec/services/pre_commit_requirements/evaluate_spec.rb
+# 486 examples, 0 failures
+```
+
+## Critical assumption 2 — batch checkout access and invocation
+
+**Claim to validate:** "Batch analyzers can analyze the pinned checkout and
+return evidence within the existing execution boundary. RDR-073's
+service-oriented image/port contract alone does not establish checkout
+access or batch invocation. Validate one native CLI analyzer and one sidecar
+interaction before finalizing the maintenance tool adapter design."
+
+### Native CLI analyzer — checkout access is already solved, independent of RDR-073
+
+`AgentRun#execute_in_execution_environment` (`app/models/agent_run.rb:3041`)
+→ `Containers::Provision#execute` (`app/services/containers/provision.rb:468`)
+is the existing, shipped contract for running an arbitrary command inside
+the run's own agent container — the same container that already has the
+pinned checkout mounted at `/workspace` (`provision.rb:182`,
+`prepare_workspace!`). `PreCommitRequirements::Evaluate#run_check`
+(`app/services/pre_commit_requirements/evaluate.rb:72-85`) is a shipped
+precedent: it calls `agent_run.execute_in_execution_environment(command,
+stream: false)`, reads `result[:exit_code]`, and surfaces
+`result[:stdout]`/`result[:stderr]` bounded by the command's own output —
+exactly the "source access, invocation, exit-code handling" contract a
+maintenance analyzer needs. `execute`'s `preparation:` parameter
+(`provision.rb:468`, `apply_execution_preparation`/
+`cleanup_execution_preparation` at `agent_run.rb` and
+`provision.rb:1227-1269`) already materializes temporary files before a
+command and removes them after, win or lose — the "bounded artifacts and
+cleanup" half of the assumption.
+
+This path has **no RDR-073 involvement at all**. It is the general
+execution-environment contract every goal already uses, not a tool-sidecar
+concern.
+
+**Live validation (2026-10-23, read-only, no application files modified):**
+
+- Ruby/Rails: installed `debride` (a native CLI analyzer named in the
+  draft's Research Findings) into an isolated `GEM_HOME`, then ran it
+  directly against a checked-out directory:
+
+  ```
+  $ debride app/services/marketplace_entries/
+  These methods MIGHT not be called:
+
+  MarketplaceEntries::JsonParser
+    parse_object!                       app/services/marketplace_entries/json_parser.rb:7-13 (7)
+
+  Total suspect LOC: 7
+  $ echo $?
+  0
+  ```
+
+  Manual (prompt-only) verification: `grep -rn parse_object!
+  app/ spec/` returns only the definition itself — no caller anywhere in the
+  application or its tests. This is a genuine true positive, not a
+  framework-callback or dynamic-dispatch false positive, and illustrates the
+  draft's intended division of labor: the tool nominates a candidate; a
+  semantic read confirms it before any recommendation.
+
+- JS/TS: ran the project's own already-configured ESLint
+  (`eslint.config.mjs`, `js.configs.recommended`) directly against a
+  checked-out file:
+
+  ```
+  $ yarn eslint app/javascript/controllers/chat_controller.js
+  Done in 0.26s.
+  $ echo $?
+  0
+  ```
+
+  (clean scan — a successful investigation with no findings, per the draft's
+  "A completed investigation with no findings is successful"). To confirm
+  the non-clean exit-code and bounded-diagnostic path, the same analyzer was
+  run against a temporary fixture placed inside the configured glob and
+  removed immediately after:
+
+  ```
+  $ yarn eslint app/javascript/controllers/zz_rdr075_validation_scratch.js
+  1:10  error  'unused' is defined but never used      no-unused-vars
+  2:7   error  'x' is assigned a value but never used  no-unused-vars
+  5:10  error  'used' is defined but never used        no-unused-vars
+  ✖ 3 problems (3 errors, 0 warnings)
+  $ echo $?
+  1
+  ```
+
+  (fixture deleted immediately after the run; `git status --porcelain
+  app/javascript/controllers/` confirmed clean before continuing.)
+
+Both runs demonstrate structured, bounded, per-finding output and a
+deterministic exit code through the same mechanism a containerized
+`execute_in_execution_environment` call already provides. Neither run
+required a tool_sidecar, a marketplace entry, or any RDR-073 provisioning
+path.
+
+### Sidecar interaction — RDR-073's contract is network-only; it does not grant checkout access
+
+`Containers::McpProvisioner#create_hardened_tool_sidecar_container`
+(`app/services/containers/mcp_provisioner.rb:389-430`) builds its Docker
+`HostConfig` from `NetworkMode`, memory/CPU/PID resource limits, cap
+drop/add, `SecurityOpt`, and `Tmpfs` only. There is no `Binds`,
+`VolumesFrom`, or any other filesystem-sharing key. The companion spec file
+(`spec/services/containers/mcp_provisioner_tool_install_arm_spec.rb`)
+asserts `HostConfig` shape and the per-run DNS alias but contains no
+`Binds` assertion anywhere, consistent with the implementation never
+setting one. `MarketplaceEntries::Renderer#inferred_attachment_strategy`
+(`app/services/marketplace_entries/renderer.rb:57-61`) has exactly one
+strategy for `entry_type == "tool"`: `"tool_sidecar"` — there is no
+marketplace install path that places a binary inside the main agent
+container's filesystem.
+
+**Finding:** a `tool_sidecar` is reachable from the agent container only
+over the network, by its stable per-run DNS alias and the port recorded in
+`PAID_TOOL_SIDECAR_ENDPOINTS`. It has zero filesystem access to the pinned
+checkout. RDR-073's service-oriented image/port contract, exactly as the
+draft suspected, "does not by itself establish checkout access or batch
+invocation" for a sidecar.
+
+**Conclusion — no RDR-073 extension required for the stated scope.** The
+first delivery's named analyzer candidates (Exhale, Knip, Debride, Vulture,
+PMD CPD — RDR-075 draft, Research Findings) are all native CLI tools, not
+network services. They fit the already-solved native-CLI path above, which
+needs nothing from RDR-073. The `tool_sidecar` path remains correctly scoped
+to tools that are inherently network-callable services (the case RDR-073 was
+designed for); it is not a channel for batch, full-repository analysis and
+should not be treated as one. The maintenance tool adapter design should
+therefore:
+
+1. Invoke native CLI analyzers (gem/npm-installable or already present in
+   the agent runtime image) through
+   `agent_run.execute_in_execution_environment`, the same contract
+   `PreCommitRequirements::Evaluate` already uses, with the pinned checkout
+   already present at the mount path.
+2. Reserve `tool_sidecar` attachments for analyzers that are themselves
+   network services and do not need full-repository filesystem access — for
+   example, an API-style linter or an LSP-shaped service that receives
+   bounded request payloads (file contents, diffs, symbol queries) over its
+   documented endpoint, mirroring how `PAID_TOOL_SIDECAR_ENDPOINTS` is
+   already consumed.
+3. If a specific future recipe genuinely needs a sidecar with full
+   checkout access (not required by any analyzer named in the current
+   draft), that is a distinct RDR-073 extension — an optional read-only
+   bind mount for `tool_sidecar` containers — and must be filed as upstream
+   work with an explicit dependency before any phase that needs it is
+   released. No such need exists in the current draft's scope, so no
+   upstream issue is filed by this report.
+
+## Critical assumption 3 — prompt-only vs. tool-assisted findings
+
+The draft frames this as choosing recipes and reporting policy once tools
+are integrated (#4330), not as a gate on this planning issue. This report
+contributes one data point toward that later comparison rather than a full
+study: the `debride` run above found a true-positive unused-method
+candidate (`MarketplaceEntries::JsonParser#parse_object!`) that a
+targeted `grep`-based prompt-only check could confirm but would not have
+surfaced on its own without first being pointed at that method — consistent
+with the draft's "Tool evidence identifies candidates; agents assess meaning"
+division of labor. A fuller Ruby/Rails and JS/TS comparison on pinned
+fixtures, as the draft's Validation section describes, belongs to #4330 once
+an actual tool-assisted recipe exists to measure against; running it earlier
+would mean comparing prompt-only review against ad hoc script output rather
+than the shipped adapter contract.
+
+## Recommended edits to PR #4308
+
+This report does not edit `docs/rdrs/RDR-075-general-maintenance-runs.md`
+directly — that file lives on PR #4308's branch, and a competing edit there
+would risk the exact "competing design PR" problem the issue warns against.
+The PR's author or reviewer should, when next revising PR #4308:
+
+- Update the **Blocked on** metadata line: Critical assumption 2 is now
+  validated by this report; no RDR-073 extension is required for the stated
+  native-CLI-analyzer and sidecar-interaction scope.
+- Update **Open Questions Before Finalization**, first bullet: RDR-073
+  exposes a network-only (image/port/DNS-alias) batch contract for
+  `tool_sidecar`; no maintenance adapter extension to RDR-073 is necessary
+  for the first delivery. Native CLI analyzers use the existing
+  `execute_in_execution_environment` contract instead.
+- The **Tool integration** section's "existing in-container tools" phrase
+  can be made concrete: native CLI analyzers run via
+  `agent_run.execute_in_execution_environment`, the same mechanism
+  `PreCommitRequirements::Evaluate` already uses.
+
+## Disposition
+
+This report resolves the validation scope of #4327 against the current
+repository state. It does not:
+
+- Accept RDR-075 or merge PR #4308 — that remains a human review action.
+- Release implementation phases #4328–#4333 — their planning holds stay in
+  place until the design and its LID artifacts (HLD update, maintenance
+  LLD/EARS) are accepted and merged, per the draft's own Implementation Plan
+  step 1 and this issue's acceptance criteria.
+- File any upstream RDR-073 extension issue — the validated scope needs
+  none.
+
+Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
+an HLD pointer) are reviewable drafts for the same pending human-review gate,
+not accepted intent.
