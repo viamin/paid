@@ -248,13 +248,19 @@ the umbrella's own final acceptance audit may close #4309.
 
 RDR-075 is reserved for **General Maintenance Runs**, proposed in
 [PR #4308](https://github.com/viamin/paid/pull/4308). Its
-[2026-10-15 C75 closeout audit](audit-report-2026-10-15-rdr-075.md) is
+[2026-10-23 C75 closeout audit](audit-report-2026-10-23-rdr-075.md) is
 **Blocked**: the design remains an unmerged Draft, no approved maintenance
-LLD/EARS or runtime surface has shipped, the `maintenance_runs` default-off
-tenant guard must be retained when implemented, and the separate RDR-073 tool
-guard remains authoritative. The audit tracks #4326 rather than closing it;
-its observed closed GitHub state must be reconciled before the umbrella's own
-final acceptance can legitimately close it.
+LLD/EARS or runtime surface has shipped, and the `maintenance_runs` default-off
+tenant guard must be retained when #4328 registers it. That audit supersedes the
+[2026-10-15](audit-report-2026-10-15-rdr-075.md) readiness snapshot because
+RDR-073's prerequisite has since resolved — #4263 and #4268 are closed and the
+[2026-10-20 final-acceptance audit](audit-report-2026-10-20-rdr-073-epic-final-acceptance.md)
+verified its four delivery phases — while RDR-073's own `marketplace_tool_sidecars`
+guard stays default-off and separately authoritative. Every unmet criterion is
+owned by an open focused issue (#4327–#4333, #4340, and this closeout's rerun),
+so no duplicate gap issue is warranted. The audit tracks #4326 rather than
+closing it; the umbrella's observed closed GitHub state must be reconciled
+before its own final acceptance can legitimately close it.
 
 [RDR-076](RDR-076.md) is the consolidated **Accepted** layered-verification
 design. It covers correspondence between approved business intent and its
