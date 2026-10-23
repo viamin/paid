@@ -6,10 +6,11 @@ require "open3"
 require "tmpdir"
 
 require Rails.root.join("lib/facet_confidence/assessment_corpus_ledger")
+load Rails.root.join("bin/facet-confidence-assessment-evaluation")
 
 # @spec FACET-CONFIDENCE-016 @spec FACET-CONFIDENCE-017
 # @spec FACET-CONFIDENCE-018
-RSpec.describe "bin/facet-confidence-assessment-evaluation" do # rubocop:disable RSpec/DescribeClass
+RSpec.describe FacetConfidence::AssessmentEvaluationCli do
   let(:script_path) { File.expand_path("../../bin/facet-confidence-assessment-evaluation", __dir__) }
   let(:committed_corpus) { File.expand_path("../../docs/intent/facet-confidence/assessment-corpus-manifest-v1.yml", __dir__) }
   let(:corpus_dir) { Pathname.new(Dir.mktmpdir) }
@@ -78,13 +79,34 @@ RSpec.describe "bin/facet-confidence-assessment-evaluation" do # rubocop:disable
     expect(stderr).not_to include("bin/facet-confidence-assessment-evaluation:")
   end
 
+  it "reports a missing ledger directory without a backtrace" do
+    copy_committed_corpus
+    missing_ledger = corpus_dir.join("missing", "ledger.jsonl").to_s
+
+    _stdout, stderr, status = run_cli("validate", "--corpus", corpus, "--ledger", missing_ledger)
+
+    expect(status.exitstatus).to eq(1)
+    expect(stderr).to include("invalid assessment corpus ledger: ledger directory does not exist:")
+    expect(stderr).not_to include("bin/facet-confidence-assessment-evaluation:")
+  end
+
+  it "reports a ledger directory passed as a file without a backtrace" do
+    copy_committed_corpus
+
+    _stdout, stderr, status = run_cli("validate", "--corpus", corpus, "--ledger", corpus_dir.to_s)
+
+    expect(status.exitstatus).to eq(1)
+    expect(stderr).to include("invalid assessment corpus ledger: invalid JSONL event:")
+    expect(stderr).not_to include("bin/facet-confidence-assessment-evaluation:")
+  end
+
   it "exits pending-operator-input when compiling before every corpus case has a run" do
     copy_committed_corpus
 
     _stdout, stderr, status = run_cli("compile", "--corpus", corpus, "--ledger", ledger)
 
     expect(status.exitstatus).to eq(2)
-      expect(stderr).to include("pending operator input: every corpus case needs a non-failed assessment verdict")
+    expect(stderr).to include("pending operator input: every corpus case needs a non-failed assessment verdict")
   end
 
   it "compiles the outcome worksheet for a fully covered ledger" do

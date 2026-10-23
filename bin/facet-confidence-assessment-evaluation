@@ -72,4 +72,4 @@ module FacetConfidence
   end
 end
 
-FacetConfidence::AssessmentEvaluationCli.call(ARGV)
+FacetConfidence::AssessmentEvaluationCli.call(ARGV) if $PROGRAM_NAME == __FILE__

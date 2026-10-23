@@ -60,6 +60,8 @@ module FacetConfidence
       entries
     rescue JSON::ParserError => error
       raise InvalidLedger, "invalid JSONL event: #{error.message}"
+    rescue Errno::EISDIR, Errno::EACCES => error
+      raise InvalidLedger, "invalid JSONL event: #{error.message}"
     end
 
     def append!(ledger_path:, event:, corpus_path:)
@@ -96,10 +98,17 @@ module FacetConfidence
     end
 
     def with_ledger_lock(path, mode = File::LOCK_EX)
-      File.open(File.dirname(path), File::RDONLY) do |directory|
-        directory.flock(mode)
-        yield
-      end
+      directory = open_ledger_directory(path)
+      directory.flock(mode)
+      yield
+    ensure
+      directory&.close
+    end
+
+    def open_ledger_directory(path)
+      File.open(File.dirname(path), File::RDONLY)
+    rescue Errno::ENOENT
+      raise InvalidLedger, "ledger directory does not exist: #{File.dirname(path)}"
     end
 
     def validate_entries!(corpus_path:, entries:)

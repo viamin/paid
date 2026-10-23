@@ -37,7 +37,7 @@ module FacetConfidence
         assessment_cost_cents: evaluation.values.sum { |entry| entry.fetch(:runs).sum { |run| run.fetch("cost_cents") } },
         downstream_rework: rework_measure(evaluation),
         band_divergences: measure(verdicts, ->(_entry) { true }) { |entry| diverges?(entry.fetch(:case), entry.fetch(:run)) },
-        operational_failures: measure(latest, ->(_entry) { true }) { |entry| entry.fetch(:run).fetch("status") == FAILED_RUN_STATUS },
+        operational_failures: all_runs_measure(evaluation) { |run| run.fetch("status") == FAILED_RUN_STATUS },
         tuning_gate: assessed == latest.length ? "metrics_required" : "blocked_incomplete_coverage"
       }
     end
@@ -115,6 +115,13 @@ module FacetConfidence
       { count: evaluation.values.sum { |entry| entry.fetch(:corrections).length },
         rate: rate(corrections.length, evaluation.length),
         cases: corrections.map { |entry| entry.fetch(:case).fetch("id") } }
+    end
+
+    def all_runs_measure(evaluation)
+      runs = evaluation.values.flat_map { |entry| entry.fetch(:runs) }
+      failed_runs = runs.select { |run| yield(run) }
+      { count: failed_runs.length, rate: rate(failed_runs.length, runs.length),
+        cases: failed_runs.map { |run| run.fetch("case_id") }.uniq }
     end
 
     def rework_measure(evaluation)

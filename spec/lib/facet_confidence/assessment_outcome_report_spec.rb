@@ -81,6 +81,21 @@ RSpec.describe FacetConfidence::AssessmentOutcomeReport do
       expect(metrics[:false_readiness][:count]).to eq(0)
     end
 
+    it "retains a failed run in operational failure metrics after a successful re-run" do
+      corpus_cases = [ not_ready_case, decisive_case, ready_case, boundary_case, *filler_cases ]
+      write_events!(*corpus_cases.map { |corpus_case| run_event(corpus_case.fetch("id"), status: "failed") })
+      write_events!(
+        correction_event("FC-CORPUS-01", input_revision: 3),
+        run_event("FC-CORPUS-01", event_id: "run-FC-CORPUS-01-r2", input_revision: 3,
+          status: "completed", intent_score: 40, technical_score: 45,
+          evidence_references: run_references + [ "correction-FC-CORPUS-01" ]))
+
+      metrics = described_class.metrics(corpus_path: corpus, ledger_path: ledger)
+
+      expect(metrics[:operational_failures]).to include(
+        count: 8, rate: "88.9% (8 / 9)", cases: corpus_cases.map { |corpus_case| corpus_case.fetch("id") })
+    end
+
     it "keeps a failed run out of unnecessary clarification and reports it as an operational failure" do
       write_events!(
         run_event("FC-CORPUS-02", status: "failed"),                # expected completed -> provider/runtime failure
