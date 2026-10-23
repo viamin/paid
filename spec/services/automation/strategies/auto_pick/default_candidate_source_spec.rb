@@ -303,6 +303,18 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         expect(scope.pluck(:id)).to contain_exactly(no_selection.id)
       end
 
+      it "skips model-selection lookup when every tier is feasible" do
+        issue = create(:issue, project: project, github_state: "open")
+        pin_tier(issue: issue, tier: "high", created_at: 2.hours.ago)
+        owner.runners.find_by!(runner_key: "claude").update!(
+          tier_models: LlmModel::TIERS.index_with { |tier| { "model_id" => "claude-#{tier}", "provider_id" => 1 } }
+        )
+
+        queries = capture_queries { expect(described_class.eligible_scope(project).pluck(:id)).to contain_exactly(issue.id) }
+
+        expect(queries).not_to include(a_string_matching(/FROM "model_selections"/))
+      end
+
       it "uses the latest selection, so an issue whose newest run dropped the pinned tier is eligible again" do
         issue = create(:issue, project: project, github_state: "open")
         pin_tier(issue: issue, tier: "high", created_at: 3.hours.ago)

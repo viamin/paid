@@ -222,12 +222,10 @@ module Automation
           # runner is configured — no persisted flag to reset. The
           # dispatch-time filter in RunAgentActivity remains the final gate.
           def tier_infeasible_issue_ids(candidate_scope, project)
-            tiers_by_issue = latest_requested_tier_by_issue_id(candidate_scope)
-            return [] if tiers_by_issue.empty?
-
-            infeasible_tiers = infeasible_tiers(project, tiers_by_issue.values.uniq)
+            infeasible_tiers = infeasible_tiers(project, LlmModel::TIERS)
             return [] if infeasible_tiers.empty?
 
+            tiers_by_issue = latest_requested_tier_by_issue_id(candidate_scope)
             tiers_by_issue.select { |_issue_id, tier| infeasible_tiers.include?(tier) }.keys
           end
 
