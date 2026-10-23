@@ -2,7 +2,7 @@
 
 module AgentRuns
   # Persists one redacted, bounded log observation while its agent can act on it.
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   class CaptureApplicationLog
     MAX_LOG_BYTES = ApplicationLog::MAX_BYTES
 
@@ -23,6 +23,8 @@ module AgentRuns
       raise TooLargeError, "application log exceeds #{MAX_LOG_BYTES} bytes" if @content.bytesize > MAX_LOG_BYTES
 
       @agent_run.with_lock do
+        return unless @agent_run.active? && @agent_run.verification_applicable?
+
         @agent_run.update!(verification_result: verification_result)
       end
     end

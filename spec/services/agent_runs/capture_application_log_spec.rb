@@ -3,9 +3,13 @@
 require "rails_helper"
 
 RSpec.describe AgentRuns::CaptureApplicationLog do
-  # @spec APP-DIAGNOSTICS-004
+  def verification_eligible_agent_run
+    create(:agent_run, :running).tap { |agent_run| agent_run.project.update!(verification_enabled: true) }
+  end
+
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "persists the bounded redacted log tail on the run" do
-    agent_run = create(:agent_run, :running)
+    agent_run = verification_eligible_agent_run
 
     described_class.call(agent_run:, content: "boot token=super-secret-value\n")
 
@@ -15,9 +19,9 @@ RSpec.describe AgentRuns::CaptureApplicationLog do
     expect(agent_run.verification_result["app_log_recorded_at"]).to be_present
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "redacts active account credentials before persistence" do
-    agent_run = create(:agent_run, :running)
+    agent_run = verification_eligible_agent_run
     credential = create(:integration_credential, account: agent_run.project.account, secret: "stagingpassword")
 
     described_class.call(agent_run:, content: "upstream denied credential: #{credential.secret}")
@@ -27,23 +31,22 @@ RSpec.describe AgentRuns::CaptureApplicationLog do
     expect(persisted_log).not_to include(credential.secret)
   end
 
-  # @spec APP-DIAGNOSTICS-004
-  it "preserves a verification result finalized after the run was loaded" do
-    agent_run = create(:agent_run, :running)
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
+  it "does not overwrite a verification result finalized after the run was loaded" do
+    agent_run = verification_eligible_agent_run
     stale_agent_run = AgentRun.find(agent_run.id)
     finalized_result = { "status" => "passed", "summary" => "Verification completed" }
     agent_run.update!(verification_result: finalized_result)
+    agent_run.complete!
 
     described_class.call(agent_run: stale_agent_run, content: "application started")
 
-    expect(agent_run.reload.verification_result).to include(
-      finalized_result.merge("app_log_tail" => "application started")
-    )
+    expect(agent_run.reload.verification_result).to eq(finalized_result)
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "raises when the payload exceeds the bounded log byte cap" do
-    agent_run = create(:agent_run, :running)
+    agent_run = verification_eligible_agent_run
 
     expect {
       described_class.call(agent_run:, content: "x" * (described_class::MAX_LOG_BYTES + 1))
@@ -51,9 +54,9 @@ RSpec.describe AgentRuns::CaptureApplicationLog do
     expect(agent_run.reload.verification_result).to be_blank
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "bounds redacted content that expands beyond the log byte cap" do
-    agent_run = create(:agent_run, :running)
+    agent_run = verification_eligible_agent_run
     content = "a@b.co " * (described_class::MAX_LOG_BYTES / 7)
 
     described_class.call(agent_run:, content:)
@@ -63,9 +66,9 @@ RSpec.describe AgentRuns::CaptureApplicationLog do
     expect(result).to include("app_log_truncated" => true)
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "treats a blank payload as a no-capture and does not overwrite retained evidence" do
-    agent_run = create(:agent_run, :running)
+    agent_run = verification_eligible_agent_run
     agent_run.update!(verification_result: {
       "app_log_tail" => "retained prior tail",
       "app_log_recorded_at" => "2026-10-21T00:00:00Z"

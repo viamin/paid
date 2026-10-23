@@ -43,26 +43,26 @@
   *Test:* `spec/lib/paid/json_log_formatter_spec.rb`,
   `spec/config/checked_in_observability_assets_spec.rb`.
 
-- [x] **APP-DIAGNOSTICS-001** — When an authenticated run requests application
+- [x] **OBSERVABILITY-APP-DIAGNOSTICS-001** — When an authenticated run requests application
   diagnostics, Paid SHALL return only that run's retained verification log tail
   and run container samples, with account/project/run/revision/timestamp
   provenance and secret redaction.
   *Code:* `AgentRuns::ApplicationDiagnostics`.
   *Test:* `spec/services/agent_runs/application_diagnostics_spec.rb`.
 
-- [x] **APP-DIAGNOSTICS-002** — Diagnostic retrieval SHALL be read-only and
+- [x] **OBSERVABILITY-APP-DIAGNOSTICS-002** — Diagnostic retrieval SHALL be read-only and
   bound lookback to one hour, samples to 100, and log content to 32 KiB; absent
   instrumentation SHALL be reported as unavailable evidence.
   *Code:* `AgentRuns::ApplicationDiagnostics`.
   *Test:* `spec/services/agent_runs/application_diagnostics_spec.rb`.
 
-- [x] **APP-DIAGNOSTICS-003** — The run diagnostic endpoint SHALL authenticate
+- [x] **OBSERVABILITY-APP-DIAGNOSTICS-003** — The run diagnostic endpoint SHALL authenticate
   with the existing container credential and SHALL not accept a target run,
   project, host, file, or container identifier.
   *Code:* `Api::ApplicationDiagnosticsController`.
   *Test:* `spec/requests/api/application_diagnostics_spec.rb`.
 
-- [x] **APP-DIAGNOSTICS-004** — While an authenticated run is active and
+- [x] **OBSERVABILITY-APP-DIAGNOSTICS-004** — While an authenticated run is active and
   verification is in progress, Paid SHALL accept only that run's bounded
   application-log tail, redact it before persistence, and make the captured
   tail available through that run's diagnostic retrieval endpoint before the

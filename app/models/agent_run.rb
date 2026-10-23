@@ -1749,7 +1749,7 @@ class AgentRun < ApplicationRecord
     goal == "create_pr"
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   def verification_applicable?
     create_pr_goal? && project.verification_enabled?
   end

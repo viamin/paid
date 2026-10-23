@@ -58,8 +58,10 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
 
   it "persists the recorded verification result and app log tail onto the run" do
     File.write(result_path, JSON.generate(
-      status: "passed", summary: "Verified the updated settings form.",
-      app_url: "http://localhost:3000/settings", used_browser_tools: true,
+      status: "passed",
+      summary: "Verified the updated settings form.",
+      app_url: "http://localhost:3000/settings",
+      used_browser_tools: true,
       browser_steps: [ "Opened settings", "Saved the form" ],
       artifacts: [ { kind: "app_log", path: AgentRuns::VerificationPrompt::APP_LOG_PATH } ]
     ))
@@ -68,8 +70,10 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
 
     expect(agent_run.reload.verification_result).to include(
-      "status" => "passed", "summary" => "Verified the updated settings form.",
-      "app_url" => "http://localhost:3000/settings", "used_browser_tools" => true,
+      "status" => "passed",
+      "summary" => "Verified the updated settings form.",
+      "app_url" => "http://localhost:3000/settings",
+      "used_browser_tools" => true,
       "browser_steps" => [ "Opened settings", "Saved the form" ],
       "app_log_tail" => "line 1\nline 2\n", "app_log_truncated" => false
     )
@@ -77,9 +81,11 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(File).not_to exist(log_path)
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "preserves a captured application log written after the run was loaded" do
     stale_agent_run = AgentRun.find(agent_run.id)
+    agent_run.project.update!(verification_enabled: true)
+    agent_run.update!(status: "running")
     AgentRuns::CaptureApplicationLog.call(agent_run:, content: "captured while verifying")
     File.write(result_path, JSON.generate(status: "passed"))
 
@@ -241,7 +247,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     )
   end
 
-  # @spec APP-DIAGNOSTICS-001
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
   it "flags the persisted tail as complete when the agent log fits within the caps" do
     File.write(result_path, JSON.generate(status: "passed"))
     File.write(log_path, "single entry\n")
@@ -251,7 +257,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(agent_run.reload.verification_result).to include("app_log_truncated" => false)
   end
 
-  # @spec APP-DIAGNOSTICS-001
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
   it "flags the persisted tail as truncated when the byte cap stops the read" do
     File.write(result_path, JSON.generate(status: "passed"))
     File.write(log_path, "x" * (described_class::LOG_TAIL_MAX_BYTES + 1))
@@ -264,7 +270,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     )
   end
 
-  # @spec APP-DIAGNOSTICS-001
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
   it "bounds redacted content that expands beyond the log byte cap" do
     File.write(result_path, JSON.generate(status: "passed"))
     File.write(log_path, "a@b.co " * (described_class::LOG_TAIL_MAX_BYTES / 7))
@@ -276,7 +282,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(result).to include("app_log_truncated" => true)
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "falls back to the agent-captured `app_log_truncated` marker when no on-disk log is readable" do
     agent_run.update!(verification_result: {
       "app_log_tail" => "captured during verification",
@@ -294,7 +300,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     )
   end
 
-  # @spec APP-DIAGNOSTICS-001
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
   it "redacts secrets before persisting the app log tail" do
     File.write(result_path, JSON.generate(status: "passed"))
     File.write(log_path, "boot token=super-secret-value\n")
@@ -304,7 +310,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(agent_run.reload.verification_result.fetch("app_log_tail")).to include("[REDACTED")
   end
 
-  # @spec APP-DIAGNOSTICS-001
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
   it "redacts active account credentials from the final app log tail" do
     credential = create(:integration_credential, account: agent_run.project.account, secret: "stagingpassword")
     File.write(result_path, JSON.generate(status: "passed"))
@@ -317,7 +323,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(persisted_log).not_to include(credential.secret)
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "retains the active-run captured log when the final log file is unavailable" do
     agent_run.update!(verification_result: {
       "app_log_tail" => "captured during verification",
@@ -333,7 +339,7 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     )
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "retains the active-run captured log on the apple-gate path when the agent wrote no result" do
     FeatureFlags.enable!(:apple_verification_workers, project:)
     project.update!(apple_verification_mode: "on_demand")

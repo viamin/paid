@@ -2,8 +2,8 @@
 
 module AgentRuns
   # Read-only, bounded diagnostic evidence for the application exercised by one run.
-  # @spec APP-DIAGNOSTICS-001
-  # @spec APP-DIAGNOSTICS-002
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-002
   class ApplicationDiagnostics
     MAX_LOOKBACK_SECONDS = 3_600
     MAX_SAMPLES = 100

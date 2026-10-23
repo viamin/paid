@@ -3,8 +3,8 @@
 require "rails_helper"
 
 RSpec.describe AgentRuns::ApplicationDiagnostics do
-  # @spec APP-DIAGNOSTICS-001
-  # @spec APP-DIAGNOSTICS-002
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-002
   let(:agent_run) { create(:agent_run, :with_git_context) }
 
   it "returns redacted bounded application logs and run-scoped metric observations" do
@@ -18,7 +18,7 @@ RSpec.describe AgentRuns::ApplicationDiagnostics do
     expect(result.fetch("provenance")).to include("agent_run_id" => agent_run.id, "project_id" => agent_run.project_id)
   end
 
-  # @spec APP-DIAGNOSTICS-001
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
   it "redacts active account credentials from retained log evidence" do
     credential = create(:integration_credential, account: agent_run.project.account, secret: "stagingpassword")
     agent_run.update!(verification_result: { "app_log_tail" => "upstream denied credential: #{credential.secret}" })
@@ -29,7 +29,7 @@ RSpec.describe AgentRuns::ApplicationDiagnostics do
     expect(content).not_to include(credential.secret)
   end
 
-  # @spec APP-DIAGNOSTICS-002
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-002
   it "bounds redacted log content returned from retained evidence" do
     agent_run.update!(verification_result: { "app_log_tail" => "a@b.co " * (AgentRuns::ApplicationLog::MAX_BYTES / 7) })
 
@@ -40,7 +40,7 @@ RSpec.describe AgentRuns::ApplicationDiagnostics do
     expect(entry).to include("truncated" => true)
   end
 
-  # @spec APP-DIAGNOSTICS-002
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-002
   it "advertises every container metric even when the oldest sample omits pids" do
     create(:container_metric, agent_run:, recorded_at: 2.minutes.ago, pids_count: nil)
     create(:container_metric, agent_run:, recorded_at: 1.minute.ago, pids_count: 3)
@@ -50,7 +50,7 @@ RSpec.describe AgentRuns::ApplicationDiagnostics do
     expect(result.dig("metrics", "metric_names")).to include("pids_count")
   end
 
-  # @spec APP-DIAGNOSTICS-002
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-002
   it "falls back to the maximum bound instead of raising on a non-scalar parameter" do
     create(:container_metric, agent_run:, recorded_at: 2.minutes.ago)
 
@@ -74,7 +74,7 @@ RSpec.describe AgentRuns::ApplicationDiagnostics do
     expect(described_class.call(agent_run:).dig("metrics", "status")).to eq("unavailable")
   end
 
-  # @spec APP-DIAGNOSTICS-001
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
   it "propagates the persisted truncation marker so callers know the tail is bounded" do
     agent_run.update!(verification_result: {
       "app_log_tail" => "truncated tail",

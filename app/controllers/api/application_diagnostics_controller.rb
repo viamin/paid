@@ -2,7 +2,7 @@
 
 module Api
   # Read-only diagnostics for the authenticated run only.
-  # @spec APP-DIAGNOSTICS-003
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-003
   class ApplicationDiagnosticsController < ActionController::API
     include Api::ContainerAuthentication
 
@@ -20,7 +20,7 @@ module Api
       )
     end
 
-    # @spec APP-DIAGNOSTICS-004
+    # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
     def capture
       AgentRuns::CaptureApplicationLog.call(agent_run: @agent_run, content: bounded_request_body)
       head :no_content
@@ -30,7 +30,7 @@ module Api
 
     private
 
-    # @spec APP-DIAGNOSTICS-004
+    # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
     def ensure_verification_in_progress
       return if @agent_run.active? && @agent_run.verification_applicable?
 
@@ -47,7 +47,7 @@ module Api
       content
     end
 
-    # @spec APP-DIAGNOSTICS-004
+    # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
     def check_capture_rate_limit
       count = Rails.cache.increment(capture_rate_limit_key, 1, expires_in: CAPTURE_RATE_LIMIT_PERIOD)
       count ||= initialize_capture_rate_limit_count

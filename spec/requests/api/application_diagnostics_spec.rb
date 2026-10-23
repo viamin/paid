@@ -7,7 +7,7 @@ RSpec.describe "Application diagnostics proxy" do
     create(:agent_run, :running, **traits).tap { |agent_run| agent_run.project.update!(verification_enabled: true) }
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "makes a bounded captured log available to the active authenticated run" do
     agent_run = verification_eligible_agent_run
     headers = {
@@ -26,7 +26,7 @@ RSpec.describe "Application diagnostics proxy" do
     expect(diagnostics.dig("logs", "entries", 0, "content")).to include("[REDACTED")
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "rejects an oversized captured log without changing retained evidence" do
     agent_run = verification_eligible_agent_run
     agent_run.update!(verification_result: { "app_log_tail" => "retained" })
@@ -42,7 +42,7 @@ RSpec.describe "Application diagnostics proxy" do
     expect(agent_run.reload.verification_result.fetch("app_log_tail")).to eq("retained")
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "rejects an oversized declared payload without reading it" do
     agent_run = verification_eligible_agent_run
     agent_run.update!(verification_result: { "app_log_tail" => "retained" })
@@ -59,7 +59,7 @@ RSpec.describe "Application diagnostics proxy" do
     expect(agent_run.reload.verification_result.fetch("app_log_tail")).to eq("retained")
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "treats a blank captured log as a no-capture and preserves retained evidence" do
     agent_run = verification_eligible_agent_run
     agent_run.update!(verification_result: { "app_log_tail" => "retained prior tail" })
@@ -75,7 +75,7 @@ RSpec.describe "Application diagnostics proxy" do
     expect(agent_run.reload.verification_result).to include("app_log_tail" => "retained prior tail")
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "rejects captures beyond the per-run budget without changing retained evidence" do
     agent_run = verification_eligible_agent_run
     agent_run.update!(verification_result: { "app_log_tail" => "retained" })
@@ -93,7 +93,7 @@ RSpec.describe "Application diagnostics proxy" do
     expect(agent_run.reload.verification_result.fetch("app_log_tail")).to eq("retained")
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "atomically initializes the capture budget before incrementing it" do
     agent_run = verification_eligible_agent_run
     headers = {
@@ -117,7 +117,7 @@ RSpec.describe "Application diagnostics proxy" do
     expect(response).to have_http_status(:no_content)
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "rejects a capture from an active run that is not eligible for interactive verification" do
     agent_run = create(:agent_run, :running, :review_goal)
     agent_run.project.update!(verification_enabled: true)
@@ -134,7 +134,7 @@ RSpec.describe "Application diagnostics proxy" do
     expect(agent_run.reload.verification_result.fetch("app_log_tail")).to eq("retained")
   end
 
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   it "rejects a capture when the project has not enabled verification" do
     agent_run = create(:agent_run, :running)
     agent_run.update!(verification_result: { "app_log_tail" => "retained" })
@@ -150,7 +150,7 @@ RSpec.describe "Application diagnostics proxy" do
     expect(agent_run.reload.verification_result.fetch("app_log_tail")).to eq("retained")
   end
 
-  # @spec APP-DIAGNOSTICS-003
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-003
   it "binds diagnostics to the run authenticated by the proxy token" do
     agent_run = create(:agent_run, :running)
     other_run = create(:agent_run, :running, project: agent_run.project)

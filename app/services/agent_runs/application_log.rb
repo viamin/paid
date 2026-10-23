@@ -2,8 +2,8 @@
 
 module AgentRuns
   # Redacts and bounds application-log content before it crosses a persistence or API boundary.
-  # @spec APP-DIAGNOSTICS-001
-  # @spec APP-DIAGNOSTICS-004
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-004
   class ApplicationLog
     MAX_BYTES = 32 * 1024
 
