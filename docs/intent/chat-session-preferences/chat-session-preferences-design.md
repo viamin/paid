@@ -87,8 +87,8 @@ Paid never asks for, stores, or displays chain-of-thought.
 Agent-harness owns provider parameter names, value translation, and protocol
 compatibility. The currently pinned release has no public ChatTransport
 capability/request field for caller-supplied reasoning effort, so the control
-remains hidden and no unsupported parameter is sent until the upstream
-contract is released. This is blocked by an explicit viamin/agent-harness
-dependency; the attempted filing is not available through the current
-repository-scoped GitHub proxy and must be created upstream before this
-behavior is enabled.
+remains hidden and no unsupported parameter is sent. Paid probes for an
+upstream `reasoning_effort_transport_supported?` declaration, but this
+feature remains deferred until agent-harness ships that declaration and its
+matching normalized candidate/request contract, then Paid updates the pin and
+verifies the end-to-end transport path.

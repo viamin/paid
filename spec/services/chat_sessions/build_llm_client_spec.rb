@@ -755,6 +755,11 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
       )
     end
 
+    # @spec CHAT-THINKING-EFFORT-001 CHAT-THINKING-EFFORT-008
+    it "keeps thinking effort unavailable until agent-harness declares its transport contract" do
+      expect(described_class.reasoning_effort_transport_supported?).to be(false)
+    end
+
     # @spec CHAT-THINKING-EFFORT-004 CHAT-THINKING-EFFORT-008
     it "forwards the normalized effort through the harness candidate for a non-streaming turn when supported" do
       allow(described_class).to receive(:reasoning_effort_transport_supported?).and_return(true)

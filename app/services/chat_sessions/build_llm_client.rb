@@ -173,21 +173,15 @@ module ChatSessions
 
       attr_reader :model
 
-      # Reasoning/thinking effort is a per-request chat parameter. Confirmed
-      # against the pinned agent-harness 0.44.22 gem
-      # (lib/agent_harness/api/chat_transport.rb,
-      # lib/agent_harness/api/ruby_llm_chat_adapter.rb): the normalized
-      # ChatTransport candidate/request contract has no reasoning-effort
-      # field, and RubyLlmChatAdapter#configure_chat never calls anything
-      # like with_reasoning_effort — there is nothing to forward the value
-      # into yet, and no tracked viamin/agent-harness issue number for
-      # adding one. This predicate is the single switch: false keeps the
-      # value out of the candidate entirely (so nothing unsupported is ever
-      # sent to the provider); flip it once agent-harness ships the
-      # capability, with no other Paid-side change required.
+      # Reasoning effort stays deferred until agent-harness publishes both a
+      # capability declaration and the matching candidate/request contract.
+      # The probe keeps the control fail-closed with the currently pinned
+      # release, while allowing the upstream contract—not a Paid-side
+      # provider table—to enable it when the dependency is updated.
       # @spec CHAT-THINKING-EFFORT-008
       def self.reasoning_effort_transport_supported?
-        false
+        AgentHarness::Api::ChatTransport.respond_to?(:reasoning_effort_transport_supported?) &&
+          AgentHarness::Api::ChatTransport.reasoning_effort_transport_supported?
       end
 
       def initialize(chat_session:, provider:, protocol:, endpoint:, api_key:, model:, max_tokens: nil, model_resolver: nil,
