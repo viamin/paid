@@ -127,6 +127,35 @@ exports `APPLE_VERIFICATION_HOST_URL` / `APPLE_VERIFICATION_HOST_TOKEN` /
 [runbook](live-validation-runbook-rdr-068.md) and archive the resulting
 report.
 
+## Closing language for the PR that carries this audit
+
+Per [closeout checklist §8](closeout-checklist.md#8-close-or-keep-the-umbrella-issue-intentionally),
+the PR delivering this audit must reference #4274 and #3930 with non-closing
+language only. GitHub resolves closing keywords against the base branch at
+merge time, so a closing keyword aimed at #4274 in that description would
+auto-close the very issue this report says must stay open, and would present
+unmet AC1–AC8 criteria as satisfied.
+
+The description of the PR carrying this audit contains a GitHub closing
+keyword immediately followed by the #4274 reference, in the line just below the
+`---` separator that precedes the LID phase report. That contradicts the
+conclusion above. GitHub counts a closing keyword whether or not it is quoted
+or backticked, so this report deliberately never writes the pairing out. Before
+merging, delete that line from the description and replace it — and the `---`
+separator directly above it — with this non-closing block, leaving the rest of
+the description unchanged:
+
+```markdown
+## Dependencies
+
+Relates to #4274
+Tracks #3930
+```
+
+No commit on this branch carries a closing keyword either, so the merge itself
+cannot close #4274. It closes only when a live run satisfies AC1–AC8 and a
+human closes the issue after the operator rerun described above.
+
 ## Rollout guard
 
 `apple_verification_workers` remains default-off
