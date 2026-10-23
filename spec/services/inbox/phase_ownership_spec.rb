@@ -73,6 +73,18 @@ RSpec.describe Inbox::PhaseOwnership do
   end
 
   describe "legacy classification from evidence" do
+    it "uses the entry kind when an anonymous record type has no class name" do
+      record = Class.new.new
+      entry = Inbox::Queue::Entry.new(
+        id: "action_required:5", kind: Inbox::Queue::ACTION_REQUIRED_KIND, project:, record:
+      )
+
+      expect(described_class.for_entry(entry)).to have_attributes(
+        classification_state: "classified",
+        origin_kind: Inbox::Queue::ACTION_REQUIRED_KIND
+      )
+    end
+
     it "classifies an enhancement clarification request as issue preparation" do
       issue = create(:issue, :needs_input, project:, github_state: "open", body: questions_body)
 

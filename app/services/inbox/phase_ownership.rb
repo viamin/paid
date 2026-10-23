@@ -243,7 +243,7 @@ module Inbox
       return "issue" if entry.issue
       return "project" if entry.record.is_a?(Project)
 
-      entry.record.class.name.underscore
+      entry.record.class.name&.underscore || entry.kind
     end
 
     def origin_id_for(entry)
