@@ -15,7 +15,19 @@ module ShadowEvaluationCorpusHelper
   }.freeze
 
   def corpus_case(id, overrides = {})
-    { "id" => id }.merge(CASE_TEMPLATE).merge(overrides)
+    # Deep-duplicate the template so serialized fixtures never share the
+    # inner objects (Psych would emit YAML anchors/aliases, which the
+    # ledger's safe_load deliberately rejects).
+    { "id" => id }.merge(CASE_TEMPLATE.deep_dup).merge(overrides)
+  end
+
+  # A corpus that passes the shared corpus-shape checks: ten cases in each
+  # stratum with the full case identity (the CLI ledger's minimum corpus).
+  def full_strata_corpus_cases
+    prefixes = { "accepted" => "A", "intentionally_drifted" => "D", "uncertain" => "U" }
+    IntentConformance::ShadowEvaluationLedger::CORPUS_STRATA.flat_map do |stratum|
+      (1..10).map { |n| corpus_case(format("%s-%02d", prefixes.fetch(stratum), n), "stratum" => stratum) }
+    end
   end
 
   def write_corpus_manifest(dir, cases, extra = {})

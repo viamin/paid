@@ -372,6 +372,17 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
     expect { described_class.load_manifest(manifest) }.to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /case ids must be unique/)
   end
 
+  # The UI Start path shares this single corpus-shape definition with the CLI
+  # surfaces, so neither can accept a corpus the other rejects (#4598 review).
+  it "validates the corpus shape a manifest must satisfy before an evaluation starts" do
+    File.write(manifest, { "cases" => complete_corpus_cases }.to_yaml)
+    expect(described_class.validate_corpus_shape!(manifest)).to be(true)
+
+    File.write(manifest, { "cases" => complete_corpus_cases.first(29) }.to_yaml)
+    expect { described_class.validate_corpus_shape!(manifest) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /at least ten cases in each stratum/)
+  end
+
   # @spec INTENT-CONFORMANCE-ROLLOUT-003
   it "rejects a shadow run referencing a case outside the frozen manifest" do
     events = complete_adjudication_events + [

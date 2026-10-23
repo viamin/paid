@@ -41,6 +41,17 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     freeze!(evaluation)
   end
 
+  # A distinct PG backend/session standing in for a second operator's
+  # process; see the contention example for why the checked-out Rails
+  # connection cannot play that role.
+  def raw_pg_session
+    db_config = ActiveRecord::Base.connection_db_config.configuration_hash
+    PG.connect(
+      host: db_config[:host], port: db_config[:port], dbname: db_config[:database],
+      user: db_config[:username], password: db_config[:password]
+    )
+  end
+
   it "refuses to execute before the reference set is frozen (blinding boundary)" do
     result = described_class.call(evaluation: evaluation)
 
@@ -126,5 +137,53 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     expect(result.failed).to eq(0)
     expect(evaluation.reload).to be_completed
     expect(evaluation.runs.count).to eq(2)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-007 — any project operator may execute,
+  # so two concurrent POSTs would both observe "no run row" for a case, both
+  # invoke the paid reviewer, and the loser's write would then race the
+  # unique (shadow_evaluation_id, case_id) index after duplicated LLM spend.
+  # A genuinely separate PG session is required to prove the contention: the
+  # transactional fixtures pin every connection checked out on this thread
+  # to the same backend/session, so advisory locks taken that way would just
+  # re-enter a lock this thread already holds. Session-scoped
+  # pg_try_advisory_lock only contends across distinct backends, so the
+  # second operator's process is simulated with a raw `pg` connection.
+  it "refuses to start when another invocation is already executing this evaluation" do
+    prepare_frozen!
+    allow(AgentHarness).to receive(:send_message)
+
+    other_session = raw_pg_session
+    begin
+      other_session.exec_params(
+        "SELECT pg_try_advisory_lock($1, $2)",
+        [ described_class::ADVISORY_LOCK_NAMESPACE, evaluation.id ]
+      )
+
+      result = described_class.call(evaluation: evaluation)
+
+      expect(result).not_to be_success
+      expect(result.error).to include("already in progress")
+      expect(AgentHarness).not_to have_received(:send_message)
+      expect(evaluation.reload).to be_frozen
+      expect(evaluation.runs).to be_empty
+    ensure
+      other_session.close
+    end
+  end
+
+  it "releases the execution lock when it finishes so a retry can proceed" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message)
+      .and_return(instance_double(AgentHarness::Response, success?: false, model: nil, output: nil, metadata: {}))
+    described_class.call(evaluation: evaluation)
+
+    allow(AgentHarness).to receive(:send_message).and_return(llm_response("within_scope"))
+    second = described_class.call(evaluation: evaluation)
+
+    expect(second).to be_success
+    expect(second.executed).to eq(2)
+    expect(evaluation.reload).to be_completed
   end
 end

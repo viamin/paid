@@ -9,14 +9,15 @@ RSpec.describe IntentConformance::ShadowEvaluation::Start do
   let(:owner) { create(:user, :owner, account: account) }
   let(:project) { create(:project, account: account, created_by: owner) }
   let(:dir) { Dir.mktmpdir }
+  let(:cases) { full_strata_corpus_cases }
   let(:manifest_path) { File.join(dir, "manifest.yml") }
 
-  before { File.write(manifest_path, manifest_yaml) }
+  before { File.write(manifest_path, { "cases" => cases }.to_yaml) }
 
   after { FileUtils.remove_entry(dir) }
 
-  def manifest_yaml(cases = [ { "id" => "A-01", "stratum" => "accepted", "repository" => "acme/widgets", "base_sha" => "a", "head_sha" => "b", "approved_design_revision" => "r", "model" => "m", "prompt_version" => "v" } ])
-    { "cases" => cases }.to_yaml
+  def write_manifest(new_cases)
+    File.write(manifest_path, { "cases" => new_cases }.to_yaml)
   end
 
   def call(policy: "solo")
@@ -43,7 +44,7 @@ RSpec.describe IntentConformance::ShadowEvaluation::Start do
 
   it "starts a new evidence generation when the corpus digest changes, keeping the old record" do
     first = call
-    File.write(manifest_path, manifest_yaml([ { "id" => "B-01", "stratum" => "accepted", "repository" => "acme/widgets", "base_sha" => "a", "head_sha" => "b", "approved_design_revision" => "r", "model" => "m", "prompt_version" => "v" } ]))
+    write_manifest(cases.map { |corpus_case| corpus_case == cases.first ? corpus_case.merge("head_sha" => "z" * 40) : corpus_case })
     second = call
 
     expect(second.evaluation.id).not_to eq(first.evaluation.id)
@@ -59,5 +60,66 @@ RSpec.describe IntentConformance::ShadowEvaluation::Start do
 
     expect(result).not_to be_success
     expect(result.error).to include("was not found")
+  end
+
+  it "resumes the surviving evaluation when a concurrent start wins the unique-index race" do
+    winner = nil
+    allow(IntentConformanceShadowEvaluation).to receive(:create!).and_wrap_original do |original, **attributes|
+      winner = original.call(**attributes)
+      raise ActiveRecord::RecordNotUnique, "simulated concurrent start inserted the row first"
+    end
+
+    result = call
+
+    expect(result).to be_success
+    expect(result.resumed).to be(true)
+    expect(result.evaluation.id).to eq(winner.id)
+    expect(IntentConformanceShadowEvaluation.count).to eq(1)
+  end
+
+  # The form accepts an operator-supplied manifest path, so Start applies the
+  # same corpus-shape checks as the CLI ledger before an evaluation exists
+  # (#4598 review).
+  it "refuses a corpus with fewer than ten cases in a stratum" do
+    write_manifest(full_strata_corpus_cases.drop(1))
+
+    result = call
+
+    expect(result).not_to be_success
+    expect(result.error).to include("at least ten cases in each stratum")
+    expect(IntentConformanceShadowEvaluation.count).to eq(0)
+  end
+
+  it "refuses a case without a valid stratum" do
+    write_manifest(full_strata_corpus_cases + [ corpus_case("X-01", "stratum" => nil) ])
+
+    result = call
+
+    expect(result).not_to be_success
+    expect(result.error).to include("X-01").and include("lacks a valid stratum")
+    expect(IntentConformanceShadowEvaluation.count).to eq(0)
+  end
+
+  it "refuses a case missing required repository, revision, or model/prompt identity" do
+    write_manifest(full_strata_corpus_cases + [ corpus_case("X-01", "model" => "") ])
+
+    result = call
+
+    expect(result).not_to be_success
+    expect(result.error).to include("X-01").and include("repository, revision, or model/prompt identity")
+    expect(IntentConformanceShadowEvaluation.count).to eq(0)
+  end
+
+  it "refuses duplicate or missing case ids" do
+    write_manifest(full_strata_corpus_cases + [ corpus_case("A-01") ])
+
+    expect(call.error).to include("case ids must be unique")
+
+    write_manifest(full_strata_corpus_cases + [ corpus_case("") ])
+    expect(call.error).to include("every case needs an id")
+
+    write_manifest([])
+    expect(call.error).to include("cases list must not be empty")
+    expect(IntentConformanceShadowEvaluation.count).to eq(0)
   end
 end

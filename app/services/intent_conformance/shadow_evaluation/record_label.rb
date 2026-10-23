@@ -30,18 +30,38 @@ module IntentConformance
         return failure("reference labels are frozen; post-result changes must use a recorded revision") unless @evaluation.labeling?
         return failure("only the declared solo maintainer may record reference labels") unless @actor&.id == @evaluation.solo_maintainer_id
         return failure("case #{@case_id.inspect} is not part of the frozen corpus") unless @evaluation.corpus.find_case(@case_id)
+        return failure("outcome must be one of #{OUTCOMES.join(', ')}") unless skip? || OUTCOMES.include?(@outcome)
+        return failure("a cited design claim is required") if recording_label? && @cited_design_claim.to_s.strip.empty?
+        return failure("a reason is required") if recording_label? && @reason.to_s.strip.empty?
 
-        label = @evaluation.labels.find_or_initialize_by(case_id: @case_id)
+        persist(build_label(@evaluation.labels.find_or_initialize_by(case_id: @case_id)))
+      rescue ActiveRecord::RecordNotUnique
+        # A double-submit of the same case races find_or_initialize_by: both
+        # requests build a new row and the loser's insert hits the unique
+        # (shadow_evaluation_id, case_id) index. The winner's row is the
+        # durable save/resume state, so the loser retries once as an in-place
+        # update instead of surfacing the index race as a 500 (#4598 review).
+        persist(build_label(@evaluation.labels.find_by!(case_id: @case_id)))
+      end
+
+      private
+
+      attr_reader :evaluation, :actor, :case_id, :outcome, :cited_design_claim, :reason
+
+      def persist(label)
+        return failure(label.errors.full_messages.to_sentence) unless label.save
+
+        log_recorded(label)
+        Result.new(success: true, error: nil, label: label)
+      end
+
+      def build_label(label)
         if skip?
           label.state = "skipped"
           label.outcome = nil
           label.cited_design_claim = nil
           label.reason = nil
         else
-          return failure("outcome must be one of #{OUTCOMES.join(', ')}") unless OUTCOMES.include?(@outcome)
-          return failure("a cited design claim is required") if @cited_design_claim.to_s.strip.empty?
-          return failure("a reason is required") if @reason.to_s.strip.empty?
-
           label.state = "labeled"
           label.outcome = @outcome
           label.cited_design_claim = @cited_design_claim.to_s.strip
@@ -49,19 +69,15 @@ module IntentConformance
         end
         label.recorded_by = @actor
         label.recorded_at = Time.current
-
-        return failure(label.errors.full_messages.to_sentence) unless label.save
-
-        log_recorded(label)
-        Result.new(success: true, error: nil, label: label)
+        label
       end
-
-      private
-
-      attr_reader :evaluation, :actor, :case_id, :outcome, :cited_design_claim, :reason
 
       def skip?
         outcome.nil?
+      end
+
+      def recording_label?
+        !skip?
       end
 
       def log_recorded(label)

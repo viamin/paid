@@ -32,6 +32,9 @@ module IntentConformance
         return failure("the solo policy must be explicitly selected; use the team-policy CLI runbook for team evaluation") unless @policy == "solo"
         return failure("the solo maintainer must be the authenticated operator who starts the evaluation") unless @actor.present?
 
+        shape_error = corpus_shape_error
+        return failure(shape_error) if shape_error
+
         digest = @corpus.content_digest
         existing = IntentConformanceShadowEvaluation.find_by(project: @project, purpose: @purpose, manifest_digest: digest)
         return Result.new(success: true, error: nil, evaluation: existing, resumed: true) if existing
@@ -52,6 +55,15 @@ module IntentConformance
         failure(error.message)
       rescue ActiveRecord::RecordInvalid => error
         failure(error.record.errors.full_messages.to_sentence)
+      rescue ActiveRecord::RecordNotUnique
+        # Two operators starting the same evidence generation concurrently both
+        # pass the find_by above; the unique (project, purpose, manifest_digest)
+        # index keeps exactly one evaluation, so the loser resumes the winner's
+        # row instead of surfacing the index race as a 500 (#4598 review).
+        winner = IntentConformanceShadowEvaluation.find_by(project: @project, purpose: @purpose, manifest_digest: digest)
+        return failure("an evaluation for this evidence generation already exists; start again to resume it") if winner.nil?
+
+        Result.new(success: true, error: nil, evaluation: winner, resumed: true)
       end
 
       private
@@ -65,6 +77,20 @@ module IntentConformance
         # frozen manifest. The digest is the binding identity, not this label.
         stdout, _stderr, status = Open3.capture3("git", "-C", Rails.root.to_s, "rev-parse", "HEAD")
         status.success? ? stdout.strip : ""
+      end
+
+      # The form accepts an operator-supplied manifest path, so the corpus
+      # must pass the same shape checks the CLI ledger applies (unique ids,
+      # ten cases per stratum, full case identity) before an evaluation can
+      # exist; otherwise an under-sized manifest could be labeled, frozen,
+      # and reported as if it were a qualifying corpus (#4598 review). The
+      # digest pinned at creation keeps the validated content byte-identical
+      # through freeze and execution.
+      def corpus_shape_error
+        ShadowEvaluationLedger.validate_corpus_shape!(corpus.resolved_path)
+        nil
+      rescue ShadowEvaluationCorpus::MissingManifest, ShadowEvaluationLedger::InvalidLedger => error
+        error.message
       end
 
       def failure(message)

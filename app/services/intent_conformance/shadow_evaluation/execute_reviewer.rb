@@ -24,6 +24,13 @@ module IntentConformance
       NOT_EVALUATED = "not_evaluated"
       VERDICTS = IntentConformance::ShadowEvaluationPolicy::LABELS
 
+      # Namespaces this execution lock apart from the other pg_advisory_lock
+      # callers in app/services (each picks its own constant; see
+      # PartialCloseouts::ReconcileLegacy, Previews::Lifecycle, etc.).
+      ADVISORY_LOCK_NAMESPACE = 1_357_180_008
+      ADVISORY_TRY_LOCK_SQL = "SELECT pg_try_advisory_lock(?, ?)".freeze
+      ADVISORY_UNLOCK_SQL = "SELECT pg_advisory_unlock(?, ?)".freeze
+
       def self.call(...) = new(...).call
 
       def initialize(evaluation:)
@@ -35,6 +42,47 @@ module IntentConformance
         return failure("corpus manifest changed since reference labels were frozen — start a new evaluation") unless @evaluation.corpus.matches_recorded_digest?
         return failure("no corpus cases to evaluate") if @evaluation.corpus.case_ids.empty?
 
+        unless try_lock!
+          Rails.logger.info(
+            message: "intent_conformance.shadow_evaluation_execute_lock_held",
+            project_id: @evaluation.project_id,
+            shadow_evaluation_id: @evaluation.id
+          )
+          return failure("reviewer execution is already in progress for this evaluation; retry once it finishes")
+        end
+
+        begin
+          execute_cases
+        ensure
+          unlock!
+        end
+      end
+
+      private
+
+      attr_reader :evaluation
+
+      # Any project operator may trigger execution, so two concurrent calls
+      # would both observe "no run row yet" for a case, both invoke the paid
+      # reviewer, and the loser's write would then race the unique
+      # (shadow_evaluation_id, case_id) index after duplicated LLM spend.
+      # The session-scoped try-advisory lock claims execution first; the
+      # loser skips with a clear error instead of racing, and a crashed
+      # holder releases the lock with its database session so retries stay
+      # possible (#4598 review).
+      def try_lock!
+        ActiveRecord::Base.connection.select_value(
+          ActiveRecord::Base.sanitize_sql_array([ ADVISORY_TRY_LOCK_SQL, ADVISORY_LOCK_NAMESPACE, @evaluation.id ])
+        )
+      end
+
+      def unlock!
+        ActiveRecord::Base.connection.execute(
+          ActiveRecord::Base.sanitize_sql_array([ ADVISORY_UNLOCK_SQL, ADVISORY_LOCK_NAMESPACE, @evaluation.id ])
+        )
+      end
+
+      def execute_cases
         @evaluation.update!(status: "executing", execute_started_at: Time.current)
         executed = 0
         failed = 0
@@ -52,10 +100,6 @@ module IntentConformance
         @evaluation.update!(status: "failed", last_failure_reason: error.message)
         failure(error.message)
       end
-
-      private
-
-      attr_reader :evaluation
 
       def evaluated_run_for(case_id)
         run = @evaluation.runs.find_by(case_id: case_id)

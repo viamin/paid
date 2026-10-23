@@ -76,6 +76,16 @@ module IntentConformance
       true
     end
 
+    # Corpus-shape contract shared by the CLI surfaces and the UI Start
+    # path: the manifest must parse, every case needs a unique id, each
+    # stratum carries at least ten cases, and every case pins its full
+    # identity. One definition so neither surface can accept a corpus the
+    # other rejects (#4598 review).
+    def validate_corpus_shape!(manifest_path)
+      ensure_corpus_shape!(load_manifest(manifest_path))
+      true
+    end
+
     def append!(path:, event:, manifest_path:)
       raise InvalidLedger, "event must be a JSON object" unless event.is_a?(Hash)
       raise InvalidLedger, "event_id is required" if event["event_id"].to_s.strip.empty?

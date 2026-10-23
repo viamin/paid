@@ -72,4 +72,19 @@ RSpec.describe IntentConformance::ShadowEvaluation::RecordLabel do
 
     expect(call(case_id: "A-01")).not_to be_success
   end
+
+  # A double-submit of the same case races find_or_initialize_by; the loser
+  # must retry as an in-place update of the surviving row rather than surface
+  # the unique (shadow_evaluation_id, case_id) index as a 500 (#4598 review).
+  it "updates the surviving row in place when a double submit races the label index" do
+    call(case_id: "A-01", outcome: "within_scope")
+    racing_duplicate = evaluation.labels.new(case_id: "A-01")
+    allow(evaluation.labels).to receive(:find_or_initialize_by).with(case_id: "A-01").and_return(racing_duplicate)
+
+    result = call(case_id: "A-01", outcome: "material_drift", claim: "claim 2", reason: "reason 2")
+
+    expect(result).to be_success
+    expect(result.label).to have_attributes(state: "labeled", outcome: "material_drift")
+    expect(evaluation.labels.where(case_id: "A-01")).to contain_exactly(result.label)
+  end
 end
