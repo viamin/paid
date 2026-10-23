@@ -66,9 +66,9 @@ module FacetConfidence
       raise InvalidLedger, "event must be a JSON object" unless event.is_a?(Hash)
       raise InvalidLedger, "event_id is required" if event["event_id"].to_s.strip.empty?
       raise InvalidLedger, "recorded_at is required" if event["recorded_at"].to_s.strip.empty?
-      raise InvalidLedger, "event_id already exists" if events(ledger_path).any? { |entry| entry["event_id"] == event["event_id"] }
 
       event = event.merge("corpus_version" => corpus_version_of(corpus_path), "corpus_digest" => corpus_digest(corpus_path))
+      validate_entries!(corpus_path:, entries: events(ledger_path) + [ event ])
       File.open(ledger_path, File::WRONLY | File::APPEND | File::CREAT, 0o644, encoding: "UTF-8") { |file| file.puts(JSON.generate(event)) }
     end
 
@@ -76,12 +76,7 @@ module FacetConfidence
     # outcome report consumes: each case with its ordered runs, corrections,
     # and rework events.
     def evaluate(corpus_path:, ledger_path:)
-      cases = load_corpus(corpus_path)
-      entries = events(ledger_path)
-      ensure_unique_event_ids!(entries)
-      ensure_frozen_corpus_identity!(entries, corpus_path)
-      evaluation = validate_events!(cases, entries)
-      evaluation
+      validate_entries!(corpus_path:, entries: events(ledger_path))
     end
 
     def validate!(corpus_path:, ledger_path:)
@@ -91,6 +86,13 @@ module FacetConfidence
 
     def corpus_version_of(path)
       read_yaml(path).fetch("corpus_version")
+    end
+
+    def validate_entries!(corpus_path:, entries:)
+      cases = load_corpus(corpus_path)
+      ensure_unique_event_ids!(entries)
+      ensure_frozen_corpus_identity!(entries, corpus_path)
+      validate_events!(cases, entries)
     end
 
     def read_yaml(path)
@@ -211,6 +213,7 @@ module FacetConfidence
     end
 
     def dispatch_event!(entry, evaluation, trackers)
+      parse_timestamp!(entry["recorded_at"], "ledger event recorded_at")
       case entry["type"]
       when "assessment_run" then validate_run!(entry, evaluation, trackers)
       when "correction" then validate_correction!(entry, evaluation, trackers)

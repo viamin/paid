@@ -33,14 +33,26 @@ RSpec.describe "bin/facet-confidence-assessment-evaluation" do # rubocop:disable
 
   it "stamps appended events with the frozen corpus version and digest" do
     copy_committed_corpus
+    event = assessment_run_event(FacetConfidence::AssessmentCorpusLedger.load_corpus(corpus).first)
 
     _stdout, _stderr, status = run_cli("append", "--corpus", corpus, "--ledger", ledger,
-      "--event", JSON.generate({ "event_id" => "event-1", "recorded_at" => "2026-10-23T09:00:00Z", "type" => "assessment_run" }))
+      "--event", JSON.generate(event))
 
     expect(status.exitstatus).to eq(0)
     event = JSON.parse(File.read(ledger))
     expect(event).to include("corpus_version" => "facet-confidence-corpus-v1")
     expect(event).to include("corpus_digest" => FacetConfidence::AssessmentCorpusLedger.corpus_digest(corpus))
+  end
+
+  it "rejects an invalid event before creating the append-only ledger" do
+    copy_committed_corpus
+
+    _stdout, stderr, status = run_cli("append", "--corpus", corpus, "--ledger", ledger,
+      "--event", JSON.generate({ "event_id" => "event-1", "recorded_at" => "2026-10-23T09:00:00Z", "type" => "assessment_run" }))
+
+    expect(status.exitstatus).to eq(1)
+    expect(stderr).to include("event references a case outside the frozen corpus")
+    expect(File).not_to exist(ledger)
   end
 
   it "reports malformed append JSON without a backtrace" do
@@ -84,20 +96,22 @@ RSpec.describe "bin/facet-confidence-assessment-evaluation" do # rubocop:disable
 
   def append_complete_ledger!
     cases = FacetConfidence::AssessmentCorpusLedger.load_corpus(corpus)
-    identity = { "corpus_version" => "facet-confidence-corpus-v1", "corpus_digest" => FacetConfidence::AssessmentCorpusLedger.corpus_digest(corpus) }
     cases.each do |corpus_case|
-      expected = corpus_case.fetch("expected")
-      completed = expected.fetch("status") == "completed"
-      thresholds = corpus_case.fetch("thresholds")
-      run_event = identity.merge("event_id" => "run-#{corpus_case.fetch('id')}", "recorded_at" => "2026-10-23T09:00:00Z",
-        "type" => "assessment_run", "case_id" => corpus_case.fetch("id"),
-        "rubric_version" => "facet-confidence-v1", "model_version" => "claude-sonnet-4-6",
-        "input_revision" => corpus_case.fetch("evidence_revision"), "status" => expected.fetch("status"),
-        "intent_score" => completed ? band_score(expected.fetch("intent_band"), thresholds.fetch("intent")) : nil,
-        "technical_score" => completed ? band_score(expected.fetch("technical_band"), thresholds.fetch("technical")) : nil,
-        "evidence_references" => run_references(corpus_case), "cost_cents" => 100)
-      File.open(ledger, "a") { |file| file.puts(JSON.generate(run_event)) }
+      File.open(ledger, "a") { |file| file.puts(JSON.generate(assessment_run_event(corpus_case))) }
     end
+  end
+
+  def assessment_run_event(corpus_case)
+    expected = corpus_case.fetch("expected")
+    thresholds = corpus_case.fetch("thresholds")
+    completed = expected.fetch("status") == "completed"
+    identity = { "corpus_version" => "facet-confidence-corpus-v1", "corpus_digest" => FacetConfidence::AssessmentCorpusLedger.corpus_digest(corpus) }
+    identity.merge({ "event_id" => "run-#{corpus_case.fetch('id')}", "recorded_at" => "2026-10-23T09:00:00Z", "type" => "assessment_run",
+      "case_id" => corpus_case.fetch("id"), "rubric_version" => "facet-confidence-v1", "model_version" => "claude-sonnet-4-6",
+      "input_revision" => corpus_case.fetch("evidence_revision"), "status" => expected.fetch("status"),
+      "intent_score" => completed ? band_score(expected.fetch("intent_band"), thresholds.fetch("intent")) : nil,
+      "technical_score" => completed ? band_score(expected.fetch("technical_band"), thresholds.fetch("technical")) : nil,
+      "evidence_references" => run_references(corpus_case), "cost_cents" => 100 })
   end
 
   def band_score(band, threshold)

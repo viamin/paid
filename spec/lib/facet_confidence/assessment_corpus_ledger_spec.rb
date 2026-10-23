@@ -210,8 +210,18 @@ RSpec.describe FacetConfidence::AssessmentCorpusLedger, :no_db do
   end
 
   describe ".append!" do
-    it "stamps the event with the frozen corpus identity and rejects duplicate event ids" do
+    it "rejects an invalid prospective event without writing it to the append-only ledger" do
       event = { "event_id" => "event-1", "recorded_at" => "2026-10-23T09:00:00Z", "type" => "assessment_run" }
+
+      expect do
+        described_class.append!(ledger_path: ledger, event: event, corpus_path: corpus)
+      end.to raise_error(described_class::InvalidLedger, /event references a case outside the frozen corpus/)
+
+      expect(ledger).not_to exist
+    end
+
+    it "stamps the event with the frozen corpus identity and rejects duplicate event ids" do
+      event = complete_events.first.merge("event_id" => "event-1")
       described_class.append!(ledger_path: ledger, event: event, corpus_path: corpus)
 
       expect(JSON.parse(File.read(ledger))).to include("corpus_version" => corpus_version, "corpus_digest" => described_class.corpus_digest(corpus))
