@@ -25,6 +25,7 @@ class IntentConformanceVerdict < ApplicationRecord
 
   belongs_to :project
   belongs_to :issue
+  belongs_to :delivery_telemetry_issue, -> { excluding_body }, class_name: "Issue", foreign_key: :issue_id
   belongs_to :reviewer_run, class_name: "AgentRun", optional: true
   has_many :intent_conformance_decisions, foreign_key: :verdict_id, inverse_of: :verdict, dependent: :nullify
 
