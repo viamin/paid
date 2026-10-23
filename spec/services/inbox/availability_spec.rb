@@ -71,6 +71,25 @@ RSpec.describe Inbox::Availability do
       )
     end
 
+    it "agrees with the queue and badge on stalled partial closeouts" do # @spec PARTIAL-CLOSEOUT-002
+      issue = create(:issue, project: project_a, github_number: 300, paid_state: "in_progress")
+      create(
+        :issue,
+        :pull_request,
+        project: project_a,
+        github_number: 301,
+        github_state: "closed",
+        parent_issue_id: issue.id,
+        pr_review_phase: "merged"
+      )
+
+      queue_count = Inbox::Queue.call(user: user, kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND).size
+      badge_count = Inbox::Count.call(user: user)
+      availability_count = described_class.call(user: user).kind_counts[Inbox::Queue::PARTIAL_CLOSEOUT_KIND]
+
+      expect([ queue_count, badge_count, availability_count ]).to eq([ 1, 1, 1 ])
+    end
+
     it "narrows kind counts to the active project filter" do
       create(:issue, :needs_input, project: project_a, body: questions_body)
       create(:issue, :needs_input, project: project_b, body: questions_body)
