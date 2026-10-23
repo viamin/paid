@@ -103,7 +103,10 @@ Paid's project authorization and presentation patterns:
    generation — the tuple of project, evaluation purpose, and frozen corpus
    manifest digest. Repeated clicks resume the same evaluation; they never
    create duplicates, and a changed corpus or evidence revision visibly
-   supersedes prior completion rather than mutating it.
+   supersedes prior completion rather than mutating it. Before creation, the
+   manifest's repository-relative path and local bytes are verified against
+   its resolved Git commit; the recorded provenance therefore identifies an
+   exact recoverable corpus.
 2. **Label.** Each case records `within_scope`, `material_drift`, or
    `uncertain`, with a cited approved claim and a reason. Saves are durable
    and resumable; any case may be skipped, and a skipped case is never

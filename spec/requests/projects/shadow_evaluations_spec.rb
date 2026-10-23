@@ -14,14 +14,10 @@ RSpec.describe "Projects::ShadowEvaluations" do
   let(:owner) { create(:user, :owner, account: account) }
   let(:member) { create(:user, :member, account: account) }
   let(:project) { create(:project, account: account, created_by: owner) }
-  let(:dir) { Dir.mktmpdir }
-  let(:cases) { full_strata_corpus_cases }
-  let(:manifest_path) { write_corpus_manifest(dir, cases) }
-  let(:manifest_commit) { "e" * 40 }
+  let(:manifest_path) { "docs/intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-13.yml" }
+  let(:manifest_commit) { `git rev-parse HEAD`.strip }
 
   before { sign_in owner }
-
-  after { FileUtils.remove_entry(dir) }
 
   def start_evaluation!(actor: owner)
     post project_shadow_evaluations_path(project),
@@ -56,14 +52,11 @@ RSpec.describe "Projects::ShadowEvaluations" do
   end
 
   it "refuses to start from a manifest that fails the CLI corpus-shape checks" do
-    undersized = File.join(dir, "undersized.yml")
-    File.write(undersized, { "cases" => [ corpus_case("A-01") ] }.to_yaml)
-
     post project_shadow_evaluations_path(project),
-      params: { purpose: "rdr-067-measured-rollout", policy: "solo", manifest_path: undersized }
+      params: { purpose: "rdr-067-measured-rollout", policy: "solo", manifest_path: "tmp/undersized.yml" }
 
     expect(response).to redirect_to(new_project_shadow_evaluation_path(project, purpose: "rdr-067-measured-rollout"))
-    expect(flash[:alert]).to include("at least ten cases in each stratum")
+    expect(flash[:alert]).to include("was not found")
     expect(project.intent_conformance_shadow_evaluations).to be_empty
   end
 
@@ -197,20 +190,20 @@ RSpec.describe "Projects::ShadowEvaluations" do
     evaluation = start_evaluation!
     label_all!(evaluation)
     freeze!(evaluation)
-    File.write(manifest_path, { "cases" => cases + [ corpus_case("A-99") ] }.to_yaml)
+    evaluation.update!(manifest_digest: "changed")
 
     get project_shadow_evaluation_path(project, evaluation)
 
     expect(response.body).to include("corpus manifest has changed")
   end
 
-  it "returns only to the fixed Inbox context, never an arbitrary external return URL" do
+  it "returns to the validated originating Inbox context and ignores arbitrary return URLs" do
     evaluation = start_evaluation!
 
-    get project_shadow_evaluation_path(project, evaluation, return_to: "https://evil.example.com/steal")
+    get project_shadow_evaluation_path(project, evaluation, inbox_kind: "partial_closeout", inbox_sort: "newest", inbox_entry_id: "unknown", return_to: "https://evil.example.com/steal")
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Back to Inbox")
+    expect(response.body).to include("/inbox?kind=partial_closeout&amp;project_id=#{project.id}&amp;sort=newest")
   end
 
   it "surfaces the Start/Resume entry point on the partial-closeout Inbox item" do

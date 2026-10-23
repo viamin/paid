@@ -32,6 +32,7 @@ module IntentConformance
         return failure("the solo policy must be explicitly selected; use the team-policy CLI runbook for team evaluation") unless @policy == "solo"
         return failure("the solo maintainer must be the authenticated operator who starts the evaluation") unless @actor.present?
 
+        resolved_commit = @corpus.verify_commit!
         shape_error = corpus_shape_error
         return failure(shape_error) if shape_error
 
@@ -45,13 +46,15 @@ module IntentConformance
           status: "labeling",
           purpose: @purpose,
           manifest_path: @manifest_path,
-          manifest_commit: resolved_manifest_commit,
+          manifest_commit: resolved_commit,
           manifest_digest: digest,
           solo_maintainer: @actor,
           created_by: @actor
         )
         Result.new(success: true, error: nil, evaluation: evaluation, resumed: false)
       rescue ShadowEvaluationCorpus::MissingManifest => error
+        failure(error.message)
+      rescue ShadowEvaluationCorpus::UncommittedManifest => error
         failure(error.message)
       rescue ActiveRecord::RecordInvalid => error
         failure(error.record.errors.full_messages.to_sentence)
@@ -69,15 +72,6 @@ module IntentConformance
       private
 
       attr_reader :project, :actor, :purpose, :policy, :manifest_path, :manifest_commit, :corpus
-
-      def resolved_manifest_commit
-        return manifest_commit if manifest_commit.present?
-
-        # Best-effort provenance: the current HEAD commit that carries the
-        # frozen manifest. The digest is the binding identity, not this label.
-        stdout, _stderr, status = Open3.capture3("git", "-C", Rails.root.to_s, "rev-parse", "HEAD")
-        status.success? ? stdout.strip : ""
-      end
 
       # The form accepts an operator-supplied manifest path, so the corpus
       # must pass the same shape checks the CLI ledger applies (unique ids,

@@ -16,6 +16,7 @@ module Projects
       authorize IntentConformanceShadowEvaluation.new(project: @project)
       @purpose = params[:purpose].presence || default_purpose
       @existing = latest_evaluation
+      @inbox_context = inbox_context
     end
 
     def create
@@ -30,9 +31,9 @@ module Projects
         manifest_commit: params[:manifest_commit].presence
       )
       if result.success?
-        redirect_to project_shadow_evaluation_path(@project, result.evaluation), notice: result.resumed ? "Resumed the existing evaluation for this evidence generation." : "Solo-maintainer evaluation started. Labels stay blinded until you freeze the reference set."
+        redirect_to evaluation_path(result.evaluation), notice: result.resumed ? "Resumed the existing evaluation for this evidence generation." : "Solo-maintainer evaluation started. Labels stay blinded until you freeze the reference set."
       else
-        redirect_to new_project_shadow_evaluation_path(@project, purpose: params[:purpose].presence), alert: result.error
+        redirect_to new_project_shadow_evaluation_path(@project, purpose: params[:purpose].presence, **inbox_context), alert: result.error
       end
     end
 
@@ -44,6 +45,7 @@ module Projects
       @next_case_id = params[:case_id].presence || IntentConformance::ShadowEvaluation::CaseView.next_pending_case_id(@evaluation)
       @case_view = IntentConformance::ShadowEvaluation::CaseView.new(evaluation: @evaluation, case_id: @next_case_id.to_s, actor: current_user)
       @corpus_changed = @evaluation.answers_visible? && !@evaluation.corpus.matches_recorded_digest?
+      @inbox_context = inbox_context
     end
 
     def label
@@ -87,10 +89,10 @@ module Projects
       result = IntentConformance::ShadowEvaluation::ExecuteReviewer.call(evaluation: @evaluation)
       if result.success?
         IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: @evaluation)
-        redirect_to project_shadow_evaluation_path(@project, @evaluation),
+        redirect_to evaluation_path(@evaluation),
           notice: "Reviewer executed: #{result.executed} evaluated, #{result.failed} not evaluated."
       else
-        redirect_to project_shadow_evaluation_path(@project, @evaluation), alert: result.error
+        redirect_to evaluation_path(@evaluation), alert: result.error
       end
     end
 
@@ -128,10 +130,34 @@ module Projects
 
     def redirect_for(result, success_notice:)
       if result.success?
-        redirect_to project_shadow_evaluation_path(@project, @evaluation), notice: success_notice
+        redirect_to evaluation_path(@evaluation), notice: success_notice
       else
-        redirect_to project_shadow_evaluation_path(@project, @evaluation), alert: result.error
+        redirect_to evaluation_path(@evaluation), alert: result.error
       end
+    end
+
+    # Inbox context is a fixed internal route, not a caller-provided return
+    # URL. Project comes from the authorized evaluation route; filters are
+    # whitelisted by the Inbox's own vocabulary.
+    def inbox_context
+      {
+        inbox_kind: params[:inbox_kind].presence_in(Inbox::Queue::KINDS),
+        inbox_sort: params[:inbox_sort].presence_in(Inbox::Queue::SORTS.keys),
+        inbox_entry_id: valid_inbox_entry_id
+      }.compact
+    end
+
+    def valid_inbox_entry_id
+      entry_id = params[:inbox_entry_id].to_s
+      return if entry_id.blank?
+
+      entry = Inbox::Queue.find_entry(user: current_user, entry_id: entry_id, project: @project,
+        kind: params[:inbox_kind].presence_in(Inbox::Queue::KINDS))
+      entry&.id
+    end
+
+    def evaluation_path(evaluation)
+      project_shadow_evaluation_path(@project, evaluation, **inbox_context)
     end
   end
 end

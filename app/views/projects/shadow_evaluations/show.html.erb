@@ -9,7 +9,7 @@
         <span class="font-medium" data-evaluation-status><%= @evaluation.status %></span>
       </p>
     </div>
-    <%= link_to "Back to Inbox", inbox_path(project_id: @project),
+    <%= link_to "Back to Inbox", inbox_path(project_id: @project, kind: @inbox_context[:inbox_kind], sort: @inbox_context[:inbox_sort], entry_id: @inbox_context[:inbox_entry_id]),
           data: { turbo_frame: "_top" },
           class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
   </div>
@@ -23,8 +23,8 @@
   <% end %>
 
   <% if @evaluation.labeling? %>
-    <%= render "labeling", evaluation: @evaluation, progress: @progress, case_view: @case_view %>
+    <%= render "labeling", evaluation: @evaluation, progress: @progress, case_view: @case_view, project: @project, inbox_context: @inbox_context %>
   <% else %>
-    <%= render "answers", evaluation: @evaluation %>
+    <%= render "answers", evaluation: @evaluation, project: @project, inbox_context: @inbox_context %>
   <% end %>
 </div>

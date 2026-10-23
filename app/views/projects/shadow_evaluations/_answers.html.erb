@@ -15,7 +15,7 @@
       </p>
     </div>
     <% if evaluation.frozen? || evaluation.failed? %>
-      <%= button_to "Execute reviewer now", execute_project_shadow_evaluation_path(@project, evaluation),
+      <%= button_to "Execute reviewer now", execute_project_shadow_evaluation_path(project, evaluation, **inbox_context),
             form: { data: { turbo_frame: "_top", turbo_confirm: "Run the real conformance reviewer for every case through agent_harness? Costs apply." } },
             class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
     <% end %>
@@ -53,7 +53,9 @@
         <% label = labels[case_id] %>
         <% run = runs[case_id] %>
         <% disagreement = label&.labeled? && run.present? && !run.not_evaluated? && label.outcome != run.verdict %>
-        <tr class="border-b border-gray-100 <%= "bg-amber-50" if disagreement %>" data-case="<%= case_id %>" <%= 'data-disagreement="true"'.html_safe if disagreement %>>
+        <%= content_tag :tr,
+              class: class_names("border-b border-gray-100", "bg-amber-50": disagreement),
+              data: { case: case_id, disagreement: (true if disagreement) } do %>
           <td class="py-2 pr-3 font-medium text-gray-900"><%= case_id %></td>
           <td class="py-2 pr-3 text-gray-600"><%= corpus_case["stratum"] %></td>
           <td class="py-2 pr-3"><code><%= label&.outcome %></code></td>
@@ -63,7 +65,7 @@
               <%= label.revised_outcome %> (was <%= label.outcome %>)
             <% elsif disagreement %>
               <%# Revision form: appends a reasoned revision; the original label is preserved. %>
-              <%= form_with url: revise_project_shadow_evaluation_path(@project, evaluation), method: :post, class: "flex flex-wrap items-center gap-2" do |form| %>
+              <%= form_with url: revise_project_shadow_evaluation_path(project, evaluation, **inbox_context), method: :post, class: "flex flex-wrap items-center gap-2" do |form| %>
                 <%= form.hidden_field :case_id, value: case_id %>
                 <%= form.select :revised_outcome, options_for_select(%w[within_scope material_drift uncertain], run.verdict), {}, class: "rounded-md border-gray-300 text-xs shadow-sm" %>
                 <%= form.text_field :reason, placeholder: "reason", required: true, class: "w-48 rounded-md border-gray-300 text-xs shadow-sm" %>
@@ -71,7 +73,7 @@
               <% end %>
             <% end %>
           </td>
-        </tr>
+        <% end %>
       <% end %>
     </tbody>
   </table>

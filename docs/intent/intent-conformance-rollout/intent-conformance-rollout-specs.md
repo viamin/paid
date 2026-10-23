@@ -96,7 +96,9 @@
   counts, false alarms, missed drift, uncertainty handling, cost, and
   provenance; post-result label revisions SHALL be appended with reason and
   timestamp without overwriting the original blinded label or the scores
-  computed from it.
+  computed from it. Before creating an evaluation, the system SHALL resolve
+  the manifest commit and reject a manifest that is absent from that commit
+  or whose local bytes differ from its committed blob.
   *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
   *Code:* `app/services/intent_conformance/shadow_evaluation/compile_report.rb`,
   `app/services/intent_conformance/shadow_evaluation/revise_label.rb`,

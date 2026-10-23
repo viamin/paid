@@ -18,8 +18,11 @@ module ShadowEvaluationGitFixture
 
   # Writes content to path, stages, and commits it, returning the new commit SHA.
   def git_write!(dir, path, content, message)
-    File.write(path, content)
-    commit_file!(dir, path, message)
+    absolute_path = Pathname.new(path).absolute? ? path : File.join(dir, path)
+    FileUtils.mkdir_p(File.dirname(absolute_path))
+    File.write(absolute_path, content)
+    relative_path = Pathname.new(absolute_path).relative_path_from(Pathname.new(dir)).to_s
+    commit_file!(dir, relative_path, message)
   end
 
   # Appends events (one JSON object per line) to an existing ledger file and
@@ -33,7 +36,7 @@ module ShadowEvaluationGitFixture
   end
 
   def commit_file!(dir, path, message)
-    run_git(dir, "add", "--", File.basename(path))
+    run_git(dir, "add", "--", path)
     run_git(dir, "commit", "-q", "-m", message)
     run_git(dir, "rev-parse", "HEAD").strip
   end
@@ -46,4 +49,7 @@ module ShadowEvaluationGitFixture
   end
 end
 
-RSpec.configure { |config| config.include ShadowEvaluationGitFixture, :no_db }
+RSpec.configure do |config|
+  config.include ShadowEvaluationGitFixture, :no_db
+  config.include ShadowEvaluationGitFixture, file_path: %r{spec/services/intent_conformance/shadow_evaluation/start_spec}
+end

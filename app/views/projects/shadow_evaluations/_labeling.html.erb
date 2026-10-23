@@ -37,7 +37,7 @@
       <% end %>
     </div>
 
-    <%= form_with url: label_project_shadow_evaluation_path(@project, evaluation), method: :post, class: "space-y-3" do |form| %>
+    <%= form_with url: label_project_shadow_evaluation_path(project, evaluation, **inbox_context), method: :post, class: "space-y-3" do |form| %>
       <%= form.hidden_field :case_id, value: current["id"] %>
       <fieldset class="space-y-2">
         <legend class="text-sm font-medium text-gray-700">Reference label</legend>
@@ -66,11 +66,11 @@
     <% end %>
 
     <div class="flex flex-wrap items-center gap-3">
-      <%= button_to "Skip case", skip_project_shadow_evaluation_path(@project, evaluation),
+      <%= button_to "Skip case", skip_project_shadow_evaluation_path(project, evaluation, **inbox_context),
             params: { case_id: current["id"] },
             form: { data: { turbo_frame: "_top" } },
             class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
-      <%= button_to "Finish and freeze reference set", freeze_project_shadow_evaluation_path(@project, evaluation),
+      <%= button_to "Finish and freeze reference set", freeze_project_shadow_evaluation_path(project, evaluation, **inbox_context),
             form: { data: { turbo_frame: "_top", turbo_confirm: "Freeze the reference label set? Reviewer outputs and strata become visible and labeling ends." } },
             disabled: remaining.positive? || progress[:skipped].positive?,
             class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
@@ -84,14 +84,14 @@
     <% if progress[:skipped].positive? %>
       <p><%= progress[:skipped] %> case(s) are still skipped — resolve them before freezing; a skipped case is never completed evidence.</p>
       <% evaluation.labels.where(state: "skipped").pluck(:case_id).each do |case_id| %>
-        <%= link_to "Return to skipped case #{case_id}", project_shadow_evaluation_path(@project, evaluation, case_id:),
+        <%= link_to "Return to skipped case #{case_id}", project_shadow_evaluation_path(project, evaluation, case_id:, **inbox_context),
               data: { turbo_frame: "_top" },
               class: "mr-3 inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
       <% end %>
     <% else %>
       <p>Every case is labeled. You can freeze the reference set.</p>
     <% end %>
-    <%= button_to "Finish and freeze reference set", freeze_project_shadow_evaluation_path(@project, evaluation),
+    <%= button_to "Finish and freeze reference set", freeze_project_shadow_evaluation_path(project, evaluation, **inbox_context),
           form: { data: { turbo_frame: "_top", turbo_confirm: "Freeze the reference label set? Reviewer outputs and strata become visible and labeling ends." } },
           class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
   </div>
