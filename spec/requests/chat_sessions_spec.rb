@@ -1373,6 +1373,36 @@ RSpec.describe "ChatSessions" do
         expect(chat_session.reload.model).to eq("gpt-4o")
       end
 
+      # @spec CHAT-THINKING-EFFORT-002 CHAT-THINKING-EFFORT-005
+      it "leaves default thinking effort absent when a model-only update changes the effective model" do
+        system_message = create(:chat_message, chat_session: chat_session, role: "system", content: "Existing system message")
+
+        expect {
+          patch chat_session_path(chat_session, format: :json), params: { model: "gpt-4o" }
+        }.not_to change { system_message.reload.updated_at }
+
+        expect(chat_session.reload.metadata).not_to have_key("thinking_effort")
+      end
+
+      # @spec CHAT-THINKING-EFFORT-005 CHAT-THINKING-EFFORT-006
+      it "normalizes a metadata-borne unsupported thinking effort against the current model" do
+        patch chat_session_path(chat_session, format: :json), params: { metadata: { thinking_effort: "ultra" } }
+
+        aggregate_failures do
+          expect(response).to have_http_status(:ok)
+          expect(response.parsed_body["thinking_effort"]).to be_nil
+          expect(chat_session.reload.metadata).not_to have_key("thinking_effort")
+        end
+      end
+
+      # @spec CHAT-THINKING-EFFORT-006
+      it "rejects a directly submitted unsupported thinking effort" do
+        patch chat_session_path(chat_session, format: :json), params: { thinking_effort: "ultra" }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(chat_session.reload.metadata).not_to have_key("thinking_effort")
+      end
+
       it "updates the auto-approve flag and echoes it in the response" do
         patch chat_session_path(chat_session, format: :json), params: { auto_approve: "true" }
 
@@ -1412,6 +1442,18 @@ RSpec.describe "ChatSessions" do
 
         expect(response).to have_http_status(:no_content)
         expect(chat_session.reload).to have_attributes(runner_id: runner.id, model: "gpt-5.6-terra")
+      end
+
+      # @spec CHAT-THINKING-EFFORT-005
+      it "removes an unsupported preference when a runner/model selection changes the model" do
+        chat_session.update!(metadata: { "thinking_effort" => "ultra" })
+        runner = create_openai_chat_runner
+        selection = ChatSessions::RunnerModelOptions.options_for([ runner ]).find { |option| option.tier == "mid" }
+
+        patch chat_session_path(chat_session, format: :json), params: { runner_model: selection.value }
+
+        expect(response).to have_http_status(:ok)
+        expect(chat_session.reload.metadata).not_to have_key("thinking_effort")
       end
 
       it "offers the curated choices instead of a runner's configured model" do

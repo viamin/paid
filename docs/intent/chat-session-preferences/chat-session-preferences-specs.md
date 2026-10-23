@@ -92,7 +92,8 @@
 - [D] **CHAT-THINKING-EFFORT-005** - When the effective model changes through
   a tier/model/runner update or fallback, the system SHALL normalize a stored
   thinking preference to Default when the new capability does not permit it.
-  *Tests:* `spec/services/chat_sessions/fallback_runners_spec.rb`.
+  *Tests:* `spec/requests/chat_sessions_spec.rb`,
+  `spec/services/chat_sessions/fallback_runners_spec.rb`.
   *Code:* `ChatSessionsController`, `ChatSessions::FallbackRunners`,
   `ChatSessions::BuildLlmClient`.
 

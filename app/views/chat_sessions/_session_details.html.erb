@@ -10,7 +10,7 @@
     between the two headers (mobile uses `_mobile`, desktop uses no
     suffix) so the `<label for>` association works in either copy without
     colliding in the DOM. %>
-<% session_projects = chat_session_projects(chat_session) %>
+<% session_projects = local_assigns.fetch(:session_projects) { chat_session_projects(chat_session) } %>
 <% dom_id_suffix = local_assigns.fetch(:dom_id_suffix, "") %>
 <div class="space-y-3 border-t border-gray-200 px-4 pb-3 pt-3 sm:px-6">
   <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
@@ -28,14 +28,13 @@
     <span>Updated <%= local_time(chat_session.updated_at, format: :relative) %></span>
   </div>
 
-  <% current_thinking_values = ChatSessions::ThinkingEffort.allowed_values(chat_session.model) %>
-  <% current_thinking_effort = chat_session.metadata["thinking_effort"] %>
+  <% current_thinking_values = ChatSessions::ThinkingEffort.allowed_values(chat_session.model, catalog_models_by_id: thinking_effort_models_by_id) %>
+  <% current_thinking_effort = ChatSessions::ThinkingEffort.normalize(model_id: chat_session.model, value: chat_session.metadata["thinking_effort"], catalog_models_by_id: thinking_effort_models_by_id) %>
   <% if can_update_chat_session %>
-    <% runner_model_options = ChatSessions::RunnerModelOptions.options_for(available_runners, projects: session_projects) %>
     <% selected_runner_model = runner_model_options.find { |option| option.runner_id == chat_session.runner_id && option.model_id == chat_session.model } %>
     <% runner_model_choices = runner_model_options.map { |option| [option.label, option.value] } %>
     <% runner_model_choices.unshift(["Choose a valid runner and model", ""]) unless selected_runner_model %>
-    <% thinking_effort_capability_map = runner_model_options.index_by(&:value).transform_values { |option| ChatSessions::ThinkingEffort.allowed_values(option.model_id) } %>
+    <% thinking_effort_capability_map = runner_model_options.index_by(&:value).transform_values { |option| ChatSessions::ThinkingEffort.allowed_values(option.model_id, catalog_models_by_id: thinking_effort_models_by_id) } %>
     <%= form_with model: chat_session,
                   url: chat_session_path(chat_session),
                   method: :patch,
@@ -93,7 +92,7 @@
         <%= form.select :thinking_effort,
                         options_for_select(
                           [[ChatSessions::ThinkingEffort::DEFAULT_LABEL, ""]] +
-                            ChatSessions::ThinkingEffort.options_for(chat_session.model).map { |option| [option.label, option.value] },
+                            ChatSessions::ThinkingEffort.options_for(chat_session.model, catalog_models_by_id: thinking_effort_models_by_id).map { |option| [option.label, option.value] },
                           current_thinking_effort
                         ),
                         {},

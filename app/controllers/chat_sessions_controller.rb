@@ -37,6 +37,11 @@ class ChatSessionsController < ApplicationController
 
       format.json do
         pagy, sessions = pagy(session_scope_with_token_totals, limit: 25)
+        @thinking_effort_models_by_id = if ChatSessions::ThinkingEffort.transport_supported?
+          LlmModel.where(model_id: sessions.filter_map(&:model).uniq).index_by(&:model_id)
+        else
+          {}
+        end
         render json: {
           sessions: sessions.map { |s| session_json(s) },
           pagination: pagination_meta(pagy)
@@ -353,8 +358,7 @@ class ChatSessionsController < ApplicationController
     permitted[:model] = selection.model_id
     metadata = (@chat_session&.metadata || {}).merge(permitted[:metadata] || {}).merge("model_tier" => selection.tier)
     # @spec CHAT-THINKING-EFFORT-005
-    metadata["thinking_effort"] = ChatSessions::ThinkingEffort.normalize(model_id: selection.model_id, value: metadata["thinking_effort"])
-    permitted[:metadata] = metadata
+    permitted[:metadata] = ChatSessions::ThinkingEffort.normalize_metadata(metadata:, model_id: selection.model_id)
   end
 
   # Validates a direct, user-submitted thinking_effort value strictly against
@@ -377,15 +381,13 @@ class ChatSessionsController < ApplicationController
   # an existing preference only when it remains valid for that model.
   # @spec CHAT-THINKING-EFFORT-005
   def normalize_thinking_effort_for_model!(permitted)
-    return unless permitted.key?(:model)
-    return if permitted.key?(:thinking_effort)
+    return unless permitted.key?(:model) || permitted.key?(:metadata)
 
     metadata = (@chat_session&.metadata || {}).merge(permitted[:metadata] || {})
-    metadata["thinking_effort"] = ChatSessions::ThinkingEffort.normalize(
-      model_id: permitted[:model],
-      value: metadata["thinking_effort"]
+    permitted[:metadata] = ChatSessions::ThinkingEffort.normalize_metadata(
+      metadata:,
+      model_id: permitted[:model] || @chat_session&.model
     )
-    permitted[:metadata] = metadata
   end
 
   def runner_model_policy_projects(permitted)
@@ -426,7 +428,8 @@ class ChatSessionsController < ApplicationController
       model: session.model,
       thinking_effort: ChatSessions::ThinkingEffort.normalize(
         model_id: session.model,
-        value: session.metadata["thinking_effort"]
+        value: session.metadata["thinking_effort"],
+        catalog_models_by_id: @thinking_effort_models_by_id
       ),
       runner_id: session.runner_id,
       runner_name: session.runner&.display_name,

@@ -121,12 +121,7 @@ module ChatSessions
 
       model = FreeModels::SelectChatModel.for_session(runner: runner, chat_session: chat_session).model_id
       if chat_session.model != model
-        metadata = chat_session.metadata.merge(
-          ThinkingEffort::METADATA_KEY => ThinkingEffort.normalize(
-            model_id: model,
-            value: chat_session.metadata[ThinkingEffort::METADATA_KEY]
-          )
-        )
+        metadata = ThinkingEffort.normalize_metadata(metadata: chat_session.metadata, model_id: model)
         chat_session.update!(model: model, metadata: metadata)
       end
       model
@@ -150,8 +145,10 @@ module ChatSessions
       end
 
       # @spec CHAT-THINKING-EFFORT-007
-      metadata = chat_session.metadata.merge("model_tier" => option.tier)
-      metadata["thinking_effort"] = ThinkingEffort.normalize(model_id: option.model_id, value: metadata["thinking_effort"])
+      metadata = ThinkingEffort.normalize_metadata(
+        metadata: chat_session.metadata.merge("model_tier" => option.tier),
+        model_id: option.model_id
+      )
       chat_session.update!(runner:, model: option.model_id, metadata: metadata)
       option.model_id
     end

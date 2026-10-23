@@ -54,10 +54,7 @@ module ChatSessions
       end
       metadata = chat_session.metadata.merge("model_tier" => option&.tier).compact
       # @spec CHAT-THINKING-EFFORT-005
-      metadata[ThinkingEffort::METADATA_KEY] = ThinkingEffort.normalize(
-        model_id: model,
-        value: metadata[ThinkingEffort::METADATA_KEY]
-      )
+      metadata = ThinkingEffort.normalize_metadata(metadata:, model_id: model)
       chat_session.update!(runner: runner, model: model, metadata: metadata)
     end
 
