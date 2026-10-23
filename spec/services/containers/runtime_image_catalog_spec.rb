@@ -15,6 +15,46 @@ RSpec.describe Containers::RuntimeImageCatalog do
     end
   end
 
+  describe "#protected_references" do
+    let(:catalog) do
+      described_class.new(
+        registry: "ghcr.io", repository: "acme/agent", profiles: {
+          "custom:config" => {
+            registry: "registry.example", repository: "team/agent", default_reference: "active",
+            identities: {
+              active: { digest: "sha256:active", architecture: "amd64" },
+              retired: { digest: "sha256:retired", architecture: "arm64", status: "deprecated" },
+              override: { registry: "another.example", repository: "other/agent", digest: "sha256:override" }
+            }
+          }
+        }
+      )
+    end
+
+    # @spec DOCKER-DISK-CLEANUP-002
+    it "includes unselected and inactive identities, with config taking precedence over env" do
+      ENV[described_class::ENV_DIGESTS_KEY] = {
+        "custom:env" => { "digest" => "sha256:env", "architecture" => "amd64" },
+        "custom:config" => { "digest" => "sha256:shadowed", "architecture" => "amd64" }
+      }.to_json
+
+
+      expect(catalog.protected_references).to contain_exactly(
+        "custom:env", "custom:config", "ghcr.io/acme/agent@sha256:env",
+        "registry.example/team/agent@sha256:active", "registry.example/team/agent@sha256:retired",
+        "another.example/other/agent@sha256:override"
+      )
+    end
+
+    # @spec DOCKER-DISK-CLEANUP-004
+    it "fails closed on malformed catalog input" do
+      ENV[described_class::ENV_DIGESTS_KEY] = "{not-json"
+      catalog = described_class.new(registry: "ghcr.io", repository: "acme/agent")
+
+      expect { catalog.protected_references }.to raise_error(described_class::Error)
+    end
+  end
+
   describe "#identity_for" do
     let(:profile_config) do
       {

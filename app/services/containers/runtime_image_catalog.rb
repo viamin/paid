@@ -54,6 +54,20 @@ module Containers
       )
     end
 
+    # All configured identities are retained, including profiles not yet selected
+    # by a project and historical references available for rollback.
+    # @spec DOCKER-DISK-CLEANUP-002 DOCKER-DISK-CLEANUP-004
+    def protected_references
+      env_profiles.merge(config_profiles).flat_map do |requested_image, profile|
+        digests = profile.fetch("identities").values.map do |identity|
+          registry = identity["registry"].presence || profile["registry"].presence || @config.fetch("registry")
+          repository = identity["repository"].presence || profile["repository"].presence || @config.fetch("repository")
+          "#{registry}/#{repository}@#{identity.fetch('digest')}"
+        end
+        [ requested_image, *digests ]
+      end.uniq
+    end
+
     private
 
     def profile_for(requested_image)

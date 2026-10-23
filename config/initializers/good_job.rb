@@ -226,6 +226,12 @@ Rails.application.configure do
       class: "AgentComboImageCleanupJob",
       description: "Prune unreferenced paid-agent combo images past the retention window (RDR-046)"
     },
+    docker_disk_cleanup: {
+      cron: "17 4 * * * UTC",
+      queue: "maintenance",
+      class: "DockerDiskCleanupJob",
+      description: "Opt-in local Docker image and build-cache cleanup with seven-day retention"
+    },
     orphan_branch_reaper: {
       cron: "0 * * * *",
       class: "OrphanBranchReaperJob",
