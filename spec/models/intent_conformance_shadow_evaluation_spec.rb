@@ -56,7 +56,6 @@ RSpec.describe IntentConformanceShadowEvaluation do
       FileUtils.remove_entry(dir)
     end
   end
-end
 
   describe IntentConformanceShadowEvaluationRun do
     it "rejects an unknown verdict" do
@@ -70,3 +69,4 @@ end
       expect(build(:intent_conformance_shadow_evaluation_run)).to be_evaluated
     end
   end
+end

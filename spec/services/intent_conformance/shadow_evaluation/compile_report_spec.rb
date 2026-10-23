@@ -49,14 +49,26 @@ RSpec.describe IntentConformance::ShadowEvaluation::CompileReport do
     report = result.report
     expect(report.fetch("policy")).to eq("solo")
     expect(report.fetch("solo_maintainer")).to eq(owner.email)
-    expect(report.fetch("assurance_limits")).to include("no independence")
     expect(report.dig("provenance", "manifest_digest")).to eq(evaluation.manifest_digest)
     expect(report.dig("provenance", "manifest_digest_matches_current")).to be(true)
     expect(report.dig("measures", "false_alarms")).to eq("100.0% (1 / 1)")
     expect(report.dig("measures", "missed_material_drift")).to eq("100.0% (1 / 1)")
     expect(report.dig("measures", "confusion_counts", "within_scope")).to eq([ 0, 0, 1 ])
     expect(report.dig("measures", "review_cost_cents")).to eq(50)
+  end
+
+  it "states the solo assurance limits and keeps production measures explicitly unestablished" do
+    freeze_with_labels!
+    record_run(case_id: "A-01", verdict: "within_scope")
+    record_run(case_id: "A-02", verdict: "within_scope")
+
+    report = described_class.call(evaluation: evaluation).report
+
+    expect(report.fetch("assurance_limits")).to include("no independence")
     expect(report.dig("measures", "escaped_changes")).to include("not established")
+    expect(report.dig("measures", "delivery_baseline")).to include("not established")
+    expect(report.dig("measures", "rework")).to include("not established")
+    expect(report.dig("measures", "human_time")).to include("not established")
     expect(report.fetch("promotion_decision")).to include("not established")
     expect(evaluation.reload.report_markdown).to include("Solo-Maintainer Shadow Evaluation Report")
   end
