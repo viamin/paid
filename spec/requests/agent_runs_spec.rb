@@ -266,6 +266,31 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("No agent runs yet")
       end
 
+      # @spec AGENT-RUNS-INDEX-001
+      it "shows only filters with values in the available agent runs" do
+        create(:agent_run, project: project, status: "completed", agent_type: "claude_code", goal: "create_pr")
+
+        get agent_runs_path
+
+        document = parsed_html
+        expect(document.at_css("details[data-testid='agent-runs-filters']")["open"]).to be_nil
+        expect(document.at_css("select[name='q[status_eq]']")).to be_present
+        expect(document.at_css("select[name='q[agent_type_eq]']")).to be_present
+        expect(document.at_css("select[name='q[goal_eq]']")).to be_present
+        expect(document.at_css("select[name='q[effective_runner_eq]']")).to be_present
+      end
+
+      # @spec AGENT-RUNS-INDEX-001
+      it "omits filters with no available values" do
+        get agent_runs_path
+
+        document = parsed_html
+        expect(document.at_css("select[name='q[status_eq]']")).to be_nil
+        expect(document.at_css("select[name='q[agent_type_eq]']")).to be_nil
+        expect(document.at_css("select[name='q[goal_eq]']")).to be_nil
+        expect(document.at_css("select[name='sort']")).to be_present
+      end
+
       it "filters agent runs using Ransack q params" do
         matching_run = create(:agent_run, :with_git_context, project: project, branch_name: "feature/alpha")
         excluded_run = create(:agent_run, :with_git_context, project: project, branch_name: "fix/beta")
@@ -303,6 +328,8 @@ RSpec.describe "AgentRuns" do
       end
 
       it "shows the goal filter dropdown" do
+        create(:agent_run, project: project, goal: "create_pr")
+
         get agent_runs_path
 
         expect(response.body).to include("All Goals")
@@ -316,7 +343,10 @@ RSpec.describe "AgentRuns" do
       end
 
       it "sorts agent runs ascending via Ransack sort params" do
-        other_project = create(:project, account: account, github_token: github_token, created_by: user)
+        # Sequenced factory names can substring-collide ("Project 1" inside
+        # "Project 10") and break String#index ordering assertions.
+        other_project = create(:project, account: account, github_token: github_token, created_by: user,
+          name: "Ascending Sort Newer Project")
         create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
         create(:agent_run, project: other_project, agent_type: "claude_code", status: "completed", created_at: 1.day.ago)
 
@@ -327,7 +357,8 @@ RSpec.describe "AgentRuns" do
       end
 
       it "sorts agent runs descending via Ransack sort params" do
-        other_project = create(:project, account: account, github_token: github_token, created_by: user)
+        other_project = create(:project, account: account, github_token: github_token, created_by: user,
+          name: "Descending Sort Newer Project")
         create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
         create(:agent_run, project: other_project, agent_type: "claude_code", status: "completed", created_at: 1.day.ago)
 
