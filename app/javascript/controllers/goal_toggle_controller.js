@@ -16,12 +16,16 @@ export default class extends Controller {
     "dockerHostSelect",
     "blockedBySection",
     "featureDescriptionSection",
+    "continuationSection",
+    "continuationEndpoint",
+    "continuationNotice",
   ]
   static values = {
     currentGoal: String,
     runnerDefaults: Object,
     runnerManuallySelected: { type: Boolean, default: false },
     dockerHostOptionsUrl: String,
+    continuationPlans: Object,
   }
 
   connect() {
@@ -160,7 +164,53 @@ export default class extends Controller {
 
     this.syncRunnerDefault(previousGoal, goal)
     this.currentGoalValue = goal
+    this.refreshContinuationPlan(goal)
     this.refreshDockerHostOptions()
+  }
+
+  // Swap the continuation section's endpoint menu and notice from the
+  // per-goal plans embedded by the server, so a goal change never leaves a
+  // stale endpoint or notice on the form.
+  refreshContinuationPlan(goal) {
+    if (!this.hasContinuationSectionTarget) return
+
+    const plan = this.continuationPlansValue[goal]
+    const show = Boolean(plan)
+    this.continuationSectionTarget.hidden = !show
+    this.continuationSectionTarget
+      .querySelectorAll("input, select")
+      .forEach((control) => {
+        control.disabled = !show
+      })
+    if (!plan) return
+
+    if (this.hasContinuationEndpointTarget) {
+      const select = this.continuationEndpointTarget
+      const previous = select.value
+      select.innerHTML = ""
+      plan.endpoints.forEach(({ value, label }) => {
+        const option = document.createElement("option")
+        option.value = value
+        option.textContent = label
+        select.appendChild(option)
+      })
+      // Keep a still-offered selection (server-rendered or user-chosen); fall
+      // back to the goal's default endpoint otherwise.
+      const offered = plan.endpoints.some(({ value }) => value === previous)
+      select.value = offered ? previous : plan.default_endpoint
+      this.showContinuationNotice(select.value)
+    }
+  }
+
+  continuationEndpointChanged(event) {
+    this.showContinuationNotice(event.target.value)
+  }
+
+  showContinuationNotice(endpoint) {
+    if (!this.hasContinuationNoticeTarget) return
+
+    const notice = this.continuationPlansValue[this.currentGoalValue]?.notices?.[endpoint]
+    if (notice) this.continuationNoticeTarget.textContent = notice
   }
 
   syncRunnerDefault(previousGoal, goal) {

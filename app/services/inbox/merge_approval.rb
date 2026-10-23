@@ -4,8 +4,8 @@ module Inbox
   class MergeApproval
     APPROVAL_SIGNALS = %w[owner_approved reviews_fresh].freeze
 
-    def self.call(issue)
-      new(issue).call
+    def self.call(issue, phase_authorized: nil)
+      new(issue, phase_authorized:).call
     end
 
     # Narrows to rows that could plausibly need an operator before falling back
@@ -41,22 +41,24 @@ module Inbox
     end
     private_class_method :candidate_conditions
 
-    def initialize(issue)
+    def initialize(issue, phase_authorized: nil)
       @issue = issue
+      @phase_authorized = phase_authorized
     end
 
     def call
       return unless candidate?
 
-      Snapshot.new(issue:, blockers: failed_blockers)
+      Snapshot.new(issue:, blockers: failed_blockers, phase_authorized:)
     end
 
     class Snapshot
-      attr_reader :blockers, :issue
+      attr_reader :blockers, :issue, :phase_authorized
 
-      def initialize(issue:, blockers:)
+      def initialize(issue:, blockers:, phase_authorized: nil)
         @issue = issue
         @blockers = blockers
+        @phase_authorized = phase_authorized
       end
 
       def summary
@@ -109,7 +111,8 @@ module Inbox
       def automatic_merge_active?
         Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(
           project: issue.project,
-          pull_request: issue
+          pull_request: issue,
+          phase_authorized: phase_authorized
         )
       end
 
@@ -205,7 +208,7 @@ module Inbox
 
     private
 
-    attr_reader :issue
+    attr_reader :issue, :phase_authorized
 
     def candidate?
       # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-004
@@ -220,7 +223,7 @@ module Inbox
       issue.is_pull_request? &&
         issue.github_state == "open" &&
         issue.pr_review_phase == "ready" &&
-        (manual_merge? || automatic_merge_active?) &&
+        (manual_merge? || automatic_merge_configured?) &&
         !issue.merge_permission_rejected?
     end
 
@@ -244,6 +247,17 @@ module Inbox
       Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(
         project: issue.project,
         pull_request: issue,
+        phase_authorized: phase_authorized
+      )
+    end
+
+    # Candidacy is determined by the configured merge lane. Phase relevance
+    # decides whether the resulting request is actionable or disabled.
+    def automatic_merge_configured?
+      Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(
+        project: issue.project,
+        pull_request: issue,
+        phase_authorized: true
       )
     end
 

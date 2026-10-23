@@ -1504,10 +1504,13 @@ module Activities
       )
 
       if merged_numbers.any?
-        project.issues
+        merged_pull_requests = project.issues
           .pull_requests_only
           .where(project_id: project.id, source: source, github_number: merged_numbers)
+        merged_work_items = merged_pull_requests.to_a
+        merged_pull_requests
           .update_all(github_state: "closed", pr_review_phase: "merged", updated_at: Time.current)
+        Automation::CompleteContinuationGrants.call(work_items: merged_work_items, endpoint: "merge")
       end
 
       if unmerged_numbers.any?

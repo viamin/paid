@@ -8,6 +8,8 @@ class InboxPolicy < ApplicationPolicy
   def count? = user.present?
   def show? = user.present?
   def chat? = user.present?
+  def remove_entry? = user.present?
+  def restore_entry? = user.present?
 
   class Scope < ApplicationPolicy::Scope
     def resolve

@@ -220,8 +220,9 @@ class AutoReleaseEvaluationJob < ApplicationJob
     )
   end
 
-  # @spec AUTOMATION-ACTIVATION-003
+  # @spec AUTOMATION-ACTIVATION-003 @spec AUTOMATION-PHASES-002 @spec AUTOMATION-PHASES-016
   def auto_release_enabled_for?(project, pr_number)
+    return false unless Automation::FeatureActivation.phase_authorized?(project:, capability: "auto_release")
     return true if project.auto_release_enabled?
 
     issue = pull_request_issue(project, pr_number)

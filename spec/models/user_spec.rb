@@ -10,6 +10,9 @@ RSpec.describe User do
     it { is_expected.to have_many(:project_memberships).dependent(:destroy) }
     it { is_expected.to have_many(:member_projects).through(:project_memberships).source(:project) }
     it { is_expected.to have_many(:runners).dependent(:destroy) }
+    it { is_expected.to have_many(:inbox_removals).dependent(:destroy) }
+    it { is_expected.to have_many(:created_work_item_continuation_grants).dependent(:nullify) }
+    it { is_expected.to have_many(:revoked_work_item_continuation_grants).dependent(:nullify) }
   end
 
   describe "validations" do
