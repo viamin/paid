@@ -66,6 +66,22 @@ RSpec.describe Inbox::Removals do
       expect(InboxRemoval.where(user:, request_key: "clarifying_questions:#{issue.id}").count).to eq(1)
     end
 
+    # @spec INBOX-PHASE-RELEVANCE-008
+    it "persists removals for distinct requests sharing an occurrence" do
+      occurrence = Time.current
+      entries = 2.times.map do
+        Inbox::Queue::Entry.new(
+          id: "action_required:#{_1}", kind: Inbox::Queue::ACTION_REQUIRED_KIND, project:,
+          record: create(:notification, account:, subject: create(:agent_run, project:)), waiting_since: occurrence
+        )
+      end
+
+      entries.each { Inbox::Removals::Remove.call(entry: _1, user:) }
+
+      expect(InboxRemoval.active.where(user:, request_occurrence: occurrence.utc.iso8601(6)).pluck(:request_key))
+        .to match_array(entries.map(&:id))
+    end
+
     it "hides the request for the acting user only" do
       remove!
 
