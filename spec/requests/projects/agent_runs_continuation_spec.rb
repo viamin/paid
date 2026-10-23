@@ -43,11 +43,47 @@ RSpec.describe "Project agent run continuation" do
     )
   end
 
-  it "does not offer continuation for discovery runs without a durable work item" do
+  it "offers the create_feature manual start its discovery continuation plan" do
     get new_project_agent_run_path(project, goal: "create_feature")
 
-    expect(response.body).not_to include("continuation_authorized")
-    expect(response.body).not_to include("continuation_endpoint")
+    expect(response.body).to include("continuation_authorized")
+    expect(response.body).to include("continuation_endpoint")
+    expect(response.body).to include("You selected automation through Issue preparation.")
+  end
+
+  it "carries a selected create_feature continuation onto the work item the run creates" do
+    stub_create_feature_github!
+    get new_project_agent_run_path(project, goal: "create_feature")
+    signature = rendered_signature
+
+    expect {
+      post project_agent_runs_path(project), params: {
+        goal: "create_feature",
+        feature_description: "Add a dark mode toggle.",
+        continuation_authorized: "1",
+        continuation_endpoint: "coding",
+        continuation_notice_signature: signature
+      }
+    }.to change(AgentRun, :count).by(1)
+      .and change(WorkItemContinuationGrant, :count).by(1)
+
+    expect(WorkItemContinuationGrant.last).to have_attributes(
+      issue: AgentRun.last.issue, start_phase: "discovery", endpoint: "coding", created_by: user
+    )
+  end
+
+  it "embeds a per-goal continuation plan so the form refreshes on goal changes" do
+    get new_project_agent_run_path(project, goal: "create_pr")
+
+    plans = rendered_continuation_plans
+    expect(plans.keys).to contain_exactly("create_pr", "create_issue", "review", "enhance_issue", "create_feature")
+    expect(plans.fetch("create_pr")).to include(
+      "default_endpoint" => "coding",
+      "endpoints" => [ { "value" => "coding", "label" => "Coding" }, { "value" => "merge", "label" => "Merge" } ]
+    )
+    expect(plans.fetch("enhance_issue")["default_endpoint"]).to eq("issue_preparation")
+    expect(plans.fetch("create_feature")["default_endpoint"]).to eq("issue_preparation")
+    expect(plans.dig("create_pr", "notices", "merge")).to include("You selected automation through Merge")
   end
 
   it "renders the default plan when GET continuation parameters are invalid" do
@@ -149,5 +185,32 @@ RSpec.describe "Project agent run continuation" do
   def rendered_signature
     Nokogiri::HTML(response.body)
       .at_css("input[name='continuation_notice_signature']")["value"]
+  end
+
+  def rendered_continuation_plans
+    form = Nokogiri::HTML(response.body)
+      .at_css("form[data-goal-toggle-continuation-plans-value]")
+
+    JSON.parse(form["data-goal-toggle-continuation-plans-value"])
+  end
+
+  def stub_create_feature_github!
+    github_client = instance_double(GithubClient)
+    gh_issue = Struct.new(:number, :html_url, :id, :title, :body, :state, :user, :labels, :created_at, :updated_at).new(
+      4321,
+      "https://github.com/example/repo/issues/4321",
+      1,
+      "[Feature] Add a dark mode toggle.",
+      "Add a dark mode toggle.",
+      "open",
+      Struct.new(:login).new("paid-agents"),
+      [],
+      Time.current,
+      Time.current
+    )
+    allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive(:create_issue).and_return(gh_issue)
+    allow(ProcessRunQueueJob).to receive(:perform_later)
+    allow(AgentRuns::RunnerResolver).to receive(:call).and_return([ nil, "claude_code" ])
   end
 end

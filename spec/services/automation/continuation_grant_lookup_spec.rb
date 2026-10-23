@@ -41,6 +41,15 @@ RSpec.describe Automation::ContinuationGrantLookup do
     expect(described_class.resolve(project:, phase: "coding", work_item: run)).to contain_exactly(grant)
   end
 
+  it "preserves a standalone pull request as the work item for its PR-scoped runs" do
+    pull_request = create(:issue, :pull_request, project:)
+    grant = grant_for(pull_request)
+    run = create(:agent_run, project:, issue: nil, goal: "create_pr", trigger_type: "automatic",
+      source_pull_request_number: pull_request.github_number)
+
+    expect(described_class.resolve(project:, phase: "coding", work_item: run)).to contain_exactly(grant)
+  end
+
   it "does not authorize an unrelated issue in the same project" do
     grant_for(issue)
     other_issue = create(:issue, project:)

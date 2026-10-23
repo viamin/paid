@@ -22,9 +22,9 @@ RSpec.describe Automation::ManualStart::Plan do
     )
   end
 
-  def plan(user: owner, phase: "coding", endpoint: nil, continuation: false)
+  def plan(user: owner, phase: "coding", goal: "create_pr", endpoint: nil, continuation: false)
     described_class.new(
-      project:, user:, phase:, goal: "create_pr",
+      project:, user:, phase:, goal:,
       endpoint:, continuation_selected: continuation
     ).call
   end
@@ -32,6 +32,15 @@ RSpec.describe Automation::ManualStart::Plan do
   describe "endpoint selection" do
     it "offers every endpoint from the action's phase through merge" do
       expect(plan(phase: "coding").endpoints).to eq(%w[coding merge])
+    end
+
+    it "offers the full endpoint menu from a discovery action" do
+      expect(plan(phase: "discovery", goal: "create_feature").endpoints)
+        .to eq(%w[issue_preparation coding merge])
+    end
+
+    it "defaults a discovery action to the first continuation endpoint" do
+      expect(plan(phase: "discovery", goal: "create_feature").endpoint).to eq("issue_preparation")
     end
 
     it "defaults the endpoint to the action's phase when that endpoint exists" do
@@ -48,6 +57,17 @@ RSpec.describe Automation::ManualStart::Plan do
       grant = created.build_grant(issue:)
 
       expect(grant.covered_phases).to eq(%w[coding])
+    end
+  end
+
+  describe "client-refresh payload" do
+    it "describes endpoints and per-endpoint notices for goal changes" do
+      payload = plan(phase: "discovery", goal: "create_feature").payload
+
+      expect(payload[:default_endpoint]).to eq("issue_preparation")
+      expect(payload[:endpoints].map { |endpoint| endpoint[:value] })
+        .to eq(%w[issue_preparation coding merge])
+      expect(payload[:notices]["merge"]).to include("You selected automation through Merge")
     end
   end
 
