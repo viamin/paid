@@ -90,6 +90,20 @@ RSpec.describe DependabotAutoMergeJob do
       expect(client).not_to have_received(:merge_pull_request)
     end
 
+    # @spec AUTOMATION-PHASES-002
+    it "does not merge a Dependabot PR from a webhook when the merge phase is disabled" do
+      issue
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(automation_phase_settings: {
+        "phases" => { "merge" => false }, "release" => false, "deployment" => false
+      })
+
+      described_class.perform_now(project.id, pr_number: 42)
+
+      expect(client).not_to have_received(:pull_request)
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
     context "when auto-merge is off but the Dependabot PR has a trusted activation label" do
       it "merges the labeled PR only" do
         project.update!(auto_merge_mode: "off")

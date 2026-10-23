@@ -299,11 +299,14 @@ class DependabotAutoMergeJob < ApplicationJob
     )
   end
 
-  # @spec AUTO-MERGE-008
+  # @spec AUTO-MERGE-008 @spec AUTOMATION-PHASES-002
   def auto_merge_enabled_for?(project, pr_number)
+    issue = pull_request_issue(project, pr_number)
+    return false unless Automation::FeatureActivation.phase_authorized?(
+      project:, capability: "auto_merge", work_item: issue
+    )
     return true if project.auto_merge_dependabot?
 
-    issue = pull_request_issue(project, pr_number)
     return false unless issue
 
     Automation::FeatureActivation.pull_request_feature_enabled?(project:, pull_request: issue, feature: "auto_merge")
