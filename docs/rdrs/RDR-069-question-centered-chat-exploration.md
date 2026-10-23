@@ -8,6 +8,7 @@
 - **Priority**: P1
 - **Related RDRs**: [RDR-028](RDR-028-interactive-chat.md), [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-070](RDR-070-facet-confidence-and-clarification.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)
 - **Intent**: [Question exploration](../intent/question-exploration/question-exploration-design.md)
+- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (shared umbrella), [#4322](https://github.com/viamin/paid/issues/4322) (RDR-069 closeout); implementation tasks are linked in the shared tree
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
 - **Related Issues**: Epic [#4309](https://github.com/viamin/paid/issues/4309); closeout [#4322](https://github.com/viamin/paid/issues/4322); gaps [#4311](https://github.com/viamin/paid/issues/4311), [#4312](https://github.com/viamin/paid/issues/4312), [#4313](https://github.com/viamin/paid/issues/4313), [#4316](https://github.com/viamin/paid/issues/4316), [#4317](https://github.com/viamin/paid/issues/4317)
 
@@ -209,3 +210,17 @@ may close #4309.
 > conversation-open/focus slice of `QUESTION-EXPLORATION-012` and the
 > project-level exploration rollout setting) have since shipped; see
 > Implementation Status. The other listed gaps remain open.
+
+## 2026-10-22 Final Acceptance Audit
+
+The final umbrella audit verified the current diagram, comment, progress,
+access, explicit-preference, and question-focus implementation with its
+focused specs. The remaining unmet acceptance is bounded investigation:
+`QUESTION-EXPLORATION-010` is still open, and the investigation portion of
+`QUESTION-EXPLORATION-012` cannot be complete until it has equivalent,
+authorized UI/API/tool transport, budget reservation, progress, cancellation,
+and reconnect behavior. The project-level exploration setting remains
+preserved as the RDR rollout guard. This RDR therefore remains **Partially
+Implemented** and the umbrella remains open. See
+[`audit-report-2026-10-22-human-centered-inbox-epic.md`](audit-report-2026-10-22-human-centered-inbox-epic.md)
+for code/test evidence and gap ownership.

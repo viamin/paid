@@ -223,23 +223,12 @@ Scaling & Distribution above).
 
 RDR-069–071 form the [human-centered Inbox implementation tree](human-centered-inbox-implementation.md).
 They extend chat and introduce an explicit confidence-driven feature policy;
-RDR-066/067 continue to describe approval-gated features. The 2026-10-12
-audits record the current state: [RDR-069](audit-report-2026-10-12-rdr-069.md)
-and [RDR-071](audit-report-2026-10-12-rdr-071.md) are Partially Implemented
-(reused approval-gated foundations are shipped; the new RDR-specific behavior
-remains open work tracked by #4311–#4317, #4310, #4314, #4315, #4318–#4321,
-and #4323); [RDR-070](audit-report-2026-10-12-rdr-070.md) remains Accepted with
-no implementation shipped. The [epic final-acceptance readiness audit](audit-report-2026-10-12-rdr-069-071-epic.md)
-and the [refreshed umbrella final-acceptance audit (2026-10-12, refreshed
-2026-10-13)](audit-report-2026-10-12-rdr-069-071-epic-final-acceptance.md)
-confirm that #4309 remains open until those focused gaps ship and a future
-audit can rerun the structural and database-backed checks against shipped
-behavior. The [2026-10-13 umbrella final-acceptance refresh](audit-report-2026-10-13-rdr-069-071-epic-final-acceptance.md)
-re-runs every structural and database-backed check used by the prior
-audits against the current working tree (1,310 focused specs, 0 failures;
-176 tables; no facet / exploration / investigation / diagram /
-preference / confidence-driven schema), reaches the same conclusion, and
-keeps the umbrella open with non-closing `Tracks #4309` language.
+RDR-066/067 continue to describe approval-gated features. The
+[2026-10-22 final umbrella audit](audit-report-2026-10-22-human-centered-inbox-epic.md)
+reconciles shipped diagrams, progress, assessments, scoped release, and
+completion-forward-work behavior. It keeps #4309 open for bounded
+investigations, held-issue publication, activation/isolation reporting, the
+assessment corpus, and browser-backed diagram evidence.
 
 RDR-075 is reserved for **General Maintenance Runs**, proposed in
 [PR #4308](https://github.com/viamin/paid/pull/4308). Its
