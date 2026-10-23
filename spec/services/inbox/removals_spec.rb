@@ -192,6 +192,15 @@ RSpec.describe Inbox::Removals do
       expect(entry).to be_present
     end
 
+    it "removes again after a fresh occurrence without duplicating the removal row" do
+      remove!
+      issue.update!(needs_input_since: Time.current + 5.minutes)
+
+      expect { remove! }.not_to raise_error
+      expect(InboxRemoval.where(user:, request_key: "clarifying_questions:#{issue.id}").count).to eq(1)
+      expect(entry).to be_nil
+    end
+
     it "does not restore from polling, an unchanged save, or a retry" do
       remove!
 

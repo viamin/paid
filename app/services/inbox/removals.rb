@@ -20,12 +20,12 @@ module Inbox
       def call
         InboxRemoval.find_or_initialize_by(
           user: user,
-          request_key: Inbox::RequestIdentity.key_for(entry),
-          request_occurrence: Inbox::RequestIdentity.occurrence_for(entry)
+          request_key: Inbox::RequestIdentity.key_for(entry)
         ).tap do |removal|
           removal.assign_attributes(
             project: entry.project,
             entry_kind: entry.kind,
+            request_occurrence: Inbox::RequestIdentity.occurrence_for(entry),
             responsible_phase: Inbox::PhaseOwnership.for_entry(entry).responsible_phase,
             removed_at: Time.current,
             cleared_at: nil
