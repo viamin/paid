@@ -26,7 +26,10 @@ and per-image deletion, in addition to the cache request timeout.
 
 The cutoff is seven days before execution. Images must have a valid creation
 timestamp older than that cutoff and no container references, including stopped
-containers. Docker receives non-forced deletion by image ID with implicit parent pruning
+containers. The daemon's image identity is external input to a destructive
+request, so only canonical `sha256:<64 hex>` identities are eligible and no
+other daemon-reported value can reach a deletion path. Docker receives
+non-forced deletion by image ID with implicit parent pruning
 disabled, so protected ancestors cannot be removed as a side effect. An image acquired
 by a container during cleanup is retained. Missing images and deletion conflicts
 are benign races; other Docker failures fail the job visibly.
