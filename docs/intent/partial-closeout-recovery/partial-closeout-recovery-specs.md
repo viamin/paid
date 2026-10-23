@@ -58,6 +58,22 @@
   *Test:* `spec/services/partial_closeouts/assessment_spec.rb`,
   `spec/requests/inbox_spec.rb`, `spec/services/inbox/chat_context_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-027** — When an authorized operator requests a
+  missing or stale acceptance assessment, the system SHALL queue one bounded,
+  report-only acceptance audit through the existing continuation admission
+  path. The persisted request SHALL identify the audit mode and the resulting
+  run SHALL refresh the criterion assessment without creating implementation
+  work, a pull request, a follow-up run, or an issue-state transition. Normal
+  evidence-generation deduplication, cancellation, failure, retry, budget,
+  trust, pause, dependency, and approved-design guards SHALL remain in effect.
+  *Code:* `app/services/issues/request_acceptance_audit.rb`,
+  `app/services/issues/request_continuation.rb`,
+  `app/temporal/activities/run_acceptance_audit_activity.rb`,
+  `app/temporal/workflows/agent_execution_workflow.rb`.
+  *Test:* `spec/services/issues/request_acceptance_audit_spec.rb`,
+  `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-001** — When `Issues::CloseoutEvidence` evaluates an
   issue, the system SHALL assemble the closeout evidence set from (a) merged
   PR rows linked to the issue via `parent_issue_id`, (b) merged PR rows matched

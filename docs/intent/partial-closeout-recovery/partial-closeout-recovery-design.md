@@ -317,6 +317,20 @@ records a classification (`awaiting_final_audit`, `blocked_implementation`,
 that explains when open ownership makes another run duplicate work. A fresh
 semantic assessment remains a bounded explicit `agent_harness` operation.
 
+### Report-only acceptance audits (#4595)
+
+When an assessment is missing or stale, Inbox offers a distinct **Run
+acceptance audit** action. It uses the existing scoped-continuation admission
+transaction, but records `acceptance_audit` in the request evidence and queues
+an `analyze_issue` run rather than a `create_pr` run. The workflow recognizes
+that persisted mode and invokes a dedicated audit activity which refreshes the
+criterion assessment on the run; it does not create a follow-up run, change the
+issue state, create a pull request, or authorize implementation. The normal
+request/run lifecycle remains the durable progress, cancellation, failure, and
+retry surface, and the existing one-open-request and active-run constraints
+deduplicate audit requests for an evidence generation. All ordinary
+continuation guards remain authoritative.
+
 ## Alternatives considered
 
 - *Lift the merged-PR guard via paid_state*: explicitly rejected — the guard is

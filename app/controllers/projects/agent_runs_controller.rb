@@ -332,6 +332,22 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Continuation queued.")
     end
 
+    # Queues a bounded, report-only assessment. This has the same admission
+    # guards as a continuation but never authorizes implementation work.
+    # @spec PARTIAL-CLOSEOUT-027
+    def request_acceptance_audit
+      authorize @project, :run_agent?
+
+      issue = resolve_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      result = Issues::RequestAcceptanceAudit.call(issue:, actor: current_user)
+      redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Acceptance audit queued.")
+    end
+
     # Records the operator's attestation that the recorded closeout evidence
     # completes the issue (evidence-gated; see Issues::ResolveCloseout).
     # @spec PARTIAL-CLOSEOUT-007

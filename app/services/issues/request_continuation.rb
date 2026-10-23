@@ -20,11 +20,13 @@ module Issues
 
     def self.call(...) = new(...).call
 
-    def initialize(issue:, actor:, reason:, origin: :operator)
+    def initialize(issue:, actor:, reason:, origin: :operator, goal: "create_pr", continuation_mode: "implementation")
       @issue = issue
       @actor = actor
       @reason = reason.to_s.strip
       @origin = origin.to_sym
+      @goal = goal
+      @continuation_mode = continuation_mode
     end
 
     def call
@@ -55,7 +57,7 @@ module Issues
 
     private
 
-    attr_reader :actor, :issue, :origin, :reason
+    attr_reader :actor, :continuation_mode, :goal, :issue, :origin, :reason
 
     def refusal_for(status)
       unless status.evidence.present?
@@ -86,17 +88,17 @@ module Issues
           project: issue.project,
           requested_by: actor,
           reason: reason,
-          evidence: evidence_snapshot(status.evidence),
+          evidence: evidence_snapshot(status.evidence).merge("continuation_mode" => continuation_mode),
           evidence_digest: status.evidence.digest
         )
-        runner_id, agent_type = AgentRuns::RunnerResolver.call(project: issue.project, goal: "create_pr")
+        runner_id, agent_type = AgentRuns::RunnerResolver.call(project: issue.project, goal: goal)
         run = AgentRun.create!(
           project: issue.project,
           issue: issue,
           initiating_user: actor,
           runner_id: runner_id,
           agent_type: agent_type,
-          goal: "create_pr",
+          goal: goal,
           trigger_type: trigger_type,
           auto_pick: automatic?,
           review_depth_snapshot: issue.project.effective_review_depth,
