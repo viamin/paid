@@ -96,3 +96,22 @@ project TDD setting, persisted readiness evidence, an explicit authorized
 trigger, a single-active-run database constraint, and the bootstrap write
 guard. The product outcome must not be enabled through an automatic bootstrap
 loop or a durable readiness latch.
+
+## 2026-10-23 umbrella acceptance follow-up
+
+**Tracks #4255; this evidence does not close the umbrella.** A final acceptance
+review found that a project created directly with strict TDD or interactive
+verification enabled did not schedule its first readiness evaluation: the
+existing callback only covered later settings updates. `Project` now queues
+that initial evaluation only when a readiness-relevant capability is enabled;
+projects with neither capability enabled do not acquire unnecessary checkout
+work. `PROJECT-READINESS-006` and its model coverage document this creation
+path alongside the existing re-evaluation triggers.
+
+The follow-up ran the project-readiness callback examples (6 examples, 0
+failures), the bootstrap, write-guard, and lifecycle focused suite (25
+examples, 0 failures, with the externally provisioned Godot command example
+pending), and `bin/validate-godot-gdunit4-readiness` (2 examples, 0 failures).
+The isolated validator downloaded Godot 4.4.1 and gdUnit4 v5.1.1, then
+confirmed the intentionally failing gdUnit4 draft command. Its non-fatal
+fontconfig warnings did not affect the result.
