@@ -544,6 +544,59 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
         expect(prompt).to include("does not post to GitHub or resolve the inbox item")
       end
 
+      # @spec QUESTION-EXPLORATION-004
+      # A diagram comment is human discussion context. Without it in the
+      # exploration section the assistant cannot answer the question the
+      # person actually asked on the element.
+      it "supplies diagram comments as discussion context with the element text they were made against" do
+        diagram = create(:chat_diagram, chat_session: chat_session, question_key: "expected-behavior")
+        create(:chat_diagram_comment, chat_diagram: diagram, actor: user, body: "Does this retry forever?",
+          element_id: "app", element_context: "Application: The Paid application.")
+
+        expect(prompt).to include("Does this retry forever?")
+        expect(prompt).to include("Application: The Paid application.")
+      end
+
+      # @spec QUESTION-EXPLORATION-004
+      it "bounds rendered diagram comments without dropping the pending questions" do
+        diagram = create(:chat_diagram, chat_session: chat_session, question_key: "expected-behavior")
+        2.times do
+          create(:chat_diagram_comment, chat_diagram: diagram, actor: user, body: "x" * 12_000)
+        end
+
+        comment_text = prompt[/## Diagram comments\n\n(.+?)(?=\nHelp the user)/m, 1]
+
+        expect(comment_text).to be_present
+        expect(comment_text.length).to be <= described_class::DIAGRAM_COMMENTS_MAX_CHARS
+        expect(prompt).to include("1. What is the expected behavior?")
+        expect(prompt.length).to be <= described_class::MAX_PROMPT_CHARS
+      end
+
+      # @spec QUESTION-EXPLORATION-013
+      it "bounds persisted evidence context without dropping the clarifying questions" do
+        progress = ClarifyingQuestions::SaveProgress.call(
+          chat_session: chat_session, position: 1, answer: "Show the error inline.", actor: user
+        )
+        progress.update_column(:evidence_context, "x" * (ClarifyingQuestionProgress::EVIDENCE_CONTEXT_MAX_CHARS + 1))
+
+        expect(prompt).to include("x" * (ClarifyingQuestionProgress::EVIDENCE_CONTEXT_MAX_CHARS - 1))
+        expect(prompt).not_to include("x" * (ClarifyingQuestionProgress::EVIDENCE_CONTEXT_MAX_CHARS + 1))
+        expect(prompt).to include("1. What is the expected behavior?")
+      end
+
+      # @spec QUESTION-EXPLORATION-013
+      # The evidence a person attached to a draft answer is human input, not a
+      # preference. Reopening must restore it with the answer.
+      it "restores a saved draft answer together with its human evidence context" do
+        ClarifyingQuestions::SaveProgress.call(
+          chat_session: chat_session, position: 1, answer: "Show the error inline.", actor: user,
+          evidence_context: "Operator comment on the error-state diagram."
+        )
+
+        expect(prompt).to include("Saved draft answer: Show the error inline.")
+        expect(prompt).to include("Operator comment on the error-state diagram.")
+      end
+
       it "labels a linked pull request as a PR" do
         pull_request = create(:issue, :needs_input, :pull_request, project: project, github_number: 9,
           title: "Ship it", needs_input_questions: [ "What should happen after approval?" ])

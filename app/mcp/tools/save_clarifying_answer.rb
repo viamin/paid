@@ -24,7 +24,7 @@ module Tools
         properties: {
           position: { type: "integer", description: "One-based position of the question being answered." },
           answer: { type: "string", description: "The user's confirmed draft answer." },
-          evidence_context: { type: "string", description: "Optional human-readable context, such as a diagram comment or research finding." },
+          evidence_context: { type: "string", maxLength: ClarifyingQuestionProgress::EVIDENCE_CONTEXT_MAX_CHARS, description: "Optional human-readable context, such as a diagram comment or research finding." },
           design_claim: { type: "string", description: "Optional canonical design claim identifier this answer supports." },
           confirmed: { type: "boolean", description: "True only after the user confirms saving this draft." }
         },

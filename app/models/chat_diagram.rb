@@ -9,7 +9,7 @@ class ChatDiagram < ApplicationRecord
 
   belongs_to :chat_session
   belongs_to :chat_message, optional: true
-  has_many :comments, class_name: "ChatDiagramComment", dependent: :destroy
+  has_many :comments, -> { chronological }, class_name: "ChatDiagramComment", dependent: :destroy
 
   validates :question_key, :question_title, :summary, :text_equivalent, presence: true
   validate :description_is_typed
@@ -67,12 +67,15 @@ class ChatDiagram < ApplicationRecord
     end
   end
 
+  # Renders a reloaded copy rather than self: self has no comments yet (it
+  # was just created), and loading that into self's association cache here
+  # would make any later read of self.comments stale in the same process.
   def broadcast_created
     ActionCable.server.broadcast("chat_session:#{chat_session_id}", {
       type: "diagram_created",
       diagram_id: id,
       question_key: question_key,
-      html: ApplicationController.render(partial: "chat_diagrams/diagram", locals: { diagram: self, chat_session: })
+      html: ApplicationController.render(partial: "chat_diagrams/diagram", locals: { diagram: self.class.find(id), chat_session: })
     })
   end
 end

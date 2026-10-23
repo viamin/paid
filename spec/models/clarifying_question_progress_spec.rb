@@ -19,6 +19,15 @@ RSpec.describe ClarifyingQuestionProgress, type: :model do
     expect(progress.errors[:chat_session]).to include("must be linked to the progress issue")
   end
 
+  # @spec QUESTION-EXPLORATION-013
+  it "bounds persisted evidence context" do
+    progress = build(:clarifying_question_progress, account:, project:, issue:, chat_session: session,
+      evidence_context: "x" * (described_class::EVIDENCE_CONTEXT_MAX_CHARS + 1))
+
+    expect(progress).to be_invalid
+    expect(progress.errors.of_kind?(:evidence_context, :too_long)).to be(true)
+  end
+
   # @spec QUESTION-EXPLORATION-010
   # Progress teardown (session, issue, or account cascades) must clear its
   # investigations first because chat_investigations.clarifying_question_progress_id

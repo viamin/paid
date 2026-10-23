@@ -21,7 +21,7 @@ module ClarifyingQuestions
       @position = position.to_i
       @answer = answer.to_s.strip
       @actor = actor
-      @evidence_context = evidence_context.to_s.strip.presence
+      @evidence_context = evidence_context.to_s.strip.truncate(ClarifyingQuestionProgress::EVIDENCE_CONTEXT_MAX_CHARS, omission: "…").presence
       @design_claim = design_claim.to_s.strip.presence
     end
 
