@@ -92,6 +92,15 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/services/issues/closeout_status_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-026** — When the Inbox evaluates multiple
+  partial-closeout candidates for one project, it SHALL batch the closeout
+  evidence and admission-diagnostic inputs while preserving every candidate's
+  blocker messages and rendered entry, so query count does not grow with the
+  candidate count.
+  *Code:* `app/services/issues/closeout_evidence.rb`,
+  `app/services/issues/closeout_status.rb`, `app/services/issues/stalled_closeouts.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-003** — When an authorized user requests a
   continuation for such an issue, the system SHALL persist an
   `IssueContinuationRequest` recording the actor, a required reason, the

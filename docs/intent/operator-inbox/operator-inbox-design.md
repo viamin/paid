@@ -175,6 +175,8 @@ Red or pending CI, merge conflicts, unresolved review threads, dependencies,
 or policy checks remain machine/blocker state rather than Inbox noise. The
 detail pane reuses the standard PR badge and GitHub-link conventions and
 directs the operator to GitHub for the supported human action.
+Candidate PRs preload their parent issue alongside their project, so building
+the lane stays constant in database queries as its entry count grows.
 
 ### `escalated_pr`
 

@@ -19,8 +19,9 @@ module FeatureIntents
       new(...).call
     end
 
-    def initialize(issue:)
+    def initialize(issue:, links: nil)
       @issue = issue
+      @preloaded_links = links
     end
 
     def call
@@ -42,6 +43,8 @@ module FeatureIntents
     # not unique); each link carries its own admission contract, so every
     # link is evaluated rather than an arbitrary one.
     def links
+      return @preloaded_links unless @preloaded_links.nil?
+
       @links ||= FeatureIntentIssue.includes(:feature_intent, :prerequisite_mapping)
         .where(issue_id: issue.id)
         .order(:id).to_a
@@ -91,7 +94,7 @@ module FeatureIntents
     end
 
     def in_tree_dependencies_complete?(link)
-      link.in_tree_dependencies.includes(:issue).all? { |dependency| dependency_complete?(dependency.issue) }
+      link.in_tree_dependencies.all? { |dependency| dependency_complete?(dependency.issue) }
     end
 
     def dependency_complete?(dependency_issue)

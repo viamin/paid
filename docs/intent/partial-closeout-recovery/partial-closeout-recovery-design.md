@@ -92,6 +92,11 @@ paid_state edit and never a blanket guard lift:
   cancel and supersede — the walk explains the authority, it never
   substitutes for it.
 
+For Inbox lane construction, `StalledCloseouts` batch-loads the evidence and
+persisted diagnostic inputs for each project's candidates before evaluating
+individual `CloseoutStatus` values. The per-issue status still produces the
+same additive blockers; batching changes only how its inputs are read.
+
 ### Prompt delivery
 
 The authorization is useless to the executing agent if it never reaches the

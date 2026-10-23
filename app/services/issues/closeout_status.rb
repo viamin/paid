@@ -16,6 +16,9 @@ module Issues
   # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-004 @spec PARTIAL-CLOSEOUT-012
   class CloseoutStatus
     Blocker = Struct.new(:code, :message, :evidence, :recovery, keyword_init: true)
+    Inputs = Struct.new(:evidence_by_issue_id, :prerequisites_by_issue_id,
+      :open_requests_by_issue_id, :active_run_issue_ids, :feature_links_by_issue_id,
+      :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id, keyword_init: true)
 
     # Blockers that are deliberate operator states or active work rather than
     # a partial-closeout stall; the lane must not surface them.
@@ -63,11 +66,11 @@ module Issues
       end
     end
 
-    def self.call(issue, eligible_issue_ids: nil, continuation_eligible_issue_ids: nil)
-      evidence = CloseoutEvidence.call(issue)
+    def self.call(issue, eligible_issue_ids: nil, continuation_eligible_issue_ids: nil, inputs: nil)
+      evidence = inputs&.evidence_by_issue_id&.fetch(issue.id) || CloseoutEvidence.call(issue)
       eligible_ids = eligible_issue_ids || admissible_issue_ids(issue)
-      prerequisites = prerequisite_labels(issue)
-      blockers = admission_blockers(issue, prerequisites: prerequisites)
+      prerequisites = inputs&.prerequisites_by_issue_id&.fetch(issue.id) || prerequisite_labels(issue)
+      blockers = admission_blockers(issue, prerequisites: prerequisites, inputs: inputs)
       if blockers.empty? && evidence.present?
         blockers = [ residual_eligibility_blocker(issue, continuation_eligible_issue_ids) ].compact
       end
@@ -76,12 +79,64 @@ module Issues
         evidence: evidence,
         blockers: blockers,
         admissible: eligible_ids.include?(issue.id),
-        open_request: IssueContinuationRequest.open_for_issue(issue),
+        open_request: inputs ? inputs.open_requests_by_issue_id[issue.id] : IssueContinuationRequest.open_for_issue(issue),
         resolved_current_generation: issue.closeout_resolved? && issue.closeout_resolution_digest == evidence.digest,
         outcome: outcome_label(issue, evidence),
         unresolved_prerequisites: prerequisites
       )
     end
+
+    # Preloads the mutable persisted inputs used only to explain each
+    # candidate's admission result. The eligibility authority remains the
+    # scoped batch evaluation in StalledCloseouts.
+    # @spec PARTIAL-CLOSEOUT-026
+    def self.inputs_for(issues)
+      return Inputs.new if issues.empty?
+
+      issue_ids = issues.map(&:id)
+      feature_links = FeatureIntentIssue.where(issue_id: issue_ids).includes(:feature_intent, :prerequisite_mapping,
+        in_tree_dependencies: :issue).to_a.group_by(&:issue_id)
+      scanner_attempts = CodeScanningRemediationAttempt.where(issue_id: issue_ids).latest_per_issue.index_by(&:issue_id)
+      reset_at = issues.group_by(&:project_id).transform_values do |project_issues|
+        next unless project_issues.any? { |issue| issue.issue_analysis_next_attempt_at.present? && issue.issue_analysis_next_attempt_at > Time.current }
+
+        IssueAnalysisBackoffResetContext.call(project: project_issues.first.project)
+      end
+      Inputs.new(
+        evidence_by_issue_id: CloseoutEvidence.results_for(issues),
+        prerequisites_by_issue_id: prerequisite_labels_for(issues),
+        open_requests_by_issue_id: IssueContinuationRequest.open.where(issue_id: issue_ids).order(:id).to_a.index_by(&:issue_id),
+        active_run_issue_ids: AgentRun.where(issue_id: issue_ids, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).distinct.pluck(:issue_id).to_set,
+        feature_links_by_issue_id: feature_links,
+        analysis_backoff_reset_by_project_id: reset_at,
+        scanner_attempts_by_issue_id: scanner_attempts
+      )
+    end
+
+    def self.prerequisite_labels_for(issues)
+      labels = Hash.new { |hash, key| hash[key] = [] }
+      issue_ids = issues.map(&:id)
+      dependencies = IssueDependency.joins(<<~SQL.squish)
+        INNER JOIN issues dependent_issues ON dependent_issues.id = issue_dependencies.issue_id
+        INNER JOIN issues depends_on_issues ON depends_on_issues.id = issue_dependencies.depends_on_issue_id
+      SQL
+      local = dependencies.where(issue_id: issue_ids, depends_on_issues: { github_state: "open" })
+        .where.not(depends_on_issues: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
+        .where("dependent_issues.parent_issue_id IS DISTINCT FROM issue_dependencies.depends_on_issue_id")
+        .pluck(:issue_id, "depends_on_issues.github_number")
+      deployment = dependencies.where(issue_id: issue_ids, requires_deployment: true)
+        .where(depends_on_issues: { is_pull_request: true, deployed_at: nil })
+        .where.not(depends_on_issues: { github_state: "open" }).pluck(:issue_id, "depends_on_issues.github_number")
+      (local + deployment).each { |issue_id, number| labels[issue_id] << "##{number}" }
+      issues.group_by { |issue| issue.project.account_id }.each do |account_id, account_issues|
+        IssueDependency.where(issue_id: account_issues.map(&:id))
+          .merge(IssueDependency.still_blocking_external_for_account(account_id))
+          .pluck(:issue_id, :depends_on_owner, :depends_on_repo, :depends_on_number)
+          .each { |issue_id, owner, repo, number| labels[issue_id] << "#{owner}/#{repo}##{number}" }
+      end
+      issues.to_h { |issue| [ issue.id, labels[issue.id].uniq.sort ] }
+    end
+    private_class_method :prerequisite_labels_for
 
     def self.admissible_issue_ids(issue)
       Automation::Strategies::AutoPick::DefaultCandidateSource
@@ -91,10 +146,10 @@ module Issues
     # Each diagnostic interrogates the same persisted state consumed by the
     # candidate source. Keep this list additive: simultaneous guards must all
     # be visible rather than having the first one conceal the rest.
-    def self.admission_blockers(issue, prerequisites: prerequisite_labels(issue))
+    def self.admission_blockers(issue, prerequisites: prerequisite_labels(issue), inputs: nil)
       prerequisite_blockers(issue, labels: prerequisites) + operator_pause_blockers(issue) +
-        run_in_flight_blockers(issue) + trust_blockers(issue) + feature_hold_blockers(issue) +
-        analysis_backoff_blockers(issue) + scanner_verification_blockers(issue)
+        run_in_flight_blockers(issue, inputs:) + trust_blockers(issue) + feature_hold_blockers(issue, inputs:) +
+        analysis_backoff_blockers(issue, inputs:) + scanner_verification_blockers(issue, inputs:)
     end
 
     # The scoped preflight is the admission authority. If it rejects after all
@@ -168,8 +223,9 @@ module Issues
       blockers
     end
 
-    def self.run_in_flight_blockers(issue)
-      return [] unless issue.agent_runs.where(status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).exists?
+    def self.run_in_flight_blockers(issue, inputs: nil)
+      active = inputs ? inputs.active_run_issue_ids.include?(issue.id) : issue.agent_runs.where(status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).exists?
+      return [] unless active
 
       [ Blocker.new(code: :run_in_flight, message: "An agent run is already queued or in flight for this issue.",
         recovery: "Wait for the active run to finish before requesting another continuation.") ]
@@ -187,8 +243,8 @@ module Issues
       ) ]
     end
 
-    def self.feature_hold_blockers(issue)
-      admission = FeatureIntents::RunAdmission.call(issue: issue)
+    def self.feature_hold_blockers(issue, inputs: nil)
+      admission = FeatureIntents::RunAdmission.call(issue: issue, links: inputs&.feature_links_by_issue_id&.fetch(issue.id, []))
       return [] if admission.allowed?
 
       [ Blocker.new(code: :feature_held, message: admission.reason || "A feature release gate holds this issue.",
@@ -201,11 +257,11 @@ module Issues
     # continuation with the specific wait-until reason instead of queueing a
     # run the dequeue recheck would cancel.
     # @spec PARTIAL-CLOSEOUT-004
-    def self.analysis_backoff_blockers(issue)
+    def self.analysis_backoff_blockers(issue, inputs: nil)
       next_attempt_at = issue.issue_analysis_next_attempt_at
       return [] if next_attempt_at.blank? || next_attempt_at <= Time.current
 
-      reset_at = Issues::IssueAnalysisBackoffResetContext.call(project: issue.project)
+      reset_at = inputs ? inputs.analysis_backoff_reset_by_project_id.fetch(issue.project_id) : Issues::IssueAnalysisBackoffResetContext.call(project: issue.project)
       return [] unless issue.issue_analysis_backoff_active?(reset_at: reset_at)
 
       [ Blocker.new(
@@ -219,10 +275,10 @@ module Issues
     end
 
     # @spec PARTIAL-CLOSEOUT-012 EAGER-QUEUE-013 EAGER-QUEUE-015
-    def self.scanner_verification_blockers(issue)
+    def self.scanner_verification_blockers(issue, inputs: nil)
       return [] unless issue.source == Issue::SYNTHETIC_CODE_SCANNING_SOURCE
 
-      attempt = issue.code_scanning_remediation_attempts.latest_per_issue.first
+      attempt = inputs ? inputs.scanner_attempts_by_issue_id[issue.id] : issue.code_scanning_remediation_attempts.latest_per_issue.first
       return [] unless attempt&.status.in?(%w[awaiting_verification verification_failed verification_blocked])
 
       [ scanner_blocker(issue, attempt) ]
