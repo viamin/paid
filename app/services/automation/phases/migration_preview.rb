@@ -63,11 +63,18 @@ module Automation
       # Built from the Disabled phases view so the preview reports exactly what
       # an operator would see after activation.
       def disabled_phase_entries(settings)
-        return [] unless Automation::RolloutGuard.enabled?(project)
-
+        derived_settings = settings.derive
         Inbox::Queue
-          .call(user:, project:, scope: Inbox::Queue::DISABLED_PHASES_SCOPE)
+          .new(user:, project:)
+          .entries
+          .select { |entry| disabled_by_derived_settings?(entry, derived_settings) }
           .filter_map { |entry| entry_identity(entry) }
+      end
+
+      def disabled_by_derived_settings?(entry, derived_settings)
+        ownership = entry.phase_ownership
+        ownership.phase_owned? && !derived_settings.fetch(Automation::PhaseSettings::PHASES_KEY)
+          .fetch(ownership.responsible_phase, false)
       end
 
       def entry_identity(entry)

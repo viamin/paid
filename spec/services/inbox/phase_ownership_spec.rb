@@ -50,7 +50,17 @@ RSpec.describe Inbox::PhaseOwnership do
       issue = create(:issue, project:, github_state: "open", needs_input_questions: [ "Which behavior?" ])
       issue.update!(paid_state: "needs_input")
 
-      expect(Inbox::PhaseOwnership.for_entry(entry_for(issue)).responsible_phase).to eq("issue_preparation")
+      expect(described_class.for_entry(entry_for(issue)).responsible_phase).to eq("issue_preparation")
+    end
+
+    it "records a coding manual-review request in the coding phase" do
+      FeatureFlags.enable!(:automation_phases, project:)
+      issue = create(:issue, project:, github_state: "open")
+      create(:agent_run, project:, issue:, goal: "create_pr", status: "completed")
+
+      issue.update!(paid_state: "manual_review", manual_review_reason: "CI repair required")
+
+      expect(InboxRequestOwnership.find_by(request_key: "manual_review:#{issue.id}").responsible_phase).to eq("coding")
     end
 
     it "does not write ownership while the rollout flag is off" do

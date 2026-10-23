@@ -45,7 +45,7 @@
   delete questions and history, SHALL leave other users' visibility unchanged,
   and SHALL remain inspectable through a **Removed** filter, related-item
   history, and the API.
-  *Tests:* `spec/services/inbox/removal_spec.rb`, `spec/requests/inbox_spec.rb`
+  *Tests:* `spec/services/inbox/removals_spec.rb`, `spec/requests/inbox_spec.rb`
   *Code:* `InboxRemoval`, `Inbox::Removals::Remove`, `InboxController`
 
 - [x] **INBOX-PHASE-RELEVANCE-007** — A removed request SHALL stay suppressed
@@ -54,7 +54,7 @@
   work on the related item produces a fresh Inbox-worthy occurrence; polling,
   unchanged saves, viewing, routine synchronization, automated retries,
   follow-ups, and classification alone SHALL NOT restore it.
-  *Tests:* `spec/services/inbox/removal_spec.rb`
+  *Tests:* `spec/services/inbox/removals_spec.rb`
   *Code:* `Inbox::Removals::RestoreOnPhaseEnablement`, `Inbox::RequestIdentity`
 
 - [x] **INBOX-PHASE-RELEVANCE-008** — Personal removal SHALL be persisted
@@ -63,7 +63,7 @@
   removal made after an occurrence SHALL survive delayed events from that
   occurrence, and returning an item SHALL clear suppression only for the new
   occurrence.
-  *Tests:* `spec/services/inbox/removal_spec.rb`
+  *Tests:* `spec/services/inbox/removals_spec.rb`
   *Code:* `InboxRemoval`, `Inbox::RequestIdentity`
 
 - [x] **INBOX-PHASE-RELEVANCE-009** — Personally removed items SHALL be
@@ -78,5 +78,5 @@
   enforcement for platform requests, phase-less requests SHALL be able to
   return on fresh manual-work conditions, and phase enablement SHALL apply only
   to phase-owned requests.
-  *Tests:* `spec/services/inbox/removal_spec.rb`
+  *Tests:* `spec/services/inbox/removals_spec.rb`
   *Code:* `Inbox::Removals::RestoreOnPhaseEnablement`, `Inbox::PhaseRelevance`

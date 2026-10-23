@@ -320,18 +320,27 @@ module Inbox
       sort_entries(apply_scope(build_entries))
     end
 
+    # Unfiltered source entries for read-only projections such as the phase
+    # migration preview. Public Inbox scopes remain filtered by #call.
+    def entries
+      sort_entries(build_entries)
+    end
+
     private
 
     attr_reader :kind, :project, :scope, :sort, :user
 
     # @spec INBOX-PHASE-RELEVANCE-002 @spec INBOX-PHASE-RELEVANCE-009
     def apply_scope(entries)
-      return entries unless phase_governed?(entries)
-
       case scope
-      when DISABLED_PHASES_SCOPE then entries.reject { |entry| relevance_for(entry).actionable? }
+      when DISABLED_PHASES_SCOPE
+        return [] unless phase_governed?(entries)
+
+        entries.reject { |entry| relevance_for(entry).actionable? }
       when REMOVED_SCOPE then entries.select { |entry| suppressed_ids.include?(entry.id) }
-      else entries.select { |entry| relevance_for(entry).actionable? && !suppressed_ids.include?(entry.id) }
+      else
+        relevant_entries = phase_governed?(entries) ? entries.select { |entry| relevance_for(entry).actionable? } : entries
+        relevant_entries.reject { |entry| suppressed_ids.include?(entry.id) }
       end
     end
 
@@ -379,6 +388,10 @@ module Inbox
         entries.concat(test_review_pending_entries) if include_kind?(TEST_REVIEW_PENDING_KIND)
         entries.concat(project_setup_pending_entries) if include_kind?(PROJECT_SETUP_PENDING_KIND)
         entries.concat(traceability_gap_entries) if include_kind?(TRACEABILITY_GAP_KIND)
+        entries_by_id = entries.index_by(&:id)
+        Inbox::PhaseOwnership.for_entries(entries).each do |entry_id, ownership|
+          entries_by_id.fetch(entry_id).instance_variable_set(:@phase_ownership, ownership)
+        end
         entries
       end
     end

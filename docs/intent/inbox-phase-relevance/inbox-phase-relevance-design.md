@@ -90,6 +90,7 @@ Classifying a legacy request never clears a removal.
 
 ## Rollout
 
-All relevance, filtering, and removal behavior is behind
-`FeatureFlags.enabled?(:automation_phases, project:)`; while the flag is off
-the queue, counts, and availability behave exactly as before.
+Phase relevance is behind `FeatureFlags.enabled?(:automation_phases, project:)`;
+while the flag is off, phase-owned requests remain in the default list.
+Personal removal is an independent per-user presentation control and applies
+to the default and Removed views regardless of that rollout flag.

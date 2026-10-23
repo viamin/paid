@@ -514,6 +514,13 @@ components:
         format: inbox-entry-id
         pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}$'
   schemas:
+    InboxEntryId:
+      type: string
+      maxLength: 40
+      format: inbox-entry-id
+      pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}$'
+      description: Opaque `kind:id` queue identifier.
+      example: clarifying_questions:4241
     ErrorEnvelope:
       type: object
       required: [error]

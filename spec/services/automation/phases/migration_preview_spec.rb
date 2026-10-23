@@ -43,7 +43,6 @@ RSpec.describe Automation::Phases::MigrationPreview do
   end
 
   it "reports the Inbox requests that would leave the default list" do
-    FeatureFlags.enable!(:automation_phases, project:)
     issue = create(:issue, :needs_input, project:, github_state: "open",
       needs_input_questions: [ "Which behavior?" ])
 

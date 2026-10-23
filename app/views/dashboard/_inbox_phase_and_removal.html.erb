@@ -29,13 +29,13 @@
   <% end %>
 
   <div>
-    <% if entry.actionable? %>
+    <% if @selected_scope == Inbox::Queue::REMOVED_SCOPE || !entry.actionable? %>
+      <%= button_to "Restore to Inbox", inbox_entry_restore_path(entry.id), method: :post,
+            class: "rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50" %>
+    <% else %>
       <%= button_to "Remove from Inbox", inbox_entry_remove_path(entry.id), method: :post,
             class: "rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50",
             form: { data: { turbo_confirm: "Hide this request from your Inbox? The work, its questions, and its history stay unchanged." } } %>
-    <% else %>
-      <%= button_to "Restore to Inbox", inbox_entry_restore_path(entry.id), method: :post,
-            class: "rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50" %>
     <% end %>
   </div>
 </div>

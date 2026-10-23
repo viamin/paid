@@ -983,7 +983,9 @@ class Issue < ApplicationRecord
   end
 
   def record_inbox_phase_ownership
-    Inbox::PhaseOwnership.record_issue_request!(issue: self, kind: INBOX_PHASE_KINDS.fetch(paid_state))
+    kind = INBOX_PHASE_KINDS.fetch(paid_state)
+    phase = Inbox::PhaseOwnership.phase_for_manual_review_issue(self) if kind == Inbox::Queue::MANUAL_REVIEW_KIND
+    Inbox::PhaseOwnership.record_issue_request!(issue: self, kind:, phase:)
   rescue ActiveRecord::StatementInvalid, ActiveRecord::RecordInvalid => e
     Rails.logger.warn(
       message: "inbox.phase_ownership_assignment_failed",

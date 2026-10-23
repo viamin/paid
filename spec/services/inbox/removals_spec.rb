@@ -40,6 +40,14 @@ RSpec.describe Inbox::Removals do
   end
 
   describe "removal" do
+    it "restores and removes the same occurrence again" do
+      remove!
+      Inbox::Removals::Restore.call(entry: entry(scope: Inbox::Queue::REMOVED_SCOPE), user:)
+
+      expect { remove! }.to change { InboxRemoval.active.count }.from(0).to(1)
+      expect(InboxRemoval.where(user:, request_key: "clarifying_questions:#{issue.id}").count).to eq(1)
+    end
+
     it "hides the request for the acting user only" do
       remove!
 

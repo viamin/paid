@@ -70,13 +70,14 @@ module Projects
 
     def phase_settings_params
       raw = params.fetch(:automation_phase_settings, {})
-      permitted = params.require(:project).permit(
-        phases: Automation::Phases::ALL,
-        release: ActiveModel::Type::Boolean.new,
-        deployment: ActiveModel::Type::Boolean.new
-      ).to_h
-      permitted[:phases] = permitted[:phases].to_h.symbolize_keys
-      permitted.presence || raw.to_h
+      permitted = params.require(:project).permit(:release, :deployment, phases: Automation::Phases::ALL).to_h
+      return raw.to_h if permitted.blank?
+
+      {
+        Automation::PhaseSettings::PHASES_KEY => permitted.fetch("phases", {}),
+        Automation::PhaseSettings::RELEASE_KEY => permitted["release"],
+        Automation::PhaseSettings::DEPLOYMENT_KEY => permitted["deployment"]
+      }
     end
   end
 end

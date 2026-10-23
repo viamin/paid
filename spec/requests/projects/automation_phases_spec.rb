@@ -1,0 +1,32 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+# @spec AUTOMATION-PHASES-002 @spec AUTOMATION-PHASES-015 @spec AUTOMATION-PHASES-016
+RSpec.describe "Project automation phases" do
+  let(:account) { create(:account) }
+  let(:user) { create(:user, account:) }
+  let(:project) { create(:project, account:, created_by: user) }
+
+  before { sign_in user }
+
+  it "renders the settings page" do
+    get project_automation_phases_path(project)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Automation phases")
+  end
+
+  it "updates the phase controls posted by the settings form" do
+    patch project_automation_phases_path(project), params: {
+      project: { phases: { "discovery" => "1", "coding" => "1" }, release: "1" }
+    }
+
+    expect(response).to redirect_to(project_automation_phases_path(project))
+    settings = Automation::PhaseSettings.call(project.reload)
+    expect(settings.phase_enabled?("discovery")).to be(true)
+    expect(settings.phase_enabled?("coding")).to be(true)
+    expect(settings.phase_enabled?("merge")).to be(false)
+    expect(settings.release_enabled?).to be(true)
+  end
+end

@@ -18,15 +18,20 @@ module Inbox
       end
 
       def call
-        InboxRemoval.create!(
+        InboxRemoval.find_or_initialize_by(
           user: user,
-          project: entry.project,
           request_key: Inbox::RequestIdentity.key_for(entry),
-          entry_kind: entry.kind,
-          request_occurrence: Inbox::RequestIdentity.occurrence_for(entry),
-          responsible_phase: Inbox::PhaseOwnership.for_entry(entry).responsible_phase,
-          removed_at: Time.current
-        )
+          request_occurrence: Inbox::RequestIdentity.occurrence_for(entry)
+        ).tap do |removal|
+          removal.assign_attributes(
+            project: entry.project,
+            entry_kind: entry.kind,
+            responsible_phase: Inbox::PhaseOwnership.for_entry(entry).responsible_phase,
+            removed_at: Time.current,
+            cleared_at: nil
+          )
+          removal.save!
+        end
       end
 
       private
@@ -77,8 +82,9 @@ module Inbox
 
           removals = InboxRemoval.active.where(user:, request_key: keys).to_a
           suppressed = Set.new
+          entries_by_key = entries.index_by { |entry| Inbox::RequestIdentity.key_for(entry) }
           removals.each do |removal|
-            entry = entries.find { |candidate| Inbox::RequestIdentity.key_for(candidate) == removal.request_key }
+            entry = entries_by_key[removal.request_key]
             next unless entry
 
             suppressed << entry.id if removal.suppresses?(Inbox::RequestIdentity.occurrence_for(entry))

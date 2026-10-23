@@ -164,11 +164,14 @@ module Projects
       blocked_by_issue_ids = resolve_blocked_by_issue_ids
       plan_docs = resolve_plan_docs
 
-      if (plan = manual_start_plan(goal: goal)) && manual_start_policy_changed?(plan)
-        load_manual_start_plan(goal)
-        flash.now[:alert] = updated_policy_alert(plan)
-        render :new, status: :unprocessable_content
-        return
+      if (plan = manual_start_plan(goal: goal))
+        plan.call
+        if manual_start_policy_changed?(plan)
+          flash[:alert] = updated_policy_alert(plan)
+          redirect_to new_project_agent_run_path(@project, goal: goal)
+          return
+        end
+        @manual_start_plan = plan
       end
 
       if goal == "review"
@@ -1122,8 +1125,6 @@ module Projects
       return if work_item.nil?
 
       plan.build_grant(issue: work_item)
-    rescue Automation::ManualStart::Plan::PermissionDenied => e
-      raise e
     end
 
     # A grant belongs to the work item and its linked chain: an issue, or the

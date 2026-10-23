@@ -42,7 +42,7 @@ module Inbox
     end
 
     def call(entry)
-      ownership = Inbox::PhaseOwnership.for_entry(entry)
+      ownership = entry.phase_ownership
       return Result.new(state: ACTIONABLE, ownership:) unless governed?(ownership)
       return Result.new(state: ACTIONABLE, ownership:) if relevant?(entry, ownership)
 

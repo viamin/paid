@@ -90,4 +90,14 @@ RSpec.describe "Inbox phase relevance and removal" do
 
     expect(response.body).to include("Which behavior?")
   end
+
+  it "honors personal removal while the rollout flag is off" do
+    post inbox_entry_remove_path(entry_id: "clarifying_questions:#{issue.id}")
+
+    get inbox_path
+    expect(response.body).not_to include("Which behavior?")
+
+    get inbox_path(scope: Inbox::Queue::REMOVED_SCOPE)
+    expect(response.body).to include("Which behavior?")
+  end
 end

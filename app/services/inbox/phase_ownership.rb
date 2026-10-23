@@ -67,7 +67,7 @@ module Inbox
     # Issue-backed lanes record ownership the moment the request is produced,
     # without building a queue entry first.
     def record_issue_request!(issue:, kind:, phase: nil)
-      resolved_phase = (phase.presence || phase_for_issue_kind(kind, issue)).to_s
+      resolved_phase = phase.presence || phase_for_issue_kind(kind, issue)
       persist(
         Ownership.new(
           request_key: "#{kind}:#{issue.id}",
@@ -88,6 +88,21 @@ module Inbox
       return ownership_from_record(stored) if stored
 
       derive(entry)
+    end
+
+    # Queue construction resolves stored ownership and manual-review evidence
+    # in batches, avoiding one ownership and latest-run query per entry.
+    def for_entries(entries)
+      return {} if entries.empty?
+
+      stored_by_key = InboxRequestOwnership.includes(:project).where(request_key: entries.map(&:id)).index_by(&:request_key)
+      latest_runs = latest_runs_by_issue_id(entries)
+
+      entries.to_h do |entry|
+        stored = stored_by_key[entry.id]
+        ownership = stored ? ownership_from_record(stored) : derive(entry, latest_runs:)
+        [ entry.id, ownership ]
+      end
     end
 
     def persist(ownership)
@@ -138,10 +153,10 @@ module Inbox
 
     # Classification from producer evidence. Insufficient evidence leaves the
     # ownership unknown instead of guessing a phase.
-    def derive(entry, origin_kind = nil, origin_id = nil)
+    def derive(entry, origin_kind = nil, origin_id = nil, latest_runs: nil)
       return platform_ownership(entry, origin_kind, origin_id) if platform_request?(entry)
 
-      phase = phase_for(entry)
+      phase = phase_for(entry, latest_runs:)
 
       Ownership.new(
         request_key: entry.id,
@@ -168,32 +183,40 @@ module Inbox
       )
     end
 
-    def phase_for(entry)
+    def phase_for(entry, latest_runs: nil)
       return KIND_PHASES[entry.kind] unless entry.kind == Inbox::Queue::MANUAL_REVIEW_KIND
 
-      manual_review_phase(entry)
+      manual_review_phase(entry, latest_runs:)
     end
 
-    def manual_review_phase(entry)
-      phase_for_manual_review_issue(entry.issue)
+    def manual_review_phase(entry, latest_runs: nil)
+      phase_for_manual_review_issue(entry.issue, latest_runs:)
     end
 
     # manual_review has several causes; the stop reason and the latest run goal
     # say which phase owns the stop.
-    def phase_for_manual_review_issue(issue)
+    def phase_for_manual_review_issue(issue, latest_runs: nil)
       return nil unless issue
       return Automation::Phases::ISSUE_PREPARATION if issue.manual_review_reason.to_s.match?(ENHANCEMENT_REASONS)
 
-      latest_run = issue.agent_runs.order(created_at: :desc, id: :desc).first
+      latest_run = latest_runs ? latest_runs[issue.id] : issue.agent_runs.order(created_at: :desc, id: :desc).first
       return Automation::Phases::ISSUE_PREPARATION if latest_run&.enhance_issue_goal?
 
       Automation::Phases::CODING
     end
 
     def phase_for_issue_kind(kind, issue)
-      return Automation::Phases::ISSUE_PREPARATION if kind == Inbox::Queue::MANUAL_REVIEW_KIND
+      return phase_for_manual_review_issue(issue) if kind == Inbox::Queue::MANUAL_REVIEW_KIND
 
       KIND_PHASES[kind.to_s]
+    end
+
+    def latest_runs_by_issue_id(entries)
+      issue_ids = entries.filter_map { |entry| entry.issue&.id if entry.manual_review? }.uniq
+      return {} if issue_ids.empty?
+
+      AgentRun.where(issue_id: issue_ids).order(created_at: :desc, id: :desc).to_a
+        .group_by(&:issue_id).transform_values(&:first)
     end
 
     # Paid's platform health, credential, and safety requests are
