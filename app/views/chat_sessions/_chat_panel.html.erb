@@ -45,12 +45,8 @@
 <% chat_panel_bottom_space = local_assigns[:chat_panel_bottom_space] %>
 <% session_projects = chat_session_projects(chat_session) %>
 <% runner_model_options = ChatSessions::RunnerModelOptions.options_for(available_runners, projects: session_projects) if can_update_chat_session %>
-<% thinking_effort_models_by_id = if ChatSessions::ThinkingEffort.transport_supported? %>
-  <% model_ids = [chat_session.model, *runner_model_options.to_a.map(&:model_id)].compact.uniq %>
-  <% LlmModel.where(model_id: model_ids).index_by(&:model_id) %>
-<% else %>
-  <% {} %>
-<% end %>
+<% thinking_effort_model_ids = [ chat_session.model, *runner_model_options.to_a.map(&:model_id) ] %>
+<% thinking_effort_models_by_id = ChatSessions::ThinkingEffort.catalog_models_by_id(thinking_effort_model_ids) %>
 <div class="flex flex-col overflow-x-hidden"
      data-controller="chat"
      data-action="click->chat#navigate"

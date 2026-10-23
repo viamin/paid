@@ -14,16 +14,22 @@ module ChatSessions
 
     Option = Data.define(:value, :label)
 
-    def self.supported?(model_id)
-      allowed_values(model_id).any?
-    end
-
     def self.allowed_values(model_id, catalog_models_by_id: nil)
       return [] if model_id.blank?
       return [] unless transport_supported?
 
       model = catalog_models_by_id ? catalog_models_by_id[model_id] : LlmModel.find_by_model_id(model_id)
       model&.reasoning_effort_values || []
+    end
+
+    # Catalog rows for the given model ids, keyed by model id. Empty while the
+    # transport cannot carry reasoning effort, so no caller can offer effort
+    # values the transport would drop.
+    # @spec CHAT-THINKING-EFFORT-001
+    def self.catalog_models_by_id(model_ids)
+      return {} unless transport_supported?
+
+      LlmModel.where(model_id: model_ids.compact.uniq).index_by(&:model_id)
     end
 
     # A catalog declaration alone is not enough to offer this control. The
@@ -54,10 +60,12 @@ module ChatSessions
 
     # Retains only a preference that the effective model and transport still
     # support. Default is represented by an absent key, rather than a null
-    # value that would create a spurious metadata update.
-    # @spec CHAT-THINKING-EFFORT-005
-    def self.normalize_metadata(metadata:, model_id:, catalog_models_by_id: nil)
-      normalized = normalize(model_id:, value: metadata[METADATA_KEY], catalog_models_by_id:)
+    # value that would create a spurious metadata update. An explicit `value:`
+    # overrides the stored one, so a validated user submission and a
+    # system-driven realignment share this single write path.
+    # @spec CHAT-THINKING-EFFORT-005 CHAT-THINKING-EFFORT-006
+    def self.normalize_metadata(metadata:, model_id:, catalog_models_by_id: nil, value: metadata[METADATA_KEY])
+      normalized = normalize(model_id:, value:, catalog_models_by_id:)
       metadata = metadata.dup
       normalized ? metadata[METADATA_KEY] = normalized : metadata.delete(METADATA_KEY)
       metadata

@@ -37,11 +37,7 @@ class ChatSessionsController < ApplicationController
 
       format.json do
         pagy, sessions = pagy(session_scope_with_token_totals, limit: 25)
-        @thinking_effort_models_by_id = if ChatSessions::ThinkingEffort.transport_supported?
-          LlmModel.where(model_id: sessions.filter_map(&:model).uniq).index_by(&:model_id)
-        else
-          {}
-        end
+        @thinking_effort_models_by_id = ChatSessions::ThinkingEffort.catalog_models_by_id(sessions.filter_map(&:model))
         render json: {
           sessions: sessions.map { |s| session_json(s) },
           pagination: pagination_meta(pagy)
@@ -356,7 +352,7 @@ class ChatSessionsController < ApplicationController
 
     permitted[:runner_id] = selection.runner_id
     permitted[:model] = selection.model_id
-    metadata = (@chat_session&.metadata || {}).merge(permitted[:metadata] || {}).merge("model_tier" => selection.tier)
+    metadata = merged_metadata(permitted).merge("model_tier" => selection.tier)
     # @spec CHAT-THINKING-EFFORT-005
     permitted[:metadata] = ChatSessions::ThinkingEffort.normalize_metadata(metadata:, model_id: selection.model_id)
   end
@@ -372,8 +368,10 @@ class ChatSessionsController < ApplicationController
 
     value = permitted.delete(:thinking_effort)
     model_id = permitted[:model] || @chat_session&.model
-    resolved = ChatSessions::ThinkingEffort.resolve!(model_id: model_id, value: value)
-    permitted[:metadata] = (@chat_session&.metadata || {}).merge(permitted[:metadata] || {}).merge("thinking_effort" => resolved)
+    resolved = ChatSessions::ThinkingEffort.resolve!(model_id:, value:)
+    permitted[:metadata] = ChatSessions::ThinkingEffort.normalize_metadata(
+      metadata: merged_metadata(permitted), model_id:, value: resolved
+    )
   end
 
   # An independently submitted model (including the legacy JSON surface) can
@@ -383,11 +381,15 @@ class ChatSessionsController < ApplicationController
   def normalize_thinking_effort_for_model!(permitted)
     return unless permitted.key?(:model) || permitted.key?(:metadata)
 
-    metadata = (@chat_session&.metadata || {}).merge(permitted[:metadata] || {})
     permitted[:metadata] = ChatSessions::ThinkingEffort.normalize_metadata(
-      metadata:,
-      model_id: permitted[:model] || @chat_session&.model
+      metadata: merged_metadata(permitted), model_id: permitted[:model] || @chat_session&.model
     )
+  end
+
+  # Submitted metadata wins over the stored metadata, so a partial update
+  # never drops keys the request did not mention.
+  def merged_metadata(permitted)
+    (@chat_session&.metadata || {}).merge(permitted[:metadata] || {})
   end
 
   def runner_model_policy_projects(permitted)

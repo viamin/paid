@@ -17,21 +17,29 @@ export default class extends Controller {
     this.sync()
   }
 
-  sync() {
-    const allowedValues = this.modelsValue[this.runnerModelSelectTarget.value] || []
+  // The runner/model choice changed: realign the effort options with the newly
+  // selected model and tell the user when the previous effort no longer
+  // applies to it.
+  // @spec CHAT-THINKING-EFFORT-003
+  runnerModelChanged() {
     const previous = this.selectTarget.value
+    this.sync()
+    this.announceIfCleared(previous, this.selectTarget.value)
+  }
 
-    if (allowedValues.length === 0) {
-      this.fieldTarget.hidden = true
-      this.rebuildOptions([])
-      this.announceIfCleared(previous, this.selectTarget.value)
-      return
-    }
+  sync() {
+    const selection = this.runnerModelSelectTarget.value
+    const allowedValues = this.modelsValue[selection] || []
 
-    this.fieldTarget.hidden = false
+    // No curated runner/model pair is selected, so there is no model to
+    // resolve effort values against. The server-rendered options for the
+    // session's effective model stay in place until the user picks a pair.
+    if (selection === "") return
+
+    const previous = this.selectTarget.value
+    this.fieldTarget.hidden = allowedValues.length === 0
     this.rebuildOptions(allowedValues)
     this.selectTarget.value = allowedValues.includes(previous) ? previous : ""
-    this.announceIfCleared(previous, this.selectTarget.value)
   }
 
   rebuildOptions(allowedValues) {
