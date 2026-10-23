@@ -75,6 +75,7 @@ module Containers
       tool_ids = []
       tool_endpoints = []
       preserved_sidecar_ids = []
+      stale_tool_ids = []
 
       # Clean up stale sidecars from a prior failed attempt to avoid leaks.
       stale_ids = Array(agent_run.mcp_sidecar_container_ids)
@@ -82,10 +83,9 @@ module Containers
       cleanup_containers(stale_ids) if stale_ids.present?
 
       stale_tool_ids = Array(agent_run.tool_sidecar_container_ids)
-      cleanup_containers(stale_tool_ids) if stale_tool_ids.present?
-      agent_run.update_columns(tool_sidecar_container_ids: [], tool_sidecar_endpoints: []) if stale_tool_ids.present? || agent_run.tool_sidecar_endpoints.present?
 
       if snapshot.blank? && tool_snapshot.blank?
+        cleanup_containers(stale_tool_ids) if stale_tool_ids.present?
         agent_run.update!(
           mcp_provisioned_servers: { "stdio_servers" => [], "url_servers" => [] },
           mcp_sidecar_container_ids: preserved_sidecar_ids,
@@ -118,6 +118,8 @@ module Containers
         tool_endpoints << result[:endpoint]
       end
 
+      cleanup_containers(stale_tool_ids - tool_ids)
+
       agent_run.update!(
         mcp_provisioned_servers: { "stdio_servers" => stdio_servers, "url_servers" => url_servers },
         mcp_sidecar_container_ids: preserved_sidecar_ids + sidecar_ids,
@@ -135,16 +137,19 @@ module Containers
     rescue Error
       cleanup_containers(sidecar_ids)
       cleanup_containers(tool_ids)
+      cleanup_containers(stale_tool_ids - tool_ids)
       agent_run.update_columns(tool_sidecar_container_ids: [], tool_sidecar_endpoints: [])
       raise
     rescue Containers::ServiceProvisioner::Error => e
       cleanup_containers(sidecar_ids)
       cleanup_containers(tool_ids)
+      cleanup_containers(stale_tool_ids - tool_ids)
       agent_run.update_columns(tool_sidecar_container_ids: [], tool_sidecar_endpoints: [])
       raise Error, "MCP provisioning failed: #{e.message}"
     rescue => e
       cleanup_containers(sidecar_ids)
       cleanup_containers(tool_ids)
+      cleanup_containers(stale_tool_ids - tool_ids)
       agent_run.update_columns(tool_sidecar_container_ids: [], tool_sidecar_endpoints: [])
       raise Error, "MCP provisioning failed: #{e.message}"
     end
@@ -179,7 +184,7 @@ module Containers
       cleanup_containers(container_ids) if container_ids.present?
       agent_run.update_columns(tool_sidecar_container_ids: [], tool_sidecar_endpoints: [])
 
-      log_info("mcp_provisioner.tool_sidecars_cleaned_up",
+      log_info("container_manager.tool_sidecars_cleaned_up",
         agent_run_id: agent_run.id,
         container_count: Array(container_ids).size)
     end
@@ -263,7 +268,7 @@ module Containers
     # @spec TOOL-SIDECAR-007
     def provision_tool_sidecar(agent_run, definition)
       unless tool_sidecars_enabled?(agent_run)
-        log_info("mcp_provisioner.tool_sidecar_skipped_flag_off",
+        log_info("container_manager.tool_sidecar_skipped_flag_off",
           agent_run_id: agent_run.id,
           name: definition["name"])
         return nil
@@ -301,7 +306,7 @@ module Containers
         raise Error, "Failed to start tool sidecar #{name}: #{e.message}"
       end
 
-      log_info("mcp_provisioner.tool_sidecar_started",
+      log_info("container_manager.tool_sidecar_started",
         agent_run_id: agent_run.id,
         name: name,
         image: image,
