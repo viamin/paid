@@ -19,23 +19,43 @@ RSpec.describe DeliveryTelemetry::ProjectReport do
       )
     end
 
-    # @spec DELIVERY-TELEMETRY-003
-    it "computes escaped drift from merged within-scope verdicts and later amendments" do
+    # @spec DELIVERY-TELEMETRY-003, DELIVERY-TELEMETRY-005
+    it "computes escaped drift from merged within-scope verdicts and later landed amendments" do
       project = create(:project)
+      project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true })
       feature = create(:feature_intent, project:, status: "released", approved_design_revision: "new-revision")
       pr = create(:issue, :pull_request, project:, github_state: "closed", pr_review_phase: "merged", closed_at: 2.days.ago)
       feature.feature_intent_issues.create!(issue: pr)
       verdict = create(:intent_conformance_verdict, project:, issue: pr, reviewer_model: "reviewer-a",
         approved_design_revision: "old-revision", evaluated_at: 3.days.ago)
       create(:design_amendment, feature_intent: feature, project:, superseded_revision: verdict.approved_design_revision,
-        created_at: 1.day.ago)
+        status: "merged", created_at: 3.days.ago, merged_at: 1.day.ago)
 
       report = described_class.call(project:)
 
+      expect(report.dig(:escaped_drift, :amendment_enforcement_enabled)).to be(true)
       expect(report.dig(:escaped_drift, :project)).to include(denominator: 1, numerator: 1, rate: 1.0)
       expect(report.dig(:escaped_drift, :by_reviewer_model)).to include(
         include(reviewer_model: "reviewer-a", denominator: 1, numerator: 1, rate: 1.0)
       )
+    end
+
+    # @spec DELIVERY-TELEMETRY-003, DELIVERY-TELEMETRY-005
+    it "excludes unlanded amendments and discloses when amendments cannot be recorded" do
+      project = create(:project)
+      feature = create(:feature_intent, project:, status: "released", approved_design_revision: "new-revision")
+      pr = merged_pr(project, created_at: 3.days.ago, closed_at: 2.days.ago)
+      feature.feature_intent_issues.create!(issue: pr)
+      verdict = create(:intent_conformance_verdict, project:, issue: pr, approved_design_revision: "old-revision")
+      %w[open approved abandoned].each do |status|
+        create(:design_amendment, feature_intent: feature, project:, status:, superseded_revision: verdict.approved_design_revision,
+          created_at: 1.day.ago)
+      end
+
+      report = described_class.call(project:)
+
+      expect(report.dig(:escaped_drift, :amendment_enforcement_enabled)).to be(false)
+      expect(report.dig(:escaped_drift, :project)).to include(denominator: 1, numerator: 0, rate: 0.0)
     end
 
     # @spec DELIVERY-TELEMETRY-001, DELIVERY-TELEMETRY-003
@@ -124,7 +144,7 @@ RSpec.describe DeliveryTelemetry::ProjectReport do
       verdict = create(:intent_conformance_verdict, project:, issue: implementation_pr, reviewer_model: "reviewer-a",
         approved_design_revision: "approved-head", evaluated_at: 3.days.ago)
       create(:design_amendment, feature_intent: feature, project:, superseded_revision: verdict.approved_design_revision,
-        created_at: 1.day.ago)
+        status: "merged", merged_at: 1.day.ago)
       [ feature, implementation_pr ]
     end
 

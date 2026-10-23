@@ -3,7 +3,7 @@
 module DeliveryTelemetry
   # Read-only delivery telemetry assembled from existing approval, audit,
   # conformance, issue, and agent-run records.
-  # @spec DELIVERY-TELEMETRY-001, DELIVERY-TELEMETRY-002, DELIVERY-TELEMETRY-003, DELIVERY-TELEMETRY-004
+  # @spec DELIVERY-TELEMETRY-001, DELIVERY-TELEMETRY-002, DELIVERY-TELEMETRY-003, DELIVERY-TELEMETRY-004, DELIVERY-TELEMETRY-005
   class ProjectReport
     def self.call(...)
       new(...).call
@@ -94,7 +94,11 @@ module DeliveryTelemetry
       feature_ids_by_issue = feature_ids_by_issue(verdicts)
       amendment_times = amendment_times_for(verdicts, feature_ids_by_issue)
       rows = verdicts.map { |verdict| escaped_drift_row(verdict, feature_ids_by_issue, amendment_times) }
-      { project: aggregate_escaped_drift(rows), by_reviewer_model: escaped_drift_by_model(rows) }
+      {
+        amendment_enforcement_enabled: amendment_enforcement_enabled?,
+        project: aggregate_escaped_drift(rows),
+        by_reviewer_model: escaped_drift_by_model(rows)
+      }
     end
 
     def escaped_drift_row(verdict, feature_ids_by_issue, amendment_times)
@@ -105,7 +109,7 @@ module DeliveryTelemetry
     end
 
     def escaped_drift?(verdict, feature_ids_by_issue, amendment_times)
-      merged_at = terminal_time(verdict.issue)
+      merged_at = terminal_time(verdict.delivery_telemetry_issue)
       return false unless merged_at
 
       feature_ids_by_issue.fetch(verdict.issue_id, []).any? do |feature_id|
@@ -139,7 +143,7 @@ module DeliveryTelemetry
 
     def features
       @features ||= FeatureIntent.where(project:).includes(:feature_intent_approval_revisions, :feature_intent_design_prs,
-        :feature_intent_decisions, :issues).to_a
+        :feature_intent_decisions, :delivery_telemetry_issues).to_a
     end
 
     def resolved_decisions
@@ -147,7 +151,7 @@ module DeliveryTelemetry
     end
 
     def merged_implementation_pr(feature)
-      feature.issues.select { |issue| merged_pull_request?(issue) }.max_by { |issue| terminal_time(issue) }
+      feature.delivery_telemetry_issues.select { |issue| merged_pull_request?(issue) }.max_by { |issue| terminal_time(issue) }
     end
 
     def create_feature_started_at(feature)
@@ -170,7 +174,7 @@ module DeliveryTelemetry
     def earliest_run_starts_by_feature
       starts_by_issue = AgentRun.where(project:, goal: "create_feature", issue_id: feature_issue_ids).group(:issue_id).minimum(:started_at)
       features.to_h do |feature|
-        [ feature.id, feature.issues.filter_map { |issue| starts_by_issue[issue.id] }.min ]
+        [ feature.id, feature.delivery_telemetry_issues.filter_map { |issue| starts_by_issue[issue.id] }.min ]
       end
     end
 
@@ -195,7 +199,7 @@ module DeliveryTelemetry
 
     def within_scope_merged_verdicts
       IntentConformanceVerdict.where(id: latest_verdict_ids, outcome: IntentConformanceVerdict::OUTCOME_WITHIN_SCOPE)
-        .includes(:issue).select { |verdict| merged_pull_request?(verdict.issue) }
+        .includes(:delivery_telemetry_issue).select { |verdict| merged_pull_request?(verdict.delivery_telemetry_issue) }
     end
 
     def latest_verdict_ids
@@ -212,8 +216,9 @@ module DeliveryTelemetry
       feature_ids = feature_ids_by_issue.values.flatten
       return {} if feature_ids.empty?
 
-      DesignAmendment.where(feature_intent_id: feature_ids, superseded_revision: verdicts.map(&:approved_design_revision))
-        .group(:feature_intent_id, :superseded_revision).maximum(:created_at)
+      DesignAmendment.where(feature_intent_id: feature_ids, status: "merged",
+        superseded_revision: verdicts.map(&:approved_design_revision))
+        .group(:feature_intent_id, :superseded_revision).maximum(:merged_at)
     end
 
     def feature_ids
@@ -221,11 +226,16 @@ module DeliveryTelemetry
     end
 
     def feature_issue_ids
-      @feature_issue_ids ||= features.flat_map { |feature| feature.issues.map(&:id) }
+      @feature_issue_ids ||= features.flat_map { |feature| feature.delivery_telemetry_issues.map(&:id) }
     end
 
     def terminal_pull_requests
-      @terminal_pull_requests ||= project.issues.where(is_pull_request: true, github_state: "closed", pr_review_phase: "merged").to_a
+      @terminal_pull_requests ||= project.issues.where(is_pull_request: true, github_state: "closed", pr_review_phase: "merged")
+        .select(:id, :github_created_at, :closed_at, :github_updated_at).to_a
+    end
+
+    def amendment_enforcement_enabled?
+      FeatureFlags.enabled?(:approved_intent_amendments, project:)
     end
 
     def merged_pull_request?(issue)
