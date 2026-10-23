@@ -191,6 +191,29 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(max_repeats).to be <= 1
     end
 
+    # The runner candidate set AUTO-PICK-QUEUE-011 resolves tier feasibility
+    # from, loaded once per resolution — so its count is the resolution count.
+    def feasibility_resolutions(queries)
+      queries.count { |sql| sql.match?(/FROM "runners" WHERE .*enabled_for_agent_runs/) }
+    end
+
+    it "does not resolve tier feasibility per project (no N+1)" do
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+      single_repo_resolutions = feasibility_resolutions(capture_queries { described_class.call(user: user) })
+
+      Rails.cache.clear
+      Array.new(3) do |i|
+        create(:project, account: account, created_by: user,
+          auto_pick_enabled: true, active: true, owner: "org", repo: "tier-repo-#{i}")
+      end.each do |p|
+        create(:issue, project: p, github_state: "open", paid_state: "new")
+      end
+      multi_repo_resolutions = feasibility_resolutions(capture_queries { described_class.call(user: user) })
+
+      expect(single_repo_resolutions).to be_positive
+      expect(multi_repo_resolutions).to eq(single_repo_resolutions)
+    end
+
     it "includes orphaned projects for the account fallback owner" do
       orphaned_project = create(:project, :without_creator, account: account,
         auto_pick_enabled: true, active: true, owner: "octo", repo: "orphaned")
