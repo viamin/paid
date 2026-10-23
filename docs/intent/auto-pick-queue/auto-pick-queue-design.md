@@ -69,6 +69,16 @@ configuration via `Runners::TierCapability` on every pass, so the exclusion
 clears itself once a capable runner is configured; the dispatch-time tier
 filter remains the final gate (AUTO-PICK-QUEUE-011, RUNNER-FALLBACK-010).
 
+Feasibility is resolved over the whole `LlmModel::TIERS` catalog rather than
+over the tiers candidate issues happen to have pinned, which lets the pass skip
+the `model_selections` lookup whenever every catalog tier is satisfiable
+(#4556). Because feasibility depends only on the owner's runner configuration,
+`Runners::TierFeasibility` resolves it once per owner for a pass and reuses it
+across that owner's projects, so a dashboard with many Auto-Pick repos does not
+re-read runner configuration per repo. The memo lives only as long as the pass:
+nothing persists, and every new pass re-derives feasibility from live
+configuration.
+
 ## GitHub-open authority and visibility
 
 An issue that remains open on GitHub is never removed from Auto-Pick merely
