@@ -1,0 +1,18 @@
+<%# @spec PROJECT-DASHBOARD-METRICS-001, PROJECT-DASHBOARD-METRICS-003 %>
+<% snapshot ||= {} %>
+<div class="mt-6 overflow-hidden rounded-lg bg-white shadow" data-testid="project-dashboard-metrics">
+  <div class="grid grid-cols-1 divide-y divide-gray-200 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+    <div class="px-4 py-5 sm:p-6">
+      <dt class="text-sm font-medium text-gray-500">Average merge time</dt>
+      <dd class="mt-1 text-2xl font-semibold text-gray-900"><%= format_duration(snapshot[:average_merge_seconds]) %></dd>
+    </div>
+    <div class="px-4 py-5 sm:p-6">
+      <dt class="text-sm font-medium text-gray-500">Average CI time</dt>
+      <dd class="mt-1 text-2xl font-semibold text-gray-900"><%= format_duration(snapshot[:average_ci_seconds]) %></dd>
+    </div>
+    <div class="px-4 py-5 sm:p-6">
+      <dt class="text-sm font-medium text-gray-500">Average tokens per PR</dt>
+      <dd class="mt-1 text-2xl font-semibold text-gray-900"><%= snapshot[:average_tokens_per_pr] ? number_with_delimiter(snapshot[:average_tokens_per_pr]) : "--" %></dd>
+    </div>
+  </div>
+</div>
