@@ -13,15 +13,41 @@
 
 ## Implementation Status
 
-Partially implemented as of 2026-10-22. The repository now ships tenant-owned
-facets, attributable evidence, versioned asynchronous assessments, correction
-precedence, adaptive clarification, explicit-preference management, and
-separate 80/80 readiness gates. Focused specs cover the structural contract,
-including unknown handling and the 79/80 boundary. The required versioned
-assessment corpus and outcome measurements have not shipped, so the RDR cannot
-be marked Implemented. The umbrella remains open and its own final acceptance
-audit decides closure. See
-[`audit-report-2026-10-22-rdr-070.md`](audit-report-2026-10-22-rdr-070.md).
+The facet/evidence, assessment, adaptive-clarification, explicit-preference,
+and scoped-readiness contracts are now implemented with linked tests. The
+RDR's versioned representative assessment corpus and its outcome measurement
+are delivered (#4573) as
+[`docs/intent/facet-confidence/assessment-corpus-manifest-v1.yml`](../intent/facet-confidence/assessment-corpus-manifest-v1.yml)
+with per-run provenance (corpus/rubric/model/input revisions, replay guard)
+and outcome metrics (false readiness, unnecessary clarification, human
+corrections, cost, downstream rework) in
+[`docs/intent/facet-confidence/assessment-evaluation-2026-10-23/`](../intent/facet-confidence/assessment-evaluation-2026-10-23/README.md);
+the operator-executed measured runs remain pending and are recorded as not
+established in the outcome worksheet. The umbrella remains open for the
+remaining RDR-071 delivery/activation integration. See the 2026-10-22 final
+acceptance audit for the criterion-level reconciliation.
+
+### 2026-10-12 Implementation progress audit
+
+This non-closeout progress audit for
+[#4309](https://github.com/viamin/paid/issues/4309) records the working-tree
+baseline while implementation remains active. It does not apply the closeout
+checklist, select a final status, or reconcile the RDR status. The audit
+verifies a structural absence rather than a runtime
+test failure: no facet or evidence schema, no facet-confidence assessment
+pipeline, no adaptive-clarification or preference surface. The umbrella
+children that will
+deliver RDR-070 are P01 (policy foundation and existing-work
+reconciliation), P05 (facets, evidence, and prerequisites), P06
+(assessments and explanations), P07 (adaptive clarification and explicit
+preferences), P11 (builder context and review policy), and C70 (final closeout
+audit). The rollout guard's shadow-mode requirement is automatically
+satisfied because no shadow assessment exists; the audit does not
+introduce or flip a flag. The PR for this audit uses `Tracks #4309` so
+the umbrella stays visibly open for the children. After the implementation
+chain finishes or stalls, a final closeout audit can apply the checklist. See
+[`audit-report-2026-10-12-rdr-070.md`](audit-report-2026-10-12-rdr-070.md)
+for the criterion-by-criterion evidence.
 
 ## Problem Statement
 
@@ -165,11 +191,13 @@ cost are additional work; no score eliminates the need for engineering review.
 
 Closeout [#4323](https://github.com/viamin/paid/issues/4323) compared every
 RDR-070 acceptance criterion with current source and focused specs. The
-evidence supports **Partially Implemented**: core behavior is shipped, while a
-versioned corpus with false-readiness, clarification, correction, cost, and
-rework measurements is still required. Focused child
-[#4573](https://github.com/viamin/paid/issues/4573) owns that gap, and
-[#4323](https://github.com/viamin/paid/issues/4323) depends on it for final
+evidence supports **Partially Implemented**: core behavior is shipped, and
+focused child [#4573](https://github.com/viamin/paid/issues/4573) has since
+delivered the versioned assessment corpus and its false-readiness,
+clarification, correction, cost, and rework measurement machinery (see
+[Implementation Status](#implementation-status)). The operator-executed
+measured runs that machinery reports on remain pending, so
+[#4323](https://github.com/viamin/paid/issues/4323) is not yet ready for final
 acceptance. The audit does not recreate the already-shipped approval policy or
 treat closed historical issues as evidence.
 

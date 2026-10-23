@@ -139,6 +139,12 @@ Rails.application.configure do
       queue: "maintenance",
       description: "Daily sweep recomputing project configuration health checks and refreshing the cached results"
     },
+    project_dashboard_metrics_sweep: {
+      cron: "45 0 * * *",
+      class: "ProjectDashboardMetricsSweepJob",
+      queue: "maintenance",
+      description: "Daily refresh of project dashboard metric snapshots"
+    },
     legacy_partial_closeout_reconciliation_sweep: {
       cron: "45 5 * * *",
       class: "LegacyPartialCloseoutReconciliationSweepJob",
@@ -225,6 +231,12 @@ Rails.application.configure do
       queue: "maintenance",
       class: "AgentComboImageCleanupJob",
       description: "Prune unreferenced paid-agent combo images past the retention window (RDR-046)"
+    },
+    docker_disk_cleanup: {
+      cron: "17 4 * * * UTC",
+      queue: "maintenance",
+      class: "DockerDiskCleanupJob",
+      description: "Opt-in local Docker image and build-cache cleanup with seven-day retention"
     },
     orphan_branch_reaper: {
       cron: "0 * * * *",

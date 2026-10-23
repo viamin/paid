@@ -23,6 +23,8 @@ module ChatSessions
     RECENT_ISSUES_LIMIT = 5
     RECENT_RUNS_LIMIT = 5
     CROSS_PROJECT_SUMMARY_MAX_CHARS = 500
+    DIAGRAM_COMMENT_LIMIT = ChatDiagramComment::CONTEXT_LIMIT
+    DIAGRAM_COMMENTS_MAX_CHARS = MAX_PROMPT_CHARS / 16
 
     attr_reader :chat_session
 
@@ -227,11 +229,44 @@ module ChatSessions
         #{feature_conversation_header}
         ## Clarifying Questions for #{issue.is_pull_request? ? "PR" : "Issue"} ##{issue.github_number}: #{issue.title}
         #{questions.each_with_index.map { |question, index| render_pending_question(question, index:, progress: progress_by_position[index + 1]) }.join("\n")}
-
+        #{diagram_comment_context}
         Help the user explore these questions and ask focused follow-ups when needed. Before asking for facts, inspect available repository and Inbox context with the read-only tools. Choose the aid that the evidence makes useful; if the useful method is unclear, ask how the user wants to investigate. The user can redirect that method at any time. Use A/B questions only to distinguish plausible directions: always accept either direction, both, neither, conditions, and free-text alternatives. Do not treat a diagram click, selection, collapse, trial edit, or an assessment inference as a durable preference. A contextual answer applies only to its current question unless the user explicitly states a preference and explicitly chooses or clarifies its scope.
 
         A confirmed answer to one question can be saved with `save_clarifying_answer` and remains a draft: it does not post to GitHub or resolve the inbox item. Include useful human context from a temporary diagram or research finding when saving it. Once every question has a final answer, call `submit_clarifying_answers` with the answers in the displayed order. For a choice question, answer with one selection per line: the option's displayed text (extra rationale may follow), its number, or its letter, or an `Other: <description>` line when no option fits. That action posts the answers to GitHub and resolves this inbox item, so ask for confirmation through the tool rather than claiming it has been posted.
       PROMPT
+    end
+
+    # Human comments on a diagram are the discussion context the person added
+    # when they selected an element. Each one carries the element text it was
+    # made against, so it stays meaningful after the diagram is replaced or its
+    # visual source released. Answer them as questions about the question, never
+    # as confirmed decisions or durable preferences.
+    # @spec QUESTION-EXPLORATION-004 QUESTION-EXPLORATION-005
+    def diagram_comment_context
+      comments = recent_diagram_comments
+      return "" if comments.empty?
+
+      <<~PROMPT.strip
+        ## Diagram comments
+
+        #{render_diagram_comments(comments)}
+      PROMPT
+    end
+
+    # @spec QUESTION-EXPLORATION-004
+    def recent_diagram_comments
+      ChatDiagramComment.where(chat_diagram_id: chat_session.chat_diagrams.select(:id))
+        .chronological.last(DIAGRAM_COMMENT_LIMIT)
+    end
+
+    def diagram_comment_target(comment)
+      comment.element_context.present? ? " (on #{comment.element_context})" : ""
+    end
+
+    def render_diagram_comments(comments)
+      comments.map { |comment| "- [#{comment.question_key}]#{diagram_comment_target(comment)} #{comment.body}" }
+        .join("\n")
+        .truncate(DIAGRAM_COMMENTS_MAX_CHARS, omission: "\n… [truncated]")
     end
 
     # @spec QUESTION-EXPLORATION-018
@@ -263,7 +298,18 @@ module ChatSessions
       end
       return rendered if progress&.answer.blank?
 
-      "#{rendered}\n   - Saved draft answer: #{progress.answer}"
+      "#{rendered}\n   - Saved draft answer: #{progress.answer}#{saved_evidence_context(progress)}"
+    end
+
+    # The evidence a person attached to a draft answer is durable human input,
+    # not a preference. Reopening the conversation must restore it with the
+    # answer so the reasoning behind the answer stays legible.
+    # @spec QUESTION-EXPLORATION-013
+    def saved_evidence_context(progress)
+      return "" if progress.evidence_context.blank?
+
+      evidence_context = progress.evidence_context.truncate(ClarifyingQuestionProgress::EVIDENCE_CONTEXT_MAX_CHARS, omission: "…")
+      "\n   - Human context recorded with that answer: #{evidence_context}"
     end
 
     def progress_by_position_for(questions)

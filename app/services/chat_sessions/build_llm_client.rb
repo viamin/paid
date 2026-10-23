@@ -69,6 +69,7 @@ module ChatSessions
         endpoint: ANTHROPIC_BASE_URL,
         api_key: api_key,
         model: model,
+        reasoning_effort: effective_thinking_effort(model),
         actor: actor,
         message: message
       )
@@ -91,9 +92,18 @@ module ChatSessions
         model: model,
         max_tokens: config&.dig(:chat_max_tokens),
         model_resolver: provider.free_model_policy? ? -> { chat_model_for(provider) } : nil,
+        # Free-policy runners have no saved curated model choice (the pool
+        # rotates per request), so there is no stable model to validate a
+        # thinking-effort preference against either.
+        reasoning_effort: provider.free_model_policy? ? nil : effective_thinking_effort(model),
         actor: actor,
         message: message
       )
+    end
+
+    # @spec CHAT-THINKING-EFFORT-007
+    def effective_thinking_effort(model_id)
+      ThinkingEffort.normalize(model_id: model_id, value: chat_session.metadata["thinking_effort"])
     end
 
     # @spec API-CONVERSATION-DELEGATION-007
@@ -110,7 +120,10 @@ module ChatSessions
       return chat_session.model || persist_curated_model!(runner) unless runner.free_model_policy?
 
       model = FreeModels::SelectChatModel.for_session(runner: runner, chat_session: chat_session).model_id
-      chat_session.update!(model: model) if chat_session.model != model
+      if chat_session.model != model
+        metadata = ThinkingEffort.normalize_metadata(metadata: chat_session.metadata, model_id: model)
+        chat_session.update!(model: model, metadata: metadata)
+      end
       model
     end
 
@@ -131,7 +144,12 @@ module ChatSessions
           "No compatible Low chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy."
       end
 
-      chat_session.update!(runner:, model: option.model_id, metadata: chat_session.metadata.merge("model_tier" => option.tier))
+      # @spec CHAT-THINKING-EFFORT-007
+      metadata = ThinkingEffort.normalize_metadata(
+        metadata: chat_session.metadata.merge("model_tier" => option.tier),
+        model_id: option.model_id
+      )
+      chat_session.update!(runner:, model: option.model_id, metadata: metadata)
       option.model_id
     end
 
@@ -152,8 +170,25 @@ module ChatSessions
 
       attr_reader :model
 
+      # Reasoning effort stays deferred until agent-harness publishes both a
+      # capability declaration and the matching candidate/request contract.
+      # Verified during #4589 review: 0.44.22 is the newest published
+      # release (rubygems.org; `bin/update --check` reports the gem pin up
+      # to date), and its ChatTransport declares neither the capability
+      # predicate nor a candidate/request effort field — no dependency
+      # version exists yet that could carry the value to a provider, so the
+      # pin cannot be updated in this PR. Fail-closed here hides the
+      # selector and drops the parameter until a contract-carrying release
+      # is installable; the #4475 tracking issue stays open until that pin
+      # bump is verified end to end.
+      # @spec CHAT-THINKING-EFFORT-008
+      def self.reasoning_effort_transport_supported?
+        AgentHarness::Api::ChatTransport.respond_to?(:reasoning_effort_transport_supported?) &&
+          AgentHarness::Api::ChatTransport.reasoning_effort_transport_supported?
+      end
+
       def initialize(chat_session:, provider:, protocol:, endpoint:, api_key:, model:, max_tokens: nil, model_resolver: nil,
-        chat_transport: AgentHarness::Api::ChatTransport.new, actor: nil, message: nil)
+        reasoning_effort: nil, chat_transport: AgentHarness::Api::ChatTransport.new, actor: nil, message: nil)
         @chat_session = chat_session
         @provider = provider
         @protocol = protocol
@@ -162,6 +197,7 @@ module ChatSessions
         @model = model
         @max_tokens = max_tokens
         @model_resolver = model_resolver
+        @reasoning_effort = reasoning_effort
         @actor = actor
         @message = message
         @harness_transport = HarnessTransport.new(chat_session: chat_session, transport: chat_transport)
@@ -193,9 +229,16 @@ module ChatSessions
             chat_session: @chat_session,
             actor: @actor,
             message: @message,
-            report: report
+            report: annotate_with_reasoning_effort(report)
           )
         end
+      end
+
+      # @spec CHAT-THINKING-EFFORT-008
+      def annotate_with_reasoning_effort(report)
+        return report unless self.class.reasoning_effort_transport_supported? && @reasoning_effort
+
+        report.merge(reasoning_effort: @reasoning_effort)
       end
 
       def build_request(conversation, tools, stream)
@@ -210,7 +253,7 @@ module ChatSessions
       end
 
       def candidate
-        {
+        base = {
           provider: @provider,
           model: model,
           protocol: @protocol,
@@ -218,6 +261,9 @@ module ChatSessions
           credentials: { api_key: @api_key },
           endpoint: @endpoint
         }
+        return base unless self.class.reasoning_effort_transport_supported? && @reasoning_effort
+
+        base.merge(reasoning_effort: @reasoning_effort)
       end
 
       def stream_observer(on_chunk)

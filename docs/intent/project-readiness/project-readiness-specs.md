@@ -51,9 +51,11 @@ prefix: PROJECT-READINESS
   *Test:* `spec/models/project_spec.rb`, `spec/services/inbox/queue_spec.rb`,
   `spec/services/inbox/count_spec.rb`, `spec/services/inbox/availability_spec.rb`.
 
-- [x] **PROJECT-READINESS-006** — When a readiness evaluation records a gap
+- [x] **PROJECT-READINESS-006** — When a project is created with TDD or
+  interactive verification enabled, or when a readiness evaluation records a gap
   set different from the project's prior snapshot, the system SHALL persist the
-  result and invalidate the Inbox cache. It SHALL queue re-evaluation after a
+  result and invalidate the Inbox cache. It SHALL queue evaluation after
+  creation with an enabled readiness capability and re-evaluation after a
   TDD-mode or verification setting change, after a project-service-container
   association change, after a service rename on an associated container, and
   after a completed run with a result commit, but SHALL not evaluate during

@@ -12,6 +12,23 @@ RSpec.describe "Mobile chat messages API" do
     { "Authorization" => "Bearer #{plaintext}" }
   end
 
+  # @spec QUESTION-EXPLORATION-004 QUESTION-EXPLORATION-012
+  it "carries diagram comments in the JSON payload so a client sees the same discussion context" do
+    diagram = create(:chat_diagram, chat_session:)
+    message = create(:chat_message, :tool, chat_session:, tool_result: { "diagram" => { "id" => diagram.id } })
+    diagram.update!(chat_message: message)
+    create(:chat_diagram_comment, chat_diagram: diagram, actor: user, body: "Does this retry forever?",
+      element_id: "app", element_context: "Application: The Paid application.")
+
+    get "/api/v1/chat/sessions/#{chat_session.id}/messages", headers: headers
+
+    diagram_payload = response.parsed_body.fetch("messages").first.fetch("diagram")
+    expect(diagram_payload.fetch("comments")).to contain_exactly(
+      hash_including("body" => "Does this retry forever?", "question_key" => diagram.question_key,
+        "element_context" => "Application: The Paid application.", "actor_id" => user.id)
+    )
+  end
+
   # @spec MOBILE-API-012
   it "returns oldest-first cursor pages with a next_before cursor" do
     messages = create_list(:chat_message, 3, chat_session:)

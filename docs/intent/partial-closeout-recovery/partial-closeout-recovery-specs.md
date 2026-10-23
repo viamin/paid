@@ -92,6 +92,15 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/services/issues/closeout_status_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-026** — When the Inbox evaluates multiple
+  partial-closeout candidates for one project, it SHALL batch the closeout
+  evidence and admission-diagnostic inputs while preserving every candidate's
+  blocker messages and rendered entry, so query count does not grow with the
+  candidate count.
+  *Code:* `app/services/issues/closeout_evidence.rb`,
+  `app/services/issues/closeout_status.rb`, `app/services/issues/stalled_closeouts.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-003** — When an authorized user requests a
   continuation for such an issue, the system SHALL persist an
   `IssueContinuationRequest` recording the actor, a required reason, the
@@ -119,8 +128,8 @@
   request SHALL be refused with the specific reason when any of them blocks.
   The admission decision SHALL be preflighted with the same scoped
   `eligible_for_dequeue?` evaluation the dequeue recheck applies
-  (`CloseoutStatus` residual guard, batched per project in
-  `StalledCloseouts`), so a request can never queue a run that dequeue would
+  (`CloseoutStatus` residual guard, evaluated from one shared set of project
+  inputs per `StalledCloseouts` project batch), so a request can never queue a run that dequeue would
   cancel and supersede, and the lane explains the real blocker instead of the
   duplicate-work fallback. With no authorized ids, `eligible_scope` SHALL
   behave exactly as before.
@@ -131,7 +140,8 @@
   *Test:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
   `spec/services/issues/request_continuation_spec.rb`,
   `spec/services/issues/closeout_status_spec.rb`,
-  `spec/services/issues/stalled_closeouts_spec.rb`.
+  `spec/services/issues/stalled_closeouts_spec.rb` (including a query-count
+  regression for the shared input build).
 
 - [x] **PARTIAL-CLOSEOUT-005** — When a queued continuation run is considered
   for dispatch, the system SHALL recheck its scoped authorization at dequeue

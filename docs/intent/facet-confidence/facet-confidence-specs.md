@@ -3,7 +3,10 @@
 Status: P05 implements the durable facet/evidence and prerequisite-map foundation
 for `001` and `008`; P06 implements assessment generation and persisted chat
 context for `002`–`005`, `012`–`014`; P08 implements `006` and `007`; P09
-implements `009` through `012`.
+implements `009` through `012`. The RDR-070 corpus deliverable (#4573)
+implements `016`–`018`: the frozen assessment corpus, per-run provenance, and
+outcome metrics machinery; operator-executed measured runs remain pending and
+the worksheet records them as not established.
 
 - [x] **FACET-CONFIDENCE-001** — When assessing a feature or issue facet, Paid SHALL represent intent certainty and technical confidence separately on a 0–100 scale and SHALL represent unknown values explicitly rather than inventing human intent.
   *Tests:* `spec/models/feature_intent_facet_assessment_spec.rb`.
@@ -44,5 +47,14 @@ implements `009` through `012`.
 - [x] **FACET-CONFIDENCE-015** — For confidence-driven features, when project thresholds or facet evidence change after a run starts, Paid SHALL route resulting findings through the confidence-driven delivery policy without using this change alone to pause that run.
   *Tests:* `spec/services/design_amendments/evaluate_impact_spec.rb`, `spec/services/feature_intents/admitted_intent_context_spec.rb`.
   *Code:* `app/services/design_amendments/evaluate_impact.rb`, `app/services/feature_intents/admitted_intent_context.rb`.
-- [ ] **FACET-CONFIDENCE-016** — When evaluating facet-confidence assessment quality, Paid SHALL run a versioned representative corpus and report false readiness, unnecessary clarification, human corrections, cost, and downstream rework without treating 80/80 defaults as calibrated probabilities or tuning scores solely to increase throughput.
-  *Gap:* [#4573](https://github.com/viamin/paid/issues/4573) owns the corpus work; final acceptance of [#4323](https://github.com/viamin/paid/issues/4323) depends on it.
+- [x] **FACET-CONFIDENCE-016** — When the facet-confidence rubric is evaluated, Paid SHALL provide a frozen, versioned representative corpus covering provisional direction, explicit corrections, repeated agent suggestions, collaborator disagreement, unknown intent with strong technical evidence, strong intent with weak feasibility, research scope, and the 79/80 threshold boundary, with per-case attributable evidence, thresholds, expected outcome bands, and selection rationale retained in the repository.
+  *Corpus:* `docs/intent/facet-confidence/assessment-corpus-manifest-v1.yml`.
+  *Code:* `lib/facet_confidence/assessment_corpus_ledger.rb`.
+  *Tests:* `spec/lib/facet_confidence/assessment_corpus_ledger_spec.rb`.
+- [x] **FACET-CONFIDENCE-017** — When a corpus assessment run is recorded, Paid SHALL retain the corpus version and content digest, rubric version, model version, and input evidence revision alongside the run outcome, SHALL serialize validation and appending so concurrent events cannot corrupt the ledger, SHALL reject a second run of identical case input as a replay of certainty, and SHALL require a re-run at a correction revision to cite the matching correction event.
+  *Code:* `lib/facet_confidence/assessment_corpus_ledger.rb`, `bin/facet-confidence-assessment-evaluation`.
+  *Tests:* `spec/lib/facet_confidence/assessment_corpus_ledger_spec.rb`, `spec/bin/facet_confidence/assessment_evaluation_cli_spec.rb`.
+- [x] **FACET-CONFIDENCE-018** — When corpus runs and their follow-ups are recorded, Paid SHALL report false readiness, unnecessary clarification, human corrections, assessment cost, and downstream rework per case and in aggregate, and SHALL treat threshold or rubric tuning proposals as unevaluated until these outcome metrics are complete, never justified by throughput alone.
+  *Code:* `lib/facet_confidence/assessment_outcome_report.rb`, `bin/facet-confidence-assessment-evaluation`.
+  *Evidence:* `assessment-evaluation-2026-10-23/outcome-worksheet-2026-10-23.md` records the operator-measured values; measured runs stay pending operator assessment execution.
+  *Tests:* `spec/lib/facet_confidence/assessment_outcome_report_spec.rb`.

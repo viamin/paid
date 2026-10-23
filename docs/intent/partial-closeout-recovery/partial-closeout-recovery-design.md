@@ -85,11 +85,17 @@ paid_state edit and never a blanket guard lift:
   from persisted admission-guard evidence, including scanner attempt, analysis,
   and alert links for synthetic findings; a residual preflight then settles admission with the
   exact scoped `eligible_for_dequeue?` decision the dequeue recheck enforces
-  (batched once per project in `StalledCloseouts`), so a request the walk
+  (evaluated from one shared set of project inputs per `StalledCloseouts`
+  project batch), so a request the walk
   cannot determine is labelled unavailable with an investigation path rather
   than a guessed guard, and is refused up front instead of queueing a run dequeue would
   cancel and supersede — the walk explains the authority, it never
   substitutes for it.
+
+For Inbox lane construction, `StalledCloseouts` batch-loads the evidence and
+persisted diagnostic inputs for each project's candidates before evaluating
+individual `CloseoutStatus` values. The per-issue status still produces the
+same additive blockers; batching changes only how its inputs are read.
 
 ### Prompt delivery
 

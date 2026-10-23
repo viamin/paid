@@ -463,6 +463,85 @@ RSpec.describe MarketplaceEntries::Resolver, :no_db do
       expect(resolver.call.map(&:entry)).to eq([ entry ])
     end
 
+    it "treats an empty languages_include_any array as no constraint" do # @spec TOOL-SIDECAR-004
+      empty_languages_rule = build_rule(
+        mode: "automatic",
+        enabled: true,
+        position: 0,
+        id: 17,
+        rationale: "Empty language scope",
+        conditions: { "languages_include_any" => [] }
+      )
+      entry = build_entry(rules: [ empty_languages_rule ])
+      project = project_double(repo_profile: { "languages" => [ "ruby" ], "marker_files" => [] })
+      issue = issue_double(labels: [])
+      agent_run = agent_run_for(project:, issue:)
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
+      allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+      expect(resolver.call.map(&:entry)).to eq([ entry ])
+    end
+
+    it "imposes no constraint when the rule omits every rule-scoping key" do # @spec TOOL-SIDECAR-003 # @spec TOOL-SIDECAR-004
+      entry = build_entry
+      project = project_double(repo_profile: { "languages" => [ "ruby" ], "marker_files" => [ "Gemfile" ] })
+      issue = issue_double(labels: [ "tooling" ])
+      agent_run = agent_run_for(project:, issue:)
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
+      allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+      expect(resolver.call.map(&:entry)).to eq([ entry ])
+    end
+
+    it "reads the repo profile once per resolution however many rules scope on it" do # @spec TOOL-SIDECAR-004
+      entries = [
+        build_entry(id: 21, rules: [ languages_match_rule ]),
+        build_entry(id: 22, rules: [ repo_files_match_rule ]),
+        build_entry(id: 23, rules: [ languages_match_rule, repo_files_match_rule ])
+      ]
+      project = project_double(repo_profile: { "languages" => [ "ruby" ], "marker_files" => [ "Gemfile" ] })
+      allow(project).to receive(:effective_repo_profile).and_call_original
+      agent_run = agent_run_for(project:, issue: issue_double(labels: []))
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true, account_auto_attach_required: true)
+      allow(resolver).to receive(:candidate_entries).and_return(entries)
+
+      expect(resolver.call.map(&:entry)).to eq(entries)
+      expect(project).to have_received(:effective_repo_profile).once
+    end
+
+    it "does not read the repo profile when no rule scopes on languages or repo files" do # @spec TOOL-SIDECAR-004
+      entry = build_entry(rules: [ labels_match_rule ])
+      project = project_double(repo_profile: { "languages" => [ "ruby" ], "marker_files" => [ "Gemfile" ] })
+      allow(project).to receive(:effective_repo_profile).and_call_original
+      agent_run = agent_run_for(project:, issue: issue_double(labels: [ "tooling" ]))
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true)
+      allow(resolver).to receive(:candidate_entries).and_return([ entry ])
+
+      expect(resolver.call.map(&:entry)).to eq([ entry ])
+      expect(project).not_to have_received(:effective_repo_profile)
+    end
+
+    it "reads the run issue once per resolution however many rules scope on its labels" do # @spec TOOL-SIDECAR-003
+      entries = [
+        build_entry(id: 31, rules: [ labels_match_rule ]),
+        build_entry(id: 32, rules: [ labels_match_rule ])
+      ]
+      project = project_double(repo_profile: { "languages" => [], "marker_files" => [] })
+      issue = issue_double(labels: [ "tooling" ])
+      allow(issue).to receive(:labels).and_call_original
+      agent_run = agent_run_for(project:, issue:)
+
+      resolver = described_class.new(project:, agent_run:, auto_attach_enabled: true, account_auto_attach_required: true)
+      allow(resolver).to receive(:candidate_entries).and_return(entries)
+
+      expect(resolver.call.map(&:entry)).to eq(entries)
+      expect(issue).to have_received(:labels).once
+    end
+
     def issue_double(labels:)
       Class.new do
         def initialize(labels)

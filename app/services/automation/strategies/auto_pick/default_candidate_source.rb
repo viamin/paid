@@ -55,6 +55,22 @@ module Automation
           "((jsonb_typeof(reconciliation->'assessment'->'gaps') = 'array' " \
           "AND jsonb_array_length(reconciliation->'assessment'->'gaps') > 0) " \
           "OR reconciliation->>'status' = 'retryable_failure')"
+        EligibilityInputs = Struct.new(
+          :blocking_issue_ids,
+          :epic_ids,
+          :reauditable_issue_ids,
+          :reauditable_closeout_ids,
+          :prerequisite_block_ids,
+          :unsynced_pr_produced_issue_ids,
+          :merged_block_issue_ids,
+          :code_scanning_verification_block_issue_ids,
+          keyword_init: true
+        )
+        PartialCloseoutEligibility = Struct.new(
+          :eligible_ids,
+          :continuation_eligible_ids,
+          keyword_init: true
+        )
 
         class << self
           def eligible_issue_ids(displayed_issues)
@@ -104,13 +120,47 @@ module Automation
             exclude_effective_skip_labels(issue_scope, project).none?
           end
 
-          def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: [], issue_ids: nil) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 AUTO-PICK-QUEUE-013 @spec PARTIAL-CLOSEOUT-004
-            epic_ids = epic_issue_ids(project)
+          # Evaluates both partial-closeout admission decisions from one set
+          # of project-scoped eligibility inputs. Continuation authorization
+          # is limited to issues rejected by the plain scope: plainly eligible
+          # issues are not stalled and do not need the scoped recheck. Both
+          # scopes also share one tier-feasibility resolver, so the second
+          # evaluation does not re-read runner configuration.
+          # @spec PARTIAL-CLOSEOUT-002 PARTIAL-CLOSEOUT-004
+          def partial_closeout_eligibility(project, issue_ids:)
+            inputs = build_eligibility_inputs(project)
+            tier_feasibility = Runners::TierFeasibility.new
+            eligible_ids = eligible_scope(project, issue_ids: issue_ids, eligibility_inputs: inputs,
+              tier_feasibility: tier_feasibility).pluck(:id).to_set
+            continuation_issue_ids = issue_ids - eligible_ids.to_a
+            continuation_eligible_ids = if continuation_issue_ids.empty?
+              Set.new
+            else
+              eligible_scope(
+                project,
+                issue_ids: continuation_issue_ids,
+                continuation_authorized_issue_ids: continuation_issue_ids,
+                eligibility_inputs: inputs,
+                tier_feasibility: tier_feasibility
+              ).pluck(:id).to_set
+            end
+
+            PartialCloseoutEligibility.new(
+              eligible_ids: eligible_ids,
+              continuation_eligible_ids: continuation_eligible_ids
+            )
+          end
+
+          # Optional +tier_feasibility+ lets a caller that evaluates scopes
+          # for several projects resolve owner tier feasibility once instead of
+          # once per scope. It defaults to a fresh, uncached resolver, so a
+          # standalone call always re-reads live runner configuration (#4556).
+          def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: [], issue_ids: nil, eligibility_inputs: nil, tier_feasibility: Runners::TierFeasibility.new) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 AUTO-PICK-QUEUE-013 @spec PARTIAL-CLOSEOUT-004
+            inputs = eligibility_inputs || build_eligibility_inputs(project, excluding_run_id: excluding_run_id)
             base = without_open_non_pr_subissues(
               base_scope(
                 project,
-                epic_ids: epic_ids,
-                excluding_run_id: excluding_run_id,
+                inputs: inputs,
                 continuation_authorized_issue_ids: continuation_authorized_issue_ids
               )
             )
@@ -147,7 +197,7 @@ module Automation
             # selection pins a tier no configured runner can satisfy stay
             # out of selection so auto-pick stops creating doomed runs
             # (#4093).
-            tier_blocked_ids = tier_infeasible_issue_ids(scope, project)
+            tier_blocked_ids = tier_infeasible_issue_ids(scope, project, tier_feasibility)
             scope = scope.where.not(id: tier_blocked_ids) if tier_blocked_ids.present?
 
             scope
@@ -180,13 +230,22 @@ module Automation
           # every pass, so the exclusion clears itself as soon as a capable
           # runner is configured — no persisted flag to reset. The
           # dispatch-time filter in RunAgentActivity remains the final gate.
-          def tier_infeasible_issue_ids(candidate_scope, project)
-            tiers_by_issue = latest_requested_tier_by_issue_id(candidate_scope)
-            return [] if tiers_by_issue.empty?
-
-            infeasible_tiers = infeasible_tiers(project, tiers_by_issue.values.uniq)
+          #
+          # Feasibility is resolved over the whole catalog tier set rather than
+          # over the tiers candidate issues happen to have pinned, which is
+          # what lets the model_selections lookup be skipped entirely whenever
+          # every tier is satisfiable (#4556). That shortcut is correct only
+          # while every persisted +model_selections.tier+ is a
+          # +LlmModel::TIERS+ member — enforced by the
+          # +model_selections_tier_check+ constraint and ModelSelection's
+          # inclusion validation, and guarded against drift by
+          # spec/models/model_selection_spec.rb. A persisted tier outside the
+          # catalog would go unreported here and reach dispatch unresolved.
+          def tier_infeasible_issue_ids(candidate_scope, project, tier_feasibility)
+            infeasible_tiers = tier_feasibility.infeasible_tiers(project.effective_owner)
             return [] if infeasible_tiers.empty?
 
+            tiers_by_issue = latest_requested_tier_by_issue_id(candidate_scope)
             tiers_by_issue.select { |_issue_id, tier| infeasible_tiers.include?(tier) }.keys
           end
 
@@ -202,17 +261,6 @@ module Automation
               .each_with_object({}) do |(issue_id, tier), map|
                 map[issue_id] ||= tier
               end
-          end
-
-          def infeasible_tiers(project, tiers)
-            user = project.effective_owner
-            return [] if user.nil?
-
-            runners = user.runners.kept_only.for_agent_runs
-              .where(runner_key: RunnerSupport.container_executable_runner_keys)
-              .ordered
-
-            tiers.select { |tier| !Runners::TierCapability.any_supports_tier?(runners, tier, user: user) }
           end
 
           def apply_issue_analysis_backoff(scope, project) # @spec ISSUE-ANALYSIS-010 AUTO-PICK-QUEUE-002
@@ -239,7 +287,7 @@ module Automation
             end
           end
 
-          def base_scope(project, epic_ids:, excluding_run_id: nil, continuation_authorized_issue_ids: []) # @spec EAGER-QUEUE-009
+          def build_eligibility_inputs(project, excluding_run_id: nil)
             blocking_runs = AgentRun.where(
               project: project, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES
             ).where.not(issue_id: nil)
@@ -247,11 +295,21 @@ module Automation
             # it so the issue is not self-excluded by the "work already in
             # flight" filter (RDR-032 dequeue-time eligibility recheck).
             blocking_runs = blocking_runs.where.not(id: excluding_run_id) if excluding_run_id
-            blocking_issue_ids = blocking_runs.select(:issue_id)
+            epic_ids = epic_issue_ids(project)
 
-            reauditable_issue_ids = reauditable_issue_ids(project, epic_ids)
-            reauditable_closeout_ids = partial_closeout_reaudit_issue_ids(project)
-            prerequisite_block_ids = partial_closeout_prerequisite_block_issue_ids(project)
+            EligibilityInputs.new(
+              blocking_issue_ids: blocking_runs.select(:issue_id),
+              epic_ids: epic_ids,
+              reauditable_issue_ids: reauditable_issue_ids(project, epic_ids),
+              reauditable_closeout_ids: partial_closeout_reaudit_issue_ids(project),
+              prerequisite_block_ids: partial_closeout_prerequisite_block_issue_ids(project),
+              unsynced_pr_produced_issue_ids: unsynced_pr_produced_issue_ids(project),
+              merged_block_issue_ids: merged_block_issue_ids(project),
+              code_scanning_verification_block_issue_ids: code_scanning_verification_block_issue_ids(project)
+            )
+          end
+
+          def base_scope(project, inputs:, continuation_authorized_issue_ids: []) # @spec EAGER-QUEUE-009
             # @spec PARTIAL-CLOSEOUT-004 — a scoped continuation authorization
             # lifts ONLY the merged-PR and no-code guards below, and only for
             # the explicitly authorized issues. Every other guard applies
@@ -260,14 +318,14 @@ module Automation
             authorized_ids = Array(continuation_authorized_issue_ids)
 
             base = Issue.ready_for_work(project)
-              .where.not(id: blocking_issue_ids)
+              .where.not(id: inputs.blocking_issue_ids)
               .where(source: [ Issue::GITHUB_SOURCE, Issue::SYNTHETIC_CODE_SCANNING_SOURCE ])
               .where.not(id: Issue.open_pull_request_parent_issue_ids(project: project).distinct)
               .where.not(id: Issue.open_paid_generated_pull_request_source_issue_ids(project: project).distinct)
               # Applies regardless of paid_state so a create_pr run that
               # already recorded a PR number cannot be immediately re-picked
               # while local PR sync is still catching up (#3432).
-              .where.not(id: unsynced_pr_produced_issue_ids(project))
+              .where.not(id: inputs.unsynced_pr_produced_issue_ids)
               # Once a merged PR row is authoritatively linked back to its
               # source issue (via +parent_issue_id+ or the originating run's
               # recorded +pull_request_number+), the issue stays ineligible
@@ -280,12 +338,12 @@ module Automation
               # recorded partial closeout is the other exception: its merged
               # PR is partial progress, and the parent must re-enter
               # selection once the gap owners resolve (#4119).
-              .where.not(id: merged_block_issue_ids(project) - reauditable_issue_ids - reauditable_closeout_ids - authorized_ids)
+              .where.not(id: inputs.merged_block_issue_ids - inputs.reauditable_issue_ids - inputs.reauditable_closeout_ids - authorized_ids)
               # A code-scanning remediation remains blocked until a matching
               # post-merge analysis records a terminal verification result.
               # In particular, a still-open finding moves to manual review,
               # rather than being silently re-enqueued into another fix loop.
-              .where.not(id: code_scanning_verification_block_issue_ids(project))
+              .where.not(id: inputs.code_scanning_verification_block_issue_ids)
               # Issues abandoned because every available provider hit the per-issue
               # retry cap (#2513) are not auto-pickable until the abandonment is
               # cleared (e.g. by a successful run).
@@ -295,7 +353,7 @@ module Automation
               # just loop (the agent will likely declare no-code-required again).
               # Applies regardless of paid_state so this guard survives a later
               # paid_state reset the same way the merged-PR guard above does.
-              .where("issues.no_code_required_at IS NULL OR issues.id IN (?)", reauditable_issue_ids + authorized_ids)
+              .where("issues.no_code_required_at IS NULL OR issues.id IN (?)", inputs.reauditable_issue_ids + authorized_ids)
               # Partial-closeout human prerequisites surface as blocking Inbox
               # notifications rather than durable IssueDependency edges
               # (NO-OUTPUT-ISSUE-007). Without this exclusion the partial-closeout
@@ -305,7 +363,7 @@ module Automation
               # or system resolve clears the block (see Notification's callback),
               # so the parent re-enters selection through the same eager-enqueue
               # path that dependency resolution uses.
-              .where.not(id: prerequisite_block_ids)
+              .where.not(id: inputs.prerequisite_block_ids)
 
             trusted_usernames = project.trusted_github_author_logins.presence
             if trusted_usernames
@@ -350,7 +408,7 @@ module Automation
               .where.not(pull_request_number: nil).where.not(issue_id: nil)
               .where("agent_runs.completed_at > ?", PR_SYNC_GRACE_PERIOD.ago)
               .where("NOT EXISTS (#{Issue::AUTO_PICK_CLOSED_PR_CORRELATED_SUBQUERY})")
-              .select(:issue_id)
+              .pluck(:issue_id)
           end
 
           # Issue ids with a merged PR row authoritatively linked back to the
@@ -593,7 +651,7 @@ module Automation
               .latest_per_issue
               .joins(:issue)
               .where(issues: { project_id: project.id, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE })
-              .select(:issue_id)
+              .pluck(:issue_id)
           end
 
           # Code-scanning issue ids where a later scanner pass has already

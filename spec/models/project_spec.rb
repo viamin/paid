@@ -3729,5 +3729,26 @@ RSpec.describe Project do
       expect { project.update!(tdd_mode: "strict") }
         .to have_enqueued_job(EvaluateProjectReadinessJob).with(project.id)
     end
+
+    # @spec PROJECT-READINESS-006
+    it "queues an initial readiness evaluation when created with TDD enabled" do
+      expect {
+        create(:project, tdd_mode: "strict")
+      }.to have_enqueued_job(EvaluateProjectReadinessJob)
+    end
+
+    # @spec PROJECT-READINESS-006
+    it "queues an initial readiness evaluation when created with verification enabled" do
+      expect {
+        create(:project, tdd_mode: "off", screenshot_settings: { "verification_enabled" => true })
+      }.to have_enqueued_job(EvaluateProjectReadinessJob)
+    end
+
+    # @spec PROJECT-READINESS-006
+    it "does not queue readiness evaluation for a project without an enabled capability" do
+      expect {
+        create(:project, tdd_mode: "off", screenshot_settings: { "verification_enabled" => false })
+      }.not_to have_enqueued_job(EvaluateProjectReadinessJob)
+    end
   end
 end

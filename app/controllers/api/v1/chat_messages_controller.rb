@@ -16,7 +16,7 @@ module Api
       # @spec MOBILE-API-012
       def index
         authorize ChatMessage.new(chat_session: @chat_session), :index?, policy_class: ChatMessagePolicy
-        messages = policy_scope(ChatMessage).where(chat_session: @chat_session).includes(:chat_diagram)
+        messages = policy_scope(ChatMessage).where(chat_session: @chat_session).includes(chat_diagram: :comments)
         messages = messages.where("chat_messages.id < ?", params[:before]) if params[:before].present?
         page = messages.order(created_at: :desc, id: :desc).limit(message_limit + 1).to_a
         listed = page.first(message_limit).reverse

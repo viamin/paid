@@ -442,6 +442,29 @@ See [the 2026-10-14 closeout audit](audit-report-2026-10-14-rdr-073.md), the
 [2026-10-20 attachment-contract audit](audit-report-2026-10-20-rdr-073.md),
 and the [2026-10-20 epic acceptance audit](audit-report-2026-10-20-rdr-073-epic-final-acceptance.md).
 
+## 2026-10-23 Rule-Scoping Predicate Verification
+
+Issue #4446 was re-audited against shipped code rather than issue state. The
+predicates already evaluated all three keys with the documented semantics, so
+the correction was bounded: the resolver read `project.effective_repo_profile`
+twice for every rule it evaluated — even for rules that declare neither
+`languages_include_any` nor `repo_files_include_any` — and read
+`agent_run.issue.labels` once per scoped rule. Both scoping sources are now
+read at most once per resolution and only when a rule declares the
+corresponding key (`MarketplaceEntries::Resolver#issue_labels`,
+`#repo_profile_values`), which is the "no per-rule query" guarantee the LLD
+states, enforced in the resolver rather than relied on from model-level
+memoization.
+
+Tests-first evidence was added before the correction: the three read-count
+examples in `spec/services/marketplace_entries/resolver_dbless_spec.rb`
+failed against the previously shipped implementation (6 profile reads instead
+of 1, 2 profile reads instead of 0 for an unscoped rule set, 2 issue-label
+reads instead of 1). Coverage gaps for the absent and empty
+`languages_include_any` cases
+were filled in the same file. `TOOL-SIDECAR-003`/`004` remain implemented;
+`Tracks #4263`, which this update does not close.
+
 ## 2026-10-22 Rule-Scoping Predicate Update
 
 Issue #4265 (Phase 2) is closed by the shipped predicates #4446 delivered:

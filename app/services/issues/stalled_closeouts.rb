@@ -7,8 +7,8 @@ module Issues
   # explicit operator hold and no work in flight.
   #
   # Admission authority stays with
-  # `DefaultCandidateSource.eligible_scope` — one batched call per project —
-  # and {CloseoutStatus} supplies the per-issue explanation. Returns
+  # `DefaultCandidateSource.partial_closeout_eligibility` — one shared input
+  # build per project — and {CloseoutStatus} supplies the per-issue explanation. Returns
   # [issue, status] pairs so list and count surfaces share one computation.
   # @spec PARTIAL-CLOSEOUT-002
   class StalledCloseouts
@@ -29,22 +29,21 @@ module Issues
     def self.pairs_for(project, candidates: candidates_for(project).to_a)
       return [] if candidates.empty?
 
-      eligible_ids = Automation::Strategies::AutoPick::DefaultCandidateSource
-        .eligible_scope(project, issue_ids: candidates.map(&:id)).pluck(:id).to_set
+      eligibility = Automation::Strategies::AutoPick::DefaultCandidateSource
+        .partial_closeout_eligibility(project, issue_ids: candidates.map(&:id))
+      candidates.each { |issue| issue.project = project }
+      inputs = CloseoutStatus.inputs_for(candidates)
       # The scoped admission decision each candidate's continuation would
       # face at dequeue (`CloseoutStatus#residual_eligibility_blocker`),
-      # batched once per project. The guards are per-issue, so authorizing
-      # every candidate at once yields each candidate's own scoped verdict.
-      continuation_eligible_ids = Automation::Strategies::AutoPick::DefaultCandidateSource
-        .eligible_scope(project, continuation_authorized_issue_ids: candidates.map(&:id), issue_ids: candidates.map(&:id))
-        .pluck(:id).to_set
-
+      # evaluated from shared project inputs. The guards are per-issue, so
+      # authorizing the plain-ineligible candidates at once yields each
+      # candidate's own scoped verdict.
       candidates.filter_map do |issue|
-        issue.project = project
         status = CloseoutStatus.call(
           issue,
-          eligible_issue_ids: eligible_ids,
-          continuation_eligible_issue_ids: continuation_eligible_ids
+          eligible_issue_ids: eligibility.eligible_ids,
+          continuation_eligible_issue_ids: eligibility.continuation_eligible_ids,
+          inputs: inputs
         )
         Pair.new(issue: issue, status: status) if status.stalled?
       end

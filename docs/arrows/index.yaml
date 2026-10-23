@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-21
+last_updated: 2026-10-23
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,15 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  docker-disk-cleanup:
+    title: Docker Disk Cleanup
+    path: docs/intent/docker-disk-cleanup/docker-disk-cleanup-design.md
+    specs: docs/intent/docker-disk-cleanup/docker-disk-cleanup-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-10-23
+    next: "Monitor reclaimed cache bytes and image counts on opted-in development hosts."
   agent-run-obstacle-proposals:
     title: Agent-run Obstacle Proposals
     path: docs/intent/agent-run-obstacle-proposals/agent-run-obstacle-proposals-design.md
@@ -70,6 +79,15 @@ arrows:
     status: OK
     audited: 2026-10-11
     next: "Evaluate contract-specific repository prerequisites before Inbox surfacing or run admission (RDR-074)"
+  project-dashboard-metrics:
+    title: Project Dashboard Metrics
+    path: docs/intent/project-dashboard-metrics/project-dashboard-metrics-design.md
+    specs: docs/intent/project-dashboard-metrics/project-dashboard-metrics-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-10-23
+    next: "Extend normalized pipeline-event ingestion when a CI provider exposes more detailed timing data."
   agent-instruction-navigation:
     title: Agent Instruction Navigation
     path: docs/intent/agent-instruction-navigation/agent-instruction-navigation-design.md
@@ -121,8 +139,8 @@ arrows:
     parent: PAID
     taxonomy: chat
     status: PARTIAL
-    audited: 2026-10-13
-    next: "Chat-entry/reuse, final-answer submission, access control and Inbox-chat context shipped (001, 002, 007, 014-017). Remaining: diagram cards (#4312), durable per-question progress (#4313), adaptive clarification and explicit preferences (#4316), bounded investigations (#4317), conversation-open API parity and the RDR-069 rollout-guard setting (#4311)."
+    audited: 2026-10-22
+    next: "Chat entry/reuse, conversation linkage, rollout setting, diagram cards, comments, durable per-question progress, adaptive clarification and final-answer submission all ship with passing tests (001-009, 011, 013-019). Remaining: bounded investigations — budget and execution-policy enforcement, authorization before overage, progress and cancellation, plus the investigation slice of transport parity (010, 012) — remain planned under #4317 while #4568 has re-taken implementation scope; reconcile these concurrent claims before delivery."
   facet-confidence:
     title: Facet Confidence and Adaptive Clarification
     path: docs/intent/facet-confidence/facet-confidence-design.md
@@ -544,6 +562,15 @@ arrows:
     status: OK
     audited: 2026-10-02
     blockedBy: [intent-conformance-review, approved-intent-merge-guard]
+  delivery-telemetry:
+    title: Human-led Delivery Telemetry
+    path: docs/intent/delivery-telemetry/delivery-telemetry-design.md
+    specs: docs/intent/delivery-telemetry/delivery-telemetry-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-10-23
+    blockedBy: [intent-conformance-rollout]
   review-depth-presets:
     title: Project-Level Review Depth Presets
     path: docs/intent/review-depth-presets/review-depth-presets-design.md
@@ -700,7 +727,7 @@ arrows:
     status: OK
     audited: 2026-10-20
     sampled: 2026-10-20
-    next: "Run final acceptance audit (#4263) once rule-scoping predicates and EARS evidence are complete."
+    next: "Run the RDR-073 epic final acceptance audit (#4263); rule-scoping predicates and their EARS evidence are complete."
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.

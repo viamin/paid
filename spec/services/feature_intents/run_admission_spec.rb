@@ -80,6 +80,27 @@ RSpec.describe FeatureIntents::RunAdmission do
     expect(described_class.call(issue: issue)).to be_allowed
   end
 
+  it "admits a standalone call without lazy-loading each in-tree dependency's issue" do # @spec FEATURE-APPROVAL-024
+    feature = create(:feature_intent, project: project)
+    link = create(:feature_intent_issue, feature_intent: feature, issue: issue)
+    3.times do
+      prerequisite_link = create(:feature_intent_issue, feature_intent: feature,
+        issue: create(:issue, project: project, github_state: "open"))
+      create(:feature_intent_issue_dependency, feature_intent_issue: link,
+        depends_on_feature_intent_issue: prerequisite_link)
+    end
+
+    queries = []
+    subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+    result = nil
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      result = described_class.call(issue: issue)
+    end
+
+    expect(result).not_to be_allowed
+    expect(queries.grep(/FROM "issues" WHERE "issues"\."id" = /)).to be_empty
+  end
+
   it "denies released work while a dependency is awaiting deployment" do # @spec FEATURE-APPROVAL-023 @spec CONFIDENCE-DELIVERY-005
     feature = create(:feature_intent, project: project)
     create(:feature_intent_issue, feature_intent: feature, issue: issue)

@@ -122,6 +122,34 @@ messages. The structured JSON log line remains the source of truth for live
 tailing/alerting; the `AgentRunLog` entry is the durable, run-scoped
 counterpart — neither replaces the other.
 
+## Run-scoped application diagnostics
+
+Agents can retrieve read-only verification diagnostics through
+`GET /api/proxy/application-diagnostics`, authenticated by the existing
+run proxy credential. During active verification, the agent can first upload
+its current application-log tail through the same authenticated endpoint, then
+read the redacted captured tail and its own `ContainerMetric` samples before
+choosing a verification outcome. Metric responses label those samples with
+`subject: agent_container`: they describe the agent sandbox, including agent
+and browser processes, and are run-health context rather than target-application
+telemetry. The endpoint never accepts a target run,
+project, or container identifier. Captured logs are limited to 32 KiB before
+persistence; final recorder-owned capture supersedes the provisional log when
+available after the run. Capture requests are also rate-limited per run (20
+captures per rolling hour, mirroring the proxy knowledge-search limiter) so a
+misbehaving container cannot drive unbounded database writes; requests past
+the budget receive `429` without touching retained evidence. Results include tenant/project/run/revision/timestamp provenance and
+cap lookback to one hour and samples to 100. Missing logs or metrics return an
+explicit `unavailable` status. The persisted log carries a `app_log_truncated`
+marker whenever the recorder hit the line or byte cap, so a caller can tell
+when the tail it reads is a bounded excerpt. Log text is redacted against every
+active account credential the run could use, whatever its length, before
+persistence and again on retrieval; short credentials use delimiter-aware
+matching so ordinary words are not rewritten. A minimum-length exemption would
+leak a valid short credential to the authenticated caller. This works without
+Prometheus/Loki; it does not expose Docker, files, credentials, or cross-project
+queries.
+
 ## What this is not
 
 - **Not a raw `prometheus-client` middleware install.** The current app uses a

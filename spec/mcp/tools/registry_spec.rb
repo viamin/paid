@@ -57,6 +57,7 @@ RSpec.describe Tools::Registry do
       submit_clarifying_answers
       save_clarifying_answer
       start_chat_investigation
+      cancel_chat_investigation
       present_chat_diagram
       save_explicit_preference
       challenge_facet_assessment

@@ -54,6 +54,23 @@ RSpec.describe LlmModel do
     it { is_expected.to have_many(:model_selections) }
   end
 
+  describe "reasoning effort capabilities" do
+    # @spec CHAT-THINKING-EFFORT-001
+    it "returns only the model-declared reasoning effort values" do
+      model = build(:llm_model, metadata: {
+        "supports_reasoning" => true,
+        "reasoning_effort_values" => %w[low high]
+      })
+
+      expect(model.reasoning_effort_values).to eq(%w[low high])
+    end
+
+    # @spec CHAT-THINKING-EFFORT-001
+    it "does not infer reasoning support for a model without that capability" do
+      expect(build(:llm_model, metadata: {}).reasoning_effort_values).to eq([])
+    end
+  end
+
   describe "scopes" do
     describe ".free" do
       it "returns only free models" do

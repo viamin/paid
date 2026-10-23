@@ -422,7 +422,7 @@ RSpec.describe Containers::McpProvisioner do # @spec TOOL-SIDECAR-002 # @spec TO
         allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
       end
 
-      it "cleans up stale tool sidecars before provisioning" do
+      it "cleans up stale tool sidecars it did not adopt" do
         provisioner.provision(agent_run)
 
         expect(stale_container).to have_received(:stop)
@@ -453,7 +453,9 @@ RSpec.describe Containers::McpProvisioner do # @spec TOOL-SIDECAR-002 # @spec TO
         allow(Docker::Container).to receive(:create)
         allow(existing_container).to receive_messages(
           json: { "State" => { "Running" => true } },
-          start: nil
+          start: nil,
+          stop: nil,
+          delete: nil
         )
         allow(Containers::TcpHealthProbe).to receive(:open?).and_return(true)
       end
@@ -462,6 +464,34 @@ RSpec.describe Containers::McpProvisioner do # @spec TOOL-SIDECAR-002 # @spec TO
         provisioner.provision(agent_run)
 
         expect(Docker::Container).not_to have_received(:create)
+        expect(agent_run.reload.tool_sidecar_container_ids).to eq([ "tool-existing" ])
+      end
+
+      # @spec TOOL-SIDECAR-005
+      it "adopts a persisted sidecar when provisioning is retried" do
+        agent_run.update_columns(tool_sidecar_container_ids: [ "tool-existing" ])
+
+        provisioner.provision(agent_run)
+
+        expect(existing_container).not_to have_received(:stop)
+        expect(existing_container).not_to have_received(:delete)
+        expect(Docker::Container).not_to have_received(:create)
+        expect(agent_run.reload.tool_sidecar_container_ids).to eq([ "tool-existing" ])
+      end
+
+      # @spec TOOL-SIDECAR-005
+      it "cleans up stale tool sidecars it did not adopt without stopping the adopted one" do
+        stale_container = instance_double(Docker::Container, id: "tool-old")
+        allow(stale_container).to receive_messages(stop: nil, delete: nil)
+        allow(Docker::Container).to receive(:get).with("tool-old").and_return(stale_container)
+        agent_run.update_columns(tool_sidecar_container_ids: [ "tool-old", "tool-existing" ])
+
+        provisioner.provision(agent_run)
+
+        expect(stale_container).to have_received(:stop)
+        expect(stale_container).to have_received(:delete)
+        expect(existing_container).not_to have_received(:stop)
+        expect(existing_container).not_to have_received(:delete)
         expect(agent_run.reload.tool_sidecar_container_ids).to eq([ "tool-existing" ])
       end
     end

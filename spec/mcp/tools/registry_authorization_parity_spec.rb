@@ -850,6 +850,21 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "cancel_chat_investigation",
+        denied_user: -> {
+          project
+          create(:user, :viewer, account: account)
+        },
+        arguments: -> { { investigation_id: 0, confirmed: true } },
+        session: ->(user) {
+          build(:chat_session, account: account, created_by: user, project: project, clarifying_question_issue: issue)
+        },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :explore?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "delete_explicit_preference",
         denied_user: -> { nil },
         arguments: -> { { preference_id: 0, confirmed: true } },

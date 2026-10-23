@@ -27,6 +27,22 @@
           </button>
         <% end %>
       </div>
+      <% comments = diagram.comments.to_a %>
+      <% if comments.any? %>
+        <ul class="space-y-2" aria-label="Comments on this diagram">
+          <%# @spec QUESTION-EXPLORATION-004 — the comment carries the element text it was made
+              against, so it stays intelligible after this diagram is replaced or released. %>
+          <% comments.each do |comment| %>
+            <li class="rounded-md bg-white/70 p-2 text-sm text-gray-700" data-diagram-comment-id="<%= comment.id %>">
+              <span class="font-medium text-gray-900"><%= comment.actor.name.presence || comment.actor.email %></span>
+              <% if comment.element_context.present? %>
+                <span class="block text-xs text-gray-600">On <%= comment.element_context %></span>
+              <% end %>
+              <span class="block break-words"><%= comment.body %></span>
+            </li>
+          <% end %>
+        </ul>
+      <% end %>
       <%= form_with url: chat_session_chat_diagram_comments_path(chat_session, diagram), class: "space-y-2" do |form| %>
         <%= form.hidden_field :element_id, data: { diagram_target: "elementId" } %>
         <%= form.label :body, "Comment on this diagram", class: "block text-sm font-medium" %>
