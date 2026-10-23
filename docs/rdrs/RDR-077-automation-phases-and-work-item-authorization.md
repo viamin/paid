@@ -326,32 +326,36 @@ flag after closeout verifies migration and complete execution-path coverage.
 
 The following issue boundaries were used for delivery and reconciliation:
 
-1. **LID planning and capability inventory (#4511).** Reconcile HLD tenets and affected
+1. **LID planning and capability inventory (#4510).** Reconcile HLD tenets and affected
    LLD/EARS segments. Map every existing action, request producer, and settings
    control to a phase or explicit platform concern. Map release and deployment
    separately within their phase and resolve legacy classification before
    implementation.
-2. **Phase policy and authorization foundation (#4512).** Add phase identity, durable
+2. **Phase policy and authorization foundation (#4511).** Add phase identity, durable
    continuation grants, lineage, authorization evaluation, audit data, and the
    rollout guard. Preserve tenant and actor permissions.
-3. **Execution enforcement (#4513).** Apply the policy to all entry, queue, retry, label,
+3. **Execution enforcement (#4512).** Apply the policy to all entry, queue, retry, label,
    follow-up, review, repair, and merge paths, including cancellation races.
-4. **Project and manual-trigger UX (#4514).** Group phase settings, preserve capability
+4. **Project and manual-trigger UX (#4513).** Group phase settings, preserve capability
    values, provide endpoint selection, effective-policy explanations, and grant
    inspection/revocation. Cover every manual-start form, including starts without
    a continuation grant, and submission-time policy changes. Maintain equivalent
    API access.
-5. **Inbox ownership and visibility (#4515).** Classify producers and legacy requests;
+5. **Inbox ownership and visibility (#4514).** Classify producers and legacy requests;
    align queues, counts, badges, chat, details, and the Disabled phases view.
-   Add personal removal, the Removed filter, stable request occurrences, and
-   event-driven return on phase enablement or fresh manual-work conditions.
-6. **Migration and pilot (#4516).** Derive phase defaults from current effective
+6. **Personal Inbox removal and event-driven return (#4515).** Add personal removal, the
+   Removed filter, stable request occurrences, and event-driven return on phase
+   enablement or fresh manual-work conditions.
+7. **Operations ownership and cross-phase handoff contracts (#4516).** Document current
+   operational ownership and handoffs, and validate that handoffs do not grant
+   authorization in another phase.
+8. **Migration preview and coordinated pilot activation (#4517).** Derive phase defaults from current effective
    capabilities without enabling new automatic work. Existing manual runs do
    not acquire continuation grants retroactively. Preview per-project execution
    and Inbox changes before activation, including currently label-enabled work.
-7. **Operations contract and final closeout (#4517).** Document current operational
-   ownership and handoffs, validate acceptance scenarios, and record any gaps
-   before removing the rollout guard.
+9. **Evidence-based RDR closeout and rollout decision (#4518).** Validate acceptance
+   scenarios, authorize any pilot separately through the rollout guard, and record
+   the final decision before removing the guard.
 
 ## Validation and Acceptance Scenarios
 
@@ -408,12 +412,13 @@ release enables it.
 
 | Obligation | Approved EARS and evidence | Delivery tree |
 | --- | --- | --- |
-| Phase vocabulary, complete capability ownership, label and scheduler gating | `AUTOMATION-PHASES-001`–`003`, `-013`, `-016`; `Automation::Phases`, `Automation::FeatureActivation`, `Automation::EffectivePolicy`, and dequeue rechecks | #4511–#4513 |
-| Defaults, grants, manual starts, policy notices, API parity, and current-policy submission checks | `AUTOMATION-PHASES-004`–`012`; `Automation::ManualStart::Plan`, `Automation::EffectivePolicyNotice`, `WorkItemContinuationGrant`, and project manual-run requests | #4512, #4514 |
-| Same-work lineage and non-inheritance to mentions, dependencies, or child issues | `AUTOMATION-PHASES-005`–`009`; `Automation::ContinuationGrantLookup` and grant completion/revocation | #4512–#4513 |
-| Inbox ownership, unknown legacy evidence, relevance, stable occurrences, per-user removal, and return ordering | `INBOX-PHASE-RELEVANCE-001`–`010`; `Inbox::PhaseOwnership`, `Inbox::RequestIdentity`, `Inbox::PhaseRelevance`, and `Inbox::Removals` | #4515 |
-| Migration preview, no retroactive grants, rollout guard, and rollback protection | `AUTOMATION-PHASES-014`–`015`; `Automation::RolloutGuard`, `Automation::Phases::MigrationPreview`, and active-grant inspection/revocation | #4516 |
-| Release/deployment separation and operational handoffs without autonomous remediation | `AUTOMATION-PHASES-016`–`018`; `Automation::Operations::ContractCatalog` and `docs/intent/automation-phases/operations-ownership.md` | #4517 |
+| Phase vocabulary, complete capability ownership, label and scheduler gating | `AUTOMATION-PHASES-001`–`003`, `-013`, `-016`; `Automation::Phases`, `Automation::FeatureActivation`, `Automation::EffectivePolicy`, and dequeue rechecks | #4510–#4512 |
+| Defaults, grants, manual starts, policy notices, API parity, and current-policy submission checks | `AUTOMATION-PHASES-004`–`012`; `Automation::ManualStart::Plan`, `Automation::EffectivePolicyNotice`, `WorkItemContinuationGrant`, and project manual-run requests | #4511, #4513 |
+| Same-work lineage and non-inheritance to mentions, dependencies, or child issues | `AUTOMATION-PHASES-005`–`009`; `Automation::ContinuationGrantLookup` and grant completion/revocation | #4511–#4512 |
+| Inbox ownership, unknown legacy evidence, and relevance | `INBOX-PHASE-RELEVANCE-001`–`005`; `Inbox::PhaseOwnership` and `Inbox::PhaseRelevance` | #4514 |
+| Stable request occurrences, per-user removal, and return ordering | `INBOX-PHASE-RELEVANCE-006`–`010`; `Inbox::RequestIdentity` and `Inbox::Removals` | #4515 |
+| Migration preview, no retroactive grants, rollout guard, and rollback protection | `AUTOMATION-PHASES-014`–`015`; `Automation::RolloutGuard`, `Automation::Phases::MigrationPreview`, and active-grant inspection/revocation | #4517 |
+| Release/deployment separation and operational handoffs without autonomous remediation | `AUTOMATION-PHASES-016`–`018`; `Automation::Operations::ContractCatalog` and `docs/intent/automation-phases/operations-ownership.md` | #4516 |
 
 The remaining focused follow-up is release work, not a planning or runtime-gap
 claim: authorize a pilot through the existing flag surface, use migration
@@ -426,18 +431,18 @@ the parent planning umbrella.
 
 | RDR validation scenario | Approved EARS | Delivery tree |
 | --- | --- | --- |
-| Disabled issue preparation with ongoing PR maintenance leaves preparation requests discoverable | `AUTOMATION-PHASES-002`, `-003`; `INBOX-PHASE-RELEVANCE-002`, `-003` | #4511, #4513, #4515 |
-| Disabled-phase manual enhancement keeps its resulting questions actionable | `AUTOMATION-PHASES-004`; `INBOX-PHASE-RELEVANCE-002` | #4514, #4515 |
-| Through-merge coding work retains authorization across PR, review, repair, and merge while ordinary controls still apply | `AUTOMATION-PHASES-005`–`007` | #4512, #4513 |
-| Notices, unchecked continuation, API/work-detail parity, and submission-time policy changes are explicit | `AUTOMATION-PHASES-010`–`012`, `-016` | #4514 |
-| Disabling, revoking, dequeueing, and retrying do not start a newly unauthorized action | `AUTOMATION-PHASES-013` | #4513 |
-| Labels cannot override a disabled phase and grants do not escape their linked work chain | `AUTOMATION-PHASES-002`, `-006`, `-007` | #4512, #4513 |
-| Lists, counts, badges, chat, and direct links share phase relevance without weakening isolation or authorization | `INBOX-PHASE-RELEVANCE-005` | #4515 |
-| Ambiguous legacy ownership remains visible and hidden requests retain their evidence | `INBOX-PHASE-RELEVANCE-001`, `-003` | #4511, #4515 |
+| Disabled issue preparation with ongoing PR maintenance leaves preparation requests discoverable | `AUTOMATION-PHASES-002`, `-003`; `INBOX-PHASE-RELEVANCE-002`, `-003` | #4511, #4512, #4514 |
+| Disabled-phase manual enhancement keeps its resulting questions actionable | `AUTOMATION-PHASES-004`; `INBOX-PHASE-RELEVANCE-002` | #4513, #4514 |
+| Through-merge coding work retains authorization across PR, review, repair, and merge while ordinary controls still apply | `AUTOMATION-PHASES-005`–`007` | #4511, #4512 |
+| Notices, unchecked continuation, API/work-detail parity, and submission-time policy changes are explicit | `AUTOMATION-PHASES-010`–`012`, `-016` | #4513 |
+| Disabling, revoking, dequeueing, and retrying do not start a newly unauthorized action | `AUTOMATION-PHASES-013` | #4512 |
+| Labels cannot override a disabled phase and grants do not escape their linked work chain | `AUTOMATION-PHASES-002`, `-006`, `-007` | #4511, #4512 |
+| Lists, counts, badges, chat, and direct links share phase relevance without weakening isolation or authorization | `INBOX-PHASE-RELEVANCE-005` | #4514 |
+| Ambiguous legacy ownership remains visible and hidden requests retain their evidence | `INBOX-PHASE-RELEVANCE-001`, `-003` | #4510, #4514 |
 | Per-user removal leaves the request inspectable and excludes it from presentation counts | `INBOX-PHASE-RELEVANCE-006`, `-009` | #4515 |
-| Fresh manual work, phase enablement, and delayed events preserve occurrence ordering and suppression | `INBOX-PHASE-RELEVANCE-004`, `-007`, `-008`, `-010` | #4515 |
-| Operations handoff cannot grant coding and platform health remains visible | `AUTOMATION-PHASES-017`, `-018` | #4517 |
-| A through-merge grant cannot authorize release/deployment, and their controls remain independent | `AUTOMATION-PHASES-005`, `-016` | #4512, #4514, #4517 |
+| Fresh manual work, phase enablement, and delayed events preserve occurrence ordering and suppression | `INBOX-PHASE-RELEVANCE-004`, `-007`, `-008`, `-010` | #4514, #4515 |
+| Operations handoff cannot grant coding and platform health remains visible | `AUTOMATION-PHASES-017`, `-018` | #4516 |
+| A through-merge grant cannot authorize release/deployment, and their controls remain independent | `AUTOMATION-PHASES-005`, `-016` | #4511, #4513, #4516 |
 
 ## Remaining Planning Work
 
