@@ -33,6 +33,8 @@ RSpec.describe AgentRuns::VerificationPrompt do
     expect(section.content).to include("http://localhost:3000")
     expect(section.content).to include("bundle exec bin/rails server -b 0.0.0.0 -p 3000")
     expect(section.content).to include(described_class::RESULT_PATH)
+    expect(section.content).to include("--data-binary @-")
+    expect(section.content).to include("application-diagnostics")
     expect(section.fallback_result).to be_nil
   end
 

@@ -1,0 +1,90 @@
+# frozen_string_literal: true
+
+require "rails_helper"
+
+RSpec.describe AgentRuns::ApplicationDiagnostics do
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-002
+  let(:agent_run) { create(:agent_run, :with_git_context) }
+
+  it "returns redacted bounded application logs and clearly identified agent-container metrics" do
+    agent_run.update!(verification_result: { "app_log_tail" => "boot token=super-secret-value" })
+    create(:container_metric, agent_run:, recorded_at: 2.minutes.ago, cpu_percent: 10.5, memory_bytes: 2_048)
+
+    result = described_class.call(agent_run:, lookback_seconds: 3_600, limit: 1)
+
+    expect(result.fetch("logs").fetch("entries").first.fetch("content")).to include("[REDACTED")
+    expect(result.fetch("metrics")).to include("subject" => "agent_container")
+    expect(result.fetch("metrics").fetch("samples")).to contain_exactly(include("cpu_percent" => 10.5))
+    expect(result.fetch("provenance")).to include("agent_run_id" => agent_run.id, "project_id" => agent_run.project_id)
+  end
+
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
+  it "redacts active account credentials from retained log evidence" do
+    credential = create(:integration_credential, account: agent_run.project.account, secret: "stagingpassword")
+    agent_run.update!(verification_result: { "app_log_tail" => "upstream denied credential: #{credential.secret}" })
+
+    content = described_class.call(agent_run:).dig("logs", "entries").first.fetch("content")
+
+    expect(content).to include("[REDACTED:known_secret]")
+    expect(content).not_to include(credential.secret)
+  end
+
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-002
+  it "bounds redacted log content returned from retained evidence" do
+    agent_run.update!(verification_result: { "app_log_tail" => "a@b.co " * (AgentRuns::ApplicationLog::MAX_BYTES / 7) })
+
+    result = described_class.call(agent_run:)
+
+    entry = result.dig("logs", "entries").first
+    expect(entry.fetch("content").bytesize).to be <= AgentRuns::ApplicationLog::MAX_BYTES
+    expect(entry).to include("truncated" => true)
+  end
+
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-002
+  it "advertises every container metric even when the oldest sample omits pids" do
+    create(:container_metric, agent_run:, recorded_at: 2.minutes.ago, pids_count: nil)
+    create(:container_metric, agent_run:, recorded_at: 1.minute.ago, pids_count: 3)
+
+    result = described_class.call(agent_run:)
+
+    expect(result.dig("metrics", "metric_names")).to include("pids_count")
+  end
+
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-002
+  it "falls back to the maximum bound instead of raising on a non-scalar parameter" do
+    create(:container_metric, agent_run:, recorded_at: 2.minutes.ago)
+
+    result = described_class.call(agent_run:, lookback_seconds: [ "100" ], limit: [ "1" ])
+
+    expect(result.dig("provenance", "lookback_seconds")).to eq(AgentRuns::ApplicationDiagnostics::MAX_LOOKBACK_SECONDS)
+    expect(result.dig("metrics", "samples").size).to eq(1)
+  end
+
+  it "reports unavailable evidence instead of treating missing telemetry as success" do
+    result = described_class.call(agent_run:)
+
+    expect(result.dig("logs", "status")).to eq("unavailable")
+    expect(result.dig("metrics", "status")).to eq("unavailable")
+  end
+
+  it "does not return observations from another run" do
+    other_run = create(:agent_run, :with_git_context, project: agent_run.project)
+    create(:container_metric, agent_run: other_run, recorded_at: 1.minute.ago)
+
+    expect(described_class.call(agent_run:).dig("metrics", "status")).to eq("unavailable")
+  end
+
+  # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
+  it "propagates the persisted truncation marker so callers know the tail is bounded" do
+    agent_run.update!(verification_result: {
+      "app_log_tail" => "truncated tail",
+      "app_log_recorded_at" => "2026-10-21T00:00:00Z",
+      "app_log_truncated" => true
+    })
+
+    result = described_class.call(agent_run:)
+
+    expect(result.dig("logs", "entries").first).to include("truncated" => true)
+  end
+end

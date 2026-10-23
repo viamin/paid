@@ -46,7 +46,7 @@ module AgentRuns
     private
 
     def verification_applicable?
-      @agent_run.create_pr_goal? && @agent_run.project.verification_enabled? && @repo_path.present?
+      @agent_run.verification_applicable? && @repo_path.present?
     end
 
     def render_section(runtime_plan, fallback_result:)
@@ -71,6 +71,24 @@ module AgentRuns
         (#{launch_command_for(runtime_plan)}) > #{Shellwords.escape(APP_LOG_PATH)} 2>&1 &
         echo $! > #{Shellwords.escape(APP_PID_PATH)}
         ```
+
+        After starting the app, capture its current log tail and inspect diagnostics while you can still act:
+
+        ```bash
+        tail -c 32768 #{Shellwords.escape(APP_LOG_PATH)} | curl --fail-with-body --connect-timeout 10 --max-time 30 \\
+          -X PUT "$PAID_PROXY_URL/api/proxy/application-diagnostics" \\
+          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
+          -H "X-Proxy-Token: $PROXY_TOKEN" \\
+          -H "Content-Type: text/plain" \\
+          --data-binary @-
+        curl --fail-with-body --connect-timeout 10 --max-time 30 \\
+          "$PAID_PROXY_URL/api/proxy/application-diagnostics" \\
+          -H "X-Agent-Run-Id: $AGENT_RUN_ID" \\
+          -H "X-Proxy-Token: $PROXY_TOKEN"
+        ```
+
+        Diagnostics are bounded and scoped to this run and revision. Unavailable instrumentation is unavailable
+        evidence, never a passing check. Capture and inspect the log again if startup or browser verification fails.
 
         Record the verification result by writing JSON to `#{RESULT_PATH}` before you finish:
 
