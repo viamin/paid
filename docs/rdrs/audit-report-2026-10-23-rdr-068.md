@@ -136,14 +136,8 @@ merge time, so a closing keyword aimed at #4274 in that description would
 auto-close the very issue this report says must stay open, and would present
 unmet AC1–AC8 criteria as satisfied.
 
-The description of the PR carrying this audit contains a GitHub closing
-keyword immediately followed by the #4274 reference, in the line just below the
-`---` separator that precedes the LID phase report. That contradicts the
-conclusion above. GitHub counts a closing keyword whether or not it is quoted
-or backticked, so this report deliberately never writes the pairing out. Before
-merging, delete that line from the description and replace it — and the `---`
-separator directly above it — with this non-closing block, leaving the rest of
-the description unchanged:
+The delivered description carries this block and no closing keyword anywhere in
+it:
 
 ```markdown
 ## Dependencies
@@ -152,9 +146,14 @@ Relates to #4274
 Tracks #3930
 ```
 
-No commit on this branch carries a closing keyword either, so the merge itself
-cannot close #4274. It closes only when a live run satisfies AC1–AC8 and a
-human closes the issue after the operator rerun described above.
+No commit on this branch carries a closing keyword either, so merging this
+branch leaves #4274 open. It closes only when a live run satisfies AC1–AC8 and
+a human closes the issue after the operator rerun described above.
+
+Do not restate the offending pairing when editing these docs or that
+description — write the issue number alone and say "closing keyword" in prose.
+Quoted or backticked, GitHub still counts it, and an audit report is the last
+place that should auto-close the very gap it documents.
 
 ## Rollout guard
 
