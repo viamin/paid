@@ -1,10 +1,13 @@
 # frozen_string_literal: true
 
 class AgentRunsController < ApplicationController
+  include AgentRunFilterOptions
+
   # policy_scope handles authorization; verify_policy_scoped is enforced by ApplicationController
   skip_after_action :verify_authorized, only: :index
 
   def index
+    # @spec AGENT-RUNS-INDEX-001
     # Synthetic operational runs (e.g. live-preview provisioning) reuse the
     # agent-run lifecycle but never execute a real agent. They are excluded from
     # this account-wide view for consistency with the project-scoped run list.
@@ -26,6 +29,7 @@ class AgentRunsController < ApplicationController
     AgentRun.preload_created_issue_records(@agent_runs)
     cache_key = AgentRun.runner_options_cache_key_for(account_id: current_account.id)
     @runner_options = base_scope.distinct_effective_runner_options(account_id: current_account.id, cache_key: cache_key)
+    @filter_options = available_filter_options(base_scope)
   end
 
   def pause_scheduler

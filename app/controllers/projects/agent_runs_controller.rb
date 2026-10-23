@@ -3,6 +3,7 @@
 module Projects
   class AgentRunsController < ApplicationController
     include AgentRunCancellable
+    include AgentRunFilterOptions
     include AuditLogging
 
     NoRunnableRunnerError = Class.new(StandardError)
@@ -14,6 +15,7 @@ module Projects
     ]
 
     def index
+      # @spec AGENT-RUNS-INDEX-001
       authorize @project, :show?
       base_scope = @project.agent_runs.excluding_synthetic.includes(:runner, project: [ :created_by, :account ], issue: :project)
       @q = base_scope.ransack(params[:q])
@@ -24,6 +26,7 @@ module Projects
       AgentRun.preload_created_issue_records(@agent_runs)
       cache_key = AgentRun.runner_options_cache_key_for(account_id: @project.account_id, project_id: @project.id)
       @runner_options = base_scope.distinct_effective_runner_options(account_id: @project.account_id, cache_key: cache_key)
+      @filter_options = available_filter_options(base_scope)
     end
 
     # @spec EXECUTION-ISOLATION-005
