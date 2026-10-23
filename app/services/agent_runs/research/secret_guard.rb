@@ -59,12 +59,17 @@ module AgentRuns
         )
       end
 
-      def self.redact_text(text)
+      def self.redact_text(text, agent_run: nil)
+        new.redact_text(text, agent_run:)
+      end
+
+      def redact_text(text, agent_run: nil)
         normalized = text.to_s
         clean = Knowledge::Redaction::Redactor.call(text: normalized).clean_text
-        candidates = redaction_targets(clean)
+        clean = redact_known_secrets(clean, agent_run) if agent_run
+        candidates = self.class.redaction_targets(clean)
           .flat_map { |target| target.scan(HIGH_ENTROPY_CANDIDATE) }
-          .select { |candidate| high_entropy?(candidate) }
+          .select { |candidate| self.class.high_entropy?(candidate) }
           .uniq
           .sort_by { |candidate| -candidate.length }
 
@@ -136,6 +141,27 @@ module AgentRuns
 
       def exact_known_secret(agent_run, text)
         known_secrets(agent_run).find { |secret| secret.present? && text.include?(secret) }
+      end
+
+      # Every active account credential is redacted whatever its length. A
+      # short credential (`test`) is still a usable secret, and this text
+      # reaches persistence plus the authenticated diagnostics response, so a
+      # length floor would hand an agent a live account credential. Blank
+      # values are dropped instead: substituting them would corrupt the log.
+      # @spec OBSERVABILITY-APP-DIAGNOSTICS-001
+      def redact_known_secrets(text, agent_run)
+        known_secrets(agent_run)
+          .map(&:to_s)
+          .select(&:present?)
+          .sort_by { |secret| -secret.length }
+          .reduce(text) { |redacted, secret| redact_secret(redacted, secret) }
+      end
+
+      def redact_secret(text, secret)
+        return text.gsub(secret, "[REDACTED:known_secret]") if secret.length > 4
+
+        pattern = /(?<prefix>(?:=|:|[\"']|Bearer\s+)\s*)#{Regexp.escape(secret)}(?![[:alnum:]_])/i
+        text.gsub(pattern) { "#{$~[:prefix]}[REDACTED:known_secret]" }
       end
 
       def known_secrets(agent_run)

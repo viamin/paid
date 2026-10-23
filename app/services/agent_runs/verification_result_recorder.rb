@@ -11,7 +11,7 @@ module AgentRuns
     MAX_RETAINED_ARTIFACT_BYTES = 512.kilobytes
     LOG_TAIL_LINES = 40
     LOG_TAIL_CHUNK_BYTES = 4096
-    LOG_TAIL_MAX_BYTES = 32 * 1024
+    LOG_TAIL_MAX_BYTES = ApplicationLog::MAX_BYTES
 
     def self.call(...)
       new(...).call
@@ -46,8 +46,12 @@ module AgentRuns
       persisted = build_result(apple_decision)
       return if persisted.nil?
 
-      @agent_run.update!(verification_result: persisted)
-      persisted
+      @agent_run.with_lock do
+        @previous_verification_result = nil
+        persisted = merge_captured_log(persisted)
+        @agent_run.update!(verification_result: persisted)
+        persisted
+      end
     ensure
       cleanup_transient_files
     end
@@ -81,6 +85,17 @@ module AgentRuns
       )
     end
 
+    def merge_captured_log(hash)
+      tail = captured_log_tail
+      return hash if tail.blank?
+
+      hash.merge(
+        "app_log_tail" => tail,
+        "app_log_recorded_at" => previous_verification_result["app_log_recorded_at"] || Time.current.iso8601,
+        "app_log_truncated" => previous_verification_result.fetch("app_log_truncated", false)
+      )
+    end
+
     def interactive_payload(payload)
       apple_result = payload.is_a?(Hash) && payload["apple_verification"]
       return payload unless apple_result.is_a?(Hash) && apple_result["interactive_status"].present?
@@ -89,9 +104,11 @@ module AgentRuns
     end
 
     def clear_apple_only_result
-      return unless @agent_run.verification_result["apple_verification"].present?
+      @agent_run.with_lock do
+        next unless @agent_run.verification_result["apple_verification"].present?
 
-      @agent_run.update!(verification_result: {})
+        @agent_run.update!(verification_result: {})
+      end
     end
 
     def apple_gate_summary(decision)
@@ -115,8 +132,12 @@ module AgentRuns
       hash = payload.is_a?(Hash) ? payload.deep_stringify_keys : {}
       status = hash["status"].to_s
       status = "failed" unless status.in?(VALID_STATUSES)
+      recorder_log = app_log_tail
+      recorder_log_tail = recorder_log[:content]
+      log_tail = recorder_log_tail.presence
+      truncated_flag = log_truncated(recorder_log[:truncated])
 
-      {
+      result = {
         "status" => status,
         "reported_status" => status,
         "summary" => hash["summary"].presence || default_summary_for(status),
@@ -129,10 +150,32 @@ module AgentRuns
         "changed_surfaces" => normalize_string_array(hash["changed_surfaces"]),
         "reported_acceptance_criteria" => normalize_criteria(hash["acceptance_criteria"] || hash["reported_acceptance_criteria"]),
         "artifacts" => normalize_artifacts(hash["artifacts"]),
-        "app_log_tail" => app_log_tail,
         "evidence" => evidence_for(hash),
         "recorded_at" => Time.current.iso8601
-      }.compact.then { |result| add_readiness_observation(result) }
+      }.compact
+      if log_tail.present?
+        result.merge!(
+          "app_log_tail" => log_tail,
+          "app_log_recorded_at" => Time.current.iso8601,
+          "app_log_truncated" => truncated_flag
+        )
+      end
+      add_readiness_observation(result)
+    end
+
+    def captured_log_tail
+      previous_verification_result["app_log_tail"].presence
+    end
+
+    # When the recorder produced the tail it knows exactly whether the read
+    # hit a cap. When we fall back to the agent-captured tail the only honest
+    # answer is the marker the agent capture stored — if it stored one.
+    def log_truncated(recorder_truncated)
+      recorder_truncated
+    end
+
+    def previous_verification_result
+      @previous_verification_result ||= @agent_run.verification_result.to_h
     end
 
     # Agent-authored JSON is a useful report, but it cannot attest to its own
@@ -407,14 +450,15 @@ module AgentRuns
     end
 
     def app_log_tail
-      with_safe_repo_file(app_log_path) { |file| read_log_tail(file, max_lines: LOG_TAIL_LINES) }
+      result = with_safe_repo_file(app_log_path) { |file| read_log_tail(file, max_lines: LOG_TAIL_LINES) }
+      result.presence || { content: nil, truncated: false }
     rescue StandardError => e
       @logger.warn(
         message: "agent_runs.verification_result.log_tail_failed",
         agent_run_id: @agent_run.id,
         error: e.message
       )
-      nil
+      { content: nil, truncated: false }
     end
 
     def read_log_tail(file, max_lines:)
@@ -428,7 +472,11 @@ module AgentRuns
         buffer.prepend(file.read(read_size))
       end
 
-      normalize_log_tail(buffer, max_lines:)
+      # Truncation is true whenever either cap stopped the read or the final
+      # buffer holds more lines than the per-call limit. A caller reading
+      # `app_log_truncated` knows the persisted tail is a bounded excerpt.
+      truncated = position.positive? || buffer.count("\n") > max_lines
+      normalize_log_tail(buffer, max_lines:, truncated:)
     end
 
     # Agent-authored transient paths are resolved from the opened descriptor,
@@ -472,10 +520,16 @@ module AgentRuns
       nil
     end
 
-    def normalize_log_tail(content, max_lines:)
+    def normalize_log_tail(content, max_lines:, truncated: false)
       content = content.encode(Encoding::UTF_8, invalid: :replace, undef: :replace, replace: "")
       lines = content.lines.last(max_lines)
-      lines.join.presence
+      # `truncated` reflects whether the read hit a cap. The final
+      # `lines.last(max_lines)` may also discard a trailing partial line when
+      # the buffer does not end with a newline; that is faithful redaction of
+      # the buffer we just read, not extra truncation, so it does not flip the
+      # flag.
+      application_log = ApplicationLog.redact_and_bound(lines.join, agent_run: @agent_run)
+      { content: application_log.content.presence, truncated: truncated || application_log.truncated }
     end
 
     def cleanup_transient_files

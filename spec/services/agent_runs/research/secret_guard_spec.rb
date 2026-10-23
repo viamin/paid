@@ -121,6 +121,41 @@ RSpec.describe AgentRuns::Research::SecretGuard do # @spec EGRESS-POLICY-009
   end
 
   describe ".redact_text" do
+    it "redacts exact run and active account credentials" do
+      credential = create(:integration_credential, account: project.account, secret: "stagingpassword")
+      proxy_token = agent_run.ensure_proxy_token!
+
+      redacted = described_class.redact_text(
+        "upstream denied credentials: #{proxy_token} #{credential.secret}",
+        agent_run:
+      )
+
+      expect(redacted).to include("[REDACTED:known_secret]")
+      expect(redacted).not_to include(proxy_token)
+      expect(redacted).not_to include(credential.secret)
+    end
+
+    it "redacts short active account credentials without rewriting ordinary words" do
+      credential = create(:integration_credential, account: project.account, secret: "test")
+
+      redacted = described_class.redact_text(
+        "application started in test mode with token=#{credential.secret}",
+        agent_run:
+      )
+
+      expect(redacted).to include("[REDACTED:known_secret]")
+      expect(redacted).not_to include("token=#{credential.secret}")
+      expect(redacted).to include("application started in test mode")
+    end
+
+    it "leaves text intact when an account has no active credential" do
+      agent_run.project.account.integration_credentials.destroy_all
+
+      redacted = described_class.redact_text("application started in test mode", agent_run:)
+
+      expect(redacted).to eq("application started in test mode")
+    end
+
     it "preserves long URL paths instead of redacting them as high-entropy tokens" do
       redacted = described_class.redact_text(
         "https://en.wikipedia.org/wiki/Row-level_security"
