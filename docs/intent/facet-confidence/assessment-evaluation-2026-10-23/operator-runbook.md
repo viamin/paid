@@ -66,7 +66,8 @@ bin/facet-confidence-assessment-evaluation compile   --corpus <manifest> --ledge
 `compile` exits `pending operator input` (2) until every corpus case has at
 least one run. Once complete it prints the outcome worksheet — false
 readiness, unnecessary clarification, human corrections, assessment cost,
-downstream rework, band divergences, and the tuning gate — which the operator
+downstream rework, band divergences, operational failures, and the tuning
+gate — which the operator
 mirrors into [`outcome-worksheet-2026-10-23.md`](outcome-worksheet-2026-10-23.md).
 
 ## 5. Evaluate quality before tuning

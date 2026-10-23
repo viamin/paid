@@ -9,7 +9,12 @@ module FacetConfidence
   # justifies tuning.
   # @spec FACET-CONFIDENCE-018
   module AssessmentOutcomeReport
-    UNRESOLVED_RUN_STATUSES = %w[clarification_needed unknown failed].freeze
+    # Verdicts where the assessment itself declined to decide. A failed run is
+    # an operational (provider/runtime) failure, not an assessment verdict: it
+    # asked no clarifying question and produced no scores, so it never enters
+    # the verdict measures and is reported separately as an operational failure.
+    UNDECISIVE_RUN_STATUSES = %w[clarification_needed unknown].freeze
+    FAILED_RUN_STATUS = "failed"
 
     module_function
 
@@ -17,20 +22,22 @@ module FacetConfidence
       evaluation = AssessmentCorpusLedger.evaluate(corpus_path:, ledger_path:)
       latest = evaluation.to_h { |id, entry| [ id, { case: entry.fetch(:case), run: entry.fetch(:runs).last } ] }
       assessed = latest.values.count { |entry| entry[:run] }
+      verdicts = latest.select { |_id, entry| entry[:run] && entry[:run].fetch("status") != FAILED_RUN_STATUS }
 
       {
         corpus_version: AssessmentCorpusLedger.corpus_version_of(corpus_path),
         coverage: { assessed:, total: latest.length },
-        false_readiness: measure(latest, ->(entry) { entry.fetch(:case)["expected"]["readiness"] == "not_ready" }) do |entry|
+        false_readiness: measure(verdicts, ->(entry) { entry.fetch(:case)["expected"]["readiness"] == "not_ready" }) do |entry|
           run_ready?(entry.fetch(:case), entry.fetch(:run))
         end,
-        unnecessary_clarification: measure(latest, ->(entry) { entry.fetch(:case)["expected"]["status"] == "completed" }) do |entry|
-          UNRESOLVED_RUN_STATUSES.include?(entry.fetch(:run).fetch("status"))
+        unnecessary_clarification: measure(verdicts, ->(entry) { entry.fetch(:case)["expected"]["status"] == "completed" }) do |entry|
+          UNDECISIVE_RUN_STATUSES.include?(entry.fetch(:run).fetch("status"))
         end,
         human_corrections: corrections_measure(evaluation),
         assessment_cost_cents: evaluation.values.sum { |entry| entry.fetch(:runs).sum { |run| run.fetch("cost_cents") } },
         downstream_rework: rework_measure(evaluation),
-        band_divergences: measure(latest, ->(_entry) { true }) { |entry| diverges?(entry.fetch(:case), entry.fetch(:run)) },
+        band_divergences: measure(verdicts, ->(_entry) { true }) { |entry| diverges?(entry.fetch(:case), entry.fetch(:run)) },
+        operational_failures: measure(latest, ->(_entry) { true }) { |entry| entry.fetch(:run).fetch("status") == FAILED_RUN_STATUS },
         tuning_gate: assessed == latest.length ? "metrics_required" : "blocked_incomplete_coverage"
       }
     end
@@ -50,7 +57,8 @@ module FacetConfidence
         cost: metrics.fetch(:assessment_cost_cents),
         rework_events: metrics.fetch(:downstream_rework)[:events],
         rework_cost: metrics.fetch(:downstream_rework)[:cost_cents],
-        divergences: count_cell(metrics.fetch(:band_divergences)))
+        divergences: count_cell(metrics.fetch(:band_divergences)),
+        operational_failures: count_cell(metrics.fetch(:operational_failures)))
     end
 
     WORKSHEET_TEMPLATE = <<~WORKSHEET
@@ -66,6 +74,7 @@ module FacetConfidence
       | Assessment cost | %{cost} cents | assessment_run.cost_cents |
       | Downstream rework | %{rework_events} events / %{rework_cost} cents | rework events |
       | Band divergences | %{divergences} | expected bands vs assessment_run scores |
+      | Operational failures | %{operational_failures} | assessment_run status failed |
 
       ## Tuning gate
 
@@ -94,8 +103,8 @@ module FacetConfidence
       score < threshold ? "below_threshold" : "at_or_above_threshold"
     end
 
-    def measure(latest, applicable)
-      applicable_entries = latest.values.select { |entry| entry[:run] && applicable.call(entry) }
+    def measure(entries, applicable)
+      applicable_entries = entries.values.select { |entry| entry[:run] && applicable.call(entry) }
       matched = applicable_entries.select { |entry| yield(entry) }
       { count: matched.length, rate: rate(matched.length, applicable_entries.length),
         cases: matched.map { |entry| entry.fetch(:case).fetch("id") } }

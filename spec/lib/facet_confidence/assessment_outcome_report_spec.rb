@@ -80,6 +80,32 @@ RSpec.describe FacetConfidence::AssessmentOutcomeReport do
       expect(metrics[:false_readiness][:count]).to eq(0)
     end
 
+    it "keeps a failed run out of unnecessary clarification and reports it as an operational failure" do
+      write_events!(
+        run_event("FC-CORPUS-02", status: "failed"),                # expected completed -> provider/runtime failure
+        run_event("FC-CORPUS-03", status: "clarification_needed"))  # expected completed -> unnecessary clarification
+
+      metrics = described_class.metrics(corpus_path: corpus, ledger_path: ledger)
+
+      expect(metrics[:unnecessary_clarification][:count]).to eq(1)
+      expect(metrics[:unnecessary_clarification][:cases]).to eq(%w[FC-CORPUS-03])
+      expect(metrics[:unnecessary_clarification][:rate]).to eq("100.0% (1 / 1)")
+      expect(metrics[:operational_failures][:count]).to eq(1)
+      expect(metrics[:operational_failures][:cases]).to eq(%w[FC-CORPUS-02])
+      expect(metrics[:operational_failures][:rate]).to eq("50.0% (1 / 2)")
+    end
+
+    it "keeps a failed run out of the false-readiness and band-divergence measures" do
+      write_events!(run_event("FC-CORPUS-01", status: "failed"))
+
+      metrics = described_class.metrics(corpus_path: corpus, ledger_path: ledger)
+
+      expect(metrics[:false_readiness][:count]).to eq(0)
+      expect(metrics[:false_readiness][:rate]).to eq("not established")
+      expect(metrics[:band_divergences][:count]).to eq(0)
+      expect(metrics[:operational_failures][:count]).to eq(1)
+    end
+
     it "counts band divergences so quality can be evaluated before any tuning" do
       write_events!(run_event("FC-CORPUS-01", status: "completed", intent_score: 85, technical_score: 82))
 
@@ -136,6 +162,7 @@ RSpec.describe FacetConfidence::AssessmentOutcomeReport do
       expect(worksheet).to include("| Human corrections | 1")
       expect(worksheet).to include("| Assessment cost | 800 cents |")
       expect(worksheet).to include("| Downstream rework | 1 events / 400 cents |")
+      expect(worksheet).to include("| Operational failures | 0")
       expect(worksheet).to include("Threshold or rubric tuning proposals must cite the outcome metrics above")
     end
   end

@@ -74,6 +74,7 @@ RSpec.describe "bin/facet-confidence-assessment-evaluation" do # rubocop:disable
     expect(stdout).to include("| Human corrections |")
     expect(stdout).to include("| Assessment cost |")
     expect(stdout).to include("| Downstream rework |")
+    expect(stdout).to include("| Operational failures |")
     expect(stdout).to include("Threshold or rubric tuning proposals must cite the outcome metrics above")
   end
 

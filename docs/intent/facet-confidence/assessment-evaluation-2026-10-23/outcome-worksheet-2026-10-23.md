@@ -53,6 +53,12 @@ metric computation (including parity with `ScopedReadiness` at the 79/80 and
 | Assessment cost | not established | `assessment_run.cost_cents` required |
 | Downstream rework | not established | `rework` events required |
 | Band divergences | not established | expected bands vs `assessment_run` scores |
+| Operational failures | not established | `assessment_run` status `failed` |
+
+A `failed` run is an operational (provider/runtime) failure, never an
+assessment verdict: it is reported as an operational failure above and stays
+out of the unnecessary-clarification, false-readiness, and band-divergence
+measures, so provider outages cannot inflate or deflate assessment quality.
 
 ## Tuning gate
 

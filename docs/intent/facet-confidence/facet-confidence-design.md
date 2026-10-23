@@ -105,7 +105,11 @@ identical case input. `lib/facet_confidence/assessment_outcome_report.rb`
 computes false readiness, unnecessary clarification, human corrections,
 assessment cost, and downstream rework against the frozen expected bands, and
 blocks threshold/rubric tuning proposals on incomplete metrics — throughput
-alone never justifies tuning. Operators record runs and follow-ups through
+alone never justifies tuning. A `failed` run is an operational
+(provider/runtime) failure rather than an assessment verdict: it is reported
+separately as an operational failure and never counted as unnecessary
+clarification, false readiness, or a band divergence. Operators record runs
+and follow-ups through
 `bin/facet-confidence-assessment-evaluation`; the current measured values are
 recorded in
 [`assessment-evaluation-2026-10-23/`](assessment-evaluation-2026-10-23/README.md)
