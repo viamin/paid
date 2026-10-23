@@ -100,7 +100,12 @@ $ bin/rails runner 'TenantContext.with_system_access { puts [AppleVerificationIm
 Per the harness's own fail-closed design (`docs/rdrs/live-validation-runbook-rdr-068.md`
 §Interpreting statuses), the correct response to a failed preflight is to
 record every one of the 22 scenarios across AC1–AC8 as a **gap**, never to
-fabricate a pass. The dated report
+fabricate a pass. That includes `report-archived-under-docs-rdrs`: the harness
+marks it passed only after it writes its own generated report
+(`bin/apple-verify-live:332-343`), and `--run` exited at preflight
+(`bin/apple-verify-live:284-290`) before reaching that path — a
+hand-committed file at the same path is blocker documentation, not
+satisfying evidence. The dated report
 [`live-validation-2026-10-23-rdr-068.md`](live-validation-2026-10-23-rdr-068.md)
 records that outcome in the same structure `bin/apple-verify-live --run`
 would have written, had preflight passed.
@@ -113,7 +118,7 @@ would have written, had preflight passed.
 | 2 | Source/result/artifact transport lanes connected | #4273 | Closed, verified shipped |
 | 3 | Live macOS-host acceptance evidence | #4274 | **Open — Blocked** on macOS/Tart host provisioning; no new child issue needed, #4274 already is the focused owner |
 
-#4274 stays open. Closing it now would misrepresent unmet acceptance
+Issue #4274 stays open. Closing it now would misrepresent unmet acceptance
 criteria as satisfied. The rerun condition: once an operator completes the
 [operator guide](apple-worker-operator-guide.md) on real macOS hardware and
 exports `APPLE_VERIFICATION_HOST_URL` / `APPLE_VERIFICATION_HOST_TOKEN` /
@@ -138,5 +143,5 @@ the 2026-10-01 audit found are resolved and verified against current code
 and tests. The sole remaining gap is live macOS-host acceptance evidence,
 and it is **Blocked**: it requires an operator action on physical or
 cloud-hosted macOS infrastructure that no coding-agent session — this one or
-any other confined to a Linux execution environment — can perform. Umbrella
-#3930 stays open; this audit does not close it or #4274.
+any other confined to a Linux execution environment — can perform. The
+umbrella issue #3930 stays open; this audit does not close it or #4274.

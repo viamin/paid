@@ -90,17 +90,19 @@ this re-audit does not close it.
 ## 2026-10-23 Re-audit
 
 The [2026-10-23 audit report](audit-report-2026-10-23-rdr-068.md) confirms
-#4272 and #4273 resolved the 2026-10-01 dispatch-wiring and transport-lane
-gaps against current code and passing specs. It attempted the live
-acceptance evidence #4274 scopes and recorded why it cannot complete here:
+issues #4272 and #4273 resolved the 2026-10-01 dispatch-wiring and
+transport-lane gaps against current code and passing specs. It attempted the
+live acceptance evidence #4274 scopes and recorded why it cannot complete here:
 `bin/apple-verify-live --plan` reports a failing preflight (no
 `APPLE_VERIFICATION_HOST_URL`/`_HOST_TOKEN`/`_GUEST_EXECUTOR_TOKEN`, no
 project or image), and no `AppleVerificationImage`, `AppleWorkerProfile`, or
 `AppleVerificationAttempt` exists anywhere this environment can reach. The
 dated report
 [`live-validation-2026-10-23-rdr-068.md`](live-validation-2026-10-23-rdr-068.md)
-records every AC1–AC7 criterion unmet with its specific missing mechanism,
-per the harness's fail-closed design.
+records every AC1–AC8 criterion unmet with its specific missing mechanism,
+per the harness's fail-closed design. AC8 is unmet too: the harness only marks
+`report-archived-under-docs-rdrs` passed after it writes its own generated
+report, and `--run` exited at preflight before that path was reached.
 
 Decision: **Partially Implemented** (unchanged). `apple_verification_workers`
 remains default-off. Umbrella #3930 stays open; #4274 stays open pending an
