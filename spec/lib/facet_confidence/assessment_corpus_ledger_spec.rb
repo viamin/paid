@@ -53,12 +53,57 @@ RSpec.describe FacetConfidence::AssessmentCorpusLedger, :no_db do
         .to raise_error(described_class::InvalidLedger, /must cover every required shape/)
     end
 
+    it "rejects missing default thresholds" do
+      document = YAML.safe_load_file(corpus)
+      document.delete("threshold_defaults")
+      File.write(corpus, document.to_yaml)
+
+      expect { described_class.load_corpus(corpus) }
+        .to raise_error(described_class::InvalidLedger, /threshold_defaults with bounded integer intent and technical thresholds is required/)
+    end
+
+    it "rejects malformed default thresholds" do
+      document = YAML.safe_load_file(corpus)
+      document["threshold_defaults"] = { "intent" => "80", "technical" => 80 }
+      File.write(corpus, document.to_yaml)
+
+      expect { described_class.load_corpus(corpus) }
+        .to raise_error(described_class::InvalidLedger, /threshold_defaults with bounded integer intent and technical thresholds is required/)
+    end
+
+    it "defaults omitted case thresholds" do
+      document = YAML.safe_load_file(corpus)
+      document.fetch("cases").first.delete("thresholds")
+      File.write(corpus, document.to_yaml)
+
+      expect(described_class.load_corpus(corpus).first.fetch("thresholds"))
+        .to eq("intent" => 80, "technical" => 80)
+    end
+
+    it "rejects malformed case threshold overrides" do
+      document = YAML.safe_load_file(corpus)
+      document.fetch("cases").second["thresholds"] = { "intent" => 80 }
+      File.write(corpus, document.to_yaml)
+
+      expect { described_class.load_corpus(corpus) }
+        .to raise_error(described_class::InvalidLedger, /thresholds must provide bounded integer intent and technical values/)
+    end
+
     it "rejects duplicate case ids" do
       cases = corpus_cases(*described_class::REQUIRED_SHAPES) + [ corpus_case("FC-CORPUS-01", "provisional_direction") ]
       File.write(corpus, minimal_document(cases))
 
       expect { described_class.load_corpus(corpus) }
         .to raise_error(described_class::InvalidLedger, /case ids must be unique/)
+    end
+
+    it "rejects a case with a non-mapping facet or direction" do
+      document = YAML.safe_load_file(corpus)
+      document.fetch("cases").first["facet"] = "not a mapping"
+      File.write(corpus, document.to_yaml)
+
+      expect { described_class.load_corpus(corpus) }
+        .to raise_error(described_class::InvalidLedger, /facet and direction must be mappings/)
     end
 
     it "rejects evidence that supersedes an unknown reference" do
@@ -194,6 +239,18 @@ RSpec.describe FacetConfidence::AssessmentCorpusLedger, :no_db do
       write_ledger!(events)
 
       expect(described_class.validate!(corpus_path: corpus, ledger_path: ledger)).to be(true)
+    end
+
+    it "rejects a correction that supersedes evidence outside its case" do
+      events = complete_events
+      events << { "event_id" => "correction-unknown-reference", "recorded_at" => later_timestamp, "type" => "correction",
+        "case_id" => "FC-CORPUS-01", "input_revision" => 3, "statement" => "Sync should stay manual for now.",
+        "supersedes_reference" => "unknown-reference", "corpus_version" => corpus_version,
+        "corpus_digest" => described_class.corpus_digest(corpus) }
+      write_ledger!(events)
+
+      expect { described_class.validate!(corpus_path: corpus, ledger_path: ledger) }
+        .to raise_error(described_class::InvalidLedger, /correction supersedes_reference must reference evidence of the case/)
     end
 
     it "rejects rework that references a run outside its case" do

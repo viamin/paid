@@ -85,7 +85,9 @@ module FacetConfidence
     end
 
     def corpus_version_of(path)
-      read_yaml(path).fetch("corpus_version")
+      document = read_yaml(path)
+      ensure_corpus_identity!(document)
+      document["corpus_version"]
     end
 
     def validate_entries!(corpus_path:, entries:)
@@ -106,9 +108,17 @@ module FacetConfidence
 
     def ensure_corpus_identity!(document)
       raise InvalidLedger, "invalid corpus manifest: corpus_version is required" if document["corpus_version"].to_s.strip.empty?
-      return if document["rubric"].is_a?(Hash) && document.dig("rubric", "version").to_s.strip != "" && document.dig("rubric", "model").to_s.strip != ""
+      unless document["rubric"].is_a?(Hash) && document.dig("rubric", "version").to_s.strip != "" && document.dig("rubric", "model").to_s.strip != ""
+        raise InvalidLedger, "invalid corpus manifest: rubric version and model are required"
+      end
 
-      raise InvalidLedger, "invalid corpus manifest: rubric version and model are required"
+      ensure_threshold_defaults!(document)
+    end
+
+    def ensure_threshold_defaults!(document)
+      return if valid_thresholds?(document["threshold_defaults"])
+
+      raise InvalidLedger, "invalid corpus manifest: threshold_defaults with bounded integer intent and technical thresholds is required"
     end
 
     def ensure_case_ids!(cases)
@@ -134,6 +144,10 @@ module FacetConfidence
     end
 
     def ensure_case_content!(corpus_case, id)
+      unless corpus_case["facet"].is_a?(Hash) && corpus_case["direction"].is_a?(Hash)
+        raise InvalidLedger, "corpus case #{id} facet and direction must be mappings"
+      end
+
       [ %w[facet name], %w[facet design_claim], %w[direction name], %w[direction description] ].each do |keys|
         raise InvalidLedger, "corpus case #{id} lacks #{keys.join(' ')}" if corpus_case.dig(*keys).to_s.strip.empty?
       end
@@ -143,6 +157,7 @@ module FacetConfidence
     def ensure_case_evidence!(corpus_case, id)
       evidence = Array(corpus_case["evidence"])
       raise InvalidLedger, "corpus case #{id} needs at least one attributable evidence item" if evidence.empty?
+      raise InvalidLedger, "corpus case #{id} evidence items must be mappings" unless evidence.all?(Hash)
 
       references = evidence.map { |item| item["reference"].to_s }
       raise InvalidLedger, "corpus case #{id} evidence references must be unique and present" unless references.all? { |reference| !reference.strip.empty? } && references.uniq.length == references.length
@@ -180,12 +195,23 @@ module FacetConfidence
     end
 
     def normalize_case!(corpus_case, document)
-      defaults = document.fetch("threshold_defaults")
-      corpus_case["thresholds"] = { "intent" => defaults.fetch("intent"), "technical" => defaults.fetch("technical") } if corpus_case["thresholds"].nil?
+      thresholds = corpus_case["thresholds"] || document["threshold_defaults"]
+      ensure_case_thresholds!(corpus_case, thresholds)
+      corpus_case["thresholds"] = thresholds
       corpus_case["evidence_revision"] = corpus_case.fetch("evidence").length
       corpus_case["rubric_version"] = document.dig("rubric", "version")
       corpus_case["model_version"] = document.dig("rubric", "model")
       corpus_case
+    end
+
+    def ensure_case_thresholds!(corpus_case, thresholds)
+      return if valid_thresholds?(thresholds)
+
+      raise InvalidLedger, "corpus case #{corpus_case.fetch('id')} thresholds must provide bounded integer intent and technical values from 0 to 100"
+    end
+
+    def valid_thresholds?(thresholds)
+      thresholds.is_a?(Hash) && thresholds.keys.sort == %w[intent technical] && thresholds.values.all? { |value| value.is_a?(Integer) && value.between?(0, 100) }
     end
 
     def ensure_unique_event_ids!(entries)
@@ -307,9 +333,17 @@ module FacetConfidence
       tracker = trackers.fetch(id)
       raise InvalidLedger, "#{id} correction must follow an assessment run" unless tracker[:run_seen]
       raise InvalidLedger, "#{id} correction must advance beyond the recorded input revision" unless revision > tracker[:last_run_revision]
+      ensure_correction_reference!(entry, entry_state.fetch(:case))
 
       tracker[:pending_corrections] << revision
       entry_state[:corrections] << entry
+    end
+
+    def ensure_correction_reference!(entry, corpus_case)
+      reference = entry["supersedes_reference"]
+      return if reference.nil? || corpus_case.fetch("evidence").any? { |evidence| evidence.fetch("reference") == reference }
+
+      raise InvalidLedger, "#{corpus_case.fetch('id')} correction supersedes_reference must reference evidence of the case"
     end
 
     def validate_rework!(entry, evaluation)

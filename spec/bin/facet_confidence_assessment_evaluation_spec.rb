@@ -65,6 +65,19 @@ RSpec.describe "bin/facet-confidence-assessment-evaluation" do # rubocop:disable
     expect(stderr).not_to include("bin/facet-confidence-assessment-evaluation:")
   end
 
+  it "reports malformed corpus thresholds without a backtrace" do
+    copy_committed_corpus
+    document = YAML.safe_load_file(corpus)
+    document.delete("threshold_defaults")
+    File.write(corpus, document.to_yaml)
+
+    _stdout, stderr, status = run_cli("validate", "--corpus", corpus, "--ledger", ledger)
+
+    expect(status.exitstatus).to eq(1)
+    expect(stderr).to include("threshold_defaults with bounded integer intent and technical thresholds is required")
+    expect(stderr).not_to include("bin/facet-confidence-assessment-evaluation:")
+  end
+
   it "exits pending-operator-input when compiling before every corpus case has a run" do
     copy_committed_corpus
 
