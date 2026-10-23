@@ -7,7 +7,7 @@ require "rails_helper"
 RSpec.describe Inbox::Removals do
   let(:account) { create(:account) }
   let(:user) { create(:user, account:) }
-  let(:other_user) { create(:user, account:) }
+  let(:other_user) { create(:user, :member, account:) }
   let(:project) { create(:project, account:, created_by: user) }
   let(:issue) do
     create(:issue, :needs_input, project:, github_state: "open",
@@ -120,17 +120,28 @@ RSpec.describe Inbox::Removals do
       expect(removal.reload).to be_active
     end
 
-    it "keeps each user's suppression independent when the phase is re-enabled" do
+    it "restores every user's suppression when the phase is re-enabled" do
       actionable_entry = entry
       Inbox::Removals::Remove.call(entry: actionable_entry, user:)
       Inbox::Removals::Remove.call(entry: actionable_entry, user: other_user)
       configure_phases({ "issue_preparation" => false })
-
       Automation::PhaseSettings::Update.call(project:, params: { "phases" => { "issue_preparation" => true } })
 
       expect(InboxRemoval.active.where(user:)).not_to exist
-      expect(InboxRemoval.active.where(user: other_user)).to exist
+      expect(InboxRemoval.active.where(user: other_user)).not_to exist
       expect(entry).to be_present
+    end
+
+    it "keeps a removed project setup request suppressed across routine readiness evaluations" do
+      setup_project = create(:project, account:, created_by: user, tdd_mode: "strict", readiness_gaps: [
+        { "kind" => "missing_ci", "description" => "CI is required." }
+      ], readiness_evaluated_at: 1.hour.ago)
+      setup_entry = Inbox::Queue.call(user:, project: setup_project).find(&:project_setup_pending?)
+      Inbox::Removals::Remove.call(entry: setup_entry, user:)
+
+      setup_project.update!(readiness_evaluated_at: Time.current)
+
+      expect(Inbox::Queue.call(user:, project: setup_project)).to be_empty
     end
 
     it "restores when manual work produces a fresh occurrence of the same request" do

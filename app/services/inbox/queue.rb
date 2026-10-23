@@ -262,13 +262,7 @@ module Inbox
       return unless KINDS.include?(entry_kind) && record_id&.match?(/\A[0-9]+\z/)
       return if kind.present? && kind != entry_kind
 
-      Inbox::Queue::SCOPES.each do |candidate_scope|
-        entry = call(user:, project:, kind: entry_kind, record_id:, scope: candidate_scope)
-          .find { |candidate| candidate.id == entry_id.to_s }
-        return entry if entry
-      end
-
-      nil
+      new(user:, project:, kind: entry_kind, record_id:).find_entry(entry_id.to_s)
     end
 
     # Questionless rows are invalid and repaired during sync, so keep them out
@@ -326,13 +320,23 @@ module Inbox
       sort_entries(build_entries)
     end
 
+    def find_entry(entry_id)
+      source_entries = build_entries
+      SCOPES.each do |candidate_scope|
+        entry = apply_scope(source_entries, candidate_scope).find { |candidate| candidate.id == entry_id }
+        return entry if entry
+      end
+
+      nil
+    end
+
     private
 
     attr_reader :kind, :project, :scope, :sort, :user
 
     # @spec INBOX-PHASE-RELEVANCE-002 @spec INBOX-PHASE-RELEVANCE-009
-    def apply_scope(entries)
-      case scope
+    def apply_scope(entries, selected_scope = scope)
+      case selected_scope
       when DISABLED_PHASES_SCOPE
         return [] unless phase_governed?(entries)
 
@@ -351,8 +355,10 @@ module Inbox
     end
 
     def relevance_by_id
-      @relevance_by_id ||= build_entries.index_by(&:id).transform_values do |entry|
-        Inbox::PhaseRelevance.new.call(entry)
+      @relevance_by_id ||= Inbox::PhaseRelevance.for_entries(
+        build_entries, governed_project_ids: governed_project_ids(build_entries)
+      ).tap do |results|
+        build_entries.each { |entry| entry.instance_variable_set(:@relevance, results.fetch(entry.id)) }
       end
     end
 
@@ -365,10 +371,14 @@ module Inbox
     # before. Resolved once per distinct project so an ungoverned queue pays
     # no extra queries.
     def phase_governed?(entries)
-      project_ids = entries.filter_map { |entry| entry.project&.id }.uniq
-      return false if project_ids.empty?
+      governed_project_ids(entries).any?
+    end
 
-      Automation::RolloutGuard.enabled_project_ids(project_ids).any?
+    def governed_project_ids(entries)
+      @governed_project_ids ||= begin
+        project_ids = entries.filter_map { |entry| entry.project&.id }.uniq
+        Automation::RolloutGuard.enabled_project_ids(project_ids)
+      end
     end
 
     def build_entries
@@ -523,24 +533,33 @@ module Inbox
 
     # @spec OPERATOR-INBOX-002K
     def merge_approval_entries
-      merge_approval_issues.filter_map do |issue|
-        snapshot = Inbox::MergeApproval.call(issue)
-        next unless snapshot
-
+      candidate_entries = merge_approval_issues.map do |issue|
         Entry.new(
           id: "#{MERGE_APPROVAL_KIND}:#{issue.id}",
           kind: MERGE_APPROVAL_KIND,
           project: issue.project,
           issue: issue,
           record: issue,
-          waiting_since: snapshot.waiting_since,
+          waiting_since: nil,
           questions: [],
           tasks: [],
-          summary_text: snapshot.summary,
+          summary_text: nil,
           title_text: nil,
-          action_url: nil,
-          guidance: snapshot.guidance
+          action_url: nil
         )
+      end
+      context = Inbox::PhaseRelevance::Context.new(entries: candidate_entries)
+      candidate_entries.filter_map do |entry|
+        phase_authorized = context.automatic_authorized?(
+          entry, project: entry.project, phase: Automation::Phases::MERGE
+        )
+        snapshot = Inbox::MergeApproval.call(entry.issue, phase_authorized:)
+        next unless snapshot
+
+        entry.waiting_since = snapshot.waiting_since
+        entry.summary_text = snapshot.summary
+        entry.guidance = snapshot.guidance
+        entry
       end
     end
 

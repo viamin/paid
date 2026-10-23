@@ -46,7 +46,7 @@ module Automation
         return if transitions.empty?
         return unless Automation::RolloutGuard.enabled?(project)
 
-        Inbox::Removals::RestoreOnPhaseEnablement.call(project:, phases: transitions, user:)
+        Inbox::Removals::RestoreOnPhaseEnablement.call(project:, phases: transitions, queue_user: user)
       end
 
       def current

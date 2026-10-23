@@ -19,11 +19,18 @@ module Inbox
     # Token compared against stored removals. Timestamps are rendered with
     # microsecond precision so two occurrences in the same second still differ.
     def occurrence_for(entry)
+      return project_setup_occurrence(entry) if entry.project_setup_pending?
+
       entry.waiting_since&.utc&.iso8601(6) || "unknown"
     end
 
     def for_entry(entry)
       { key: key_for(entry), occurrence: occurrence_for(entry) }
+    end
+
+    def project_setup_occurrence(entry)
+      digest = Digest::SHA256.hexdigest(JSON.generate(entry.project.readiness_gaps))
+      "state:project_setup:#{digest}"
     end
   end
 end

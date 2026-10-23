@@ -65,6 +65,8 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
   describe "#execute" do
     it "returns sufficient_context: true for a well-described issue with knowledge context" do
+      grant = create(:work_item_continuation_grant, project:, issue:,
+        start_phase: "issue_preparation", endpoint: "issue_preparation")
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result).to include(
@@ -76,6 +78,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       )
       expect(agent_run.reload.status).to eq("completed")
       expect(issue.reload.paid_state).to eq("analyzed")
+      expect(grant.reload).to be_completed
     end
 
     it "returns sufficient_context: false for a vague issue with no knowledge match" do

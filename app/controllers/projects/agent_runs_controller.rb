@@ -1080,7 +1080,6 @@ module Projects
     # RDR-077 §3: goals map to the phase that owns the work they perform.
     # @spec AUTOMATION-PHASES-004
     MANUAL_START_PHASES = {
-      "create_feature" => Automation::Phases::DISCOVERY,
       "enhance_issue" => Automation::Phases::ISSUE_PREPARATION,
       "analyze_issue" => Automation::Phases::ISSUE_PREPARATION,
       "create_pr" => Automation::Phases::CODING,

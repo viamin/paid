@@ -17,12 +17,7 @@ module Inbox
     def call
       return unless Inbox::Queue::KINDS.include?(kind)
 
-      Inbox::Queue::SCOPES.each do |scope|
-        entry = Inbox::Queue.call(user:, kind:, scope:).find { |candidate| candidate.id == entry_id }
-        return entry if entry
-      end
-
-      nil
+      Inbox::Queue.new(user:, kind:).find_entry(entry_id)
     end
 
     private

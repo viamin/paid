@@ -43,9 +43,10 @@ platform requests (no phase) and follow the same visibility rule.
 - `request_key` — `"<kind>:<record_id>"`, stable across rebuilds.
 - `occurrence` — the producer-owned timestamp the request has been waiting
   since (`needs_input_since`, `manual_review_started_at`, `blocked_since`,
-  `waiting_since`, `created_at`, …). Polling, re-reading, and unchanged saves
-  never change it; a fresh manual occurrence does, even when the question text
-  and state value are identical.
+  `waiting_since`, `created_at`, …), or a deterministic producer-state token
+  for derived requests such as project setup. Polling, re-reading, routine
+  readiness evaluation, and unchanged saves never change it; a fresh manual
+  occurrence or materially changed producer state does.
 
 ## Relevance
 

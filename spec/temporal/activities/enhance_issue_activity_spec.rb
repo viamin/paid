@@ -42,6 +42,17 @@ RSpec.describe Activities::EnhanceIssueActivity do
     allow(Projects::EnsureStandardLabels).to receive(:call_best_effort)
   end
 
+  # @spec AUTOMATION-PHASES-008
+  it "completes an issue-preparation continuation grant when enhancement finishes" do
+    grant = create(:work_item_continuation_grant, project:, issue:,
+      start_phase: "issue_preparation", endpoint: "issue_preparation")
+    log_agent_stdout(structured_output)
+
+    activity.execute(agent_run_id: agent_run.id)
+
+    expect(grant.reload).to be_completed
+  end
+
   def expect_label_added(label)
     expect(client).to have_received(:add_labels_to_issue).with(
       project.full_name,

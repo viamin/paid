@@ -91,6 +91,21 @@ RSpec.describe Inbox::PhaseRelevance do
 
       expect(relevance(scope: Inbox::Queue::DISABLED_PHASES_SCOPE)).to be_disabled_phase
     end
+
+    it "batches phase relevance queries across queue entries" do
+      configure_phases({ "issue_preparation" => false })
+      Inbox::Queue.new(user:, project:).entries
+      single_entry_queries = count_queries { Inbox::Queue.call(user:, project:) }
+
+      3.times do |index|
+        create(:issue, :needs_input, project:, github_state: "open",
+          github_number: 100 + index, needs_input_questions: [ "Question #{index}?" ])
+      end
+      Inbox::Queue.new(user:, project:).entries
+      multiple_entry_queries = count_queries { Inbox::Queue.call(user:, project:) }
+
+      expect(multiple_entry_queries).to eq(single_entry_queries)
+    end
   end
 
   describe "phase re-enablement" do

@@ -43,6 +43,13 @@ RSpec.describe "Project agent run continuation" do
     )
   end
 
+  it "does not offer continuation for discovery runs without a durable work item" do
+    get new_project_agent_run_path(project, goal: "create_feature")
+
+    expect(response.body).not_to include("continuation_authorized")
+    expect(response.body).not_to include("continuation_endpoint")
+  end
+
   it "rejects continuation when the run has no work item to authorize" do
     get new_project_agent_run_path(project, goal: "create_pr")
     signature = rendered_signature

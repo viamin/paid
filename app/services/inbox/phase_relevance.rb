@@ -37,8 +37,13 @@ module Inbox
       new(...).call
     end
 
-    def initialize(project: nil)
-      @project = project
+    def self.for_entries(entries, governed_project_ids: nil)
+      context = Context.new(entries:, governed_project_ids:)
+      entries.index_by(&:id).transform_values { |entry| new(context:).call(entry) }
+    end
+
+    def initialize(context: nil)
+      @context = context
     end
 
     def call(entry)
@@ -51,13 +56,13 @@ module Inbox
 
     private
 
-    attr_reader :project
+    attr_reader :context
 
     # Relevance only applies to a project whose phase model is enabled.
     def governed?(ownership)
       return false unless ownership.project
 
-      Automation::RolloutGuard.enabled?(ownership.project)
+      context ? context.governed?(ownership) : Automation::RolloutGuard.enabled?(ownership.project)
     end
 
     def relevant?(entry, ownership)
@@ -71,6 +76,8 @@ module Inbox
     end
 
     def grant_covers?(entry, ownership)
+      return context.grant_covers?(entry, ownership) if context
+
       Automation::ContinuationGrantLookup
         .covering(project: ownership.project, phase: ownership.responsible_phase, work_item: work_item_for(entry))
         .present?
@@ -79,6 +86,7 @@ module Inbox
     def outstanding_manual_action?(entry, ownership)
       issue = entry.issue
       return false unless issue
+      return context.outstanding_manual_action?(entry, ownership) if context
 
       Automation::ContinuationGrantLookup.outstanding_manual_action?(project: ownership.project, issue:)
     end

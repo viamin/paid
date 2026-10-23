@@ -494,6 +494,7 @@ module Activities
       else
         agent_run.issue.update!(attrs)
       end
+      Automation::CompleteContinuationGrants.call(work_items: agent_run.issue, endpoint: "issue_preparation")
     end
 
     # Shared with stop_after_max_rounds' GitHub comment copy, so the persisted

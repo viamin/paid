@@ -100,8 +100,9 @@ module Automation
     # opt an individual human PR into that path while the project setting is
     # off, but cannot broaden Dependabot-only mode.
     # @spec AUTO-MERGE-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-007
-    def human_pull_request_auto_merge_enabled?(project:, pull_request:)
-      return false unless phase_authorized?(project:, capability: "auto_merge", work_item: pull_request)
+    def human_pull_request_auto_merge_enabled?(project:, pull_request:, phase_authorized: nil)
+      authorized = phase_authorized.nil? ? phase_authorized?(project:, capability: "auto_merge", work_item: pull_request) : phase_authorized
+      return false unless authorized
       return false if upstream_mode_disables?(project, "auto_merge")
       return project.auto_merge_enabled? if project.paid_local_activation?
       return true if project.auto_merge_mode == "all"

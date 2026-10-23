@@ -30,6 +30,7 @@ class InboxRemoval < ApplicationRecord
   # occurrence is not newer than the removed occurrence.
   def suppresses?(current_occurrence)
     return false unless active?
+    return request_occurrence == current_occurrence.to_s if state_occurrence?(current_occurrence)
 
     (current_occurrence.to_s <=> request_occurrence.to_s) <= 0
   end
@@ -38,5 +39,11 @@ class InboxRemoval < ApplicationRecord
     return false unless active?
 
     update!(cleared_at: Time.current)
+  end
+
+  private
+
+  def state_occurrence?(current_occurrence)
+    request_occurrence.start_with?("state:") || current_occurrence.to_s.start_with?("state:")
   end
 end

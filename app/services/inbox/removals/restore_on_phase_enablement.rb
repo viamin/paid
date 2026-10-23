@@ -16,42 +16,36 @@ module Inbox
         new(...).call
       end
 
-      def initialize(project:, phases:, user: nil)
+      def initialize(project:, phases:, queue_user: nil)
         @project = project
         @phases = Array(phases).map(&:to_s)
-        @user = user
+        @queue_user = queue_user
       end
 
       def call
         return 0 if phases.empty?
 
-        removals = scope.includes(:user).to_a
+        removals = scope.to_a
         return 0 if removals.empty?
 
-        restored = 0
-        removals.group_by(&:user).each do |removal_user, user_removals|
-          entries = reconciled_entries(removal_user)
-          user_removals.each do |removal|
-            next unless still_actionable?(removal, entries[removal.request_key])
+        entries = reconciled_entries
+        removals.count do |removal|
+          next false unless still_actionable?(removal, entries[removal.request_key])
 
-            removal.clear!
-            restored += 1
-          end
+          removal.clear!
         end
-        restored
       end
 
       private
 
-      attr_reader :phases, :project, :user
+      attr_reader :phases, :project, :queue_user
 
       def scope
-        removals = InboxRemoval.active.where(project_id: project.id, responsible_phase: phases)
-        user ? removals.where(user:) : removals
+        InboxRemoval.active.where(project_id: project.id, responsible_phase: phases)
       end
 
-      def reconciled_entries(removal_user)
-        Inbox::Queue.new(user: removal_user, project:).entries.index_by(&:id)
+      def reconciled_entries
+        Inbox::Queue.new(user: project.created_by || queue_user, project:).entries.index_by(&:id)
       end
 
       def still_actionable?(removal, entry)

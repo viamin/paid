@@ -138,6 +138,7 @@ module Activities
         attrs.merge!(reconcile_resolved_clarification_state_attrs(issue))
       end
       issue.update!(attrs)
+      Automation::CompleteContinuationGrants.call(work_items: issue, endpoint: "issue_preparation")
     end
 
     # When the analyzer returns `sufficient_context: true`, a stale
