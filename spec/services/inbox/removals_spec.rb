@@ -14,6 +14,14 @@ RSpec.describe Inbox::Removals do
       needs_input_questions: [ "Which behavior?" ])
   end
 
+  around do |example|
+    original_store = Rails.cache
+    Rails.cache = ActiveSupport::Cache::MemoryStore.new
+    example.run
+  ensure
+    Rails.cache = original_store
+  end
+
   before do
     allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))
     FeatureFlags.enable!(:automation_phases, project:)
@@ -40,6 +48,16 @@ RSpec.describe Inbox::Removals do
   end
 
   describe "removal" do
+    # @spec INBOX-PHASE-RELEVANCE-009
+    it "invalidates the Inbox cache version" do
+      previous_version = Dashboard::CacheVersion.current(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+
+      remove!
+
+      expect(Dashboard::CacheVersion.current(account, scope: Dashboard::CacheVersion::INBOX_SCOPE))
+        .to be > previous_version
+    end
+
     it "restores and removes the same occurrence again" do
       remove!
       Inbox::Removals::Restore.call(entry: entry(scope: Inbox::Queue::REMOVED_SCOPE), user:)
@@ -89,15 +107,19 @@ RSpec.describe Inbox::Removals do
   end
 
   describe "return events" do
+    # @spec INBOX-PHASE-RELEVANCE-009
     it "restores when the responsible phase transitions from disabled to enabled" do
       configure_phases({ "issue_preparation" => false })
       remove!(target: entry(scope: Inbox::Queue::DISABLED_PHASES_SCOPE))
       expect(entry).to be_nil
+      previous_version = Dashboard::CacheVersion.current(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
 
       Automation::PhaseSettings::Update.call(project:, params: { "phases" => { "issue_preparation" => true } })
 
       expect(entry).to be_present
       expect(entry(scope: Inbox::Queue::REMOVED_SCOPE)).to be_nil
+      expect(Dashboard::CacheVersion.current(account, scope: Dashboard::CacheVersion::INBOX_SCOPE))
+        .to be > previous_version
     end
 
     it "does not restore when an already-enabled phase is saved unchanged" do
@@ -187,6 +209,18 @@ RSpec.describe Inbox::Removals do
   end
 
   describe "restore action" do
+    # @spec INBOX-PHASE-RELEVANCE-009
+    it "invalidates the Inbox cache version" do
+      remove!
+      removed_entry = entry(scope: Inbox::Queue::REMOVED_SCOPE)
+      previous_version = Dashboard::CacheVersion.current(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+
+      Inbox::Removals::Restore.call(entry: removed_entry, user:)
+
+      expect(Dashboard::CacheVersion.current(account, scope: Dashboard::CacheVersion::INBOX_SCOPE))
+        .to be > previous_version
+    end
+
     it "returns the request to the default list" do
       remove!
 

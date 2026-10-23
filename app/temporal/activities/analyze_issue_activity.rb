@@ -127,7 +127,7 @@ module Activities
       }
     end
 
-    # @spec ISSUE-ANALYSIS-017
+    # @spec ISSUE-ANALYSIS-017 @spec AUTOMATION-PHASES-008
     def complete_run!(agent_run, parsed = nil, paid_state = "analyzed")
       agent_run.complete!
       return unless agent_run.issue
@@ -138,6 +138,8 @@ module Activities
         attrs.merge!(reconcile_resolved_clarification_state_attrs(issue))
       end
       issue.update!(attrs)
+      return unless parsed.present? && parsed[:sufficient_context] == true
+
       Automation::CompleteContinuationGrants.call(work_items: issue, endpoint: "issue_preparation")
     end
 

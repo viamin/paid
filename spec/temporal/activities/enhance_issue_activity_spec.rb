@@ -288,7 +288,10 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.reload.last_analyzer_sufficient_context).to be(false)
     end
 
-    it "posts clarifying questions when the agent reports insufficient context" do
+    # @spec AUTOMATION-PHASES-008
+    it "posts clarifying questions without completing the issue-preparation grant" do
+      grant = create(:work_item_continuation_grant, project:, issue:,
+        start_phase: "issue_preparation", endpoint: "issue_preparation")
       log_agent_stdout({
         sufficient_context: false,
         comment_body: "## Clarifying questions\n1. Which events should be recorded?"
@@ -303,6 +306,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.reload.paid_state).to eq("needs_input")
       expect(issue.labels).to include(project.enhance_issue_needs_input_label_name)
       expect(issue.needs_input_questions).to eq([ "Which events should be recorded?" ])
+      expect(grant.reload).to be_active
     end
 
     context "when quiet-mode questions are being replaced" do
@@ -483,8 +487,10 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.labels).not_to include(project.enhance_issue_enhanced_label_name)
     end
 
-    # @spec ISSUE-ENHANCEMENT-011
+    # @spec ISSUE-ENHANCEMENT-011 @spec AUTOMATION-PHASES-008
     it "moves the issue to manual review at the max round and preserves the terminal round's clarifying questions" do
+      grant = create(:work_item_continuation_grant, project:, issue:,
+        start_phase: "issue_preparation", endpoint: "issue_preparation")
       issue.update!(enhance_issue_rounds: project.max_enhance_issue_reevaluation_rounds)
       log_agent_stdout({
         sufficient_context: false,
@@ -500,6 +506,7 @@ RSpec.describe Activities::EnhanceIssueActivity do
       expect(issue.manual_review_reason).to include("#{project.max_enhance_issue_reevaluation_rounds} enhancement re-evaluation rounds")
       expect(issue.manual_review_started_at).to be_present
       expect(issue.needs_input_questions).to eq([ "Which events should be recorded?" ])
+      expect(grant.reload).to be_active
     end
 
     # @spec ISSUE-ENHANCEMENT-011

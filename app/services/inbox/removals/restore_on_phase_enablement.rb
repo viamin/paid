@@ -29,11 +29,13 @@ module Inbox
         return 0 if removals.empty?
 
         entries = reconciled_entries
-        removals.count do |removal|
+        restored_count = removals.count do |removal|
           next false unless still_actionable?(removal, entries[removal.request_key])
 
           removal.clear!
         end
+        Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE) if restored_count.positive?
+        restored_count
       end
 
       private

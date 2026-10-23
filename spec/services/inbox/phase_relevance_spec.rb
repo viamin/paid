@@ -106,6 +106,22 @@ RSpec.describe Inbox::PhaseRelevance do
 
       expect(multiple_entry_queries).to eq(single_entry_queries)
     end
+
+    it "classifies a non-Issue request without looking for an Issue work chain" do
+      configure_phases({ "discovery" => false })
+      setup_entry = Inbox::Queue::Entry.new(
+        id: "project_setup_pending:#{project.id}",
+        kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND,
+        project:,
+        issue: nil,
+        record: project,
+        waiting_since: Time.current
+      )
+
+      result = described_class.for_entries([ setup_entry ]).fetch(setup_entry.id)
+
+      expect(result).to be_disabled_phase
+    end
   end
 
   describe "phase re-enablement" do

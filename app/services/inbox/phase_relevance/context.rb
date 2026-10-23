@@ -49,7 +49,9 @@ module Inbox
       end
 
       def root_id_for(entry)
-        issue = entry.issue || entry.record
+        issue = entry.issue || (entry.record if entry.record.is_a?(Issue))
+        return unless issue
+
         issue.is_pull_request? && issue.parent_issue_id ? issue.parent_issue_id : issue.id
       end
 

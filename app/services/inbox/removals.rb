@@ -31,6 +31,7 @@ module Inbox
             cleared_at: nil
           )
           removal.save!
+          Dashboard::CacheVersion.bump(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
         end
       end
 
@@ -53,7 +54,10 @@ module Inbox
 
       def call
         removed = InboxRemoval.active.where(user:, request_key: Inbox::RequestIdentity.key_for(entry))
+        return 0 unless removed.exists?
+
         removed.find_each(&:clear!)
+        Dashboard::CacheVersion.bump(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
       end
 
       private
