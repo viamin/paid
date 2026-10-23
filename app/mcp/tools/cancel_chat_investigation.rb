@@ -13,7 +13,7 @@ module Tools
     end
 
     def self.available_for_chat?(user:, session:)
-      session&.clarifying_question_issue.present? && StartChatInvestigation.exploration_enabled?(session) &&
+      session&.clarifying_question_issue.present? &&
         policy_allows?(user:, record: StartChatInvestigation.project_for(session), query: :explore?, policy_class: ProjectPolicy)
     end
 

@@ -33,9 +33,9 @@ RSpec.describe Tools::CancelChatInvestigation do
     expect(result).to include(investigation_id: investigation.id, status: "cancelled")
   end
 
-  it "does not expose cancellation while the exploration rollout is disabled" do
+  it "exposes cancellation for an existing investigation while the exploration rollout is disabled" do
     FeatureFlags.disable!(:question_exploration, project:)
 
-    expect(described_class).not_to be_available_for_chat(user:, session:)
+    expect(described_class).to be_available_for_chat(user:, session:)
   end
 end
