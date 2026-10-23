@@ -2,12 +2,16 @@
 
 # @spec QUESTION-EXPLORATION-004 QUESTION-EXPLORATION-005 QUESTION-EXPLORATION-006
 class ChatDiagramComment < ApplicationRecord
+  CONTEXT_LIMIT = 20
+
   belongs_to :chat_diagram
   belongs_to :actor, class_name: "User"
 
   validates :question_key, presence: true
   validates :body, presence: true, length: { maximum: 12_000 }
   validate :selected_element_has_context
+
+  scope :chronological, -> { order(:created_at, :id) }
 
   private
 

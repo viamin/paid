@@ -230,6 +230,22 @@ completion-forward-work behavior. It keeps #4309 open for bounded
 investigations, held-issue publication, activation/isolation reporting, the
 assessment corpus, and browser-backed diagram evidence.
 
+The [2026-10-22 RDR-069 closeout refresh](audit-report-2026-10-22-rdr-069.md)
+re-audits RDR-069 against shipped code and a live run (3043 examples, 0
+failures; 23 `spec/system` examples skipped for a missing Chromium): RDR-069
+stays **Partially Implemented**, now with only bounded investigations
+(`QUESTION-EXPLORATION-010` and the investigation slice of `012`) outstanding.
+That scope is claimed by two open issues: `#4317` (P08, labelled `planning`,
+so auto-pick cannot reach it) and the focused `#4568` (no skip label), which
+was filed on the premise that `#4317` was closed — that premise does not match
+its current GitHub state. `#4322` depends on the outstanding scope explicitly.
+That audit also closed a real divergence — human diagram comments were
+persisted but read by nothing — by rendering them in the card, sharing one
+comment payload across the HTML and JSON transports, supplying them to the
+assistant's exploration context, and restoring a saved answer's recorded
+evidence on reopen. #4322 stays open and keeps `Tracks #4309` language; only
+the umbrella's own final acceptance audit may close #4309.
+
 RDR-075 is reserved for **General Maintenance Runs**, proposed in
 [PR #4308](https://github.com/viamin/paid/pull/4308). Its
 [2026-10-15 C75 closeout audit](audit-report-2026-10-15-rdr-075.md) is
