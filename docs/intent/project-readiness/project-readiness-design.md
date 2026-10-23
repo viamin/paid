@@ -67,7 +67,8 @@ is diagnostic evidence, not a readiness latch: a later target-branch evaluation
 replaces repository gaps from checkout evidence, and a recovered browser or
 service needs no cleanup action.
 
-Evaluation is queued when readiness-relevant settings change (TDD mode,
+Evaluation is queued when a project is created with a readiness-relevant
+setting enabled, when readiness-relevant settings change (TDD mode,
 verification settings), when a project's service-container associations change
 or an associated service is renamed, and after a completed run that produced a
 result commit. A snapshot update bumps the Inbox cache

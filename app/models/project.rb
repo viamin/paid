@@ -461,6 +461,7 @@ class Project < ApplicationRecord
 
   after_create_commit :start_github_polling
   after_create_commit :enqueue_knowledge_collection
+  after_create_commit :enqueue_initial_readiness_evaluation, if: :readiness_evaluation_required?
   after_update :clear_github_client_cache, if: :saved_change_to_git_push_pat_fallback_configuration?
   after_update_commit :toggle_github_polling, if: :saved_change_to_active?
   after_update_commit :clear_scheduler_pause_on_token_change, if: :saved_change_to_github_token_id?
@@ -479,8 +480,18 @@ class Project < ApplicationRecord
     EvaluateProjectReadinessJob.perform_later(id)
   end
 
+  # @spec PROJECT-READINESS-006
+  def enqueue_initial_readiness_evaluation
+    enqueue_readiness_evaluation
+  end
+
   def readiness_settings_changed?
     saved_change_to_tdd_mode? || saved_change_to_screenshot_settings?
+  end
+
+  # @spec PROJECT-READINESS-006
+  def readiness_evaluation_required?
+    tdd_mode.in?(Projects::Readiness::Rules::Tdd::REQUIRING_MODES) || verification_enabled?
   end
 
   def full_name
