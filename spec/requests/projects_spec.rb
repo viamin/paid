@@ -292,6 +292,25 @@ RSpec.describe "Projects" do
     end
   end
 
+  describe "project dashboard metrics" do
+    before { sign_in user }
+
+    # @spec PROJECT-DASHBOARD-METRICS-001
+    it "shows cached metrics to a project viewer" do
+      project = create(:project, account: account, github_token: github_token)
+      allow(ProjectDashboardMetrics::Snapshot).to receive(:fetch).with(project: project).and_return(
+        average_merge_seconds: 7200, average_ci_seconds: 600, average_tokens_per_pr: 12_345
+      )
+
+      get project_path(project)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Average merge time", "2h 0m")
+      expect(response.body).to include("Average CI time", "10m 0s")
+      expect(response.body).to include("Average tokens per PR", "12,345")
+    end
+  end
+
   describe "merge notification subscriptions" do
     let(:project) { create(:project, account: account, github_token: github_token) }
     let(:issue) { create(:issue, project: project, github_number: 14, title: "Fix flaky spec") }

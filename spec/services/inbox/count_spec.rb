@@ -29,6 +29,19 @@ RSpec.describe Inbox::Count do
   end
 
   describe ".call" do
+    # @spec INBOX-PHASE-RELEVANCE-009
+    it "excludes personally removed requests while the phase rollout is off" do
+      allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))
+      create(:issue, :needs_input, project:, github_state: "open",
+        needs_input_questions: [ "Which behavior?" ])
+      entry = Inbox::Queue.call(user:).first
+
+      Inbox::Removals::Remove.call(entry:, user:)
+
+      expect(described_class.call(user:)).to eq(0)
+      expect(Inbox::Queue.call(user:)).to be_empty
+    end
+
     # @spec DESIGN-RECONCILIATION-001
     it "counts open traceability gaps and invalidates after resolution" do
       finding = create(:design_artifact_finding, project: project, account: account)
@@ -424,6 +437,7 @@ RSpec.describe Inbox::Count do
 
     # @spec OPERATOR-INBOX-002B
     it "batch-preloads subject projects for action_required instead of querying per row" do
+      described_class.call(user: user)
       create_agent_run_blocking_notification(github_number: 100)
       single_row_queries = count_queries { described_class.call(user: user) }
 
@@ -702,6 +716,53 @@ RSpec.describe Inbox::Count do
 
       expect(described_class.call(user:)).to eq(1)
       expect(Inbox::Queue.call(user:, kind: Inbox::Queue::PROJECT_SETUP_PENDING_KIND).map(&:project)).to eq([ project ])
+    end
+  end
+
+  # @spec INBOX-PHASE-RELEVANCE-005 @spec INBOX-PHASE-RELEVANCE-009
+  describe "phase relevance and personal removal" do
+    let(:issues) do
+      Array.new(2) do
+        create(:issue, :needs_input, project: project, github_state: "open",
+          needs_input_questions: [ "Which behavior?" ])
+      end
+    end
+
+    before do
+      allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))
+      FeatureFlags.enable!(:automation_phases, project: project)
+      project.update!(
+        Automation::PhaseSettings::SETTINGS_KEY => {
+          Automation::PhaseSettings::PHASES_KEY => { "issue_preparation" => false },
+          Automation::PhaseSettings::RELEASE_KEY => false,
+          Automation::PhaseSettings::DEPLOYMENT_KEY => false
+        }
+      )
+      issues
+    end
+
+    it "agrees with the list about requests held back by a disabled phase" do
+      expect(described_class.call(user: user)).to eq(0)
+      expect(Inbox::Queue.call(user: user)).to be_empty
+      expect(Inbox::Queue.call(user: user, scope: Inbox::Queue::DISABLED_PHASES_SCOPE).size).to eq(2)
+    end
+
+    it "agrees with the list about personally removed requests" do
+      configure_issue_preparation
+      entry = Inbox::Queue.call(user: user).first
+      Inbox::Removals::Remove.call(entry:, user:)
+
+      expect(described_class.call(user: user)).to eq(Inbox::Queue.call(user: user).size)
+    end
+
+    def configure_issue_preparation
+      project.update!(
+        Automation::PhaseSettings::SETTINGS_KEY => {
+          Automation::PhaseSettings::PHASES_KEY => { "issue_preparation" => true },
+          Automation::PhaseSettings::RELEASE_KEY => false,
+          Automation::PhaseSettings::DEPLOYMENT_KEY => false
+        }
+      )
     end
   end
 end

@@ -66,4 +66,24 @@ RSpec.describe ModelSelection do
       expect(described_class.escalated).to contain_exactly(escalated)
     end
   end
+
+  # AUTO-PICK-QUEUE-011 resolves tier feasibility over the whole
+  # LlmModel::TIERS catalog rather than over the tiers candidate issues
+  # happen to have pinned, so a persisted tier outside that catalog would
+  # never be reported infeasible. The catalog is the load-bearing side of
+  # that assumption; this keeps it from drifting from the constraint that
+  # actually bounds stored tiers.
+  # @spec MODEL-SELECTION-004 AUTO-PICK-QUEUE-011
+  describe "persisted tier constraint" do
+    let(:constraint) do
+      ActiveRecord::Base.connection
+        .check_constraints(described_class.table_name)
+        .find { |check| check.name == "model_selections_tier_check" }
+    end
+
+    it "constrains stored tiers to LlmModel::TIERS" do
+      expect(constraint).to be_present
+      expect(constraint.expression.scan(/'([^']*)'::character varying/).flatten).to eq(LlmModel::TIERS)
+    end
+  end
 end

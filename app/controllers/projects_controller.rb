@@ -22,8 +22,10 @@ class ProjectsController < ApplicationController
   end
 
   # @spec DEPENDABOT-COVERAGE-001
+  # @spec PROJECT-DASHBOARD-METRICS-001
   def show
     authorize @project
+    @dashboard_metrics = ProjectDashboardMetrics::Snapshot.fetch(project: @project)
     @open_dependabot_alert_coverages = @project.dependabot_alert_coverages
       .where(alert_state: "open")
       .order(last_detected_at: :desc)

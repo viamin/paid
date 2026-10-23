@@ -65,6 +65,8 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
   describe "#execute" do
     it "returns sufficient_context: true for a well-described issue with knowledge context" do
+      grant = create(:work_item_continuation_grant, project:, issue:,
+        start_phase: "issue_preparation", endpoint: "issue_preparation")
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result).to include(
@@ -76,9 +78,13 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       )
       expect(agent_run.reload.status).to eq("completed")
       expect(issue.reload.paid_state).to eq("analyzed")
+      expect(grant.reload).to be_completed
     end
 
-    it "returns sufficient_context: false for a vague issue with no knowledge match" do
+    # @spec AUTOMATION-PHASES-008
+    it "keeps an issue-preparation grant active when context is insufficient" do
+      grant = create(:work_item_continuation_grant, project:, issue:,
+        start_phase: "issue_preparation", endpoint: "issue_preparation")
       allow(Knowledge::Search).to receive(:call).and_return(results: [], meta: {})
       allow(Knowledge::ContextBundle::Build).to receive(:call).and_return(
         content: "", sections: [], total_tokens: 0
@@ -97,6 +103,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       expect(result[:missing_context_areas]).to include("acceptance criteria", "affected components")
       expect(agent_run.reload.status).to eq("completed")
       expect(issue.reload.paid_state).to eq("analyzed")
+      expect(grant.reload).to be_active
     end
 
     it "raises a non-retryable error when the LLM returns malformed JSON" do

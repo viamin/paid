@@ -91,6 +91,19 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       expect(result.success?).to be(true)
       expect(result.request.id).to eq(existing.id)
     end
+
+    it "refuses rather than reusing an open acceptance-audit request" do
+      merged_partial_pr(number: 12)
+      audit = Issues::RequestAcceptanceAudit.call(issue: issue, actor: user)
+
+      result = request_continuation(reason: "Continue the remaining implementation now.")
+
+      expect(result.success?).to be(false)
+      expect(result.code).to eq(:conflicting_open_request)
+      expect(result.message).to include("acceptance audit")
+      expect(issue.agent_runs.count).to eq(1)
+      expect(audit.request.reload.status).to eq("queued")
+    end
   end
 
   describe "refusals" do

@@ -70,6 +70,38 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     expect(status.unresolved_prerequisites).to include("#44")
   end
 
+  # @spec PARTIAL-CLOSEOUT-026
+  it "orders batched prerequisites exactly like the singleton path, numerically by PR number" do
+    merged_partial_pr(number: 12)
+    create(:issue_dependency, issue: issue, depends_on_issue: create(:issue, project: project, github_state: "open", github_number: 10))
+    create(:issue_dependency, issue: issue, depends_on_issue: create(:issue, project: project, github_state: "open", github_number: 9))
+
+    inputs = described_class.inputs_for([ issue ])
+    batched = described_class.call(issue, eligible_issue_ids: [], continuation_eligible_issue_ids: [], inputs: inputs)
+    singleton = described_class.call(issue, eligible_issue_ids: [], continuation_eligible_issue_ids: [])
+
+    expect(inputs.prerequisites_by_issue_id[issue.id]).to eq([ "#9", "#10" ])
+    expect(batched.unresolved_prerequisites).to eq(singleton.unresolved_prerequisites)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-026
+  it "surfaces the same feature-hold denial as the singleton path when several links are held" do
+    merged_partial_pr(number: 12)
+    revising = create(:feature_intent, project: project, status: "revising")
+    create(:feature_intent_issue, feature_intent: revising, issue: issue)
+    unreleased = create(:feature_intent, project: project, status: "approved_waiting_for_merge")
+    create(:feature_intent_issue, feature_intent: unreleased, issue: issue)
+
+    inputs = described_class.inputs_for([ issue ])
+    batched = described_class.call(issue, eligible_issue_ids: [], continuation_eligible_issue_ids: [], inputs: inputs)
+    singleton = described_class.call(issue, eligible_issue_ids: [], continuation_eligible_issue_ids: [])
+
+    expect(inputs.feature_links_by_issue_id[issue.id].map(&:id)).to eq(inputs.feature_links_by_issue_id[issue.id].map(&:id).sort)
+    expect(batched.blocker_codes).to eq([ :feature_held ])
+    expect(batched.reason).to eq(singleton.reason)
+    expect(batched.reason).to include("revising")
+  end
+
   it "explains an active issue-analysis backoff as the continuation blocker" do
     merged_partial_pr(number: 12)
     issue.update_columns(

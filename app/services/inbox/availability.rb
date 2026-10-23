@@ -13,6 +13,7 @@ module Inbox
   # @spec INBOX-FOUNDATION-010
   class Availability
     CACHE_TTL = 90.seconds
+    ROLLOUT_PROBE_TTL = 30.seconds
 
     def self.call(...)
       new(...).call
@@ -27,6 +28,20 @@ module Inbox
 
     def call
       self
+    end
+
+    # @spec INBOX-PHASE-RELEVANCE-005
+    # When any visible project runs the phase model, or the user has personally
+    # removed a request, the matrix is derived from the same scope-filtered
+    # queue the list renders. Personal removal is independent of rollout.
+    def governed?
+      return false if @entries
+
+      governed_project_ids.any? || personal_removals?
+    end
+
+    def governed_entries
+      @governed_entries ||= Inbox::Queue.call(user: user)
     end
 
     # Kind => count, scoped to the active project filter (if any). Only
@@ -101,7 +116,7 @@ module Inbox
     # project_counts, total_count, project_ids_for, kinds_for), so it is the
     # single thing worth caching.
     def matrix
-      # @spec OPERATOR-INBOX-016
+      # @spec OPERATOR-INBOX-016 @spec INBOX-PHASE-RELEVANCE-005
       if @entries
         return @matrix ||= Inbox::Queue::KINDS.index_with do |entry_kind|
           @entries.select { |entry| entry.kind == entry_kind }.map { |entry| entry.project.id }.tally
@@ -109,8 +124,30 @@ module Inbox
       end
 
       @matrix ||= Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) do
-        Inbox::Queue::KINDS.index_with { |k| count_by_project(k) }
+        if governed?
+          matrix_from(governed_entries)
+        else
+          Inbox::Queue::KINDS.index_with { |k| count_by_project(k) }
+        end
       end
+    end
+
+    def matrix_from(entries)
+      Inbox::Queue::KINDS.index_with do |entry_kind|
+        entries.select { |entry| entry.kind == entry_kind }.filter_map { |entry| entry.project&.id }.tally
+      end
+    end
+
+    def governed_project_ids
+      @governed_project_ids ||= Rails.cache.fetch(
+        "inbox/availability/governed/#{user.id}", expires_in: ROLLOUT_PROBE_TTL
+      ) do
+        Automation::RolloutGuard.enabled_project_ids(visible_project_ids).sort
+      end
+    end
+
+    def personal_removals?
+      InboxRemoval.active.where(user: user).exists?
     end
 
     def count_by_project(entry_kind)
@@ -266,7 +303,7 @@ module Inbox
     end
 
     def cache_key
-      "inbox/availability/#{user.account_id}/#{user.id}/#{Dashboard::CacheVersion.current(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)}"
+      "inbox/availability/#{user.account_id}/#{user.id}/#{Dashboard::CacheVersion.current(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)}/#{governed_project_ids.join("-")}"
     end
   end
 end

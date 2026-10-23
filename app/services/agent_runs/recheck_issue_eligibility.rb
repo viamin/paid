@@ -18,6 +18,18 @@ module AgentRuns
   # runs have nothing to recheck, and review goals are PR-scoped with
   # their own retry/limit handling.
   class RecheckIssueEligibility
+    # RDR-077: goal -> automation capability, so the dequeue recheck asks the
+    # same effective policy the entry points asked when the run was created.
+    # @spec AUTOMATION-PHASES-013
+    PHASE_CAPABILITIES = {
+      "create_pr" => "auto_pick",
+      "review" => "auto_scan_prs",
+      "enhance_issue" => "auto_enhance",
+      "analyze_issue" => "auto_enhance",
+      "create_feature" => "create_feature",
+      "create_issue" => "auto_pick"
+    }.freeze
+
     def self.call(...)
       new(...).call
     end
@@ -29,6 +41,7 @@ module AgentRuns
     # Returns true when the run was cancelled because its issue is no
     # longer eligible; false when the run should proceed normally.
     def call # @spec EAGER-QUEUE-005 ISSUE-ENHANCEMENT-018
+      return cancel_phase_unauthorized_run if phase_revoked?
       return cancel_feature_held_run if feature_held?
       return recheck_continuation if continuation_run?
       return recheck_automatic_enhancement_hold if automatic_enhancement_recheck?
@@ -41,6 +54,35 @@ module AgentRuns
     private
 
     attr_reader :agent_run
+
+    # Authorization is rechecked before queued work starts. Disabling a phase
+    # or revoking a grant prevents the queued run from starting; it never
+    # terminates a run that already started, and manual runs keep the
+    # authorization their explicit start carried.
+    # @spec AUTOMATION-PHASES-013
+    def phase_revoked?
+      return false unless agent_run.automatic?
+      return false unless Automation::RolloutGuard.enabled?(agent_run.project)
+
+      capability = PHASE_CAPABILITIES[agent_run.goal]
+      return false if capability.nil?
+
+      policy = Automation::EffectivePolicy.call(
+        project: agent_run.project,
+        phase: Automation::Phases.for_capability(capability),
+        work_item: agent_run,
+        trigger: :automatic
+      )
+      return false if policy.permitted?
+
+      @phase_policy = policy
+      true
+    end
+
+    def cancel_phase_unauthorized_run
+      cancel_run(reason: "Authorization for #{agent_run.goal} was withdrawn before the run started " \
+                         "(#{@phase_policy.reason}); it will be re-seeded when the phase permits it again")
+    end
 
     def continuation_run?
       agent_run.continuation_request_id.present? && agent_run.issue_id.present?

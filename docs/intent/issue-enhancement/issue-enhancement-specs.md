@@ -283,20 +283,20 @@
   Codex) MAY wrap the agent's final message inside a JSONL transcript, where
   the delimiter's newlines are escaped within a JSON string field and the
   runner's own turn-selection logic MAY prefer an earlier progress message
-  over the true final one. Extraction SHALL decode each transcript event's
-  own message text and select the last delimiter match found across the
+  over the true final one. Extraction SHALL restore a JSONL separator after
+  every complete persisted JSON event that lacks a trailing newline, while
+  leaving incomplete records contiguous as genuinely split stream chunks and
+  preserving plain-text output. It SHALL decode each transcript event's own
+  message text and select the last delimiter match found across the
   transcript, rather than depending on the runner-selected "final" message.
-  When the parse path fails even though the raw output demonstrably
-  contained a delimited payload that satisfies the structured-output
-  contract — i.e. Paid discarded a valid payload — the run SHALL still
-  fail non-retryably and move the issue to `manual_review`
-  (ISSUE-ENHANCEMENT-002), but SHALL refund the enhancement round consumed
-  at queue time (ISSUE-ENHANCEMENT-011) — which only automatic runs
-  consume, so manual runs SHALL NOT refund a round — so a Paid-side
-  extraction defect does not burn round budget meant to bound repeated
-  automatic re-evaluation. A delimited payload that is itself malformed
-  JSON or omits the required keys is an agent contract failure, not an
-  extraction defect, and SHALL consume the round.
+  A retained, valid final payload found by this bounded extraction SHALL
+  complete the enhancement normally without an agent rerun, duplicate
+  publication, or manual-review stop notice. A delimited payload that is
+  malformed JSON or omits required keys is an agent contract failure and
+  SHALL fail non-retryably into `manual_review` (ISSUE-ENHANCEMENT-002). If
+  the selected payload is invalid despite a different recognized valid
+  payload, the system SHALL retain the existing automatic-round refund
+  (ISSUE-ENHANCEMENT-011) but SHALL NOT publish the superseded payload.
   *Tests:* `spec/temporal/activities/enhance_issue_activity_spec.rb`.
   *Code:* `app/temporal/activities/enhance_issue_activity.rb#enhance_issue_post_run`,
   `app/temporal/activities/enhance_issue_activity.rb#delimited_payload`,

@@ -81,6 +81,18 @@ RSpec.describe ChatSessions::RecordTransportAttempt do
     expect(attempt.token_usage.cost_cents).to eq(2)
   end
 
+  # @spec CHAT-THINKING-EFFORT-004 CHAT-THINKING-EFFORT-008
+  it "records the effective reasoning effort reported by the transport" do
+    attempt = described_class.call(
+      chat_session:,
+      actor:,
+      message:,
+      report: attempt_report.merge(reasoning_effort: "high")
+    )
+
+    expect(attempt.metadata).to include("reasoning_effort" => "high")
+  end
+
   def attempt_report(number: 1, status: :succeeded, usage: { input_tokens: 120, output_tokens: 30, cache_read_tokens: 15, cache_write_tokens: 5 },
     cost: { total: "0.01234", currency: "USD", source: :provider_reported, priced_at: Time.current })
     {

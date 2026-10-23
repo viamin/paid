@@ -228,6 +228,15 @@ RSpec.describe "ChatSessions" do
         expect(response.parsed_body["container_capability"]).to eq("none")
       end
 
+      # @spec CHAT-THINKING-EFFORT-006
+      it "rejects a directly submitted thinking effort the transport cannot carry" do
+        expect {
+          post chat_sessions_path(format: :json), params: { container_capability: "none", thinking_effort: "high" }
+        }.not_to change(ChatSession, :count)
+
+        expect(response).to have_http_status(:unprocessable_entity)
+      end
+
       it "maps legacy api mode to inline-only sessions" do
         # @spec CHAT-API-001
         post chat_sessions_path(format: :json), params: { mode: "api", title: "Legacy API Chat" }
@@ -542,6 +551,22 @@ RSpec.describe "ChatSessions" do
           expect(form["data-action"]).to include("change->chat#saveSettings")
           expect(form["data-action"]).to include("turbo:submit-end->chat#settingsSubmitted")
         end
+      end
+
+      # @spec CHAT-THINKING-EFFORT-002
+      it "renders the thinking effort selector when the model and transport support it" do
+        runner = create_openai_chat_runner
+        model = LlmModel.find_by!(model_id: "gpt-5.6-luna")
+        model.update!(metadata: { "supports_reasoning" => true, "reasoning_effort_values" => %w[low high] })
+        chat_session.update!(runner: runner, model: model.model_id)
+        allow(ChatSessions::BuildLlmClient::HttpClient).to receive(:reasoning_effort_transport_supported?).and_return(true)
+
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        selects = Nokogiri::HTML(response.body).xpath("//select[@name='chat_session[thinking_effort]']")
+        expect(selects).not_to be_empty
+        expect(selects).to all(satisfy { |select| select.at_xpath(".//option[@value='high']") })
       end
 
       it "lists only curated Low, Medium, and High choices for each runner" do
@@ -1095,6 +1120,18 @@ RSpec.describe "ChatSessions" do
         expect(runner_model_options).not_to include("OpenAI Codex CLI — Low: gpt-5.6-luna")
       end
 
+      # @spec CHAT-THINKING-EFFORT-001
+      it "keeps the thinking effort control hidden while the transport cannot carry reasoning effort" do
+        get chat_session_path(chat_session)
+
+        expect(response).to have_http_status(:ok)
+        doc = Nokogiri::HTML(response.body)
+        field = doc.at_css("[data-chat-thinking-effort-target='field']")
+
+        expect(field).to be_present
+        expect(field["hidden"]).to be_present
+      end
+
       it "renders mobile archive controls without expanding the sidebar by default" do
         get chat_session_path(chat_session)
 
@@ -1373,6 +1410,36 @@ RSpec.describe "ChatSessions" do
         expect(chat_session.reload.model).to eq("gpt-4o")
       end
 
+      # @spec CHAT-THINKING-EFFORT-002 CHAT-THINKING-EFFORT-005
+      it "leaves default thinking effort absent when a model-only update changes the effective model" do
+        system_message = create(:chat_message, chat_session: chat_session, role: "system", content: "Existing system message")
+
+        expect {
+          patch chat_session_path(chat_session, format: :json), params: { model: "gpt-4o" }
+        }.not_to change { system_message.reload.updated_at }
+
+        expect(chat_session.reload.metadata).not_to have_key("thinking_effort")
+      end
+
+      # @spec CHAT-THINKING-EFFORT-005 CHAT-THINKING-EFFORT-006
+      it "normalizes a metadata-borne unsupported thinking effort against the current model" do
+        patch chat_session_path(chat_session, format: :json), params: { metadata: { thinking_effort: "ultra" } }
+
+        aggregate_failures do
+          expect(response).to have_http_status(:ok)
+          expect(response.parsed_body["thinking_effort"]).to be_nil
+          expect(chat_session.reload.metadata).not_to have_key("thinking_effort")
+        end
+      end
+
+      # @spec CHAT-THINKING-EFFORT-006
+      it "rejects a directly submitted unsupported thinking effort" do
+        patch chat_session_path(chat_session, format: :json), params: { thinking_effort: "ultra" }
+
+        expect(response).to have_http_status(:unprocessable_entity)
+        expect(chat_session.reload.metadata).not_to have_key("thinking_effort")
+      end
+
       it "updates the auto-approve flag and echoes it in the response" do
         patch chat_session_path(chat_session, format: :json), params: { auto_approve: "true" }
 
@@ -1412,6 +1479,18 @@ RSpec.describe "ChatSessions" do
 
         expect(response).to have_http_status(:no_content)
         expect(chat_session.reload).to have_attributes(runner_id: runner.id, model: "gpt-5.6-terra")
+      end
+
+      # @spec CHAT-THINKING-EFFORT-005
+      it "removes an unsupported preference when a runner/model selection changes the model" do
+        chat_session.update!(metadata: { "thinking_effort" => "ultra" })
+        runner = create_openai_chat_runner
+        selection = ChatSessions::RunnerModelOptions.options_for([ runner ]).find { |option| option.tier == "mid" }
+
+        patch chat_session_path(chat_session, format: :json), params: { runner_model: selection.value }
+
+        expect(response).to have_http_status(:ok)
+        expect(chat_session.reload.metadata).not_to have_key("thinking_effort")
       end
 
       it "offers the curated choices instead of a runner's configured model" do

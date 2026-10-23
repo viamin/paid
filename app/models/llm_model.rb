@@ -85,6 +85,18 @@ class LlmModel < ApplicationRecord
       Array(metadata["supported_parameters"]).map(&:to_s).include?("reasoning")
   end
 
+  # Allowed reasoning/thinking-effort values for this model, most permissive
+  # first. The catalog row must declare the values: a reasoning capability
+  # without an effort-value contract is insufficient to expose a control.
+  # This avoids assuming a Paid-wide provider enum for models whose supported
+  # levels differ or are unknown.
+  # @spec CHAT-THINKING-EFFORT-001
+  def reasoning_effort_values
+    return [] unless reasoning_supported?
+
+    Array(metadata["reasoning_effort_values"]).map(&:to_s).presence || []
+  end
+
   def expired?
     expires_at.present? && expires_at <= Time.current
   end
