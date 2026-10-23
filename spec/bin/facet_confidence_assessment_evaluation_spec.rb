@@ -84,7 +84,7 @@ RSpec.describe "bin/facet-confidence-assessment-evaluation" do # rubocop:disable
     _stdout, stderr, status = run_cli("compile", "--corpus", corpus, "--ledger", ledger)
 
     expect(status.exitstatus).to eq(2)
-    expect(stderr).to include("pending operator input: every corpus case needs at least one assessment run")
+      expect(stderr).to include("pending operator input: every corpus case needs a non-failed assessment verdict")
   end
 
   it "compiles the outcome worksheet for a fully covered ledger" do

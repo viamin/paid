@@ -21,8 +21,8 @@ module FacetConfidence
     def metrics(corpus_path:, ledger_path:)
       evaluation = AssessmentCorpusLedger.evaluate(corpus_path:, ledger_path:)
       latest = evaluation.to_h { |id, entry| [ id, { case: entry.fetch(:case), run: entry.fetch(:runs).last } ] }
-      assessed = latest.values.count { |entry| entry[:run] }
       verdicts = latest.select { |_id, entry| entry[:run] && entry[:run].fetch("status") != FAILED_RUN_STATUS }
+      assessed = verdicts.length
 
       {
         corpus_version: AssessmentCorpusLedger.corpus_version_of(corpus_path),
@@ -45,7 +45,7 @@ module FacetConfidence
     def compile(corpus_path:, ledger_path:)
       metrics = metrics(corpus_path:, ledger_path:)
       coverage = metrics.fetch(:coverage)
-      raise AssessmentCorpusLedger::PendingOperatorInput, "pending operator input: every corpus case needs at least one assessment run" unless coverage[:assessed] == coverage[:total]
+      raise AssessmentCorpusLedger::PendingOperatorInput, "pending operator input: every corpus case needs a non-failed assessment verdict" unless coverage[:assessed] == coverage[:total]
 
       format(WORKSHEET_TEMPLATE,
         corpus_version: metrics.fetch(:corpus_version),

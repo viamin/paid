@@ -73,7 +73,8 @@ RSpec.describe FacetConfidence::AssessmentOutcomeReport do
       write_events!(
         run_event("FC-CORPUS-01", status: "completed", intent_score: 85, technical_score: 82),
         correction_event("FC-CORPUS-01", input_revision: 3),
-        run_event("FC-CORPUS-01", event_id: "run-FC-CORPUS-01-r2", input_revision: 3, status: "completed", intent_score: 40, technical_score: 45))
+        run_event("FC-CORPUS-01", event_id: "run-FC-CORPUS-01-r2", input_revision: 3, status: "completed", intent_score: 40, technical_score: 45,
+          evidence_references: run_references + [ "correction-FC-CORPUS-01" ]))
 
       metrics = described_class.metrics(corpus_path: corpus, ledger_path: ledger)
 
@@ -123,6 +124,18 @@ RSpec.describe FacetConfidence::AssessmentOutcomeReport do
       expect(metrics[:tuning_gate]).to eq("blocked_incomplete_coverage")
     end
 
+    it "does not count failed runs as quality coverage for threshold or rubric tuning" do
+      write_events!(*[ not_ready_case, decisive_case, ready_case, boundary_case, *filler_cases ].map do |corpus_case|
+        run_event(corpus_case.fetch("id"), status: "failed")
+      end)
+
+      metrics = described_class.metrics(corpus_path: corpus, ledger_path: ledger)
+
+      expect(metrics[:coverage]).to eq(assessed: 0, total: 8)
+      expect(metrics[:operational_failures][:count]).to eq(8)
+      expect(metrics[:tuning_gate]).to eq("blocked_incomplete_coverage")
+    end
+
     it "requires tuning proposals to cite the recorded metrics once coverage is complete" do
       write_events!(
         run_event("FC-CORPUS-01", status: "completed", intent_score: 40, technical_score: 45),
@@ -142,7 +155,7 @@ RSpec.describe FacetConfidence::AssessmentOutcomeReport do
       write_events!(run_event("FC-CORPUS-01", status: "unknown"))
 
       expect { described_class.compile(corpus_path: corpus, ledger_path: ledger) }
-        .to raise_error(FacetConfidence::AssessmentCorpusLedger::PendingOperatorInput, /every corpus case needs at least one assessment run/)
+        .to raise_error(FacetConfidence::AssessmentCorpusLedger::PendingOperatorInput, /every corpus case needs a non-failed assessment verdict/)
     end
 
     it "compiles the repository-visible outcome worksheet with every required measure" do
@@ -176,7 +189,8 @@ RSpec.describe FacetConfidence::AssessmentOutcomeReport do
       expect(described_class.metrics(corpus_path: corpus, ledger_path: ledger)[:false_readiness][:count]).to eq(0)
 
       write_events!(correction_event("FC-CORPUS-04", input_revision: 3),
-        run_event("FC-CORPUS-04", event_id: "run-boundary-80", input_revision: 3, status: "completed", intent_score: 80, technical_score: 80))
+        run_event("FC-CORPUS-04", event_id: "run-boundary-80", input_revision: 3, status: "completed", intent_score: 80, technical_score: 80,
+          evidence_references: run_references + [ "correction-FC-CORPUS-04" ]))
       expect(described_class.metrics(corpus_path: corpus, ledger_path: ledger)[:false_readiness][:count]).to eq(1)
     end
   end
@@ -191,12 +205,12 @@ RSpec.describe FacetConfidence::AssessmentOutcomeReport do
     events.each { |event| FacetConfidence::AssessmentCorpusLedger.append!(ledger_path: ledger, event: event, corpus_path: corpus) }
   end
 
-  def run_event(case_id, event_id: "run-#{case_id}", input_revision: 2, status:, intent_score: nil, technical_score: nil)
-    { "event_id" => event_id, "recorded_at" => "2026-10-23T09:00:00Z", "type" => "assessment_run", "case_id" => case_id,
+  def run_event(case_id, status:, **attributes)
+    { "event_id" => attributes.fetch(:event_id, "run-#{case_id}"), "recorded_at" => "2026-10-23T09:00:00Z", "type" => "assessment_run", "case_id" => case_id,
       "corpus_version" => "facet-confidence-corpus-v1", "rubric_version" => "facet-confidence-v1",
-      "model_version" => "claude-sonnet-4-6", "input_revision" => input_revision, "status" => status,
-      "intent_score" => intent_score, "technical_score" => technical_score,
-      "evidence_references" => run_references, "cost_cents" => 100 }
+      "model_version" => "claude-sonnet-4-6", "input_revision" => attributes.fetch(:input_revision, 2), "status" => status,
+      "intent_score" => attributes[:intent_score], "technical_score" => attributes[:technical_score],
+      "evidence_references" => attributes.fetch(:evidence_references, run_references), "cost_cents" => 100 }
   end
 
   def correction_event(case_id, input_revision:)
