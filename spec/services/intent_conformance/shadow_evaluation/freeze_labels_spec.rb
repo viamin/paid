@@ -67,6 +67,18 @@ RSpec.describe IntentConformance::ShadowEvaluation::FreezeLabels do
     expect(call).not_to be_success
   end
 
+  it "fails closed when the manifest changed since the evaluation was created" do
+    label_all!(evaluation)
+    File.write(manifest_path, { "cases" => cases + [ corpus_case("A-03") ] }.to_yaml)
+
+    result = call
+
+    expect(result).not_to be_success
+    expect(result.error).to include("manifest changed")
+    expect(evaluation.reload).to be_labeling
+    expect(evaluation.labels_frozen_at).to be_nil
+  end
+
   it "applies the same shared validation as the CLI ledger" do
     label_all!(evaluation)
     allow(IntentConformance::ShadowEvaluationPolicy).to receive(:validate_reference_labels!).and_call_original

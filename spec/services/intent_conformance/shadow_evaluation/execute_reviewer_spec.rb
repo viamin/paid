@@ -82,6 +82,17 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     end
   end
 
+  it "fails closed when the manifest changed since labels were frozen" do
+    prepare_frozen!
+    File.write(manifest_path, { "cases" => cases + [ corpus_case("A-03") ] }.to_yaml)
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).not_to be_success
+    expect(result.error).to include("manifest changed")
+    expect(evaluation.runs).to be_empty
+  end
+
   it "fails closed when a case's repository is outside the project" do
     evaluation
     other_case = corpus_case("A-03", "repository" => "someone/else")

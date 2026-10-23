@@ -32,6 +32,7 @@ module IntentConformance
 
       def call
         return failure("reviewer execution requires a frozen reference label set") unless @evaluation.answers_visible?
+        return failure("corpus manifest changed since reference labels were frozen — start a new evaluation") unless @evaluation.corpus.matches_recorded_digest?
         return failure("no corpus cases to evaluate") if @evaluation.corpus.case_ids.empty?
 
         @evaluation.update!(status: "executing", execute_started_at: Time.current)

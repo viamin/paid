@@ -24,6 +24,7 @@ module IntentConformance
       def call
         return failure("reference labels are already frozen") unless @evaluation.labeling?
         return failure("only the declared solo maintainer may freeze the reference set") unless @actor&.id == @evaluation.solo_maintainer_id
+        return failure("corpus manifest changed since the evaluation was created — start a new evaluation") unless @evaluation.corpus.matches_recorded_digest?
 
         cases = @evaluation.corpus.cases
         ShadowEvaluationPolicy.validate_reference_labels!(cases: cases, labels: serialized_labels, declaration: declaration)
