@@ -30,8 +30,8 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     { files: files }
   end
 
-  def llm_response(outcome)
-    instance_double(AgentHarness::Response, success?: true, model: "claude-sonnet-4-6",
+  def llm_response(outcome, model: "claude-sonnet-4-6")
+    instance_double(AgentHarness::Response, success?: true, model: model,
       output: { outcome: outcome, cited_design_claims: [ "blue" ], cited_diff_locations: [ { "file" => "app/models/widget.rb", "note" => "color" } ], reasoning_summary: "ok" }.to_json,
       metadata: { cost_cents: 42 })
   end
@@ -76,6 +76,64 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     expect(runs["A-01"].prompt_digest).to be_present
   end
 
+  it "executes the reviewer pinned by the manifest" do
+    manifest_path = write_corpus_manifest(dir, cases, "reviewer" => {
+      "model" => "claude-opus-4-6",
+      "prompt_version" => IntentConformance::ReviewerLlm::PROMPT_VERSION,
+      "prompt_sha256" => Digest::SHA256.hexdigest(IntentConformance::ReviewerLlm::PROMPT)
+    })
+    pinned_evaluation = create(:intent_conformance_shadow_evaluation, project: project, solo_maintainer: owner, created_by: owner,
+      manifest_path: manifest_path, manifest_digest: Digest::SHA256.file(manifest_path).hexdigest)
+    label_all!(pinned_evaluation)
+    freeze!(pinned_evaluation)
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message).and_return(llm_response("within_scope", model: "claude-opus-4-6"))
+
+    result = described_class.call(evaluation: pinned_evaluation)
+
+    expect(result).to be_success
+    expect(AgentHarness).to have_received(:send_message).with(anything, hash_including(model: "claude-opus-4-6")).twice
+    expect(pinned_evaluation.runs.pluck(:reviewer_model)).to all(eq("claude-opus-4-6"))
+  end
+
+  it "refuses an unexecutable manifest reviewer identity before invoking the reviewer" do
+    manifest_path = write_corpus_manifest(dir, cases, "reviewer" => {
+      "model" => "claude-opus-4-6",
+      "prompt_version" => "retired-reviewer-prompt",
+      "prompt_sha256" => "stale-prompt-digest"
+    })
+    pinned_evaluation = create(:intent_conformance_shadow_evaluation, project: project, solo_maintainer: owner, created_by: owner,
+      manifest_path: manifest_path, manifest_digest: Digest::SHA256.file(manifest_path).hexdigest)
+    label_all!(pinned_evaluation)
+    freeze!(pinned_evaluation)
+    allow(AgentHarness).to receive(:send_message)
+
+    result = described_class.call(evaluation: pinned_evaluation)
+
+    expect(result).not_to be_success
+    expect(result.error).to include("prompt version")
+    expect(AgentHarness).not_to have_received(:send_message)
+  end
+
+  it "does not count a response from a different model as an evaluated verdict" do
+    manifest_path = write_corpus_manifest(dir, cases, "reviewer" => {
+      "model" => "claude-opus-4-6",
+      "prompt_version" => IntentConformance::ReviewerLlm::PROMPT_VERSION,
+      "prompt_sha256" => Digest::SHA256.hexdigest(IntentConformance::ReviewerLlm::PROMPT)
+    })
+    pinned_evaluation = create(:intent_conformance_shadow_evaluation, project: project, solo_maintainer: owner, created_by: owner,
+      manifest_path: manifest_path, manifest_digest: Digest::SHA256.file(manifest_path).hexdigest)
+    label_all!(pinned_evaluation)
+    freeze!(pinned_evaluation)
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message).and_return(llm_response("within_scope"))
+
+    result = described_class.call(evaluation: pinned_evaluation)
+
+    expect(result.failed).to eq(2)
+    expect(pinned_evaluation.runs).to all(have_attributes(verdict: "not_evaluated", failure_reason: "reviewer_model_mismatch", reviewer_model: "claude-sonnet-4-6", cost_cents: 42))
+  end
+
   it "records missing or failed reviewer output as not_evaluated, never as agreement" do
     prepare_frozen!
     allow(github_client).to receive(:compare_summary).and_return(comparison)
@@ -108,7 +166,7 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     evaluation
     other_case = corpus_case("A-03", "repository" => "someone/else")
     v2_path = File.join(dir, "corpus-manifest-v2.yml")
-    File.write(v2_path, { "cases" => [ corpus_case("A-01"), other_case ] }.to_yaml)
+    File.write(v2_path, { "cases" => [ corpus_case("A-01"), other_case ], "reviewer" => reviewer_identity }.to_yaml)
     evaluation.update!(manifest_path: v2_path, manifest_digest: Digest::SHA256.file(v2_path).hexdigest)
     label_all!(evaluation)
     freeze!(evaluation)

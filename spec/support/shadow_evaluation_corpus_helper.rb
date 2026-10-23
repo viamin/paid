@@ -32,8 +32,16 @@ module ShadowEvaluationCorpusHelper
 
   def write_corpus_manifest(dir, cases, extra = {})
     path = File.join(dir, "corpus-manifest.yml")
-    File.write(path, { "cases" => cases }.merge(extra).to_yaml)
+    File.write(path, { "cases" => cases, "reviewer" => reviewer_identity }.merge(extra).to_yaml)
     path
+  end
+
+  def reviewer_identity
+    {
+      "model" => IntentConformance::ReviewerLlm::DEFAULT_MODEL,
+      "prompt_version" => IntentConformance::ReviewerLlm::PROMPT_VERSION,
+      "prompt_sha256" => Digest::SHA256.hexdigest(IntentConformance::ReviewerLlm::PROMPT)
+    }
   end
 
   def label_all!(evaluation, verdict: "within_scope")

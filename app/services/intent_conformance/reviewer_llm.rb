@@ -21,6 +21,7 @@ module IntentConformance
     include Llm::OutputNormalizer
 
     DEFAULT_MODEL = "claude-sonnet-4-6"
+    PROMPT_VERSION = "review-run-v1"
     TIMEOUT = 60
     LLM_OUTCOMES = %w[within_scope material_drift uncertain].freeze
     MAX_CITED_CLAIMS = 20

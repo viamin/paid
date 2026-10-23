@@ -41,6 +41,8 @@ module IntentConformance
         return failure("reviewer execution requires a frozen reference label set") unless @evaluation.answers_visible?
         return failure("corpus manifest changed since reference labels were frozen — start a new evaluation") unless @evaluation.corpus.matches_recorded_digest?
         return failure("no corpus cases to evaluate") if @evaluation.corpus.case_ids.empty?
+        identity_error = reviewer_identity_error
+        return failure(identity_error) if identity_error
 
         unless try_lock!
           Rails.logger.info(
@@ -117,11 +119,38 @@ module IntentConformance
           base_sha: preparation[:base_sha],
           head_sha: preparation[:head_sha],
           diff: preparation[:diff_entries],
-          verification: "No verification evidence was available."
+          verification: "No verification evidence was available.",
+          model: reviewer_model
         )
         return [ NOT_EVALUATED, result.status.to_s, nil, 0 ] unless result.ok?
+        return [ NOT_EVALUATED, "reviewer_model_mismatch", result.model, result.cost_cents ] unless result.model == reviewer_model
 
         [ result.validated[:outcome], nil, result.model, result.cost_cents ]
+      end
+
+      # A report identifies a specific reviewer configuration, so execution
+      # must neither substitute ReviewerLlm's default model nor run a prompt
+      # whose identity differs from the manifest's frozen provenance.
+      def reviewer_identity_error
+        return "corpus manifest reviewer model is required" if reviewer_model.blank?
+        return "corpus manifest reviewer prompt version is not executable" unless reviewer_prompt_version == ReviewerLlm::PROMPT_VERSION
+        "corpus manifest reviewer prompt digest does not match the executable prompt" unless reviewer_prompt_digest == prompt_digest
+      end
+
+      def reviewer_identity
+        @reviewer_identity ||= @evaluation.corpus.reviewer_identity
+      end
+
+      def reviewer_model
+        reviewer_identity.fetch("model")
+      end
+
+      def reviewer_prompt_version
+        reviewer_identity.fetch("prompt_version")
+      end
+
+      def reviewer_prompt_digest
+        reviewer_identity.fetch("prompt_sha256")
       end
 
       # Structural preparation only (ZFC): pinned identity resolution, diff
