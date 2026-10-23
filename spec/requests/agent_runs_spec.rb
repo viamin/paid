@@ -343,7 +343,10 @@ RSpec.describe "AgentRuns" do
       end
 
       it "sorts agent runs ascending via Ransack sort params" do
-        other_project = create(:project, account: account, github_token: github_token, created_by: user)
+        # Sequenced factory names can substring-collide ("Project 1" inside
+        # "Project 10") and break String#index ordering assertions.
+        other_project = create(:project, account: account, github_token: github_token, created_by: user,
+          name: "Ascending Sort Newer Project")
         create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
         create(:agent_run, project: other_project, agent_type: "claude_code", status: "completed", created_at: 1.day.ago)
 
@@ -354,7 +357,8 @@ RSpec.describe "AgentRuns" do
       end
 
       it "sorts agent runs descending via Ransack sort params" do
-        other_project = create(:project, account: account, github_token: github_token, created_by: user)
+        other_project = create(:project, account: account, github_token: github_token, created_by: user,
+          name: "Descending Sort Newer Project")
         create(:agent_run, project: project, agent_type: "claude_code", status: "completed", created_at: 2.days.ago)
         create(:agent_run, project: other_project, agent_type: "claude_code", status: "completed", created_at: 1.day.ago)
 

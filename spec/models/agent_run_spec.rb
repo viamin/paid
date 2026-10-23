@@ -5318,6 +5318,21 @@ RSpec.describe AgentRun do
       expect(Rails.cache.read(account_key)).to be_nil
       expect(Rails.cache.read(project_key)).to be_nil
     end
+
+    # @spec AGENT-RUNS-INDEX-002
+    it "computes a cache-miss aggregate in one narrow query without eager-load joins" do
+      project = create(:project)
+      create(:agent_run, :completed, project: project, agent_type: "claude_code", goal: "create_pr")
+      scope = described_class.where(project_id: project.id)
+        .includes(:runner, project: [ :created_by, :account ], issue: :project)
+      cache_key = described_class.filter_options_cache_key_for(account_id: project.account_id)
+
+      queries = capture_queries { scope.distinct_filter_options(cache_key: cache_key) }
+
+      aggregate_queries = queries.grep(/SELECT DISTINCT/)
+      expect(aggregate_queries.count).to eq(1)
+      expect(aggregate_queries.first).not_to include("LEFT OUTER JOIN")
+    end
   end
 
   describe "#effective_provider" do
