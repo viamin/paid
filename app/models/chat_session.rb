@@ -68,6 +68,9 @@ class ChatSession < ApplicationRecord
   has_many :token_usages, dependent: :destroy
   has_many :api_usage_attempts, dependent: :destroy
   has_many :change_intents, dependent: :nullify
+  # Destroyed before clarifying_question_progresses: chat_investigations hold a
+  # null:false FK onto the progress records, so the dependents must fall first.
+  has_many :chat_investigations, dependent: :destroy
   has_many :clarifying_question_progresses, dependent: :destroy
   has_many :chat_session_projects, dependent: :destroy
   has_many :projects, through: :chat_session_projects

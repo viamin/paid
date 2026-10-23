@@ -25,8 +25,12 @@ implements release and unified admission claims `003`–`006` and `009`.
 - [x] **CONFIDENCE-DELIVERY-010** — When reviewing a confidence-driven PR, Paid SHALL use its admitted scope/design baseline, preserve ordinary CI/security/quality/current-head/merge controls and SHALL NOT impose the approval-gated amendment pause solely because later feature intent differs.
   *Tests:* `spec/services/intent_conformance/signal_spec.rb`, `spec/services/intent_conformance/verify_at_merge_spec.rb`, `spec/services/feature_intents/admitted_intent_context_spec.rb`.
   *Code:* `app/services/intent_conformance/signal.rb`, `app/services/intent_conformance/verify_at_merge.rb`, `app/services/feature_intents/admitted_intent_context.rb`.
-- [ ] **CONFIDENCE-DELIVERY-011** — When attempting feature completion, Paid SHALL verify acceptance and all implementation/follow-up dependencies, including pending external writes and concurrent findings, before reporting completion.
-- [ ] **CONFIDENCE-DELIVERY-012** — When a finding arrives after feature completion, Paid SHALL reopen completion or create a linked completion cycle and SHALL NOT leave the unresolved gap represented as completed.
+- [x] **CONFIDENCE-DELIVERY-011** — When attempting feature completion, Paid SHALL verify acceptance and all implementation/follow-up dependencies, including pending external writes and concurrent findings, before reporting completion.
+  *Tests:* `spec/services/feature_intents/complete_forward_work_spec.rb`.
+  *Code:* `app/services/feature_intents/complete_forward_work.rb`, `app/models/feature_intent_completion.rb`.
+- [x] **CONFIDENCE-DELIVERY-012** — When a finding arrives after feature completion, Paid SHALL reopen completion or create a linked completion cycle and SHALL NOT leave the unresolved gap represented as completed.
+  *Tests:* `spec/services/feature_intents/complete_forward_work_spec.rb`, `spec/services/feature_intents/complete_forward_work_concurrent_first_findings_spec.rb`.
+  *Code:* `app/services/feature_intents/complete_forward_work.rb`, `app/models/feature_intent_completion.rb`.
 - [ ] **CONFIDENCE-DELIVERY-013** — While implementing confidence-driven features, Paid SHALL use feature flags where feasible and SHALL require follow-up completion before declaring readiness for activation; impossible isolation SHALL NOT itself pause in-flight work, and activation SHALL follow project release policy.
 - [x] **CONFIDENCE-DELIVERY-014** — When enabling automatic confidence-driven release, Paid SHALL require admission, policy-specific review and completion wiring to be available; shadow assessment alone SHALL NOT change execution eligibility.
 - [x] **CONFIDENCE-DELIVERY-015** — When confidence-driven enrollment is disabled, Paid SHALL preserve existing feature policy snapshots, evidence and run state and SHALL NOT automatically release held issues or pause active runs.

@@ -3,12 +3,13 @@
 ## Metadata
 
 - **Date**: 2026-09-22
-- **Status**: Partially Implemented (see [2026-10-12 Closeout](#2026-10-12-closeout))
+- **Status**: Partially Implemented (see [2026-10-22 Final Acceptance Audit](#2026-10-22-final-acceptance-audit))
 - **Type**: Product workflow and orchestration
 - **Priority**: P1
 - **Related RDRs**: [RDR-053](RDR-053-new-feature-creation.md), [RDR-066](RDR-066-feature-intent-approval-lifecycle.md), [RDR-067](RDR-067-approved-intent-conformance.md), [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-070](RDR-070-facet-confidence-and-clarification.md)
-- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open; P09, P10, P11, P12, C71 unimplemented)
+- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (epic — open; blocked on `CONFIDENCE-DELIVERY-002` and `013`, see [2026-10-22 Final Acceptance Audit](#2026-10-22-final-acceptance-audit))
 - **Intent**: [Confidence-driven delivery](../intent/confidence-driven-delivery/confidence-driven-delivery-design.md)
+- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (shared umbrella), [#4324](https://github.com/viamin/paid/issues/4324) (RDR-071 closeout); implementation tasks are linked in the shared tree
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
 - **Related Issues**: Epic [#4309](https://github.com/viamin/paid/issues/4309); closeout [#4324](https://github.com/viamin/paid/issues/4324); gaps [#4310](https://github.com/viamin/paid/issues/4310), [#4314](https://github.com/viamin/paid/issues/4314), [#4315](https://github.com/viamin/paid/issues/4315), [#4318](https://github.com/viamin/paid/issues/4318), [#4319](https://github.com/viamin/paid/issues/4319), [#4320](https://github.com/viamin/paid/issues/4320), [#4321](https://github.com/viamin/paid/issues/4321), [#4323](https://github.com/viamin/paid/issues/4323)
 
@@ -23,21 +24,25 @@ new confidence-driven policy is only partially implemented:
 enrollment foundation. `db/schema.rb` carries the project selection and
 immutable feature-policy snapshot; `FeatureIntents::RunAdmission` fails
 closed for that policy until the complete delivery path is installed.
-Release-audit, completion, and follow-up records remain unimplemented.
+Release-audit, completion, and follow-up records now implement the
+completion-blocking forward-work protocol; held-issue publication and
+activation/isolation reporting remain incomplete.
 The existing approval-gated policy and its review guards
 (`IntentConformance::VerifyAtMerge`, `DesignAmendments::EvaluateImpact`,
 `FeatureIntents::Release`, `FeatureIntents::RunAdmission`) remain the
-authority for approval-gated features. The rollout guard remains in force:
-enrollment does not enable execution because confidence-driven admission is
-explicitly denied pending the later integrations. The umbrella children that
-will deliver the remaining RDR-071 behavior are P09 (scoped readiness with
-80/80 thresholds), P10
-(publish held issues and one automatic release contract), P11 (carry
-admitted intent to builders and dispatch conformance by policy), P12
-(forward-work follow-ups and completion), and C71 (final closeout
-audit). This audit does not introduce or flip a flag. See
+authority for approval-gated features. The rollout guard has narrowed since
+this audit: P09 (scoped readiness with 80/80 thresholds), P10 (publish held
+issues and one automatic release contract), P11 (carry admitted intent to
+builders and dispatch conformance by policy), and P12 (forward-work
+follow-ups and completion) have since shipped, so `RunAdmission` no longer
+denies confidence-driven admission outright. `RunAdmission#confidence_admission`
+now reconciles an unreleased confidence-driven link through `ReleaseIssue`
+and permits the run once a passing, scoped snapshot is released
+(`app/services/feature_intents/run_admission.rb`). See the
+[2026-10-22 Final Acceptance Audit](#2026-10-22-final-acceptance-audit) for
+the current evidence and remaining gaps. See
 [`audit-report-2026-10-12-rdr-071.md`](audit-report-2026-10-12-rdr-071.md)
-for the criterion-by-criterion evidence.
+for the criterion-by-criterion evidence as of that earlier date.
 
 ## Problem Statement
 
@@ -220,3 +225,43 @@ The rollout guard remains in force: automatic confidence-driven release is not
 enabled, and no settings-only enrollment surface exists. This closeout tracks
 [#4309](https://github.com/viamin/paid/issues/4309) and does not close it; E01's
 own final acceptance audit decides closure from shipped evidence.
+
+## 2026-10-22 Final Acceptance Audit
+
+The umbrella audit verified the current delivery implementation rather than
+the child issue states. `FeatureIntents::ReleaseIssue` and `RunAdmission`
+release only Paid's planning hold from a passing, scoped snapshot and apply
+the same contract at admission. `CompleteForwardWork` records forward work,
+reads back completion dependencies, blocks completion for pending writes or
+open work, and reopens a completed cycle for a later finding. Accordingly,
+`CONFIDENCE-DELIVERY-011` and `012` are now marked implemented alongside the
+previously shipped release, admission, baseline, and forward-work claims.
+
+This RDR remains **Partially Implemented**. Coherent-but-not-ready issue
+publication (`CONFIDENCE-DELIVERY-002`) and activation/isolation reporting
+(`CONFIDENCE-DELIVERY-013`) still lack shipped evidence. Those gaps prevent
+the RDR-070 shadow-mode guard from being treated as fully satisfied and prevent
+closing #4309. The audit preserves the existing policy snapshots and active
+runs and records the exact evidence in
+[`audit-report-2026-10-22-human-centered-inbox-epic.md`](audit-report-2026-10-22-human-centered-inbox-epic.md).
+
+## 2026-10-22 C71 Closeout
+
+This audit **Tracks #4324** (C71) and ran its own RDR-071-scoped audit,
+re-executing the focused suite directly in this session against a reachable
+database (292 examples, 0 failures). Every
+`CONFIDENCE-DELIVERY-*` claim except `002` and `013` has concrete code/spec
+evidence; the reused RDR-066/067 approval-gated suite (`release_spec.rb`,
+`mark_approved_spec.rb`, `approval_readiness_spec.rb`) passes unchanged and is
+not claimed as RDR-071 evidence. See
+[`audit-report-2026-10-22-rdr-071.md`](audit-report-2026-10-22-rdr-071.md) for
+the criterion-by-criterion table, the behavioral-checklist results, and the
+remaining-gap ownership ([#4319](https://github.com/viamin/paid/issues/4319)
+P10, [#4321](https://github.com/viamin/paid/issues/4321) P12,
+[#4323](https://github.com/viamin/paid/issues/4323) C70).
+
+This closeout does not close #4324: C71 depends on P12, C69, and C70, and all
+three remain open with owned gaps. It also does not close #4309 — it tracks
+the epic and documents that #4309 was closed in error by
+[PR #4567](https://github.com/viamin/paid/pull/4567) on 2026-10-22, contrary
+to that PR's own bundled audit conclusion and the unresolved gaps above.

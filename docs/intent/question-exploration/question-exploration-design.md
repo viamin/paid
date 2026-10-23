@@ -145,6 +145,17 @@ Project budgets and execution capabilities bound autonomous investigations;
 reserve/check budget before dispatch, show progress, and support cancellation.
 Interrupted research preserves partial human input. Executable experiments use
 existing isolated previews/containers, never the application's HTML origin.
+Each investigation is a durable, question-scoped record with queued, running,
+authorization-required, completed, failed, and cancelled states. Admission
+locks the project while comparing active reservations with daily and monthly
+hard-stop budgets; a per-run hard stop bounds the individual request. The job
+rechecks execution controls before it starts and releases its reservation if a
+new control requires additional authorization. Results and terminal failures
+remain attached to the question for reconnecting collaborators.
+New investigation dispatch is guarded by the project-scoped
+`question_exploration` feature flag, which is off until an operator explicitly
+enrolls the project. Disabling the flag prevents new dispatch while preserving
+the question's existing answers and investigation records.
 
 ## Decisions and alternatives
 

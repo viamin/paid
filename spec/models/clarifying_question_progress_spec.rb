@@ -27,4 +27,15 @@ RSpec.describe ClarifyingQuestionProgress, type: :model do
     expect(progress).to be_invalid
     expect(progress.errors.of_kind?(:evidence_context, :too_long)).to be(true)
   end
+
+  # @spec QUESTION-EXPLORATION-010
+  # Progress teardown (session, issue, or account cascades) must clear its
+  # investigations first because chat_investigations.clarifying_question_progress_id
+  # is null:false.
+  it "destroys its investigations before the progress record" do
+    investigation = create(:chat_investigation)
+
+    expect { investigation.clarifying_question_progress.destroy! }
+      .to change(ChatInvestigation, :count).by(-1)
+  end
 end

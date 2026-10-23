@@ -216,32 +216,19 @@ Scaling & Distribution above).
 | [RDR-053](RDR-053-new-feature-creation.md) | New Feature Creation — RDR-Driven Issue Trees with LID Support | Implemented | P1 |
 | [RDR-066](RDR-066-feature-intent-approval-lifecycle.md) | Feature Intent and Approval Lifecycle | Partially Implemented | P1 |
 | [RDR-067](RDR-067-approved-intent-conformance.md) | Approved Intent Conformance for Feature PRs | Partially Implemented | P1 |
-| [RDR-070](RDR-070-facet-confidence-and-clarification.md) | Facet Confidence and Adaptive Clarification | Accepted | P1 |
+| [RDR-070](RDR-070-facet-confidence-and-clarification.md) | Facet Confidence and Adaptive Clarification | Partially Implemented | P1 |
 | [RDR-071](RDR-071-confidence-driven-issue-delivery.md) | Confidence-Driven Issue Delivery and Feature Completion | Partially Implemented | P1 |
 | [RDR-076](RDR-076.md) | Layered Verification of Business Intent and Implementation | Accepted | P1 |
 | [RDR-077](RDR-077-automation-phases-and-work-item-authorization.md) | Automation Phases and Work-Item Authorization | Draft | — |
 
 RDR-069–071 form the [human-centered Inbox implementation tree](human-centered-inbox-implementation.md).
 They extend chat and introduce an explicit confidence-driven feature policy;
-RDR-066/067 continue to describe approval-gated features. The 2026-10-12
-audits recorded the state at that date: [RDR-069](audit-report-2026-10-12-rdr-069.md)
-and [RDR-071](audit-report-2026-10-12-rdr-071.md) were Partially Implemented
-with the new RDR-specific behavior outstanding, and
-[RDR-070](audit-report-2026-10-12-rdr-070.md) was Accepted with no
-implementation shipped. Their delivery children #4310–#4321 have since closed;
-closed state is not delivery evidence, so each RDR's current status comes from
-its own re-audit against shipped code and running tests rather than from the
-2026-10-12 snapshot. The [epic final-acceptance readiness audit](audit-report-2026-10-12-rdr-069-071-epic.md)
-and the [refreshed umbrella final-acceptance audit (2026-10-12, refreshed
-2026-10-13)](audit-report-2026-10-12-rdr-069-071-epic-final-acceptance.md)
-confirm that #4309 remains open until those focused gaps ship and a future
-audit can rerun the structural and database-backed checks against shipped
-behavior. The [2026-10-13 umbrella final-acceptance refresh](audit-report-2026-10-13-rdr-069-071-epic-final-acceptance.md)
-re-runs every structural and database-backed check used by the prior
-audits against the current working tree (1,310 focused specs, 0 failures;
-176 tables; no facet / exploration / investigation / diagram /
-preference / confidence-driven schema), reaches the same conclusion, and
-keeps the umbrella open with non-closing `Tracks #4309` language.
+RDR-066/067 continue to describe approval-gated features. The
+[2026-10-22 final umbrella audit](audit-report-2026-10-22-human-centered-inbox-epic.md)
+reconciles shipped diagrams, progress, assessments, scoped release, and
+completion-forward-work behavior. It keeps #4309 open for bounded
+investigations, held-issue publication, activation/isolation reporting, the
+assessment corpus, and browser-backed diagram evidence.
 
 The [2026-10-22 RDR-069 closeout refresh](audit-report-2026-10-22-rdr-069.md)
 re-audits RDR-069 against shipped code and a live run (3043 examples, 0

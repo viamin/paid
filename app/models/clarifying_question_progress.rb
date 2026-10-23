@@ -11,6 +11,10 @@ class ClarifyingQuestionProgress < ApplicationRecord
   belongs_to :chat_session
   belongs_to :answered_by, class_name: "User", optional: true
 
+  # Investigations reference the progress through a null:false FK, so every
+  # teardown path (session, issue, account) must clear them with the progress.
+  has_many :chat_investigations, dependent: :destroy
+
   validates :question, :question_digest, :position, presence: true
   validates :position, numericality: { only_integer: true, greater_than: 0 }
   validates :position, uniqueness: { scope: [ :issue_id, :question_digest ] }
