@@ -73,36 +73,52 @@ same records (`LAYERED-VERIFY-005`).
 
 ## Authority and canonical intent
 
-### Existing-framework detection
+### Existing-framework resolution
 
 A project's `lid_mode` (`docs/intent/lid-detection/`) already tells Paid
-whether a project is a LID project and in which mode, derived from the
-checked-out repository rather than copied into Paid's schema. This segment
-extends that same detection, read at audit/design/bootstrap request time, into
-a three-way **framework classification** per project:
+whether a project is a LID project and in which mode. That value is the
+**persisted effective mode**: `projects.lid_mode` as last written by
+`Projects::DetectLidMode` or by an owner's manual override from project
+settings (`projects.lid_mode_overridden`), an override background detection
+preserves rather than replaces. This segment reads that persisted value; it
+never re-detects it. Framework resolution at audit/design/bootstrap request
+time composes it into a three-way **framework classification** per project:
 
-1. **LID** — `lid_mode` is `"full"` or `"scoped"`. The obligation's canonical
-   home is the project's own `docs/intent/` EARS spec (or HLD/LLD prose for a
-   not-yet-spec'd behavior). Paid references the spec ID and the design-tree
-   path; it never re-expresses the obligation's text locally.
-2. **OKF** — no `lid_mode`, but an OKF bundle is present (the same detection
-   `Knowledge::Collectors::OkfCollector` uses: an `.okf/`-shaped directory of
-   frontmattered Markdown, or a project-configured `options[:okf_paths]`).
-   The obligation's canonical home is the OKF concept file; Paid references
-   its `scope_path` and content digest.
-3. **None** — neither framework is present. Paid **offers** two things,
-   explicitly, before any obligation can be marked approved: a lightweight
-   CIR-style OKF-compatible Markdown record (reusing the same
-   frontmatter shape `Knowledge::Okf::Frontmatter` already parses, written to
-   the target repository through the project's normal PR path — never
-   invented and held only in Paid's database), and LID itself as a available,
-   supported structured option. Adopting the lightweight record never
-   requires adopting all of LID; adopting LID is the project owner's explicit
-   choice, made through the normal LID bootstrap phase 1 (`docs/lid/workflow.md`),
-   not implied by using this add-on.
+1. **LID** — the persisted effective `lid_mode` is `"full"` or `"scoped"`.
+   The obligation's canonical home is the project's own `docs/intent/` EARS
+   spec (or HLD/LLD prose for a not-yet-spec'd behavior). Paid references the
+   spec ID and the design-tree path; it never re-expresses the obligation's
+   text locally.
+2. **OKF** — the persisted effective `lid_mode` is `nil`, but an OKF bundle
+   is present (the same detection `Knowledge::Collectors::OkfCollector`
+   uses: an `.okf/`-shaped directory of frontmattered Markdown, or a
+   project-configured `options[:okf_paths]`). The obligation's canonical
+   home is the OKF concept file; Paid references its `scope_path` and
+   content digest.
+3. **None** — neither a persisted LID mode nor a detected OKF bundle. Paid
+   **offers** two things, explicitly, before any obligation can be marked
+   approved: a lightweight CIR-style OKF-compatible Markdown record (reusing
+   the same frontmatter shape `Knowledge::Okf::Frontmatter` already parses,
+   written to the target repository through the project's normal PR path —
+   never invented and held only in Paid's database), and LID itself as an
+   available, supported structured option. Adopting the lightweight record
+   never requires adopting all of LID; adopting LID is the project owner's
+   explicit choice, made through the normal LID bootstrap phase 1
+   (`docs/lid/workflow.md`), not implied by using this add-on.
 
-Classification is read fresh at every audit/design/bootstrap request — it is
-a detection, not a one-time project setting this add-on owns.
+The classification is resolved at every audit/design/bootstrap request, but
+from persisted state — the effective `projects.lid_mode` plus OKF bundle
+presence — never from a fresh LID re-detection of the checkout. The LID leg
+therefore honors an owner's manual Full/Scoped override even when the current
+checkout lacks detectable LID artifacts: a request-time checkout read is not a
+substitute for the configured mode. Only the OKF leg reads the checkout at
+request time (Paid persists no OKF-mode column to read), and it is evaluated
+only when the effective `lid_mode` is `nil`, so it can never displace a
+persisted — or overridden — LID classification with the `None`/offered-CIR
+path. This add-on never writes `projects.lid_mode`; the owner's explicit
+re-detect, the same `Projects::DetectLidMode` project-settings action
+`docs/intent/lid-detection/` defines, remains the only operation that
+replaces the persisted mode.
 
 ### Obligation persistence: reference, not duplicate
 
@@ -446,6 +462,7 @@ project's existing host policy.
 | Decision | Chosen | Alternatives Considered | Rationale |
 | --- | --- | --- | --- |
 | Canonical EARS prefix | `LAYERED-VERIFY` | `VERIFY-*` (too generic — would collide project-wide); `LAYER-VERIFY-*` (singular, doesn't match the segment or folder name) | Matches the repo's existing `<domain>-VERIFY` convention (`APPLE-VERIFY`, `REVIEW-VERIFY`) and this segment's folder name. |
+| Framework classification source | Effective persisted `projects.lid_mode` (an owner override included) plus request-time OKF bundle presence | Fresh checkout-time LID re-detection at each request | `lid_mode` is the persisted effective mode `lid-detection` owns, not a value derived afresh from the checkout; request-time re-detection would discard an owner's Full/Scoped override whenever the checkout lacks LID artifacts and misroute the project to the `None`/offered-CIR path. Only an explicit re-detect replaces the persisted mode. |
 | Obligation canonical home | Reference the existing framework's own record (LID spec, OKF file, or offered CIR); Paid never duplicates the text | A Paid-native obligation document as the new source of truth | RDR-076 explicitly rejects a parallel obligation store; `ChangeIntent`/OKF already solve durable-intent persistence. |
 | Audit vs. repair authorization bar | Two separate Pundit checks (`manage_issues?` for audit, `update?` for repair) on two separate tool/controller actions | One shared permission gating both | A shared gate would let a broad grant imply repair authority, collapsing the RDR's audit/repair separation at the one layer meant to enforce it. |
 | Audit/repair run modeling | Two distinct `AgentRun::GOALS` values | One goal with a `mode: audit \| repair` metadata flag | A single goal needs an explicit runtime check to prevent repair behavior on every call site; two goals make "audit cannot repair" true by construction, matching the existing one-goal-per-lifecycle convention (`create_pr` vs `review`). |
@@ -511,10 +528,11 @@ project's existing host policy.
 The audit-first milestone (RDR-076's V1–V4, V6–V7, V17–V19, and the
 audit-only portions of V10–V11 and V20) corresponds to EARS IDs
 `LAYERED-VERIFY-001` through `-010`, `-013` through `-018`, `-021`, `-022`,
-and `-023`, carried by #4432–#4434. Full closeout requires all 23 IDs and
-#4435–#4438; optional automation (#4439 PR-triggered audits, #4440 scheduled
-audits via RDR-075) is not required for core closeout and is not mapped to a
-`V` reference because RDR-076 marks both as later, optional integrations.
+and `-023`, carried by #4432–#4434. Full closeout requires all 23 IDs
+and #4435–#4438; optional automation (#4439 PR-triggered audits, #4440
+scheduled audits via RDR-075) is not required for core closeout and is
+not mapped to a `V` reference because RDR-076 marks both as later,
+optional integrations.
 
 Per this issue's acceptance criteria, #4432–#4438's own EARS references and
 approved scopes are updated to cite these IDs **after** this planning segment
@@ -524,8 +542,9 @@ itself edit those issues.
 ## References
 
 - [RDR-076](../../rdrs/RDR-076.md) — the accepted design this segment converts.
-- `docs/intent/lid-detection/` — project framework detection this segment
-  reuses rather than duplicates.
+- `docs/intent/lid-detection/` — the persisted effective `lid_mode` and its
+  override/re-detect lifecycle, which this segment reads rather than
+  duplicates.
 - `docs/intent/change-intent-records/` — the `ChangeIntent` lifecycle reused
   for `paid_offered_cir` obligations and in-Inbox clarifications.
 - `docs/intent/knowledge-base/` — OKF collection/export this segment reuses

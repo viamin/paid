@@ -18,28 +18,34 @@
 ## Authority and canonical intent
 
 - [ ] **LAYERED-VERIFY-001** — When a layered-verification request resolves a
-  project whose `lid_mode` is `"full"` or `"scoped"`, an obligation's
-  canonical home SHALL be its existing `docs/intent/` EARS spec ID (or LLD/HLD
-  prose section when no spec exists yet), referenced by ID and design-tree
-  path; Paid SHALL NOT persist a second copy of the obligation's
-  required-behavior text.
+  project whose effective persisted `projects.lid_mode` (an owner override
+  included) is `"full"` or `"scoped"`, an obligation's canonical home SHALL be
+  its existing `docs/intent/` EARS spec ID (or LLD/HLD prose section when no
+  spec exists yet), referenced by ID and design-tree path; Paid SHALL NOT
+  persist a second copy of the obligation's required-behavior text.
+  Request-time framework resolution SHALL read the persisted effective
+  `lid_mode` and SHALL NOT re-detect LID mode from the checkout or write
+  `projects.lid_mode`; only the owner's explicit re-detect SHALL replace the
+  persisted mode.
   *Tests:* `spec/services/layered_verification/obligations/resolve_framework_spec.rb`
   *Code:* `LayeredVerification::Obligations::ResolveFramework` (#4432)
 
 - [ ] **LAYERED-VERIFY-002** — When a layered-verification request resolves a
-  project with no `lid_mode` but a detected OKF bundle, an obligation's
-  canonical home SHALL be the OKF concept file's `scope_path` and content
-  digest, using the same OKF bundle detection `Knowledge::Collectors::OkfCollector`
-  already performs.
+  project with no persisted `lid_mode` but a detected OKF bundle, an
+  obligation's canonical home SHALL be the OKF concept file's `scope_path`
+  and content digest, using the same OKF bundle detection
+  `Knowledge::Collectors::OkfCollector` already performs; OKF bundle
+  detection SHALL be evaluated only when the effective persisted `lid_mode`
+  is `nil`.
   *Tests:* `spec/services/layered_verification/obligations/resolve_framework_spec.rb`
   *Code:* `LayeredVerification::Obligations::ResolveFramework` (#4432)
 
 - [ ] **LAYERED-VERIFY-003** — When a layered-verification request resolves a
-  project with neither `lid_mode` nor a detected OKF bundle, Paid SHALL offer
-  both a lightweight OKF-compatible CIR record (written to the target
-  repository through the project's normal PR path) and LID adoption as a
-  supported option, before any obligation sourced from that project can be
-  marked `approved`; adopting the lightweight record SHALL NOT require
+  project with neither a persisted `lid_mode` nor a detected OKF bundle, Paid
+  SHALL offer both a lightweight OKF-compatible CIR record (written to the
+  target repository through the project's normal PR path) and LID adoption
+  as a supported option, before any obligation sourced from that project can
+  be marked `approved`; adopting the lightweight record SHALL NOT require
   adopting LID.
   *Tests:* `spec/services/layered_verification/obligations/resolve_framework_spec.rb`
   *Code:* `LayeredVerification::Obligations::ResolveFramework` (#4432)
