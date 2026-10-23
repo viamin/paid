@@ -134,7 +134,6 @@ module ChatInvestigations
     def settle!(status:, result:)
       investigation.project.with_lock do
         investigation.with_lock do
-          investigation.reload
           return unless investigation.status == "running"
 
           consume_reserved_budget!
