@@ -737,6 +737,53 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
     end
   end
 
+  describe ChatSessions::BuildLlmClient::HttpClient do
+    let(:chat_session) { create(:chat_session, account: account, created_by: user) }
+    let(:chat_transport) { instance_double(AgentHarness::Api::ChatTransport) }
+    let(:result) { succeeded_result(model: "gpt-reasoning-test") }
+
+    def reasoning_client(chat_session:, chat_transport:)
+      described_class.new(
+        chat_session: chat_session,
+        provider: :openai,
+        protocol: :responses,
+        endpoint: "https://api.openai.com/v1",
+        api_key: "sk-openai-test",
+        model: "gpt-reasoning-test",
+        reasoning_effort: "high",
+        chat_transport: chat_transport
+      )
+    end
+
+    # @spec CHAT-THINKING-EFFORT-004 CHAT-THINKING-EFFORT-008
+    it "forwards the normalized effort through the harness candidate for a non-streaming turn when supported" do
+      allow(described_class).to receive(:reasoning_effort_transport_supported?).and_return(true)
+      allow(chat_transport).to receive(:call).and_return(result)
+
+      reasoning_client(chat_session:, chat_transport:).call([ { role: "user", content: "Answer" } ])
+
+      expect(chat_transport).to have_received(:call) do |request|
+        expect(request[:candidates].first[:reasoning_effort]).to eq("high")
+      end
+    end
+
+    # @spec CHAT-THINKING-EFFORT-004 CHAT-THINKING-EFFORT-008
+    it "forwards the same normalized effort through the harness candidate for a streaming turn when supported" do
+      allow(described_class).to receive(:reasoning_effort_transport_supported?).and_return(true)
+      allow(chat_transport).to receive(:call).and_return(result)
+
+      reasoning_client(chat_session:, chat_transport:).call(
+        [ { role: "user", content: "Answer" } ],
+        on_chunk: ->(_content) { }
+      )
+
+      expect(chat_transport).to have_received(:call) do |request|
+        expect(request[:stream]).to be(true)
+        expect(request[:candidates].first[:reasoning_effort]).to eq("high")
+      end
+    end
+  end
+
   def attempt_report(attempt_id:, number: 1, status: :succeeded, usage: { input_tokens: 20, output_tokens: 10 }, cost: nil)
     {
       attempt_id: attempt_id,

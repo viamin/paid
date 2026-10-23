@@ -176,10 +176,11 @@ class ChatSessionsController < ApplicationController
 
   def update
     authorize @chat_session
-    project_changed = update_params.key?(:project_id) && update_params[:project_id].to_s != @chat_session.project_id.to_s
-    metadata_changed = update_params.key?(:metadata) && update_params[:metadata] != @chat_session.metadata
-    validate_api_chat_runner!(update_params[:runner_id]) if update_params.key?(:runner_id)
-    @chat_session.update!(update_params)
+    attributes = update_params
+    project_changed = attributes.key?(:project_id) && attributes[:project_id].to_s != @chat_session.project_id.to_s
+    metadata_changed = attributes.key?(:metadata) && attributes[:metadata] != @chat_session.metadata
+    validate_api_chat_runner!(attributes[:runner_id]) if attributes.key?(:runner_id)
+    @chat_session.update!(attributes)
     regenerate_system_message! if project_changed || metadata_changed
 
     respond_to do |format|
@@ -311,20 +312,26 @@ class ChatSessionsController < ApplicationController
       :system_prompt,
       :title,
       :auto_approve,
+      :thinking_effort,
       metadata: {}
     )
       .to_h.symbolize_keys
     permitted[:runner_id] ||= permitted.delete(:provider_id)
     normalize_legacy_create_params!(permitted)
     resolve_runner_model_selection!(permitted)
+    resolve_thinking_effort!(permitted)
+    normalize_thinking_effort_for_model!(permitted)
     permitted
   end
 
   def update_params
-    permitted = params.fetch(:chat_session, params).permit(:title, :model, :project_id, :runner_id, :runner_model, :provider_id, :auto_approve, metadata: {})
+    permitted = params.fetch(:chat_session, params)
+      .permit(:title, :model, :project_id, :runner_id, :runner_model, :provider_id, :auto_approve, :thinking_effort, metadata: {})
       .to_h.symbolize_keys
     permitted[:runner_id] ||= permitted.delete(:provider_id)
     resolve_runner_model_selection!(permitted)
+    resolve_thinking_effort!(permitted)
+    normalize_thinking_effort_for_model!(permitted)
     permitted
   end
 
@@ -344,7 +351,41 @@ class ChatSessionsController < ApplicationController
 
     permitted[:runner_id] = selection.runner_id
     permitted[:model] = selection.model_id
-    permitted[:metadata] = (@chat_session&.metadata || {}).merge(permitted[:metadata] || {}).merge("model_tier" => selection.tier)
+    metadata = (@chat_session&.metadata || {}).merge(permitted[:metadata] || {}).merge("model_tier" => selection.tier)
+    # @spec CHAT-THINKING-EFFORT-005
+    metadata["thinking_effort"] = ChatSessions::ThinkingEffort.normalize(model_id: selection.model_id, value: metadata["thinking_effort"])
+    permitted[:metadata] = metadata
+  end
+
+  # Validates a direct, user-submitted thinking_effort value strictly against
+  # the request's effective model (applied after any runner/model switch in
+  # the same request), rejecting a stale or crafted submission instead of
+  # silently downgrading it the way #resolve_runner_model_selection!'s
+  # system-driven normalization does.
+  # @spec CHAT-THINKING-EFFORT-006
+  def resolve_thinking_effort!(permitted)
+    return unless permitted.key?(:thinking_effort)
+
+    value = permitted.delete(:thinking_effort)
+    model_id = permitted[:model] || @chat_session&.model
+    resolved = ChatSessions::ThinkingEffort.resolve!(model_id: model_id, value: value)
+    permitted[:metadata] = (@chat_session&.metadata || {}).merge(permitted[:metadata] || {}).merge("thinking_effort" => resolved)
+  end
+
+  # An independently submitted model (including the legacy JSON surface) can
+  # change the effective capability without using the curated selector. Keep
+  # an existing preference only when it remains valid for that model.
+  # @spec CHAT-THINKING-EFFORT-005
+  def normalize_thinking_effort_for_model!(permitted)
+    return unless permitted.key?(:model)
+    return if permitted.key?(:thinking_effort)
+
+    metadata = (@chat_session&.metadata || {}).merge(permitted[:metadata] || {})
+    metadata["thinking_effort"] = ChatSessions::ThinkingEffort.normalize(
+      model_id: permitted[:model],
+      value: metadata["thinking_effort"]
+    )
+    permitted[:metadata] = metadata
   end
 
   def runner_model_policy_projects(permitted)
@@ -383,6 +424,10 @@ class ChatSessionsController < ApplicationController
       container_requested_at: session.container_requested_at,
       container_ready_at: session.container_ready_at,
       model: session.model,
+      thinking_effort: ChatSessions::ThinkingEffort.normalize(
+        model_id: session.model,
+        value: session.metadata["thinking_effort"]
+      ),
       runner_id: session.runner_id,
       runner_name: session.runner&.display_name,
       project_id: session.project_id,

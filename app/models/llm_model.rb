@@ -16,6 +16,8 @@ class LlmModel < ApplicationRecord
   # consumes this contract rather than reinventing the empty-provider case.
   # @spec DIRECT-OUTBOUND-CATALOG-005
   CUSTOM_MODEL_OPTION = "custom"
+  # @spec CHAT-THINKING-EFFORT-001
+  DEFAULT_REASONING_EFFORT_VALUES = %w[low medium high].freeze
 
   belongs_to :free_variant_of, class_name: "LlmModel", optional: true
   has_many :model_selections, dependent: :restrict_with_error
@@ -83,6 +85,18 @@ class LlmModel < ApplicationRecord
   def reasoning_supported?
     ActiveModel::Type::Boolean.new.cast(metadata["supports_reasoning"]) ||
       Array(metadata["supported_parameters"]).map(&:to_s).include?("reasoning")
+  end
+
+  # Allowed reasoning/thinking-effort values for this model, most permissive
+  # first. Reads the catalog row's own declared values when present so a
+  # future per-family value list (e.g. a provider that only accepts two
+  # levels) does not require a Paid code change; falls back to the curated
+  # default set for any reasoning-capable row that has not declared its own.
+  # @spec CHAT-THINKING-EFFORT-001
+  def reasoning_effort_values
+    return [] unless reasoning_supported?
+
+    Array(metadata["reasoning_effort_values"]).map(&:to_s).presence || DEFAULT_REASONING_EFFORT_VALUES
   end
 
   def expired?

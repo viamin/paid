@@ -64,3 +64,31 @@ or failed. The conversation stays in place, and the control remains editable
 after a failed save. If an existing session has a pair that is no longer
 configured, no invalid option is rendered; the user is prompted to choose a
 valid replacement.
+
+## Thinking effort
+
+Thinking effort is independent from the curated Low, Medium, and High model
+tier. It is an optional per-session preference, scoped to the effective
+model and API-key chat transport. The selector appears only when the catalog
+declares configurable reasoning for that model and agent-harness confirms that
+the selected transport can accept its normalized values. Its choices are the
+model capability's allowed values, not a Paid-wide provider table. The
+explicit `Default (model picks)` choice persists no value and sends no
+reasoning-effort parameter; it preserves the provider/model default and does
+not imply maximum effort.
+
+When a user changes runner, model tier, or the effective fallback model, Paid
+revalidates the stored preference. A value unsupported by the new effective
+model is cleared to Default and the UI announces that reset. The effective
+value, when a transport actually accepts it, is included in the normalized
+transport request and attempt metadata. This setting only configures effort;
+Paid never asks for, stores, or displays chain-of-thought.
+
+Agent-harness owns provider parameter names, value translation, and protocol
+compatibility. The currently pinned release has no public ChatTransport
+capability/request field for caller-supplied reasoning effort, so the control
+remains hidden and no unsupported parameter is sent until the upstream
+contract is released. This is blocked by an explicit viamin/agent-harness
+dependency; the attempted filing is not available through the current
+repository-scoped GitHub proxy and must be created upstream before this
+behavior is enabled.

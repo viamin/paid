@@ -52,7 +52,13 @@ module ChatSessions
         option&.model_id ||
           raise(LlmClientConfigurationError, "No compatible Low chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy.")
       end
-      chat_session.update!(runner: runner, model: model, metadata: chat_session.metadata.merge("model_tier" => option&.tier).compact)
+      metadata = chat_session.metadata.merge("model_tier" => option&.tier).compact
+      # @spec CHAT-THINKING-EFFORT-005
+      metadata[ThinkingEffort::METADATA_KEY] = ThinkingEffort.normalize(
+        model_id: model,
+        value: metadata[ThinkingEffort::METADATA_KEY]
+      )
+      chat_session.update!(runner: runner, model: model, metadata: metadata)
     end
 
     # @spec CHAT-API-019
