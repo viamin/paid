@@ -45,7 +45,8 @@ module FeatureIntents
     def links
       return @preloaded_links unless @preloaded_links.nil?
 
-      @links ||= FeatureIntentIssue.includes(:feature_intent, :prerequisite_mapping)
+      @links ||= FeatureIntentIssue.includes(:feature_intent, :prerequisite_mapping,
+        in_tree_dependencies: :issue)
         .where(issue_id: issue.id)
         .order(:id).to_a
     end

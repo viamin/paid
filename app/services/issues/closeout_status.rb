@@ -95,7 +95,7 @@ module Issues
 
       issue_ids = issues.map(&:id)
       feature_links = FeatureIntentIssue.where(issue_id: issue_ids).includes(:feature_intent, :prerequisite_mapping,
-        in_tree_dependencies: :issue).to_a.group_by(&:issue_id)
+        in_tree_dependencies: :issue).order(:id).to_a.group_by(&:issue_id)
       scanner_attempts = CodeScanningRemediationAttempt.where(issue_id: issue_ids).latest_per_issue.index_by(&:issue_id)
       reset_at = issues.group_by(&:project_id).transform_values do |project_issues|
         next unless project_issues.any? { |issue| issue.issue_analysis_next_attempt_at.present? && issue.issue_analysis_next_attempt_at > Time.current }
@@ -134,7 +134,13 @@ module Issues
           .pluck(:issue_id, :depends_on_owner, :depends_on_repo, :depends_on_number)
           .each { |issue_id, owner, repo, number| labels[issue_id] << "#{owner}/#{repo}##{number}" }
       end
-      issues.to_h { |issue| [ issue.id, labels[issue.id].uniq.sort ] }
+      # Mirror the singleton +prerequisite_labels+ ordering: PR numbers sorted
+      # numerically before lexicographic external refs, so a batched lane
+      # renders identical messages to a direct CloseoutStatus.call.
+      issues.to_h do |issue|
+        numbers, externals = labels[issue.id].uniq.partition { |label| label.start_with?("#") }
+        [ issue.id, numbers.sort_by { |label| label.delete_prefix("#").to_i } + externals.sort ]
+      end
     end
     private_class_method :prerequisite_labels_for
 
