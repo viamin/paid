@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-21
+last_updated: 2026-10-23
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,15 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  docker-disk-cleanup:
+    title: Docker Disk Cleanup
+    path: docs/intent/docker-disk-cleanup/docker-disk-cleanup-design.md
+    specs: docs/intent/docker-disk-cleanup/docker-disk-cleanup-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-10-23
+    next: "Monitor reclaimed cache bytes and image counts on opted-in development hosts."
   agent-run-obstacle-proposals:
     title: Agent-run Obstacle Proposals
     path: docs/intent/agent-run-obstacle-proposals/agent-run-obstacle-proposals-design.md

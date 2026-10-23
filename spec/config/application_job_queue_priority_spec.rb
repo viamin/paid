@@ -46,6 +46,7 @@ RSpec.describe ApplicationJob, :no_db do
         BillingPeriodManagementJob
         DependencyBackfillJob
         DispatchCircuitBreakerRecoveryJob
+        DockerDiskCleanupJob
         DockerOrphanCleanupJob
         ClaudeAuthHealthCheckJob
         ClaudeCredentialKeepWarmJob
