@@ -5,13 +5,14 @@
   maintenance intent and validate the RDR-073 tool handoff)
 - **Umbrella:** [#4326](https://github.com/viamin/paid/issues/4326) — tracked,
   not closed by this report
-- **Result:** Critical assumptions 1 and 2 from the draft RDR's "Critical
-  assumptions requiring validation" section are **validated** against RDR-073's
-  shipped code and a live execution of one native CLI analyzer and one
-  ESLint-equivalent native CLI analyzer. **No RDR-073 extension is required**
-  for the first delivery's native-CLI-analyzer path. RDR-075 remains Draft;
-  this report resolves the design's stated blocker but does not itself accept
-  the design or release implementation phases #4328–#4333.
+- **Result:** Critical assumption 1 is **validated** by the shipped RDR-073
+  contract and its focused tests. Critical assumption 2 is **not yet
+  validated**: the recorded analyzer commands ran in this checkout, not via
+  `AgentRun#execute_in_execution_environment`, and no execution-environment
+  sidecar request was recorded. The native CLI and sidecar acceptance criteria
+  therefore remain open. RDR-075 remains Draft; this report does not resolve
+  the design's stated blocker, accept the design, or release implementation
+  phases #4328–#4333.
 
 This is a validation audit, not a closeout. It does not change RDR-073's
 status (already final-accepted per
@@ -97,7 +98,7 @@ service-oriented image/port contract alone does not establish checkout
 access or batch invocation. Validate one native CLI analyzer and one sidecar
 interaction before finalizing the maintenance tool adapter design."
 
-### Native CLI analyzer — checkout access is already solved, independent of RDR-073
+### Native CLI analyzer — shipped contract, pending native-environment validation
 
 `AgentRun#execute_in_execution_environment` (`app/models/agent_run.rb:3041`)
 → `Containers::Provision#execute` (`app/services/containers/provision.rb:468`)
@@ -119,9 +120,13 @@ cleanup" half of the assumption.
 
 This path has **no RDR-073 involvement at all**. It is the general
 execution-environment contract every goal already uses, not a tool-sidecar
-concern.
+concern. Source and unit-test evidence establishes the contract, but cannot
+establish that the provisioned agent image contains a selected analyzer or
+that its mounted checkout, executor limits, streamed output, and cleanup
+behave as expected in a live run.
 
-**Live validation (2026-10-23, read-only, no application files modified):**
+**Host-only exploratory evidence (2026-10-23, read-only, no application files
+modified):**
 
 - Ruby/Rails: installed `debride` (a native CLI analyzer named in the
   draft's Research Findings) into an isolated `GEM_HOME`, then ran it
@@ -176,11 +181,21 @@ concern.
   (fixture deleted immediately after the run; `git status --porcelain
   app/javascript/controllers/` confirmed clean before continuing.)
 
-Both runs demonstrate structured, bounded, per-finding output and a
-deterministic exit code through the same mechanism a containerized
-`execute_in_execution_environment` call already provides. Neither run
-required a tool_sidecar, a marketplace entry, or any RDR-073 provisioning
-path.
+Both runs demonstrate that these commands work in this checkout, with
+structured output and deterministic exit codes. They do **not** demonstrate
+the containerized `execute_in_execution_environment` mechanism: neither
+command provisioned an `AgentRun`, and neither result is an execution artifact
+from the agent image. They must not be used to resolve the native-analyzer
+criterion.
+
+**Required live evidence before resolving this criterion:** provision a fresh
+`AgentRun` against its pinned checkout, invoke one selected native analyzer
+through `agent_run.execute_in_execution_environment(..., stream: false)`, and
+record the returned `stdout`, `stderr`, `exit_code`, image/check-out identity,
+and successful run-container cleanup. Use a bounded, read-only target and
+preserve the resulting artifact with this audit. This workspace has no Docker
+client or Docker socket, so that live execution could not be performed here;
+the criterion remains unvalidated rather than inferred from host commands.
 
 ### Sidecar interaction — RDR-073's contract is network-only; it does not grant checkout access
 
@@ -198,22 +213,34 @@ strategy for `entry_type == "tool"`: `"tool_sidecar"` — there is no
 marketplace install path that places a binary inside the main agent
 container's filesystem.
 
-**Finding:** a `tool_sidecar` is reachable from the agent container only
-over the network, by its stable per-run DNS alias and the port recorded in
-`PAID_TOOL_SIDECAR_ENDPOINTS`. It has zero filesystem access to the pinned
-checkout. RDR-073's service-oriented image/port contract, exactly as the
-draft suspected, "does not by itself establish checkout access or batch
-invocation" for a sidecar.
+**Static finding:** the provisioner is designed to make a `tool_sidecar`
+reachable from the agent container over the network, by its stable per-run DNS
+alias and the port recorded in `PAID_TOOL_SIDECAR_ENDPOINTS`. Its creation
+options do not grant filesystem access to the pinned checkout. RDR-073's
+service-oriented image/port contract therefore does not by itself establish
+checkout access or batch invocation for a sidecar. This is not a live
+sidecar-interaction result: endpoint metadata and `HostConfig` inspection do
+not exercise DNS, request routing, authentication, or sidecar lifecycle.
 
-**Conclusion — no RDR-073 extension required for the stated scope.** The
-first delivery's named analyzer candidates (Exhale, Knip, Debride, Vulture,
-PMD CPD — RDR-075 draft, Research Findings) are all native CLI tools, not
-network services. They fit the already-solved native-CLI path above, which
-needs nothing from RDR-073. The `tool_sidecar` path remains correctly scoped
-to tools that are inherently network-callable services (the case RDR-073 was
-designed for); it is not a channel for batch, full-repository analysis and
-should not be treated as one. The maintenance tool adapter design should
-therefore:
+**Required live evidence before resolving this criterion:** provision a
+representative allowlisted `tool_sidecar`, call its documented health or API
+endpoint from the paired `AgentRun` through
+`execute_in_execution_environment`, record the endpoint, response shape,
+exit code, and both sidecar and run-container cleanup, then attach that
+artifact to this report. No such request was made in this workspace because
+it has no Docker client or Docker socket. The sidecar criterion remains
+unvalidated.
+
+**Provisional design direction — pending the two live validations.** The first
+delivery's named analyzer candidates (Exhale, Knip, Debride, Vulture, PMD CPD
+— RDR-075 draft, Research Findings) are native CLI tools, not network
+services. The implementation plan should continue to target the existing
+native-CLI execution contract, but must not assert that it is ready in the
+agent image until the required native validation completes. The
+`tool_sidecar` path remains scoped to tools that are inherently
+network-callable services (the case RDR-073 was designed for); it is not yet
+validated as a usable request path. Subject to that evidence, the maintenance
+tool adapter design should:
 
 1. Invoke native CLI analyzers (gem/npm-installable or already present in
    the agent runtime image) through
@@ -257,31 +284,30 @@ directly — that file lives on PR #4308's branch, and a competing edit there
 would risk the exact "competing design PR" problem the issue warns against.
 The PR's author or reviewer should, when next revising PR #4308:
 
-- Update the **Blocked on** metadata line: Critical assumption 2 is now
-  validated by this report; no RDR-073 extension is required for the stated
-  native-CLI-analyzer and sidecar-interaction scope.
-- Update **Open Questions Before Finalization**, first bullet: RDR-073
-  exposes a network-only (image/port/DNS-alias) batch contract for
-  `tool_sidecar`; no maintenance adapter extension to RDR-073 is necessary
-  for the first delivery. Native CLI analyzers use the existing
-  `execute_in_execution_environment` contract instead.
+- Keep the **Blocked on** metadata line: critical assumption 2 remains open
+  until a native analyzer and representative sidecar request have each run
+  from an `AgentRun` execution environment with cleanup evidence.
+- Update **Open Questions Before Finalization**, first bullet: RDR-073's
+  image/port/DNS-alias contract is statically understood but awaits a live
+  sidecar request. Native CLI analyzers are expected to use the existing
+  `execute_in_execution_environment` contract, pending a native image run.
 - The **Tool integration** section's "existing in-container tools" phrase
-  can be made concrete: native CLI analyzers run via
-  `agent_run.execute_in_execution_environment`, the same mechanism
-  `PreCommitRequirements::Evaluate` already uses.
+  should name `agent_run.execute_in_execution_environment` and make its use
+  conditional on the required native-environment validation artifact.
 
 ## Disposition
 
-This report resolves the validation scope of #4327 against the current
-repository state. It does not:
+This report resolves critical assumption 1 only. Critical assumption 2 remains
+blocked on the two live execution-environment validations described above. It
+does not:
 
 - Accept RDR-075 or merge PR #4308 — that remains a human review action.
 - Release implementation phases #4328–#4333 — their planning holds stay in
   place until the design and its LID artifacts (HLD update, maintenance
   LLD/EARS) are accepted and merged, per the draft's own Implementation Plan
   step 1 and this issue's acceptance criteria.
-- File any upstream RDR-073 extension issue — the validated scope needs
-  none.
+- Determine whether an upstream RDR-073 extension is needed — that decision
+  follows the required native and sidecar execution evidence.
 
 Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
 an HLD pointer) are reviewable drafts for the same pending human-review gate,
