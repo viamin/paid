@@ -161,6 +161,7 @@ cycles.
 | [RDR-063](RDR-063-operational-supervisor-delivery-health.md) | Operational Supervisor for Delivery Health | Draft | P1 |
 | [RDR-068](RDR-068-apple-platform-verification-workers.md) | Apple Platform Verification Workers | Partially Implemented | P1 |
 | [RDR-074](RDR-074-project-readiness.md) | Settings-Aware Project Readiness | Implemented | P2 |
+| [RDR-075](RDR-075-general-maintenance-runs.md) | General Maintenance Runs — Directed Audits and Recurring Repository Care | Draft | — |
 
 ### Cloud Execution Readiness
 
@@ -246,11 +247,11 @@ assistant's exploration context, and restoring a saved answer's recorded
 evidence on reopen. #4322 stays open and keeps `Tracks #4309` language; only
 the umbrella's own final acceptance audit may close #4309.
 
-RDR-075 is reserved for **General Maintenance Runs**, proposed in
-[PR #4308](https://github.com/viamin/paid/pull/4308). Its
-[2026-10-15 C75 closeout audit](audit-report-2026-10-15-rdr-075.md) is
-**Blocked**: the design remains an unmerged Draft, no approved maintenance
-LLD/EARS or runtime surface has shipped, the `maintenance_runs` default-off
+RDR-075, **General Maintenance Runs** (indexed above under Quality &
+Automation), is drafted in [PR #4308](https://github.com/viamin/paid/pull/4308).
+Its [2026-10-15 C75 closeout audit](audit-report-2026-10-15-rdr-075.md) found
+it **Blocked**: the design remained an unmerged Draft, no approved maintenance
+LLD/EARS or runtime surface had shipped, the `maintenance_runs` default-off
 tenant guard must be retained when implemented, and the separate RDR-073 tool
 guard remains authoritative. The audit tracks #4326 rather than closing it;
 its observed closed GitHub state must be reconciled before the umbrella's own
