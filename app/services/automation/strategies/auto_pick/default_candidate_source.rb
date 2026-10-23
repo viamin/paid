@@ -123,11 +123,15 @@ module Automation
           # Evaluates both partial-closeout admission decisions from one set
           # of project-scoped eligibility inputs. Continuation authorization
           # is limited to issues rejected by the plain scope: plainly eligible
-          # issues are not stalled and do not need the scoped recheck.
+          # issues are not stalled and do not need the scoped recheck. Both
+          # scopes also share one tier-feasibility resolver, so the second
+          # evaluation does not re-read runner configuration.
           # @spec PARTIAL-CLOSEOUT-002 PARTIAL-CLOSEOUT-004
           def partial_closeout_eligibility(project, issue_ids:)
             inputs = build_eligibility_inputs(project)
-            eligible_ids = eligible_scope(project, issue_ids: issue_ids, eligibility_inputs: inputs).pluck(:id).to_set
+            tier_feasibility = Runners::TierFeasibility.new
+            eligible_ids = eligible_scope(project, issue_ids: issue_ids, eligibility_inputs: inputs,
+              tier_feasibility: tier_feasibility).pluck(:id).to_set
             continuation_issue_ids = issue_ids - eligible_ids.to_a
             continuation_eligible_ids = if continuation_issue_ids.empty?
               Set.new
@@ -136,7 +140,8 @@ module Automation
                 project,
                 issue_ids: continuation_issue_ids,
                 continuation_authorized_issue_ids: continuation_issue_ids,
-                eligibility_inputs: inputs
+                eligibility_inputs: inputs,
+                tier_feasibility: tier_feasibility
               ).pluck(:id).to_set
             end
 
@@ -146,7 +151,11 @@ module Automation
             )
           end
 
-          def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: [], issue_ids: nil, eligibility_inputs: nil) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 AUTO-PICK-QUEUE-013 @spec PARTIAL-CLOSEOUT-004
+          # Optional +tier_feasibility+ lets a caller that evaluates scopes
+          # for several projects resolve owner tier feasibility once instead of
+          # once per scope. It defaults to a fresh, uncached resolver, so a
+          # standalone call always re-reads live runner configuration (#4556).
+          def eligible_scope(project, excluding_run_id: nil, continuation_authorized_issue_ids: [], issue_ids: nil, eligibility_inputs: nil, tier_feasibility: Runners::TierFeasibility.new) # @spec AUTO-PICK-QUEUE-004 AUTO-PICK-QUEUE-005 AUTO-PICK-QUEUE-007 AUTO-PICK-QUEUE-013 @spec PARTIAL-CLOSEOUT-004
             inputs = eligibility_inputs || build_eligibility_inputs(project, excluding_run_id: excluding_run_id)
             base = without_open_non_pr_subissues(
               base_scope(
@@ -188,7 +197,7 @@ module Automation
             # selection pins a tier no configured runner can satisfy stay
             # out of selection so auto-pick stops creating doomed runs
             # (#4093).
-            tier_blocked_ids = tier_infeasible_issue_ids(scope, project)
+            tier_blocked_ids = tier_infeasible_issue_ids(scope, project, tier_feasibility)
             scope = scope.where.not(id: tier_blocked_ids) if tier_blocked_ids.present?
 
             scope
@@ -221,8 +230,19 @@ module Automation
           # every pass, so the exclusion clears itself as soon as a capable
           # runner is configured — no persisted flag to reset. The
           # dispatch-time filter in RunAgentActivity remains the final gate.
-          def tier_infeasible_issue_ids(candidate_scope, project)
-            infeasible_tiers = infeasible_tiers(project, LlmModel::TIERS)
+          #
+          # Feasibility is resolved over the whole catalog tier set rather than
+          # over the tiers candidate issues happen to have pinned, which is
+          # what lets the model_selections lookup be skipped entirely whenever
+          # every tier is satisfiable (#4556). That shortcut is correct only
+          # while every persisted +model_selections.tier+ is a
+          # +LlmModel::TIERS+ member — enforced by the
+          # +model_selections_tier_check+ constraint and ModelSelection's
+          # inclusion validation, and guarded against drift by
+          # spec/models/model_selection_spec.rb. A persisted tier outside the
+          # catalog would go unreported here and reach dispatch unresolved.
+          def tier_infeasible_issue_ids(candidate_scope, project, tier_feasibility)
+            infeasible_tiers = tier_feasibility.infeasible_tiers(project.effective_owner)
             return [] if infeasible_tiers.empty?
 
             tiers_by_issue = latest_requested_tier_by_issue_id(candidate_scope)
@@ -241,17 +261,6 @@ module Automation
               .each_with_object({}) do |(issue_id, tier), map|
                 map[issue_id] ||= tier
               end
-          end
-
-          def infeasible_tiers(project, tiers)
-            user = project.effective_owner
-            return [] if user.nil?
-
-            runners = user.runners.kept_only.for_agent_runs
-              .where(runner_key: RunnerSupport.container_executable_runner_keys)
-              .ordered
-
-            tiers.select { |tier| !Runners::TierCapability.any_supports_tier?(runners, tier, user: user) }
           end
 
           def apply_issue_analysis_backoff(scope, project) # @spec ISSUE-ANALYSIS-010 AUTO-PICK-QUEUE-002

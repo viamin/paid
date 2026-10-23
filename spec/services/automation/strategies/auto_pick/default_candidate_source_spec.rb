@@ -303,6 +303,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         expect(scope.pluck(:id)).to contain_exactly(no_selection.id)
       end
 
+      # @spec AUTO-PICK-QUEUE-011
       it "skips model-selection lookup when every tier is feasible" do
         issue = create(:issue, project: project, github_state: "open")
         pin_tier(issue: issue, tier: "high", created_at: 2.hours.ago)
@@ -313,6 +314,24 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         queries = capture_queries { expect(described_class.eligible_scope(project).pluck(:id)).to contain_exactly(issue.id) }
 
         expect(queries).not_to include(a_string_matching(/FROM "model_selections"/))
+      end
+
+      # @spec AUTO-PICK-QUEUE-011
+      it "resolves owner feasibility once when a caller shares one resolver across scopes" do
+        project_b = create(:project, account: project.account, created_by: owner, auto_pick_enabled: true, active: true)
+        create(:issue, project: project_b, github_state: "open")
+        shared = Runners::TierFeasibility.new
+
+        shared_queries = capture_queries do
+          described_class.eligible_scope(project, tier_feasibility: shared).count
+          described_class.eligible_scope(project_b, tier_feasibility: shared).count
+        end
+        per_scope_queries = capture_queries do
+          described_class.eligible_scope(project).count
+          described_class.eligible_scope(project_b).count
+        end
+
+        expect(shared_queries.grep(/FROM "runners"/).size).to be < per_scope_queries.grep(/FROM "runners"/).size
       end
 
       it "uses the latest selection, so an issue whose newest run dropped the pinned tier is eligible again" do
