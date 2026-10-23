@@ -43,11 +43,12 @@ module AgentRuns
       end
       return if @repo_path.blank?
 
+      persisted = build_result(apple_decision)
+      return if persisted.nil?
+
       @agent_run.with_lock do
         @previous_verification_result = nil
-        persisted = build_result(apple_decision)
-        next if persisted.nil?
-
+        persisted = merge_captured_log(persisted)
         @agent_run.update!(verification_result: persisted)
         persisted
       end
@@ -71,11 +72,6 @@ module AgentRuns
 
     def apply_apple_gate(payload, decision)
       interactive = payload.is_a?(Hash) && payload["status"].present? ? normalize(payload) : {}
-      # When the agent never wrote a recorder-readable result on the gate
-      # path, the captured `app_log_tail` would otherwise be dropped by the
-      # wholesale `update!` below. Carry the captured log forward so the
-      # recorded state stays consistent with the normal-recorder path.
-      interactive = merge_captured_log(interactive) if interactive["app_log_tail"].blank?
       entry = { "state" => decision.pending? ? "pending" : "blocked", "gate" => decision.gate }
       entry["failure_classification"] = decision.attempt.failure_classification if decision.blocked? && decision.attempt
       entry["interactive_status"] = interactive["status"] if interactive["status"].present?
@@ -138,8 +134,8 @@ module AgentRuns
       status = "failed" unless status.in?(VALID_STATUSES)
       recorder_log = app_log_tail
       recorder_log_tail = recorder_log[:content]
-      log_tail = recorder_log_tail.presence || captured_log_tail
-      truncated_flag = log_truncated(recorder_log_tail, recorder_log[:truncated])
+      log_tail = recorder_log_tail.presence
+      truncated_flag = log_truncated(recorder_log[:truncated])
 
       result = {
         "status" => status,
@@ -160,7 +156,7 @@ module AgentRuns
       if log_tail.present?
         result.merge!(
           "app_log_tail" => log_tail,
-          "app_log_recorded_at" => log_recorded_at(recorder_log_tail),
+          "app_log_recorded_at" => Time.current.iso8601,
           "app_log_truncated" => truncated_flag
         )
       end
@@ -174,16 +170,8 @@ module AgentRuns
     # When the recorder produced the tail it knows exactly whether the read
     # hit a cap. When we fall back to the agent-captured tail the only honest
     # answer is the marker the agent capture stored — if it stored one.
-    def log_truncated(recorder_log_tail, recorder_truncated)
-      return recorder_truncated if recorder_log_tail.present?
-
-      previous_verification_result.fetch("app_log_truncated", false)
-    end
-
-    def log_recorded_at(recorder_log_tail)
-      return Time.current.iso8601 if recorder_log_tail.present?
-
-      previous_verification_result["app_log_recorded_at"] || Time.current.iso8601
+    def log_truncated(recorder_truncated)
+      recorder_truncated
     end
 
     def previous_verification_result

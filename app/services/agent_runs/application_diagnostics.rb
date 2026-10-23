@@ -66,9 +66,14 @@ module AgentRuns
           "pids_count" => sample.pids_count
         }.compact
       end.reverse
-      return unavailable("no run-scoped application container samples are available") if samples.empty?
+      return unavailable("no run-scoped agent container samples are available") if samples.empty?
 
-      { "status" => "available", "samples" => samples, "metric_names" => METRIC_NAMES }
+      {
+        "status" => "available",
+        "subject" => "agent_container",
+        "samples" => samples,
+        "metric_names" => METRIC_NAMES
+      }
     end
 
     def since

@@ -154,7 +154,14 @@ module AgentRuns
           .map(&:to_s)
           .select(&:present?)
           .sort_by { |secret| -secret.length }
-          .reduce(text) { |redacted, secret| redacted.gsub(secret, "[REDACTED:known_secret]") }
+          .reduce(text) { |redacted, secret| redact_secret(redacted, secret) }
+      end
+
+      def redact_secret(text, secret)
+        return text.gsub(secret, "[REDACTED:known_secret]") if secret.length > 4
+
+        pattern = /(?<prefix>(?:=|:|[\"']|Bearer\s+)\s*)#{Regexp.escape(secret)}(?![[:alnum:]_])/i
+        text.gsub(pattern) { "#{$~[:prefix]}[REDACTED:known_secret]" }
       end
 
       def known_secrets(agent_run)
