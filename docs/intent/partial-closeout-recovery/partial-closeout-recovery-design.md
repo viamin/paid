@@ -328,7 +328,11 @@ criterion assessment on the run; it does not create a follow-up run, change the
 issue state, create a pull request, or authorize implementation. The normal
 request/run lifecycle remains the durable progress, cancellation, failure, and
 retry surface, and the existing one-open-request and active-run constraints
-deduplicate audit requests for an evidence generation. All ordinary
+deduplicate audit requests for an evidence generation. Deduplication only
+reuses an open request whose persisted mode and run goal match the requested
+operation: a request that would authorize a different operation is refused with
+the open authorization named, so an implementation continuation is never
+reported as an acceptance audit and vice versa. All ordinary
 continuation guards remain authoritative.
 
 ## Alternatives considered

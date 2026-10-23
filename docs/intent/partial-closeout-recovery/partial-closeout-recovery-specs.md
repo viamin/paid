@@ -65,7 +65,10 @@
   run SHALL refresh the criterion assessment without creating implementation
   work, a pull request, a follow-up run, or an issue-state transition. Normal
   evidence-generation deduplication, cancellation, failure, retry, budget,
-  trust, pause, dependency, and approved-design guards SHALL remain in effect.
+  trust, pause, dependency, and approved-design guards SHALL remain in effect,
+  and deduplication SHALL only reuse an open request whose persisted mode and
+  run goal match the requested operation; a conflicting open mode SHALL be
+  refused so audit and implementation authorizations remain distinct.
   *Code:* `app/services/issues/request_acceptance_audit.rb`,
   `app/services/issues/request_continuation.rb`,
   `app/temporal/activities/run_acceptance_audit_activity.rb`,

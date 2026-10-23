@@ -3,8 +3,11 @@
 module Issues
   # Deliberate continuation of an issue stalled behind terminal closeout
   # evidence (merged partial PR / no-code outcome). Persists the scoped
-  # authorization (actor, reason, outcome-generation digest) and queues
-  # exactly one create_pr run for it, in a single transaction (#4120).
+  # authorization (actor, reason, outcome-generation digest, continuation
+  # mode) and queues exactly one run for it, in a single transaction (#4120).
+  # The mode keeps distinct authorizations distinct: implementation
+  # continuations queue a create_pr run, acceptance audits an analyze_issue
+  # run, and deduplication never converts one into the other.
   #
   # Admission reuses the auto-pick eligibility guards: the request only lifts
   # the merged-PR and no-code guards for this one issue (via
@@ -13,10 +16,16 @@ module Issues
   # skip labels, and active-run uniqueness all still apply, with the blocker
   # explained to the user.
   # @spec PARTIAL-CLOSEOUT-003 @spec PARTIAL-CLOSEOUT-004 @spec PARTIAL-CLOSEOUT-008
+  # @spec PARTIAL-CLOSEOUT-027
   class RequestContinuation
     Result = Struct.new(:request, :agent_run, :code, :message, keyword_init: true) do
       def success? = code.nil?
     end
+
+    MODE_LABELS = {
+      "implementation" => "implementation continuation",
+      "acceptance_audit" => "acceptance audit"
+    }.freeze
 
     def self.call(...) = new(...).call
 
@@ -35,7 +44,7 @@ module Issues
 
       issue.with_lock do
         existing = IssueContinuationRequest.open_for_issue(issue)
-        return success(existing, existing.agent_runs.first) if existing
+        return dedupe_or_refuse(existing) if existing
 
         status = CloseoutStatus.call(issue)
         refusal = refusal_for(status)
@@ -50,7 +59,7 @@ module Issues
       raise unless duplicate_request?(e)
 
       existing = IssueContinuationRequest.open_for_issue(issue)
-      return success(existing, existing.agent_runs.first) if existing
+      return dedupe_or_refuse(existing) if existing
 
       raise
     end
@@ -58,6 +67,46 @@ module Issues
     private
 
     attr_reader :actor, :continuation_mode, :goal, :issue, :origin, :reason
+
+    # The one-open-request-per-issue dedup only spans the same operation: an
+    # open implementation continuation is not an acceptance-audit request and
+    # vice versa, so a mismatched open authorization is refused rather than
+    # reported as the requested operation (#4597 review).
+    # @spec PARTIAL-CLOSEOUT-027
+    def dedupe_or_refuse(existing)
+      return success(existing, existing.agent_runs.first) if authorizes_requested_operation?(existing)
+
+      failure(:conflicting_open_request, conflict_message(existing))
+    end
+
+    def authorizes_requested_operation?(existing)
+      return false unless persisted_mode(existing) == continuation_mode
+
+      existing_run = existing.agent_runs.first
+      existing_run.nil? || existing_run.goal == goal
+    end
+
+    # Requests persisted before continuation modes existed can only be
+    # implementation continuations, so a missing mode reads as implementation.
+    def persisted_mode(existing)
+      existing.evidence["continuation_mode"] || "implementation"
+    end
+
+    def conflict_message(existing)
+      open_label = label_for(persisted_mode(existing))
+      requested_label = label_for(continuation_mode)
+      "This issue already has an open #{open_label} authorization (request ##{existing.id}); " \
+        "it must finish or be cancelled before #{article_for(requested_label)} " \
+        "#{requested_label} can be requested."
+    end
+
+    def label_for(mode)
+      MODE_LABELS.fetch(mode, mode)
+    end
+
+    def article_for(label)
+      label.start_with?(/[aeiou]/) ? "an" : "a"
+    end
 
     def refusal_for(status)
       unless status.evidence.present?

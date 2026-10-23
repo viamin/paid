@@ -31,4 +31,21 @@ RSpec.describe Issues::RequestAcceptanceAudit do
     expect(second.agent_run).to eq(first.agent_run)
     expect(issue.agent_runs.count).to eq(1)
   end
+
+  # @spec PARTIAL-CLOSEOUT-027
+  it "refuses rather than reusing an open implementation continuation" do
+    create(:issue, :pull_request, project:, github_number: 12, github_state: "closed",
+      pr_review_phase: "merged", parent_issue: issue, created_at: 2.days.ago)
+    implementation = Issues::RequestContinuation.call(
+      issue:, actor: user, reason: "Continue the deferred implementation."
+    )
+
+    result = described_class.call(issue:, actor: user)
+
+    expect(result.success?).to be(false)
+    expect(result.code).to eq(:conflicting_open_request)
+    expect(result.message).to include("implementation continuation")
+    expect(issue.agent_runs.count).to eq(1)
+    expect(implementation.request.reload.status).to eq("queued")
+  end
 end
