@@ -195,7 +195,7 @@ RSpec.describe FacetConfidence::AssessmentOutcomeReport do
     end
   end
 
-  describe "readiness parity with ScopedReadiness" do
+  describe "readiness parity with ScopedReadiness", :db do
     it "agrees with the deterministic verdict at the 79/80 boundary and at 80/80" do
       expect(FeatureIntents::ScopedReadiness.call(project:, mapping: mapping_for(intent: 79, technical: 80))).not_to be_ready
       expect(FeatureIntents::ScopedReadiness.call(project:, mapping: mapping_for(intent: 80, technical: 80))).to be_ready

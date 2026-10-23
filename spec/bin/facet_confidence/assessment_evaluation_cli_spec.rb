@@ -10,9 +10,9 @@ load Rails.root.join("bin/facet-confidence-assessment-evaluation")
 
 # @spec FACET-CONFIDENCE-016 @spec FACET-CONFIDENCE-017
 # @spec FACET-CONFIDENCE-018
-RSpec.describe FacetConfidence::AssessmentEvaluationCli do
-  let(:script_path) { File.expand_path("../../bin/facet-confidence-assessment-evaluation", __dir__) }
-  let(:committed_corpus) { File.expand_path("../../docs/intent/facet-confidence/assessment-corpus-manifest-v1.yml", __dir__) }
+RSpec.describe FacetConfidence::AssessmentEvaluationCli, :no_db do
+  let(:script_path) { File.expand_path("../../../bin/facet-confidence-assessment-evaluation", __dir__) }
+  let(:committed_corpus) { File.expand_path("../../../docs/intent/facet-confidence/assessment-corpus-manifest-v1.yml", __dir__) }
   let(:corpus_dir) { Pathname.new(Dir.mktmpdir) }
   let(:corpus) { corpus_dir.join("corpus.yml").to_s }
   let(:ledger) { corpus_dir.join("ledger.jsonl").to_s }

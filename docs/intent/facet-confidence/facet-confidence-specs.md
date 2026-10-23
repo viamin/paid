@@ -53,7 +53,7 @@ the worksheet records them as not established.
   *Tests:* `spec/lib/facet_confidence/assessment_corpus_ledger_spec.rb`.
 - [x] **FACET-CONFIDENCE-017** — When a corpus assessment run is recorded, Paid SHALL retain the corpus version and content digest, rubric version, model version, and input evidence revision alongside the run outcome, SHALL serialize validation and appending so concurrent events cannot corrupt the ledger, SHALL reject a second run of identical case input as a replay of certainty, and SHALL require a re-run at a correction revision to cite the matching correction event.
   *Code:* `lib/facet_confidence/assessment_corpus_ledger.rb`, `bin/facet-confidence-assessment-evaluation`.
-  *Tests:* `spec/lib/facet_confidence/assessment_corpus_ledger_spec.rb`, `spec/facet_confidence/assessment_evaluation_cli_spec.rb`.
+  *Tests:* `spec/lib/facet_confidence/assessment_corpus_ledger_spec.rb`, `spec/bin/facet_confidence/assessment_evaluation_cli_spec.rb`.
 - [x] **FACET-CONFIDENCE-018** — When corpus runs and their follow-ups are recorded, Paid SHALL report false readiness, unnecessary clarification, human corrections, assessment cost, and downstream rework per case and in aggregate, and SHALL treat threshold or rubric tuning proposals as unevaluated until these outcome metrics are complete, never justified by throughput alone.
   *Code:* `lib/facet_confidence/assessment_outcome_report.rb`, `bin/facet-confidence-assessment-evaluation`.
   *Evidence:* `assessment-evaluation-2026-10-23/outcome-worksheet-2026-10-23.md` records the operator-measured values; measured runs stay pending operator assessment execution.
