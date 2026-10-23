@@ -8,15 +8,8 @@
 - **Priority**: P1
 - **Related RDRs**: [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)
 - **Intent**: [Facet confidence](../intent/facet-confidence/facet-confidence-design.md)
-- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (shared umbrella), [#4323](https://github.com/viamin/paid/issues/4323) (RDR-070 closeout); implementation tasks are linked in the shared tree
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
-- **Related Issues**: Epic [#4309](https://github.com/viamin/paid/issues/4309)
-  (open; P01, P05, P06, P07, P11, C70 unimplemented);
-  assessment audit [#4323](https://github.com/viamin/paid/issues/4323);
-  implementation gaps [#4314](https://github.com/viamin/paid/issues/4314),
-  [#4315](https://github.com/viamin/paid/issues/4315),
-  [#4316](https://github.com/viamin/paid/issues/4316), and
-  [#4318](https://github.com/viamin/paid/issues/4318)
+- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (shared umbrella), [#4323](https://github.com/viamin/paid/issues/4323) (RDR-070 closeout), and [#4573](https://github.com/viamin/paid/issues/4573) (assessment-corpus final-acceptance dependency)
 
 ## Implementation Status
 
@@ -194,46 +187,29 @@ Evidence, explanations, unknown states and correction mechanisms are part of
 the same feature, not optional observability. Rubric evaluation and assessment
 cost are additional work; no score eliminates the need for engineering review.
 
-## 2026-10-12 Assessment Audit
-
-Assessment issue [#4323](https://github.com/viamin/paid/issues/4323) compared
-this RDR and every `FACET-CONFIDENCE-*` claim with the repository rather than
-using closed historical issues as implementation evidence. **RDR-070 remains
-Accepted, not closed out:** no evidence-backed implementation status from the
-closeout checklist is currently truthful. The facet/evidence foundation,
-assessment pipeline, adaptive clarification/preferences, and scoped readiness
-are each still planned in focused, open implementation issues [#4314](https://github.com/viamin/paid/issues/4314),
-[#4315](https://github.com/viamin/paid/issues/4315),
-[#4316](https://github.com/viamin/paid/issues/4316), and
-[#4318](https://github.com/viamin/paid/issues/4318). The full evidence and
-rollout-guard disposition are in
-[`audit-report-2026-10-12-rdr-070.md`](audit-report-2026-10-12-rdr-070.md).
-
-The audit deliberately does not call the RDR Partially Implemented: the
-pre-existing approval-gated `FeatureIntentDecision` records and
-clarifying-answer parsing are reusable foundations, but they do not implement
-the independent scores, evidence provenance, explicit preference, or readiness
-contract. It also does not call the RDR Abandoned or Superseded: the accepted
-design remains the active intent and its focused implementation work is open.
-The required shadow-mode rollout guard remains in force; no confidence score
-may release work until the complete RDR-071 delivery path ships.
-
 ## 2026-10-22 Final Acceptance Audit
 
-The final umbrella audit rechecked the accepted RDR against the current
-models, services, and focused tests rather than the historical issue state.
-`FeatureIntentFacet*` records retain attributable evidence and independent
-scores; `FeatureIntents::AssessFacet`, `ChallengeFacetAssessment`, and
-`ScopedReadiness` supply assessment, correction, and 80/80 readiness behavior;
-and `ExplicitPreferences` preserves only explicit, scoped statements. The
-current EARS ledger marks `FACET-CONFIDENCE-001` through `015` implemented.
+Closeout [#4323](https://github.com/viamin/paid/issues/4323) compared every
+RDR-070 acceptance criterion with current source and focused specs. The
+evidence supports **Partially Implemented**: core behavior is shipped, and
+focused child [#4573](https://github.com/viamin/paid/issues/4573) has since
+delivered the versioned assessment corpus and its false-readiness,
+clarification, correction, cost, and rework measurement machinery (see
+[Implementation Status](#implementation-status)). The operator-executed
+measured runs that machinery reports on remain pending, so
+[#4323](https://github.com/viamin/paid/issues/4323) is not yet ready for final
+acceptance. The audit does not recreate the already-shipped approval policy or
+treat closed historical issues as evidence.
 
-This is nevertheless **Partially Implemented**, not Implemented: the required
-versioned representative assessment corpus and its false-readiness,
-clarification, correction, cost, and rework measurements have not been run or
-recorded. In addition, automatic release remains contingent on the still-open
-confidence-delivery publication and activation-isolation work. The shadow-mode
+The final umbrella audit rechecked the accepted RDR against current models,
+services, and focused tests rather than historical issue state. The rollout
+guard has progressed from shadow-only assessment to the RDR-071 gated release
+path: confidence release remains contingent on complete scoped readiness,
+admission, review, publication, and activation-isolation wiring. The default
+thresholds remain provisional judgments, not calibrated probabilities, and the
+corpus must not tune scores solely to increase throughput. The shadow-mode
 guard therefore remains a release-policy constraint; this audit does not
-broaden enrollment or change an active run. Evidence and the remaining-gap
-disposition are recorded in
+broaden enrollment or change an active run. This closeout tracks
+[#4309](https://github.com/viamin/paid/issues/4309); it does not close the
+umbrella. The shared audit evidence is also recorded in
 [`audit-report-2026-10-22-human-centered-inbox-epic.md`](audit-report-2026-10-22-human-centered-inbox-epic.md).
