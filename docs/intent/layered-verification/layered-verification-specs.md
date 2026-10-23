@@ -137,6 +137,33 @@
   *Tests:* `spec/services/layered_verification/checks/tlc_runner_spec.rb`
   *Code:* `LayeredVerification::Checks::TlcRunner` (#4433)
 
+## Audit execution and coverage synthesis
+
+- [ ] **LAYERED-VERIFY-024** — A `layered_verification_audit` run SHALL
+  execute the checks its verification plan selected
+  (`LAYERED-VERIFY-021`) — including the correspondence checks against
+  `LayeredVerificationCorrespondenceClaim`s (`business_to_model`,
+  `business_to_spec`, `spec_to_code`, `model_to_code`) and semantic-audit
+  checks — and SHALL record each outcome as a `LayeredVerificationCheckResult`
+  per `LAYERED-VERIFY-008`; a plan-selected check the run cannot execute SHALL
+  be recorded as `not_run`, `incomplete`, or `non_applicable` with a stated
+  `limitations` reason, never silently dropped. For every in-scope obligation
+  the run SHALL derive and record an `obligation_coverage` verdict
+  (`supported` \| `contradicted` \| `unresolved`) from its contributing check
+  results and SHALL synthesize a per-obligation coverage view; the run SHALL
+  NOT complete without one synthesized coverage view per in-scope obligation.
+  A `contradicted` verdict — including a cross-representation discrepancy
+  detected while each representation's own local checks pass — SHALL produce
+  a source-grounded `LayeredVerificationFinding` naming the conflicting
+  passages and the missing correspondence evidence, and an `unresolved`
+  verdict SHALL be reported as explicit uncertainty, never as support. A
+  recorded `contradicted` verdict or finding SHALL NOT be cleared by
+  weakening, removing, or re-prompting the detecting check in a later plan;
+  only fresh supporting evidence recorded against a current revision SHALL
+  resolve it.
+  *Tests:* `spec/services/layered_verification/audits/synthesize_coverage_spec.rb`
+  *Code:* `LayeredVerification::Audits::SynthesizeCoverage` (#4433)
+
 ## Audit-only permissions and separately authorized repair
 
 - [ ] **LAYERED-VERIFY-010** — Requesting a `layered_verification_audit` run

@@ -40,7 +40,9 @@ superseded design PRs (#4364, #4384, #4406) — `VERIFY-*`, `LAYERED-VERIFY-*`,
 and `LAYER-VERIFY-*` — were planning-stage references in those PRs' branches,
 never merged into `docs/intent/`. None of the three are allocated EARS IDs in
 this repository today: a repository-wide search for any of them outside this
-segment and RDR-076 itself returns no hits. `LAYERED-VERIFY` is the only one
+segment, RDR-076 itself, and the historical RDR-075 audit reports (which record
+the superseded PRs' planning-stage references) returns no allocated hits.
+`LAYERED-VERIFY` is the only one
 of the three carried forward, chosen because it matches this repository's
 existing `<domain>-VERIFY` naming convention for cross-representation
 verification segments (`APPLE-VERIFY`, `REVIEW-VERIFY`) and matches this
@@ -299,9 +301,9 @@ existing `Workflows::AgentExecutionWorkflow` the way `lid_planning` and
 `create_feature` already do: `layered_verification_audit` skips the
 host-network-reaching model-check path when no model is declared
 (`non_applicable`, not a skipped container), and completion requires at least
-one synthesized coverage view per in-scope obligation rather than a
-created-PR URL. `layered_verification_repair` completes exactly like
-`create_pr` — it is one.
+one synthesized coverage view per in-scope obligation
+(`LAYERED-VERIFY-024`) rather than a created-PR URL.
+`layered_verification_repair` completes exactly like `create_pr` — it is one.
 
 A **manual audit** can be created without a GitHub issue (RDR-076's "Manual
 audit... create an audit run without requiring a GitHub issue"), the one
@@ -504,10 +506,10 @@ project's existing host policy.
 
 | RDR ref | EARS IDs | Replacement task(s) |
 | --- | --- | --- |
-| V1 | LAYERED-VERIFY-006, -007 | #4432, #4433 |
-| V2 | LAYERED-VERIFY-021, -022 | #4433 |
-| V3 | LAYERED-VERIFY-021, -022 | #4433 |
-| V4 | LAYERED-VERIFY-021, -022 | #4433 |
+| V1 | LAYERED-VERIFY-006, -007, -024 | #4432, #4433 |
+| V2 | LAYERED-VERIFY-021, -022, -024 | #4433 |
+| V3 | LAYERED-VERIFY-021, -022, -024 | #4433 |
+| V4 | LAYERED-VERIFY-021, -024 | #4433 |
 | V5 | LAYERED-VERIFY-001, -002, -003, -004 | #4432 |
 | V6 | LAYERED-VERIFY-021 | #4433 |
 | V7 | LAYERED-VERIFY-023 | #4433 |
@@ -516,7 +518,7 @@ project's existing host policy.
 | V10 | LAYERED-VERIFY-008 | #4432, #4433 |
 | V11 | LAYERED-VERIFY-010 | #4432, #4433 |
 | V12 | LAYERED-VERIFY-011 | #4436 |
-| V13 | LAYERED-VERIFY-022 | #4433, #4436 |
+| V13 | LAYERED-VERIFY-022, -024 | #4433, #4436 |
 | V14 | LAYERED-VERIFY-020 | #4435 |
 | V15 | LAYERED-VERIFY-005 | #4437 |
 | V16 | LAYERED-VERIFY-012 | #4432 |
@@ -527,12 +529,22 @@ project's existing host policy.
 
 The audit-first milestone (RDR-076's V1–V4, V6–V7, V17–V19, and the
 audit-only portions of V10–V11 and V20) corresponds to EARS IDs
-`LAYERED-VERIFY-001` through `-010`, `-013` through `-018`, `-021`, `-022`,
-and `-023`, carried by #4432–#4434. Full closeout requires all 23 IDs
-and #4435–#4438; optional automation (#4439 PR-triggered audits, #4440
-scheduled audits via RDR-075) is not required for core closeout and is
-not mapped to a `V` reference because RDR-076 marks both as later,
-optional integrations.
+`LAYERED-VERIFY-001` through `-004`, `-006` through `-010`, `-012`, `-013`
+through `-018`, `-021`, `-022`, `-023`, and `-024`, carried by #4432–#4434.
+That enumeration is the strict EARS union of the RDR's milestone `V`
+references (`-006` through `-008`, `-010`, `-013` through `-018`, `-021`
+through `-024`) plus the Phase-1 foundation IDs every audit stands on:
+`-001` through `-004` (framework/authority resolution), `-009` (linkage
+freshness), and `-012` (the rollout guard — an explicit #4432 Phase 1
+deliverable). `LAYERED-VERIFY-005` (design/bootstrap, #4437), `-011`
+(repair authorization, #4436), and `-019`/`-020` (change impact and
+resumption, #4435) remain post-milestone; where a listed ID's `*Code:*`
+line also names a later issue (`-009` → #4435, `-014` → #4436), the
+milestone verifies its audit-path scope as carried by #4432–#4433 and
+evaluated at #4434. Full closeout requires all 24 IDs and #4435–#4438;
+optional automation (#4439 PR-triggered audits, #4440 scheduled audits via
+RDR-075) is not required for core closeout and is not mapped to a `V`
+reference because RDR-076 marks both as later, optional integrations.
 
 Per this issue's acceptance criteria, #4432–#4438's own EARS references and
 approved scopes are updated to cite these IDs **after** this planning segment
