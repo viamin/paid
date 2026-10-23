@@ -38,6 +38,42 @@ RSpec.describe DeliveryTelemetry::ProjectReport do
       )
     end
 
+    # @spec DELIVERY-TELEMETRY-003
+    it "uses only the latest verdict for each merged PR" do
+      project = create(:project)
+      feature = create(:feature_intent, project:, status: "released", approved_design_revision: "current-revision")
+      pr = merged_pr(project, created_at: 3.days.ago, closed_at: 2.days.ago)
+      feature.feature_intent_issues.create!(issue: pr)
+      create(:intent_conformance_verdict, project:, issue: pr, reviewer_model: "reviewer-a",
+        approved_design_revision: "superseded-revision", evaluated_at: 3.days.ago)
+      latest_verdict = create(:intent_conformance_verdict, project:, issue: pr, reviewer_model: "reviewer-b",
+        approved_design_revision: "current-revision", evaluated_at: 1.day.ago)
+      create(:design_amendment, feature_intent: feature, project:, superseded_revision: "superseded-revision",
+        created_at: 1.day.ago)
+
+      report = described_class.call(project:)
+
+      expect(report.dig(:escaped_drift, :project)).to include(denominator: 1, numerator: 0, rate: 0.0)
+      expect(report.dig(:escaped_drift, :by_reviewer_model)).to contain_exactly(
+        include(reviewer_model: latest_verdict.reviewer_model, denominator: 1, numerator: 0, rate: 0.0)
+      )
+    end
+
+    # @spec DELIVERY-TELEMETRY-003
+    it "excludes a historical within-scope verdict when the latest verdict is not within scope" do
+      project = create(:project)
+      feature = create(:feature_intent, project:, status: "released")
+      pr = merged_pr(project, created_at: 3.days.ago, closed_at: 2.days.ago)
+      feature.feature_intent_issues.create!(issue: pr)
+      create(:intent_conformance_verdict, project:, issue: pr, evaluated_at: 3.days.ago)
+      create(:intent_conformance_verdict, :material_drift, project:, issue: pr, evaluated_at: 1.day.ago)
+
+      report = described_class.call(project:)
+
+      expect(report.dig(:escaped_drift, :project)).to include(denominator: 0, numerator: 0, rate: nil)
+      expect(report.dig(:escaped_drift, :by_reviewer_model)).to be_empty
+    end
+
     # @spec DELIVERY-TELEMETRY-004
     it "compares pre-activation and post-activation delivery time" do
       project = create(:project)

@@ -35,12 +35,12 @@ provenance that was not stored. Stale-approval churn compares every immutable
 approval revision's `pr_heads` snapshot with the currently synchronized design
 PR heads, per feature intent.
 
-Escaped drift is continuous: its denominator is merged linked PRs with a
-`within_scope` verdict, and its numerator is the subset subsequently
-superseded by a design amendment for that verdict's approved design revision.
-The same calculation is grouped by reviewer model. A design amendment is the
-persisted, non-manual record that the approved design materially changed after
-the PR merged.
+Escaped drift is continuous: its denominator is merged linked PRs whose latest
+conformance verdict is `within_scope`, and its numerator is the subset
+subsequently superseded by a design amendment for that verdict's approved
+design revision. The same calculation is grouped by the latest verdict's
+reviewer model. A design amendment is the persisted, non-manual record that
+the approved design materially changed after the PR merged.
 
 Delivery time is PR `github_created_at` to local terminal `closed_at` (or the
 last synchronized timestamp for legacy terminal rows), matching the rollout

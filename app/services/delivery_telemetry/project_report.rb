@@ -162,8 +162,13 @@ module DeliveryTelemetry
     end
 
     def within_scope_merged_verdicts
-      IntentConformanceVerdict.where(project:, outcome: IntentConformanceVerdict::OUTCOME_WITHIN_SCOPE)
+      IntentConformanceVerdict.where(id: latest_verdict_ids, outcome: IntentConformanceVerdict::OUTCOME_WITHIN_SCOPE)
         .includes(:issue).select { |verdict| merged_pull_request?(verdict.issue) }
+    end
+
+    def latest_verdict_ids
+      IntentConformanceVerdict.where(project:).select("DISTINCT ON (issue_id) id")
+        .order(:issue_id, evaluated_at: :desc, id: :desc)
     end
 
     def feature_ids_for(issue_id)

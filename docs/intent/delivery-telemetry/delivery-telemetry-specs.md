@@ -11,8 +11,8 @@
   snapshots by comparing immutable approved PR heads with current design PR
   heads.
 
-- [x] **DELIVERY-TELEMETRY-003** — When a merged linked PR has a
-  `within_scope` conformance verdict and a later design amendment supersedes
+- [x] **DELIVERY-TELEMETRY-003** — When a merged linked PR's latest
+  conformance verdict is `within_scope` and a later design amendment supersedes
   that verdict's approved revision, the system SHALL count it as escaped drift
   in project and reviewer-model aggregates without manual adjudication.
 
