@@ -58,15 +58,15 @@ RSpec.describe IntentConformanceShadowEvaluation do
   end
 end
 
-RSpec.describe IntentConformanceShadowEvaluationRun do
-  it "rejects an unknown verdict" do
-    run = build(:intent_conformance_shadow_evaluation_run, verdict: "approved")
+  describe IntentConformanceShadowEvaluationRun do
+    it "rejects an unknown verdict" do
+      run = build(:intent_conformance_shadow_evaluation_run, verdict: "approved")
 
-    expect(run).not_to be_valid
-  end
+      expect(run).not_to be_valid
+    end
 
-  it "classifies not_evaluated separately from evaluated verdicts" do
-    expect(build(:intent_conformance_shadow_evaluation_run, :not_evaluated)).to be_not_evaluated
-    expect(build(:intent_conformance_shadow_evaluation_run)).to be_evaluated
+    it "classifies not_evaluated separately from evaluated verdicts" do
+      expect(build(:intent_conformance_shadow_evaluation_run, :not_evaluated)).to be_not_evaluated
+      expect(build(:intent_conformance_shadow_evaluation_run)).to be_evaluated
+    end
   end
-end
