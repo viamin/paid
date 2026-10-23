@@ -26,7 +26,8 @@ module Projects
       AgentRun.preload_created_issue_records(@agent_runs)
       cache_key = AgentRun.runner_options_cache_key_for(account_id: @project.account_id, project_id: @project.id)
       @runner_options = base_scope.distinct_effective_runner_options(account_id: @project.account_id, cache_key: cache_key)
-      @filter_options = available_filter_options(base_scope)
+      filter_options_cache_key = AgentRun.filter_options_cache_key_for(account_id: @project.account_id, project_id: @project.id)
+      @filter_options = available_filter_options(base_scope, cache_key: filter_options_cache_key)
     end
 
     # @spec EXECUTION-ISOLATION-005

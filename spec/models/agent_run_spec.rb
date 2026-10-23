@@ -5278,6 +5278,48 @@ RSpec.describe AgentRun do
     end
   end
 
+  describe ".distinct_filter_options caching" do
+    around do |example|
+      original_cache = Rails.cache
+      Rails.cache = ActiveSupport::Cache::MemoryStore.new
+      example.run
+    ensure
+      Rails.cache = original_cache
+    end
+
+    # @spec AGENT-RUNS-INDEX-002
+    it "caches filter options by account and project scope" do
+      project = create(:project)
+      create(:agent_run, :completed, project: project, agent_type: "claude_code", goal: "create_pr")
+
+      account_key = described_class.filter_options_cache_key_for(account_id: project.account_id)
+      project_key = described_class.filter_options_cache_key_for(account_id: project.account_id, project_id: project.id)
+      scope = described_class.where(project_id: project.id)
+
+      expect(scope.distinct_filter_options(cache_key: account_key)).to include(status: [ "completed" ])
+      expect(scope.distinct_filter_options(cache_key: project_key)).to include(agent_type: [ "claude_code" ])
+      expect(Rails.cache.read(account_key)).not_to be_nil
+      expect(Rails.cache.read(project_key)).not_to be_nil
+    end
+
+    # @spec AGENT-RUNS-INDEX-002
+    it "invalidates account and project filter options when a run changes" do
+      project = create(:project)
+      agent_run = create(:agent_run, :completed, project: project, agent_type: "claude_code", goal: "create_pr")
+      account_key = described_class.filter_options_cache_key_for(account_id: project.account_id)
+      project_key = described_class.filter_options_cache_key_for(account_id: project.account_id, project_id: project.id)
+      scope = described_class.where(project_id: project.id)
+
+      scope.distinct_filter_options(cache_key: account_key)
+      scope.distinct_filter_options(cache_key: project_key)
+
+      agent_run.update!(goal: "create_issue")
+
+      expect(Rails.cache.read(account_key)).to be_nil
+      expect(Rails.cache.read(project_key)).to be_nil
+    end
+  end
+
   describe "#effective_provider" do
     it "returns final_runner when present and not mapped" do
       agent_run = create(:agent_run, agent_type: "claude_code", final_runner: "codex")
