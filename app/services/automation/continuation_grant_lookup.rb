@@ -69,7 +69,7 @@ module Automation
 
       pull_request = run.project.issues.pull_requests_only
         .find_by(github_number: run.source_pull_request_number)
-      pull_request&.parent_issue
+      pull_request&.parent_issue || pull_request
     end
 
     def linked_pull_request_ids(issue_ids)
