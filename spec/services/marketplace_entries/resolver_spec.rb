@@ -256,6 +256,43 @@ RSpec.describe MarketplaceEntries::Resolver do
     expect(results).to be_empty
   end
 
+  it "attaches an entry whose rule requires labels, language, and marker file together" do # @spec TOOL-SIDECAR-003 # @spec TOOL-SIDECAR-004
+    project = create(:project, repo_profile: { "languages" => [ "Ruby" ], "marker_files" => [ "Gemfile" ] })
+    entry = create_automatic_entry_with_conditions(
+      project.account,
+      "issue_labels_includes_any" => [ "tooling" ],
+      "languages_include_any" => [ "ruby" ],
+      "repo_files_include_any" => [ "Gemfile" ]
+    )
+    issue = create(:issue, project: project, labels: [ "tooling", "bug" ])
+    agent_run = create(:agent_run, project: project, issue: issue, custom_prompt: "Implement the issue")
+
+    results = described_class.call(
+      project: project,
+      agent_run: agent_run,
+      auto_attach_enabled: true
+    )
+
+    expect(results.map(&:entry)).to eq([ entry ])
+  end
+
+  it "does not match marker files whose case differs from the stored repo profile" do # @spec TOOL-SIDECAR-004
+    project = create(:project, repo_profile: { "languages" => [ "ruby" ], "marker_files" => [ "Gemfile" ] })
+    create_automatic_entry_with_conditions(
+      project.account,
+      "repo_files_include_any" => [ "gemfile" ]
+    )
+    agent_run = create(:agent_run, project: project, custom_prompt: "Implement the issue")
+
+    results = described_class.call(
+      project: project,
+      agent_run: agent_run,
+      auto_attach_enabled: true
+    )
+
+    expect(results).to be_empty
+  end
+
   def create_automatic_entry_for(account)
     entry = create(:marketplace_entry, account: account, name: "Shared skill")
     version = create(:marketplace_entry_version,
