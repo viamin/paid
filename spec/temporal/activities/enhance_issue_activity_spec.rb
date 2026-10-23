@@ -1101,6 +1101,52 @@ RSpec.describe Activities::EnhanceIssueActivity do
         expect(issue.reload.paid_state).to eq("completed")
       end
 
+      # Codex persists each transcript event as its own stdout record, but
+      # does not guarantee that a record ends with a newline. The record
+      # boundary is therefore part of the JSONL framing: without preserving
+      # it, the earlier progress prose is glued to the final item.completed
+      # event and the generic normalizer selects the prose instead.
+      # @spec ISSUE-ENHANCEMENT-006
+      it "publishes a final Codex item.completed payload from newline-less stdout records" do
+        progress_events = [
+          { type: "item.completed", item: { type: "agent_message", text: "The repository exploration is complete." } },
+          { type: "item.completed", item: { type: "agent_message", text: "I'll now prepare the final enhancement." } }
+        ]
+        final_event = {
+          type: "item.completed",
+          item: { type: "agent_message", text: delimiter_wrapped(structured_output) }
+        }
+
+        log_agent_stdout((progress_events + [ final_event ]).map(&:to_json), wrap: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect_comment_including(described_class::COMMENT_MARKER, "## Implementation context")
+        expect(client).not_to have_received(:add_comment).with(
+          project.full_name,
+          issue.github_number,
+          a_string_including("## Auto-enhancement stopped")
+        )
+        expect(agent_run.reload.status).to eq("completed")
+        expect(issue.reload.paid_state).to eq("completed")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-006
+      it "keeps genuinely split JSONL stream chunks contiguous" do
+        event = {
+          type: "item.completed",
+          item: { type: "agent_message", text: delimiter_wrapped(structured_output) }
+        }.to_json
+        midpoint = event.length / 2
+        log_agent_stdout([ event[0...midpoint], event[midpoint..] ], wrap: false)
+
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result[:sufficient_context]).to be true
+        expect(issue.reload.paid_state).to eq("completed")
+      end
+
       # @spec ISSUE-ENHANCEMENT-006
       it "parses a delimited payload wrapped in an event_msg envelope" do
         event = {
