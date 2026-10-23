@@ -232,6 +232,11 @@ module Screenshots
         path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/change_intents/#{seed_data.fetch(:change_intent).id}" },
         requires_auth: true
       ),
+      project_automation_phases: Target.new(
+        slug: "project_automation_phases",
+        path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/automation_phases" },
+        requires_auth: true
+      ),
       workflow_status: Target.new(slug: "workflow_status", path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/workflow_status" }, requires_auth: true)
     }.freeze
 
@@ -353,6 +358,7 @@ module Screenshots
       "knowledge/quality_controller.rb" => [ :project_knowledge_quality ],
       "projects/cost_budgets_controller.rb" => [ :project_cost_dashboard ],
       "projects/change_intents_controller.rb" => [ :project_change_intent_show ],
+      "projects/automation_phases_controller.rb" => [ :project_automation_phases ],
       "projects/clarifying_questions_controller.rb" => [ :project_issue_clarifying_questions ],
       "projects/health_check_controller.rb" => [ :project_health_check ],
       "projects/connector_events_controller.rb" => [ :project_edit ],
@@ -739,6 +745,7 @@ module Screenshots
       when "edit.html.erb" then [ :project_edit ]
       when "clarifying_questions/show.html.erb" then [ :project_issue_clarifying_questions ]
       when "change_intents/show.html.erb" then [ :project_change_intent_show ]
+      when "automation_phases/show.html.erb" then [ :project_automation_phases ]
       when /\A_/
         base = File.basename(leaf, ".html.erb")
         if PROJECT_SHOW_PARTIALS.include?(base)
