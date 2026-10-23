@@ -5,11 +5,13 @@ require "json"
 require "time"
 require "yaml"
 require_relative "shadow_evaluation_ledger_git_evidence"
+require_relative "shadow_evaluation_policy"
 
 module IntentConformance
   # Repository-visible, append-only evidence for the RDR-067 shadow evaluation.
   # It intentionally has no writer other than the command-line append operation.
   # @spec INTENT-CONFORMANCE-ROLLOUT-002 @spec INTENT-CONFORMANCE-ROLLOUT-003
+  # @spec INTENT-CONFORMANCE-ROLLOUT-005
   module ShadowEvaluationLedger
     PendingHumanInput = Class.new(StandardError)
     InvalidLedger = Class.new(StandardError)
@@ -55,6 +57,7 @@ module IntentConformance
       ensure_operators_frozen!(entries)
       ensure_adjudications!(cases, entries)
       ensure_shadow_runs_follow_adjudications!(cases, entries)
+      ensure_label_revisions_follow_runs!(cases, entries)
       ensure_corpus_shape!(cases)
       ensure_git_evidence!(entries, manifest_path, ledger_path, manifest_commit)
       true
@@ -129,7 +132,13 @@ module IntentConformance
       ShadowEvaluationLedgerGitEvidence.verify!(entries: entries, manifest_path: manifest_path, ledger_path: ledger_path, manifest_commit: manifest_commit)
     end
 
+    # Operator identity freezing is policy dependent: a solo evaluation
+    # freezes its single maintainer through the evaluation_policy declaration
+    # (see ShadowEvaluationPolicy.ensure_declaration!), while the team policy
+    # keeps the separate operators_frozen event two-operator rule.
     def ensure_operators_frozen!(entries)
+      return if ShadowEvaluationPolicy.solo?(entries)
+
       frozen_events = entries.each_with_index.select { |entry, _index| entry["type"] == "operators_frozen" }
       adjudication_indices = entries.each_index.select { |index| entries[index]["type"] == "adjudication" }
       return if adjudication_indices.empty?
@@ -148,6 +157,9 @@ module IntentConformance
     end
 
     def ensure_adjudications!(cases, entries)
+      ShadowEvaluationPolicy.ensure_skips!(cases, entries)
+      return ShadowEvaluationPolicy.ensure_solo_adjudications!(cases, entries) if ShadowEvaluationPolicy.solo?(entries)
+
       adjudications = entries.select { |entry| entry["type"] == "adjudication" }
       case_ids = cases.to_h { |corpus_case| [ corpus_case.fetch("id"), true ] }
       adjudications.reject { |entry| case_ids.key?(entry["case_id"]) }.each do |entry|
@@ -217,6 +229,13 @@ module IntentConformance
     def ensure_one_shadow_run_per_case!(runs)
       duplicated = runs.group_by { |entry| entry["case_id"] }.any? { |_case_id, group| group.length > 1 }
       raise InvalidLedger, "each case may have at most one shadow run" if duplicated
+    end
+
+    # Post-result label revisions are retained evidence, never score inputs:
+    # they must follow the case's reviewer run and bind to the frozen label.
+    # @spec INTENT-CONFORMANCE-ROLLOUT-008
+    def ensure_label_revisions_follow_runs!(cases, entries)
+      ShadowEvaluationPolicy.ensure_label_revisions!(cases, entries)
     end
 
     def ensure_unique_event_ids!(entries)

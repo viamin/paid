@@ -402,6 +402,93 @@ RSpec.describe IntentConformance::ShadowEvaluationLedger, :no_db do
     }.to raise_error(IntentConformance::ShadowEvaluationLedger::PendingHumanInput, /pending human input/)
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-005
+  it "validates a solo ledger: declaration first, one maintainer adjudication per case, then runs" do
+    Dir.mktmpdir do |dir|
+      init_git_repo(dir)
+      manifest_path = File.join(dir, "manifest.yml")
+      ledger_path = File.join(dir, "ledger.jsonl")
+      cases = complete_corpus_cases
+      manifest_commit = git_write!(dir, manifest_path, { "cases" => cases }.to_yaml, "freeze corpus manifest")
+      base = event_base_for(manifest_path, manifest_commit)
+
+      record_events_in_separate_commits(dir, ledger_path, solo_corpus_events(cases, base))
+
+      expect(described_class.validate!(manifest_path: manifest_path, ledger_path: ledger_path, manifest_commit: manifest_commit)).to be(true)
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-005
+  it "does not reinterpret a declaration-less ledger as solo evidence: the team policy still demands two operators" do
+    # Emulates the rejected 2026-10-13 bot-authored ledger shape: a frozen
+    # operator list plus a single operator's adjudication and no policy
+    # declaration — the team rules, not a solo reading, apply.
+    File.write(manifest, { "cases" => [ complete_case("A-01") ] }.to_yaml)
+    single = [
+      base_event.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[maintainer@paid second@paid]),
+      base_event.merge("type" => "adjudication", "event_id" => "one", "case_id" => "A-01", "operator" => "maintainer@paid", "verdict" => "within_scope", "cited_design_claim" => "X", "reason" => "Y")
+    ]
+    File.write(ledger, single.map { |event| JSON.generate(event) }.join("\n"))
+
+    expect { described_class.ready_for_shadow_run!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::PendingHumanInput, /A-01 needs two adjudications/)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-005
+  it "rejects a solo adjudication by an operator other than the declared maintainer" do
+    File.write(manifest, { "cases" => complete_corpus_cases }.to_yaml)
+    events = solo_corpus_events(complete_corpus_cases)
+    events[1] = events[1].merge("operator" => "paid-agents@paid-agents.com")
+    File.write(ledger, events.map { |event| JSON.generate(event) }.join("\n"))
+
+    expect { described_class.ready_for_shadow_run!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /declared maintainer/)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-008
+  it "rejects a solo label revision recorded before the case's reviewer run" do
+    cases = complete_corpus_cases
+    File.write(manifest, { "cases" => cases }.to_yaml)
+    events = solo_corpus_events(cases)
+    revision = base_event.merge(
+      "type" => "label_revision", "event_id" => "rev-early", "case_id" => events[1].fetch("case_id"),
+      "operator" => "maintainer@paid", "original_verdict" => events[1].fetch("verdict"), "revised_verdict" => "uncertain",
+      "reason" => "rethought", "recorded_at" => "2026-10-10T11:00:00Z"
+    )
+    # Insert before every shadow run but after the adjudications.
+    insert_at = events.index { |event| event["type"] == "shadow_run" }
+    events.insert(insert_at, revision)
+    File.write(ledger, events.map { |event| JSON.generate(event) }.join("\n"))
+
+    expect { described_class.validate!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::InvalidLedger, /label revision must follow the case's shadow run/)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-005
+  it "keeps a skipped solo case as pending human input instead of completed evidence" do
+    cases = complete_corpus_cases
+    File.write(manifest, { "cases" => cases }.to_yaml)
+    skipped_case = cases.first.fetch("id")
+    events = solo_corpus_events(cases)
+    events.reject! { |event| event["type"] == "adjudication" && event["case_id"] == skipped_case }
+    events << base_event.merge("type" => "case_skipped", "event_id" => "skip-1", "case_id" => skipped_case, "operator" => "maintainer@paid", "recorded_at" => "2026-10-10T12:00:00Z")
+    File.write(ledger, events.map { |event| JSON.generate(event) }.join("\n"))
+
+    expect { described_class.ready_for_shadow_run!(manifest_path: manifest, ledger_path: ledger, manifest_commit: "a" * 40) }
+      .to raise_error(IntentConformance::ShadowEvaluationLedger::PendingHumanInput, /needs the maintainer's blinded label/)
+  end
+
+  def solo_corpus_events(cases, event_base = base_event)
+    declaration = event_base.merge("type" => "evaluation_policy", "event_id" => "policy", "policy" => "solo", "maintainer" => "maintainer@paid", "recorded_at" => "2026-10-10T07:00:00Z")
+    adjudications = cases.map do |corpus_case|
+      event_base.merge("type" => "adjudication", "event_id" => "#{corpus_case.fetch("id")}-solo", "case_id" => corpus_case.fetch("id"), "operator" => "maintainer@paid", "verdict" => "within_scope", "cited_design_claim" => "X", "reason" => "Y", "recorded_at" => "2026-10-10T08:01:00Z")
+    end
+    runs = cases.map do |corpus_case|
+      event_base.merge("type" => "shadow_run", "event_id" => "run-#{corpus_case.fetch("id")}", "case_id" => corpus_case.fetch("id"), "reviewer_run_id" => "run-#{corpus_case.fetch("id")}", "reviewer_model" => "model", "prompt_digest" => "digest", "verdict" => "within_scope", "cost_cents" => 1, "recorded_at" => "2026-10-10T12:01:00Z")
+    end
+    [ declaration, *adjudications, *runs ]
+  end
+
   def complete_adjudication_events
     [
       base_event.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[one two three]),

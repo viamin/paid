@@ -221,7 +221,8 @@ RSpec.describe IntentConformance::VerifyAtMerge do
           instance_double(AgentHarness::Response,
             success?: true,
             output: { outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "OK" }.to_json,
-            model: "claude-sonnet-4-6")
+            model: "claude-sonnet-4-6",
+            metadata: {})
         )
       end
 

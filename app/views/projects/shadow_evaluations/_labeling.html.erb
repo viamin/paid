@@ -1,0 +1,98 @@
+<%# Blinded labeling surface: pinned evidence + outcome/reason/citation only.
+    Strata and reviewer outputs are structurally absent (CaseView whitelist),
+    so this partial cannot render them before freeze. @spec INTENT-CONFORMANCE-ROLLOUT-006 %>
+<% remaining = progress[:total] - progress[:labeled] - progress[:skipped] %>
+
+<div class="rounded-xl border border-gray-200 bg-white p-4" data-labeling-progress>
+  <div class="flex items-center justify-between">
+    <h2 class="text-sm font-semibold text-gray-900">Progress</h2>
+    <span class="text-xs text-gray-500"><%= progress[:labeled] %> labeled · <%= progress[:skipped] %> skipped · <%= progress[:total] %> total</span>
+  </div>
+  <div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+    <div class="h-full rounded-full bg-violet-600" style="width: <%= (progress[:labeled] * 100.0 / [progress[:total], 1].max).round %>%"></div>
+  </div>
+  <p class="mt-2 text-xs text-gray-500">
+    Skipped cases are never counted as completed and block freezing. Answers stay hidden until you freeze.
+  </p>
+</div>
+
+<% if case_view && case_view.exists? %>
+  <% current = case_view.blinded_payload %>
+  <% own = current["label"] %>
+  <div class="space-y-4 rounded-xl border border-gray-200 bg-white p-6" data-labeling-case="<%= current["id"] %>">
+    <div class="space-y-1">
+      <h2 class="text-lg font-semibold text-gray-900">Case <%= current["id"] %></h2>
+      <dl class="space-y-1 text-sm text-gray-700">
+        <div>Repository: <code><%= current["repository"] %></code></div>
+        <div>Pinned diff: <code class="break-all"><%= current["base_sha"] %>…<%= current["head_sha"] %></code></div>
+        <div>Approved design revision: <code class="break-all"><%= current["approved_design_revision"] %></code></div>
+        <% %w[context notes rationale].each do |field| %>
+          <% if current[field].present? %>
+            <div class="whitespace-pre-line"><%= field.humanize %>: <%= current[field] %></div>
+          <% end %>
+        <% end %>
+      </dl>
+      <% if Array(current["design_document_paths"]).any? %>
+        <p class="text-xs text-gray-500">Design documents: <%= Array(current["design_document_paths"]).join(", ") %></p>
+      <% end %>
+    </div>
+
+    <%= form_with url: label_project_shadow_evaluation_path(@project, evaluation), method: :post, class: "space-y-3" do |form| %>
+      <%= form.hidden_field :case_id, value: current["id"] %>
+      <fieldset class="space-y-2">
+        <legend class="text-sm font-medium text-gray-700">Reference label</legend>
+        <% %w[within_scope material_drift uncertain].each do |outcome| %>
+          <label class="flex items-center gap-2 text-sm text-gray-700">
+            <%= form.radio_button :outcome, outcome, checked: own && own["state"] == "labeled" && own["outcome"] == outcome, required: true,
+                  class: "h-4 w-4 border-gray-300 text-violet-600 focus:ring-violet-500" %>
+            <code><%= outcome %></code>
+          </label>
+        <% end %>
+      </fieldset>
+      <div>
+        <%= form.label :cited_design_claim, "Cited approved claim", class: "block text-sm font-medium text-gray-700" %>
+        <%= form.text_field :cited_design_claim, value: own && own["cited_design_claim"], required: true,
+              class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
+      </div>
+      <div>
+        <%= form.label :reason, "Reason", class: "block text-sm font-medium text-gray-700" %>
+        <%= form.text_area :reason, value: own && own["reason"], required: true, rows: 3,
+              class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
+      </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <%= form.submit "Save label",
+              class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
+      </div>
+    <% end %>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <%= button_to "Skip case", skip_project_shadow_evaluation_path(@project, evaluation),
+            params: { case_id: current["id"] },
+            form: { data: { turbo_frame: "_top" } },
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      <%= button_to "Finish and freeze reference set", freeze_project_shadow_evaluation_path(@project, evaluation),
+            form: { data: { turbo_frame: "_top", turbo_confirm: "Freeze the reference label set? Reviewer outputs and strata become visible and labeling ends." } },
+            disabled: remaining.positive? || progress[:skipped].positive?,
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      <% if remaining.positive? || progress[:skipped].positive? %>
+        <span class="text-xs text-amber-800">Freezing is blocked until every case is labeled (no pending or skipped cases).</span>
+      <% end %>
+    </div>
+  </div>
+<% else %>
+  <div class="space-y-3 rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-700">
+    <% if progress[:skipped].positive? %>
+      <p><%= progress[:skipped] %> case(s) are still skipped — resolve them before freezing; a skipped case is never completed evidence.</p>
+      <% evaluation.labels.where(state: "skipped").pluck(:case_id).each do |case_id| %>
+        <%= link_to "Return to skipped case #{case_id}", project_shadow_evaluation_path(@project, evaluation, case_id:),
+              data: { turbo_frame: "_top" },
+              class: "mr-3 inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      <% end %>
+    <% else %>
+      <p>Every case is labeled. You can freeze the reference set.</p>
+    <% end %>
+    <%= button_to "Finish and freeze reference set", freeze_project_shadow_evaluation_path(@project, evaluation),
+          form: { data: { turbo_frame: "_top", turbo_confirm: "Freeze the reference label set? Reviewer outputs and strata become visible and labeling ends." } },
+          class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
+  </div>
+<% end %>

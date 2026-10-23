@@ -9,11 +9,14 @@ prefix: INTENT-CONFORMANCE-ROLLOUT
 > approval-gated operating mode; it does not alter the reviewer’s semantic
 > decision or authorize a merge.
 
-**Current state (2026-10-13):** The 30-case corpus is frozen, but it has not
+**Current state (2026-10-23):** The 30-case corpus is frozen, but it has not
 been independently adjudicated by two humans with auditable, distinct
 provenance. The prior label-only record does not establish independence.
-Issue #4205 remains open for the complete measured rollout; the corpus alone
-does not authorize promotion.
+Issue #4205 is closed without qualifying adjudications; the audit trail and
+the follow-up it requires live in the RDR-067 audit reports. #4594 adds the
+explicitly selected solo-maintainer policy below so a one-maintainer project
+can still produce qualifying reference labels; the corpus alone does not
+authorize promotion.
 
 ## Purpose
 
@@ -56,6 +59,80 @@ reason. A disagreement is resolved by a third operator and retained with the
 case. The corpus manifest contains references and hashes only; repository
 patches and prompt bodies remain in the repository/provider and are never
 copied into telemetry.
+
+## Solo-maintainer evaluation policy (#4594)
+
+The two-operator team policy above is the default and remains unchanged. A
+project with exactly one maintainer cannot satisfy it; fabricating a second
+identity would be worse than an explicit weaker policy. An evaluation may
+therefore declare the **solo-maintainer policy**, which must be:
+
+- **Explicitly selected.** The declaration is recorded once, before any
+  label, as an `evaluation_policy` ledger event naming the policy (`solo`)
+  and the single authenticated maintainer who will label. A ledger with no
+  declaration keeps the team policy; historical bot-authored records are
+  never silently reinterpreted as solo human evidence.
+- **Identity-bound.** Only the declared maintainer may record reference
+  labels, revisions, or the freeze action, under the project's existing
+  tenant/project authorization. No additional operator identities are
+  created, and an agent may assist navigation/recording only through the
+  authenticated maintainer's session — it cannot impersonate the decision.
+- **Blinded before freeze.** While the evaluation is in the labeling state,
+  the labeling surface shows each case's pinned diff references, approved
+  design revision, and supporting context, but never the reviewer outputs,
+  the preassigned stratum, or any expected label. Reviewer execution is
+  refused until the reference set is frozen.
+
+### Assurance limits (stated, not hidden)
+
+A solo reference set has no independence: one human's mistake or bias is the
+reference for every case, and no tie-break exists for internal doubt. It is
+weaker evidence than the team policy and is acceptable only because the
+alternative is no qualifying evaluation at all. The report must state the
+policy and the declared maintainer next to every measure. A team that later
+has two operators SHOULD re-run under the team policy before any promotion
+decision relies on independence-sensitive measures.
+
+### Labeling lifecycle
+
+The maintainer works one case at a time on a minimal labeling screen reusing
+Paid's project authorization and presentation patterns:
+
+1. **Start / resume.** Starting from the originating partial-closeout Inbox
+   item opens (or resumes) the evaluation for the current evidence
+   generation — the tuple of project, evaluation purpose, and frozen corpus
+   manifest digest. Repeated clicks resume the same evaluation; they never
+   create duplicates, and a changed corpus or evidence revision visibly
+   supersedes prior completion rather than mutating it.
+2. **Label.** Each case records `within_scope`, `material_drift`, or
+   `uncertain`, with a cited approved claim and a reason. Saves are durable
+   and resumable; any case may be skipped, and a skipped case is never
+   counted as completed.
+3. **Freeze.** The explicit finish action refuses to freeze while any case
+   is unlabeled or skipped, then stamps the reference set frozen. Answers
+   (strata and reviewer outputs) become visible only from freeze onward.
+4. **Execute.** After freeze, the real conformance reviewer runs for every
+   case through `agent_harness` (the documented operator command or the
+   equivalent UI action), recording actual verdicts, reviewer model, prompt
+   digest, cost, and failures. Missing or failed reviewer output is recorded
+   as not evaluated; prerequisite validation alone is never presented as
+   execution.
+5. **Review and revise.** Disagreements surface for maintainer review after
+   the run. A post-result revision is appended with its own reason and
+   timestamp; it never overwrites the original blinded label, and blinded
+   scoring always uses the original reference labels.
+6. **Report.** Compilation produces a reproducible report with exact
+   corpus/rubric/model/prompt/design identities, original reference labels,
+   appended revisions, reviewer verdicts, confusion counts, false alarms,
+   missed drift, uncertainty handling, cost, and provenance.
+
+Missing production measures (escaped changes, delivery baseline, rework,
+human time) stay `not established` with an explicit rollout follow-up;
+fixture accuracy cannot fabricate production effectiveness. Completing
+labels, or even a passing evaluation, implements acceptance only — it never
+automatically attests issue completion, closes GitHub work, or enables
+enforcement. Enforcement promotion remains the explicit human decision the
+RDR-067 rollout guard already requires.
 
 ## Telemetry and promotion criteria
 
