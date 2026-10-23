@@ -139,8 +139,8 @@ module MarketplaceEntries
         match_constraint(conditions["repository_full_names"], project.full_name) &&
         match_text_constraint(conditions["task_text_includes_any"]) &&
         match_issue_labels_constraint(conditions["issue_labels_includes_any"]) &&
-        match_repo_profile_constraint(conditions["languages_include_any"], languages_in_repo_profile) &&
-        match_repo_profile_constraint(conditions["repo_files_include_any"], marker_files_in_repo_profile)
+        match_repo_profile_constraint(conditions["languages_include_any"], "languages") &&
+        match_repo_profile_constraint(conditions["repo_files_include_any"], "marker_files")
     end
 
     def match_constraint(allowed_values, actual_value)
@@ -168,28 +168,26 @@ module MarketplaceEntries
       candidates = Array(labels).map(&:to_s).reject(&:blank?)
       return true if candidates.empty?
 
-      issue_labels = Array(agent_run.issue&.labels).map(&:to_s)
-      return false if issue_labels.empty?
-
       (candidates & issue_labels).any?
     end
 
-    def match_repo_profile_constraint(values, profile_values) # @spec TOOL-SIDECAR-004
+    def match_repo_profile_constraint(values, profile_key) # @spec TOOL-SIDECAR-004
       candidates = Array(values).map(&:to_s).reject(&:blank?)
       return true if candidates.empty?
 
-      available = Array(profile_values).map(&:to_s)
-      return false if available.empty?
-
-      (candidates & available).any?
+      (candidates & repo_profile_values(profile_key)).any?
     end
 
-    def languages_in_repo_profile
-      project.effective_repo_profile.fetch("languages", [])
+    # Run-level scoping inputs are read at most once per resolution, and only
+    # when a rule actually constrains on them, so evaluating a rule never adds
+    # a query of its own.
+    def issue_labels # @spec TOOL-SIDECAR-003
+      @issue_labels ||= Array(agent_run.issue&.labels).map(&:to_s)
     end
 
-    def marker_files_in_repo_profile
-      project.effective_repo_profile.fetch("marker_files", [])
+    def repo_profile_values(profile_key) # @spec TOOL-SIDECAR-004
+      profile = @effective_repo_profile ||= project.effective_repo_profile
+      Array(profile[profile_key]).map(&:to_s)
     end
 
     def provider_key
