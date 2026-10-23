@@ -553,6 +553,15 @@ arrows:
     status: OK
     audited: 2026-10-02
     blockedBy: [intent-conformance-review, approved-intent-merge-guard]
+  delivery-telemetry:
+    title: Human-led Delivery Telemetry
+    path: docs/intent/delivery-telemetry/delivery-telemetry-design.md
+    specs: docs/intent/delivery-telemetry/delivery-telemetry-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-10-23
+    blockedBy: [intent-conformance-rollout]
   review-depth-presets:
     title: Project-Level Review Depth Presets
     path: docs/intent/review-depth-presets/review-depth-presets-design.md

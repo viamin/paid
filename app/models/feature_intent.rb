@@ -40,6 +40,7 @@ class FeatureIntent < ApplicationRecord
 
   has_many :feature_intent_issues, dependent: :destroy
   has_many :issues, through: :feature_intent_issues
+  has_many :delivery_telemetry_issues, -> { excluding_body }, through: :feature_intent_issues, source: :issue
   has_many :feature_intent_decisions, dependent: :destroy
   has_many :facets, class_name: "FeatureIntentFacet", dependent: :destroy
   has_many :feature_intent_design_prs, dependent: :destroy
