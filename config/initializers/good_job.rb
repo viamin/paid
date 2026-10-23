@@ -139,6 +139,12 @@ Rails.application.configure do
       queue: "maintenance",
       description: "Daily sweep recomputing project configuration health checks and refreshing the cached results"
     },
+    project_dashboard_metrics_sweep: {
+      cron: "45 0 * * *",
+      class: "ProjectDashboardMetricsSweepJob",
+      queue: "maintenance",
+      description: "Daily refresh of project dashboard metric snapshots"
+    },
     legacy_partial_closeout_reconciliation_sweep: {
       cron: "45 5 * * *",
       class: "LegacyPartialCloseoutReconciliationSweepJob",
