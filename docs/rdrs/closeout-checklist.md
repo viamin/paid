@@ -138,6 +138,20 @@ an override during reconciliation.
       follow-up work, use
       non-closing language such as `Tracks #1234` and explain in the RDR why no
       closure is claimed.
+- [ ] Apply the same non-closing rule to **the closeout issue and every gap
+      child issue**, not just the umbrella. A PR that records a **Blocked** or
+      **Partially Implemented** audit leaves those issues open by definition —
+      the remaining gaps in steps 2 and 3 are their whole purpose. Reference
+      them with `Relates to #1234` / `Part of #1234`, never with a GitHub
+      closing keyword.
+- [ ] Before merging an audit PR, re-read its own description against the audit
+      artifact and confirm the two agree: if the report says an issue stays
+      open, no closing keyword may point at that issue anywhere in the body.
+      GitHub resolves closing keywords on merge, so a contradiction here
+      silently misreports unmet acceptance criteria as satisfied. Note that the
+      keyword only counts when it directly precedes the reference — avoid
+      quoting the pairing (even inside backticks) when explaining the rule, or
+      the explanation itself becomes the directive.
 - [ ] Do not rely on Paid's local `paid_state` as the source of truth for
       closure; GitHub-visible closing references and issue state must tell the
       same story a user sees.
