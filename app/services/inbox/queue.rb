@@ -424,6 +424,7 @@ module Inbox
       end
     end
 
+    # @spec OPERATOR-INBOX-002K
     def merge_approval_entries
       merge_approval_issues.filter_map do |issue|
         snapshot = Inbox::MergeApproval.call(issue)
@@ -474,7 +475,7 @@ module Inbox
         ids = scoped_projects.map(&:id)
         return Issue.none if ids.empty?
 
-        only_record(Inbox::MergeApproval.candidates(ids))
+        only_record(Inbox::MergeApproval.candidates(ids)).includes(:parent_issue)
       end
     end
 

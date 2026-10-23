@@ -1169,6 +1169,38 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:issue)).to include(stalled)
     end
 
+    # @spec PARTIAL-CLOSEOUT-026
+    it "batch-preloads partial-closeout status inputs instead of querying per candidate" do
+      create_partial_closeout_issue(github_number: 216, merged_pr_number: 2160)
+      single_row_queries = count_queries do
+        described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)
+      end
+
+      create_partial_closeout_issue(github_number: 217, merged_pr_number: 2170)
+      create_partial_closeout_issue(github_number: 218, merged_pr_number: 2180)
+      multi_row_queries = count_queries do
+        described_class.call(user: user, kind: described_class::PARTIAL_CLOSEOUT_KIND)
+      end
+
+      expect(multi_row_queries).to eq(single_row_queries)
+    end
+
+    # @spec OPERATOR-INBOX-002K
+    it "batch-preloads merge-approval entries instead of querying per PR" do
+      create_merge_approval_pr(github_number: 219)
+      single_row_queries = count_queries do
+        described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+      end
+
+      create_merge_approval_pr(github_number: 220)
+      create_merge_approval_pr(github_number: 221)
+      multi_row_queries = count_queries do
+        described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+      end
+
+      expect(multi_row_queries).to eq(single_row_queries)
+    end
+
     # @spec FEATURE-APPROVAL-013
     it "batch-preloads decision, design-PR, and approver lookups for feature_decision entries instead of querying per row" do
       create(:feature_intent, :approved_waiting_for_merge, project: project)
