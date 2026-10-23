@@ -59,6 +59,10 @@ RSpec.describe "Chat diagrams", :js, system_driver: :paid_cuprite, type: :system
   # @spec QUESTION-EXPLORATION-003 QUESTION-EXPLORATION-012
   it "does not duplicate a live diagram when its tool result arrives" do
     visit chat_session_path(chat_session)
+    # The example injects the live transport payload below. Suppress the
+    # model callback's separate asynchronous delivery so it cannot race the
+    # deterministic client-side event under test.
+    allow(ActionCable.server).to receive(:broadcast)
     diagram = create(:chat_diagram, chat_session:)
     tool_result = create(:chat_message, :tool, chat_session:)
     diagram.update!(chat_message: tool_result)
