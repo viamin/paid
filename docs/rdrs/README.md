@@ -161,6 +161,7 @@ cycles.
 | [RDR-063](RDR-063-operational-supervisor-delivery-health.md) | Operational Supervisor for Delivery Health | Draft | P1 |
 | [RDR-068](RDR-068-apple-platform-verification-workers.md) | Apple Platform Verification Workers | Partially Implemented | P1 |
 | [RDR-074](RDR-074-project-readiness.md) | Settings-Aware Project Readiness | Implemented | P2 |
+| [RDR-075](RDR-075-general-maintenance-runs.md) | General Maintenance Runs — Directed Audits and Recurring Repository Care | Draft | — |
 
 ### Cloud Execution Readiness
 

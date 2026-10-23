@@ -43,6 +43,10 @@
     document-scroll failure this bound exists to prevent.
     (@spec CHAT-API-008, CHAT-API-009, #3459, #3575, #3635, #4271) %>
 <% chat_panel_bottom_space = local_assigns[:chat_panel_bottom_space] %>
+<% session_projects = chat_session_projects(chat_session) %>
+<% runner_model_options = ChatSessions::RunnerModelOptions.options_for(available_runners, projects: session_projects) if can_update_chat_session %>
+<% thinking_effort_model_ids = [ chat_session.model, *runner_model_options.to_a.map(&:model_id) ] %>
+<% thinking_effort_models_by_id = ChatSessions::ThinkingEffort.catalog_models_by_id(thinking_effort_model_ids) %>
 <div class="flex flex-col overflow-x-hidden"
      data-controller="chat"
      data-action="click->chat#navigate"
@@ -77,7 +81,10 @@
                  can_archive_chat_session: can_archive_chat_session,
                  can_unarchive_chat_session: can_unarchive_chat_session,
                  available_runners: available_runners,
-                 available_models: available_models %>
+                 available_models: available_models,
+                 session_projects: session_projects,
+                 runner_model_options: runner_model_options,
+                 thinking_effort_models_by_id: thinking_effort_models_by_id %>
 
       <%= tag.details class: "group mt-1 rounded-lg border border-gray-200 bg-gray-50",
                       data: { chat_workspace_disclosure: true },
@@ -113,7 +120,10 @@
                  can_archive_chat_session: can_archive_chat_session,
                  can_unarchive_chat_session: can_unarchive_chat_session,
                  available_runners: available_runners,
-                 available_models: available_models %>
+                 available_models: available_models,
+                 session_projects: session_projects,
+                 runner_model_options: runner_model_options,
+                 thinking_effort_models_by_id: thinking_effort_models_by_id %>
 
       <%# Collapsed for inline-only chats. Non-inline sessions retain the
           nested disclosure's server-rendered open state, while its closed

@@ -54,6 +54,7 @@ RSpec.describe Issues::EnqueueEligible, :no_db do
   let(:service) { described_class.new(issue, project: project) }
 
   before do
+    allow(Automation::RolloutGuard).to receive(:enabled?).with(project).and_return(false)
     allow(project).to receive_messages(auto_pick_enabled?: true, model_preferences: {})
     allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(true)
     allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:eligible_scope)

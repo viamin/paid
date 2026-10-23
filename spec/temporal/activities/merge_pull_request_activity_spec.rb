@@ -21,6 +21,19 @@ RSpec.describe Activities::MergePullRequestActivity do
   end
 
   describe "#execute" do
+    # @spec AUTOMATION-PHASES-002
+    it "does not merge when the merge phase is disabled but auto-merge remains enabled" do
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(automation_phase_settings: {
+        "phases" => { "merge" => false }, "release" => false, "deployment" => false
+      })
+
+      result = activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+      expect(result).to include(merged: false, skipped: true)
+      expect(Automation::Providers::Resolver).not_to have_received(:repository_for)
+    end
+
     context "when auto_merge is disabled" do
       before { project.update!(auto_merge_mode: "off") }
 
@@ -86,6 +99,37 @@ RSpec.describe Activities::MergePullRequestActivity do
         expect(provider).to have_received(:merge_pull_request)
           .with(repo: project.full_name, number: 42, method: :squash)
         expect(issue.reload.pr_review_phase).to eq("merged")
+      end
+    end
+
+    context "when the rollout is off and the project uses dependabot-only auto-merge" do
+      let(:pr_data) do
+        Automation::Providers::Data::PullRequest.new(
+          number: 42, title: "Test", body: nil, state: :open, draft: false,
+          merged: false, mergeable: true, head_sha: "abc", head_ref: "feature",
+          base_ref: "main", author_login: "user", labels: [], created_at: Time.current,
+          updated_at: Time.current, merged_at: nil, url: "https://example.com/pr/42",
+          raw_state: "open"
+        )
+      end
+
+      before do
+        project.update!(auto_merge_mode: "dependabot_only")
+        allow(provider).to receive_messages(
+          fetch_pull_request: pr_data,
+          merge_pull_request: Automation::Providers::Data::MergeResult.new(
+            merged: true, sha: "def456", message: "Merged"
+          ),
+          add_labels: nil,
+          add_comment: nil
+        )
+      end
+
+      # @spec AUTOMATION-PHASES-014
+      it "preserves the pre-rollout human PR executor behavior" do
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+
+        expect(provider).to have_received(:merge_pull_request)
       end
     end
 

@@ -31,17 +31,19 @@ module Issues
 
       eligibility = Automation::Strategies::AutoPick::DefaultCandidateSource
         .partial_closeout_eligibility(project, issue_ids: candidates.map(&:id))
+      candidates.each { |issue| issue.project = project }
+      inputs = CloseoutStatus.inputs_for(candidates)
       # The scoped admission decision each candidate's continuation would
       # face at dequeue (`CloseoutStatus#residual_eligibility_blocker`),
       # evaluated from shared project inputs. The guards are per-issue, so
       # authorizing the plain-ineligible candidates at once yields each
       # candidate's own scoped verdict.
       candidates.filter_map do |issue|
-        issue.project = project
         status = CloseoutStatus.call(
           issue,
           eligible_issue_ids: eligibility.eligible_ids,
-          continuation_eligible_issue_ids: eligibility.continuation_eligible_ids
+          continuation_eligible_issue_ids: eligibility.continuation_eligible_ids,
+          inputs: inputs
         )
         Pair.new(issue: issue, status: status) if status.stalled?
       end

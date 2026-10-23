@@ -22,16 +22,25 @@ module Issues
     end
 
     def self.call(issue)
-      merged_prs = merged_pull_requests(issue)
-      no_code_at = issue.no_code_required_at
-      terminal_at = (merged_prs.map(&:terminal_at).compact + [ no_code_at ]).compact.max
+      results_for([ issue ]).fetch(issue.id)
+    end
 
-      Result.new(
-        merged_prs: merged_prs.sort_by { |pr| [ pr.terminal_at || Time.at(0), pr.number ] },
-        no_code_required_at: no_code_at,
-        terminal_at: terminal_at,
-        digest: digest_for(merged_prs, no_code_at)
-      )
+    # Builds evidence for a lane's candidates with the same authoritative
+    # joins as +call+, without issuing the two evidence queries per issue.
+    def self.results_for(issues)
+      return {} if issues.empty?
+
+      issues_by_id = issues.index_by(&:id)
+      issue_ids = issues_by_id.keys
+      linked = Issue.where(project_id: issues.map(&:project_id).uniq, is_pull_request: true,
+        pr_review_phase: "merged", parent_issue_id: issue_ids)
+        .pluck(:parent_issue_id, :github_number, :github_html_url, :created_at)
+      run_linked = linked_runs(issue_ids)
+      merged_prs_by_issue_id = merged_prs_by_issue_id(issues_by_id, linked, run_linked)
+
+      issues_by_id.transform_values do |issue|
+        build_result(merged_prs_by_issue_id.fetch(issue.id, {}).values, issue.no_code_required_at)
+      end
     end
 
     def self.digest_for(merged_prs, no_code_at)
@@ -123,5 +132,51 @@ module Issues
 
       by_number.values
     end
+
+    def self.build_result(merged_prs, no_code_at)
+      terminal_at = (merged_prs.map(&:terminal_at).compact + [ no_code_at ]).compact.max
+      Result.new(
+        merged_prs: merged_prs.sort_by { |pr| [ pr.terminal_at || Time.at(0), pr.number ] },
+        no_code_required_at: no_code_at,
+        terminal_at: terminal_at,
+        digest: digest_for(merged_prs, no_code_at)
+      )
+    end
+    private_class_method :build_result
+
+    def self.linked_runs(issue_ids)
+      AgentRun.where(goal: "create_pr", issue_id: issue_ids).where.not(pull_request_number: nil)
+        .joins(<<~SQL.squish)
+          INNER JOIN issues merged_prs
+            ON merged_prs.project_id = agent_runs.project_id
+           AND merged_prs.github_number = agent_runs.pull_request_number
+          INNER JOIN projects merged_pr_projects ON merged_pr_projects.id = merged_prs.project_id
+           AND (merged_prs.github_html_url = agent_runs.pull_request_url OR (
+             merged_prs.github_html_url IS NULL AND agent_runs.pull_request_url = CONCAT(
+               'https://github.com/', merged_pr_projects.owner, '/', merged_pr_projects.repo,
+               '/pull/', merged_prs.github_number)))
+           AND merged_prs.is_pull_request = TRUE AND merged_prs.pr_review_phase = 'merged'
+        SQL
+        .pluck("agent_runs.issue_id", "agent_runs.id", "agent_runs.pull_request_number",
+          "agent_runs.pull_request_url", "agent_runs.completed_at", "merged_prs.created_at")
+    end
+    private_class_method :linked_runs
+
+    def self.merged_prs_by_issue_id(issues_by_id, linked, run_linked)
+      result = Hash.new { |hash, key| hash[key] = {} }
+      run_times = run_linked.group_by { |issue_id, _run_id, number, *_rest| [ issue_id, number ] }
+        .transform_values { |rows| rows.map { |row| row[4] }.compact.max }
+      linked.each do |issue_id, number, url, created_at|
+        issue = issues_by_id.fetch(issue_id)
+        result[issue_id][number] ||= MergedPullRequest.new(number:, url: url.presence || "#{issue.project.github_url}/pull/#{number}", terminal_at: run_times[[ issue_id, number ]] || created_at, run_id: nil)
+      end
+      run_linked.each do |issue_id, run_id, number, url, completed_at, created_at|
+        pr = result[issue_id][number]
+        result[issue_id][number] = MergedPullRequest.new(number:, url: url.presence || "#{issues_by_id.fetch(issue_id).project.github_url}/pull/#{number}", terminal_at: completed_at || created_at, run_id:) if pr.nil?
+        pr.run_id = run_id if pr
+      end
+      result
+    end
+    private_class_method :merged_prs_by_issue_id
   end
 end

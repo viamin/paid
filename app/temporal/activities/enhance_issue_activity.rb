@@ -154,13 +154,29 @@ module Activities
 
     # Reads recent stdout through AgentRun's provider-aware output normalizer.
     # Structured runners may wrap the final agent message in JSONL events, while
-    # text runners return the delimited payload directly.
+    # text runners return the delimited payload directly. Persisted JSONL
+    # records are individually complete even when their writers omit a trailing
+    # newline; incomplete records remain contiguous because they are stream
+    # fragments rather than event boundaries.
     # @spec ISSUE-ENHANCEMENT-006
     def collect_agent_stdout(agent_run)
-      raw = agent_run.agent_run_logs.stdout.recent.limit(STDOUT_TAIL_CHUNKS).pluck(:content).reverse.join
+      records = agent_run.agent_run_logs.stdout.recent.limit(STDOUT_TAIL_CHUNKS).pluck(:content).reverse
+      raw = reassemble_stdout_records(records)
       return raw if delimited_payload(raw)
 
       agent_run.normalized_agent_output(raw, succeeded: true)
+    end
+
+    def reassemble_stdout_records(records)
+      records.map { |record| jsonl_event_record?(record) ? "#{record}\n" : record }.join
+    end
+
+    def jsonl_event_record?(record)
+      return false if record.end_with?("\n")
+
+      JSON.parse(record).is_a?(Hash)
+    rescue JSON::ParserError
+      false
     end
 
     # Extracts the JSON payload from concatenated stdout. The agent prompt
@@ -466,6 +482,7 @@ module Activities
     # enhance_issue so auto-pick's completed-issue recovery can recognize an
     # enhanced-and-ready issue without depending on how the run that produced
     # the verdict was triggered (#3851).
+    # @spec AUTOMATION-PHASES-008
     def complete_run!(agent_run, paid_state = "completed", sufficient_context: nil, reason: nil)
       agent_run.complete!
       return unless agent_run.issue
@@ -477,6 +494,9 @@ module Activities
         agent_run.issue.complete_unless_reopen_review_pending!(attrs.except(:paid_state))
       else
         agent_run.issue.update!(attrs)
+      end
+      if paid_state == "completed"
+        Automation::CompleteContinuationGrants.call(work_items: agent_run.issue, endpoint: "issue_preparation")
       end
     end
 

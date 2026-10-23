@@ -55,7 +55,7 @@ module ChatSessions
         started_at: report.fetch(:started_at),
         finished_at: report.fetch(:finished_at),
         metadata: { request_id: report.fetch(:request_id), provider_reported: report[:provider_reported] == true,
-                    error: report[:error] }.compact
+                    error: report[:error], reasoning_effort: report[:reasoning_effort] }.compact
       }
     end
 

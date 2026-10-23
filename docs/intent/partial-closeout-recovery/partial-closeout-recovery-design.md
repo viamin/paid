@@ -92,6 +92,11 @@ paid_state edit and never a blanket guard lift:
   cancel and supersede — the walk explains the authority, it never
   substitutes for it.
 
+For Inbox lane construction, `StalledCloseouts` batch-loads the evidence and
+persisted diagnostic inputs for each project's candidates before evaluating
+individual `CloseoutStatus` values. The per-issue status still produces the
+same additive blockers; batching changes only how its inputs are read.
+
 ### Prompt delivery
 
 The authorization is useless to the executing agent if it never reaches the
@@ -311,6 +316,24 @@ records a classification (`awaiting_final_audit`, `blocked_implementation`,
 `missing_measured_results`, or `coordination_epic`) and a supported next action
 that explains when open ownership makes another run duplicate work. A fresh
 semantic assessment remains a bounded explicit `agent_harness` operation.
+
+### Report-only acceptance audits (#4595)
+
+When an assessment is missing or stale, Inbox offers a distinct **Run
+acceptance audit** action. It uses the existing scoped-continuation admission
+transaction, but records `acceptance_audit` in the request evidence and queues
+an `analyze_issue` run rather than a `create_pr` run. The workflow recognizes
+that persisted mode and invokes a dedicated audit activity which refreshes the
+criterion assessment on the run; it does not create a follow-up run, change the
+issue state, create a pull request, or authorize implementation. The normal
+request/run lifecycle remains the durable progress, cancellation, failure, and
+retry surface, and the existing one-open-request and active-run constraints
+deduplicate audit requests for an evidence generation. Deduplication only
+reuses an open request whose persisted mode and run goal match the requested
+operation: a request that would authorize a different operation is refused with
+the open authorization named, so an implementation continuation is never
+reported as an acceptance audit and vice versa. All ordinary
+continuation guards remain authoritative.
 
 ## Alternatives considered
 

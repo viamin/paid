@@ -11,11 +11,13 @@ module Inbox
       @entry_id = entry_id.to_s
     end
 
-    # @spec MOBILE-API-008
+    # @spec MOBILE-API-008 @spec INBOX-PHASE-RELEVANCE-003
+    # Searches every scope: an authorized user may inspect a request that
+    # phase relevance or their own removal moved out of the default list.
     def call
       return unless Inbox::Queue::KINDS.include?(kind)
 
-      Inbox::Queue.call(user:, kind:).find { |entry| entry.id == entry_id }
+      Inbox::Queue.new(user:, kind:).find_entry(entry_id)
     end
 
     private

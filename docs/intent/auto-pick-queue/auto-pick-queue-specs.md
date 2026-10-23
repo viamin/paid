@@ -182,8 +182,17 @@
   creating runs doomed to fail with `NoTierCapableRunner` (#4093).
   Feasibility SHALL be re-derived from live runner configuration on every
   pass, so the exclusion clears itself once a capable runner is configured.
+  Feasibility SHALL be resolved over the whole `LlmModel::TIERS` catalog, so
+  the model-selection lookup MAY be skipped when every catalog tier is
+  satisfiable; that shortcut SHALL stay correct only while every persisted
+  `model_selections.tier` is a catalog tier. Feasibility depends only on the
+  owner's runner configuration, so a pass MAY resolve it once per owner and
+  reuse it across the projects it evaluates; the memoized value SHALL NOT
+  outlive the pass.
   Issues with no model selection, or whose latest selection pins a
   satisfiable tier, remain eligible.
-  *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+  *Tests:* `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`,
+  `spec/services/runners/tier_feasibility_spec.rb`,
+  `spec/models/model_selection_spec.rb`.
   *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
-  `Runners::TierCapability`.
+  `Runners::TierCapability`, `Runners::TierFeasibility`.

@@ -4,12 +4,32 @@ module Automation
   module FeatureActivation
     module_function
 
+    # RDR-077: every capability entry point asks the one effective policy
+    # first. A disabled phase grants no standing authorization, so a trusted
+    # per-item activation label (or catch-all label) cannot re-enable it —
+    # while a continuation grant for the covered work still authorizes the
+    # action. While the rollout flag is off this is always permitted, so the
+    # pre-existing behavior is untouched.
+    #
+    # @spec AUTOMATION-PHASES-002 @spec AUTOMATION-PHASES-007
+    def phase_authorized?(project:, capability:, work_item: nil)
+      phase = Automation::Phases.for_capability(capability)
+      return true if phase.nil?
+
+      policy = Automation::EffectivePolicy.call(project:, phase:, work_item:, trigger: :automatic)
+      return false unless policy.permitted?
+      return true unless Automation::RolloutGuard.enabled?(project)
+
+      capability.to_s != "auto_release" || Automation::PhaseSettings.call(project).release_enabled?
+    end
+
     # @spec AUTOMATION-ACTIVATION-003 @spec AUTOMATION-ACTIVATION-004 @spec AUTOMATION-ACTIVATION-005 @spec AUTOMATION-ACTIVATION-006
     # @spec LABEL-CONTROL-007 — In ignored mode the activation signal lives
     # on the Issue row (paid_activation_state = "activated") rather than on a
     # GitHub label; its caller uses the sentinel to take the authenticated
     # Paid-local authorization path without replaying label history.
     def issue_auto_pick_trigger(project:, issue:)
+      return nil unless phase_authorized?(project:, capability: "auto_pick", work_item: issue)
       return paid_local_trigger(issue) if project.paid_local_activation?
 
       return nil if blocked_by_skip_labels?(project, issue)
@@ -25,6 +45,7 @@ module Automation
     # setting alone. The issue itself need only be paid-activated for the
     # underlying run to be queued, which is checked by the caller.
     def issue_auto_enhance_enabled?(project:, issue:)
+      return false unless phase_authorized?(project:, capability: "auto_enhance", work_item: issue)
       return project.auto_enhance_enabled? if project.paid_local_activation?
 
       return true if project.auto_enhance_enabled?
@@ -61,6 +82,7 @@ module Automation
     # there is no per-PR feature activation; PR features resolve to the
     # project-level setting alone.
     def pull_request_feature_enabled?(project:, pull_request:, feature:)
+      return false unless phase_authorized?(project:, capability: feature, work_item: pull_request)
       return false if upstream_mode_disables?(project, feature)
 
       # @spec LABEL-CONTROL-007 — ignored mode has no per-PR feature
@@ -82,7 +104,9 @@ module Automation
     # opt an individual human PR into that path while the project setting is
     # off, but cannot broaden Dependabot-only mode.
     # @spec AUTO-MERGE-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-007
-    def human_pull_request_auto_merge_enabled?(project:, pull_request:)
+    def human_pull_request_auto_merge_enabled?(project:, pull_request:, phase_authorized: nil)
+      authorized = phase_authorized.nil? ? phase_authorized?(project:, capability: "auto_merge", work_item: pull_request) : phase_authorized
+      return false unless authorized
       return false if upstream_mode_disables?(project, "auto_merge")
       return project.auto_merge_enabled? if project.paid_local_activation?
       return true if project.auto_merge_mode == "all"
@@ -93,6 +117,7 @@ module Automation
 
     # @spec LABEL-CONTROL-007
     def any_pull_request_feature_enabled?(project:, feature:)
+      return false unless phase_authorized?(project:, capability: feature)
       return false if upstream_mode_disables?(project, feature)
 
       return true if project_setting_enabled?(project, feature)

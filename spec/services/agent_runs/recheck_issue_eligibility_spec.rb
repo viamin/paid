@@ -287,4 +287,78 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
       expect(run.reload.status).to eq("cancelled")
     end
   end
+
+  # @spec AUTOMATION-PHASES-013
+  describe "phase authorization recheck" do
+    def configure_phases(phases)
+      project.update!(
+        Automation::PhaseSettings::SETTINGS_KEY => {
+          Automation::PhaseSettings::PHASES_KEY => phases,
+          Automation::PhaseSettings::RELEASE_KEY => false,
+          Automation::PhaseSettings::DEPLOYMENT_KEY => false
+        }
+      )
+    end
+
+    before { FeatureFlags.enable!(:automation_phases, project:) }
+
+    it "cancels queued automatic work whose phase is now disabled" do
+      issue = create(:issue, project: project, github_state: "open")
+      run = queued_auto_pick_run(issue: issue)
+      configure_phases({ "coding" => false, "merge" => false })
+
+      expect(described_class.call(run)).to be true
+      expect(run.reload.status).to eq("cancelled")
+      expect(run.error_message).to include("Authorization for create_pr was withdrawn")
+    end
+
+    it "keeps queued work covered by an active continuation grant" do
+      issue = create(:issue, project: project, github_state: "open")
+      run = queued_auto_pick_run(issue: issue)
+      configure_phases({ "coding" => false, "merge" => false })
+      create(:work_item_continuation_grant, project: project, issue: issue, start_phase: "coding", endpoint: "merge")
+
+      expect(described_class.call(run)).to be false
+      expect(run.reload.status).to eq("queued")
+    end
+
+    it "keeps queued work once the grant is revoked" do
+      issue = create(:issue, project: project, github_state: "open")
+      run = queued_auto_pick_run(issue: issue)
+      configure_phases({ "coding" => false, "merge" => false })
+      grant = create(:work_item_continuation_grant, project: project, issue: issue, start_phase: "coding", endpoint: "merge")
+      grant.revoke!
+
+      expect(described_class.call(run)).to be true
+    end
+
+    it "does not cancel a manually started run" do
+      issue = create(:issue, project: project, github_state: "open")
+      run = create(:agent_run, :queued, project: project, issue: issue, goal: "create_pr", trigger_type: "manual")
+      configure_phases({ "coding" => false })
+
+      expect(described_class.call(run)).to be false
+      expect(run.reload.status).to eq("queued")
+    end
+
+    it "does not cancel an already-claimed run that started before the phase was disabled" do
+      issue = create(:issue, project: project, github_state: "open")
+      run = queued_auto_pick_run(issue: issue)
+      run.update!(status: "running", temporal_workflow_id: "wf-1")
+      configure_phases({ "coding" => false })
+
+      expect(described_class.call(run)).to be false
+      expect(run.reload.status).to eq("running")
+    end
+
+    it "keeps the pre-existing behavior while the rollout flag is off" do
+      FeatureFlags.disable!(:automation_phases, project:)
+      issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])
+      run = queued_auto_pick_run(issue: issue)
+      configure_phases({ "coding" => false })
+
+      expect(described_class.call(run)).to be true
+      expect(run.reload.error_message).to include("no longer eligible")
+    end
+  end
 end

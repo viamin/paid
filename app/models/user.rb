@@ -36,6 +36,13 @@ class User < ApplicationRecord
   has_many :personal_access_tokens, dependent: :destroy
   has_many :api_usage_attempts, foreign_key: :actor_id, dependent: :nullify
   has_many :pr_templates, dependent: :destroy
+  has_many :inbox_removals, dependent: :destroy
+  has_many :created_work_item_continuation_grants,
+    class_name: "WorkItemContinuationGrant", foreign_key: :created_by_id, dependent: :nullify,
+    inverse_of: :created_by
+  has_many :revoked_work_item_continuation_grants,
+    class_name: "WorkItemContinuationGrant", foreign_key: :revoked_by_id, dependent: :nullify,
+    inverse_of: :revoked_by
 
   # Include default devise modules. Others available are:
   # :confirmable, :lockable, :timeoutable, :trackable and :omniauthable

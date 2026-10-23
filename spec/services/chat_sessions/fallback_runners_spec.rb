@@ -3,6 +3,22 @@
 require "rails_helper"
 
 RSpec.describe ChatSessions::FallbackRunners do
+  describe "thinking effort on .switch!" do
+    # @spec CHAT-THINKING-EFFORT-003
+    it "clears a thinking effort unsupported by the fallback model" do
+      account = create(:account)
+      user = create(:user, account: account)
+      runner = create(:runner, :api_key, user: user, runner_key: "claude",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+      ChatFallbackCatalog.seed_low_tier_model(model_id: "claude-haiku-4-5")
+      session = create(:chat_session, account: account, created_by: user, metadata: { "thinking_effort" => "high" })
+
+      described_class.switch!(chat_session: session, runner: runner)
+
+      expect(session.reload.metadata["thinking_effort"]).to be_nil
+    end
+  end
+
   describe ".for" do
     let(:account) { create(:account) }
     let(:user) { create(:user, account: account) }

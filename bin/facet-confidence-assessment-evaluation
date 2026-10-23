@@ -1,0 +1,75 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "json"
+require "optparse"
+require_relative "../lib/facet_confidence/assessment_corpus_ledger"
+require_relative "../lib/facet_confidence/assessment_outcome_report"
+
+module FacetConfidence
+  # Operator entry point for the RDR-070 versioned assessment corpus: append
+  # provenance-complete events, validate the frozen corpus ledger, and compile
+  # the outcome worksheet. Runs as plain Ruby without Rails.
+  # @spec FACET-CONFIDENCE-016 FACET-CONFIDENCE-017 FACET-CONFIDENCE-018
+  module AssessmentEvaluationCli
+    COMMANDS = %w[append validate compile].freeze
+
+    module_function
+
+    def call(argv)
+      command = argv.shift
+      abort "usage: #{$PROGRAM_NAME} {append|validate|compile} --corpus PATH --ledger PATH [--event JSON]" unless COMMANDS.include?(command)
+
+      options = parse(argv)
+      case command
+      when "append" then append(options)
+      when "validate" then validate(options)
+      when "compile" then compile(options)
+      end
+    rescue AssessmentCorpusLedger::PendingOperatorInput => error
+      warn error.message
+      exit 2
+    rescue AssessmentCorpusLedger::InvalidLedger => error
+      warn "invalid assessment corpus ledger: #{error.message}"
+      exit 1
+    rescue OptionParser::ParseError => error
+      warn "invalid assessment corpus ledger: #{error.message}"
+      exit 1
+    end
+
+    def parse(argv)
+      options = {}
+      OptionParser.new do |parser|
+        parser.on("--corpus PATH") { |value| options[:corpus] = value }
+        parser.on("--ledger PATH") { |value| options[:ledger] = value }
+        parser.on("--event JSON") do |value|
+          options[:event] = JSON.parse(value)
+        rescue JSON::ParserError => error
+          raise AssessmentCorpusLedger::InvalidLedger, "--event is not valid JSON: #{error.message}"
+        end
+      end.parse!(argv)
+      %i[corpus ledger].each do |key|
+        raise AssessmentCorpusLedger::InvalidLedger, "--#{key} is required" if options[key].to_s.strip.empty?
+      end
+      options
+    end
+
+    def append(options)
+      raise AssessmentCorpusLedger::InvalidLedger, "--event is required" unless options[:event]
+      raise AssessmentCorpusLedger::InvalidLedger, "--event must be a JSON object" unless options[:event].is_a?(Hash)
+
+      AssessmentCorpusLedger.append!(ledger_path: options[:ledger], event: options[:event], corpus_path: options[:corpus])
+    end
+
+    def validate(options)
+      AssessmentCorpusLedger.validate!(corpus_path: options[:corpus], ledger_path: options[:ledger])
+      puts "valid"
+    end
+
+    def compile(options)
+      puts AssessmentOutcomeReport.compile(corpus_path: options[:corpus], ledger_path: options[:ledger])
+    end
+  end
+end
+
+FacetConfidence::AssessmentEvaluationCli.call(ARGV) if $PROGRAM_NAME == __FILE__

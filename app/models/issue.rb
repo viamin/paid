@@ -161,6 +161,7 @@ class Issue < ApplicationRecord
   after_update_commit :resolve_partial_closeout_prerequisite_notifications, if: :github_just_closed?
   after_update_commit :enqueue_self_if_became_auto_pick_eligible, if: :auto_pick_recheck_needed?
   after_update_commit :cancel_orphaned_queued_runs, if: :work_no_longer_needed?
+  after_update_commit :complete_continuation_grants, if: :continuation_endpoint_reached?
   after_commit :update_project_last_github_activity_at, on: [ :create, :update ]
 
   # UI -> GitHub: whenever the local `paused` flag flips, mirror it onto the
@@ -201,6 +202,12 @@ class Issue < ApplicationRecord
   # saved_change_to_pr_review_phase? for every pull request.
   # @spec OPERATOR-INBOX-010 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
   after_commit :bump_inbox_cache_version, if: :inbox_count_cache_invalidation_needed?
+
+  # RDR-077: the phase that owns a request is assigned when the request is
+  # produced, not inferred later from the generic needs_input / manual_review
+  # state. Only runs for projects whose phase model is enabled.
+  # @spec INBOX-PHASE-RELEVANCE-001
+  after_commit :record_inbox_phase_ownership, on: [ :create, :update ], if: :inbox_phase_ownership_changed?
 
   scope :by_paid_state, ->(state) { where(paid_state: state) }
   scope :root_issues, -> { where(parent_issue_id: nil) }
@@ -963,6 +970,32 @@ class Issue < ApplicationRecord
     Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
   end
 
+  # @spec INBOX-PHASE-RELEVANCE-001
+  INBOX_PHASE_KINDS = {
+    "needs_input" => Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+    "manual_review" => Inbox::Queue::MANUAL_REVIEW_KIND
+  }.freeze
+
+  def inbox_phase_ownership_changed?
+    return false unless saved_change_to_paid_state?
+    return false unless INBOX_PHASE_KINDS.key?(paid_state)
+
+    Automation::RolloutGuard.enabled?(project)
+  end
+
+  def record_inbox_phase_ownership
+    kind = INBOX_PHASE_KINDS.fetch(paid_state)
+    phase = Inbox::PhaseOwnership.phase_for_manual_review_issue(self) if kind == Inbox::Queue::MANUAL_REVIEW_KIND
+    Inbox::PhaseOwnership.record_issue_request!(issue: self, kind:, phase:)
+  rescue ActiveRecord::StatementInvalid, ActiveRecord::RecordInvalid => e
+    Rails.logger.warn(
+      message: "inbox.phase_ownership_assignment_failed",
+      issue_id: id,
+      paid_state: paid_state,
+      error_class: e.class.name
+    )
+  end
+
   def waiting_issue_github_state_changed?
     saved_change_to_github_state? && paid_state.in?(%w[needs_input manual_review])
   end
@@ -1172,6 +1205,16 @@ class Issue < ApplicationRecord
 
   def github_just_closed?
     saved_change_to_github_state? && github_state == "closed"
+  end
+
+  # @spec AUTOMATION-PHASES-008
+  def continuation_endpoint_reached?
+    is_pull_request? && saved_change_to_pr_review_phase? && pr_review_phase.in?(%w[ready merged])
+  end
+
+  def complete_continuation_grants
+    endpoint = merged_phase? ? "merge" : "coding"
+    Automation::CompleteContinuationGrants.call(work_items: self, endpoint:)
   end
 
   # An issue that just finished (paid_state -> completed) or was closed on

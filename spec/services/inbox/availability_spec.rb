@@ -40,6 +40,19 @@ RSpec.describe Inbox::Availability do
   end
 
   describe "#kind_counts and #available_kinds" do
+    # @spec INBOX-PHASE-RELEVANCE-009
+    it "excludes personally removed requests while the phase rollout is off" do
+      allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))
+      create(:issue, :needs_input, project: project_a, body: questions_body)
+      entry = Inbox::Queue.call(user: user).first
+
+      Inbox::Removals::Remove.call(entry:, user: user)
+
+      availability = described_class.call(user: user)
+      expect(availability.total_count).to eq(0)
+      expect(availability.available_projects).to be_empty
+    end
+
     # @spec OPERATOR-INBOX-016
     it "derives counts and projects from supplied entries without database queries" do
       create(:issue, :needs_input, project: project_a, body: questions_body)
@@ -258,6 +271,16 @@ RSpec.describe Inbox::Availability do
 
       expect(first).to eq(1)
       expect(cached).to eq(1)
+    end
+
+    # @spec INBOX-PHASE-RELEVANCE-005
+    it "caches the governed matrix so repeated filtered renders skip queue construction" do
+      FeatureFlags.enable!(:automation_phases, project: project_a)
+      create(:issue, :needs_input, project: project_a, body: questions_body)
+
+      expect(Inbox::Queue).to receive(:call).with(user: user).once.and_call_original
+
+      2.times { described_class.call(user: user, project: project_a).kind_counts }
     end
 
     # @spec INBOX-FOUNDATION-010

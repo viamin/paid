@@ -29,7 +29,12 @@ module Dashboard
     attr_reader :user
 
     def build
-      auto_pick_projects.map { |project| breakdown_for(project) }
+      # One tier-feasibility resolver for the whole pass. Feasibility
+      # depends only on the owner's runner configuration, so projects sharing an
+      # owner share one resolution; resolving it per project would re-read the
+      # same configuration once per repo (#4556).
+      tier_feasibility = Runners::TierFeasibility.new
+      auto_pick_projects.map { |project| breakdown_for(project, tier_feasibility: tier_feasibility) }
     end
 
     # Preload everything the per-project gate and breakdown touch so a dashboard
@@ -53,10 +58,11 @@ module Dashboard
     end
 
     # @spec OPERATOR-INBOX-002D
-    def breakdown_for(project)
+    def breakdown_for(project, tier_feasibility:)
       open = Issue.where(project: project, github_state: "open", is_pull_request: false)
 
-      eligible_scope = Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(project)
+      eligible_scope = Automation::Strategies::AutoPick::DefaultCandidateSource
+        .eligible_scope(project, tier_feasibility: tier_feasibility)
       eligible_count = eligible_scope.count
 
       # Count all non-eligible issues in a single conditional-aggregation query.

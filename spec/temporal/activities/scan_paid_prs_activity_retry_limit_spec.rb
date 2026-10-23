@@ -724,6 +724,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       stub_const("ExecuteCacheGithubTokenStub", Class.new)
       stub_const("ExecuteCacheGithubClientStub", Class.new)
       stub_const("ExecuteCacheProgressStateStub", Class.new)
+      allow(Automation::RolloutGuard).to receive(:enabled?).with(project).and_return(false)
       allow(activity).to receive(:update_stuck_confirmation!)
     end
 

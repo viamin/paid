@@ -271,6 +271,7 @@ class AgentRun < ApplicationRecord
   after_commit :broadcast_project_updates, on: [ :create, :update ]
   after_commit :update_project_last_agent_run_at, on: :create, unless: :synthetic_operational_run?
   after_commit :invalidate_runner_options_cache_on_change, on: [ :create, :update ]
+  after_commit :invalidate_filter_options_cache_on_change, on: [ :create, :update, :destroy ]
   after_commit :enqueue_quality_metrics_collection, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_anomaly_detection, on: :update, if: :real_run_just_finished?
   after_commit :enqueue_resource_profile_refresh, on: :update, if: :real_run_just_finished?
@@ -620,6 +621,7 @@ class AgentRun < ApplicationRecord
   end
 
   RUNNER_OPTIONS_CACHE_TTL = 5.minutes
+  FILTER_OPTIONS_CACHE_TTL = 90.seconds
 
   def self.distinct_effective_runner_options(account_id:, cache_key: nil)
     if cache_key
@@ -649,6 +651,27 @@ class AgentRun < ApplicationRecord
     return if project_id
 
     invalidate_runner_options_cache_for_account(account_id: account_id)
+  end
+
+  # @spec AGENT-RUNS-INDEX-002
+  def self.distinct_filter_options(cache_key: nil)
+    return compute_distinct_filter_options unless cache_key
+
+    Rails.cache.fetch(cache_key, expires_in: FILTER_OPTIONS_CACHE_TTL) do
+      compute_distinct_filter_options
+    end
+  end
+
+  def self.filter_options_cache_key_for(account_id:, project_id: nil)
+    scope = project_id ? "project/#{project_id}" : "account"
+    "agent_runs/filter_options/account/#{account_id}/#{scope}"
+  end
+
+  def self.invalidate_filter_options_cache(account_id:, project_id: nil)
+    Rails.cache.delete(filter_options_cache_key_for(account_id: account_id))
+    return unless project_id
+
+    Rails.cache.delete(filter_options_cache_key_for(account_id: account_id, project_id: project_id))
   end
 
   def self.preload_final_runner_records(runs)
@@ -693,6 +716,19 @@ class AgentRun < ApplicationRecord
       .sort_by { |option| [ option[:label], option[:value] ] }
   end
   private_class_method :compute_distinct_effective_runner_options
+
+  def self.compute_distinct_filter_options
+    # The aggregate only reads agent_runs columns; eager loads on the incoming
+    # scope would otherwise fan the pluck out into wide LEFT JOIN queries.
+    values = except(:includes, :eager_load, :preload).distinct.pluck(:status, :agent_type, :goal)
+
+    {
+      status: values.filter_map(&:first).uniq,
+      agent_type: values.filter_map { |row| row[1] }.uniq,
+      goal: values.filter_map { |row| row[2] }.uniq
+    }
+  end
+  private_class_method :compute_distinct_filter_options
 
   def self.runner_options_cache_generation_for(account_id:)
     Rails.cache.read(runner_options_cache_generation_key_for(account_id: account_id)) || 1
@@ -4376,6 +4412,15 @@ class AgentRun < ApplicationRecord
     return unless previous_changes.key?("agent_type") || previous_changes.key?("final_runner")
 
     self.class.invalidate_runner_options_cache(
+      account_id: project.account_id,
+      project_id: project_id
+    )
+  end
+
+  def invalidate_filter_options_cache_on_change
+    return unless destroyed? || previous_changes.slice("status", "agent_type", "goal", "synthetic").present?
+
+    self.class.invalidate_filter_options_cache(
       account_id: project.account_id,
       project_id: project_id
     )
