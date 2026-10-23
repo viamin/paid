@@ -123,7 +123,7 @@ module Inbox
         end
       end
 
-      return @matrix ||= matrix_from(governed_entries) if governed?
+      return @matrix ||= Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { matrix_from(governed_entries) } if governed?
 
       @matrix ||= Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) do
         Inbox::Queue::KINDS.index_with { |k| count_by_project(k) }

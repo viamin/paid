@@ -39,7 +39,7 @@ module Automation
       attr_reader :params, :project, :user
 
       def enabled_transitions
-        current.phases.select { |phase, was_enabled| !was_enabled && requested_phase(phase) }.keys
+        current.phases.select { |phase, was_enabled| !was_enabled && requested_phase_enabled?(phase) }.keys
       end
 
       def reconcile_removed_items(transitions)
@@ -66,7 +66,7 @@ module Automation
       def sanitized
         {
           PhaseSettings::PHASES_KEY => Automation::Phases::ALL.index_with do |phase|
-            requested_phase(phase) ? true : false
+            requested_phase_enabled?(phase)
           end,
           PhaseSettings::RELEASE_KEY => requested_boolean(PhaseSettings::RELEASE_KEY, current.release_enabled?),
           PhaseSettings::DEPLOYMENT_KEY => requested_boolean(PhaseSettings::DEPLOYMENT_KEY, current.deployment_enabled?)
@@ -78,6 +78,10 @@ module Automation
         return fallback if value.nil?
 
         ActiveModel::Type::Boolean.new.cast(value)
+      end
+
+      def requested_phase_enabled?(phase)
+        ActiveModel::Type::Boolean.new.cast(requested_phase(phase))
       end
     end
   end

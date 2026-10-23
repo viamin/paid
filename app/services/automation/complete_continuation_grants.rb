@@ -19,7 +19,7 @@ module Automation
       return 0 if work_items.empty?
 
       WorkItemContinuationGrant.active
-        .where(project_id: project_ids, issue_id: chain_issue_ids, endpoint:)
+        .where(project_id: project_ids, issue_id: chain_issue_ids, endpoint: reached_or_earlier_endpoints)
         .update_all(completed_at: Time.current, updated_at: Time.current)
     end
 
@@ -35,6 +35,13 @@ module Automation
       direct_ids = work_items.map(&:id)
       root_ids = direct_ids | work_items.filter_map(&:parent_issue_id)
       root_ids | Issue.where(parent_issue_id: root_ids, is_pull_request: true).pluck(:id)
+    end
+
+    def reached_or_earlier_endpoints
+      index = Automation::Phases::DELIVERY_CHAIN.index(endpoint)
+      return [] unless index
+
+      Automation::Phases::DELIVERY_CHAIN[0..index] & Automation::Phases::CONTINUATION_ENDPOINTS
     end
   end
 end

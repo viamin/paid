@@ -215,8 +215,10 @@ module Inbox
       issue_ids = entries.filter_map { |entry| entry.issue&.id if entry.manual_review? }.uniq
       return {} if issue_ids.empty?
 
-      AgentRun.where(issue_id: issue_ids).order(created_at: :desc, id: :desc).to_a
-        .group_by(&:issue_id).transform_values(&:first)
+      AgentRun.where(issue_id: issue_ids)
+        .select("DISTINCT ON (issue_id) agent_runs.*")
+        .order(:issue_id, created_at: :desc, id: :desc)
+        .index_by(&:issue_id)
     end
 
     # Paid's platform health, credential, and safety requests are

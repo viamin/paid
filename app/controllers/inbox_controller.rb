@@ -24,7 +24,6 @@ class InboxController < ApplicationController
     @detail_view = true
     return render(:show) if detail_frame_request?
 
-    load_inbox_presentations
     render :index
   end
 

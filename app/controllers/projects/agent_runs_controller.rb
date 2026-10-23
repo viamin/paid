@@ -853,6 +853,10 @@ module Projects
     def load_manual_start_plan(goal)
       plan = manual_start_plan(goal:)
       plan&.call
+    rescue Automation::ManualStart::Plan::Error
+      plan = default_manual_start_plan(goal)
+      plan&.call
+    ensure
       @manual_start_plan = plan
       @continuation_endpoints = plan&.endpoints || []
       @effective_policy_notice = plan&.notice
@@ -1103,6 +1107,13 @@ module Projects
         endpoint: params[:continuation_endpoint],
         continuation_selected: params[:continuation_authorized].present?
       )
+    end
+
+    def default_manual_start_plan(goal)
+      phase = MANUAL_START_PHASES[goal.to_s]
+      return if phase.nil?
+
+      Automation::ManualStart::Plan.new(project: @project, user: current_user, phase:, goal:)
     end
 
     # The form always carries the notice it rendered; a policy change between

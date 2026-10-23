@@ -59,6 +59,15 @@ RSpec.describe WorkItemContinuationGrant do
 
       expect(grant.reload).to be_completed
     end
+
+    it "completes earlier endpoint grants when linked work reaches merge" do
+      pull_request = create(:issue, :pull_request, project:, parent_issue: issue, pr_review_phase: "ready")
+      grant = create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "coding")
+
+      Automation::CompleteContinuationGrants.call(work_items: pull_request, endpoint: "merge")
+
+      expect(grant.reload).to be_completed
+    end
   end
 
   describe "revocation" do

@@ -223,7 +223,7 @@ module Inbox
       issue.is_pull_request? &&
         issue.github_state == "open" &&
         issue.pr_review_phase == "ready" &&
-        (manual_merge? || automatic_merge_active?) &&
+        (manual_merge? || automatic_merge_configured?) &&
         !issue.merge_permission_rejected?
     end
 
@@ -248,6 +248,16 @@ module Inbox
         project: issue.project,
         pull_request: issue,
         phase_authorized: phase_authorized
+      )
+    end
+
+    # Candidacy is determined by the configured merge lane. Phase relevance
+    # decides whether the resulting request is actionable or disabled.
+    def automatic_merge_configured?
+      Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(
+        project: issue.project,
+        pull_request: issue,
+        phase_authorized: true
       )
     end
 

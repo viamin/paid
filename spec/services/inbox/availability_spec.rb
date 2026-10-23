@@ -260,6 +260,16 @@ RSpec.describe Inbox::Availability do
       expect(cached).to eq(1)
     end
 
+    # @spec INBOX-PHASE-RELEVANCE-005
+    it "caches the governed matrix so repeated filtered renders skip queue construction" do
+      FeatureFlags.enable!(:automation_phases, project: project_a)
+      create(:issue, :needs_input, project: project_a, body: questions_body)
+
+      expect(Inbox::Queue).to receive(:call).with(user: user).once.and_call_original
+
+      2.times { described_class.call(user: user, project: project_a).kind_counts }
+    end
+
     # @spec INBOX-FOUNDATION-010
     it "refreshes the matrix after the inbox cache version bumps" do
       issue = create(:issue, :needs_input, project: project_a, body: questions_body)

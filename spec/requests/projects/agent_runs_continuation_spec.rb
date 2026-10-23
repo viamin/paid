@@ -50,6 +50,22 @@ RSpec.describe "Project agent run continuation" do
     expect(response.body).not_to include("continuation_endpoint")
   end
 
+  it "renders the default plan when GET continuation parameters are invalid" do
+    get new_project_agent_run_path(project, goal: "create_pr", continuation_endpoint: "discovery")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("continuation_endpoint")
+  end
+
+  it "renders the default plan when GET continuation delegation is unauthorized" do
+    sign_in create(:user, :member, account:)
+
+    get new_project_agent_run_path(project, goal: "create_pr", continuation_authorized: "1", continuation_endpoint: "merge")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("continuation_endpoint")
+  end
+
   it "rejects continuation when the run has no work item to authorize" do
     get new_project_agent_run_path(project, goal: "create_pr")
     signature = rendered_signature

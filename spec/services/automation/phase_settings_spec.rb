@@ -112,5 +112,12 @@ RSpec.describe Automation::PhaseSettings do
 
       expect(settings.to_h[described_class::PHASES_KEY].keys).to match_array(Automation::Phases::ALL)
     end
+
+    it "casts explicit false phase values before persisting authorization" do
+      described_class::Update.call(project: project, params: { "phases" => { "coding" => "0", "merge" => "false" } })
+
+      expect(settings.phase_enabled?("coding")).to be(false)
+      expect(settings.phase_enabled?("merge")).to be(false)
+    end
   end
 end
