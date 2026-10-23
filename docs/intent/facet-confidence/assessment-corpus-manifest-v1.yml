@@ -1,0 +1,269 @@
+# @spec FACET-CONFIDENCE-016
+# RDR-070 frozen facet-confidence assessment corpus, version
+# facet-confidence-corpus-v1.
+#
+# This manifest is the versioned representative corpus RDR-070 requires for
+# evaluating facet-confidence readiness and clarification quality. Every case
+# is a representative conversation shape drawn from the RDR's Implementation
+# and Validation section, pinned to facet/direction descriptions, ordered
+# attributable evidence, per-case thresholds, and the expected outcome band a
+# human operator can re-derive from the cited statements without trusting the
+# label. Expected bands are semantic judgments frozen for measurement — the
+# ledger records rubric/model/input provenance for every assessment run and
+# the outcome report compares runs against these expectations (false
+# readiness, unnecessary clarification, corrections, cost, rework).
+#
+# Rollout guard: this corpus only measures assessment quality. No corpus run
+# may release work; readiness-driven release stays gated on the complete
+# RDR-071 delivery path, and thresholds remain the provisional 80/80 policy
+# defaults. Evidence statements are authored scenarios, not statements made by
+# real people.
+corpus_version: facet-confidence-corpus-v1
+frozen_at: "2026-10-23T00:00:00Z"
+rubric:
+  version: facet-confidence-v1
+  model: claude-sonnet-4-6
+threshold_defaults:
+  intent: 80
+  technical: 80
+cases:
+  - id: FC-CORPUS-01
+    shape: provisional_direction
+    selection_rationale: "RDR-070 requires a tentative-exploration case: a person sketches a direction without committing to it, so intent must stay below threshold even though a prototype exists."
+    facet:
+      name: "Cross-device draft sync"
+      design_claim: "Unfinished answers stay preserved while the person keeps exploring cross-device behavior."
+    direction:
+      name: "automatic draft sync"
+      description: "Sync drafts across devices without an explicit share action."
+    evidence:
+      - reference: "sync-sketch-statement"
+        source_type: "human_statement"
+        actor_role: "owner"
+        statement: "I started sketching the sync flow on my phone; not sure yet whether it should just work."
+        occurred_at: "2026-10-20T09:00:00Z"
+      - reference: "sync-spike-note"
+        source_type: "repository_fact"
+        actor_role: "agent"
+        statement: "Sandbox spike syncs drafts automatically; no tests and no conflict handling."
+        occurred_at: "2026-10-20T10:00:00Z"
+    expected:
+      status: "completed"
+      intent_band: "below_threshold"
+      technical_band: "below_threshold"
+      readiness: "not_ready"
+      rationale: "Tentative exploration is not explicit direction; an untested spike is not demonstrated feasibility."
+
+  - id: FC-CORPUS-02
+    shape: explicit_correction
+    selection_rationale: "RDR-070 requires an explicit-correction case: a clear correction supersedes the earlier direction rather than being outvoted by its repetition."
+    facet:
+      name: "Toolbar navigation model"
+      design_claim: "Contrasting mouse-oriented and keyboard-oriented interactions clarifies the navigation facet."
+    direction:
+      name: "keyboard-navigable menus"
+      description: "Menus open on focus and support full keyboard traversal."
+    evidence:
+      - reference: "early-hover-statement"
+        source_type: "human_statement"
+        actor_role: "owner"
+        statement: "Hover menus feel natural for the toolbar."
+        occurred_at: "2026-10-20T09:00:00Z"
+      - reference: "keyboard-correction"
+        source_type: "human_correction"
+        actor_role: "owner"
+        statement: "Scrap hover-only: keyboard navigation is required for accessibility."
+        occurred_at: "2026-10-20T11:00:00Z"
+        supersedes: "early-hover-statement"
+      - reference: "menu-primitive-fact"
+        source_type: "repository_fact"
+        actor_role: "agent"
+        statement: "The design system already ships a keyboard-navigable menu primitive."
+        occurred_at: "2026-10-20T11:30:00Z"
+    expected:
+      status: "completed"
+      intent_band: "at_or_above_threshold"
+      technical_band: "at_or_above_threshold"
+      readiness: "ready"
+      must_cite:
+        - "keyboard-correction"
+      must_not_cite:
+        - "early-hover-statement"
+      rationale: "The correction is explicit and technically supported; assessments must follow the corrected direction."
+
+  - id: FC-CORPUS-03
+    shape: repeated_agent_suggestions
+    selection_rationale: "RDR-070 requires a repeated-suggestion case: three agent proposals plus one preview interaction must not accumulate into human agreement."
+    facet:
+      name: "Draft entry surface"
+      design_claim: "The agent may propose surfaces but cannot invent a preference for them."
+    direction:
+      name: "command-palette entry"
+      description: "Open a command palette for creating drafts."
+    evidence:
+      - reference: "agent-suggestion-1"
+        source_type: "agent_suggestion"
+        actor_role: "agent"
+        statement: "Suggest opening drafts from a command palette."
+        occurred_at: "2026-10-20T09:00:00Z"
+      - reference: "agent-suggestion-2"
+        source_type: "agent_suggestion"
+        actor_role: "agent"
+        statement: "Reiterating: a palette would make draft entry faster."
+        occurred_at: "2026-10-20T09:05:00Z"
+      - reference: "agent-suggestion-3"
+        source_type: "agent_suggestion"
+        actor_role: "agent"
+        statement: "Third proposal for the palette entry point."
+        occurred_at: "2026-10-20T09:10:00Z"
+      - reference: "palette-preview-click"
+        source_type: "ui_interaction"
+        actor_role: "owner"
+        statement: "Previewed the palette prototype once without answering."
+        occurred_at: "2026-10-20T09:20:00Z"
+    expected:
+      status: "unknown"
+      intent_band: "unknown"
+      technical_band: "at_or_above_threshold"
+      readiness: "not_ready"
+      rationale: "Repeated agent suggestions and preview interactions are not human agreement; intent stays unknown."
+
+  - id: FC-CORPUS-04
+    shape: collaborator_disagreement
+    selection_rationale: "RDR-070 requires a collaborator-conflict case: attributable disagreement must trigger clarification instead of a majority verdict."
+    facet:
+      name: "Default draft visibility"
+      design_claim: "Whose answers count is attributable; disagreement is not resolved by counting statements."
+    direction:
+      name: "team-visible drafts"
+      description: "Drafts are visible to the whole team by default."
+    evidence:
+      - reference: "owner-private-statement"
+        source_type: "human_statement"
+        actor_role: "owner"
+        statement: "Drafts should stay private to the author until explicitly shared."
+        occurred_at: "2026-10-20T09:00:00Z"
+      - reference: "collaborator-visible-statement"
+        source_type: "human_statement"
+        actor_role: "collaborator"
+        statement: "No; the whole point of shared drafts is team visibility by default."
+        occurred_at: "2026-10-20T10:00:00Z"
+      - reference: "visibility-flags-fact"
+        source_type: "repository_fact"
+        actor_role: "agent"
+        statement: "Visibility flags for both policies already exist behind the draft API."
+        occurred_at: "2026-10-20T10:30:00Z"
+    expected:
+      status: "clarification_needed"
+      intent_band: "unknown"
+      technical_band: "at_or_above_threshold"
+      readiness: "not_ready"
+      rationale: "Conflicting collaborator statements remain attributable and trigger clarification instead of a majority verdict."
+
+  - id: FC-CORPUS-05
+    shape: unknown_intent_strong_technical
+    selection_rationale: "RDR-070 requires an unknown-intent/strong-technical case: a promising prototype is not evidence that a person wants the behavior."
+    facet:
+      name: "Command palette invocation"
+      design_claim: "A technically promising prototype is not evidence of wanted behavior."
+    direction:
+      name: "two-stroke chord invocation"
+      description: "Invoke the palette with a two-stroke keyboard chord."
+    evidence:
+      - reference: "chord-proposal"
+        source_type: "agent_suggestion"
+        actor_role: "agent"
+        statement: "Proposed a two-stroke chord invocation for the palette."
+        occurred_at: "2026-10-20T09:00:00Z"
+      - reference: "chord-benchmark"
+        source_type: "experiment_result"
+        actor_role: "agent"
+        statement: "Prototype chord invocation responds in 40ms across the supported browser matrix."
+        occurred_at: "2026-10-20T10:00:00Z"
+    expected:
+      status: "unknown"
+      intent_band: "unknown"
+      technical_band: "at_or_above_threshold"
+      readiness: "not_ready"
+      rationale: "Strong technical evidence with no attributable human direction keeps intent unknown; unknown never passes a threshold."
+
+  - id: FC-CORPUS-06
+    shape: strong_intent_weak_feasibility
+    selection_rationale: "RDR-070 requires a strong-intent/weak-feasibility case: human insistence alone does not change technical confidence."
+    facet:
+      name: "Offline editing"
+      design_claim: "Wanting a capability does not make it feasible for the scoped work."
+    direction:
+      name: "conflict-free offline editing"
+      description: "Edit fully offline and merge conflict-free on reconnect."
+    evidence:
+      - reference: "offline-requirement"
+        source_type: "human_statement"
+        actor_role: "owner"
+        statement: "We need full offline editing with no exceptions; I am certain about this."
+        occurred_at: "2026-10-20T09:00:00Z"
+      - reference: "conflict-spike-result"
+        source_type: "experiment_result"
+        actor_role: "agent"
+        statement: "Reconnect spike: last-write-wins loses edits in 3 of 5 simulated conflicts; CRDT evaluation incomplete."
+        occurred_at: "2026-10-20T10:00:00Z"
+    expected:
+      status: "completed"
+      intent_band: "at_or_above_threshold"
+      technical_band: "below_threshold"
+      readiness: "not_ready"
+      rationale: "Explicit intent is strong, but the failed conflict spike keeps technical confidence below the threshold."
+
+  - id: FC-CORPUS-07
+    shape: research_scope
+    selection_rationale: "RDR-070 requires a research-scope case: a research issue is assessed on the clarity and feasibility of its investigation scope, not on certainty about the implementation answer it seeks."
+    facet:
+      name: "Invocation recall research"
+      design_claim: "Research issues need a clear question and feasible method; dependent implementation waits for the result."
+    direction:
+      name: "within-subject recall study"
+      description: "Run a 12-participant within-subject study comparing invocation styles."
+    evidence:
+      - reference: "research-question"
+        source_type: "human_statement"
+        actor_role: "owner"
+        statement: "Research question: which invocation style has lower recall error? Method: 12-participant within-subject study with a defined error metric."
+        occurred_at: "2026-10-20T09:00:00Z"
+      - reference: "study-harness-fact"
+        source_type: "repository_fact"
+        actor_role: "agent"
+        statement: "An event-capture harness for invocation studies already exists in the research sandbox."
+        occurred_at: "2026-10-20T09:30:00Z"
+    expected:
+      status: "completed"
+      intent_band: "at_or_above_threshold"
+      technical_band: "at_or_above_threshold"
+      readiness: "ready"
+      rationale: "The investigation scope is clear and feasible; the implementation option it studies remains uncertain and its readiness is assessed separately."
+
+  - id: FC-CORPUS-08
+    shape: boundary_79_80
+    selection_rationale: "RDR-070 requires the 79/80 boundary case: intent certainty just under the 80 threshold with technical confidence exactly at it must stay not ready at the default 80/80 thresholds, mirroring ScopedReadiness's independent per-axis comparison."
+    facet:
+      name: "Export formatting"
+      design_claim: "Each prerequisite score must independently meet its threshold; no average may hide a 79."
+    direction:
+      name: "locale-aware CSV export"
+      description: "Export CSV with locale-aware number formatting."
+    evidence:
+      - reference: "export-statement"
+        source_type: "human_statement"
+        actor_role: "owner"
+        statement: "CSV export is needed and locale formatting matters, I think; please confirm the decimal separators."
+        occurred_at: "2026-10-20T09:00:00Z"
+      - reference: "formatter-tests"
+        source_type: "experiment_result"
+        actor_role: "agent"
+        statement: "Locale formatter passes the decimal and grouping table tests for all shipped locales."
+        occurred_at: "2026-10-20T10:00:00Z"
+    expected:
+      status: "completed"
+      intent_band: "below_threshold"
+      technical_band: "at_or_above_threshold"
+      readiness: "not_ready"
+      rationale: "Intent certainty sits just under the 80 threshold (79) while technical confidence meets it (80); at 80/80 thresholds the issue must stay not ready."

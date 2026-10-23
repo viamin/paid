@@ -22,10 +22,17 @@
 
 The facet/evidence, assessment, adaptive-clarification, explicit-preference,
 and scoped-readiness contracts are now implemented with linked tests. The
-umbrella remains open because the RDR's representative assessment corpus and
-the remaining RDR-071 delivery/activation integration are not yet evidenced.
-See the 2026-10-22 final acceptance audit for the current criterion-level
-reconciliation.
+RDR's versioned representative assessment corpus and its outcome measurement
+are delivered (#4573) as
+[`docs/intent/facet-confidence/assessment-corpus-manifest-v1.yml`](../intent/facet-confidence/assessment-corpus-manifest-v1.yml)
+with per-run provenance (corpus/rubric/model/input revisions, replay guard)
+and outcome metrics (false readiness, unnecessary clarification, human
+corrections, cost, downstream rework) in
+[`docs/intent/facet-confidence/assessment-evaluation-2026-10-23/`](../intent/facet-confidence/assessment-evaluation-2026-10-23/README.md);
+the operator-executed measured runs remain pending and are recorded as not
+established in the outcome worksheet. The umbrella remains open for the
+remaining RDR-071 delivery/activation integration. See the 2026-10-22 final
+acceptance audit for the criterion-level reconciliation.
 
 ### 2026-10-12 Implementation progress audit
 
