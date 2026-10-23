@@ -168,8 +168,8 @@ module Activities
     # merged, not even via activation label. @spec UPSTREAM-GATE-002
     # @spec AUTOMATION-PHASES-002
     def auto_merge_enabled_for?(project, issue)
-      Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(
-        project:, pull_request: issue
+      Automation::FeatureActivation.pull_request_feature_enabled?(
+        project:, pull_request: issue, feature: "auto_merge"
       )
     end
 

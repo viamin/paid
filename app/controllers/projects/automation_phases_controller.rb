@@ -45,11 +45,14 @@ module Projects
       authorize @project, :update?
 
       grant = @project.work_item_continuation_grants.find(params[:id])
-      grant.revoke!(user: current_user)
+      revoked = grant.revoke!(user: current_user)
 
       respond_to do |format|
-        format.html { redirect_to project_automation_phases_path(@project), notice: "Continuation grant revoked." }
-        format.json { render json: { revoked: true, grant_id: grant.id } }
+        format.html do
+          notice = revoked ? "Continuation grant revoked." : "Grant was no longer active; nothing to revoke."
+          redirect_to project_automation_phases_path(@project), notice:
+        end
+        format.json { render json: { revoked:, grant_id: grant.id } }
       end
     end
 

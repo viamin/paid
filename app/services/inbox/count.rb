@@ -11,6 +11,7 @@ module Inbox
   # bounded approximation rather than a rendering bug.
   class Count
     CACHE_TTL = 90.seconds
+    ROLLOUT_PROBE_TTL = 30.seconds
     DISPLAY_CAP = 99
 
     def self.call(...)
@@ -33,10 +34,12 @@ module Inbox
     # @spec INBOX-PHASE-RELEVANCE-005 @spec INBOX-PHASE-RELEVANCE-009
     # When any visible project runs the phase model, the count comes from the
     # same scope-filtered queue the list renders, so the badge can never
-    # disagree with the list about phase relevance or personal removal. While
-    # every project is off the flag, the cheap SQL approximation is unchanged.
+    # disagree with the list about phase relevance. Personal removal is
+    # rollout-independent and requires the same exact count. Otherwise the
+    # cheap SQL approximation is unchanged.
     def compute_count
       return governed_count if phase_model_governed?
+      return governed_count if personal_removals?
 
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
@@ -53,7 +56,15 @@ module Inbox
     end
 
     def governed_project_ids
-      @governed_project_ids ||= Automation::RolloutGuard.enabled_project_ids(visible_project_ids)
+      @governed_project_ids ||= Rails.cache.fetch(
+        "inbox/count/governed/#{user.id}", expires_in: ROLLOUT_PROBE_TTL
+      ) do
+        Automation::RolloutGuard.enabled_project_ids(visible_project_ids).sort
+      end
+    end
+
+    def personal_removals?
+      InboxRemoval.active.where(user: user).exists?
     end
 
     def needs_input_count
@@ -221,7 +232,7 @@ module Inbox
     end
 
     def cache_key
-      "inbox/count/#{user.account_id}/#{user.id}/#{Dashboard::CacheVersion.current(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)}/#{governed_project_ids.sort.join("-")}"
+      "inbox/count/#{user.account_id}/#{user.id}/#{Dashboard::CacheVersion.current(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)}/#{governed_project_ids.join("-")}"
     end
   end
 end

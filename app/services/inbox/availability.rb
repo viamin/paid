@@ -13,6 +13,7 @@ module Inbox
   # @spec INBOX-FOUNDATION-010
   class Availability
     CACHE_TTL = 90.seconds
+    ROLLOUT_PROBE_TTL = 30.seconds
 
     def self.call(...)
       new(...).call
@@ -30,14 +31,13 @@ module Inbox
     end
 
     # @spec INBOX-PHASE-RELEVANCE-005
-    # When any visible project runs the phase model, the matrix is derived from
-    # the same scope-filtered queue the list renders, so kinds, project counts,
-    # and the total agree with the list instead of over-reporting hidden or
-    # personally removed requests.
+    # When any visible project runs the phase model, or the user has personally
+    # removed a request, the matrix is derived from the same scope-filtered
+    # queue the list renders. Personal removal is independent of rollout.
     def governed?
       return false if @entries
 
-      governed_project_ids.any?
+      governed_project_ids.any? || personal_removals?
     end
 
     def governed_entries
@@ -123,10 +123,12 @@ module Inbox
         end
       end
 
-      return @matrix ||= Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { matrix_from(governed_entries) } if governed?
-
       @matrix ||= Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) do
-        Inbox::Queue::KINDS.index_with { |k| count_by_project(k) }
+        if governed?
+          matrix_from(governed_entries)
+        else
+          Inbox::Queue::KINDS.index_with { |k| count_by_project(k) }
+        end
       end
     end
 
@@ -137,7 +139,15 @@ module Inbox
     end
 
     def governed_project_ids
-      @governed_project_ids ||= Automation::RolloutGuard.enabled_project_ids(visible_project_ids)
+      @governed_project_ids ||= Rails.cache.fetch(
+        "inbox/availability/governed/#{user.id}", expires_in: ROLLOUT_PROBE_TTL
+      ) do
+        Automation::RolloutGuard.enabled_project_ids(visible_project_ids).sort
+      end
+    end
+
+    def personal_removals?
+      InboxRemoval.active.where(user: user).exists?
     end
 
     def count_by_project(entry_kind)
@@ -293,7 +303,7 @@ module Inbox
     end
 
     def cache_key
-      "inbox/availability/#{user.account_id}/#{user.id}/#{Dashboard::CacheVersion.current(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)}"
+      "inbox/availability/#{user.account_id}/#{user.id}/#{Dashboard::CacheVersion.current(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)}/#{governed_project_ids.join("-")}"
     end
   end
 end

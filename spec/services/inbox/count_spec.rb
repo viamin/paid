@@ -29,6 +29,19 @@ RSpec.describe Inbox::Count do
   end
 
   describe ".call" do
+    # @spec INBOX-PHASE-RELEVANCE-009
+    it "excludes personally removed requests while the phase rollout is off" do
+      allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))
+      create(:issue, :needs_input, project:, github_state: "open",
+        needs_input_questions: [ "Which behavior?" ])
+      entry = Inbox::Queue.call(user:).first
+
+      Inbox::Removals::Remove.call(entry:, user:)
+
+      expect(described_class.call(user:)).to eq(0)
+      expect(Inbox::Queue.call(user:)).to be_empty
+    end
+
     # @spec DESIGN-RECONCILIATION-001
     it "counts open traceability gaps and invalidates after resolution" do
       finding = create(:design_artifact_finding, project: project, account: account)
@@ -424,6 +437,7 @@ RSpec.describe Inbox::Count do
 
     # @spec OPERATOR-INBOX-002B
     it "batch-preloads subject projects for action_required instead of querying per row" do
+      described_class.call(user: user)
       create_agent_run_blocking_notification(github_number: 100)
       single_row_queries = count_queries { described_class.call(user: user) }
 

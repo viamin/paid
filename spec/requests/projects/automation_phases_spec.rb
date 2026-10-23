@@ -2,7 +2,8 @@
 
 require "rails_helper"
 
-# @spec AUTOMATION-PHASES-002 @spec AUTOMATION-PHASES-015 @spec AUTOMATION-PHASES-016
+# @spec AUTOMATION-PHASES-002 @spec AUTOMATION-PHASES-008
+# @spec AUTOMATION-PHASES-015 @spec AUTOMATION-PHASES-016
 RSpec.describe "Project automation phases" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account:) }
@@ -63,5 +64,23 @@ RSpec.describe "Project automation phases" do
     settings = Automation::PhaseSettings.call(project.reload)
     expect(settings.phase_enabled?("merge")).to be(true)
     expect(settings.deployment_enabled?).to be(true)
+  end
+
+  it "reports when a continuation grant was no longer active" do
+    grant = create(:work_item_continuation_grant, project:, issue: create(:issue, project:), completed_at: Time.current)
+
+    delete continuation_grant_project_automation_phases_path(project, grant), as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("revoked" => false, "grant_id" => grant.id)
+  end
+
+  it "explains a no-op continuation grant revocation in the HTML flow" do
+    grant = create(:work_item_continuation_grant, project:, issue: create(:issue, project:), revoked_at: Time.current)
+
+    delete continuation_grant_project_automation_phases_path(project, grant)
+
+    expect(response).to redirect_to(project_automation_phases_path(project))
+    expect(flash[:notice]).to eq("Grant was no longer active; nothing to revoke.")
   end
 end
