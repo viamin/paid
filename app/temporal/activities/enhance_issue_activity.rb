@@ -482,6 +482,7 @@ module Activities
     # enhance_issue so auto-pick's completed-issue recovery can recognize an
     # enhanced-and-ready issue without depending on how the run that produced
     # the verdict was triggered (#3851).
+    # @spec AUTOMATION-PHASES-008
     def complete_run!(agent_run, paid_state = "completed", sufficient_context: nil, reason: nil)
       agent_run.complete!
       return unless agent_run.issue
@@ -493,6 +494,9 @@ module Activities
         agent_run.issue.complete_unless_reopen_review_pending!(attrs.except(:paid_state))
       else
         agent_run.issue.update!(attrs)
+      end
+      if paid_state == "completed"
+        Automation::CompleteContinuationGrants.call(work_items: agent_run.issue, endpoint: "issue_preparation")
       end
     end
 

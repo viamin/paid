@@ -61,6 +61,30 @@ RSpec.describe AutoReleaseEvaluationJob do
       )
     end
 
+    # @spec AUTOMATION-PHASES-002 @spec AUTOMATION-PHASES-016
+    it "does not merge when the release phase is disabled but auto-release remains enabled" do
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(automation_phase_settings: {
+        "phases" => { "release_deployment" => false }, "release" => true, "deployment" => false
+      })
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
+    # @spec AUTOMATION-PHASES-016
+    it "does not merge when the release control is disabled" do
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(automation_phase_settings: {
+        "phases" => { "release_deployment" => true }, "release" => false, "deployment" => false
+      })
+
+      described_class.perform_now(project.id)
+
+      expect(client).not_to have_received(:merge_pull_request)
+    end
+
     # @spec GH-LABELS-001
     it "syncs the standard label catalog before applying the auto-released label" do
       described_class.perform_now(project.id)

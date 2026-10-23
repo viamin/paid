@@ -20,6 +20,30 @@ RSpec.describe Activities::EvaluateAutoReleaseActivity do
       expect(result).to eq(evaluated: true)
     end
 
+    # @spec AUTOMATION-PHASES-002 @spec AUTOMATION-PHASES-016
+    it "does not enqueue when the release phase is disabled but auto-release remains enabled" do
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(automation_phase_settings: {
+        "phases" => { "release_deployment" => false }, "release" => true, "deployment" => false
+      })
+
+      expect {
+        activity.execute(project_id: project.id)
+      }.not_to have_enqueued_job(AutoReleaseEvaluationJob)
+    end
+
+    # @spec AUTOMATION-PHASES-016
+    it "does not enqueue when the release control is disabled" do
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(automation_phase_settings: {
+        "phases" => { "release_deployment" => true }, "release" => false, "deployment" => false
+      })
+
+      expect {
+        activity.execute(project_id: project.id)
+      }.not_to have_enqueued_job(AutoReleaseEvaluationJob)
+    end
+
     it "does not enqueue when auto-release is disabled" do
       project.update!(auto_release_granularity: "off")
 

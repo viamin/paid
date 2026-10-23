@@ -254,6 +254,14 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(view_targets.map(&:slug)).to eq([ "project_change_intent_show" ])
     end
 
+    it "maps the automation phases controller and show view to the automation phases target" do
+      controller_targets = described_class.call(changed_files: [ "app/controllers/projects/automation_phases_controller.rb" ])
+      view_targets = described_class.call(changed_files: [ "app/views/projects/automation_phases/show.html.erb" ])
+
+      expect(controller_targets.map(&:slug)).to eq([ "project_automation_phases" ])
+      expect(view_targets.map(&:slug)).to eq([ "project_automation_phases" ])
+    end
+
     it "maps the Apple verification controller and views to the project show target" do
       controller_targets = described_class.call(changed_files: [ "app/controllers/projects/apple_verifications_controller.rb" ])
       show_view_targets = described_class.call(changed_files: [ "app/views/projects/apple_verifications/show.html.erb" ])

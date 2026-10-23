@@ -205,4 +205,67 @@ RSpec.describe "Mobile inbox API" do
     expect(response.parsed_body.dig("error", "message")).to eq("Replacement reference must be an http(s) URL")
     expect(feature_intent.reload.status).to eq("discovering")
   end
+
+  # @spec INBOX-PHASE-RELEVANCE-002 @spec INBOX-PHASE-RELEVANCE-003
+  # @spec INBOX-PHASE-RELEVANCE-006 @spec INBOX-PHASE-RELEVANCE-009
+  describe "phase relevance and personal removal" do
+    before do
+      allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))
+      FeatureFlags.enable!(:automation_phases, project: project)
+      project.update!(
+        Automation::PhaseSettings::SETTINGS_KEY => {
+          Automation::PhaseSettings::PHASES_KEY => { "issue_preparation" => false },
+          Automation::PhaseSettings::RELEASE_KEY => false,
+          Automation::PhaseSettings::DEPLOYMENT_KEY => false
+        }
+      )
+    end
+
+    it "keeps a request held by a disabled phase out of the default list and in the disabled view" do
+      issue
+
+      get "/api/v1/inbox", headers: headers
+      expect(response.parsed_body.fetch("entries")).to be_empty
+
+      get "/api/v1/inbox", params: { scope: "disabled_phases" }, headers: headers
+      expect(response.parsed_body.fetch("entries").map { |entry| entry["id"] })
+        .to eq([ "clarifying_questions:#{issue.id}" ])
+    end
+
+    it "removes a request for the caller and exposes the Removed view and restore" do
+      issue
+
+      post "/api/v1/inbox/entries/clarifying_questions:#{issue.id}/remove", headers: headers
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include("removed" => true)
+
+      get "/api/v1/inbox", headers: headers
+      expect(response.parsed_body.fetch("entries")).to be_empty
+
+      get "/api/v1/inbox", params: { scope: "removed" }, headers: headers
+      expect(response.parsed_body.fetch("entries").size).to eq(1)
+
+      post "/api/v1/inbox/entries/clarifying_questions:#{issue.id}/restore", headers: headers
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "agrees with the count endpoint about personally removed items" do
+      issue
+
+      post "/api/v1/inbox/entries/clarifying_questions:#{issue.id}/remove", headers: headers
+      get "/api/v1/inbox/count", headers: headers
+
+      expect(response.parsed_body.fetch("count")).to eq(0)
+    end
+
+    it "still allows direct inspection of a removed entry" do
+      issue
+
+      post "/api/v1/inbox/entries/clarifying_questions:#{issue.id}/remove", headers: headers
+      get "/api/v1/inbox/entries/clarifying_questions:#{issue.id}", headers: headers
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("entry", "id")).to eq("clarifying_questions:#{issue.id}")
+    end
+  end
 end

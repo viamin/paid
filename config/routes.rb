@@ -61,12 +61,17 @@ Rails.application.routes.draw do
   get "dashboard/pr_cycle_time", to: "dashboard#pr_cycle_time", as: :dashboard_pr_cycle_time
   get "inbox", to: "inbox#index", as: :inbox
   get "inbox/count", to: "inbox#count", as: :inbox_count
+  get "inbox/disabled-phases", to: "inbox#index", as: :inbox_disabled_phases, defaults: { scope: "disabled_phases" }
+  get "inbox/removed", to: "inbox#index", as: :inbox_removed, defaults: { scope: "removed" }
   get "inbox/partial-closeout-guide", to: "inbox#partial_closeout_guide", as: :partial_closeout_guide
   post "design_artifact_findings/:id/resolve", to: "design_artifact_findings#resolve", as: :resolve_design_artifact_finding
   post "design_artifact_findings/:id/file_issue", to: "design_artifact_findings#file_issue", as: :file_issue_design_artifact_finding
   post "design_artifact_findings/:id/repair_document_links", to: "design_artifact_findings#repair_document_links", as: :repair_document_links_design_artifact_finding
   post "design_artifact_findings/:id/recheck", to: "design_artifact_findings#recheck", as: :recheck_design_artifact_finding
   post "inbox/:entry_id/interactive_chat", to: "inbox#open_chat", as: :inbox_interactive_chat
+  # RDR-077: personal removal is presentation-only and per user.
+  post "inbox/:entry_id/remove", to: "inbox#remove_entry", as: :inbox_entry_remove
+  post "inbox/:entry_id/restore", to: "inbox#restore_entry", as: :inbox_entry_restore
   get "inbox/:entry_id/supplement", to: "inbox#supplement", as: :inbox_entry_supplement
   get "inbox/:entry_id", to: "inbox#show", as: :inbox_entry
   get "dashboard/inbox", to: "legacy_inbox_redirects#index", as: :dashboard_inbox
@@ -282,6 +287,11 @@ Rails.application.routes.draw do
       get :export
     end
     resource :quality_thresholds, only: [ :update ], controller: "projects/quality_thresholds"
+    # RDR-077: phase defaults, migration preview, and grant revocation.
+    resource :automation_phases, only: [ :show, :update ], controller: "projects/automation_phases" do
+      get :preview
+      delete "continuation_grants/:id", to: "projects/automation_phases#revoke_grant", as: :continuation_grant
+    end
     resource :cost_snapshot, only: [ :show ], controller: "projects/cost_snapshots"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
     resource :docker_host_preference, only: [ :update ], controller: "projects/docker_host_preferences"
@@ -399,6 +409,9 @@ Rails.application.routes.draw do
       get "inbox/count", to: "inbox#count"
       get "inbox/entries/:entry_id", to: "inbox#show"
       post "inbox/entries/:entry_id/chat", to: "inbox#chat"
+      # RDR-077: the same personal removal surface as the web Inbox.
+      post "inbox/entries/:entry_id/remove", to: "inbox#remove_entry"
+      post "inbox/entries/:entry_id/restore", to: "inbox#restore_entry"
       post "feature_intents/:id/cancel", to: "feature_intents#cancel"
       post "feature_intents/:id/reopen", to: "feature_intents#reopen"
       get "projects/:project_id/design_artifact_findings", to: "design_artifact_findings#index"

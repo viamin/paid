@@ -6,7 +6,7 @@ module Api
       DEFAULT_LIMIT = 50
       MAX_LIMIT = 100
 
-      before_action -> { require_scope!(:inbox) }, only: %i[index count show]
+      before_action -> { require_scope!(:inbox) }, only: %i[index count show remove_entry restore_entry]
       before_action -> { require_scope!(:chat) }, only: :chat
 
       # @spec MOBILE-API-006 MOBILE-API-010
@@ -17,7 +17,7 @@ module Api
         filters = inbox_filters
         return if conditional_response?(filters)
 
-        entries = Inbox::Queue.call(user: current_user, **filters.slice(:project, :kind, :sort))
+        entries = Inbox::Queue.call(user: current_user, **filters.slice(:project, :kind, :sort, :scope))
         page = paginated_entries(entries)
         listed_entries = page.first(inbox_limit)
         payload = { entries: listed_entries.map { |entry| InboxEntrySerializer.render_list(entry) } }
@@ -63,16 +63,51 @@ module Api
         render_error(:bad_gateway, :github_error, "Failed to load clarifying questions: #{e.message}")
       end
 
+      # RDR-077: removal hides the request for this user only; the request,
+      # its questions, and its authorization are untouched.
+      # @spec INBOX-PHASE-RELEVANCE-006
+      def remove_entry
+        authorize :inbox, policy_class: InboxPolicy
+        entry = entry_for_mutation
+        return render_entry_not_found unless entry
+
+        Inbox::Removals::Remove.call(entry:, user: current_user)
+        render json: { removed: true, entry_id: entry.id }
+      end
+
+      # @spec INBOX-PHASE-RELEVANCE-006
+      def restore_entry
+        authorize :inbox, policy_class: InboxPolicy
+        entry = entry_for_mutation
+        return render_entry_not_found unless entry
+
+        Inbox::Removals::Restore.call(entry:, user: current_user)
+        render json: { restored: true, entry_id: entry.id }
+      end
+
       private
+
+      def entry_for_mutation
+        Inbox::FindEntry.call(user: current_user, entry_id: params[:entry_id])
+      end
 
       def inbox_filters
         {
           project: scoped_project,
           kind: valid_kind,
           sort: valid_sort,
+          scope: valid_scope,
           limit: inbox_limit,
           cursor: params[:cursor].presence
         }.compact
+      end
+
+      # @spec INBOX-PHASE-RELEVANCE-002
+      def valid_scope
+        scope = params[:scope].to_s
+        return nil if scope.blank?
+
+        Inbox::Queue::SCOPES.include?(scope) ? scope : Inbox::Queue::ACTIONABLE_SCOPE
       end
 
       def scoped_project
@@ -103,7 +138,7 @@ module Api
       end
 
       def inbox_etag(filters)
-        payload = [ current_user.id, filters.slice(:kind, :sort, :limit, :cursor).merge(project_id: filters[:project]&.id), inbox_version ]
+        payload = [ current_user.id, filters.slice(:kind, :sort, :scope, :limit, :cursor).merge(project_id: filters[:project]&.id), inbox_version ]
         %Q("#{Digest::SHA256.hexdigest(payload.to_json)}")
       end
 
