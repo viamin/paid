@@ -79,6 +79,15 @@ arrows:
     status: OK
     audited: 2026-10-11
     next: "Evaluate contract-specific repository prerequisites before Inbox surfacing or run admission (RDR-074)"
+  project-dashboard-metrics:
+    title: Project Dashboard Metrics
+    path: docs/intent/project-dashboard-metrics/project-dashboard-metrics-design.md
+    specs: docs/intent/project-dashboard-metrics/project-dashboard-metrics-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-10-23
+    next: "Extend normalized pipeline-event ingestion when a CI provider exposes more detailed timing data."
   agent-instruction-navigation:
     title: Agent Instruction Navigation
     path: docs/intent/agent-instruction-navigation/agent-instruction-navigation-design.md
