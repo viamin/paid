@@ -17,6 +17,12 @@ module Inbox
     PROJECT_SETUP_PENDING_KIND = "project_setup_pending"
     TRACEABILITY_GAP_KIND = "traceability_gap"
     DEFAULT_SORT = "oldest"
+    # RDR-077 §5 scopes: the default actionable list, the requests held back by
+    # a disabled phase, and the requests this user personally removed.
+    ACTIONABLE_SCOPE = "actionable"
+    DISABLED_PHASES_SCOPE = "disabled_phases"
+    REMOVED_SCOPE = "removed"
+    SCOPES = [ ACTIONABLE_SCOPE, DISABLED_PHASES_SCOPE, REMOVED_SCOPE ].freeze
     SORTS = {
       DEFAULT_SORT => "Oldest first",
       "newest" => "Newest first"
@@ -168,6 +174,34 @@ module Inbox
         )
       end
 
+      # @spec INBOX-PHASE-RELEVANCE-001 @spec INBOX-PHASE-RELEVANCE-003
+      def phase_ownership
+        @phase_ownership ||= Inbox::PhaseOwnership.for_entry(self)
+      end
+
+      # @spec INBOX-PHASE-RELEVANCE-003
+      def relevance
+        @relevance ||= Inbox::PhaseRelevance.new.call(self)
+      end
+
+      def responsible_phase
+        phase_ownership.responsible_phase
+      end
+
+      # Stop reason and recovery action for a request held back by a disabled
+      # phase; nil while the request is actionable.
+      def stop_reason
+        relevance.stop_reason
+      end
+
+      def recovery_action
+        relevance.recovery
+      end
+
+      def actionable?
+        relevance.actionable?
+      end
+
       def title
         title_text.presence || issue&.title || record.try(:title)
       end
@@ -228,8 +262,13 @@ module Inbox
       return unless KINDS.include?(entry_kind) && record_id&.match?(/\A[0-9]+\z/)
       return if kind.present? && kind != entry_kind
 
-      call(user: user, project: project, kind: entry_kind, record_id: record_id)
-        .find { |entry| entry.id == entry_id.to_s }
+      Inbox::Queue::SCOPES.each do |candidate_scope|
+        entry = call(user:, project:, kind: entry_kind, record_id:, scope: candidate_scope)
+          .find { |candidate| candidate.id == entry_id.to_s }
+        return entry if entry
+      end
+
+      nil
     end
 
     # Questionless rows are invalid and repaired during sync, so keep them out
@@ -267,37 +306,82 @@ module Inbox
       label_gated.or(local_gated)
     end
 
-    def initialize(user:, project: nil, kind: nil, sort: DEFAULT_SORT, record_id: nil)
+    def initialize(user:, project: nil, kind: nil, sort: DEFAULT_SORT, record_id: nil, scope: ACTIONABLE_SCOPE)
       @user = user
       @project = project
       @kind = kind.to_s.presence
       @sort = SORTS.key?(sort) ? sort : DEFAULT_SORT
       @record_id = record_id
+      @scope = SCOPES.include?(scope.to_s) ? scope.to_s : ACTIONABLE_SCOPE
     end
 
     # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-009 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
     def call
-      entries = []
-      entries.concat(clarifying_question_entries) if include_kind?(CLARIFYING_QUESTIONS_KIND)
-      entries.concat(plan_review_entries) if include_kind?(PLAN_REVIEW_KIND)
-      entries.concat(merge_approval_entries) if include_kind?(MERGE_APPROVAL_KIND)
-      entries.concat(action_required_entries) if include_kind?(ACTION_REQUIRED_KIND)
-      entries.concat(escalated_pr_entries) if include_kind?(ESCALATED_PR_KIND)
-      entries.concat(manual_review_entries) if include_kind?(MANUAL_REVIEW_KIND)
-      entries.concat(intent_conformance_entries) if include_kind?(INTENT_CONFORMANCE_KIND)
-      entries.concat(feature_decision_entries) if include_kind?(FEATURE_DECISION_KIND)
-      entries.concat(retry_limited_entries) if include_kind?(RETRY_LIMITED_KIND)
-      entries.concat(change_intent_draft_entries) if include_kind?(CHANGE_INTENT_DRAFT_KIND)
-      entries.concat(partial_closeout_entries) if include_kind?(PARTIAL_CLOSEOUT_KIND)
-      entries.concat(test_review_pending_entries) if include_kind?(TEST_REVIEW_PENDING_KIND)
-      entries.concat(project_setup_pending_entries) if include_kind?(PROJECT_SETUP_PENDING_KIND)
-      entries.concat(traceability_gap_entries) if include_kind?(TRACEABILITY_GAP_KIND)
-      sort_entries(entries)
+      sort_entries(apply_scope(build_entries))
     end
 
     private
 
-    attr_reader :kind, :project, :sort, :user
+    attr_reader :kind, :project, :scope, :sort, :user
+
+    # @spec INBOX-PHASE-RELEVANCE-002 @spec INBOX-PHASE-RELEVANCE-009
+    def apply_scope(entries)
+      return entries unless phase_governed?(entries)
+
+      case scope
+      when DISABLED_PHASES_SCOPE then entries.reject { |entry| relevance_for(entry).actionable? }
+      when REMOVED_SCOPE then entries.select { |entry| suppressed_ids.include?(entry.id) }
+      else entries.select { |entry| relevance_for(entry).actionable? && !suppressed_ids.include?(entry.id) }
+      end
+    end
+
+    # One relevance computation shared by every scope, so the Disabled phases,
+    # Removed, and default views can never disagree about one entry.
+    def relevance_for(entry)
+      relevance_by_id.fetch(entry.id)
+    end
+
+    def relevance_by_id
+      @relevance_by_id ||= build_entries.index_by(&:id).transform_values do |entry|
+        Inbox::PhaseRelevance.new.call(entry)
+      end
+    end
+
+    def suppressed_ids
+      @suppressed_ids ||= Inbox::Removals::Suppression.call(user:, entries: build_entries).to_a
+    end
+
+    # Phase relevance is only applied to projects whose rollout flag is on;
+    # while the flag is off every entry stays in the default list exactly as
+    # before. Resolved once per distinct project so an ungoverned queue pays
+    # no extra queries.
+    def phase_governed?(entries)
+      projects = entries.filter_map(&:project).uniq(&:id)
+      return false if projects.empty?
+
+      projects.any? { |project| Automation::RolloutGuard.enabled?(project) }
+    end
+
+    def build_entries
+      @build_entries ||= begin
+        entries = []
+        entries.concat(clarifying_question_entries) if include_kind?(CLARIFYING_QUESTIONS_KIND)
+        entries.concat(plan_review_entries) if include_kind?(PLAN_REVIEW_KIND)
+        entries.concat(merge_approval_entries) if include_kind?(MERGE_APPROVAL_KIND)
+        entries.concat(action_required_entries) if include_kind?(ACTION_REQUIRED_KIND)
+        entries.concat(escalated_pr_entries) if include_kind?(ESCALATED_PR_KIND)
+        entries.concat(manual_review_entries) if include_kind?(MANUAL_REVIEW_KIND)
+        entries.concat(intent_conformance_entries) if include_kind?(INTENT_CONFORMANCE_KIND)
+        entries.concat(feature_decision_entries) if include_kind?(FEATURE_DECISION_KIND)
+        entries.concat(retry_limited_entries) if include_kind?(RETRY_LIMITED_KIND)
+        entries.concat(change_intent_draft_entries) if include_kind?(CHANGE_INTENT_DRAFT_KIND)
+        entries.concat(partial_closeout_entries) if include_kind?(PARTIAL_CLOSEOUT_KIND)
+        entries.concat(test_review_pending_entries) if include_kind?(TEST_REVIEW_PENDING_KIND)
+        entries.concat(project_setup_pending_entries) if include_kind?(PROJECT_SETUP_PENDING_KIND)
+        entries.concat(traceability_gap_entries) if include_kind?(TRACEABILITY_GAP_KIND)
+        entries
+      end
+    end
 
     # @spec OPERATOR-INBOX-015
     def only_record(scope)

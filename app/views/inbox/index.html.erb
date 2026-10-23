@@ -88,6 +88,21 @@
     </div>
   </div>
 
+  <%# @spec INBOX-PHASE-RELEVANCE-002 @spec INBOX-PHASE-RELEVANCE-006 %>
+  <div class="mb-4 flex flex-wrap items-center gap-3 text-sm">
+    <% { "actionable" => "Inbox", "disabled_phases" => "Disabled phases", "removed" => "Removed" }.each do |scope, label| %>
+      <% next if scope == @selected_scope %>
+      <%= link_to label,
+            inbox_path(project_id: @scoped_project&.id, kind: @selected_kind, sort: params[:sort].presence, scope: scope == "actionable" ? nil : scope),
+            class: "rounded-full bg-white px-3 py-1 font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    <% end %>
+    <% if @selected_scope.present? %>
+      <span class="rounded-full bg-indigo-50 px-3 py-1 font-medium text-indigo-700">
+        <%= @selected_scope == Inbox::Queue::DISABLED_PHASES_SCOPE ? "Disabled phases" : "Removed" %>
+      </span>
+    <% end %>
+  </div>
+
   <% if @inbox_entries.empty? %>
     <%= render "shared/list_detail_empty_state",
                title: "Inbox clear",

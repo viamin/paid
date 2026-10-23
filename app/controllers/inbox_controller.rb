@@ -18,11 +18,24 @@ class InboxController < ApplicationController
 
   # @spec OPERATOR-INBOX-003 @spec OPERATOR-INBOX-009
   def show
-    @selected_entry = resolve_selected_entry(@inbox_entries)
+    @selected_entry = resolve_selected_entry(@inbox_entries) || hidden_or_removed_entry
     return redirect_to(inbox_path(**inbox_redirect_params), status: :see_other) unless @selected_entry
 
     @detail_view = true
-    render(detail_frame_request? ? :show : :index)
+    return render(:show) if detail_frame_request?
+
+    load_inbox_presentations
+    render :index
+  end
+
+  # An authorized user may inspect a request that phase relevance or their own
+  # removal moved out of the default list.
+  # @spec INBOX-PHASE-RELEVANCE-003
+  def hidden_or_removed_entry
+    entry = Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id],
+      project: @scoped_project, kind: @selected_kind)
+    @inbox_entries = [ entry ].compact if entry
+    entry
   end
 
   # @spec QUESTION-EXPLORATION-001 @spec QUESTION-EXPLORATION-014
@@ -49,7 +62,37 @@ class InboxController < ApplicationController
     @selected_entry = resolve_selected_entry(@inbox_entries)
   end
 
+  # @spec INBOX-PHASE-RELEVANCE-006
+  def remove_entry
+    entry = removable_entry
+    return redirect_back_to_inbox(alert: "That inbox item is no longer available.") unless entry
+
+    Inbox::Removals::Remove.call(entry:, user: current_user)
+    redirect_back_to_inbox(notice: "Removed from your inbox. The work and its history are unchanged.")
+  end
+
+  # @spec INBOX-PHASE-RELEVANCE-006
+  def restore_entry
+    entry = removable_entry
+    return redirect_back_to_inbox(alert: "That inbox item is no longer available.") unless entry
+
+    Inbox::Removals::Restore.call(entry:, user: current_user)
+    redirect_back_to_inbox(notice: "Restored to your inbox.")
+  end
+
   private
+
+  # Direct links resolve in any scope, so an item moved out of the default list
+  # by phase relevance or personal removal stays inspectable.
+  # @spec INBOX-PHASE-RELEVANCE-003
+  def removable_entry
+    Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id])
+  end
+
+  def redirect_back_to_inbox(alert: nil, notice: nil)
+    target = inbox_path(inbox_redirect_params)
+    alert ? redirect_to(target, alert:) : redirect_to(target, notice:)
+  end
 
   # @spec INBOX-FOUNDATION-009 @spec INBOX-FOUNDATION-010 @spec INBOX-FOUNDATION-011
   # @spec OPERATOR-INBOX-016
@@ -57,19 +100,29 @@ class InboxController < ApplicationController
     @scoped_project = scoped_needs_input_project
     @selected_kind = valid_inbox_kind
     @selected_sort = valid_inbox_sort
-    if detail_frame_request? || %w[open_chat supplement].include?(action_name)
+    @selected_scope = valid_inbox_scope
+    if single_entry_request?
       @inbox_entries = selected_entry_queue
       return
     end
 
-    @inbox_entries = Inbox::Queue.call(user: current_user, project: @scoped_project, kind: @selected_kind, sort: @selected_sort)
-    @inbox_availability = if @scoped_project.nil? && @selected_kind.nil?
-      Inbox::Availability.call(user: current_user, entries: @inbox_entries)
+    @inbox_entries = Inbox::Queue.call(user: current_user, project: @scoped_project, kind: @selected_kind,
+      sort: @selected_sort, scope: @selected_scope)
+    load_inbox_presentations(entries: @inbox_entries)
+    redirect_for_empty_filtered_combination
+  end
+
+  # Filters, counts, and the project list a list rendering needs. The unfiltered
+  # index passes its already-built entries so counts match the list exactly; a
+  # single-entry render derives the matrix so the filter dialog still offers
+  # every project with items.
+  def load_inbox_presentations(entries: nil)
+    if entries && @scoped_project.nil? && @selected_kind.nil? && @selected_scope == Inbox::Queue::ACTIONABLE_SCOPE
+      @inbox_availability = Inbox::Availability.call(user: current_user, entries:)
     else
-      Inbox::Availability.call(user: current_user, project: @scoped_project, kind: @selected_kind)
+      @inbox_availability = Inbox::Availability.call(user: current_user, project: @scoped_project, kind: @selected_kind)
     end
     @inbox_projects = @inbox_availability.available_projects
-    redirect_for_empty_filtered_combination
   end
 
   # @spec OPERATOR-INBOX-015
@@ -77,9 +130,21 @@ class InboxController < ApplicationController
     action_name == "show" && turbo_frame_request_id == "inbox-detail"
   end
 
+  # A request that renders exactly one entry: the turbo-frame detail pane and
+  # the chat/supplement entry points.
+  def single_entry_request?
+    detail_frame_request? || %w[open_chat supplement].include?(action_name)
+  end
+
   def selected_entry_queue
     [ Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id],
       project: @scoped_project, kind: @selected_kind) ].compact
+  end
+
+  # @spec INBOX-PHASE-RELEVANCE-002
+  def valid_inbox_scope
+    scope = params[:scope].to_s
+    Inbox::Queue::SCOPES.include?(scope) ? scope : Inbox::Queue::ACTIONABLE_SCOPE
   end
 
   # A filter combination with no matching items would otherwise render the
@@ -115,7 +180,8 @@ class InboxController < ApplicationController
   end
 
   def inbox_redirect_params
-    { project_id: @scoped_project&.id, kind: @selected_kind, sort: params[:sort].presence }.compact
+    { project_id: @scoped_project&.id, kind: @selected_kind, sort: params[:sort].presence,
+      scope: @selected_scope == Inbox::Queue::ACTIONABLE_SCOPE ? nil : @selected_scope }.compact
   end
 
   def resolve_selected_entry(entries)

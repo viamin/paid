@@ -1,0 +1,41 @@
+<%# @spec INBOX-PHASE-RELEVANCE-002 @spec INBOX-PHASE-RELEVANCE-003 @spec INBOX-PHASE-RELEVANCE-006 %>
+<% ownership = entry.phase_ownership %>
+
+<div class="mt-6 space-y-3 border-t border-gray-200 pt-4">
+  <div class="flex flex-wrap items-center gap-2 text-xs">
+    <% if ownership.phase_owned? %>
+      <span class="rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-700">
+        Responsible phase: <%= ownership.phase_label %>
+      </span>
+    <% elsif ownership.unknown? %>
+      <span class="rounded-full bg-yellow-100 px-2 py-0.5 font-medium text-yellow-800">
+        Responsible phase: unclassified — visible for reconciliation
+      </span>
+    <% else %>
+      <span class="rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-800">
+        Platform request — independent of project phase settings
+      </span>
+    <% end %>
+
+    <% unless entry.actionable? %>
+      <span class="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-900">
+        Hidden: <%= entry.stop_reason %>
+      </span>
+    <% end %>
+  </div>
+
+  <% if entry.recovery_action.present? %>
+    <p class="text-sm text-gray-600"><%= entry.recovery_action %></p>
+  <% end %>
+
+  <div>
+    <% if entry.actionable? %>
+      <%= button_to "Remove from Inbox", inbox_entry_remove_path(entry.id), method: :post,
+            class: "rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50",
+            form: { data: { turbo_confirm: "Hide this request from your Inbox? The work, its questions, and its history stay unchanged." } } %>
+    <% else %>
+      <%= button_to "Restore to Inbox", inbox_entry_restore_path(entry.id), method: :post,
+            class: "rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50" %>
+    <% end %>
+  </div>
+</div>

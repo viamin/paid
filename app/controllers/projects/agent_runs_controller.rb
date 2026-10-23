@@ -151,6 +151,7 @@ module Projects
         .to_set
 
       @pr_priority_tiers = compute_pr_priority_tiers(@pull_requests)
+      load_manual_start_plan(selected_goal)
     end
 
     def create
@@ -162,6 +163,13 @@ module Projects
       priority_tier = resolve_priority_tier
       blocked_by_issue_ids = resolve_blocked_by_issue_ids
       plan_docs = resolve_plan_docs
+
+      if (plan = manual_start_plan(goal: goal)) && manual_start_policy_changed?(plan)
+        load_manual_start_plan(goal)
+        flash.now[:alert] = updated_policy_alert(plan)
+        render :new, status: :unprocessable_content
+        return
+      end
 
       if goal == "review"
         pr_ids = Array(params[:pull_request_ids]).filter_map { |id| Integer(id, exception: false) }.select(&:positive?)
@@ -836,6 +844,21 @@ module Projects
       tier if Project::PRIORITY_TIERS.include?(tier)
     end
 
+    # @spec AUTOMATION-PHASES-010
+    def load_manual_start_plan(goal)
+      plan = manual_start_plan(goal:)
+      plan&.call
+      @manual_start_plan = plan
+      @continuation_endpoints = plan&.endpoints || []
+      @effective_policy_notice = plan&.notice
+    end
+
+    # @spec AUTOMATION-PHASES-011
+    def updated_policy_alert(plan)
+      "This project's automation settings changed since you opened this form. " \
+        "Review the updated automation notice and submit again. #{plan.notice.summary}"
+    end
+
     def resolve_blocked_by_issue_ids
       Array(params[:blocked_by_issue_ids]).filter_map { |id| Integer(id, exception: false) }.select(&:positive?)
     end
@@ -1044,8 +1067,73 @@ module Projects
           blocked_by_issue_ids: blocked_by_issue_ids
         )
         attach_marketplace_entries(agent_run: agent_run)
+        apply_continuation_grant(agent_run)
         agent_run
       end
+    end
+
+    # RDR-077 §3: goals map to the phase that owns the work they perform.
+    # @spec AUTOMATION-PHASES-004
+    MANUAL_START_PHASES = {
+      "create_feature" => Automation::Phases::DISCOVERY,
+      "enhance_issue" => Automation::Phases::ISSUE_PREPARATION,
+      "analyze_issue" => Automation::Phases::ISSUE_PREPARATION,
+      "create_pr" => Automation::Phases::CODING,
+      "review" => Automation::Phases::CODING,
+      "create_issue" => Automation::Phases::CODING,
+      "lid_planning" => Automation::Phases::CODING
+    }.freeze
+
+    # @spec AUTOMATION-PHASES-010
+    def manual_start_plan(goal:)
+      return unless phase_model_governed?
+
+      phase = MANUAL_START_PHASES[goal.to_s]
+      return if phase.nil?
+
+      Automation::ManualStart::Plan.new(
+        project: @project,
+        user: current_user,
+        phase: phase,
+        goal: goal,
+        endpoint: params[:continuation_endpoint],
+        continuation_selected: params[:continuation_authorized].present?
+      )
+    end
+
+    # The form always carries the notice it rendered; a policy change between
+    # render and submission returns the updated notice for review instead of
+    # silently omitting a newly permitted continuation.
+    # @spec AUTOMATION-PHASES-011
+    def manual_start_policy_changed?(plan)
+      plan.policy_changed_since?(params[:continuation_notice_signature])
+    end
+
+    def phase_model_governed?
+      Automation::RolloutGuard.enabled?(@project)
+    end
+
+    # @spec AUTOMATION-PHASES-005
+    def apply_continuation_grant(agent_run)
+      plan = @manual_start_plan
+      return unless plan&.continuation_selected
+
+      work_item = continuation_work_item(agent_run)
+      return if work_item.nil?
+
+      plan.build_grant(issue: work_item)
+    rescue Automation::ManualStart::Plan::PermissionDenied => e
+      raise e
+    end
+
+    # A grant belongs to the work item and its linked chain: an issue, or the
+    # source issue behind the run's pull request.
+    def continuation_work_item(agent_run)
+      return agent_run.issue if agent_run.issue
+
+      pull_request = @project.issues.pull_requests_only
+        .find_by(github_number: agent_run.source_pull_request_number)
+      pull_request&.parent_issue || pull_request
     end
 
     def attach_marketplace_entries(agent_run:)

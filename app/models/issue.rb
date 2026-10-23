@@ -202,6 +202,12 @@ class Issue < ApplicationRecord
   # @spec OPERATOR-INBOX-010 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
   after_commit :bump_inbox_cache_version, if: :inbox_count_cache_invalidation_needed?
 
+  # RDR-077: the phase that owns a request is assigned when the request is
+  # produced, not inferred later from the generic needs_input / manual_review
+  # state. Only runs for projects whose phase model is enabled.
+  # @spec INBOX-PHASE-RELEVANCE-001
+  after_commit :record_inbox_phase_ownership, on: [ :create, :update ], if: :inbox_phase_ownership_changed?
+
   scope :by_paid_state, ->(state) { where(paid_state: state) }
   scope :root_issues, -> { where(parent_issue_id: nil) }
   scope :sub_issues_only, -> { where.not(parent_issue_id: nil) }
@@ -961,6 +967,30 @@ class Issue < ApplicationRecord
 
   def bump_inbox_cache_version
     Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+  end
+
+  # @spec INBOX-PHASE-RELEVANCE-001
+  INBOX_PHASE_KINDS = {
+    "needs_input" => Inbox::Queue::CLARIFYING_QUESTIONS_KIND,
+    "manual_review" => Inbox::Queue::MANUAL_REVIEW_KIND
+  }.freeze
+
+  def inbox_phase_ownership_changed?
+    return false unless saved_change_to_paid_state?
+    return false unless INBOX_PHASE_KINDS.key?(paid_state)
+
+    Automation::RolloutGuard.enabled?(project)
+  end
+
+  def record_inbox_phase_ownership
+    Inbox::PhaseOwnership.record_issue_request!(issue: self, kind: INBOX_PHASE_KINDS.fetch(paid_state))
+  rescue ActiveRecord::StatementInvalid, ActiveRecord::RecordInvalid => e
+    Rails.logger.warn(
+      message: "inbox.phase_ownership_assignment_failed",
+      issue_id: id,
+      paid_state: paid_state,
+      error_class: e.class.name
+    )
   end
 
   def waiting_issue_github_state_changed?

@@ -30,11 +30,33 @@ module Inbox
 
     attr_reader :user
 
+    # @spec INBOX-PHASE-RELEVANCE-005 @spec INBOX-PHASE-RELEVANCE-009
+    # When any visible project runs the phase model, the count comes from the
+    # same scope-filtered queue the list renders, so the badge can never
+    # disagree with the list about phase relevance or personal removal. While
+    # every project is off the flag, the cheap SQL approximation is unchanged.
     def compute_count
+      return governed_count if phase_model_governed?
+
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
         retry_limited_count + change_intent_draft_count + partial_closeout_count +
         test_review_pending_count + project_setup_pending_count + traceability_gap_count
+    end
+
+    def governed_count
+      [ Inbox::Queue.call(user: user).size, DISPLAY_CAP ].min
+    end
+
+    def phase_model_governed?
+      governed_project_ids.any?
+    end
+
+    def governed_project_ids
+      @governed_project_ids ||= Project
+        .where(id: visible_project_ids)
+        .select { |project| Automation::RolloutGuard.enabled?(project) }
+        .map(&:id)
     end
 
     def needs_input_count
@@ -202,7 +224,7 @@ module Inbox
     end
 
     def cache_key
-      "inbox/count/#{user.account_id}/#{user.id}/#{Dashboard::CacheVersion.current(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)}"
+      "inbox/count/#{user.account_id}/#{user.id}/#{Dashboard::CacheVersion.current(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)}/#{governed_project_ids.sort.join("-")}"
     end
   end
 end

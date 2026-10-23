@@ -29,6 +29,21 @@ module Inbox
       self
     end
 
+    # @spec INBOX-PHASE-RELEVANCE-005
+    # When any visible project runs the phase model, the matrix is derived from
+    # the same scope-filtered queue the list renders, so kinds, project counts,
+    # and the total agree with the list instead of over-reporting hidden or
+    # personally removed requests.
+    def governed?
+      return false if @entries
+
+      governed_project_ids.any?
+    end
+
+    def governed_entries
+      @governed_entries ||= Inbox::Queue.call(user: user)
+    end
+
     # Kind => count, scoped to the active project filter (if any). Only
     # kinds with a positive count belong in the Type radio group.
     def kind_counts
@@ -101,16 +116,31 @@ module Inbox
     # project_counts, total_count, project_ids_for, kinds_for), so it is the
     # single thing worth caching.
     def matrix
-      # @spec OPERATOR-INBOX-016
+      # @spec OPERATOR-INBOX-016 @spec INBOX-PHASE-RELEVANCE-005
       if @entries
         return @matrix ||= Inbox::Queue::KINDS.index_with do |entry_kind|
           @entries.select { |entry| entry.kind == entry_kind }.map { |entry| entry.project.id }.tally
         end
       end
 
+      return @matrix ||= matrix_from(governed_entries) if governed?
+
       @matrix ||= Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) do
         Inbox::Queue::KINDS.index_with { |k| count_by_project(k) }
       end
+    end
+
+    def matrix_from(entries)
+      Inbox::Queue::KINDS.index_with do |entry_kind|
+        entries.select { |entry| entry.kind == entry_kind }.filter_map { |entry| entry.project&.id }.tally
+      end
+    end
+
+    def governed_project_ids
+      @governed_project_ids ||= Project
+        .where(id: visible_project_ids)
+        .select { |project| Automation::RolloutGuard.enabled?(project) }
+        .map(&:id)
     end
 
     def count_by_project(entry_kind)

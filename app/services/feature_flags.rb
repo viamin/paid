@@ -91,6 +91,13 @@ class FeatureFlags
       intent: "Gate the RDR-073 third install arm on Containers::McpProvisioner so per-run hardened tool sidecars only provision behind per-tenant opt-in.",
       rollout_plan: "Default-off; opt in per tenant via tenant_settings.features; expand after the hardened HostConfig, image gate, and PAID_SERVICE_HARDENING override path are exercised end-to-end.",
       cleanup_criteria: "Remove once the RDR-073 closeout audit verifies the hardened provisioning path is complete, image gating is enforced, and pilot tenants have run tool-attached runs without incident."
+    ),
+    automation_phases: Definition.new(
+      name: :automation_phases,
+      owner: "automation-phases",
+      intent: "Gate the RDR-077 phase model: phase project defaults, explicit continuation grants, execution enforcement, and Inbox phase relevance plus personal removal.",
+      rollout_plan: "Default-off; enable a pilot project only after phase mappings, capability configuration, grant storage, and Inbox classification are validated together. Block rollback for a project with active grants until they finish or are revoked and its queued work is reconciled.",
+      cleanup_criteria: "Remove after the RDR-077 closeout verifies migration and complete execution-path coverage."
     )
   }.freeze
 

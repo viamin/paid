@@ -299,6 +299,8 @@ class Project < ApplicationRecord
   has_many :design_artifact_findings, dependent: :destroy
   has_many :auto_merge_attempts, dependent: :destroy
   has_many :agent_runs, dependent: :destroy
+  # RDR-077: explicit continuation grants authorized by a manual start.
+  has_many :work_item_continuation_grants, dependent: :destroy
   has_many :apple_verification_waivers, dependent: :destroy
   has_many :apple_verification_attempts, dependent: :destroy
   has_many :apple_verification_workflow_revisions, dependent: :destroy

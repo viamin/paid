@@ -49,6 +49,7 @@ paths:
         - $ref: '#/components/parameters/IfNoneMatch'
         - $ref: '#/components/parameters/InboxKind'
         - $ref: '#/components/parameters/InboxSort'
+        - $ref: '#/components/parameters/InboxScope'
         - $ref: '#/components/parameters/ProjectId'
         - $ref: '#/components/parameters/InboxLimit'
         - $ref: '#/components/parameters/InboxCursor'
@@ -137,6 +138,56 @@ paths:
                 properties:
                   chat_session_id:
                     type: integer
+        default:
+          $ref: '#/components/responses/Error'
+  /inbox/entries/{entry_id}/remove:
+    parameters:
+      - $ref: '#/components/parameters/EntryId'
+    post:
+      operationId: removeInboxEntry
+      description: >-
+        Hides this request for the calling user only. The request, its
+        questions, its history, and its automation authorization are
+        unchanged, and it stays inspectable through the removed scope and a
+        direct link.
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: The request is hidden for the calling user.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [removed, entry_id]
+                properties:
+                  removed: {type: boolean}
+                  entry_id: {$ref: '#/components/schemas/InboxEntryId'}
+        default:
+          $ref: '#/components/responses/Error'
+  /inbox/entries/{entry_id}/restore:
+    parameters:
+      - $ref: '#/components/parameters/EntryId'
+    post:
+      operationId: restoreInboxEntry
+      description: >-
+        Clears the calling user's personal removal so the request is eligible
+        again under the normal phase-relevance rules.
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: The request is eligible for the inbox again.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [restored, entry_id]
+                properties:
+                  restored: {type: boolean}
+                  entry_id: {$ref: '#/components/schemas/InboxEntryId'}
         default:
           $ref: '#/components/responses/Error'
   /feature_intents/{id}/cancel:
@@ -433,6 +484,16 @@ components:
       schema:
         type: string
         enum: [oldest, newest]
+    InboxScope:
+      name: scope
+      in: query
+      description: >-
+        actionable (default) is the phase-relevant list; disabled_phases lists
+        requests held back by a disabled project phase; removed lists the
+        calling user's personally removed requests.
+      schema:
+        type: string
+        enum: [actionable, disabled_phases, removed]
     ProjectId:
       name: project_id
       in: query
