@@ -70,9 +70,10 @@ valid replacement.
 Thinking effort is independent from the curated Low, Medium, and High model
 tier. It is an optional per-session preference, scoped to the effective
 model and API-key chat transport. The selector appears only when the catalog
-declares configurable reasoning for that model and agent-harness confirms that
-the selected transport can accept its normalized values. Its choices are the
-model capability's allowed values, not a Paid-wide provider table. The
+declares configurable reasoning and an explicit allowed-value list for that
+model, and agent-harness confirms that the selected transport can accept its
+normalized values. Its choices are the model capability's allowed values, not
+a Paid-wide provider table. The
 explicit `Default (model picks)` choice persists no value and sends no
 reasoning-effort parameter; it preserves the provider/model default and does
 not imply maximum effort.

@@ -69,6 +69,13 @@ RSpec.describe LlmModel do
     it "does not infer reasoning support for a model without that capability" do
       expect(build(:llm_model, metadata: {}).reasoning_effort_values).to eq([])
     end
+
+    # @spec CHAT-THINKING-EFFORT-001
+    it "does not assume effort values when the capability omits them" do
+      model = build(:llm_model, metadata: { "supports_reasoning" => true })
+
+      expect(model.reasoning_effort_values).to eq([])
+    end
   end
 
   describe "scopes" do
