@@ -152,6 +152,7 @@ module Projects
 
       @pr_priority_tiers = compute_pr_priority_tiers(@pull_requests)
       load_manual_start_plan(selected_goal)
+      @continuation_plans_by_goal = continuation_plans_by_goal
     end
 
     def create
@@ -1084,6 +1085,7 @@ module Projects
     # RDR-077 §3: goals map to the phase that owns the work they perform.
     # @spec AUTOMATION-PHASES-004
     MANUAL_START_PHASES = {
+      "create_feature" => Automation::Phases::DISCOVERY,
       "enhance_issue" => Automation::Phases::ISSUE_PREPARATION,
       "analyze_issue" => Automation::Phases::ISSUE_PREPARATION,
       "create_pr" => Automation::Phases::CODING,
@@ -1091,6 +1093,10 @@ module Projects
       "create_issue" => Automation::Phases::CODING,
       "lid_planning" => Automation::Phases::CODING
     }.freeze
+
+    # The run form's goal radios. Each goal's continuation plan is embedded so
+    # the goal toggle can refresh the section client-side.
+    RUN_FORM_GOALS = %w[create_pr create_issue review enhance_issue create_feature].freeze
 
     # @spec AUTOMATION-PHASES-010
     def manual_start_plan(goal:)
@@ -1114,6 +1120,17 @@ module Projects
       return if phase.nil?
 
       Automation::ManualStart::Plan.new(project: @project, user: current_user, phase:, goal:)
+    end
+
+    # Per-goal continuation plans for the run form's goal toggle, keyed by the
+    # form's goal radios. Empty unless the phase model governs the project.
+    # @spec AUTOMATION-PHASES-004
+    def continuation_plans_by_goal
+      return {} unless phase_model_governed?
+
+      RUN_FORM_GOALS.index_with do |goal|
+        default_manual_start_plan(goal)&.payload
+      end.compact
     end
 
     # The form always carries the notice it rendered; a policy change between

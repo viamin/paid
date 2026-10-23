@@ -61,6 +61,19 @@ module Automation
         )
       end
 
+      # Client-refresh payload: the run form's goal toggle re-renders the
+      # continuation section from this without a server round trip. The policy
+      # signature is deliberately absent; submission re-evaluates it
+      # server-side against the then-current signature.
+      # @spec AUTOMATION-PHASES-004 @spec AUTOMATION-PHASES-010
+      def payload
+        {
+          default_endpoint: default_endpoint,
+          endpoints: endpoints.map { |endpoint| { value: endpoint, label: Automation::Phases.label(endpoint) } },
+          notices: notices
+        }
+      end
+
       def signature
         notice.signature
       end
@@ -88,6 +101,14 @@ module Automation
       end
 
       private
+
+      def notices
+        endpoints.index_with { |endpoint| notice_for(endpoint) }
+      end
+
+      def notice_for(endpoint)
+        EffectivePolicyNotice.new(project: project, phase: phase, endpoint: endpoint).selection_summary
+      end
 
       def resolve_endpoint(endpoint)
         requested = endpoint.to_s.presence

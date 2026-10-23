@@ -11,11 +11,21 @@ module Automation
   class EffectivePolicyNotice
     NO_CONTINUATION_REASON = "Paid stops after the action you selected unless this project's settings permit more."
 
-    attr_reader :endpoint, :phase, :project, :selection
+    class << self
+      def call(...)
+        new(...).call
+      end
 
-    def self.call(...)
-      new(...).call
+      # The sentence every endpoint description leads with, so surfaces that
+      # list each endpoint choice (the run form's client-refresh payload)
+      # cannot drift from the server-rendered summary.
+      # @spec AUTOMATION-PHASES-010
+      def selection_statement(endpoint)
+        "You selected automation through #{Automation::Phases.label(endpoint)}."
+      end
     end
+
+    attr_reader :endpoint, :phase, :project, :selection
 
     def initialize(project:, phase:, endpoint:, continuation_selected: false)
       @project = project
@@ -45,10 +55,19 @@ module Automation
       labels = permitted_phases.map { |later| Automation::Phases.label(later) }.to_sentence
       sources = permitted_entries.map { |entry| entry[:source] }.uniq.to_sentence
 
-      "You selected automation through #{Automation::Phases.label(endpoint)}. " \
+      "#{self.class.selection_statement(endpoint)} " \
         "This project's settings also permit #{labels}, so Paid may continue this work into #{labels} " \
         "once the earlier phase's conditions are satisfied. That permission comes from #{sources}. " \
         "Continuation is conditional authorization, not a guarantee of completing #{labels.downcase}."
+    end
+
+    # Summary that always names the selected endpoint, for surfaces that offer
+    # every endpoint choice up front (the run form's client-refresh payload).
+    # @spec AUTOMATION-PHASES-010
+    def selection_summary
+      return summary if permitted_phases.any?
+
+      "#{self.class.selection_statement(endpoint)} #{NO_CONTINUATION_REASON}"
     end
 
     # Digest of project policy state, so user selections do not look stale but
