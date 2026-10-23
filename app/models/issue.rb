@@ -161,6 +161,7 @@ class Issue < ApplicationRecord
   after_update_commit :resolve_partial_closeout_prerequisite_notifications, if: :github_just_closed?
   after_update_commit :enqueue_self_if_became_auto_pick_eligible, if: :auto_pick_recheck_needed?
   after_update_commit :cancel_orphaned_queued_runs, if: :work_no_longer_needed?
+  after_update_commit :complete_continuation_grants, if: :continuation_endpoint_reached?
   after_commit :update_project_last_github_activity_at, on: [ :create, :update ]
 
   # UI -> GitHub: whenever the local `paused` flag flips, mirror it onto the
@@ -1204,6 +1205,16 @@ class Issue < ApplicationRecord
 
   def github_just_closed?
     saved_change_to_github_state? && github_state == "closed"
+  end
+
+  # @spec AUTOMATION-PHASES-008
+  def continuation_endpoint_reached?
+    is_pull_request? && saved_change_to_pr_review_phase? && pr_review_phase.in?(%w[ready merged])
+  end
+
+  def complete_continuation_grants
+    endpoint = merged_phase? ? "merge" : "coding"
+    Automation::CompleteContinuationGrants.call(work_items: self, endpoint:)
   end
 
   # An issue that just finished (paid_state -> completed) or was closed on

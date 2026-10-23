@@ -108,6 +108,18 @@ RSpec.describe Inbox::Removals do
       expect(entry).to be_nil
     end
 
+    # @spec INBOX-PHASE-RELEVANCE-004 @spec INBOX-PHASE-RELEVANCE-007
+    it "does not clear the removal when the request closed before phase enablement" do
+      configure_phases({ "issue_preparation" => false })
+      remove!(target: entry(scope: Inbox::Queue::DISABLED_PHASES_SCOPE))
+      removal = InboxRemoval.active.find_by!(user:, request_key: "clarifying_questions:#{issue.id}")
+      issue.update!(github_state: "closed")
+
+      Automation::PhaseSettings::Update.call(project:, params: { "phases" => { "issue_preparation" => true } })
+
+      expect(removal.reload).to be_active
+    end
+
     it "keeps each user's suppression independent when the phase is re-enabled" do
       actionable_entry = entry
       Inbox::Removals::Remove.call(entry: actionable_entry, user:)
@@ -116,7 +128,8 @@ RSpec.describe Inbox::Removals do
 
       Automation::PhaseSettings::Update.call(project:, params: { "phases" => { "issue_preparation" => true } })
 
-      expect(InboxRemoval.active.count).to eq(0)
+      expect(InboxRemoval.active.where(user:)).not_to exist
+      expect(InboxRemoval.active.where(user: other_user)).to exist
       expect(entry).to be_present
     end
 

@@ -28,8 +28,10 @@
 - [x] **INBOX-PHASE-RELEVANCE-004** — Re-enabling a phase SHALL reconcile its
   outstanding requests before restoring relevant ones, and SHALL NOT restore
   requests that are satisfied, closed, or superseded.
-  *Tests:* `spec/services/inbox/phase_relevance_spec.rb`
-  *Code:* `Automation::PhaseSettings::Update`, `Inbox::PhaseRelevance`
+  *Tests:* `spec/services/inbox/phase_relevance_spec.rb`,
+  `spec/services/inbox/removals_spec.rb`
+  *Code:* `Automation::PhaseSettings::Update`,
+  `Inbox::Removals::RestoreOnPhaseEnablement`, `Inbox::PhaseRelevance`
 
 - [x] **INBOX-PHASE-RELEVANCE-005** — Inbox lists, counts, navigation badges,
   availability indicators, search filters, chat admission, and direct-link

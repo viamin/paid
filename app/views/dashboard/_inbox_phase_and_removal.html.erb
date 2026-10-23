@@ -1,5 +1,6 @@
 <%# @spec INBOX-PHASE-RELEVANCE-002 @spec INBOX-PHASE-RELEVANCE-003 @spec INBOX-PHASE-RELEVANCE-006 %>
 <% ownership = entry.phase_ownership %>
+<% personally_removed = Inbox::Removals::Suppression.call(user: current_user, entries: [entry]).include?(entry.id) %>
 
 <div class="mt-6 space-y-3 border-t border-gray-200 pt-4">
   <div class="flex flex-wrap items-center gap-2 text-xs">
@@ -29,10 +30,10 @@
   <% end %>
 
   <div>
-    <% if selected_scope == Inbox::Queue::REMOVED_SCOPE || !entry.actionable? %>
+    <% if personally_removed %>
       <%= button_to "Restore to Inbox", inbox_entry_restore_path(entry.id), method: :post,
             class: "rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50" %>
-    <% else %>
+    <% elsif entry.actionable? %>
       <%= button_to "Remove from Inbox", inbox_entry_remove_path(entry.id), method: :post,
             class: "rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50",
             form: { data: { turbo_confirm: "Hide this request from your Inbox? The work, its questions, and its history stay unchanged." } } %>

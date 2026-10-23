@@ -45,6 +45,16 @@ RSpec.describe "Inbox phase relevance and removal" do
     get inbox_path(scope: Inbox::Queue::DISABLED_PHASES_SCOPE)
 
     expect(response.body).to include("Issue preparation")
+    expect(response.body).not_to include("Restore to Inbox")
+  end
+
+  it "shows the default Inbox scope as selected" do
+    FeatureFlags.enable!(:automation_phases, project:)
+
+    get inbox_path
+
+    expect(response.body).to match(/bg-indigo-50[^>]*>\s*Inbox\s*</)
+    expect(response.body).not_to match(/bg-indigo-50[^>]*>\s*Removed\s*</)
   end
 
   it "keeps a hidden request inspectable through its direct link" do

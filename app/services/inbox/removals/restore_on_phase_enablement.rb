@@ -25,15 +25,18 @@ module Inbox
       def call
         return 0 if phases.empty?
 
-        removals = scope.to_a
+        removals = scope.includes(:user).to_a
         return 0 if removals.empty?
 
         restored = 0
-        removals.each do |removal|
-          next unless still_actionable?(removal)
+        removals.group_by(&:user).each do |removal_user, user_removals|
+          entries = reconciled_entries(removal_user)
+          user_removals.each do |removal|
+            next unless still_actionable?(removal, entries[removal.request_key])
 
-          removal.clear!
-          restored += 1
+            removal.clear!
+            restored += 1
+          end
         end
         restored
       end
@@ -47,14 +50,15 @@ module Inbox
         user ? removals.where(user:) : removals
       end
 
-      # Reconciliation before restoration: a request whose owner is known, and
-      # whose phase is now enabled, is eligible again. Satisfied, closed, or
-      # superseded requests are not in the queue at all, so they can never be
-      # restored here.
-      def still_actionable?(removal)
+      def reconciled_entries(removal_user)
+        Inbox::Queue.new(user: removal_user, project:).entries.index_by(&:id)
+      end
+
+      def still_actionable?(removal, entry)
+        return false unless entry
         return false unless Automation::PhaseSettings.phase_enabled?(project, removal.responsible_phase)
 
-        true
+        entry.actionable? && removal.suppresses?(Inbox::RequestIdentity.occurrence_for(entry))
       end
     end
   end

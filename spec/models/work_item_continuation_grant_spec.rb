@@ -49,6 +49,16 @@ RSpec.describe WorkItemContinuationGrant do
       expect(grant.complete!).to be(false)
       expect(grant.reload).to be_completed
     end
+
+    # @spec AUTOMATION-PHASES-008
+    it "completes a merge grant when its linked pull request merges" do
+      pull_request = create(:issue, :pull_request, project:, parent_issue: issue, pr_review_phase: "ready")
+      grant = create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
+
+      pull_request.update!(github_state: "closed", pr_review_phase: "merged")
+
+      expect(grant.reload).to be_completed
+    end
   end
 
   describe "revocation" do

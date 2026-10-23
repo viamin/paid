@@ -61,8 +61,10 @@
   the grant, reopening the work SHALL NOT silently reactivate it, and
   revoking a grant SHALL withdraw only that exception while project defaults
   continue to permit work independently.
-  *Tests:* `spec/models/work_item_continuation_grant_spec.rb`
-  *Code:* `WorkItemContinuationGrant`
+  *Tests:* `spec/models/work_item_continuation_grant_spec.rb`,
+  `spec/temporal/activities/mark_pr_ready_activity_spec.rb`
+  *Code:* `WorkItemContinuationGrant`, `Automation::CompleteContinuationGrants`,
+  `Issue`
 
 - [x] **AUTOMATION-PHASES-009** — The system SHALL require permission to
   delegate the actions a grant covers, so automating through merge requires
