@@ -95,6 +95,7 @@ module Workflows
       # the resource.
       planned_container_host = input[:container_host].presence
       goal = input.fetch(:goal, "create_pr")
+      continuation_mode = input[:continuation_mode]
 
       Temporalio::Workflow.logger.info(
         "AgentExecutionWorkflow started for project=#{project_id} issue=#{issue_id}"
@@ -163,6 +164,14 @@ module Workflows
             { agent_run_id: agent_run_id, error: quality_gate_error(gate_result) }, timeout: 30)
 
           return { success: false, quality_gate_blocked: true, agent_run_id: agent_run_id }
+        end
+
+        if goal == "analyze_issue" && continuation_mode == "acceptance_audit"
+          run_activity(Activities::RunAcceptanceAuditActivity,
+            { agent_run_id: agent_run_id }, start_to_close_timeout: issue_goal_timeout_seconds,
+            retry_policy: NO_RETRY)
+          agent_step_succeeded = true
+          return { success: true, agent_run_id: agent_run_id, acceptance_audit: true }
         end
 
         if goal == "analyze_issue"

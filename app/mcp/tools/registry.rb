@@ -16,6 +16,7 @@ module Tools
       "Tools::TriggerAgentRun",
       "Tools::TriggerReadinessBootstrap",
       "Tools::RequestIssueContinuation",
+      "Tools::RequestAcceptanceAudit",
       "Tools::ResolveIssueCloseout",
       "Tools::GetAgentRun",
       "Tools::ListAgentRuns",
