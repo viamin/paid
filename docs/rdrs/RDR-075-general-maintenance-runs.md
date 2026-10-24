@@ -181,13 +181,14 @@ them against code and intent, and produces a durable report tied to the run.
 It does not require a separate agent session per stage; the implementation
 must justify additional calls with measured improvements.
 
-Each finding records its category, code locations/symbols, claim, supporting
-evidence, known counterevidence, proposed action, validation plan, and
-verification disposition. Raw tool confidence remains separate from the
-agent's assessment. Similarity alone does not establish that code should be
-shared; absence of static references or test coverage does not establish
-that code can be deleted. Framework callbacks, reflection, external APIs,
-intentional independence, and compatibility obligations must be considered.
+Each report-specific finding occurrence records its category, code
+locations/symbols, claim, supporting evidence, known counterevidence,
+proposed action, validation plan, and verification disposition. Raw tool
+confidence remains separate from the agent's assessment. Similarity alone does
+not establish that code should be shared; absence of static references or test
+coverage does not establish that code can be deleted. Framework callbacks,
+reflection, external APIs, intentional independence, and compatibility
+obligations must be considered.
 
 A report distinguishes actionable findings, unresolved candidates, deliberate
 exceptions, and coverage limitations. A completed investigation with no
@@ -196,12 +197,14 @@ or unavailable services cannot be represented as a clean scan; partial
 reports identify which checks actually completed. Cancellation and budget
 exhaustion preserve collected evidence and visibly incomplete coverage.
 
-Findings persist across runs with project- and recipe-scoped identity based
-on the claim and affected symbols, not only shifting line numbers. Repeated
-scans update occurrences rather than generating repeated repair work.
-Dismissals retain reasons; materially changed evidence requires reassessment.
-Repository-owned exceptions remain reviewable project intent, and stale
-exceptions are reported rather than silently carried forever.
+Canonical findings persist across runs with project- and recipe-scoped
+identity based on the claim and affected symbols, not only shifting line
+numbers. Each report retains immutable, report-specific finding occurrences
+and evidence; repeated scans create a later occurrence of the same canonical
+finding rather than generating repeated repair work or rewriting an earlier
+report. Dismissals retain reasons; materially changed evidence requires
+reassessment. Repository-owned exceptions remain reviewable project intent,
+and stale exceptions are reported rather than silently carried forever.
 
 ### Tool integration
 

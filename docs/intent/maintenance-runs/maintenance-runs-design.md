@@ -70,20 +70,29 @@ report records:
   the scope the user requested (an ambiguous or missing named target is a
   clarification outcome, not a silent repository-wide scan).
 
-Each `MaintenanceFinding` belongs to a report and additionally carries a
-**project- and recipe-scoped identity** derived from its claim and affected
-symbols (not line numbers alone), so repeated scans update occurrence state
-on the same finding rather than creating duplicates. A finding records:
+Each `MaintenanceFinding` is a canonical, **project- and recipe-scoped**
+record, identified from its claim and affected symbols (not line numbers
+alone). It does not belong to one report: it owns the durable current finding
+identity and lifecycle, so a repeated scan updates that same canonical finding
+rather than creating duplicate repair work. A canonical finding records:
 
-- `category`, `locations`/`symbols`, `claim`, `supporting_evidence`,
-  `counterevidence`, `proposed_action`, `validation_plan`, and a
-  `verification_disposition` (the agent's semantic assessment, held
-  separate from any raw tool-confidence score the evidence carried).
+- Its identity inputs: `category`, current `locations`/`symbols`, and `claim`.
 - `status`: `open`, `dismissed` (with a required reason), or
   `repaired` (linked to the repair work that addressed it).
 - A revalidation marker set when supporting evidence materially changes
   across scans, forcing a dismissed finding back for reassessment rather
   than staying silently dismissed forever.
+
+Each report owns an immutable `MaintenanceFindingOccurrence` for every
+canonical finding observed in that run. The occurrence links the report and
+canonical finding and snapshots that run's locations/symbols, claim,
+supporting evidence, counterevidence, analyzer provenance, verification
+disposition, and observed status. A later scan creates a new occurrence for
+the same canonical finding; it must never reattach or overwrite an earlier
+report's occurrence. Thus report inspection retains the evidence actually
+observed at that pinned revision while the canonical finding retains its
+cross-run status. The no-duplicates rule applies to canonical findings, not
+to the necessary per-report occurrence records.
 
 A `MaintenanceSchedule` (project-scoped, opt-in) captures the same
 objective/scope/guidance/limits shape as a manual run plus recurrence:
@@ -96,19 +105,23 @@ active run — cancellation is a separate explicit action on the run itself.
 
 Manual maintenance runs are reachable equivalently from the UI, the
 authenticated API, and the agent-accessible MCP surface — none of the three
-is a thicker or thinner contract than the others:
+is a thicker or thinner contract than the others. For every action below,
+each surface enforces the same project-scoped authorization decision; repair
+selection also applies the existing authorization of the selected issue or
+PR-creation pathway:
 
-- **Start**: project, optional objective (recipe key), optional scope
-  (paths/symbols), optional free-text guidance. Response identifies the
-  created run and its resolved (or pending-clarification) scope.
-- **Inspect**: run status, report outcome once terminal, and findings with
-  their status.
-- **Cancel**: an explicit action distinct from schedule disable; preserves
-  whatever evidence was already collected.
-- **Select repair**: choosing one or more findings to become a bounded
-  issue or PR-creation run through existing authorized pathways — this
-  create path is a new run/issue through existing creation goals, not a
-  new side-effecting action hung off the maintenance report.
+- **Start**: an authorized user supplies a project, optional objective (recipe
+  key), optional scope (paths/symbols), and optional free-text guidance.
+  Response identifies the created run and its resolved (or
+  pending-clarification) scope.
+- **Inspect**: an authorized user reads run status, report outcome once
+  terminal, and findings with their status.
+- **Cancel**: an authorized user takes an explicit action distinct from
+  schedule disable; it preserves whatever evidence was already collected.
+- **Select repair**: an authorized user chooses one or more findings to
+  become a bounded issue or PR-creation run through existing authorized
+  pathways — this create path is a new run/issue through existing creation
+  goals, not a new side-effecting action hung off the maintenance report.
 
 All three surfaces are gated by the `maintenance_runs` guard (below); none
 of the three may admit a maintenance run while the guard is off for the
@@ -180,7 +193,7 @@ shipped code in
 | --- | --- | --- | --- |
 | New run type vs. custom prompt on an existing goal | New `"maintenance"` `AgentRun` goal | Custom prompts on existing creation goals | A custom prompt cannot represent report-only success, recurring finding identity, or a maintenance-shaped scope without overloading an unrelated goal's semantics (RDR-075 draft, Alternatives Considered). |
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
-| Finding identity | Project- and recipe-scoped identity from claim + affected symbols | Line-number-based identity | Line numbers shift on unrelated edits; symbol/claim-based identity is what lets repeated scans update occurrences instead of duplicating repair work (RDR-075 draft, Evidence and reporting). |
+| Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
 | Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
 
 ## Open Questions & Future Decisions
@@ -192,9 +205,10 @@ shipped code in
 
 ### Deferred
 
-1. Exact `MaintenanceReport`/`MaintenanceFinding` column shapes and API
-   response schemas (JSON structure, pagination) — resolve during #4328/#4329
-   implementation, not before design acceptance.
+1. Exact `MaintenanceReport`/`MaintenanceFinding`/
+   `MaintenanceFindingOccurrence` column shapes and API response schemas
+   (JSON structure, pagination) — resolve during #4328/#4329 implementation,
+   not before design acceptance.
 2. Whether `ScheduledMutationSweepJob`/`MutationSweeps::Run` migrate into a
    maintenance recipe — RDR-075 draft leaves this open; keep current sweep
    behavior unchanged until an explicit migration is designed.

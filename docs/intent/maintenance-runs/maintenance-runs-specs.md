@@ -27,9 +27,10 @@
 
 ## Manual Investigation
 
-- [ ] **MAINT-010**: The system shall allow a user to start a maintenance run
-      from a project without an associated issue, through the UI, the
-      authenticated API, and the MCP surface.
+- [ ] **MAINT-010**: The system shall allow an authorized user to start a
+      maintenance run from a project without an associated issue, through the
+      UI, the authenticated API, and the MCP surface, applying the same
+      project-scoped start authorization on every surface.
 - [ ] **MAINT-011**: The system shall accept an optional recipe objective, an
       optional scope (paths or symbols), and optional free-text guidance when
       starting a maintenance run.
@@ -45,12 +46,26 @@
       revision, objective, scope, guidance, recipe version, and resolved
       tool versions/configuration on every maintenance run at start, and
       shall not mutate those fields after the run starts.
+- [ ] **MAINT-016**: The system shall allow an authorized user to inspect a
+      maintenance run, its terminal report, and its findings through the UI,
+      authenticated API, and MCP surface, applying the same project-scoped
+      inspection authorization on every surface.
+- [ ] **MAINT-017**: The system shall allow an authorized user to cancel an
+      in-flight maintenance run through the UI, authenticated API, and MCP
+      surface, applying the same project-scoped cancellation authorization on
+      every surface and preserving evidence already collected.
+- [ ] **MAINT-018**: The system shall allow an authorized user to select
+      findings for bounded repair work through the UI, authenticated API, and
+      MCP surface, applying the same project-scoped selection authorization
+      on every surface and the existing authorization of the selected repair
+      creation pathway.
 
 ## Reports and Findings
 
 - [ ] **MAINT-020**: The system shall produce exactly one `MaintenanceReport`
       per maintenance run, with a terminal outcome of `clean`, `partial`,
-      `cancelled`, or `budget_exhausted`.
+      `cancelled`, or `budget_exhausted`, and shall preserve that report's
+      finding occurrences and evidence after later scans complete.
 - [ ] **MAINT-021**: The system shall record, for every maintenance report,
       which checks actually completed and which did not, independent of
       whether findings exist.
@@ -63,7 +78,8 @@
 - [ ] **MAINT-024**: When a maintenance run exhausts its cost or time budget,
       the system shall preserve all evidence collected up to that point and
       report `budget_exhausted`.
-- [ ] **MAINT-025**: The system shall record, for every finding, its
+- [ ] **MAINT-025**: The system shall record, for every report-specific
+      finding occurrence, its canonical finding, its
       category, affected locations/symbols, claim, supporting evidence,
       known counterevidence, proposed action, validation plan, and a
       verification disposition distinct from any raw tool-confidence score.
@@ -71,8 +87,9 @@
       project, recipe, claim, and affected symbols, not from line numbers
       alone.
 - [ ] **MAINT-027**: When a repeated scan reproduces a finding with the same
-      identity, the system shall update that finding's occurrence rather
-      than creating a duplicate.
+      identity, the system shall retain one canonical finding, create a new
+      occurrence linked to the current report, and shall not overwrite or
+      reattach an occurrence from an earlier report.
 - [ ] **MAINT-028**: When a user dismisses a finding, the system shall
       require and persist a dismissal reason.
 - [ ] **MAINT-029**: If a dismissed finding's supporting evidence materially
@@ -121,9 +138,9 @@
 - [ ] **MAINT-064**: When a user disables a maintenance schedule, the system
       shall stop future dispatch without cancelling any already-active run
       or deleting any prior report.
-- [ ] **MAINT-070**: The system shall allow a user to select one or more
-      open findings from a maintenance report to create a bounded repair
-      issue or PR-creation run through existing authorized creation
+- [ ] **MAINT-070**: The system shall allow an authorized user to select one
+      or more open findings from a maintenance report to create a bounded
+      repair issue or PR-creation run through existing authorized creation
       pathways.
 - [ ] **MAINT-071**: If the repair target's revision has changed since the
       source report was generated, then the system shall require
