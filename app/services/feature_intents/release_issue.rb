@@ -23,7 +23,7 @@ module FeatureIntents
 
     def call
       return Result.new(released: true, reason: nil) if confidence_links.empty?
-      return Result.new(released: true, reason: nil) if links.empty? && planning_task_links?
+      return Result.new(released: true, reason: nil) if links.empty? && planning_task_link?
       return hold_for_dependencies unless issue.ready_to_work?
       return hold_for_unknown_planning_label if unknown_planning_label?
       return reconcile_released_projection if links.empty?
@@ -60,12 +60,21 @@ module FeatureIntents
       @links ||= confidence_links.reject { |link| link.release_state == "released" || link.planning_task? }
     end
 
-    def planning_task_links?
-      confidence_links.any? && confidence_links.all?(&:planning_task?)
+    def unknown_planning_label?
+      links.any? && issue.labels.include?(PLANNING_LABEL) &&
+        (!confidence_links.any?(&:workflow_owned_planning_hold?) || planning_task_link?)
     end
 
-    def unknown_planning_label?
-      links.any? && issue.labels.include?(PLANNING_LABEL) && !confidence_links.any?(&:workflow_owned_planning_hold?)
+    # A shared GitHub label cannot distinguish Paid's implementation hold from
+    # an operator hold on the planning task. Preserve it whenever either task
+    # is linked to this issue so planning-task eligibility remains independent.
+    def planning_task_link?
+      confidence_links.any? { |link| planning_task_contract?(link) }
+    end
+
+    def planning_task_contract?(link)
+      link.current_readiness_mapping.dig("planning_hold", "owner") == FeatureIntentIssue::PAID_HOLD_OWNER &&
+        link.current_readiness_mapping.dig("planning_hold", "task_kind") == FeatureIntentIssue::PLANNING_TASK_KIND
     end
 
     def hold_for_unknown_planning_label

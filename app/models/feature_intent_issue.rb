@@ -38,19 +38,24 @@ class FeatureIntentIssue < ApplicationRecord
   # can independently hold the planning task.
   # @spec CONFIDENCE-DELIVERY-017
   def planning_task?
-    planning_hold.fetch("owner", nil) == PAID_HOLD_OWNER &&
-      planning_hold.fetch("task_kind", nil) == PLANNING_TASK_KIND &&
-      planning_hold.fetch("operator_override", false) != true
+    planning_task_contract? && planning_hold.fetch("operator_override", false) != true
   end
 
   # A generic GitHub label has no inherent ownership. Only the durable receipt
   # written by PublishHeldIssue authorizes ReleaseIssue to remove it.
   # @spec CONFIDENCE-DELIVERY-017
   def workflow_owned_planning_hold?
-    planning_hold.fetch("owner", nil) == PAID_HOLD_OWNER && !planning_task?
+    planning_hold.fetch("owner", nil) == PAID_HOLD_OWNER &&
+      planning_hold.fetch("task_kind", nil) == "implementation" &&
+      planning_hold.fetch("operator_override", false) != true
   end
 
   private
+
+  def planning_task_contract?
+    planning_hold.fetch("owner", nil) == PAID_HOLD_OWNER &&
+      planning_hold.fetch("task_kind", nil) == PLANNING_TASK_KIND
+  end
 
   def planning_hold
     current_readiness_mapping.fetch("planning_hold", {}).to_h.deep_stringify_keys

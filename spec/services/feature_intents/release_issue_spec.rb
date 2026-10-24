@@ -217,6 +217,53 @@ RSpec.describe FeatureIntents::ReleaseIssue do
     expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
   end
 
+  it "preserves a planning-task operator hold shared with ready implementation work" do # @spec CONFIDENCE-DELIVERY-004, CONFIDENCE-DELIVERY-017
+    planning_feature = create(:feature_intent, :confidence_driven, project: project)
+    create(:feature_intent_issue,
+      feature_intent: planning_feature,
+      issue: issue,
+      readiness_mapping: mapping.merge("planning_hold" => mapping.fetch("planning_hold").merge("task_kind" => "planning")))
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(result.reason).to include("ownership")
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(link.reload).to have_attributes(release_state: "held")
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
+  it "does not sweep a shared planning-task hold after implementation work released" do # @spec CONFIDENCE-DELIVERY-004, CONFIDENCE-DELIVERY-017
+    link.update!(release_state: "released", released_at: Time.current)
+    planning_feature = create(:feature_intent, :confidence_driven, project: project)
+    create(:feature_intent_issue,
+      feature_intent: planning_feature,
+      issue: issue,
+      readiness_mapping: mapping.merge("planning_hold" => mapping.fetch("planning_hold").merge("task_kind" => "planning")))
+
+    result = described_class.call(issue: issue)
+
+    expect(result).to be_released
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
+  it "preserves an overridden planning-task hold shared with implementation work" do # @spec CONFIDENCE-DELIVERY-004, CONFIDENCE-DELIVERY-017
+    planning_feature = create(:feature_intent, :confidence_driven, project: project)
+    create(:feature_intent_issue,
+      feature_intent: planning_feature,
+      issue: issue,
+      readiness_mapping: mapping.merge("planning_hold" => mapping.fetch("planning_hold").merge(
+        "task_kind" => "planning", "operator_override" => true
+      )))
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
   it "reports a failed projection reconciliation without touching released evidence" do
     link.update!(release_state: "released", released_at: Time.current, release_snapshot: { "scope_revision" => "scope-v1", "preserved" => true })
     allow(project.client).to receive(:remove_label_from_issue).and_raise(GithubClient::ApiError, "unavailable")
