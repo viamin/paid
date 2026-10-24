@@ -22,7 +22,7 @@ class LayeredVerificationObligation < ApplicationRecord
   validates :framework, inclusion: { in: FRAMEWORKS }
   validates :external_identity, :scope_description, presence: true
   validates :approval_state, inclusion: { in: APPROVAL_STATES }
-  validates :external_identity, uniqueness: { scope: [ :project_id, :framework ] }
+  validates :external_identity, uniqueness: { scope: [ :project_id, :framework, :external_identity ] }
   validate :change_intent_belongs_to_project
   validate :superseded_by_belongs_to_same_project, if: -> { superseded_by.present? }
   validate :superseded_by_is_not_self

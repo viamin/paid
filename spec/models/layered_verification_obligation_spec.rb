@@ -12,6 +12,16 @@ RSpec.describe LayeredVerificationObligation do
     expect(obligation.approval_state).to eq("unresolved")
   end
 
+  # @spec LAYERED-VERIFY-006
+  it "allows distinct canonical references in the same project and framework" do
+    project = create(:project)
+
+    create(:layered_verification_obligation, project:, framework: "lid", external_identity: "PAYMENTS-001")
+    obligation = build(:layered_verification_obligation, project:, framework: "lid", external_identity: "PAYMENTS-002")
+
+    expect(obligation).to be_valid
+  end
+
   # @spec LAYERED-VERIFY-004
   it "does not treat a ChangeIntent activation as repository-persisted approval" do
     intent = create(:change_intent, :draft)
