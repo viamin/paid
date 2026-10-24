@@ -145,6 +145,10 @@
 
 ## Inbox surface
 
+Approval-gated requirements in this section apply only to features whose
+immutable delivery policy is `approval_gated`; confidence-driven delivery owns
+its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
+
 - [x] **FEATURE-APPROVAL-020** — When an Inbox-authorized member declines an
   eligible feature proposal, including one in `discovering` with a pending
   clarity assessment, the system SHALL require a structured reason, optionally
@@ -232,18 +236,37 @@
   create, close, transfer, or hold GitHub work. A successful RDR-directory
   discovery SHALL resolve prior open RDR findings whose artifact paths are no
   longer present; an unavailable directory read SHALL remain unverifiable and
-  SHALL NOT resolve prior findings. Open findings SHALL appear as authorized
-  Inbox traceability-gap work, including their pinned revision and evidence;
-  Inbox badge and filter caches SHALL invalidate when a finding enters or
-  leaves the open state. Semantic candidate assessment SHALL use `agent_harness`
+  SHALL NOT resolve prior findings. Actionable findings SHALL appear as
+  authorized Inbox traceability-gap work, including their pinned revision and
+  evidence; one shared actionability rule SHALL govern the reconciliation
+  result, persisted findings, and every Inbox surface (list, detail and direct
+  links, badge count, filter availability, and supported API serialization).
+  Informational deferred-state findings (draft, deferred, superseded, or
+  historical artifacts) SHALL be retained for inspection but SHALL NOT persist
+  as open action items or become Inbox work merely because those statuses were
+  discovered; reconciliation SHALL record them as deferred without inventing an
+  operator decision, SHALL preserve any separately recorded human decision and
+  its provenance, and repeated reconciliation or revision refresh SHALL NOT
+  resurrect an unchanged informational item. Missing/partial work trees and
+  stale metadata SHALL stay actionable while backed by artifact evidence and a
+  concrete resolution or assignment action. Inbox badge and filter caches SHALL
+  invalidate when a finding enters or leaves the open state. Unverifiable
+  coverage SHALL remain visible as an access/coverage problem — naming the
+  known cause and recovery action, never claiming implementation or a work
+  tree is missing — and SHALL NOT be hidden by a disabled project phase.
+  Semantic candidate assessment SHALL use `agent_harness`
   only after structural evidence is exhausted and be cached by assessed revisions;
   the existing daily sweep remains the bounded fallback for unchanged inputs.
   Issue coverage SHALL load shared project records separately from issue rows,
   so project audit history is not duplicated for every synchronized issue.
   *Tests:* `spec/services/feature_intents/reconcile_design_artifacts_spec.rb`,
+  `spec/services/feature_intents/persist_design_artifact_findings_spec.rb`,
+  `spec/models/design_artifact_finding_spec.rb`,
   `spec/jobs/feature_intents/reconcile_design_artifacts_job_spec.rb`,
   `spec/jobs/feature_intents/design_artifact_reconciliation_sweep_job_spec.rb`.
-  *Code:* `app/services/feature_intents/reconcile_design_artifacts.rb`,
+  *Code:* `app/models/design_artifact_finding.rb`,
+  `app/services/feature_intents/reconcile_design_artifacts.rb`,
+  `app/services/feature_intents/persist_design_artifact_findings.rb`,
   `app/services/feature_intents/discover_rdr_artifacts.rb`,
   `app/jobs/feature_intents/reconcile_design_artifacts_job.rb`,
   `app/jobs/feature_intents/design_artifact_reconciliation_sweep_job.rb`.

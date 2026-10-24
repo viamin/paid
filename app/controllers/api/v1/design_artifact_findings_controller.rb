@@ -10,7 +10,7 @@ module Api
         project = policy_scope(Project).find(params[:project_id])
         authorize project, :show?
 
-        findings = project.design_artifact_findings.open_findings.order(created_at: :desc)
+        findings = project.design_artifact_findings.actionable_findings.order(created_at: :desc)
         render json: { findings: findings.map { |finding| serialize(finding) } }
       end
 

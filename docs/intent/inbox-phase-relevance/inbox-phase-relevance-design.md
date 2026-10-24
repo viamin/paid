@@ -28,6 +28,7 @@ existing evidence — record kind, `manual_review_reason`, the latest run goal,
 | `manual_review` (enhancement rounds) | issue preparation |
 | `action_required` | operations |
 | `feature_decision`, `project_setup_pending` | discovery |
+| `traceability_gap` (unverifiable coverage) | platform (no phase) — an access problem a disabled coding phase must not hide |
 
 A request whose evidence does not resolve to a phase is recorded with
 `responsible_phase = NULL` and `classification_state = "unknown"`. Unknown

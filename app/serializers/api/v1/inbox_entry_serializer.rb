@@ -145,10 +145,12 @@ module Api
       # deterministic in-memory check, not an extra query (mirrors the web
       # detail partial's inline call).
       def feature_decision_payload
-        readiness = FeatureIntents::ApprovalReadiness.call(feature_intent: entry.record)
+        readiness = Inbox::FeatureDecisionReadiness.call(feature_intent: entry.record)
         {
+          delivery_policy: entry.record.delivery_policy,
           ready: readiness.ready?,
-          blockers: readiness.blockers.map { |blocker| { code: blocker.code, message: blocker.message } }
+          blockers: readiness.blockers.map { |blocker| { code: blocker.code, message: blocker.message } },
+          human_actions: readiness.human_actions.map { |action| { kind: action.kind, message: action.message } }
         }
       end
 
@@ -180,7 +182,7 @@ module Api
           state: finding.state,
           evidence: finding.evidence,
           covered_at: finding.covered_at.iso8601,
-          recommended_action: finding.state == "unverifiable" ? "Restore coverage access and recheck." : "Record an explicit owner or disposition."
+          recommended_action: finding.unverifiable? ? "Restore coverage access and recheck." : "Record an explicit owner or disposition."
         }
       end
     end

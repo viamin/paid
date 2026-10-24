@@ -147,6 +147,18 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload).to include(ready: true, blockers: [])
     end
 
+    it "serializes confidence policy actions without an approval action" do # @spec CONFIDENCE-DELIVERY-016
+      feature_intent = create(:feature_intent, :confidence_driven, project: project)
+      create(:feature_intent_decision, feature_intent: feature_intent, kind: "question")
+      entry = build_entry(Inbox::Queue::FEATURE_DECISION_KIND, record: feature_intent)
+
+      payload = described_class.render(entry)
+
+      expect(payload).to include(delivery_policy: "confidence_driven")
+      expect(payload[:human_actions]).to include(a_hash_including(kind: "answer_or_clarify"))
+      expect(payload[:human_actions]).not_to include(a_hash_including(kind: "approve"))
+    end
+
     it "serializes retry_limited with the push-permission flag and return count" do
       issue = create(:issue, project: project,
         runner_retry_abandon_reason: "All available runners reached the per-issue retry cap (3).",
@@ -212,6 +224,21 @@ RSpec.describe Api::V1::InboxEntrySerializer do
         state: "partial_tree",
         evidence: [ "Missing linked issue acme/widgets#42" ]
       )
+    end
+
+    # @spec OPERATOR-INBOX-020
+    it "serializes unverifiable coverage as an access problem with a recovery action" do
+      finding = create(:design_artifact_finding, project: project,
+        artifact_path: "docs/rdrs/RDR-124.md", revision: "abc123", state: "unverifiable",
+        evidence: [ "GitHub coverage was incomplete" ])
+      entry = build_entry(Inbox::Queue::TRACEABILITY_GAP_KIND,
+        record: finding, tasks: finding.evidence, title_text: "Coverage unavailable: docs/rdrs/RDR-124.md")
+
+      payload = described_class.render(entry)
+
+      expect(payload[:recommended_action]).to eq("Restore coverage access and recheck.")
+      expect(payload[:title]).to eq("Coverage unavailable: docs/rdrs/RDR-124.md")
+      expect(payload[:summary]).not_to include("Traceability gap")
     end
 
     it "raises for an unrecognized kind rather than silently returning an empty payload" do

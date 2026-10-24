@@ -6,17 +6,19 @@
                     "#{entry.project.github_url}/blob/#{entry.record.revision}/#{artifact_path}"
                   end %>
 <p class="text-sm text-gray-700">
-  <% case entry.record.state %>
-  <% when "missing_tree" %>
-    This document is not linked to a tracked work tree. That does not prove implementation is missing.
-  <% when "partial_tree" %>
-    Existing work may cover only part of this document; choose whether it is the right owner.
-  <% when "stale_metadata" %>
-    The document or its recorded links are stale and need a verified repair.
-  <% when "unverifiable" %>
+  <% if entry.record.unverifiable? %>
     Coverage could not be read. Restore access or retry; do not file implementation work from unavailable coverage.
   <% else %>
+    <% case entry.record.state %>
+    <% when "missing_tree" %>
+    This document is not linked to a tracked work tree. That does not prove implementation is missing.
+    <% when "partial_tree" %>
+    Existing work may cover only part of this document; choose whether it is the right owner.
+    <% when "stale_metadata" %>
+    The document or its recorded links are stale and need a verified repair.
+    <% else %>
     This finding needs an explicit operator decision before it can leave the action queue.
+    <% end %>
   <% end %>
 </p>
 
@@ -51,7 +53,7 @@
     A decision is recorded against revision <code><%= entry.record.revision %></code>. Reconciliation, not this form, verifies a repair.
   </p>
 
-  <% if entry.record.state == "unverifiable" %>
+  <% if entry.record.unverifiable? %>
     <p class="mt-3 rounded-md bg-amber-50 p-3 text-sm text-amber-900">Retry after GitHub access or coverage is available. Filing a new implementation issue would be misleading.</p>
   <% else %>
     <% if entry.record.state == "stale_metadata" %>
