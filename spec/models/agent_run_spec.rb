@@ -10,9 +10,45 @@ RSpec.describe AgentRun do
     Rails.cache.clear
   end
 
+  # @spec LAYERED-VERIFY-013
+  it "keeps layered-verification audit and repair goals distinct" do
+    expect(described_class::GOALS).to include("layered_verification_audit", "layered_verification_repair")
+
+    repair = build(:agent_run, goal: "layered_verification_repair")
+
+    expect(repair).to be_invalid
+    expect(repair.errors[:originating_audit_run]).to include("can't be blank")
+  end
+
+  # @spec LAYERED-VERIFY-013
+  it "requires a layered-verification repair to cite an audit run from the same project" do
+    project = create(:project)
+    audit = create(:agent_run, goal: "layered_verification_audit")
+    repair = build(:agent_run, goal: "layered_verification_repair",
+      project: project, originating_audit_run: audit)
+
+    expect(repair).to be_invalid
+    expect(repair.errors[:originating_audit_run]).to include("must belong to the same project")
+
+    repair.originating_audit_run = create(:agent_run, goal: "layered_verification_audit", project: project)
+
+    expect(repair).to be_valid
+  end
+
+  # @spec LAYERED-VERIFY-013
+  it "deletes repairs with their originating audit" do
+    audit = create(:agent_run, goal: "layered_verification_audit")
+    repair = create(:agent_run, goal: "layered_verification_repair", project: audit.project, originating_audit_run: audit)
+
+    expect { audit.destroy! }.to change(described_class, :count).by(-2)
+    expect { repair.reload }.to raise_error(ActiveRecord::RecordNotFound)
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:project) }
     it { is_expected.to belong_to(:issue).optional }
+    it { is_expected.to belong_to(:originating_audit_run).class_name("AgentRun").optional }
+    it { is_expected.to have_many(:repair_runs).class_name("AgentRun").dependent(:delete_all) }
     it { is_expected.to have_many(:agent_run_logs).dependent(:destroy) }
     it { is_expected.to have_many(:agent_run_phases).dependent(:destroy) }
     it { is_expected.to have_many(:orchestration_decisions).dependent(:nullify) }
@@ -4761,7 +4797,7 @@ RSpec.describe AgentRun do
     end
 
     it "defines valid GOALS" do
-      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness])
+      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness layered_verification_audit layered_verification_repair])
     end
 
     it "defines valid TRIGGER_TYPES" do

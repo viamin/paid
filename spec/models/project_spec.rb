@@ -99,6 +99,7 @@ RSpec.describe Project do
     it { is_expected.to have_many(:project_memberships).dependent(:destroy) }
     it { is_expected.to have_many(:members).through(:project_memberships).source(:user) }
     it { is_expected.to have_many(:issues).dependent(:destroy) }
+    it { is_expected.to have_many(:layered_verification_obligations).dependent(:delete_all) }
     it { is_expected.to have_many(:agent_runs).dependent(:destroy) }
     it { is_expected.to have_many(:style_guide_ab_tests).through(:account) }
     it { is_expected.to have_many(:orchestration_decisions).dependent(:destroy) }
@@ -106,6 +107,38 @@ RSpec.describe Project do
     it { is_expected.to have_many(:scaling_experiments).dependent(:destroy) }
     it { is_expected.to have_many(:scaling_experiment_assignments).dependent(:destroy) }
     it { is_expected.to have_many(:workflow_states).dependent(:destroy) }
+  end
+
+  describe "layered verification records" do
+    # @spec LAYERED-VERIFY-006 @spec LAYERED-VERIFY-007 @spec LAYERED-VERIFY-008
+    it "deletes owned records before agent runs when a project is destroyed" do
+      project = create(:project)
+      obligation = create(:layered_verification_obligation, project: project)
+      claim = create(:layered_verification_correspondence_claim, obligation: obligation)
+      run = create(:agent_run, project: project)
+      result = create(:layered_verification_check_result, obligation: obligation, correspondence_claim: claim, agent_run: run)
+
+      expect { project.destroy! }
+        .to change(LayeredVerificationObligation, :count).by(-1)
+        .and change(LayeredVerificationCorrespondenceClaim, :count).by(-1)
+        .and change(LayeredVerificationCheckResult, :count).by(-1)
+      expect { result.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
+    # @spec LAYERED-VERIFY-006 @spec LAYERED-VERIFY-007 @spec LAYERED-VERIFY-008
+    it "deletes owned records through account destruction" do
+      account = create(:account)
+      project = create(:project, account: account)
+      obligation = create(:layered_verification_obligation, project: project)
+      claim = create(:layered_verification_correspondence_claim, obligation: obligation)
+      result = create(:layered_verification_check_result, obligation: obligation, correspondence_claim: claim)
+
+      expect { account.destroy! }
+        .to change(LayeredVerificationObligation, :count).by(-1)
+        .and change(LayeredVerificationCorrespondenceClaim, :count).by(-1)
+        .and change(LayeredVerificationCheckResult, :count).by(-1)
+      expect { result.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    end
   end
 
   # @spec MANUAL-RUN-RETRY-004
