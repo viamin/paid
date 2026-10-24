@@ -710,8 +710,15 @@ module Projects
       redirect_to project_agent_run_path(@project, @agent_run), alert: e.message
     end
 
+    # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
     def refresh_auth
       authorize @agent_run
+
+      if @agent_run.layered_verification_goal?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Layered-verification runs must be started again from their dedicated entry point."
+        return
+      end
 
       unless @agent_run.auth_expired?
         redirect_to project_agent_run_path(@project, @agent_run),

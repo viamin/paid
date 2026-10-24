@@ -3532,6 +3532,22 @@ RSpec.describe "AgentRuns" do
     context "when authenticated" do
       before { sign_in user }
 
+      # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
+      it "does not use the auth-refresh retry path for layered-verification runs" do
+        audit = create(:agent_run, :auth_expired, project: project, goal: "layered_verification_audit")
+        repair = create(:agent_run, :auth_expired, project: project, goal: "layered_verification_repair", originating_audit_run: audit)
+
+        [ audit, repair ].each do |run|
+          expect {
+            post refresh_auth_project_agent_run_path(project, run), params: { auth_token: "valid-token" }
+          }.not_to change(AgentRun, :count)
+
+          expect(response).to redirect_to(project_agent_run_path(project, run))
+          follow_redirect!
+          expect(response.body).to include("Layered-verification runs must be started again")
+        end
+      end
+
       it "redirects when run is not auth_expired" do
         agent_run = create(:agent_run, :failed, project: project)
 
