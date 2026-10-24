@@ -316,6 +316,12 @@ neither `/var/run/docker.sock` nor `/run/docker.sock` exists; and no
 substitute for a Docker daemon, so provisioning an `AgentRun` here would not
 produce the required live evidence.
 
+GitHub issue #4604 must not be closed by the resolving PR. Its acceptance
+criteria are the two artifacts below, and this run produced neither, so the
+resolving PR references the issue without a closing keyword; it stays open
+as the sole owner of the pending native-analyzer and sidecar-interaction
+evidence until a Docker-capable environment delivers both artifacts.
+
 | Required artifact | Attempt disposition | Evidence still required in a Docker-capable environment |
 | --- | --- | --- |
 | Native analyzer | Not started: no engine is available to provision the fresh run container. | A selected, read-only native analyzer invoked through `agent_run.execute_in_execution_environment(..., stream: false)`, with returned `stdout`, `stderr`, `exit_code`, pinned image/checkout identity, and successful run-container cleanup. |
