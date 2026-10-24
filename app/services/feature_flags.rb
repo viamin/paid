@@ -98,6 +98,13 @@ class FeatureFlags
       intent: "Gate the RDR-077 phase model: phase project defaults, explicit continuation grants, execution enforcement, and Inbox phase relevance plus personal removal.",
       rollout_plan: "Default-off; enable a pilot project only after phase mappings, capability configuration, grant storage, and Inbox classification are validated together. Block rollback for a project with active grants until they finish or are revoked and its queued work is reconciled.",
       cleanup_criteria: "Remove after the RDR-077 closeout verifies migration and complete execution-path coverage."
+    ),
+    layered_verification_add_on: Definition.new(
+      name: :layered_verification_add_on,
+      owner: "layered-verification",
+      intent: "Gate RDR-076's audit-only layered-verification add-on while its authority, evidence, and operation boundaries are validated.",
+      rollout_plan: "Default-off; enable selected tenant projects only after shared UI, chat, MCP, authorization, and host-check paths are verified together.",
+      cleanup_criteria: "Remove only after RDR-076 closeout establishes a safe default and migrates any remaining tenant configuration."
     )
   }.freeze
 
