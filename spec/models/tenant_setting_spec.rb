@@ -81,6 +81,16 @@ RSpec.describe TenantSetting do
       expect(setting.errors[:agent_settings]).to include("default_goal is unsupported")
     end
 
+    # @spec LAYERED-VERIFY-012, LAYERED-VERIFY-013
+    it "rejects layered verification goals as tenant defaults" do
+      AgentRun::LAYERED_VERIFICATION_GOALS.each do |goal|
+        setting = build(:tenant_setting, agent_settings: { "default_goal" => goal })
+
+        expect(setting).not_to be_valid
+        expect(setting.errors[:agent_settings]).to include("default_goal is unsupported")
+      end
+    end
+
     it "rejects a preferred host identifier that is not enabled for the account" do
       account = create(:account)
       create(:docker_host, account: account, identifier: "disabled-host", enabled: false)
@@ -139,6 +149,14 @@ RSpec.describe TenantSetting do
     it "falls back when persisted tenant data has an unsupported goal" do
       setting = build(:tenant_setting)
       setting.agent_settings = { "default_goal" => "typo" }
+
+      expect(setting.default_goal).to eq("create_pr")
+    end
+
+    # @spec LAYERED-VERIFY-012, LAYERED-VERIFY-013
+    it "falls back when persisted tenant data has a layered verification goal" do
+      setting = build(:tenant_setting)
+      setting.agent_settings = { "default_goal" => "layered_verification_audit" }
 
       expect(setting.default_goal).to eq("create_pr")
     end

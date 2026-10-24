@@ -111,7 +111,7 @@ module Tools
     private
 
     def self.triggerable_goals
-      AgentRun::GOALS - AgentRun::LAYERED_VERIFICATION_GOALS
+      AgentRun::TRIGGERABLE_GOALS
     end
 
     def layered_verification_goal?(goal)

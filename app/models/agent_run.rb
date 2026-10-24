@@ -34,6 +34,10 @@ class AgentRun < ApplicationRecord
   # @spec LAYERED-VERIFY-013
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness layered_verification_audit layered_verification_repair].freeze
   LAYERED_VERIFICATION_GOALS = %w[layered_verification_audit layered_verification_repair].freeze
+  # @spec LAYERED-VERIFY-012 — these are the only goals that generic
+  # triggers and tenant defaults may select; layered verification requires
+  # its dedicated, feature-gated entry points.
+  TRIGGERABLE_GOALS = (GOALS - LAYERED_VERIFICATION_GOALS).freeze
   # RDR-056 (Strict TDD): the run-scoped write-guard phase for projects with
   # tdd_mode != "off". nil means the run is not TDD-governed (existing
   # behavior). See Tdd::WriteGuard for the enforced allowed/forbidden matrix.

@@ -13,6 +13,7 @@ RSpec.describe AgentRun do
   # @spec LAYERED-VERIFY-013
   it "keeps layered-verification audit and repair goals distinct" do
     expect(described_class::GOALS).to include("layered_verification_audit", "layered_verification_repair")
+    expect(described_class::TRIGGERABLE_GOALS).not_to include(*described_class::LAYERED_VERIFICATION_GOALS)
 
     repair = build(:agent_run, goal: "layered_verification_repair")
 
