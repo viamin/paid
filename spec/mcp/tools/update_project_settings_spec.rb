@@ -106,6 +106,7 @@ RSpec.describe Tools::UpdateProjectSettings do
     end
 
     it "authorizes and audits confidence-delivery enrollment changes" do # @spec CONFIDENCE-DELIVERY-001
+      FeatureFlags.enable!(:confidence_driven_delivery, project: project)
       expect {
         call(settings: {
           "new_feature_delivery_policy" => "confidence_driven",
@@ -120,6 +121,14 @@ RSpec.describe Tools::UpdateProjectSettings do
       expect(account.account_activity_events.last.metadata.fetch("changed_fields")).to include(
         "new_feature_delivery_policy", "confidence_delivery_enrollment_enabled"
       )
+    end
+
+    it "rejects confidence-delivery enrollment until integrated delivery is rolled out" do # @spec CONFIDENCE-DELIVERY-014
+      expect {
+        call(settings: { "confidence_delivery_enrollment_enabled" => true })
+      }.to raise_error(ActiveRecord::RecordInvalid, /confidence-driven delivery integration rollout/)
+
+      expect(project.reload.confidence_delivery_enrollment_enabled).to be(false)
     end
 
     it "updates and audits the question-exploration rollout setting" do # @spec QUESTION-EXPLORATION-019

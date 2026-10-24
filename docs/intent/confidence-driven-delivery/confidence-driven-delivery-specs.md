@@ -1,8 +1,8 @@
 # EARS Specs: Confidence-Driven Delivery
 
-Status: P01 foundation is implemented for `001`, `014`, and `015`; P10
-implements publication, release and unified admission claims `002`–`006` and
-`009`.
+Status: P01 foundation implements `001` and `015`; P10 implements publication,
+release and unified admission claims `002`–`006` and `009`; P12 supplies the
+integrated enrollment guard in `014`.
 
 - [x] **CONFIDENCE-DELIVERY-001** — When enrolling a feature in confidence-driven delivery, Paid SHALL snapshot an explicitly selected policy; existing features SHALL retain their established policy unless deliberately migrated.
 - [x] **CONFIDENCE-DELIVERY-002** — When a potential task has coherent purpose and scope but insufficient readiness, Paid SHALL publish a planning-held GitHub issue linked to its feature and prerequisites; speculative alternatives SHALL remain visible in Paid without requiring GitHub issues.
@@ -34,8 +34,12 @@ implements publication, release and unified admission claims `002`–`006` and
 - [x] **CONFIDENCE-DELIVERY-012** — When a finding arrives after feature completion, Paid SHALL reopen completion or create a linked completion cycle and SHALL NOT leave the unresolved gap represented as completed.
   *Tests:* `spec/services/feature_intents/complete_forward_work_spec.rb`, `spec/services/feature_intents/complete_forward_work_concurrent_first_findings_spec.rb`.
   *Code:* `app/services/feature_intents/complete_forward_work.rb`, `app/models/feature_intent_completion.rb`.
-- [ ] **CONFIDENCE-DELIVERY-013** — While implementing confidence-driven features, Paid SHALL use feature flags where feasible and SHALL require follow-up completion before declaring readiness for activation; impossible isolation SHALL NOT itself pause in-flight work, and activation SHALL follow project release policy.
+- [x] **CONFIDENCE-DELIVERY-013** — While implementing confidence-driven features, Paid SHALL use feature flags where feasible and SHALL require follow-up completion before declaring readiness for activation; impossible isolation SHALL NOT itself pause in-flight work, and activation SHALL follow project release policy.
+  *Tests:* `spec/services/feature_intents/complete_forward_work_spec.rb`.
+  *Code:* `app/services/feature_intents/complete_forward_work.rb`.
 - [x] **CONFIDENCE-DELIVERY-014** — When enabling automatic confidence-driven release, Paid SHALL require admission, policy-specific review and completion wiring to be available; shadow assessment alone SHALL NOT change execution eligibility.
+  *Tests:* `spec/services/feature_intents/delivery_integration_spec.rb`, `spec/models/feature_intent_spec.rb`.
+  *Code:* `app/services/feature_intents/delivery_integration.rb`, `app/models/project.rb`.
 - [x] **CONFIDENCE-DELIVERY-015** — When confidence-driven enrollment is disabled, Paid SHALL preserve existing feature policy snapshots, evidence and run state and SHALL NOT automatically release held issues or pause active runs.
 - [x] **CONFIDENCE-DELIVERY-016** — When rendering a confidence-driven feature in the Inbox, Paid SHALL evaluate linked issue mappings with `ScopedReadiness` and SHALL admit it only for a recorded concrete human decision. It SHALL expose the policy, scoped blockers, and the specific answer-or-direction action through the web and supported API surfaces; it SHALL NOT offer feature approval, treat background assessment or dependency waits as an Inbox action, or let an answer/evidence submission attest readiness or execution authority.
   *Tests:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/feature_decision_summary_spec.rb`, `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`, `spec/views/dashboard/inbox_detail_feature_decision_partial_spec.rb`.

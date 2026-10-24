@@ -101,7 +101,7 @@ Implement the policy/enrollment foundation without enabling automatic release.
 
 - [x] Record shipped code/test evidence and reuse or revise overlapping tasks; no duplicate record models or contradictory run-admission tasks remain in the filed plan. RDR-066's shipped `FeatureIntent`, `AttachFromAgentRun`, and `RunAdmission` contracts remain the approval-gated foundation; P01 extends those records rather than recreating #3862/#3863/#3865.
 - [x] Project selection and feature policy snapshot are authorized and audited; existing features retain their established policy. `Projects::Update` and `Tools::UpdateProjectSettings` use `ProjectPolicy#update?`; the tool records `project.settings_changed`; `FeatureIntent#delivery_policy` snapshots the selected policy.
-- [x] Enrollment cannot enable confidence-driven execution before P10–P12 wiring is present; a settings-only UI is insufficient. `FeatureIntents::RunAdmission` explicitly fails closed for `confidence_driven` until P10–P12 replace that denial with unified readiness, review, and completion enforcement.
+- [x] Enrollment cannot enable confidence-driven execution before P10–P12 wiring is present; a settings-only UI is insufficient. `FeatureIntents::DeliveryIntegration` requires the default-off `confidence_driven_delivery` rollout flag and the deployed P10 release/admission, P11 conformance, and P12 completion entry points before the authorized project setting may enable enrollment. `RunAdmission` applies the unified readiness contract after that guard admits the policy.
 - [x] Disabling enrollment preserves active work, held issues and existing feature policies. It changes only policy selection for subsequently attached features.
 - [x] Update the older RDR/intent scope links and add mixed-policy regression fixtures. `spec/models/feature_intent_spec.rb`, `spec/services/feature_intents/attach_from_agent_run_spec.rb`, and `spec/services/feature_intents/run_admission_spec.rb` cover approval-gated and confidence-driven records in one project.
 
@@ -313,12 +313,12 @@ dependencies and release-readiness reporting.
 
 **Acceptance criteria:**
 
-- [ ] New findings update suitable unstarted issues or create linked follow-ups; active runs continue even without feature-flag isolation.
-- [ ] The completion issue contains explicit dependencies on all implementation/follow-up issues; remote writes are read back and retries cannot duplicate work.
-- [ ] Pending writes and findings arriving during closeout prevent false completion; findings after completion reopen or establish a linked completion cycle.
-- [ ] Completion verifies acceptance and actual flag/isolation status where applicable; activation requires existing project release authorization.
-- [ ] Forward-work findings do not create a follow-up/completion dependency cycle or erase unrelated human controls.
-- [ ] Enable confidence-driven enrollment only after P10/P11/P12 integration checks pass; disabling enrollment preserves existing work.
+- [x] New findings update suitable unstarted issues or create linked follow-ups; active runs continue even without feature-flag isolation.
+- [x] The completion issue contains explicit dependencies on all implementation/follow-up issues; remote writes are read back and retries cannot duplicate work.
+- [x] Pending writes and findings arriving during closeout prevent false completion; findings after completion reopen or establish a linked completion cycle.
+- [x] Completion verifies acceptance and actual flag/isolation status where applicable; activation requires existing project release authorization.
+- [x] Forward-work findings do not create a follow-up/completion dependency cycle or erase unrelated human controls.
+- [x] Enable confidence-driven enrollment only after P10/P11/P12 integration checks pass; disabling enrollment preserves existing work.
 
 **Intent:** `CONFIDENCE-DELIVERY-007`–`015`.
 **Likely touchpoints:** Design impact review, issue CRUD/dependency sync,

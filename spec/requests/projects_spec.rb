@@ -2135,9 +2135,7 @@ RSpec.describe "Projects" do
       end
 
       it "shows the confidence-driven policy selection and enrollment guard" do # @spec CONFIDENCE-DELIVERY-001 @spec CONFIDENCE-DELIVERY-014
-        project = create(:project, account: account, github_token: github_token,
-          new_feature_delivery_policy: "confidence_driven",
-          confidence_delivery_enrollment_enabled: true)
+        project = create(:project, account: account, github_token: github_token, new_feature_delivery_policy: "confidence_driven")
 
         get edit_project_path(project)
 
@@ -2439,6 +2437,7 @@ RSpec.describe "Projects" do
 
       it "updates the confidence-driven enrollment policy" do # @spec CONFIDENCE-DELIVERY-001
         project = create(:project, account: account, github_token: github_token)
+        FeatureFlags.enable!(:confidence_driven_delivery, project: project)
 
         patch project_path(project), params: { project: {
           new_feature_delivery_policy: "confidence_driven",
