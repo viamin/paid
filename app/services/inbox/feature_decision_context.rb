@@ -39,11 +39,19 @@ module Inbox
 
     def tasks
       feature_intent.feature_intent_issues.filter_map do |link|
+        next unless held?(link)
+
         issue = link.issue
         next unless issue
 
         Task.new(number: issue.github_number, title: issue.title, url: issue.github_url)
       end
+    end
+
+    def held?(link)
+      return link.release_state != "released" if feature_intent.confidence_driven?
+
+      !feature_intent.released? || feature_intent.approved_design_revision.blank?
     end
 
     def design_revisions

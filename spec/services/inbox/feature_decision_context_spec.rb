@@ -38,6 +38,20 @@ RSpec.describe Inbox::FeatureDecisionContext do
     expect(context.next_actions.map(&:kind)).not_to include("approve")
   end
 
+  it "excludes released tasks when a decision still holds other confidence-driven tasks" do
+    feature_intent = create(:feature_intent, :confidence_driven)
+    create(:feature_intent_decision, feature_intent:)
+    released_issue = create(:issue, project: feature_intent.project, github_number: 41, title: "Released task")
+    held_issue = create(:issue, project: feature_intent.project, github_number: 42, title: "Held task")
+    create(:feature_intent_issue, feature_intent:, issue: released_issue,
+      release_state: "released", released_at: Time.current, release_snapshot: { "scope_revision" => "scope-v1" })
+    create(:feature_intent_issue, feature_intent:, issue: held_issue, release_state: "held")
+
+    context = described_class.call(feature_intent:)
+
+    expect(context.tasks).to contain_exactly(have_attributes(number: 42, title: "Held task"))
+  end
+
   it "projects queue-preloaded context without database queries" do
     feature_intent = create(:feature_intent, :confidence_driven)
     create(:feature_intent_decision, feature_intent:)
