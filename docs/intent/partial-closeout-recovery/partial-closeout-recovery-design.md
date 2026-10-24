@@ -57,9 +57,10 @@ no gaps remain. Every other result, including unavailable execution evidence,
 partial or blocked work, malformed data, and stale revisions, is `track`.
 
 PR templates, generated descriptions, fallback text, and later repair paths
-are normalized against that disposition. A source-specific `Closes`, `Fixes`,
-or `Resolves` reference becomes `Tracks` unless the persisted disposition is
-`close`; free-form PR prose never grants closing authority. Reconciliation and
+are normalized against that disposition. Any GitHub closing-keyword variant
+that references the source issue — by short or source-repository-qualified
+reference — becomes `Tracks` unless the persisted disposition is `close`;
+free-form PR prose never grants closing authority. Reconciliation and
 acceptance-audit paths reuse the same disposition record, retaining the normal
 owner/prerequisite workflow rather than creating a completion authority.
 

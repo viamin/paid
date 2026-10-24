@@ -6,7 +6,7 @@ module PullRequests
   # decision: PartialCloseouts::SourceClosureDisposition owns that decision.
   # @spec PARTIAL-CLOSEOUT-029
   class SourceClosureBody
-    CLOSING_KEYWORDS = "Closes|Fixes|Resolves"
+    CLOSING_KEYWORDS = "Close(?:s|d)?|Fix(?:es|ed)?|Resolve(?:s|d)?"
 
     def self.call(...) = new(...).call
 
@@ -37,7 +37,13 @@ module PullRequests
     end
 
     def closing_reference_pattern
-      /\b(?:#{CLOSING_KEYWORDS})\s*:?[ \t]+#{Regexp.escape(issue_reference)}\b/i
+      /\b(?:#{CLOSING_KEYWORDS})\s*:?[ \t]+(?:#{source_issue_references})\b/i
+    end
+
+    def source_issue_references
+      [ "##{issue.github_number}", "#{project.issue_target_repository}##{issue.github_number}" ]
+        .map { |reference| Regexp.escape(reference) }
+        .join("|")
     end
   end
 end
