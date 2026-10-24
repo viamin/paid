@@ -88,6 +88,20 @@ that human decision for a particular PR by applying the structured
 `paid-hold-review` label; the hold blocks auto-merge and makes the PR an
 actionable Inbox item until a human releases it.
 
+Execution delegation is distinct from an attestation that a particular pull
+request head was reviewed. A project may offer an authorized user an explicit,
+auditable authorization for one identified work item's bounded delivery phase
+and repair lineage. Such an authorization can let Paid perform in-scope review
+and repair iterations, but it never makes a stale GitHub approval current or
+waives repository review, CI, security, branch-protection, or tenant policy.
+Its selected endpoint is an enforceable stop, even where project defaults
+would otherwise proceed; merge is included only when separately selected.
+Authorization does not extend through mentions, dependencies, child work,
+milestones, releases, deployments, or settings changes. Scope expansion,
+changed intent or policy, a newly discovered risk, and unknown correspondence
+require a visible reassessment before further work. The proposed design is
+recorded in [RDR-078](rdrs/RDR-078-bounded-delivery-phase-authorization.md).
+
 The same human review boundary applies when a completed issue is reopened:
 Paid parks the reopened issue for validation of the prior closure and current
 intent before it can return to work or be completed again. See
