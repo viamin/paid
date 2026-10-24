@@ -1,6 +1,7 @@
-<%# @spec FEATURE-APPROVAL-020 CONFIDENCE-DELIVERY-016 OPERATOR-INBOX-019 %>
+<%# @spec FEATURE-APPROVAL-020 CONFIDENCE-DELIVERY-016 OPERATOR-INBOX-019 FACET-CONFIDENCE-019 %>
 <% feature_intent = entry.record %>
 <% readiness = Inbox::FeatureDecisionReadiness.call(feature_intent: feature_intent) %>
+<% response_drafts = FeatureIntents::ResponseDrafts.for_feature_intent(session, feature_intent) %>
 <% confidence_driven = feature_intent.confidence_driven? %>
 <div class="space-y-6">
   <div class="rounded-xl border <%= readiness.ready? ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50" %> p-4">
@@ -48,6 +49,14 @@
           <li class="rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm">
             <p class="text-gray-900"><%= decision.prompt %></p>
             <p class="mt-1 text-xs text-gray-500">Affects: <%= decision.design_claim %></p>
+            <% if policy(feature_intent).approve? %>
+              <%# Decisions have no emitted option schema. Do not infer choices from prose. %>
+              <%= form_with url: respond_to_decision_feature_intent_path(feature_intent, decision_id: decision.id), method: :post, class: "mt-3 space-y-2", data: { turbo_frame: "_top" } do |form| %>
+                <%= form.label :answer, "Your response", for: dom_id(decision, :answer), class: "block text-xs font-medium text-gray-700" %>
+                <%= form.text_area :answer, rows: 3, required: true, maxlength: FeatureIntents::ResponseDrafts::MAX_ANSWER_CHARS, placeholder: "State the direction or answer…", value: response_drafts[decision.id.to_s], id: dom_id(decision, :answer), class: "block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+                <%= form.submit "Save response", class: "inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500" %>
+              <% end %>
+            <% end %>
           </li>
         <% end %>
       </ul>
@@ -64,6 +73,13 @@
             <%# The [inferred] flag lives in the decision's prompt text (FEATURE-APPROVAL-019). %>
             <p class="text-gray-900"><%= decision.prompt %></p>
             <p class="mt-1 text-xs text-gray-500">Affects: <%= decision.design_claim %></p>
+            <% if policy(feature_intent).approve? %>
+              <%= form_with url: respond_to_decision_feature_intent_path(feature_intent, decision_id: decision.id), method: :post, class: "mt-3 space-y-2", data: { turbo_frame: "_top" } do |form| %>
+                <%= form.label :answer, "Confirm or correct this inference", for: dom_id(decision, :answer), class: "block text-xs font-medium text-gray-700" %>
+                <%= form.text_area :answer, rows: 3, required: true, maxlength: FeatureIntents::ResponseDrafts::MAX_ANSWER_CHARS, placeholder: "Confirm it, or state the correction…", value: response_drafts[decision.id.to_s], id: dom_id(decision, :answer), class: "block w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+                <%= form.submit "Save response", class: "inline-flex min-h-11 items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white hover:bg-indigo-500" %>
+              <% end %>
+            <% end %>
           </li>
         <% end %>
       </ul>

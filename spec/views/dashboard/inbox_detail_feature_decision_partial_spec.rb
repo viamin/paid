@@ -53,7 +53,34 @@ RSpec.describe "dashboard/_inbox_detail_feature_decision", type: :view do
     expect(queries.grep(/"feature_intent_issues"."issue_id" = /)).to be_empty
   end
 
-  it "does not render Mark approved for confidence-driven work" do # @spec CONFIDENCE-DELIVERY-016
+  # @spec FACET-CONFIDENCE-019
+  it "renders authorized response forms with their preserved drafts" do
+    question = create(:feature_intent_decision, feature_intent: feature_intent)
+    inferred_decision = create(:feature_intent_decision, :inferred_decision, feature_intent: feature_intent)
+    policy_double = instance_double(FeatureIntentPolicy, approve?: true)
+    view.define_singleton_method(:policy) { |_| policy_double }
+    session[:feature_decision_drafts] = {
+      feature_intent.id.to_s => {
+        question.id.to_s => "Use CSV exports only.",
+        inferred_decision.id.to_s => "Correct the inferred direction."
+      }
+    }
+
+    render partial: "dashboard/inbox_detail_feature_decision",
+      locals: { entry: entry_for(feature_intent), scoped_project: nil, selected_kind: Inbox::Queue::FEATURE_DECISION_KIND }
+
+    expect(rendered).to have_css("textarea[name='answer'][required][maxlength='500']", count: 2)
+    expect(rendered).to include("Use CSV exports only.", "Correct the inferred direction.")
+
+    document = Nokogiri::HTML.fragment(rendered)
+    textarea_ids = document.css("textarea[name='answer']").map { |node| node["id"] }
+    expect(textarea_ids).to eq([ dom_id(question, :answer), dom_id(inferred_decision, :answer) ])
+    answer_labels = document.css(%(label[for^="answer_feature_intent_decision"]))
+    expect(answer_labels.map { |node| node["for"] }).to match_array(textarea_ids)
+  end
+
+  # @spec CONFIDENCE-DELIVERY-016
+  it "does not render Mark approved for confidence-driven work" do
     confidence_feature = create(:feature_intent, :confidence_driven, project: project)
     create(:feature_intent_decision, feature_intent: confidence_feature, kind: "question")
 

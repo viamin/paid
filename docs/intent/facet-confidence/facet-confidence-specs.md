@@ -58,3 +58,6 @@ the worksheet records them as not established.
   *Code:* `lib/facet_confidence/assessment_outcome_report.rb`, `bin/facet-confidence-assessment-evaluation`.
   *Evidence:* `assessment-evaluation-2026-10-23/outcome-worksheet-2026-10-23.md` records the operator-measured values; measured runs stay pending operator assessment execution.
   *Tests:* `spec/lib/facet_confidence/assessment_outcome_report_spec.rb`.
+- [x] **FACET-CONFIDENCE-019** — When an authorized operator responds to an open feature-decision Inbox item, Paid SHALL persist the explicit statement, actor, and resolution on that existing decision and trigger the established clarity reassessment; it SHALL reject blank, stale, or over-500-character submissions, SHALL NOT truncate a submitted draft, SHALL NOT infer structured choices from decision prose, and SHALL NOT treat the response as feature approval or execution authorization.
+  *Tests:* `spec/services/feature_intents/respond_to_decision_spec.rb`, `spec/services/feature_intents/response_drafts_spec.rb`, `spec/requests/feature_intents_spec.rb`, `spec/views/dashboard/inbox_detail_feature_decision_partial_spec.rb`.
+  *Code:* `app/services/feature_intents/respond_to_decision.rb`, `app/services/feature_intents/response_drafts.rb`, `app/controllers/feature_intents_controller.rb`, `app/views/dashboard/_inbox_detail_feature_decision.html.erb`.
