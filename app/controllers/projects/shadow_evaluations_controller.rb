@@ -171,8 +171,8 @@ module Projects
       entry&.id
     end
 
-    def evaluation_path(evaluation)
-      project_shadow_evaluation_path(@project, evaluation, **inbox_context)
+    def evaluation_path(evaluation, **extra)
+      project_shadow_evaluation_path(@project, evaluation, **inbox_context, **extra)
     end
   end
 end

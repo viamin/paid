@@ -120,9 +120,12 @@
   *Test:* `spec/requests/projects/shadow_evaluations_spec.rb`.
 
 - [ ] **INTENT-CONFORMANCE-ROLLOUT-010** — Before a blinded labeler can open
-  case evidence, the system SHALL authorize the project request and validate
-  the case repository, exact base/head or approved-design revision, and any
-  declared design artifact through the project's repository-access service.
+  case evidence, the system SHALL authorize the project request, SHALL refuse
+  the request when the corpus manifest no longer matches the digest recorded
+  when the evaluation was created (a changed corpus is a new evidence
+  generation), and SHALL validate the case repository, exact base/head or
+  approved-design revision, and any declared design artifact through the
+  project's repository-access service.
   It SHALL navigate only to fixed, revision-bound repository URLs, SHALL never
   render or execute repository content in the labeling request, and SHALL
   report unavailable evidence without substituting a branch, selection

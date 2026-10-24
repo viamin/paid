@@ -13,6 +13,7 @@ module IntentConformance
 
       SHA = /\A[0-9a-f]{40}\z/i
       PATH_SEGMENT = /\A[a-zA-Z0-9._-]+\z/
+      CHANGED_MANIFEST_ERROR = "corpus manifest changed since the evaluation was created — start a new evaluation"
 
       def self.call(...) = new(...).call
 
@@ -25,6 +26,10 @@ module IntentConformance
       end
 
       def call
+        # A changed corpus is a new evidence generation: never read or validate
+        # a manifest that was edited after the evaluation was created, even
+        # when a retained case id makes the replacement look familiar.
+        return unavailable(CHANGED_MANIFEST_ERROR) unless evaluation.corpus.matches_recorded_digest?
         return unavailable("case is not part of the frozen corpus") unless corpus_case
         return unavailable("case repository is outside this project") unless repository == project.full_name
         return unavailable("case repository identity is invalid") unless valid_repository?

@@ -234,6 +234,16 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response).to have_http_status(:not_found)
   end
 
+  it "refuses evidence navigation when the corpus manifest no longer matches the frozen corpus" do
+    evaluation = start_evaluation!
+    evaluation.update!(manifest_digest: "stale")
+
+    get evidence_project_shadow_evaluation_path(project, evaluation, case_id: "A-01", kind: "diff")
+
+    expect(response).to redirect_to(project_shadow_evaluation_path(project, evaluation, case_id: "A-01"))
+    expect(flash[:alert]).to eq("corpus manifest changed since the evaluation was created — start a new evaluation")
+  end
+
   it "shows the corpus-changed warning when a frozen evaluation's manifest no longer matches" do
     evaluation = start_evaluation!
     label_all!(evaluation)

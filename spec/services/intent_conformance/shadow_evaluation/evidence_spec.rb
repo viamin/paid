@@ -72,4 +72,16 @@ RSpec.describe IntentConformance::ShadowEvaluation::Evidence do
     expect(result).not_to be_available
     expect(result.error).to eq("case repository is outside this project")
   end
+
+  it "rejects navigation when the manifest was edited after the evaluation started, even retaining the case id" do
+    expect(evaluation.corpus.matches_recorded_digest?).to be(true)
+    corpus_case["base_sha"] = "e" * 40
+    corpus_case["head_sha"] = "f" * 40
+    File.write(manifest_path, { "cases" => [ corpus_case ] }.to_yaml)
+
+    result = call(kind: "diff")
+
+    expect(result).not_to be_available
+    expect(result.error).to eq("corpus manifest changed since the evaluation was created — start a new evaluation")
+  end
 end

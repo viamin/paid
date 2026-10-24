@@ -83,7 +83,10 @@ therefore declare the **solo-maintainer policy**, which must be:
   the reviewer outputs, the preassigned stratum, expected label, selection
   rationale, or free-text notes/context that could reveal an outcome. Evidence
   navigation validates repository access, every requested SHA, and each
-  declared artifact before redirecting to a revision-bound GitHub URL. It
+  declared artifact before redirecting to a revision-bound GitHub URL.
+  Navigation is refused outright when the manifest no longer matches the
+  digest recorded at evaluation creation, so replacement evidence under an
+  edited corpus cannot be inspected through an existing evaluation. It
   never falls back to a branch or moving default revision; missing, forbidden,
   malformed, or undeclared evidence is explicitly unavailable. Reviewer
   execution is refused until the reference set is frozen.
