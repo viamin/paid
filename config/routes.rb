@@ -232,6 +232,7 @@ Rails.application.routes.draw do
   resources :feature_intents, only: [ :index ] do
     post :approve, on: :member
     post :cancel, on: :member
+    post "decisions/:decision_id/respond", to: "feature_intents#respond_to_decision", on: :member, as: :respond_to_decision
     post :reopen, on: :member
   end
 

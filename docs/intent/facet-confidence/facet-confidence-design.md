@@ -54,6 +54,20 @@ conversation. Ask discriminating questions about uncertainty; support A/B,
 both/neither, conditions and free text. Selecting a response is evidence only
 when it expresses an answer, not when merely previewing an alternative.
 
+Feature-decision Inbox entries use the existing durable decision and
+reassessment path. They render a single choice, multiple choice, or free text
+only when the decision producer supplies that structured input contract; the
+Inbox never derives choices from natural-language prose. Saving one statement
+resolves only that decision with its human attribution and cannot approve a
+feature or authorize execution. A stale response is rejected rather than
+attached to a replacement decision.
+Validation failures preserve the submitted draft for that same decision; a
+successful response leaves unrelated open decisions and their drafts intact.
+Drafts live in the operator's session, keyed by feature intent and decision,
+so partial progress survives the redirected render, refreshes, and navigation;
+responses are limited to 500 characters before submission to fit bounded cookie
+storage. Only the draft whose decision was successfully saved is cleared.
+
 Explicit preference persistence is separate from inference about current
 intent. A statement's scope must be explicit or clarified. User-scoped settings
 do not overwrite shared project choices. Inspection/correction/deletion uses
