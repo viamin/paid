@@ -67,6 +67,47 @@
     </div>
   <% end %>
 
+  <%# The facet-confidence packet is a read-only readiness check for the
+      shipped #4573 corpus. It makes missing prerequisite ownership visible
+      before an operator enters the separate blinded-labeling workflow.
+      @spec FACET-CONFIDENCE-020 %>
+  <% facet_evaluation = FacetConfidence::CloseoutEvaluationPacket.call(issue:, status:) %>
+  <div class="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4" data-facet-confidence-evaluation-inbox>
+    <div>
+      <h3 class="text-sm font-semibold text-indigo-900">Facet-confidence closeout evaluation (RDR-070)</h3>
+      <p class="mt-1 text-sm text-indigo-800">
+        Frozen corpus <code><%= facet_evaluation.corpus_version %></code> · rubric <code><%= facet_evaluation.rubric_version %></code> ·
+        model <code><%= facet_evaluation.model_version %></code>.
+      </p>
+    </div>
+    <p class="text-xs text-indigo-800">
+      Work item #<%= facet_evaluation.work_item %> · project <%= facet_evaluation.project %> · source revision
+      <code class="break-all"><%= facet_evaluation.source_revision || "not recorded" %></code> · corpus digest
+      <code class="break-all"><%= facet_evaluation.corpus_digest %></code>.
+      Case input revisions: <%= facet_evaluation.input_revisions.values.join(", ") %>.
+    </p>
+    <% if facet_evaluation.ready? %>
+      <p class="text-sm text-indigo-900">
+        The closeout prerequisites are resolved. Start or resume the blinded reference-label workflow from the
+        frozen corpus runbook; its report must return here as closeout evidence.
+      </p>
+      <%= link_to "Start/Resume evaluation", "https://github.com/viamin/paid/blob/main/docs/intent/facet-confidence/assessment-evaluation-2026-10-23/operator-runbook.md",
+            target: "_blank", rel: "noopener noreferrer",
+            class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    <% else %>
+      <p class="text-sm font-medium text-indigo-900">Evaluation is not ready; resolve its recorded prerequisite first.</p>
+      <ul class="space-y-1 text-sm text-indigo-900">
+        <% facet_evaluation.blockers.each do |blocker| %>
+          <li><code><%= blocker[:code] %></code>: <%= blocker[:message] %> <span class="text-indigo-700">Route: <%= blocker[:recovery] %></span></li>
+        <% end %>
+      </ul>
+    <% end %>
+    <p class="text-xs text-indigo-800">
+      Scores are policy assessments, not calibrated probabilities. Evaluation evidence does not close this issue,
+      enable delivery, or change the separate 80/80 defaults.
+    </p>
+  </div>
+
   <div class="space-y-2 rounded-xl border border-gray-200 bg-white p-4">
     <h3 class="text-sm font-semibold text-gray-900">Deciding what to do</h3>
     <ol class="list-decimal space-y-1 pl-5 text-sm text-gray-700">

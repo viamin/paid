@@ -130,3 +130,20 @@ and follow-ups through
 recorded in
 [`assessment-evaluation-2026-10-23/`](assessment-evaluation-2026-10-23/README.md)
 and remain not established until the operator-executed runs exist.
+
+## Closeout evaluation entry point
+
+A partial-closeout Inbox item that needs this measurement renders its current
+evaluation packet before an operator starts work: the originating work item,
+project, accepted-design/source revision, frozen corpus digest, rubric and
+model identities, and corpus input-evidence revisions. This is an operator
+surface over the shipped corpus and reporting machinery, not a second corpus
+or a readiness override.
+
+The entry point is blocked until the closeout's recorded prerequisites resolve.
+Each blocker is rendered with the owner and recovery route supplied by the
+closeout status, so an operator can distinguish missing implementation from a
+pending measured run. The packet deliberately says that scores are policy
+assessments rather than calibrated probabilities, and that a completed
+evaluation neither closes the source issue nor enables delivery or changes the
+default 80/80 thresholds.
