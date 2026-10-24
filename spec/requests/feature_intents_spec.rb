@@ -180,8 +180,32 @@ RSpec.describe "Feature intents" do
       post respond_to_decision_feature_intent_path(feature_intent, decision_id: answered_decision), params: { answer: "Use CSV exports only." }
 
       expect(response).to redirect_to(inbox_entry_path("#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"))
-      expect(flash[:feature_decision_drafts]).to eq(unsaved_decision.id.to_s => " ")
+      expect(session[:feature_decision_drafts]).to eq(feature_intent.id.to_s => { unsaved_decision.id.to_s => " " })
       expect(answered_decision.reload).to have_attributes(status: "resolved", answer: "Use CSV exports only.", resolved_by: owner)
+    end
+
+    # @spec FACET-CONFIDENCE-019
+    it "keeps an unsaved draft through the redirect and later refreshes" do
+      feature_intent = create(:feature_intent, :ready_for_approval, project: project)
+      open_decision = create(:feature_intent_decision, feature_intent: feature_intent)
+      resolved_decision = create(:feature_intent_decision, :resolved, feature_intent: feature_intent)
+
+      post respond_to_decision_feature_intent_path(feature_intent, decision_id: open_decision), params: { answer: " " }
+      follow_redirect!
+      get inbox_entry_path("#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}")
+      expect(session[:feature_decision_drafts]).to eq(feature_intent.id.to_s => { open_decision.id.to_s => " " })
+
+      post respond_to_decision_feature_intent_path(feature_intent, decision_id: resolved_decision), params: { answer: "Apply to existing records too." }
+      follow_redirect!
+      get inbox_entry_path("#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}")
+
+      expect(response).to have_http_status(:ok)
+      expect(session[:feature_decision_drafts]).to eq(
+        feature_intent.id.to_s => {
+          open_decision.id.to_s => " ",
+          resolved_decision.id.to_s => "Apply to existing records too."
+        }
+      )
     end
 
     # @spec FACET-CONFIDENCE-019

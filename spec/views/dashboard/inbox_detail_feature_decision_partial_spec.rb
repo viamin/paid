@@ -59,9 +59,11 @@ RSpec.describe "dashboard/_inbox_detail_feature_decision", type: :view do
     inferred_decision = create(:feature_intent_decision, :inferred_decision, feature_intent: feature_intent)
     policy_double = instance_double(FeatureIntentPolicy, approve?: true)
     view.define_singleton_method(:policy) { |_| policy_double }
-    flash[:feature_decision_drafts] = {
-      question.id.to_s => "Use CSV exports only.",
-      inferred_decision.id.to_s => "Correct the inferred direction."
+    session[:feature_decision_drafts] = {
+      feature_intent.id.to_s => {
+        question.id.to_s => "Use CSV exports only.",
+        inferred_decision.id.to_s => "Correct the inferred direction."
+      }
     }
 
     render partial: "dashboard/inbox_detail_feature_decision",

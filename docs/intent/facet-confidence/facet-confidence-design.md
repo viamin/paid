@@ -63,6 +63,9 @@ feature or authorize execution. A stale response is rejected rather than
 attached to a replacement decision.
 Validation failures preserve the submitted draft for that same decision; a
 successful response leaves unrelated open decisions and their drafts intact.
+Drafts live in the operator's session, keyed by feature intent and decision,
+so partial progress survives the redirected render, refreshes, and navigation;
+only the draft whose decision was successfully saved is cleared.
 
 Explicit preference persistence is separate from inference about current
 intent. A statement's scope must be explicit or clarified. User-scoped settings

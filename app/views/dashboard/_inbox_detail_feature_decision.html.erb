@@ -1,7 +1,7 @@
 <%# @spec FEATURE-APPROVAL-020 %>
 <% feature_intent = entry.record %>
 <% readiness = FeatureIntents::ApprovalReadiness.call(feature_intent: feature_intent) %>
-<% response_drafts = flash[:feature_decision_drafts] || {} %>
+<% response_drafts = FeatureIntents::ResponseDrafts.for_feature_intent(session, feature_intent) %>
 <div class="space-y-6">
   <div class="rounded-xl border <%= readiness.ready? ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50" %> p-4">
     <h3 class="text-sm font-semibold <%= readiness.ready? ? "text-emerald-900" : "text-amber-900" %>">
