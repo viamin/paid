@@ -85,7 +85,14 @@ would otherwise multiply that history by the synchronized issue count.
 
 Only structural existence and linkage checks happen in Rails. An issue number
 in prose is not a relationship: a line must declare a relationship keyword or
-field before it establishes coverage. A weak semantic candidate is not linked
+field before it establishes coverage. Markdown GitHub issue URLs and qualified
+shorthand retain the URL repository identity (a `#number` link label does not
+also imply a local issue); declared ownership-table rows may pair a repository
+with a bare number. Compound historical/superseded statuses are deferred only
+when their structural status form explicitly says so. External identities are
+read only from account-authorized project coverage; missing or inaccessible
+coverage is unknown, never evidence that local implementation work is missing.
+A weak semantic candidate is not linked
 until an `agent_harness` assessment confirms it. The existing daily sweep is a bounded
 fallback; sync and design events prompt reassessment, while unchanged assessed inputs
 do not cause repeated semantic work.
