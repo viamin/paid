@@ -53,6 +53,7 @@ module FeatureIntents
 
     def admit_link(link)
       return denied("in_tree_dependency_incomplete", "Issue has incomplete in-tree dependencies.") unless in_tree_dependencies_complete?(link)
+      return allowed if link.planning_task?
       return confidence_admission(link) if link.feature_intent.confidence_driven?
 
       approval_admission(link.feature_intent)

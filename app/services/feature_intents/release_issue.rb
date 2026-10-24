@@ -23,7 +23,9 @@ module FeatureIntents
 
     def call
       return Result.new(released: true, reason: nil) if confidence_links.empty?
+      return Result.new(released: true, reason: nil) if links.empty? && planning_task_links?
       return hold_for_dependencies unless issue.ready_to_work?
+      return hold_for_unknown_planning_label if unknown_planning_label?
       return reconcile_released_projection if links.empty?
 
       readiness_by_link = links.to_h { |link| [ link, assess(link) ] }
@@ -55,7 +57,21 @@ module FeatureIntents
     # Released snapshots are immutable evidence, so only unreleased links
     # reconcile.
     def links
-      @links ||= confidence_links.reject { |link| link.release_state == "released" }
+      @links ||= confidence_links.reject { |link| link.release_state == "released" || link.planning_task? }
+    end
+
+    def planning_task_links?
+      confidence_links.any? && confidence_links.all?(&:planning_task?)
+    end
+
+    def unknown_planning_label?
+      issue.labels.include?(PLANNING_LABEL) && !confidence_links.any?(&:workflow_owned_planning_hold?)
+    end
+
+    def hold_for_unknown_planning_label
+      reason = "Planning label ownership is unknown and requires operator reconciliation."
+      links.each { |link| mark_held(link, reason) }
+      Result.new(released: false, reason:)
     end
 
     # Every design the issue serves already recorded immutable release

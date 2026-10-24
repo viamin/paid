@@ -5,6 +5,8 @@
 # on each FeatureIntent records the distinct plan membership.
 class FeatureIntentIssue < ApplicationRecord
   RELEASE_STATES = %w[held pending released reconciliation_failed].freeze
+  PLANNING_TASK_KIND = "planning"
+  PAID_HOLD_OWNER = "paid"
 
   belongs_to :feature_intent
   belongs_to :issue
@@ -23,6 +25,34 @@ class FeatureIntentIssue < ApplicationRecord
   # prerequisite mappings were persisted.
   # @spec CONFIDENCE-DELIVERY-003
   def current_readiness_mapping
-    prerequisite_mapping&.readiness_payload || readiness_mapping
+    persisted_mapping = prerequisite_mapping&.readiness_payload
+    return readiness_mapping unless persisted_mapping
+
+    persisted_mapping.deep_merge(readiness_mapping.slice("planning_hold"))
+  end
+
+  # A planning task creates the evidence that will authorize a later
+  # implementation task. Its persisted contract is intentionally explicit:
+  # only a Paid-owned, non-overridden receipt may bypass the implementation
+  # approval gate. Labels remain ordinary eligibility controls, so an operator
+  # can independently hold the planning task.
+  # @spec CONFIDENCE-DELIVERY-017
+  def planning_task?
+    planning_hold.fetch("owner", nil) == PAID_HOLD_OWNER &&
+      planning_hold.fetch("task_kind", nil) == PLANNING_TASK_KIND &&
+      planning_hold.fetch("operator_override", false) != true
+  end
+
+  # A generic GitHub label has no inherent ownership. Only the durable receipt
+  # written by PublishHeldIssue authorizes ReleaseIssue to remove it.
+  # @spec CONFIDENCE-DELIVERY-017
+  def workflow_owned_planning_hold?
+    planning_hold.fetch("owner", nil) == PAID_HOLD_OWNER && !planning_task?
+  end
+
+  private
+
+  def planning_hold
+    current_readiness_mapping.fetch("planning_hold", {}).to_h.deep_stringify_keys
   end
 end

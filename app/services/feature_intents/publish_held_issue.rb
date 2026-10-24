@@ -18,6 +18,7 @@ module FeatureIntents
   # @spec CONFIDENCE-DELIVERY-002
   class PublishHeldIssue
     PLANNING_LABEL = ReleaseIssue::PLANNING_LABEL
+    TASK_KINDS = %w[implementation planning].freeze
 
     ADVISORY_LOCK_SQL = "SELECT pg_advisory_lock($1, $2)".freeze
     ADVISORY_UNLOCK_SQL = "SELECT pg_advisory_unlock($1, $2)".freeze
@@ -31,7 +32,7 @@ module FeatureIntents
     def self.call(...) = new(...).call
 
     def initialize(feature_intent:, title:, body: "", parent_issue: nil, dependencies: [],
-      speculative_alternatives: [], facet_prerequisites: [], client: nil)
+      speculative_alternatives: [], facet_prerequisites: [], task_kind: "implementation", client: nil)
       @feature_intent = feature_intent
       @title = title.to_s
       @body = body.to_s
@@ -39,11 +40,13 @@ module FeatureIntents
       @dependencies = Array(dependencies)
       @speculative_alternatives = Array(speculative_alternatives)
       @facet_prerequisites = Array(facet_prerequisites)
+      @task_kind = task_kind.to_s
       @client = client || feature_intent.project.client
     end
 
     def call
       raise ArgumentError, "title is required" if @title.strip.empty?
+      raise ArgumentError, "task_kind must be one of: #{TASK_KINDS.join(', ')}" unless TASK_KINDS.include?(task_kind)
       return Result.new(issue: nil, link: nil, reused: false, speculative_alternatives: []) unless feature_intent.confidence_driven?
 
       issue, reused = with_publication_lock { publish_issue }
@@ -52,6 +55,7 @@ module FeatureIntents
       # AttachFromAgentRun can mirror them as in-tree prerequisite edges.
       attach_dependencies(issue)
       link = link_issue(issue)
+      record_planning_hold_contract(link)
       record_facet_prerequisites(link)
       alternatives = record_speculative_alternatives
       log_publication(issue:, reused:)
@@ -60,7 +64,7 @@ module FeatureIntents
 
     private
 
-    attr_reader :feature_intent, :title, :body, :parent_issue, :dependencies, :speculative_alternatives,
+    attr_reader :feature_intent, :title, :body, :parent_issue, :dependencies, :speculative_alternatives, :task_kind,
       :facet_prerequisites, :client
 
     def project = feature_intent.project
@@ -124,7 +128,7 @@ module FeatureIntents
         project.full_name,
         title: title.truncate(255),
         body: composed_body,
-        labels: [ PLANNING_LABEL ]
+        labels: planning_hold_required? ? [ PLANNING_LABEL ] : []
       )
       verify_read_back(remote)
       record_remote_issue!(receipt, remote)
@@ -158,7 +162,9 @@ module FeatureIntents
     def verify_read_back_number(number)
       verified = client.issue(project.full_name, number)
       raise GithubClient::Error, "planning-held issue body was not read back" unless verified.body.to_s.include?(marker)
-      raise GithubClient::Error, "planning hold was not read back" unless label_names(verified).include?(PLANNING_LABEL)
+      if planning_hold_required? && !label_names(verified).include?(PLANNING_LABEL)
+        raise GithubClient::Error, "planning hold was not read back"
+      end
 
       missing = expected_body_lines.reject { |line| verified.body.to_s.include?(line) }
       raise GithubClient::Error, "planning-held issue links were not read back" if missing.any?
@@ -204,6 +210,26 @@ module FeatureIntents
       AttachFromAgentRun.attach_issue(feature_intent:, issue:)
       feature_intent.feature_intent_issues.find_by!(issue: issue)
     end
+
+    # The existing readiness mapping is the durable per-task contract. Keeping
+    # provenance beside the scoped evidence lets reconciliation distinguish a
+    # Paid-owned hold from a legacy/operator `planning` label without a second
+    # state machine or a migration-only record.
+    # @spec CONFIDENCE-DELIVERY-017
+    def record_planning_hold_contract(link)
+      contract = {
+        "owner" => FeatureIntentIssue::PAID_HOLD_OWNER,
+        "task_kind" => task_kind,
+        "operator_override" => false,
+        "reason" => "Awaiting the scoped planning release condition.",
+        "release_condition" => "Current scoped readiness and dependencies permit implementation.",
+        "scope_revision" => "published-#{digest}",
+        "provenance" => { "source" => "publish_held_issue", "task_digest" => digest }
+      }
+      link.update!(readiness_mapping: link.readiness_mapping.deep_merge("planning_hold" => contract))
+    end
+
+    def planning_hold_required? = task_kind != FeatureIntentIssue::PLANNING_TASK_KIND
 
     # The parent link is a contextual relationship, deliberately not a
     # blocking dependency; the planning hold and facet readiness own blocking.

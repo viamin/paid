@@ -94,6 +94,19 @@ release reconciliation before denying the run; already-released links read only
 their local release evidence. The admitted snapshot is copied onto the created
 run so later scope changes cannot silently alter active work.
 
+The existing `FeatureIntentIssue.readiness_mapping` also carries the durable
+planning-hold contract: affected scope, concrete reason, Paid ownership,
+release condition, scope/evidence revision, publication provenance, task kind,
+and an explicit operator-override field. This extends the task's existing
+readiness record rather than creating a second admission store. A
+Paid-owned `implementation` hold may be reconciled after scoped readiness;
+an unknown legacy `planning` label remains visible for operator reconciliation
+and is never blanket-removed. A `planning` task that prepares the design or
+approval evidence is not subject to the implementation approval gate, but an
+independent label or dependency still controls its eligibility. Reconciliation
+never enables rollout or activation; it returns work only to canonical queue
+admission.
+
 Serialize the transition between an unstarted scope edit and run admission.
 Admission either receives the revised ready scope or the already-started run
 retains its original snapshot and the change becomes follow-up work. Do not

@@ -36,7 +36,7 @@ class PublishHeldIssueFakeClient
       number: number,
       title: created[:title],
       body: read_back_body_override || created[:body],
-      labels: read_back_labels_override || [ @planning_label ]
+      labels: read_back_labels_override || created[:labels]
     )
   end
 
@@ -175,6 +175,14 @@ RSpec.describe FeatureIntents::PublishHeldIssue do
     expect(client.created_issues.length).to eq(2)
   end
 
+  it "does not put an implementation planning hold on a planning task" do # @spec CONFIDENCE-DELIVERY-017
+    result = publish(task_kind: "planning")
+
+    expect(client.created_issues.first[:labels]).to eq([])
+    expect(result.link.planning_task?).to be(true)
+    expect(FeatureIntents::RunAdmission.call(issue: result.issue).code).to eq("issue_dependencies_incomplete")
+  end
+
   it "recovers a remotely created issue whose local record was lost" do
     published = publish
     published.issue.destroy!
@@ -274,7 +282,9 @@ RSpec.describe FeatureIntents::PublishHeldIssue do
     result = publish(facet_prerequisites: [])
 
     expect(result.link.prerequisite_mapping).to be_nil
-    expect(result.link.current_readiness_mapping).to eq({})
+    expect(result.link.current_readiness_mapping).to include(
+      "planning_hold" => hash_including("owner" => "paid", "task_kind" => "implementation")
+    )
     expect(FeatureIntents::ReleaseIssue.call(issue: result.issue)).not_to be_released
   end
 end

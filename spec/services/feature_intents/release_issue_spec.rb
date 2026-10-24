@@ -10,6 +10,11 @@ RSpec.describe FeatureIntents::ReleaseIssue do
   let(:mapping) do
     {
       "coverage" => "complete", "scope_revision" => "scope-v1",
+      "planning_hold" => {
+        "owner" => "paid", "task_kind" => "implementation", "operator_override" => false,
+        "reason" => "Awaiting scoped readiness.", "release_condition" => "Scoped readiness passes.",
+        "provenance" => { "source" => "publish_held_issue" }
+      },
       "prerequisites" => [ { "id" => "scope", "assessment" => { "status" => "completed", "evidence_revision" => "e1", "intent_score" => 80, "technical_score" => 80 } } ],
       "design_artifacts" => [ { "path" => "docs/intent/example.md", "required" => true, "merged" => true, "scope_revision" => "scope-v1", "revision" => "a" * 40 } ]
     }
@@ -31,7 +36,7 @@ RSpec.describe FeatureIntents::ReleaseIssue do
   end
 
   it "uses the persisted prerequisite mapping when the compatibility payload is empty" do # @spec CONFIDENCE-DELIVERY-003
-    link.update!(readiness_mapping: {})
+    link.update!(readiness_mapping: mapping.slice("planning_hold"))
     persisted_mapping = create(:feature_intent_issue_prerequisite_mapping,
       feature_intent_issue: link,
       relevant_design_documents: mapping.fetch("design_artifacts"))
@@ -56,7 +61,7 @@ RSpec.describe FeatureIntents::ReleaseIssue do
   end
 
   it "keeps an unassessed issue held without calling GitHub" do
-    link.update!(readiness_mapping: {})
+    link.update!(readiness_mapping: mapping.slice("planning_hold"))
 
     expect(described_class.call(issue: issue)).not_to be_released
     expect(project.client).not_to have_received(:remove_label_from_issue)
@@ -141,7 +146,7 @@ RSpec.describe FeatureIntents::ReleaseIssue do
   end
 
   it "records each blocked design's own blockers when several are not ready" do
-    link.update!(readiness_mapping: {})
+    link.update!(readiness_mapping: mapping.slice("planning_hold"))
     second_feature = create(:feature_intent, :confidence_driven, project: project)
     second_link = create(:feature_intent_issue, feature_intent: second_feature, issue: issue, readiness_mapping: {})
 
@@ -192,6 +197,17 @@ RSpec.describe FeatureIntents::ReleaseIssue do
     result = described_class.call(issue: issue)
 
     expect(result).to be_released
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
+  it "keeps a legacy planning label visible when no Paid-owned hold receipt exists" do # @spec CONFIDENCE-DELIVERY-017
+    link.update!(readiness_mapping: mapping.except("planning_hold"))
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(result.reason).to include("ownership")
     expect(project.client).not_to have_received(:remove_label_from_issue)
     expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
   end

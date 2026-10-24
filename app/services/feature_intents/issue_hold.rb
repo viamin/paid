@@ -62,6 +62,8 @@ module FeatureIntents
     # project a hold from the link's reconciled `release_state` — mirroring
     # `RunAdmission`'s `confidence_admission` branch (CONFIDENCE-DELIVERY-003).
     def feature_held?(candidate)
+      return false if candidate.planning_task?
+
       target = candidate.feature_intent
       return true if target.approval_gated? && (!target.released? || target.approved_design_revision.blank?)
       return true if target.confidence_driven? && candidate.release_state != "released"
