@@ -1169,21 +1169,40 @@ module Activities
       changed_files = fetch_changed_files(agent_run, client)
       raise "Bootstrap write guard validation requires changed file data (missing client or commit SHAs)" if changed_files.nil?
 
-      result = Projects::Readiness::BootstrapWriteGuard.call(changed_files: changed_files)
-      return if result.valid?
+      result = Projects::Readiness::BootstrapWriteGuard.call(
+        changed_files: changed_files,
+        readiness_gaps: agent_run.project.active_readiness_gaps
+      )
+      unless result.valid?
+        logger.error(
+          message: "agent_execution.bootstrap_write_guard_violation",
+          agent_run_id: agent_run.id,
+          forbidden_files: result.forbidden_files,
+          total_changed: changed_files.size
+        )
+        agent_run.log!(
+          "system",
+          "Bootstrap write guard violation: #{result.reason}. " \
+          "Forbidden files: #{result.forbidden_files.to_sentence}. The run is aborted."
+        )
+        raise "Bootstrap write guard violation: #{result.forbidden_files.join(', ')}"
+      end
 
-      logger.error(
-        message: "agent_execution.bootstrap_write_guard_violation",
-        agent_run_id: agent_run.id,
-        forbidden_files: result.forbidden_files,
-        total_changed: changed_files.size
+      reject_symlinked_bootstrap_entry_points!(agent_run, client, changed_files)
+    end
+
+    def reject_symlinked_bootstrap_entry_points!(agent_run, client, changed_files)
+      entry_points = Projects::Readiness::Detectors.bootstrap_entry_points_for(
+        readiness_gaps: agent_run.project.active_readiness_gaps
       )
-      agent_run.log!(
-        "system",
-        "Bootstrap write guard violation: #{result.reason}. " \
-        "Forbidden files: #{result.forbidden_files.to_sentence}. The run is aborted."
-      )
-      raise "Bootstrap write guard violation: #{result.forbidden_files.join(', ')}"
+      symlinks = changed_files.intersection(entry_points).select do |path|
+        client.file_type(agent_run.project.full_name, path: path, ref: agent_run.result_commit_sha) == "symlink"
+      end
+      return if symlinks.empty?
+
+      reason = "authorized bootstrap entry scripts must be regular files, not symlinks"
+      agent_run.log!("system", "Bootstrap write guard violation: #{reason}. Forbidden files: #{symlinks.to_sentence}. The run is aborted.")
+      raise "Bootstrap write guard violation: #{symlinks.join(', ')}"
     end
 
     def create_feature_pr_title(agent_run)

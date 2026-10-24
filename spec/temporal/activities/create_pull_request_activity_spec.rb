@@ -1445,6 +1445,32 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect { activity.execute(agent_run_id: bootstrap_run.id) }.not_to raise_error
       end
 
+      it "allows the selected Godot test entry point" do
+        bootstrap_run.project.update!(tdd_mode: "strict", readiness_gaps: [ {
+          "kind" => "missing_test_command", "evidence" => { "ecosystem" => "godot" }
+        } ])
+        allow(github_client).to receive_messages(
+          compare_changed_files: [ "bin/test" ],
+          file_type: "file"
+        )
+
+        expect { activity.execute(agent_run_id: bootstrap_run.id) }.not_to raise_error
+      end
+
+      it "rejects a symlinked selected entry point" do
+        bootstrap_run.project.update!(tdd_mode: "strict", readiness_gaps: [ {
+          "kind" => "missing_test_command", "evidence" => { "ecosystem" => "godot" }
+        } ])
+        allow(github_client).to receive_messages(
+          compare_changed_files: [ "bin/test" ],
+          file_type: "symlink"
+        )
+
+        expect {
+          activity.execute(agent_run_id: bootstrap_run.id)
+        }.to raise_error(RuntimeError, /Bootstrap write guard violation.*bin\/test/)
+      end
+
       it "reports behavior-bearing files outside the harness boundary" do
         allow(github_client).to receive(:compare_changed_files)
           .and_return([ ".github/workflows/gdunit.yml", "scripts/player.gd" ])

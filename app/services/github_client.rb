@@ -311,6 +311,13 @@ class GithubClient
     Base64.decode64(data.content).force_encoding("UTF-8")
   end
 
+  def file_type(repo, path:, ref: nil)
+    data = contents(repo, path: path, ref: ref)
+    return "file" if data.is_a?(String)
+
+    data&.type
+  end
+
   def actions_run(repo, run_id)
     handle_errors { client.get("#{Octokit::Repository.path(repo)}/actions/runs/#{run_id}") }
   end

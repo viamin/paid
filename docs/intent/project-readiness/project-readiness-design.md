@@ -114,6 +114,24 @@ structural boundary is not a judgment about whether a configuration is
 runnable; the bootstrap prompt must inspect the actual checkout and configure
 a runnable harness.
 
+An explicitly classified install-on-demand harness may additionally require
+repository-owned entry scripts. The guard obtains those exact paths from the
+same detector that produced current readiness evidence, never from CI text or a
+filename convention. A Godot gap with `ecosystem: godot` and
+`missing_test_command` may therefore create or repair only the paired
+`bin/install-test-tools` and `bin/test` entry points. No other `bin/` path is
+admitted, and absolute, non-canonical, traversal paths and symlinked entry
+scripts are rejected before publication. Scripts are behavior-bearing even when their paths are
+classified: the structural guard makes their setup achievable, while isolated
+execution and the ordinary PR review continue to evaluate and approve their
+contents. Bootstrap never gains authority to implement application or gameplay
+behavior.
+
+The #4623 incident report's available failed-run evidence identifies `bin/test`
+as the rejected path; it does not make the remainder of run 14399's diff safe
+by implication. The contract above consequently derives authorization from the
+detector and current gap, not from that historical filename alone.
+
 Verification bootstrap work may additionally change `.paid/screenshots.yml`.
 It is still explicitly admitted, bounded to configuration/harness files, and
 never auto-retried. A repository gap clears only after the bootstrap PR merges

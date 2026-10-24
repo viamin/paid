@@ -106,9 +106,17 @@ prefix: PROJECT-READINESS
 - [x] **PROJECT-READINESS-008** — When `bootstrap_readiness` creates or
   reuses a pull request, the system SHALL allow only CI configuration,
   scaffold/project manifests, conventional test-directory layout, and tool
-  configuration files. It SHALL abort changes outside that harness class with
-  the offending file names in the system log. It SHALL preserve every
-  `Tdd::WriteGuard` phase semantic unchanged.
+  configuration files. When current, checkout-backed missing-test-command
+  evidence selects a detector's declared setup contract, it SHALL additionally
+  allow only that detector's exact repository-owned test/setup entry points;
+  for Godot/gdUnit4, those are the paired `bin/install-test-tools` and
+  `bin/test` paths. It SHALL reject arbitrary `bin/` paths, application files,
+  symlinked entry scripts and non-canonical or traversal paths, and SHALL abort changes outside that
+  harness class with the offending file names and an actionable reason in the
+  system log. Entry-script contents remain behavior-bearing code: they receive
+  the ordinary isolated execution and pull-request review and are not accepted
+  merely because of their filename. It SHALL preserve every `Tdd::WriteGuard`
+  phase semantic unchanged.
   *Code:* `Projects::Readiness::BootstrapWriteGuard`,
   `Activities::CreatePullRequestActivity`.
   *Test:* `spec/services/projects/readiness/bootstrap_write_guard_spec.rb`,
