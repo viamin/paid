@@ -158,7 +158,7 @@ module Projects
     def create
       authorize @project, :run_agent?
 
-      goal = params[:goal].presence || "create_pr"
+      goal = manual_create_goal
       custom_prompt = params[:custom_prompt]&.strip.presence
       issue = resolve_issue
       priority_tier = resolve_priority_tier
@@ -1113,6 +1113,16 @@ module Projects
     # The run form's goal radios. Each goal's continuation plan is embedded so
     # the goal toggle can refresh the section client-side.
     RUN_FORM_GOALS = %w[create_pr create_issue review enhance_issue create_feature].freeze
+    MANUAL_CREATE_GOALS = (RUN_FORM_GOALS + [ "lid_planning" ]).freeze
+
+    # Dedicated layered-verification entry points own their feature-flag and
+    # authorization checks. Do not let the generic manual-run endpoint bypass
+    # those rollout guards.
+    # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-012
+    def manual_create_goal
+      goal = params[:goal].presence
+      MANUAL_CREATE_GOALS.include?(goal) ? goal : "create_pr"
+    end
 
     # @spec AUTOMATION-PHASES-010
     def manual_start_plan(goal:)

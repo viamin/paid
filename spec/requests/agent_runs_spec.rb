@@ -1445,6 +1445,20 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.status).to eq("queued")
       end
 
+      # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-012
+      it "does not create layered-verification runs through the generic manual endpoint" do
+        %w[layered_verification_audit layered_verification_repair].each do |goal|
+          expect {
+            post project_agent_runs_path(project), params: {
+              goal: goal,
+              custom_prompt: "Audit payment authorization."
+            }
+          }.to change(AgentRun, :count).by(1)
+
+          expect(AgentRun.last.goal).to eq("create_pr")
+        end
+      end
+
       it "attaches selected marketplace entries to the queued run" do
         entry = create_prompt_append_marketplace_entry(name: "Repo skill", content: "Use the repo coding workflow.")
 
