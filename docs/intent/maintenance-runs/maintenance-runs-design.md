@@ -140,12 +140,16 @@ shipped code in
 
 - **Native CLI analyzers** (the first delivery's primary path — Exhale,
   Knip, Debride, Vulture, PMD CPD, and similar gem/npm-installable or
-  runtime-image-resident tools) run through
+  runtime-image-resident tools) may run through
   `AgentRun#execute_in_execution_environment`, the same contract
   `PreCommitRequirements::Evaluate` already uses, against the run's own
-  pinned checkout. This path needs nothing from RDR-073: checkout access,
-  invocation, exit-code handling, bounded stdout/stderr, and preparation/
-  cleanup of any temporary files are already solved there.
+  pinned checkout, only after [#4604](https://github.com/viamin/paid/issues/4604)
+  records the required live execution-environment evidence. That evidence must
+  establish the selected analyzer's availability in the agent image and the
+  checkout-access, invocation, bounded-output, exit-code, and cleanup behavior
+  in a provisioned run. The shipped code establishes a candidate integration
+  path; the host-only commands in the handoff audit do not make it
+  implementation-ready.
 - **`tool_sidecar` attachments** (RDR-073) remain scoped to analyzers that
   are themselves network-callable services and do not require full
   filesystem access to the checkout — RDR-073's sidecar `HostConfig`
@@ -175,7 +179,7 @@ shipped code in
 | Decision | Chosen | Alternatives Considered | Rationale |
 | --- | --- | --- | --- |
 | New run type vs. custom prompt on an existing goal | New `"maintenance"` `AgentRun` goal | Custom prompts on existing creation goals | A custom prompt cannot represent report-only success, recurring finding identity, or a maintenance-shaped scope without overloading an unrelated goal's semantics (RDR-075 draft, Alternatives Considered). |
-| Checkout access for batch analyzers | Native CLI analyzers run inside the agent's own container via `execute_in_execution_environment`; `tool_sidecar` reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are all CLI tools, not services; the existing execution-environment contract already solves checkout access, invocation, and cleanup with zero RDR-073 changes. A bind-mount extension is deferred — file it only if a specific future recipe needs it. |
+| Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity | Project- and recipe-scoped identity from claim + affected symbols | Line-number-based identity | Line numbers shift on unrelated edits; symbol/claim-based identity is what lets repeated scans update occurrences instead of duplicating repair work (RDR-075 draft, Evidence and reporting). |
 | Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
 
@@ -183,10 +187,7 @@ shipped code in
 
 ### Resolved
 
-1. ✅ Batch checkout access for native CLI analyzers needs no RDR-073
-   extension — validated in
-   [the 2026-10-23 handoff-validation report](../../rdrs/audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md).
-2. ✅ Issue-less manual runs can match RDR-073 tool attachments through
+1. ✅ Issue-less manual runs can match RDR-073 tool attachments through
    language/repo-file/explicit/task-text conditions — same report.
 
 ### Deferred
@@ -203,6 +204,11 @@ shipped code in
 4. A bind-mounted `tool_sidecar` variant for checkout-dependent network-service
    analyzers — not needed by any analyzer named in the current draft; file as
    upstream RDR-073 work only if a future recipe requires it.
+5. Native CLI analyzer checkout access, invocation, bounded output, exit-code
+   handling, and cleanup in the agent image — #4604 must record the required
+   live execution-environment artifact before an implementation uses this
+   candidate path. The handoff audit's host-only commands are not evidence for
+   this decision.
 
 ## What This Is Not
 
