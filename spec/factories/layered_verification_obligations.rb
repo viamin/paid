@@ -7,7 +7,7 @@ FactoryBot.define do
     sequence(:external_identity) { |n| "PAYMENTS-#{n}" }
     external_revision { "abc123" }
     scope_description { "Process a checkout payment." }
-    approval_state { "approved" }
+    approval_state { "proposed" }
 
     trait :offered_cir do
       framework { "paid_offered_cir" }

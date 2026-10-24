@@ -35,6 +35,24 @@ RSpec.describe LayeredVerificationObligation do
     )
   end
 
+  # @spec LAYERED-VERIFY-004
+  it "rejects direct approval even when a revision and reference are supplied" do
+    obligation = create(:layered_verification_obligation, :offered_cir)
+
+    expect {
+      obligation.update!(approval_state: "approved", external_revision: "abc123", approved_revision_reference: "pr#1")
+    }.to raise_error(ActiveRecord::RecordInvalid, /record_approval/)
+
+    expect(obligation.reload).to have_attributes(approval_state: "proposed", approved_revision_reference: nil)
+  end
+
+  # @spec LAYERED-VERIFY-004
+  it "rejects direct creation in the approved state" do
+    obligation = build(:layered_verification_obligation, approval_state: "approved", approved_revision_reference: "pr#1")
+
+    expect { obligation.save! }.to raise_error(ActiveRecord::RecordInvalid, /record_approval/)
+  end
+
   # @spec LAYERED-VERIFY-006
   it "keeps the supersession chain inside one project" do
     project = create(:project)
