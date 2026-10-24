@@ -200,7 +200,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         base: project.default_branch,
         head: agent_run.branch_name,
         title: "fix: Resolve auth redirect bug",
-        body: a_string_including("Closes ##{issue.github_number}"),
+        body: a_string_including("Tracks ##{issue.github_number}"),
         draft: true
       ).and_return(pr_response)
 
@@ -225,7 +225,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         base: "main",
         head: "#{project.owner}:#{agent_run.branch_name}",
         title: anything,
-        body: a_string_including("Closes stenolabs/stenoai##{issue.github_number}"),
+        body: a_string_including("Tracks stenolabs/stenoai##{issue.github_number}"),
         draft: true
       )
       expect(github_client).to have_received(:issue).with("stenolabs/stenoai", 42)
@@ -267,7 +267,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
           base: "trunk",
           head: "#{project.owner}:#{agent_run.branch_name}",
           title: anything,
-          body: a_string_including("Closes upstream/repo##{issue.github_number}"),
+          body: a_string_including("Tracks upstream/repo##{issue.github_number}"),
           draft: true
         ).and_return(pr_response)
 
@@ -288,7 +288,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         activity.execute(agent_run_id: agent_run.id)
 
         expect(captured_body).not_to include("Closes ##{issue.github_number}")
-        expect(captured_body).to include("Closes upstream/repo##{issue.github_number}")
+        expect(captured_body).to include("Tracks upstream/repo##{issue.github_number}")
       end
 
       it "does not convert a transient server error during the existing-PR lookup into a fatal permission failure" do # @spec UPSTREAM-PR-004
@@ -695,7 +695,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       expect(captured_body).to include("## Summary")
       expect(captured_body).to include(issue.title)
-      expect(captured_body).to include("Closes ##{issue.github_number}")
+      expect(captured_body).to include("Tracks ##{issue.github_number}")
       expect(captured_body).not_to include("Here are the changes I made to fix the issue.")
     end
 
@@ -838,7 +838,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
           body: a_string_including("## Summary")
             .and(including(issue.title))
             .and(including("See ##{issue.github_number} for context"))
-            .and(including("Closes ##{issue.github_number}"))
+            .and(including("Tracks ##{issue.github_number}"))
         )
       ).and_return(pr_response)
 
@@ -1341,6 +1341,22 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(captured_body).to include("Add dark mode")
       end
 
+      it "normalizes closing references in a source issue's goal-specific PR body" do # @spec PARTIAL-CLOSEOUT-029
+        feature_agent_run.update!(issue: issue, external_metadata: {
+          "feature_brief" => { "title" => "Fixes ##{issue.github_number}", "problem" => "Eye strain" }
+        })
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+
+        activity.execute(agent_run_id: feature_agent_run.id)
+
+        expect(captured_body).to include("Tracks ##{issue.github_number}")
+        expect(captured_body).not_to match(/Fixes ##{issue.github_number}/i)
+      end
+
       it "fetches changed files once for both allowlist and contract checks" do
         expect(github_client).to receive(:compare_changed_files)
           .with(project.full_name, feature_agent_run.base_commit_sha, feature_agent_run.result_commit_sha)
@@ -1750,7 +1766,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
           hash_including(
             body: a_string_including("## Summary")
               .and(including("OAuth support"))
-              .and(including("Closes ##{issue.github_number}"))
+              .and(including("Tracks ##{issue.github_number}"))
           )
         ).and_return(pr_response)
 
