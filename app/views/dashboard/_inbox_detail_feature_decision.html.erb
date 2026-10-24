@@ -1,7 +1,7 @@
 <%# @spec FEATURE-APPROVAL-020 CONFIDENCE-DELIVERY-016 OPERATOR-INBOX-019 FACET-CONFIDENCE-019 %>
 <% feature_intent = entry.record %>
 <% readiness = Inbox::FeatureDecisionReadiness.call(feature_intent: feature_intent) %>
-<% decision_context = Inbox::FeatureDecisionContext.call(feature_intent: feature_intent) %>
+<% decision_context = Inbox::FeatureDecisionContext.call(feature_intent: feature_intent, readiness: readiness) %>
 <% response_drafts = FeatureIntents::ResponseDrafts.for_feature_intent(session, feature_intent) %>
 <% confidence_driven = feature_intent.confidence_driven? %>
 <div class="space-y-6">

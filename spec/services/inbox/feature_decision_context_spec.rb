@@ -37,4 +37,26 @@ RSpec.describe Inbox::FeatureDecisionContext do
 
     expect(context.next_actions.map(&:kind)).not_to include("approve")
   end
+
+  it "projects queue-preloaded context without database queries" do
+    feature_intent = create(:feature_intent, :confidence_driven)
+    create(:feature_intent_decision, feature_intent:)
+    issue = create(:issue, project: feature_intent.project)
+    create(:feature_intent_issue, feature_intent:, issue:)
+    readiness = Inbox::FeatureDecisionReadiness.call(feature_intent:)
+    loaded_intent = FeatureIntent.includes(
+      :feature_intent_decisions,
+      :feature_intent_design_prs,
+      feature_intent_issues: [
+        { issue: :project },
+        { prerequisite_mapping: { prerequisites: [ :feature_intent_facet, :feature_intent_facet_direction ] } }
+      ]
+    ).find(feature_intent.id)
+
+    queries = count_queries do
+      described_class.call(feature_intent: loaded_intent, readiness:)
+    end
+
+    expect(queries).to eq(0)
+  end
 end

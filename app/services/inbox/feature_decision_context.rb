@@ -13,8 +13,9 @@ module Inbox
 
     def self.call(...) = new(...).call
 
-    def initialize(feature_intent:)
+    def initialize(feature_intent:, readiness: nil)
       @feature_intent = feature_intent
+      @readiness = readiness || FeatureDecisionReadiness.call(feature_intent:)
     end
 
     def call
@@ -28,7 +29,7 @@ module Inbox
 
     private
 
-    attr_reader :feature_intent
+    attr_reader :feature_intent, :readiness
 
     def decisions
       feature_intent.feature_intent_decisions.select(&:open?).map do |decision|
@@ -37,7 +38,7 @@ module Inbox
     end
 
     def tasks
-      feature_intent.feature_intent_issues.includes(:issue).filter_map do |link|
+      feature_intent.feature_intent_issues.filter_map do |link|
         issue = link.issue
         next unless issue
 
@@ -54,10 +55,6 @@ module Inbox
           url: design_pr.github_url
         )
       end
-    end
-
-    def readiness
-      @readiness ||= FeatureDecisionReadiness.call(feature_intent:)
     end
   end
 end
