@@ -732,6 +732,19 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:record)).to include(feature_intent)
     end
 
+    # @spec CONFIDENCE-DELIVERY-016
+    it "admits confidence-driven work only for a concrete human decision" do
+      feature_intent = create(:feature_intent, :confidence_driven, project: project, status: "design_open")
+      issue = create(:issue, project: project)
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: issue, readiness_mapping: {})
+
+      expect(described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)).not_to include(have_attributes(record: feature_intent))
+
+      create(:feature_intent_decision, feature_intent: feature_intent, kind: "question")
+
+      expect(described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)).to include(have_attributes(record: feature_intent))
+    end
+
     # @spec FEATURE-APPROVAL-013
     it "keeps an approved intent with a stale required design PR in the action Inbox" do
       feature_intent = create(:feature_intent, :approved_waiting_for_merge, project: project)

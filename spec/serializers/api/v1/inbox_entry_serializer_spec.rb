@@ -147,6 +147,18 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload).to include(ready: true, blockers: [])
     end
 
+    it "serializes confidence policy actions without an approval action" do # @spec CONFIDENCE-DELIVERY-016
+      feature_intent = create(:feature_intent, :confidence_driven, project: project)
+      create(:feature_intent_decision, feature_intent: feature_intent, kind: "question")
+      entry = build_entry(Inbox::Queue::FEATURE_DECISION_KIND, record: feature_intent)
+
+      payload = described_class.render(entry)
+
+      expect(payload).to include(delivery_policy: "confidence_driven")
+      expect(payload[:human_actions]).to include(a_hash_including(kind: "answer_or_clarify"))
+      expect(payload[:human_actions]).not_to include(a_hash_including(kind: "approve"))
+    end
+
     it "serializes retry_limited with the push-permission flag and return count" do
       issue = create(:issue, project: project,
         runner_retry_abandon_reason: "All available runners reached the per-issue retry cap (3).",

@@ -1,10 +1,11 @@
-<%# @spec FEATURE-APPROVAL-020 %>
+<%# @spec FEATURE-APPROVAL-020 CONFIDENCE-DELIVERY-016 OPERATOR-INBOX-019 %>
 <% feature_intent = entry.record %>
-<% readiness = FeatureIntents::ApprovalReadiness.call(feature_intent: feature_intent) %>
+<% readiness = Inbox::FeatureDecisionReadiness.call(feature_intent: feature_intent) %>
+<% confidence_driven = feature_intent.confidence_driven? %>
 <div class="space-y-6">
   <div class="rounded-xl border <%= readiness.ready? ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50" %> p-4">
     <h3 class="text-sm font-semibold <%= readiness.ready? ? "text-emerald-900" : "text-amber-900" %>">
-      <%= readiness.ready? ? "Ready for approval" : "Held" %>
+      <%= confidence_driven ? (readiness.actionable? ? "Human action required" : "Scoped readiness") : (readiness.ready? ? "Ready for approval" : "Held") %>
     </h3>
     <p class="mt-1 text-sm <%= readiness.ready? ? "text-emerald-800" : "text-amber-800" %>">
       <%= entry.summary %>
@@ -17,6 +18,16 @@
       </ul>
     <% end %>
   </div>
+
+  <% if confidence_driven && readiness.human_actions.any? %>
+    <div class="space-y-2">
+      <h3 class="text-sm font-semibold text-gray-900">Next action</h3>
+      <% readiness.human_actions.each do |action| %>
+        <p class="rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900" data-testid="feature-decision-action-<%= action.kind %>"><%= action.message %></p>
+      <% end %>
+      <p class="text-xs text-gray-500">Answers and evidence corrections trigger normal scoped-readiness reassessment; they do not approve the feature or authorize execution.</p>
+    </div>
+  <% end %>
 
   <% if feature_intent.brief.present? %>
     <div class="space-y-2">
@@ -108,7 +119,7 @@
     </div>
   <% end %>
 
-  <% if policy(feature_intent).approve? %>
+  <% if !confidence_driven && policy(feature_intent).approve? %>
     <div class="flex flex-wrap items-center gap-3">
       <%= button_to "Mark approved",
             approve_feature_intent_path(feature_intent),
