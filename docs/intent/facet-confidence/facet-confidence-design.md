@@ -86,8 +86,12 @@ failed and unknown assessments fail initial readiness with an explanation.
 
 Do not evaluate the entire feature for every issue. Research work can proceed
 with a clear investigation scope/method while dependent implementation waits.
-Builders get applicable scores, explanations and source summaries; inferred
-fit is labeled as such, never as a new expressed preference. After admission,
+Builders get every relevant active candidate direction with independent scores,
+the admitted issue baseline and mapped design paths, and source summaries.
+Human statements and corrections are expressed intent; repository facts and
+experiment results are demonstrated feasibility. Inferred fit is a dedicated
+structured assessment, labeled as such and never as a new expressed preference.
+Missing evidence and scores remain unknown. After admission,
 new findings follow the delivery segment rather than revoking the run.
 
 ## Decisions and alternatives

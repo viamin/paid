@@ -2,6 +2,8 @@
 
 # @spec FACET-CONFIDENCE-002
 class FeatureIntentFacetEvidence < ApplicationRecord
+  SOURCE_TYPES = %w[human_statement human_correction repository_fact experiment_result agent_suggestion ui_interaction].freeze
+
   include TenantScoped
 
   self.table_name = "feature_intent_facet_evidence"
@@ -13,6 +15,7 @@ class FeatureIntentFacetEvidence < ApplicationRecord
   belongs_to :actor, class_name: "User", optional: true
   belongs_to :superseded_by, class_name: "FeatureIntentFacetEvidence", optional: true
 
+  validates :source_type, inclusion: { in: SOURCE_TYPES }
   validates :source_type, :source_reference, :idempotency_key, :statement, :occurred_at, presence: true
   validates :idempotency_key, uniqueness: { scope: :account_id }
   validates :evidence_revision, numericality: { only_integer: true, greater_than_or_equal_to: 0 }

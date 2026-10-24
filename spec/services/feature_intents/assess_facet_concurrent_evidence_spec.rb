@@ -20,6 +20,7 @@ RSpec.describe FeatureIntents::AssessFacet do
   let(:completed_response) do
     double(success?: true, output: JSON.generate(
       "status" => "completed", "intent_score" => 90, "technical_score" => 75,
+      "inferred_fit" => "The candidate fits the assessed scope.",
       "explanation" => "Assessed before the concurrent evidence landed.", "evidence_references" => []
     ))
   end

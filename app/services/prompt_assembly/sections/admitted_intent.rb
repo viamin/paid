@@ -11,7 +11,7 @@ class PromptAssembly::Sections::AdmittedIntent
   def build_section
     return "" if snapshot.blank?
 
-    [ "# Admitted Intent Baseline", guidance, facet_lines ].join("\n\n")
+    [ "# Admitted Intent Baseline", guidance, baseline_lines, facet_lines ].reject(&:blank?).join("\n\n")
   end
 
   def snapshot
@@ -26,9 +26,18 @@ class PromptAssembly::Sections::AdmittedIntent
     Array(snapshot["facets"]).map { |facet| format_facet(facet) }.join("\n")
   end
 
+  def baseline_lines
+    lines = []
+    lines << "Admitted design revision: #{snapshot["design_baseline"] || "unknown"}"
+    paths = Array(snapshot["design_document_paths"])
+    lines << "Admitted design documents: #{paths.join(", ")}" if paths.present?
+    lines.join("\n")
+  end
+
   def format_facet(facet)
+    direction = " (#{facet["direction"]})" if facet["direction"].present?
     [
-      "- #{facet["name"]}: intent #{facet["intent_score"] || "unknown"}, technical #{facet["technical_score"] || "unknown"}",
+      "- #{facet["name"]}#{direction}: intent #{facet["intent_score"] || "unknown"}, technical #{facet["technical_score"] || "unknown"}",
       "  Expressed intent: #{Array(facet["expressed_intent"]).join("; ").presence || "none recorded"}",
       "  Inferred fit: #{facet["inferred_fit"].presence || "none recorded"}",
       "  Demonstrated feasibility: #{Array(facet["demonstrated_feasibility"]).join("; ").presence || "none recorded"}"

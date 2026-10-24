@@ -94,6 +94,15 @@ release reconciliation before denying the run; already-released links read only
 their local release evidence. The admitted snapshot is copied onto the created
 run so later scope changes cannot silently alter active work.
 
+Confidence-driven PRs receive an independent conformance review against that
+issue link's immutable release snapshot: its merged baseline, mapped design
+documents, and admitted scope. Detected drift is recorded as tracked forward
+work under the confidence-driven policy. Review scheduling does not require a
+feature-wide approval or approved-design revision, and later evidence alone
+does not impose an approval-gated amendment pause or merge block. Ordinary CI,
+security, quality, current-head, authorization, and merge checks remain
+independent requirements.
+
 Serialize the transition between an unstarted scope edit and run admission.
 Admission either receives the revised ready scope or the already-started run
 retains its original snapshot and the change becomes follow-up work. Do not
