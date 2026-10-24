@@ -12,6 +12,10 @@ module FeatureIntents
     RELATIONSHIP_LINE_PATTERN = /^\s*(?:[-*]\s+)?(?:\*\*)?(?:implements|closes|fixes|resolves|tracks|depends on|blocked by|related issues?)(?:\s*:)?(?:\*\*)?\s*:?\s+(.+)$/i
     RELATIONSHIP_HEADING_PATTERN = /^\s{0,3}\#{1,6}\s+(?:\*\*)?(?:implements|closes|fixes|resolves|tracks|depends on|blocked by|related issues?)(?:\*\*)?\s*#*\s*$/i
     MARKDOWN_HEADING_PATTERN = /^\s{0,3}\#{1,6}\s+/
+    OWNERSHIP_HEADING_PATTERN = /^\s{0,3}\#{1,6}\s+(?:\*\*)?(?:issue |work |implementation )?ownership(?:\*\*)?\s*$/i
+    GITHUB_ISSUE_URL_PATTERN = %r{https?://github\.com/([\w.-]+)/([\w.-]+)/issues/(\d+)}i
+    QUALIFIED_ISSUE_PATTERN = %r{(?<![\w/-])([\w.-]+/[\w.-]+)#(\d+)}
+    BARE_ISSUE_PATTERN = %r{(?<![\w/-])#(\d+)}
 
     queue_as :maintenance
 
@@ -191,15 +195,50 @@ module FeatureIntents
     end
 
     def explicit_references(body)
-      relationship_text(body).scan(%r{(?<![\w/-])(?:([\w.-]+/[\w.-]+))?#(\d+)})
-        .map { |repository, number| "#{repository || project.full_name}##{number}" }
-        .uniq
+      references_from(relationship_text(body)) + ownership_table_references(body)
+    end
+
+    def references_from(text, local_bare: true)
+      urls = text.scan(GITHUB_ISSUE_URL_PATTERN).map { |owner, repo, number| "#{owner}/#{repo}##{number}" }
+      without_link_labels = text.gsub(/\[[^\]]*\]\([^)]*\)/, "")
+      qualified = without_link_labels.scan(QUALIFIED_ISSUE_PATTERN).map { |repository, number| "#{repository}##{number}" }
+      bare = local_bare ? without_link_labels.scan(BARE_ISSUE_PATTERN).flatten.map { |number| "#{project.full_name}##{number}" } : []
+      (urls + qualified + bare).uniq
+    end
+
+    def ownership_table_references(body)
+      ownership_table_text(body).flat_map do |line|
+        repositories = line.scan(%r{\b([\w.-]+/[\w.-]+)\b}).flatten.reject do |repository|
+          repository.start_with?("github.com/") || repository.end_with?("/issues")
+        end.uniq
+        references = references_from(line, local_bare: repositories.empty?)
+        references + (repositories.one? ? line.scan(BARE_ISSUE_PATTERN).flatten.map { |number| "#{repositories.first}##{number}" } : [])
+      end.uniq
+    end
+
+    def ownership_table_text(body)
+      in_table = false
+      body.to_s.each_line.filter_map do |line|
+        if in_table && !line.start_with?("|")
+          in_table = false
+          nil
+        elsif in_table
+          line
+        elsif ownership_table_header?(line)
+          in_table = true
+          line
+        end
+      end
+    end
+
+    def ownership_table_header?(line)
+      line.match?(/\bowner(?:ship)?\b/i) && line.match?(/\b(?:issue|work)\b/i)
     end
 
     def relationship_text(body)
       in_relationship_section = false
       body.to_s.each_line.filter_map do |line|
-        if line.match?(RELATIONSHIP_HEADING_PATTERN)
+        if line.match?(RELATIONSHIP_HEADING_PATTERN) || line.match?(OWNERSHIP_HEADING_PATTERN)
           in_relationship_section = true
           next
         end

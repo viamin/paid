@@ -143,6 +143,43 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     expect(DesignArtifactFinding.count).to eq(0)
   end
 
+  it "preserves external URL and ownership-table identities without inventing local references" do
+    forager = create(:project, account: project.account, owner: "viamin", repo: "Forager-iOS")
+    [ 4255, 4256, 4258, 4325 ].each { |number| create(:issue, project: forager, github_number: number) }
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "73558a022fdb2a5db9332bbeac8b22f5d661ad04",
+      body: <<~MARKDOWN
+        Status: Closed (superseded by Paid RDR-074 and its readiness issue tree)
+
+        ## Issue ownership
+
+        | Owner | Work |
+        | --- | --- |
+        | viamin/Forager-iOS | [#4255](https://github.com/viamin/Forager-iOS/issues/4255), #4256, viamin/Forager-iOS#4258, https://github.com/viamin/Forager-iOS/issues/4325 |
+      MARKDOWN
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.find_by(artifact_path: artifact.path)).to have_attributes(state: "deferred", status: "deferred")
+    expect(DesignArtifactAssociation.where(artifact_path: artifact.path).pluck(:issue_identity)).to contain_exactly(
+      "viamin/Forager-iOS#4255", "viamin/Forager-iOS#4256", "viamin/Forager-iOS#4258", "viamin/Forager-iOS#4325"
+    )
+  end
+
+  it "keeps denied external ownership coverage unverifiable rather than claiming local work is missing" do
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
+      body: "## Ownership\n\n| Owner | Issue |\n| --- | --- |\n| denied/mobile | #4255 |"
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(state: "unverifiable", status: "open")
+  end
+
   it "uses an exact issue backlink to reconcile an RDR without repairing the document" do
     artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
       path: "docs/rdrs/RDR-020-service-container-architecture.md",

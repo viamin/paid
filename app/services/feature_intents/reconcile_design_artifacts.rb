@@ -52,7 +52,8 @@ module FeatureIntents
     def associations_for(artifact)
       normalized = normalize(artifact)
       semantic_association = semantic_association_for(artifact)
-      (normalized.fetch(:associated_issues) + (semantic_association ? [ semantic_association ] : [])).filter_map do |association|
+      associations = normalized.fetch(:associated_issues) + declared_reference_associations(normalized.fetch(:references))
+      (associations + (semantic_association ? [ semantic_association ] : [])).filter_map do |association|
         identity = qualified_reference(association)
         next unless identity && issue_identities.include?(identity)
 
@@ -61,6 +62,13 @@ module FeatureIntents
           issue_revision: association[:revision] || association["revision"],
           provenance: association[:provenance] || association["provenance"]
         }.compact
+      end
+    end
+
+    def declared_reference_associations(references)
+      references.map do |identity|
+        repository, number = identity.split("#", 2)
+        { repository:, number:, provenance: "declared issue reference" }
       end
     end
 
@@ -90,7 +98,7 @@ module FeatureIntents
     end
 
     def deferred?(artifact)
-      %w[draft deferred superseded historical].any? { |status| artifact[:status].casecmp?(status) }
+      artifact[:status].match?(%r{\A(?:draft|deferred|superseded|historical)\b|\Aclosed\s*\(\s*(?:superseded|historical)\b}i)
     end
 
     def stale_metadata(artifact)

@@ -231,7 +231,14 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   resolving unrelated paths or operator history; incomplete discovery SHALL
   not perform that cleanup. draft and
   superseded/deferred artifacts SHALL not be treated as missing merely from
-  their status. Findings SHALL retain cited evidence and last successful
+  their status. Explicit GitHub issue URLs, repository-qualified shorthand,
+  and declared ownership-table entries SHALL retain their repository-qualified
+  identity; an external URL's `#number` label SHALL NOT become a second local
+  reference, and bare shorthand SHALL remain local only in an explicit
+  relationship declaration. Supported compound historical or superseded status
+  forms SHALL be deferred conservatively. External work SHALL be read only
+  through an authorized project coverage record; unavailable external evidence
+  SHALL be unverifiable rather than missing local work. Findings SHALL retain cited evidence and last successful
   coverage, be deduplicated by artifact/revision, and SHALL NOT automatically
   create, close, transfer, or hold GitHub work. A successful RDR-directory
   discovery SHALL resolve prior open RDR findings whose artifact paths are no
