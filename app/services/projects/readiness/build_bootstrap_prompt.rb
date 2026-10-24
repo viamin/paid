@@ -25,6 +25,8 @@ module Projects
           #{gaps}
 
           #{setup_instructions}
+
+          #{authorized_entry_point_instruction}
         PROMPT
       end
 
@@ -60,6 +62,14 @@ module Projects
 
         "Configure real test execution appropriate to this checkout. Do not deliberately break CI: " \
           "the later test-writing run owns the intentionally failing red phase."
+      end
+
+      def authorized_entry_point_instruction
+        paths = Detectors.bootstrap_entry_points_for(readiness_gaps: project.active_readiness_gaps)
+        return if paths.empty?
+
+        "Current readiness evidence authorizes only these repository-owned setup entry points: " \
+          "#{paths.to_sentence}. Do not change any other bin/ script. Their behavior remains subject to isolated execution and normal PR review."
       end
 
       def verification_gaps?

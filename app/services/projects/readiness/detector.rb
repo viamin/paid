@@ -6,6 +6,10 @@ module Projects
     # new ecosystem means subclassing this and registering the subclass in
     # {Detectors::REGISTRY} — never editing a central language switch.
     class Detector
+      def self.bootstrap_entry_points_for(readiness_gaps:)
+        []
+      end
+
       # @param project [Project]
       # @param repo_path [String] path to a repository checkout
       # @return [Boolean] whether this detector owns the project's ecosystem

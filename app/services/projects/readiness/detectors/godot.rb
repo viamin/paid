@@ -16,6 +16,24 @@ module Projects
         TEST_COMMAND_PATH = "bin/test"
         INSTALL_COMMAND_PATH = "bin/install-test-tools"
 
+        def self.bootstrap_entry_points_for(readiness_gaps:)
+          return [] unless readiness_gaps.any? { |gap| missing_test_command_gap?(gap) }
+
+          [ INSTALL_COMMAND_PATH, TEST_COMMAND_PATH ]
+        end
+
+        def self.missing_test_command_gap?(gap)
+          gap_kind(gap) == "missing_test_command" && gap_evidence(gap)["ecosystem"] == "godot"
+        end
+
+        def self.gap_kind(gap)
+          gap["kind"] || gap[:kind]
+        end
+
+        def self.gap_evidence(gap)
+          gap["evidence"] || gap[:evidence] || {}
+        end
+
         TestCommandConfiguration = Data.define(:status) do
           def configured?
             status.in?(%i[installed setup_required])
