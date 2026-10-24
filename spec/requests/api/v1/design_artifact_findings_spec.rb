@@ -28,7 +28,7 @@ RSpec.describe "Design artifact findings API" do
     expect(finding.reload).to have_attributes(status: "assigned", resolution_actor: user)
   end
 
-  # @spec OPERATOR-INBOX-019 DESIGN-RECONCILIATION-001
+  # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
   it "lists actionable findings and excludes informational deferred-state findings" do
     finding
     informational = create(:design_artifact_finding, account:, project:, state: "deferred", status: "open",
@@ -42,7 +42,7 @@ RSpec.describe "Design artifact findings API" do
     expect(paths).not_to include(informational.artifact_path)
   end
 
-  # @spec OPERATOR-INBOX-019
+  # @spec OPERATOR-INBOX-020
   it "keeps another account's findings invisible across tenants" do
     other_project = create(:project)
 

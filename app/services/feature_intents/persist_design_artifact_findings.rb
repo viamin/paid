@@ -12,14 +12,18 @@ module FeatureIntents
       # dismissed decision no longer leaves a permanent record once the RDR is
       # removed: reconciliation, not the operator's note, is the verifier.
       project.design_artifact_findings.pending_findings
-        .where("artifact_path LIKE ?", "#{ActiveRecord::Base.sanitize_sql_like(directory)}/%")
+        .where("artifact_path = ? OR artifact_path LIKE ?", directory,
+          "#{ActiveRecord::Base.sanitize_sql_like(directory)}/%")
         .find_each do |finding|
-          next unless File.dirname(finding.artifact_path) == directory
-          next unless File.fnmatch?(file_pattern, File.basename(finding.artifact_path))
+          next unless finding.artifact_path == directory || matching_rdr_path?(finding.artifact_path, directory, file_pattern)
           next if finding.artifact_path.in?(paths)
 
           finding.resolve!
         end
+    end
+
+    def self.matching_rdr_path?(path, directory, file_pattern)
+      File.dirname(path) == directory && File.fnmatch?(file_pattern, File.basename(path))
     end
 
     def initialize(project:, revision:, artifacts:, issues:, coverage_complete: true)
@@ -111,7 +115,7 @@ module FeatureIntents
     # is retained for inspection but records no human action, so it persists as
     # deferred without inventing an operator decision. Reconciliation, not the
     # operator, owns this classification.
-    # @spec OPERATOR-INBOX-019
+    # @spec OPERATOR-INBOX-020
     def informational_attributes
       { status: "deferred", resolved_at: nil }
     end

@@ -335,6 +335,26 @@ the open authorization named, so an implementation continuation is never
 reported as an acceptance audit and vice versa. All ordinary
 continuation guards remain authoritative.
 
+### Held-delivery reconciliation (#4614)
+
+A merged delivery record may coexist with `manual_review`, including a
+reopened issue or an enhancement/parser/transport stop. That hold is a human
+decision boundary and is never cleared, but it must not erase the bounded
+technical recovery path. The legacy reconciler therefore assesses an otherwise
+eligible merged-delivery run behind manual review once and reuses
+`PartialCloseouts::Reconcile` to record focused existing/new owners or a
+specific human prerequisite. It leaves `paid_state`, `manual_review_reason`,
+labels, rollout settings, closure, and ordinary dequeue eligibility unchanged.
+The resulting terminal reconciliation status prevents no-change reassessment;
+the existing manual-review Inbox entry remains the operator's action surface.
+
+This is bookkeeping under the reconciler's existing project-scoped authority,
+not closure or product-decision delegation. `needs_input`, pauses, untrusted
+issues, non-open issues, and pull requests remain excluded. The assessment
+continues to bind its criterion evidence to the current closeout digest and
+issue-intent revision; a later explicit acceptance audit is required when
+those revisions change.
+
 ## Alternatives considered
 
 - *Lift the merged-PR guard via paid_state*: explicitly rejected — the guard is

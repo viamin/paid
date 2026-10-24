@@ -17,6 +17,7 @@ RSpec.describe Committee::Drivers do
       "/inbox/entries/{entry_id}/restore",
       "/feature_intents/{id}/cancel",
       "/feature_intents/{id}/reopen",
+      "/projects/{project_id}/design_artifact_findings",
       "/projects/{project_id}/design_artifact_findings/{id}/repair_document_links",
       "/chat/sessions",
       "/chat/sessions/{id}",
@@ -43,6 +44,28 @@ RSpec.describe Committee::Drivers do
       expect(mapping.keys).to match_array(Inbox::Queue::KINDS)
       expect(branch_references).to match_array(mapping.values)
     end
+  end
+
+  # @spec CONFIDENCE-DELIVERY-016
+  it "documents feature-decision delivery policy and human action payloads" do
+    feature_decision = schema.dig("components", "schemas", "FeatureDecisionEntry")
+    properties = feature_decision.fetch("allOf").last.fetch("properties")
+
+    expect(properties.fetch("delivery_policy")).to include(
+      "type" => "string",
+      "enum" => %w[approval_gated confidence_driven]
+    )
+    expect(properties.fetch("human_actions")).to include(
+      "type" => "array",
+      "items" => {
+        "type" => "object",
+        "required" => %w[kind message],
+        "properties" => {
+          "kind" => { "type" => "string" },
+          "message" => { "type" => "string" }
+        }
+      }
+    )
   end
 
   # @spec MOBILE-API-009 MOBILE-API-016
@@ -84,6 +107,7 @@ RSpec.describe Committee::Drivers do
       "/inbox/entries/{entry_id}/restore" => { "post" => [ "inbox" ] },
       "/feature_intents/{id}/cancel" => { "post" => [ "inbox" ] },
       "/feature_intents/{id}/reopen" => { "post" => [ "inbox" ] },
+      "/projects/{project_id}/design_artifact_findings" => { "get" => [ "inbox" ] },
       "/projects/{project_id}/design_artifact_findings/{id}/repair_document_links" => { "post" => [ "inbox" ] },
       "/chat/sessions" => { "get" => [ "chat" ], "post" => [ "chat" ] },
       "/chat/sessions/{id}" => { "get" => [ "chat" ], "patch" => [ "chat" ], "delete" => [ "chat" ] },

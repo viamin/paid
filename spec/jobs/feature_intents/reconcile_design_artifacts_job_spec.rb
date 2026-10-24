@@ -4,6 +4,13 @@ require "rails_helper"
 
 # @spec DESIGN-RECONCILIATION-001
 RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
+  def discovery(artifacts, complete: true)
+    FeatureIntents::DiscoverRdrArtifacts::Discovery.new(
+      artifacts:, revision: "a" * 40, coverage_complete: complete,
+      directory_status: complete ? :matching_files : :unavailable
+    )
+  end
+
   let(:project) { create(:project, owner: "acme", repo: "widget") }
   let(:feature_intent) { create(:feature_intent, project:) }
   let(:design_pr) { create(:feature_intent_design_pr, feature_intent:, pull_request_number: 100, draft: false) }
@@ -23,7 +30,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
   end
 
-  # @spec OPERATOR-INBOX-019
+  # @spec OPERATOR-INBOX-020
   it "does not treat a synced draft design pull request without links as missing" do
     design_pr.update!(draft: true)
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
@@ -54,7 +61,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
   end
 
-  # @spec OPERATOR-INBOX-019
+  # @spec OPERATOR-INBOX-020
   it "does not treat draft, deferred, superseded, or historical RDRs without links as missing" do
     [ "Draft", "Deferred", "Superseded", "Historical" ].each do |status|
       artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
@@ -62,7 +69,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
         revision: status.downcase,
         body: "- **Status**: #{status}"
       )
-      allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ artifact ])
+      allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
 
       described_class.perform_now(project.id)
 
@@ -129,7 +136,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
       body: "### Related Issues\n\n- #216\n"
     )
     create(:issue, project:, github_number: 216)
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ artifact ])
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -144,7 +151,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
     create(:issue, project:, github_number: 216,
       body: "Implements docs/rdrs/RDR-020-service-container-architecture.md")
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ artifact ])
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -164,7 +171,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     other_project = create(:project, account: project.account, owner: "acme", repo: "other-widget")
     create(:issue, project: other_project, github_number: 216,
       body: "Implements docs/rdrs/RDR-020-service-container-architecture.md")
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ artifact ])
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -182,7 +189,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
     create(:issue, project:, github_number: 216, github_creator_login: "attacker",
       body: "Implements docs/rdrs/RDR-020-service-container-architecture.md")
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ artifact ])
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -200,7 +207,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
     create(:issue, project:, github_number: 216,
       body: "We discussed `docs/rdrs/RDR-020-service-container-architecture.md` last week.")
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ artifact ])
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
 
     described_class.perform_now(project.id)
 
@@ -243,7 +250,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
   it "resolves RDR findings removed from a successfully discovered directory" do
     finding = create(:design_artifact_finding, project:, account: project.account,
       artifact_path: "docs/rdrs/RDR-063-removed.md", revision: "a" * 40)
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([])
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([]))
 
     described_class.perform_now(project.id)
 
@@ -254,10 +261,34 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     finding = create(:design_artifact_finding, project:, account: project.account,
       artifact_path: "docs/rdrs/RDR-063-unknown.md", revision: "a" * 40)
     unavailable = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(path: "docs/rdrs", revision: "main", body: nil)
-    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return([ unavailable ])
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ unavailable ], complete: false))
 
     described_class.perform_now(project.id)
 
     expect(finding.reload.status).to eq("open")
+  end
+
+  it "resolves the stale directory-level unavailable sentinel after successful empty discovery" do
+    sentinel = create(:design_artifact_finding, project:, account: project.account,
+      artifact_path: "docs/rdrs", revision: "main", state: "unverifiable")
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([]))
+
+    described_class.perform_now(project.id)
+
+    expect(sentinel.reload).to have_attributes(status: "resolved", resolved_at: be_present)
+  end
+
+  it "does not resolve a prior finding for an unreadable individual artifact" do
+    finding = create(:design_artifact_finding, project:, account: project.account,
+      artifact_path: "docs/rdrs/RDR-063.md", revision: "a" * 40)
+    unavailable = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: finding.artifact_path, revision: "b" * 40, body: nil
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ unavailable ]))
+
+    described_class.perform_now(project.id)
+
+    expect(finding.reload.status).to eq("open")
+    expect(project.design_artifact_findings.open_findings.pluck(:state)).to contain_exactly("missing_tree", "unverifiable")
   end
 end

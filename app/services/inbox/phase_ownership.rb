@@ -228,7 +228,7 @@ module Inbox
     # credentials, or an account-level notification with no subject is one.
     # Unverifiable reconciliation coverage is an access problem, not coding
     # work, so a disabled coding phase can never hide it.
-    # @spec INBOX-PHASE-RELEVANCE-001 @spec OPERATOR-INBOX-019
+    # @spec INBOX-PHASE-RELEVANCE-001 @spec OPERATOR-INBOX-020
     def platform_request?(entry)
       return true if entry.project.nil?
       return true if unverifiable_coverage_request?(entry)

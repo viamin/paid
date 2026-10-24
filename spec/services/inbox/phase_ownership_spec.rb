@@ -148,7 +148,7 @@ RSpec.describe Inbox::PhaseOwnership do
       expect(ownership.responsible_phase).to be_nil
     end
 
-    # @spec INBOX-PHASE-RELEVANCE-001 @spec OPERATOR-INBOX-019
+    # @spec INBOX-PHASE-RELEVANCE-001 @spec OPERATOR-INBOX-020
     it "classifies unverifiable coverage as a platform request so a disabled coding phase cannot hide it" do
       finding = create(:design_artifact_finding, project:, account: project.account, state: "unverifiable")
       entry = Inbox::Queue::Entry.new(
@@ -164,7 +164,7 @@ RSpec.describe Inbox::PhaseOwnership do
       expect(ownership).not_to be_phase_owned
     end
 
-    # @spec OPERATOR-INBOX-019
+    # @spec OPERATOR-INBOX-020
     it "keeps actionable traceability gaps owned by the coding phase" do
       finding = create(:design_artifact_finding, project:, account: project.account)
       entry = Inbox::Queue::Entry.new(

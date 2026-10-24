@@ -11,7 +11,7 @@ class DesignArtifactFinding < ApplicationRecord
   # state is informational records an intentional artifact status. It is kept
   # for inspection but implies no concrete human action, so it never enters
   # the Inbox lane, badge, filters, or supported API action listings.
-  # @spec OPERATOR-INBOX-019
+  # @spec OPERATOR-INBOX-020
   INFORMATIONAL_STATES = %w[deferred].freeze
 
   belongs_to :account

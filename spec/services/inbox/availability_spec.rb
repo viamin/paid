@@ -145,7 +145,7 @@ RSpec.describe Inbox::Availability do
       expect(availability.kind_counts[Inbox::Queue::TRACEABILITY_GAP_KIND]).to eq(1)
     end
 
-    # @spec OPERATOR-INBOX-019 DESIGN-RECONCILIATION-001
+    # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
     it "does not offer the traceability-gap filter for informational deferred-state findings" do
       create(:design_artifact_finding, project: project_a, account: account, state: "deferred", status: "open")
 
@@ -156,7 +156,7 @@ RSpec.describe Inbox::Availability do
       expect(availability.total_count).to eq(0)
     end
 
-    # @spec OPERATOR-INBOX-019
+    # @spec OPERATOR-INBOX-020
     it "keeps unverifiable coverage failures available" do
       create(:design_artifact_finding, project: project_a, account: account, state: "unverifiable")
 

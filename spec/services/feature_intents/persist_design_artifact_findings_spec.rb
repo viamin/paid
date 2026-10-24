@@ -21,7 +21,7 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
     expect(finding.evidence).to include("No explicit qualified issue links were found")
   end
 
-  # @spec OPERATOR-INBOX-019 DESIGN-RECONCILIATION-001
+  # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
   it "persists a draft artifact's informational finding as deferred without inventing an operator decision" do
     described_class.call(
       project:, revision:, artifacts: [ artifact.merge(status: "Draft") ], issues: []
@@ -34,7 +34,7 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
     expect(project.design_artifact_findings.actionable_findings).to be_empty
   end
 
-  # @spec OPERATOR-INBOX-019 DESIGN-RECONCILIATION-001
+  # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
   it "reconciles a previously open informational finding back out of the open action status" do
     create(:design_artifact_finding, project:, account: project.account,
       artifact_path: artifact[:path], revision:, state: "deferred", status: "open",
@@ -49,7 +49,7 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
     expect(project.design_artifact_findings.where(state: "deferred", status: "deferred")).to be_present
   end
 
-  # @spec OPERATOR-INBOX-019
+  # @spec OPERATOR-INBOX-020
   it "invalidates the inbox cache when reconciliation retires a fingerprint-matched noisy finding" do
     fingerprint = Digest::SHA256.hexdigest([ project.id, artifact[:path], revision, "deferred" ].join(":"))
     create(:design_artifact_finding, project:, account: project.account,
@@ -65,7 +65,7 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
       .with(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
   end
 
-  # @spec OPERATOR-INBOX-019
+  # @spec OPERATOR-INBOX-020
   it "does not resurrect an unchanged informational finding on revision refresh" do
     described_class.call(
       project:, revision:, artifacts: [ artifact.merge(status: "Superseded") ], issues: []
@@ -84,7 +84,7 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
     expect(project.design_artifact_findings.open_findings).to be_empty
   end
 
-  # @spec OPERATOR-INBOX-019 DESIGN-RECONCILIATION-001
+  # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
   it "resolves the informational record and surfaces actionable work when a draft artifact becomes active" do
     described_class.call(
       project:, revision:, artifacts: [ artifact.merge(status: "Draft") ], issues: []
@@ -99,7 +99,7 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
     )
   end
 
-  # @spec OPERATOR-INBOX-019 DESIGN-RECONCILIATION-001
+  # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
   it "resolves the open actionable finding when an active artifact becomes superseded" do
     described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
     actionable = DesignArtifactFinding.sole
@@ -113,7 +113,7 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
     expect(project.design_artifact_findings.where(state: "deferred")).to be_present
   end
 
-  # @spec OPERATOR-INBOX-019
+  # @spec OPERATOR-INBOX-020
   it "preserves an operator decision recorded on an informational finding" do
     described_class.call(
       project:, revision:, artifacts: [ artifact.merge(status: "Draft") ], issues: []
@@ -212,6 +212,31 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
     )
 
     expect(DesignArtifactFinding.sole).to have_attributes(status: "resolved", resolved_at: be_present)
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
+  it "resolves the directory-level unavailable sentinel after complete discovery" do
+    sentinel = create(:design_artifact_finding, project:, account: project.account,
+      artifact_path: "docs/rdrs", revision: "main", state: "unverifiable")
+
+    described_class.resolve_removed_rdr_findings(
+      project:, paths: [], directory: "docs/rdrs", file_pattern: "RDR-*.md"
+    )
+
+    expect(sentinel.reload).to have_attributes(status: "resolved", resolved_at: be_present)
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
+  it "keeps an identical finding in another tenant untouched" do
+    other_project = create(:project)
+    other = create(:design_artifact_finding, project: other_project, account: other_project.account,
+      artifact_path: "docs/rdrs/RDR-100.md", revision: revision)
+
+    described_class.resolve_removed_rdr_findings(
+      project:, paths: [], directory: "docs/rdrs", file_pattern: "RDR-*.md"
+    )
+
+    expect(other.reload.status).to eq("open")
   end
 
   # @spec OPERATOR-INBOX-018

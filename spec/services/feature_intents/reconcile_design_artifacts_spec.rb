@@ -100,7 +100,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifacts do
     expect(result.findings.map(&:state)).to all(eq("deferred"))
   end
 
-  # @spec OPERATOR-INBOX-019
+  # @spec OPERATOR-INBOX-020
   it "shares one actionability rule between the result and persisted findings" do
     result = described_class.call(
       project:,
@@ -119,7 +119,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifacts do
     end
   end
 
-  # @spec OPERATOR-INBOX-019
+  # @spec OPERATOR-INBOX-020
   it "keeps an unverifiable coverage failure actionable" do
     result = described_class.call(
       project:,

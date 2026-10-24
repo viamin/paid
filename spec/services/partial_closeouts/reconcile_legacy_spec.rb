@@ -196,6 +196,29 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
       expect(notification.title).to eq("macOS acceptance needs operator action")
     end
 
+    # @spec PARTIAL-CLOSEOUT-028 — an enhancement/manual-review hold remains
+    # a human gate, but prior merged delivery evidence must still receive one
+    # bounded reconciliation so the operator gets a concrete owner or
+    # prerequisite instead of an indefinite generic stop.
+    it "reconciles merged delivery evidence behind manual review without clearing the hold" do
+      parent.update!(paid_state: "manual_review", manual_review_reason: "Structured enhancement output was invalid.")
+      merged_pr(number: 131, parent_issue: parent)
+      run = legacy_run(issue: parent, pull_request_number: 131)
+      assessment = {
+        "gaps" => [ { "criterion" => "production pilot", "kind" => "human",
+          "next_step" => "An operator must attach the production pilot result." } ]
+      }
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return(assessment)
+
+      result = described_class.call(account_id: account.id)
+
+      expect(result.awaiting_operator).to eq(1)
+      expect(parent.reload).to have_attributes(paid_state: "manual_review", manual_review_reason: "Structured enhancement output was invalid.")
+      expect(run.reload.reconciliation.fetch("status")).to eq("awaiting_operator")
+      expect(Notification.where(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE).last.description)
+        .to include("An operator must attach the production pilot result.")
+    end
+
     # @spec PARTIAL-CLOSEOUT-019 / @spec PARTIAL-CLOSEOUT-020 — replay
     # recovery: re-running the sweep on a run already marked terminal must
     # NOT re-invoke the analyzer, must NOT re-file owners, must NOT publish
@@ -439,6 +462,22 @@ RSpec.describe PartialCloseouts::ReconcileLegacy do
 
       expect(result.scanned).to eq(1)
       expect(result.skipped).to eq(1)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-028 — a merged record does not authorize an LLM
+    # to consume an issue whose author fails the normal trust gate.
+    it "does not reconcile an untrusted held issue" do
+      merged_pr(number: 221, parent_issue: parent)
+      legacy_run(issue: parent, pull_request_number: 221)
+      project.update!(allowed_github_usernames: [ "another-user" ])
+      parent.update!(paid_state: "manual_review", manual_review_reason: "Enhancement transport failed.")
+      allow(Llm::AnalyzePartialCloseout).to receive(:call)
+
+      result = described_class.call(account_id: account.id)
+
+      expect(result.skipped).to eq(1)
+      expect(Llm::AnalyzePartialCloseout).not_to have_received(:call)
+      expect(parent.reload.paid_state).to eq("manual_review")
     end
 
     # @spec PARTIAL-CLOSEOUT-020 — replay safety: the assessment is the

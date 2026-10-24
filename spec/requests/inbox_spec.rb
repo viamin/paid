@@ -1365,7 +1365,7 @@ RSpec.describe "Inbox" do
     expect(document.at_css(%(a[href="#{project.github_url}/pull/100"]))).to be_present
   end
 
-  # @spec OPERATOR-INBOX-019 DESIGN-RECONCILIATION-001
+  # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
   it "keeps informational draft and superseded findings out of the inbox list and detail" do
     draft = create(:design_artifact_finding, project: project, account: project.account, state: "deferred",
       status: "open", artifact_path: "docs/rdrs/RDR-063.md", evidence: [ "Artifact status is Draft" ])
@@ -1379,7 +1379,7 @@ RSpec.describe "Inbox" do
     expect(response).to be_redirect
   end
 
-  # @spec OPERATOR-INBOX-019
+  # @spec OPERATOR-INBOX-020
   it "presents unavailable coverage as a coverage problem rather than a traceability gap" do
     create(:design_artifact_finding, project: project, account: project.account, state: "unverifiable",
       artifact_path: "docs/rdrs/RDR-064.md", evidence: [ "GitHub coverage was incomplete" ])

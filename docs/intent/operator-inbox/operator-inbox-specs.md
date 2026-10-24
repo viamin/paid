@@ -660,7 +660,20 @@
   *Test:* `spec/services/design_artifact_findings/resolve_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
-- [x] **OPERATOR-INBOX-019** — The traceability-gap Inbox lane, its badge
+- [x] **OPERATOR-INBOX-019** — When a `feature_decision` entry belongs to a
+  confidence-driven feature, the Inbox queue, count, availability matrix,
+  detail, and supported API SHALL share its policy-specific admission result.
+  The entry SHALL appear only for a concrete recorded human decision and SHALL
+  name its answer-or-direction recovery action; assessment progress,
+  investigations, dependency waits, and scoped readiness alone SHALL NOT make
+  it actionable. The detail SHALL not render Mark approved or an equivalent
+  whole-feature approval action.
+  *Test:* `spec/services/inbox/queue_spec.rb`,
+  `spec/services/inbox/feature_decision_summary_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
+  `spec/views/dashboard/inbox_detail_feature_decision_partial_spec.rb`.
+
+- [x] **OPERATOR-INBOX-020** — The traceability-gap Inbox lane, its badge
   count, filter availability, detail and direct-link access, and the supported
   API surfaces SHALL share one actionability rule with reconciliation and the
   persisted findings: only findings implying a concrete human action —

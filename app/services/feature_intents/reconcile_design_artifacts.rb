@@ -13,7 +13,7 @@ module FeatureIntents
     Result = Data.define(:findings, :associations, :last_successful_coverage_at) do
       # The same actionability contract the persisted findings and every Inbox
       # surface use — never a second, drifting copy of the rule.
-      # @spec OPERATOR-INBOX-019
+      # @spec OPERATOR-INBOX-020
       def actionable_findings = findings.select { |finding| DesignArtifactFinding.actionable_state?(finding.state) }
     end
 

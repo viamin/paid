@@ -89,7 +89,20 @@ field before it establishes coverage. A weak semantic candidate is not linked
 until an `agent_harness` assessment confirms it. The existing daily sweep is a bounded
 fallback; sync and design events prompt reassessment, while unchanged assessed inputs
 do not cause repeated semantic work.
-Failures or partial GitHub reads produce `unverifiable`, never an absence
+Discovery first resolves the default branch to an immutable revision and then
+uses a complete, non-truncated repository tree at that revision to establish
+whether the configured directory is absent, empty, or has no matching files.
+Each matching file is read at that same revision. An authoritatively absent
+directory and a successful empty or non-matching directory are healthy empty
+discovery results; they are not synthetic design artifacts and do not depend
+on LID adoption. A missing/deleted repository, authentication or permission
+failure, transient failure, truncated tree, or unreadable matching file keeps
+the affected coverage unavailable. A contents-endpoint 404 alone is never
+proof that a directory is absent. On complete discovery, reconciliation
+resolves stale matching-file findings and its directory-level unavailable
+sentinel, while preserving finding history, operator provenance, tenant
+boundaries, and unrelated paths. Incomplete discovery never performs that
+cleanup. Failures or partial GitHub reads produce `unverifiable`, never an absence
 finding. Repository-specific draft, deferred, and superseded statuses are
 reported rather than treated as missing work. The reconciliation is read-only:
 operators may inspect evidence, link verified existing work, repair stale document

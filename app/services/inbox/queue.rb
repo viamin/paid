@@ -154,7 +154,7 @@ module Inbox
 
       # Lane chips default to the kind name, but an unverifiable finding is an
       # access/coverage problem and must not wear the traceability-gap label.
-      # @spec OPERATOR-INBOX-019
+      # @spec OPERATOR-INBOX-020
       def badge_label
         return "Coverage Unavailable" if traceability_gap? && record.try(:unverifiable?)
 
@@ -723,6 +723,7 @@ module Inbox
     # re-review a stale approved design PR; discovery and pending automated
     # assessments belong to background progress.
     # @spec FEATURE-APPROVAL-013 @spec FEATURE-APPROVAL-020
+    # @spec CONFIDENCE-DELIVERY-016 OPERATOR-INBOX-019
     def feature_decision_entries
       scope = FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve
         .where.not(status: FeatureIntent::TERMINAL_STATUSES)
@@ -730,13 +731,21 @@ module Inbox
 
       # approved_by is loaded too because FeatureDecisionSummary reads the
       # approver's email for approved_waiting_for_merge entries.
-      only_record(scope).includes(:project, :approved_by, :feature_intent_decisions, :feature_intent_design_prs)
+      only_record(scope).includes(
+        :project,
+        :approved_by,
+        :feature_intent_decisions,
+        :feature_intent_design_prs,
+        feature_intent_issues: { prerequisite_mapping: { prerequisites: [ :feature_intent_facet, :feature_intent_facet_direction ] } }
+      )
         .order(:created_at, :id)
         .select { |feature_intent| feature_action_required?(feature_intent) }
         .map { |feature_intent| feature_decision_entry(feature_intent) }
     end
 
     def feature_action_required?(feature_intent)
+      return Inbox::FeatureDecisionReadiness.call(feature_intent: feature_intent).actionable? if feature_intent.confidence_driven?
+
       FeatureIntents::ApprovalReadiness.call(feature_intent: feature_intent).ready? ||
         feature_intent.feature_intent_decisions.any?(&:open?) ||
         feature_intent.feature_intent_design_prs.any? { |design_pr| design_pr.required? && design_pr.stale? }
@@ -936,7 +945,7 @@ module Inbox
     # the one shared actionability rule: informational deferred-state findings
     # never appear, while unverifiable coverage stays visible as an
     # access/coverage problem rather than a claimed traceability gap.
-    # @spec DESIGN-RECONCILIATION-001 @spec OPERATOR-INBOX-019
+    # @spec DESIGN-RECONCILIATION-001 @spec OPERATOR-INBOX-020
     def traceability_gap_entries
       scope = project ? project.design_artifact_findings : DesignArtifactFinding.where(project: scoped_projects)
 

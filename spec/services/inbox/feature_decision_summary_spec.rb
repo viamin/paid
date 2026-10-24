@@ -4,6 +4,17 @@ require "rails_helper"
 
 # @spec FEATURE-APPROVAL-013
 RSpec.describe Inbox::FeatureDecisionSummary do
+  # @spec CONFIDENCE-DELIVERY-016
+  it "describes the concrete confidence decision without requesting approval" do
+    feature_intent = create(:feature_intent, :confidence_driven)
+    create(:feature_intent_decision, feature_intent: feature_intent, prompt: "Which export format is required?")
+
+    summary = described_class.call(feature_intent: feature_intent)
+
+    expect(summary).to include("Action required: Which export format is required?")
+    expect(summary).not_to include("approval")
+  end
+
   it "explains readiness when there are no blockers" do
     feature_intent = create(:feature_intent, :ready_for_approval)
 

@@ -54,7 +54,7 @@ RSpec.describe DesignArtifactFinding do
       finding.save!
     end
 
-    # @spec OPERATOR-INBOX-019
+    # @spec OPERATOR-INBOX-020
     it "does not bump the cache when an informational finding is persisted" do
       finding = build(:design_artifact_finding, state: "deferred", status: "deferred")
 
@@ -64,7 +64,7 @@ RSpec.describe DesignArtifactFinding do
     end
   end
 
-  # @spec OPERATOR-INBOX-019 DESIGN-RECONCILIATION-001
+  # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
   describe ".actionable_state?" do
     it "treats only deferred artifact statuses as informational" do
       expect(described_class.actionable_state?("missing_tree")).to be(true)
@@ -75,7 +75,7 @@ RSpec.describe DesignArtifactFinding do
     end
   end
 
-  # @spec OPERATOR-INBOX-019 DESIGN-RECONCILIATION-001
+  # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
   describe "#unverifiable?" do
     it "identifies coverage that could not be read" do
       finding = build(:design_artifact_finding, state: "unverifiable")
@@ -84,7 +84,7 @@ RSpec.describe DesignArtifactFinding do
     end
   end
 
-  # @spec OPERATOR-INBOX-019 DESIGN-RECONCILIATION-001
+  # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
   describe ".actionable_findings" do
     it "excludes informational deferred-state findings even while status is open" do
       project = create(:project)
