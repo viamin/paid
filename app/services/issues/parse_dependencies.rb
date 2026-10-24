@@ -119,7 +119,9 @@ module Issues
     MARKDOWN_HEADING_PATTERN = /^[ \t]{0,3}\#{1,6}[ \t]+(.+?)\s*#*\s*$/
     FENCED_CODE_BLOCK_PATTERN = /^[ \t]{0,3}(`{3,}|~{3,})/
     CLOSING_FENCE_PATTERN = /\A[ \t]{0,3}(`{3,}|~{3,})[ \t]*(?:\r?\n)?\z/
-    LIST_ITEM_PATTERN = /^([ \t]*(?:[-+*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)(.+)$/
+    # CommonMark permits up to three leading spaces before a list marker; four
+    # spaces begin an indented code block instead.
+    LIST_ITEM_PATTERN = /^([ ]{0,3}(?:[-+*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)(.+)$/
     # Indented non-blank content: a continuation of the preceding list item.
     CONTINUATION_LINE_PATTERN = /^[ \t]+\S/
 

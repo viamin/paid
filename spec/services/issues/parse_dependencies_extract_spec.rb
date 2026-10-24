@@ -22,6 +22,21 @@ RSpec.describe Issues::ParseDependencies, :no_db do
       expect(cross_deps).to eq([ "viamin", "paid", 4263 ] => false)
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-001
+    it "ignores indented code-block examples that resemble dependency list items" do
+      local_deps, cross_deps = described_class.extract(
+        body: <<~BODY,
+          ## Dependencies
+              - #4326
+          - #41
+        BODY
+        comments: []
+      )
+
+      expect(local_deps).to eq(41 => false)
+      expect(cross_deps).to eq({})
+    end
+
     # @spec DEPENDENCY-DECLARATIONS-003
     it "keeps explicit inline and deployment directives in dependency-section prose" do
       local_deps, cross_deps = described_class.extract(
