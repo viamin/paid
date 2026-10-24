@@ -118,3 +118,22 @@
   *Code:* `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`,
   `app/controllers/projects/shadow_evaluations_controller.rb`.
   *Test:* `spec/requests/projects/shadow_evaluations_spec.rb`.
+
+- [ ] **INTENT-CONFORMANCE-ROLLOUT-010** — Before a blinded labeler can open
+  case evidence, the system SHALL authorize the project request and validate
+  the case repository, exact base/head or approved-design revision, and any
+  declared design artifact through the project's repository-access service.
+  It SHALL navigate only to fixed, revision-bound repository URLs, SHALL never
+  render or execute repository content in the labeling request, and SHALL
+  report unavailable evidence without substituting a branch, selection
+  rationale, notes, context, stratum, expected label, or reviewer output.
+  A corpus case without declared approved-design artifacts remains unavailable
+  for that evidence and SHALL NOT be treated as independently assessed
+  acceptance.
+  *Design:* `intent-conformance-rollout-design.md` §Solo-maintainer evaluation
+  policy and §Labeling lifecycle.
+  *Code:* `app/services/intent_conformance/shadow_evaluation/evidence.rb`,
+  `app/controllers/projects/shadow_evaluations_controller.rb`,
+  `app/views/projects/shadow_evaluations/_labeling.html.erb`.
+  *Test:* `spec/services/intent_conformance/shadow_evaluation/evidence_spec.rb`,
+  `spec/requests/projects/shadow_evaluations_spec.rb`.

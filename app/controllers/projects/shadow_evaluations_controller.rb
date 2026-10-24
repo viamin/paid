@@ -48,6 +48,21 @@ module Projects
       @inbox_context = inbox_context
     end
 
+    # @spec INTENT-CONFORMANCE-ROLLOUT-010
+    def evidence
+      authorize @evaluation
+
+      result = IntentConformance::ShadowEvaluation::Evidence.call(
+        evaluation: @evaluation,
+        case_id: params[:case_id].to_s,
+        kind: params[:kind].to_s,
+        path: params[:path]
+      )
+      return redirect_to(result.url, allow_other_host: true) if result.available?
+
+      redirect_to evaluation_path(@evaluation, case_id: params[:case_id]), alert: result.error
+    end
+
     def label
       authorize @evaluation
 
