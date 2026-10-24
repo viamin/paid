@@ -74,4 +74,18 @@ RSpec.describe FeatureIntents::ResponseDrafts do
     end
     expect(described_class.for_feature_intent(session, dropped.feature_intent)).to eq({})
   end
+
+  it "retains the newest multibyte draft within the cookie byte budget" do
+    decisions = Array.new(described_class::MAX_DRAFTS) do
+      create(:feature_intent_decision, feature_intent: create(:feature_intent))
+    end
+    answer = "あ" * described_class::MAX_ANSWER_CHARS
+
+    decisions.each do |draft_decision|
+      save_draft(answer:, decision_id: draft_decision.id, feature: draft_decision.feature_intent)
+    end
+
+    expect(described_class.for_feature_intent(session, decisions.last.feature_intent)).to eq(decisions.last.id.to_s => answer)
+    expect(session.to_json.bytesize).to be <= described_class::MAX_SERIALIZED_DRAFT_BYTES
+  end
 end

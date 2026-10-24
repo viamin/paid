@@ -9,10 +9,11 @@ module FeatureIntents
   # @spec FACET-CONFIDENCE-019
   class ResponseDrafts
     SESSION_KEY = :feature_decision_drafts
-    # Cookie sessions cap at 4KB: keep a handful of recent drafts and bound
-    # each answer so draft storage cannot overflow the session cookie.
+    # Cookie sessions cap at 4KB: reserve room for encryption and unrelated
+    # session state while keeping the newest complete drafts.
     MAX_DRAFTS = 4
     MAX_ANSWER_CHARS = 500
+    MAX_SERIALIZED_DRAFT_BYTES = 2_400
 
     def self.for_feature_intent(session, feature_intent)
       all(session)[feature_intent.id.to_s] || {}
@@ -46,11 +47,28 @@ module FeatureIntents
     private_class_method :write
 
     def self.newest_first(drafts)
-      triples = drafts.flat_map { |feature_key, bucket| bucket.map { |decision_key, answer| [ feature_key, decision_key, answer ] } }
-      triples.last(MAX_DRAFTS).each_with_object({}) do |(feature_key, decision_key, answer), kept|
-        (kept[feature_key] ||= {})[decision_key] = answer
+      kept = []
+      draft_triples(drafts).last(MAX_DRAFTS).reverse_each do |triple|
+        candidate = [ triple, *kept ]
+        kept = candidate if fits_cookie_budget?(candidate)
       end
+      serialized_drafts(kept)
     end
     private_class_method :newest_first
+
+    def self.draft_triples(drafts)
+      drafts.flat_map { |feature_key, bucket| bucket.map { |decision_key, answer| [ feature_key, decision_key, answer ] } }
+    end
+    private_class_method :draft_triples
+
+    def self.serialized_drafts(triples)
+      triples.each_with_object({}) { |(feature_key, decision_key, answer), kept| (kept[feature_key] ||= {})[decision_key] = answer }
+    end
+    private_class_method :serialized_drafts
+
+    def self.fits_cookie_budget?(triples)
+      JSON.generate(SESSION_KEY => serialized_drafts(triples)).bytesize <= MAX_SERIALIZED_DRAFT_BYTES
+    end
+    private_class_method :fits_cookie_budget?
   end
 end
