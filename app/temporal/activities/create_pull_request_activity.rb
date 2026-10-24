@@ -519,7 +519,7 @@ module Activities
             client,
             project,
             pr.number,
-            PullRequests::ReviewSurface.call(body: pr.body.to_s, agent_run: agent_run)
+            source_closure_body(PullRequests::ReviewSurface.call(body: pr.body.to_s, agent_run: agent_run), issue, agent_run)
           )
         end
       end
@@ -576,6 +576,7 @@ module Activities
       else
         build_default_pr_body(issue, agent_run, description, quality_warnings: quality_warnings, lid_coherence: lid_coherence)
       end
+      body = source_closure_body(body, issue, agent_run)
 
       {
         body: PullRequests::ReviewSurface.call(body: body, agent_run: agent_run),
@@ -602,12 +603,11 @@ module Activities
         parts << lid_coherence
       end
 
-      parts << ""
-
       if issue
+        parts << ""
         parts << "---"
         parts << ""
-        parts << "Closes #{issue_reference(issue, agent_run.project)}"
+        parts << "Tracks #{issue_reference(issue, agent_run.project)}"
       end
 
       parts.join("\n")
@@ -623,6 +623,12 @@ module Activities
       return "##{issue.github_number}" unless project.upstream_pr_target?
 
       "#{project.issue_target_repository}##{issue.github_number}"
+    end
+
+    # @spec PARTIAL-CLOSEOUT-029
+    def source_closure_body(body, issue, agent_run)
+      disposition = PartialCloseouts::SourceClosureDisposition.for(agent_run).fetch("disposition")
+      PullRequests::SourceClosureBody.call(body: body, issue: issue, project: agent_run.project, disposition: disposition)
     end
 
     # Builds a goal-specific PR body for lid_planning runs.
