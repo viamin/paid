@@ -95,7 +95,7 @@ RSpec.describe AppleVerification::SourceLane::BundleBuilder do
     modes = tar_entry_modes(result.bundle_path)
 
     expect(modes["Scripts/build.sh"]).to eq(0o755)
-    expect(modes["Sources/App.swift"]).to eq(0o644)
+    expect(modes["Sources/App.swift"]).to eq(File.stat(File.join(workspace_root, "Sources/App.swift")).mode & 0o777)
   end
 
   def tar_entry_modes(bundle_path)

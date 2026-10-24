@@ -544,7 +544,10 @@ module ApplicationHelper
     "analyze_issue" => "Issue Analysis",
     "lid_planning" => "LID Planning",
     "create_feature" => "Feature Creation",
-    "bootstrap_readiness" => "Bootstrap Readiness"
+    "bootstrap_readiness" => "Bootstrap Readiness",
+    # @spec LAYERED-VERIFY-013
+    "layered_verification_audit" => "Layered Verification Audit",
+    "layered_verification_repair" => "Layered Verification Repair"
   }.freeze
 
   AGENT_RUN_FOCUS_LABELS = {
