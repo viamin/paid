@@ -121,7 +121,10 @@ filename convention. A Godot gap with `ecosystem: godot` and
 `missing_test_command` may therefore create or repair only the paired
 `bin/install-test-tools` and `bin/test` entry points. No other `bin/` path is
 admitted, and absolute, non-canonical, traversal paths and symlinked entry
-scripts are rejected before publication. Scripts are behavior-bearing even when their paths are
+scripts are rejected before publication. Each selected entry point must also
+land as a regular file at the run's result commit: a deleted entry point, or a
+symlink or directory substituted for it, aborts as a guard violation naming the
+offending path — never as a raw GitHub API failure. Scripts are behavior-bearing even when their paths are
 classified: the structural guard makes their setup achievable, while isolated
 execution and the ordinary PR review continue to evaluate and approve their
 contents. Bootstrap never gains authority to implement application or gameplay

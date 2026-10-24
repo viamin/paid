@@ -1174,35 +1174,50 @@ module Activities
         readiness_gaps: agent_run.project.active_readiness_gaps
       )
       unless result.valid?
-        logger.error(
-          message: "agent_execution.bootstrap_write_guard_violation",
-          agent_run_id: agent_run.id,
-          forbidden_files: result.forbidden_files,
-          total_changed: changed_files.size
-        )
-        agent_run.log!(
-          "system",
-          "Bootstrap write guard violation: #{result.reason}. " \
-          "Forbidden files: #{result.forbidden_files.to_sentence}. The run is aborted."
-        )
-        raise "Bootstrap write guard violation: #{result.forbidden_files.join(', ')}"
+        abort_bootstrap_guard_violation!(agent_run, result.forbidden_files, changed_files, reason: result.reason)
       end
 
-      reject_symlinked_bootstrap_entry_points!(agent_run, client, changed_files)
+      reject_non_file_bootstrap_entry_points!(agent_run, client, changed_files)
     end
 
-    def reject_symlinked_bootstrap_entry_points!(agent_run, client, changed_files)
+    # Entry scripts admitted by readiness evidence must land at the result
+    # commit as regular files. A deleted entry point, or a symlink or
+    # directory in its place, is a deterministic guard violation — not a
+    # raw GitHub API failure — so the run aborts with the offending paths.
+    def reject_non_file_bootstrap_entry_points!(agent_run, client, changed_files)
       entry_points = Projects::Readiness::Detectors.bootstrap_entry_points_for(
         readiness_gaps: agent_run.project.active_readiness_gaps
       )
-      symlinks = changed_files.intersection(entry_points).select do |path|
-        client.file_type(agent_run.project.full_name, path: path, ref: agent_run.result_commit_sha) == "symlink"
+      offenders = changed_files.intersection(entry_points).select do |path|
+        bootstrap_entry_point_type(client, agent_run, path) != "file"
       end
-      return if symlinks.empty?
+      return if offenders.empty?
 
-      reason = "authorized bootstrap entry scripts must be regular files, not symlinks"
-      agent_run.log!("system", "Bootstrap write guard violation: #{reason}. Forbidden files: #{symlinks.to_sentence}. The run is aborted.")
-      raise "Bootstrap write guard violation: #{symlinks.join(', ')}"
+      reason = "authorized bootstrap entry scripts must be present as regular files"
+      abort_bootstrap_guard_violation!(agent_run, offenders, changed_files, reason: reason)
+    end
+
+    # The compare already proved the result commit resolves, so a NotFound
+    # here means the run deleted the entry point at that commit.
+    def bootstrap_entry_point_type(client, agent_run, path)
+      client.file_type(agent_run.project.full_name, path: path, ref: agent_run.result_commit_sha)
+    rescue GithubClient::NotFoundError
+      "missing"
+    end
+
+    def abort_bootstrap_guard_violation!(agent_run, forbidden_files, changed_files, reason:)
+      logger.error(
+        message: "agent_execution.bootstrap_write_guard_violation",
+        agent_run_id: agent_run.id,
+        forbidden_files: forbidden_files,
+        total_changed: changed_files.size
+      )
+      agent_run.log!(
+        "system",
+        "Bootstrap write guard violation: #{reason}. " \
+        "Forbidden files: #{forbidden_files.to_sentence}. The run is aborted."
+      )
+      raise "Bootstrap write guard violation: #{forbidden_files.join(', ')}"
     end
 
     def create_feature_pr_title(agent_run)

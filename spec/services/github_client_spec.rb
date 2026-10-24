@@ -1765,6 +1765,51 @@ RSpec.describe GithubClient do
     end
   end
 
+  describe "#file_type" do # @spec PROJECT-READINESS-008
+    let(:repo) { "owner/repo" }
+
+    def stub_contents_entry(ref:, body:, content_type: "application/json")
+      stub_request(:get, "#{api_base}/repos/#{repo}/contents/bin/test")
+        .with(query: { "ref" => ref })
+        .to_return(status: 200, body: body, headers: { "Content-Type" => content_type })
+    end
+
+    it "returns the reported type for a regular file entry" do
+      stub_contents_entry(ref: "head456", body: { name: "test", type: "file", content: "" }.to_json)
+
+      expect(client.file_type(repo, path: "bin/test", ref: "head456")).to eq("file")
+    end
+
+    it "returns the reported type for a symlink entry" do
+      stub_contents_entry(ref: "head456", body: { name: "test", type: "symlink", target: "../elsewhere" }.to_json)
+
+      expect(client.file_type(repo, path: "bin/test", ref: "head456")).to eq("symlink")
+    end
+
+    it "reports a directory listing as a directory" do
+      stub_contents_entry(ref: "head456", body: [ { name: "run.sh", type: "file" } ].to_json)
+
+      expect(client.file_type(repo, path: "bin/test", ref: "head456")).to eq("dir")
+    end
+
+    it "reports raw non-JSON content responses as files" do
+      stub_contents_entry(ref: "head456", body: "#!/bin/sh\necho hi\n", content_type: "text/plain")
+
+      expect(client.file_type(repo, path: "bin/test", ref: "head456")).to eq("file")
+    end
+
+    it "raises NotFoundError when the path does not exist at the ref" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/contents/bin/test")
+        .with(query: { "ref" => "head456" })
+        .to_return(status: 404, body: { message: "Not Found" }.to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      expect {
+        client.file_type(repo, path: "bin/test", ref: "head456")
+      }.to raise_error(GithubClient::NotFoundError)
+    end
+  end
+
   describe "#resolve_review_thread" do
     context "when resolution succeeds" do
       before do
