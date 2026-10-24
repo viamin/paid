@@ -117,7 +117,13 @@ module Issues
     DEPENDENCY_HEADING_PATTERN = /\bdependenc(?:y|ies)\b/i
     CHILD_LISTING_HEADING_PATTERN = /\b(?:child\s+issues?|sub[- ]?issues?|sub[- ]?tasks?)\b/i
     MARKDOWN_HEADING_PATTERN = /^[ \t]{0,3}\#{1,6}[ \t]+(.+?)\s*#*\s*$/
-    FENCED_CODE_BLOCK_PATTERN = /^[ \t]{0,3}(```|~~~)/
+    FENCED_CODE_BLOCK_PATTERN = /^[ \t]{0,3}(`{3,}|~{3,})/
+    CLOSING_FENCE_PATTERN = /\A[ \t]{0,3}(`{3,}|~{3,})[ \t]*(?:\r?\n)?\z/
+    # CommonMark permits up to three leading spaces before a list marker; four
+    # spaces begin an indented code block instead.
+    LIST_ITEM_PATTERN = /^([ ]{0,3}(?:[-+*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)(.+)$/
+    # Indented non-blank content: a continuation of the preceding list item.
+    CONTINUATION_LINE_PATTERN = /^[ \t]+\S/
 
     attr_reader :issue, :adjacency, :comments, :body
 
@@ -240,7 +246,7 @@ module Issues
     # sections are stripped before inline extraction so dependency phrases
     # describing inter-sub-issue relationships are not attributed to the
     # current issue.
-    def extract_body_refs(body, local_deps, cross_deps)
+    def extract_body_refs(body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-004
       markdown_sections(body, heading_pattern: DEPENDENCY_HEADING_PATTERN).each do |section_body|
         extract_section_refs(section_body, local_deps, cross_deps)
       end
@@ -249,11 +255,10 @@ module Issues
       extract_inline_refs(inline_text, local_deps, cross_deps)
     end
 
-    # Within a "## Dependencies" section, recognise both explicit
-    # "awaits/depends on/blocked by deployment of #N" phrasing and the shorter
-    # list-item style "- Deployment of #N". Remaining refs are treated as
-    # plain dependencies.
-    def extract_section_refs(section_body, local_deps, cross_deps)
+    # Within a "## Dependencies" section, recognise deployment directives and
+    # bare references only in Markdown list items. This keeps implementation
+    # inventories in ordinary prose from becoming unintended prerequisites.
+    def extract_section_refs(section_body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-002, DEPENDENCY-DECLARATIONS-003
       scratch = section_body.dup
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
@@ -264,7 +269,53 @@ module Issues
         scratch = scratch.gsub(pattern, "")
       end
 
-      extract_all_refs(scratch, local_deps, cross_deps, requires_deployment: false)
+      extract_list_item_refs(scratch, local_deps, cross_deps)
+    end
+
+    # Extracts bare refs from Markdown list items. Indented continuation lines
+    # fold into the preceding item (CommonMark list semantics), so a wrapped
+    # "- #41,\n  #42" item declares both refs. Fenced-code lines are skipped:
+    # markdown_sections preserves them in the section body, but they are code,
+    # not list structure.
+    def extract_list_item_refs(text, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-006, DEPENDENCY-DECLARATIONS-007
+      item = nil
+      continuation_indentation = nil
+
+      each_markdown_line(text) do |line, in_fenced_code_block|
+        next if in_fenced_code_block
+
+        match = LIST_ITEM_PATTERN.match(line)
+        if match
+          flush_list_item(item, local_deps, cross_deps)
+          continuation_indentation = markdown_columns(match[1])
+          item = match[2]
+        elsif item && continuation_line?(line, continuation_indentation)
+          item = "#{item} #{line.strip}"
+        elsif !line.strip.empty?
+          flush_list_item(item, local_deps, cross_deps)
+          item = nil
+          continuation_indentation = nil
+        end
+      end
+
+      flush_list_item(item, local_deps, cross_deps)
+    end
+
+    def flush_list_item(item, local_deps, cross_deps)
+      return unless item
+
+      extract_all_refs(item, local_deps, cross_deps, requires_deployment: false)
+    end
+
+    def continuation_line?(line, indentation)
+      return false unless line.match?(CONTINUATION_LINE_PATTERN)
+
+      markdown_columns(line[/\A[ \t]*/]) >= indentation
+    end
+
+    # Tabs advance to the next four-column stop in CommonMark indentation.
+    def markdown_columns(text)
+      text.each_char.reduce(0) { |columns, char| char == "\t" ? columns + 4 - (columns % 4) : columns + 1 }
     end
 
     # Extracts refs from inline "Depends on" / "Blocked by" / deployment patterns.
@@ -483,12 +534,23 @@ module Issues
     def each_markdown_line(text)
       return enum_for(__method__, text) unless block_given?
 
-      in_fenced_code_block = false
+      opening_fence = nil
 
       text.to_s.scan(/.*?(?:\r?\n|\z)/) do |line|
-        yield line, in_fenced_code_block
-        in_fenced_code_block = !in_fenced_code_block if line.match?(FENCED_CODE_BLOCK_PATTERN)
+        yield line, opening_fence.present?
+        opening_fence = updated_fence(line, opening_fence)
       end
+    end
+
+    def updated_fence(line, opening_fence)
+      return FENCED_CODE_BLOCK_PATTERN.match(line)&.[](1) unless opening_fence
+
+      closes_fenced_code_block?(line, opening_fence) ? nil : opening_fence
+    end
+
+    def closes_fenced_code_block?(line, opening_fence)
+      closing_fence = CLOSING_FENCE_PATTERN.match(line)&.[](1)
+      closing_fence && closing_fence[0] == opening_fence[0] && closing_fence.length >= opening_fence.length
     end
 
     def markdown_heading_text(line)
