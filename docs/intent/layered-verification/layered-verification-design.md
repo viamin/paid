@@ -281,6 +281,20 @@ that will verify the correction, before Paid creates the run — surfaced to
 the requester as the same "show the resolved scope before dispatch" pattern
 the manual-audit trigger already uses.
 
+Once dispatched, the repair run carries RDR-076 §7's post-repair
+obligations (`LAYERED-VERIFY-025`): it corrects the named artifacts through
+the project's normal review path (a PR, never a direct push); it records
+each ambiguous decision through its framework-approved clarification before
+the downstream cascade touches the artifacts it disambiguates; it preserves
+the originating finding, its observations, and the detecting check results
+unchanged — a finding resolves only through fresh supporting evidence
+against a current revision (`LAYERED-VERIFY-024`), never through the
+repair's own artifact edits; and it reruns every verifying check its request
+named, recording each outcome as a new `LayeredVerificationCheckResult`
+(`LAYERED-VERIFY-008`), with a check it cannot rerun recorded explicitly
+(`not_run`/`incomplete`/`non_applicable` plus a stated limitation) rather
+than silently dropped.
+
 ## Agent-run goals
 
 Two new `AgentRun::GOALS` entries:
@@ -303,7 +317,11 @@ host-network-reaching model-check path when no model is declared
 (`non_applicable`, not a skipped container), and completion requires at least
 one synthesized coverage view per in-scope obligation
 (`LAYERED-VERIFY-024`) rather than a created-PR URL.
-`layered_verification_repair` completes exactly like `create_pr` — it is one.
+`layered_verification_repair` completes exactly like `create_pr` — it is
+one — with the one addition that it records its post-repair obligations
+(`LAYERED-VERIFY-025`: preserved failure evidence, recorded decisions, and
+the named verifying checks rerun with new `LayeredVerificationCheckResult`
+rows) before reporting completion.
 
 A **manual audit** can be created without a GitHub issue (RDR-076's "Manual
 audit... create an audit run without requiring a GitHub issue"), the one
@@ -517,7 +535,7 @@ project's existing host policy.
 | V9 | LAYERED-VERIFY-009 | #4432, #4435 |
 | V10 | LAYERED-VERIFY-008 | #4432, #4433 |
 | V11 | LAYERED-VERIFY-010 | #4432, #4433 |
-| V12 | LAYERED-VERIFY-011 | #4436 |
+| V12 | LAYERED-VERIFY-011, -025 | #4436 |
 | V13 | LAYERED-VERIFY-022, -024 | #4433, #4436 |
 | V14 | LAYERED-VERIFY-020 | #4435 |
 | V15 | LAYERED-VERIFY-005 | #4437 |
@@ -537,11 +555,12 @@ through `-024`) plus the Phase-1 foundation IDs every audit stands on:
 `-001` through `-004` (framework/authority resolution), `-009` (linkage
 freshness), and `-012` (the rollout guard — an explicit #4432 Phase 1
 deliverable). `LAYERED-VERIFY-005` (design/bootstrap, #4437), `-011`
-(repair authorization, #4436), and `-019`/`-020` (change impact and
+(repair authorization, #4436), `-025` (post-repair evidence preservation
+and verifying-check reruns, #4436), and `-019`/`-020` (change impact and
 resumption, #4435) remain post-milestone; where a listed ID's `*Code:*`
 line also names a later issue (`-009` → #4435, `-014` → #4436), the
 milestone verifies its audit-path scope as carried by #4432–#4433 and
-evaluated at #4434. Full closeout requires all 24 IDs and #4435–#4438;
+evaluated at #4434. Full closeout requires all 25 IDs and #4435–#4438;
 optional automation (#4439 PR-triggered audits, #4440 scheduled audits via
 RDR-075) is not required for core closeout and is not mapped to a `V`
 reference because RDR-076 marks both as later, optional integrations.

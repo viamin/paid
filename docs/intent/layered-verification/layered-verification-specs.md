@@ -191,6 +191,28 @@
   *Code:* `app/policies/project_policy.rb`,
   `LayeredVerification::Repairs::Request` (#4436)
 
+- [ ] **LAYERED-VERIFY-025** — A `layered_verification_repair` run SHALL
+  correct the artifacts its request named through the project's normal
+  review path (a PR gated by the project's own review lanes, never a direct
+  push), and SHALL NOT begin correcting artifacts while a decision its
+  request listed as required is unrecorded — an ambiguous decision SHALL be
+  recorded through its framework-approved clarification
+  (`LAYERED-VERIFY-004`) before the downstream cascade touches the artifacts
+  it disambiguates. The repair run SHALL preserve the original failure
+  evidence unchanged: the originating `LayeredVerificationFinding`, its
+  observations, and the `LayeredVerificationCheckResult` rows that detected
+  the discrepancy SHALL NOT be deleted, overwritten, or mutated; reruns
+  create new rows per `LAYERED-VERIFY-008`, and the linked finding resolves
+  only through fresh supporting evidence recorded against a current revision
+  (`LAYERED-VERIFY-024`), never through the repair's own artifact edits.
+  Before completing, the run SHALL rerun every verifying check its request
+  named against the corrected revision and record each outcome as a new
+  `LayeredVerificationCheckResult`; a named check the run cannot execute
+  SHALL be recorded as `not_run`, `incomplete`, or `non_applicable` with a
+  stated `limitations` reason, never silently dropped.
+  *Tests:* `spec/services/layered_verification/repairs/complete_spec.rb`
+  *Code:* `LayeredVerification::Repairs::Complete` (#4436)
+
 - [ ] **LAYERED-VERIFY-012** — Every UI, project-scoped chat, and MCP entry
   point into layered verification SHALL read
   `FeatureFlags.enabled?(:layered_verification_add_on, project:)` and SHALL
