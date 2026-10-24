@@ -183,5 +183,33 @@ RSpec.describe "Feature intents" do
       expect(flash[:feature_decision_drafts]).to eq(unsaved_decision.id.to_s => " ")
       expect(answered_decision.reload).to have_attributes(status: "resolved", answer: "Use CSV exports only.", resolved_by: owner)
     end
+
+    # @spec FACET-CONFIDENCE-019
+    it "rejects a viewer who can see the project but cannot respond to its decisions" do
+      viewer = create(:user, :viewer, account: owner.account)
+      feature_intent = create(:feature_intent, :ready_for_approval, project: project)
+      decision = create(:feature_intent_decision, feature_intent: feature_intent)
+      sign_out owner
+      sign_in viewer
+
+      post respond_to_decision_feature_intent_path(feature_intent, decision_id: decision), params: { answer: "Use CSV exports only." }
+
+      expect(response).to redirect_to(root_path)
+      expect(flash[:alert]).to include("not authorized")
+      expect(decision.reload).to have_attributes(status: "open", answer: nil)
+    end
+
+    # @spec FACET-CONFIDENCE-019
+    it "does not allow responding to a decision outside the user's account" do
+      other_account = create(:account)
+      hidden_project = create(:project, account: other_account)
+      hidden_feature_intent = create(:feature_intent, :ready_for_approval, project: hidden_project)
+      hidden_decision = create(:feature_intent_decision, feature_intent: hidden_feature_intent)
+
+      post respond_to_decision_feature_intent_path(hidden_feature_intent, decision_id: hidden_decision), params: { answer: "No." }
+
+      expect(response).to have_http_status(:not_found)
+      expect(hidden_decision.reload).to have_attributes(status: "open", answer: nil)
+    end
   end
 end

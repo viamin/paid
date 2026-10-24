@@ -69,5 +69,11 @@ RSpec.describe "dashboard/_inbox_detail_feature_decision", type: :view do
 
     expect(rendered).to have_css("textarea[name='answer'][required]", count: 2)
     expect(rendered).to include("Use CSV exports only.", "Correct the inferred direction.")
+
+    document = Nokogiri::HTML.fragment(rendered)
+    textarea_ids = document.css("textarea[name='answer']").map { |node| node["id"] }
+    expect(textarea_ids).to eq([ dom_id(question, :answer), dom_id(inferred_decision, :answer) ])
+    answer_labels = document.css(%(label[for^="answer_feature_intent_decision"]))
+    expect(answer_labels.map { |node| node["for"] }).to match_array(textarea_ids)
   end
 end
