@@ -6,20 +6,33 @@ module ChatInvestigations
   # (Containers::ChatSessionManager) and retains the bounded output as
   # reconnectable evidence on the investigation. Workspace readiness alone is
   # never reported as experimental evidence; the recorded exit status and
-  # output are the experiment's result.
+  # output are the experiment's result. A runtime failure after output has
+  # streamed keeps that partial output and settles through the same failed
+  # path as a non-zero exit.
   class ExecuteExperiment
     MAX_OUTPUT_BYTES = 100 * 1024
+    MAX_RUNTIME_ERROR_BYTES = 500
     EXECUTION_TIMEOUT = 10.minutes
 
-    Execution = Data.define(:exit_code, :stdout, :stderr, :session_id, :stdout_truncated, :stderr_truncated) do
-      def success? = exit_code.zero?
+    Execution = Data.define(:exit_code, :stdout, :stderr, :session_id, :stdout_truncated, :stderr_truncated,
+      :runtime_error) do
+      def initialize(exit_code:, stdout:, stderr:, session_id:, stdout_truncated:, stderr_truncated:, runtime_error: nil)
+        super
+      end
+
+      def success? = runtime_error.nil? && exit_code.zero?
 
       def result_text
-        header = success? ? "Experiment completed (exit code #{exit_code})." : "Experiment failed (exit code #{exit_code})."
         [ header, output_section, stderr_section, truncation_notice ].compact.join("\n\n")
       end
 
       private
+
+      def header
+        return "Experiment failed (runtime error: #{runtime_error})." if runtime_error
+
+        success? ? "Experiment completed (exit code #{exit_code})." : "Experiment failed (exit code #{exit_code})."
+      end
 
       def output_section
         "Output:\n#{stdout.rstrip}" if stdout.present?
@@ -58,16 +71,31 @@ module ChatInvestigations
     def execute_prompt
       result = Containers::ChatSessionManager.new(investigation.chat_session)
         .execute_agent_command(prompt: investigation.prompt, timeout: EXECUTION_TIMEOUT)
-      stdout, stdout_truncated = bounded_stream(result[:stdout])
-      stderr, stderr_truncated = bounded_stream(result[:stderr])
       Execution.new(
         exit_code: result[:exit_code].to_i,
-        stdout:,
-        stderr:,
         session_id: result[:session_id],
-        stdout_truncated:,
-        stderr_truncated:
+        **bounded_streams(result[:stdout], result[:stderr])
       )
+    rescue Containers::ChatSessionManager::ExecutionError => e
+      runtime_failed_execution(e)
+    end
+
+    # A runtime failure mid-stream (e.g. Docker daemon death) carries the
+    # already-streamed output on the error; bound and retain it so the partial
+    # experiment output and truncation evidence survive the failed settlement.
+    def runtime_failed_execution(error)
+      Execution.new(
+        exit_code: nil,
+        session_id: nil,
+        runtime_error: error.message.truncate(MAX_RUNTIME_ERROR_BYTES),
+        **bounded_streams(error.stdout, error.stderr)
+      )
+    end
+
+    def bounded_streams(raw_stdout, raw_stderr)
+      stdout, stdout_truncated = bounded_stream(raw_stdout)
+      stderr, stderr_truncated = bounded_stream(raw_stderr)
+      { stdout:, stderr:, stdout_truncated:, stderr_truncated: }
     end
 
     def bounded_stream(raw)
@@ -92,6 +120,7 @@ module ChatInvestigations
         "stdout_truncated" => execution.stdout_truncated,
         "stderr_truncated" => execution.stderr_truncated,
         "agent_session_id" => execution.session_id,
+        "runtime_error" => execution.runtime_error,
         "executed_at" => Time.current.iso8601
       }.compact
     end

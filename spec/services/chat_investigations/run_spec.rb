@@ -107,6 +107,21 @@ RSpec.describe ChatInvestigations::Run do
       expect(investigation.metadata["experiment"]).to include("exit_code" => 1)
     end
 
+    it "settles a mid-stream runtime failure as failed while retaining the partial output and evidence" do # @spec QUESTION-EXPLORATION-010
+      investigation = create(:chat_investigation, kind: "experiment", reserved_cost_cents: 10)
+      investigation.created_by.add_role(:project_member, investigation.project)
+      investigation.chat_session.update!(container_capability: "ready", container_ready_at: Time.current,
+        container_id: "chat-container-abc123")
+      stub_agent_execution(stdout: "partial progress\n",
+        mid_stream_error: Docker::Error::DockerError.new("daemon died"))
+
+      described_class.call(investigation:)
+
+      expect(investigation.reload).to have_attributes(status: "failed", reserved_cost_cents: 0)
+      expect(investigation.result).to include("runtime error").and include("daemon died").and include("partial progress")
+      expect(investigation.metadata["experiment"]).to include("runtime_error" => a_string_including("daemon died"))
+    end
+
     it "exposes executing progress and broadcasts it before the experiment runs" do # @spec QUESTION-EXPLORATION-010
       investigation = create(:chat_investigation, kind: "experiment", reserved_cost_cents: 10)
       investigation.created_by.add_role(:project_member, investigation.project)
@@ -235,7 +250,7 @@ RSpec.describe ChatInvestigations::Run do
   # Stubs the external container/agent-harness boundaries the executor rides:
   # Docker (Containers.backend) and the harness execution plan. The optional
   # block runs when the container exec starts, acting as the mid-execution hook.
-  def stub_agent_execution(stdout: "Experiment output\n", stderr: "", exit_code: 0, on_exec: nil, &exec_hook)
+  def stub_agent_execution(stdout: "Experiment output\n", stderr: "", exit_code: 0, mid_stream_error: nil, on_exec: nil, &exec_hook)
     harness_result = Runners::HarnessExecutionPlan::Result.new(
       command: [ "claude", "--print", "investigation" ], env: {}, preparation: nil
     )
@@ -254,6 +269,7 @@ RSpec.describe ChatInvestigations::Run do
       on_exec&.call
       block&.call(:stdout, stdout)
       block&.call(:stderr, stderr) if stderr.present?
+      raise mid_stream_error if mid_stream_error
       [ stdout.lines, stderr.present? ? stderr.lines : [], exit_code ]
     end
     allow(Containers).to receive(:backend).and_return(backend)

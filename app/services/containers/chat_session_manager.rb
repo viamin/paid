@@ -24,7 +24,18 @@ module Containers
 
     class Error < StandardError; end
     class ContainerNotRunning < Error; end
-    class ExecutionError < Error; end
+
+    # Raised when container exec fails; carries the output streamed before the
+    # failure so bounded callers can retain it as partial evidence.
+    class ExecutionError < Error
+      attr_reader :stdout, :stderr
+
+      def initialize(msg, stdout: nil, stderr: nil)
+        @stdout = stdout
+        @stderr = stderr
+        super(msg)
+      end
+    end
 
     EXECUTE_TIMEOUT = 1.hour.to_i
     MAX_SESSION_DURATION = 4.hours
@@ -104,7 +115,11 @@ module Containers
       end
     rescue Docker::Error::DockerError => e
       log("execute.failed", error: e.message)
-      raise ExecutionError, "Docker exec error: #{e.message}"
+      raise ExecutionError.new(
+        "Docker exec error: #{e.message}",
+        stdout: stdout_buffer&.join,
+        stderr: stderr_buffer&.join
+      )
     end
 
     # Resets the idle timeout on the chat session, clamped to MAX_SESSION_DURATION

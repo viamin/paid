@@ -204,6 +204,24 @@ RSpec.describe Containers::ChatSessionManager do
           .to raise_error(described_class::ExecutionError, /exec failed/)
       end
     end
+
+    context "when Docker exec fails after streaming partial output" do
+      before do
+        allow(mock_container).to receive(:exec) do |_cmd, **_opts, &block|
+          block&.call(:stdout, "partial stdout\n")
+          block&.call(:stderr, "partial stderr\n")
+          raise Docker::Error::DockerError, "daemon died"
+        end
+      end
+
+      it "raises ExecutionError carrying the streamed output" do
+        expect { manager.execute_agent_command(prompt: "test") }
+          .to raise_error(described_class::ExecutionError, /daemon died/) do |error|
+            expect(error.stdout).to eq("partial stdout\n")
+            expect(error.stderr).to eq("partial stderr\n")
+          end
+      end
+    end
   end
 
   describe "#extend_idle_timeout!" do

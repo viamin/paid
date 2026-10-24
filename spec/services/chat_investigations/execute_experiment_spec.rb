@@ -42,6 +42,17 @@ RSpec.describe ChatInvestigations::ExecuteExperiment do
 
       expect(execution.result_text).to include("stdout truncated")
     end
+
+    it "reports a runtime failure with the runtime error and partial output" do
+      execution = described_class::Execution.new(
+        exit_code: nil, stdout: "half the suite ran\n", stderr: "", session_id: nil,
+        stdout_truncated: false, stderr_truncated: false, runtime_error: "Docker exec error: daemon died"
+      )
+
+      expect(execution).not_to be_success
+      expect(execution.result_text)
+        .to eq("Experiment failed (runtime error: Docker exec error: daemon died).\n\nOutput:\nhalf the suite ran")
+    end
   end
 
   describe "execution" do
@@ -92,11 +103,32 @@ RSpec.describe ChatInvestigations::ExecuteExperiment do
       expect(execution.stdout_truncated).to be(true)
       expect(investigation.reload.metadata["experiment"]).to include("stdout_truncated" => true)
     end
+
+    it "retains bounded partial output and truncation evidence when the runtime fails mid-stream" do # @spec QUESTION-EXPLORATION-010
+      investigation = create(:chat_investigation, kind: "experiment", prompt: "Reproduce the failure")
+      investigation.chat_session.update!(container_capability: "ready", container_ready_at: Time.current,
+        container_id: "chat-container-abc123")
+      stub_agent_boundaries(stdout: "z" * 150.kilobytes, stderr: "", exit_code: 0,
+        mid_stream_error: Docker::Error::DockerError.new("daemon died"))
+
+      execution = described_class.call(investigation:)
+
+      expect(execution).not_to be_success
+      expect(execution.result_text).to include("runtime error").and include("daemon died")
+      expect(execution.stdout.bytesize).to be <= described_class::MAX_OUTPUT_BYTES
+      expect(execution.stdout_truncated).to be(true)
+      evidence = investigation.reload.metadata["experiment"]
+      expect(evidence).to include(
+        "stdout_truncated" => true,
+        "runtime_error" => a_string_including("daemon died")
+      )
+      expect(evidence).not_to have_key("exit_code")
+    end
   end
 
   private
 
-  def stub_agent_boundaries(stdout:, stderr:, exit_code:)
+  def stub_agent_boundaries(stdout:, stderr:, exit_code:, mid_stream_error: nil)
     harness_result = Runners::HarnessExecutionPlan::Result.new(
       command: [ "claude", "--print", "investigation" ], env: {}, preparation: nil
     )
@@ -113,6 +145,7 @@ RSpec.describe ChatInvestigations::ExecuteExperiment do
     allow(backend).to receive(:exec_in_container) do |_container, _command, **_options, &block|
       block&.call(:stdout, stdout)
       block&.call(:stderr, stderr) if stderr.present?
+      raise mid_stream_error if mid_stream_error
       [ stdout.lines, stderr.present? ? stderr.lines : [], exit_code ]
     end
     allow(Containers).to receive(:backend).and_return(backend)
