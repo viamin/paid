@@ -5,7 +5,9 @@
   produced, SHALL classify legacy requests from existing run, issue, and
   request-producer evidence, and SHALL keep requests with unresolved ownership
   visible with an explicit classification gap rather than hiding them or
-  granting them execution authority.
+  granting execution authority. Reconciliation coverage/access failures
+  (unverifiable traceability findings) SHALL classify as platform requests,
+  so a disabled coding phase SHALL NOT hide an unresolved coverage problem.
   *Tests:* `spec/services/inbox/phase_ownership_spec.rb`
   *Code:* `Inbox::PhaseOwnership`, `InboxRequestOwnership`
 

@@ -637,10 +637,10 @@
   empty frame if the entry is no longer available.
   *Test:* `spec/requests/inbox_spec.rb`.
 
-- [x] **OPERATOR-INBOX-018** — When reconciliation leaves an open
+- [x] **OPERATOR-INBOX-018** — When reconciliation leaves an actionable
   traceability finding after structural matching, the Inbox SHALL explain in
   plain language whether it is missing linkage, potentially missing/partial
-  work, stale metadata, deliberate deferral, or unavailable coverage. It
+  work, stale metadata, or unavailable coverage. It
   SHALL show the pinned artifact/revision, last successful coverage, cited
   evidence and a direct GitHub link, and SHALL state that missing links do
   not prove missing implementation and closed work does not prove delivery.
@@ -659,3 +659,41 @@
   `app/views/dashboard/_inbox_detail_traceability_gap.html.erb`.
   *Test:* `spec/services/design_artifact_findings/resolve_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-019** — The traceability-gap Inbox lane, its badge
+  count, filter availability, detail and direct-link access, and the supported
+  API surfaces SHALL share one actionability rule with reconciliation and the
+  persisted findings: only findings implying a concrete human action —
+  missing_tree, partial_tree, stale_metadata, and unverifiable
+  coverage/access failures — belong in the lane. Informational deferred-state
+  findings (intentionally draft, deferred, superseded, or historical
+  artifacts) SHALL be retained durably for inspection but SHALL NOT appear in
+  the lane list, badge, filters, or supported API action listings, and their
+  direct links SHALL stop resolving, merely because those artifact statuses
+  were discovered; any separate concrete human decision on such an artifact
+  SHALL surface through its existing action path with operator decisions,
+  revalidation semantics, tenant authorization, and provenance preserved.
+  Genuinely unavailable coverage SHALL be presented as an access/coverage
+  problem — naming the known cause and the recovery action in list, detail,
+  and API summaries — never as a claim that implementation or a work tree is
+  missing, and SHALL remain actionable regardless of any disabled project
+  phase. Artifact state transitions SHALL reconcile through the persistence
+  contract: a draft/superseded artifact that becomes actionable re-enters the
+  lane, an actionable artifact that becomes informational leaves it, and
+  repeated reconciliation or revision refresh SHALL NOT resurrect unchanged
+  informational items, erase findings, or discard operator decisions. Affected
+  Inbox caches SHALL invalidate without bulk-dismissing genuine unknown or
+  missing-tree findings.
+  *Code:* `app/models/design_artifact_finding.rb`,
+  `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
+  `app/services/inbox/availability.rb`,
+  `app/services/inbox/phase_ownership.rb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb`,
+  `app/controllers/api/v1/design_artifact_findings_controller.rb`.
+  *Test:* `spec/models/design_artifact_finding_spec.rb`,
+  `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  `spec/services/inbox/availability_spec.rb`,
+  `spec/services/inbox/phase_ownership_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
+  `spec/requests/inbox_spec.rb`,
+  `spec/requests/api/v1/design_artifact_findings_spec.rb`.

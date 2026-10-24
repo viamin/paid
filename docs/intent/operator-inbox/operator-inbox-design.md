@@ -79,15 +79,26 @@ rechecks current queue membership and returns an empty frame for stale entries.
 ### `traceability_gap`
 
 Durable reconciliation findings are operator decisions, not proof that an
-implementation is absent. The detail pane names whether the finding is an
-unlinked document, potentially missing or partial work, ambiguous work, stale
-metadata, a deliberate deferral, or unavailable coverage. It shows the pinned
+implementation is absent. One shared actionability rule
+(`DesignArtifactFinding.actionable_findings`, reused from
+`ReconcileDesignArtifacts::Result#actionable_findings`) governs the lane list,
+detail and direct links, badge count, filter availability, and the supported
+API surfaces: only findings implying a concrete human action belong in the
+lane. Informational deferred-state findings — intentionally draft, deferred,
+superseded, or historical artifacts — are persisted for inspection but never
+become Inbox work merely because those statuses were discovered; a separate
+concrete human decision surfaces through its existing action path. The detail
+pane names whether the finding is an unlinked document, potentially missing
+or partial work, stale metadata, or unavailable coverage. It shows the pinned
 artifact/revision, last successful coverage, candidates/evidence, and direct
 GitHub artifact link. Operators may link verified existing work, defer, or
 dismiss with a reason; each decision is revision-checked, records its actor
 and provenance, removes the item from the unassigned queue, and remains
-pending until reconciliation verifies resolution. Unverifiable coverage asks
-for retry/access repair rather than proposing new implementation work.
+pending until reconciliation verifies resolution. Unverifiable coverage is an
+access/coverage problem, not a traceability gap: list, detail, and API copy
+name the known cause and the retry/access recovery instead of proposing new
+implementation work, and the entry is platform-owned so a disabled coding
+phase can never hide it.
 
 Chat remains an optional contextual aid. It does not replace a decision and
 does not make a repair, approve a design, or change main.

@@ -78,7 +78,7 @@ module FeatureIntents
       record.assign_attributes(
         account: project.account, fingerprint: finding.fingerprint, artifact_path: finding.path, revision: finding.revision,
         state: finding.state, evidence: finding.evidence, covered_at: covered_at || record.covered_at || Time.current,
-        **resolution_attributes(record)
+        **resolution_attributes(record, finding)
       )
       record.save!
       record
@@ -95,15 +95,25 @@ module FeatureIntents
       [ finding.respond_to?(:artifact_path) ? finding.artifact_path : finding.path, finding.state ].join(":")
     end
 
-    def resolution_attributes(record)
+    def resolution_attributes(record, finding)
       return reopened_attributes(record) if assigned_issue_closed?(record)
       return { status: record.status, resolved_at: record.resolved_at } if record.decision_pending?
+      return informational_attributes if DesignArtifactFinding.informational_state?(finding.state)
 
       { status: "open", resolved_at: nil }
     end
 
     def assigned_issue_closed?(record)
       record.status == "assigned" && record.resolution_issue&.github_state == "closed"
+    end
+
+    # An informational finding (draft/superseded/deferred/historical artifact)
+    # is retained for inspection but records no human action, so it persists as
+    # deferred without inventing an operator decision. Reconciliation, not the
+    # operator, owns this classification.
+    # @spec OPERATOR-INBOX-019
+    def informational_attributes
+      { status: "deferred", resolved_at: nil }
     end
 
     def reopened_attributes(record)

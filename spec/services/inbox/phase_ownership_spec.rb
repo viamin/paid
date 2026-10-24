@@ -147,5 +147,33 @@ RSpec.describe Inbox::PhaseOwnership do
       expect(ownership.classification_state).to eq("platform")
       expect(ownership.responsible_phase).to be_nil
     end
+
+    # @spec INBOX-PHASE-RELEVANCE-001 @spec OPERATOR-INBOX-019
+    it "classifies unverifiable coverage as a platform request so a disabled coding phase cannot hide it" do
+      finding = create(:design_artifact_finding, project:, account: project.account, state: "unverifiable")
+      entry = Inbox::Queue::Entry.new(
+        id: "#{Inbox::Queue::TRACEABILITY_GAP_KIND}:#{finding.id}",
+        kind: Inbox::Queue::TRACEABILITY_GAP_KIND,
+        project:, record: finding
+      )
+
+      ownership = described_class.for_entry(entry)
+
+      expect(ownership.classification_state).to eq("platform")
+      expect(ownership.responsible_phase).to be_nil
+      expect(ownership).not_to be_phase_owned
+    end
+
+    # @spec OPERATOR-INBOX-019
+    it "keeps actionable traceability gaps owned by the coding phase" do
+      finding = create(:design_artifact_finding, project:, account: project.account)
+      entry = Inbox::Queue::Entry.new(
+        id: "#{Inbox::Queue::TRACEABILITY_GAP_KIND}:#{finding.id}",
+        kind: Inbox::Queue::TRACEABILITY_GAP_KIND,
+        project:, record: finding
+      )
+
+      expect(described_class.for_entry(entry).responsible_phase).to eq("coding")
+    end
   end
 end

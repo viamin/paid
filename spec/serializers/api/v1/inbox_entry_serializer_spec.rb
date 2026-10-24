@@ -214,6 +214,21 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       )
     end
 
+    # @spec OPERATOR-INBOX-019
+    it "serializes unverifiable coverage as an access problem with a recovery action" do
+      finding = create(:design_artifact_finding, project: project,
+        artifact_path: "docs/rdrs/RDR-124.md", revision: "abc123", state: "unverifiable",
+        evidence: [ "GitHub coverage was incomplete" ])
+      entry = build_entry(Inbox::Queue::TRACEABILITY_GAP_KIND,
+        record: finding, tasks: finding.evidence, title_text: "Coverage unavailable: docs/rdrs/RDR-124.md")
+
+      payload = described_class.render(entry)
+
+      expect(payload[:recommended_action]).to eq("Restore coverage access and recheck.")
+      expect(payload[:title]).to eq("Coverage unavailable: docs/rdrs/RDR-124.md")
+      expect(payload[:summary]).not_to include("Traceability gap")
+    end
+
     it "raises for an unrecognized kind rather than silently returning an empty payload" do
       entry = build_entry("unknown_kind")
 

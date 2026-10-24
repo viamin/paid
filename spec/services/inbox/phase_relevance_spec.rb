@@ -122,6 +122,17 @@ RSpec.describe Inbox::PhaseRelevance do
 
       expect(result).to be_disabled_phase
     end
+
+    # @spec OPERATOR-INBOX-019 @spec INBOX-PHASE-RELEVANCE-001
+    it "keeps an unverifiable coverage failure actionable when the coding phase is disabled" do
+      finding = create(:design_artifact_finding, project:, account: project.account, state: "unverifiable")
+      configure_phases({ "coding" => false })
+
+      entry = Inbox::Queue.call(user:, project:, kind: Inbox::Queue::TRACEABILITY_GAP_KIND).sole
+
+      expect(entry).to be_actionable
+      expect(described_class.new.call(entry)).to be_actionable
+    end
   end
 
   describe "phase re-enablement" do

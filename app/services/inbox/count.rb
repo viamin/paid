@@ -171,9 +171,9 @@ module Inbox
       Project.where(id: visible_project_ids).select(&:readiness_blocked?).count
     end
 
-    # @spec DESIGN-RECONCILIATION-001
+    # @spec DESIGN-RECONCILIATION-001 @spec OPERATOR-INBOX-019
     def traceability_gap_count
-      DesignArtifactFinding.open_findings.where(project_id: visible_project_ids).count
+      DesignArtifactFinding.actionable_findings.where(project_id: visible_project_ids).count
     end
 
     # Shares the exact lane computation with Inbox::Queue

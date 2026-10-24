@@ -152,6 +152,15 @@ module Inbox
         kind == TRACEABILITY_GAP_KIND
       end
 
+      # Lane chips default to the kind name, but an unverifiable finding is an
+      # access/coverage problem and must not wear the traceability-gap label.
+      # @spec OPERATOR-INBOX-019
+      def badge_label
+        return "Coverage Unavailable" if traceability_gap? && record.try(:state) == "unverifiable"
+
+        kind.tr("_", " ").titleize
+      end
+
       # This stays lazy because only the selected Inbox entry renders its
       # detail pane. The readiness gap remains actionable after a failure, but
       # the operator also needs the most recent failed bootstrap attempt to
@@ -923,12 +932,15 @@ module Inbox
     end
 
     # Findings are durable reconciliation output, so queue rendering only
-    # reads the stored evidence and never re-contacts GitHub.
-    # @spec DESIGN-RECONCILIATION-001
+    # reads the stored evidence and never re-contacts GitHub. The lane uses
+    # the one shared actionability rule: informational deferred-state findings
+    # never appear, while unverifiable coverage stays visible as an
+    # access/coverage problem rather than a claimed traceability gap.
+    # @spec DESIGN-RECONCILIATION-001 @spec OPERATOR-INBOX-019
     def traceability_gap_entries
       scope = project ? project.design_artifact_findings : DesignArtifactFinding.where(project: scoped_projects)
 
-      only_record(scope.open_findings.includes(:project).order(:created_at, :id)).map do |finding|
+      only_record(scope.actionable_findings.includes(:project).order(:created_at, :id)).map do |finding|
         Entry.new(
           id: "#{TRACEABILITY_GAP_KIND}:#{finding.id}",
           kind: TRACEABILITY_GAP_KIND,
@@ -938,11 +950,23 @@ module Inbox
           waiting_since: finding.created_at,
           questions: [],
           tasks: finding.evidence,
-          summary_text: finding.state.humanize,
-          title_text: "Traceability gap: #{finding.artifact_path}",
+          summary_text: traceability_summary(finding),
+          title_text: traceability_title(finding),
           action_url: nil
         )
       end
+    end
+
+    def traceability_title(finding)
+      return "Coverage unavailable: #{finding.artifact_path}" if finding.state == "unverifiable"
+
+      "Traceability gap: #{finding.artifact_path}"
+    end
+
+    def traceability_summary(finding)
+      return "GitHub coverage could not be read for this artifact; restore access or retry. No implementation gap is claimed." if finding.state == "unverifiable"
+
+      finding.state.humanize
     end
 
     def visible_blocking_notifications

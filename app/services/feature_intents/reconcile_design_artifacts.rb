@@ -11,7 +11,10 @@ module FeatureIntents
   class ReconcileDesignArtifacts
     Finding = Data.define(:fingerprint, :path, :revision, :state, :evidence)
     Result = Data.define(:findings, :associations, :last_successful_coverage_at) do
-      def actionable_findings = findings.reject { |finding| finding.state == "deferred" }
+      # The same actionability contract the persisted findings and every Inbox
+      # surface use — never a second, drifting copy of the rule.
+      # @spec OPERATOR-INBOX-019
+      def actionable_findings = findings.select { |finding| DesignArtifactFinding.actionable_state?(finding.state) }
     end
 
     def self.call(...) = new(...).call
