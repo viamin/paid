@@ -722,7 +722,13 @@ module Inbox
 
       # approved_by is loaded too because FeatureDecisionSummary reads the
       # approver's email for approved_waiting_for_merge entries.
-      only_record(scope).includes(:project, :approved_by, :feature_intent_decisions, :feature_intent_design_prs, :feature_intent_issues)
+      only_record(scope).includes(
+        :project,
+        :approved_by,
+        :feature_intent_decisions,
+        :feature_intent_design_prs,
+        feature_intent_issues: { prerequisite_mapping: { prerequisites: [ :feature_intent_facet, :feature_intent_facet_direction ] } }
+      )
         .order(:created_at, :id)
         .select { |feature_intent| feature_action_required?(feature_intent) }
         .map { |feature_intent| feature_decision_entry(feature_intent) }
