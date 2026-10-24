@@ -52,6 +52,15 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  dependency-declarations:
+    title: Dependency Declarations
+    path: docs/intent/dependency-declarations/dependency-declarations-design.md
+    specs: docs/intent/dependency-declarations/dependency-declarations-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-10-24
+    next: "Keep Auto-Pick persistence and Auto-Merge live extraction on the shared structural declaration contract."
   docker-disk-cleanup:
     title: Docker Disk Cleanup
     path: docs/intent/docker-disk-cleanup/docker-disk-cleanup-design.md
