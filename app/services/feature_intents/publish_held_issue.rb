@@ -18,7 +18,7 @@ module FeatureIntents
   # @spec CONFIDENCE-DELIVERY-002
   class PublishHeldIssue
     PLANNING_LABEL = ReleaseIssue::PLANNING_LABEL
-    TASK_KINDS = %w[implementation planning].freeze
+    TASK_KINDS = FeatureIntentIssuePublication::TASK_KINDS
 
     ADVISORY_LOCK_SQL = "SELECT pg_advisory_lock($1, $2)".freeze
     ADVISORY_UNLOCK_SQL = "SELECT pg_advisory_unlock($1, $2)".freeze
@@ -75,6 +75,7 @@ module FeatureIntents
     def marker = "<!-- paid:planning-held:#{feature_intent.id}:#{digest} -->"
 
     def publish_issue
+      ensure_receipt_task_kind_consistent!(publication_receipt)
       existing_issue || reconcile_receipted_issue || create_remote_issue
     end
 
@@ -114,6 +115,8 @@ module FeatureIntents
       receipt = publication_receipt
       return unless receipt
 
+      ensure_receipt_task_kind_consistent!(receipt)
+
       remote = receipt.remote_issue_number ? client.issue(project.full_name, receipt.remote_issue_number) : remote_issue_with_marker
       raise GithubClient::Error, "planning-held issue creation is pending remote reconciliation" unless remote
 
@@ -143,7 +146,9 @@ module FeatureIntents
     end
 
     def reserve_publication!
-      FeatureIntentIssuePublication.create_or_find_by!(feature_intent:, task_digest: digest)
+      FeatureIntentIssuePublication.create_or_find_by!(feature_intent:, task_digest: digest) do |receipt|
+        receipt.task_kind = task_kind
+      end
     end
 
     def record_remote_issue!(receipt, remote)
@@ -229,6 +234,12 @@ module FeatureIntents
     def ensure_task_kind_consistent!(link)
       stored_task_kind = link&.readiness_mapping&.dig("planning_hold", "task_kind").presence
       return if stored_task_kind.blank? || stored_task_kind == task_kind
+
+      raise ArgumentError, "task_kind conflicts with the existing publication"
+    end
+
+    def ensure_receipt_task_kind_consistent!(receipt)
+      return if receipt.nil? || receipt.task_kind == task_kind
 
       raise ArgumentError, "task_kind conflicts with the existing publication"
     end

@@ -228,6 +228,19 @@ RSpec.describe FeatureIntents::PublishHeldIssue do
     expect(feature.feature_intent_issues.where(issue_id: result.issue.id)).to exist
   end
 
+  it "rejects a recovered implementation publication retried as planning" do # @spec CONFIDENCE-DELIVERY-017
+    published = publish
+    published.issue.destroy!
+    FeatureIntentIssue.where(feature_intent: feature).destroy_all
+    client.remote_items << client.remote_issue(number: 4242, body: client.created_issues.first[:body])
+
+    expect { publish(task_kind: "planning") }.to raise_error(
+      ArgumentError, /task_kind conflicts with the existing publication/
+    )
+    expect(FeatureIntentIssuePublication.sole.task_kind).to eq("implementation")
+    expect(feature.feature_intent_issues).to be_empty
+  end
+
   it "recovers the create receipt after local upsert fails before search visibility" do
     client.create_response_title_override = ""
 
