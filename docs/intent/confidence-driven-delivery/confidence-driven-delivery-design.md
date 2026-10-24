@@ -30,10 +30,14 @@ as a GitHub issue carrying the workflow-owned `planning` label, explicit
 `Sub-issue of #N` parent text and `Depends on #N` prerequisite lines (the
 project's dependency conventions), and a `FeatureIntentIssue` link that enters
 the tree at `release_state: "held"`. Publication is idempotent per feature and
-task identity (a body marker, local reuse, and remote-body recovery), is
-serialized on a session advisory lock without holding row locks across GitHub
-calls, and reads back the created issue — marker, planning label, and
-dependency lines — before any local link is committed. Speculative
+task identity: a durable create receipt is committed before GitHub is called,
+then stores GitHub's returned issue identity before local synchronization; a
+retry reconciles that number rather than relying on eventually-consistent body
+search. Local reuse and remote-body recovery cover records lost after a
+completed synchronization. Publication is serialized on a session advisory
+lock without holding row locks across GitHub calls, and reads back the created
+issue — marker, planning label, and dependency lines — before any local link
+is committed. Speculative
 alternatives are recorded deduplicated on the feature
 (`feature_intents.speculative_alternatives`) and never filed as GitHub issues;
 the authorized chat surface is the `publish_held_issue` tool, which reuses
