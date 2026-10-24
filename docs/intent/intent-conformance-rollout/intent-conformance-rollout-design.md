@@ -78,10 +78,18 @@ therefore declare the **solo-maintainer policy**, which must be:
   created, and an agent may assist navigation/recording only through the
   authenticated maintainer's session — it cannot impersonate the decision.
 - **Blinded before freeze.** While the evaluation is in the labeling state,
-  the labeling surface shows each case's pinned diff references, approved
-  design revision, and supporting context, but never the reviewer outputs,
-  the preassigned stratum, or any expected label. Reviewer execution is
-  refused until the reference set is frozen.
+  the labeling surface provides navigation to the case's pinned diff and its
+  declared approved-design artifacts at their recorded revisions, but never
+  the reviewer outputs, the preassigned stratum, expected label, selection
+  rationale, or free-text notes/context that could reveal an outcome. Evidence
+  navigation validates repository access, every requested SHA, and each
+  declared artifact before redirecting to a revision-bound GitHub URL.
+  Navigation is refused outright when the manifest no longer matches the
+  digest recorded at evaluation creation, so replacement evidence under an
+  edited corpus cannot be inspected through an existing evaluation. It
+  never falls back to a branch or moving default revision; missing, forbidden,
+  malformed, or undeclared evidence is explicitly unavailable. Reviewer
+  execution is refused until the reference set is frozen.
 
 ### Assurance limits (stated, not hidden)
 
@@ -107,10 +115,14 @@ Paid's project authorization and presentation patterns:
    manifest's repository-relative path and local bytes are verified against
    its resolved Git commit; the recorded provenance therefore identifies an
    exact recoverable corpus.
-2. **Label.** Each case records `within_scope`, `material_drift`, or
-   `uncertain`, with a cited approved claim and a reason. Saves are durable
-   and resumable; any case may be skipped, and a skipped case is never
-   counted as completed.
+2. **Label.** Each case presents a one-case-at-a-time evidence surface. The
+   diff and approved-design links are resolved only from repository and
+   revision identities stored in the frozen corpus; a case without declared
+   approved-design paths remains unavailable for design evidence and cannot
+   be represented as independently assessed acceptance. Each label records
+   `within_scope`, `material_drift`, or `uncertain`, with a cited approved
+   claim and a reason. Saves are durable and resumable; any case may be
+   skipped, and a skipped case is never counted as completed.
 3. **Freeze.** The explicit finish action refuses to freeze while any case
    is unlabeled or skipped, then stamps the reference set frozen. Answers
    (strata and reviewer outputs) become visible only from freeze onward.

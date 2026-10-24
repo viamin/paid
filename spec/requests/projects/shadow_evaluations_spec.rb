@@ -86,7 +86,7 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(project.intent_conformance_shadow_evaluations).to be_empty
   end
 
-  it "hides strata and reviewer outputs from the labeling screen until the reference set is frozen" do
+  it "hides strata, selection rationale, and reviewer outputs from the labeling screen until the reference set is frozen" do
     evaluation = start_evaluation!
     label!(evaluation, case_id: "A-01", outcome: "within_scope")
 
@@ -96,7 +96,19 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("Case A-02")
     expect(response.body).not_to include("intentionally_drifted")
     expect(response.body).not_to include("stratum")
+    expect(response.body).not_to include("Dependency maintenance commit")
     expect(response.body).to include("Answers stay hidden until you freeze")
+  end
+
+  it "offers a pinned-diff navigation journey without rendering repository content" do
+    evaluation = start_evaluation!
+
+    get project_shadow_evaluation_path(project, evaluation)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Open pinned diff")
+    expect(response.body).to include("Approved design documents are unavailable")
+    expect(response.body).not_to include("selection_rationale")
   end
 
   it "supports durable save/resume and skips without counting skipped cases as completed" do
@@ -210,6 +222,26 @@ RSpec.describe "Projects::ShadowEvaluations" do
     get project_shadow_evaluation_path(project, evaluation)
 
     expect(response).to have_http_status(:not_found)
+  end
+
+  it "validates tenant ownership before opening case evidence" do
+    evaluation = start_evaluation!
+    outsider = create(:user, :owner, account: create(:account))
+    sign_in outsider
+
+    get evidence_project_shadow_evaluation_path(project, evaluation, case_id: "A-01", kind: "diff")
+
+    expect(response).to have_http_status(:not_found)
+  end
+
+  it "refuses evidence navigation when the corpus manifest no longer matches the frozen corpus" do
+    evaluation = start_evaluation!
+    evaluation.update!(manifest_digest: "stale")
+
+    get evidence_project_shadow_evaluation_path(project, evaluation, case_id: "A-01", kind: "diff")
+
+    expect(response).to redirect_to(project_shadow_evaluation_path(project, evaluation, case_id: "A-01"))
+    expect(flash[:alert]).to eq("corpus manifest changed since the evaluation was created — start a new evaluation")
   end
 
   it "shows the corpus-changed warning when a frozen evaluation's manifest no longer matches" do
