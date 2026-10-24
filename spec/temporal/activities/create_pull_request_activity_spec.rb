@@ -1341,6 +1341,22 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect(captured_body).to include("Add dark mode")
       end
 
+      it "normalizes closing references in a source issue's goal-specific PR body" do # @spec PARTIAL-CLOSEOUT-029
+        feature_agent_run.update!(issue: issue, external_metadata: {
+          "feature_brief" => { "title" => "Fixes ##{issue.github_number}", "problem" => "Eye strain" }
+        })
+        captured_body = nil
+        allow(github_client).to receive(:create_pull_request) do |*_args, **kwargs|
+          captured_body = kwargs[:body]
+          pr_response
+        end
+
+        activity.execute(agent_run_id: feature_agent_run.id)
+
+        expect(captured_body).to include("Tracks ##{issue.github_number}")
+        expect(captured_body).not_to match(/Fixes ##{issue.github_number}/i)
+      end
+
       it "fetches changed files once for both allowlist and contract checks" do
         expect(github_client).to receive(:compare_changed_files)
           .with(project.full_name, feature_agent_run.base_commit_sha, feature_agent_run.result_commit_sha)

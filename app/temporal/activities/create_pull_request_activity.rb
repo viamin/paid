@@ -560,8 +560,8 @@ module Activities
     end
 
     def build_pr_body(issue, agent_run, client: nil)
-      return build_lid_planning_pr_body(agent_run) if agent_run.lid_planning_goal?
-      return build_create_feature_pr_body(agent_run) if agent_run.create_feature_goal?
+      return normalize_pr_body(build_lid_planning_pr_body(agent_run), issue, agent_run) if agent_run.lid_planning_goal?
+      return normalize_pr_body(build_create_feature_pr_body(agent_run), issue, agent_run) if agent_run.create_feature_goal?
 
       summary = agent_run.agent_summary
       validate_summary_scope(summary, issue, agent_run, client: client)
@@ -576,12 +576,23 @@ module Activities
       else
         build_default_pr_body(issue, agent_run, description, quality_warnings: quality_warnings, lid_coherence: lid_coherence)
       end
-      body = source_closure_body(body, issue, agent_run)
-
-      {
-        body: PullRequests::ReviewSurface.call(body: body, agent_run: agent_run),
+      normalize_pr_body({
+        body:,
         llm_generated_description: description.present?
-      }
+      }, issue, agent_run)
+    end
+
+    # Keep source-issue closing syntax as the final body transform. Every PR
+    # shape, including goal-specific bodies and review-surface additions, must
+    # reflect the authoritative closeout disposition.
+    def normalize_pr_body(pr_body, issue, agent_run)
+      pr_body.merge(
+        body: source_closure_body(
+          PullRequests::ReviewSurface.call(body: pr_body.fetch(:body), agent_run: agent_run),
+          issue,
+          agent_run
+        )
+      )
     end
 
     def build_default_pr_body(issue, agent_run, description, quality_warnings: nil, lid_coherence: nil)
