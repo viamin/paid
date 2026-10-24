@@ -210,7 +210,15 @@ module FeatureIntents
         next unless dependency.is_a?(Issue)
 
         persist_dependency!(issue, dependency)
+        link_dependency_issue(dependency)
       end
+    end
+
+    # Attach prerequisite issues before their dependent so AttachFromAgentRun
+    # can record the IssueDependency as an in-tree prerequisite edge.
+    def link_dependency_issue(dependency)
+      AttachFromAgentRun.attach_issue(feature_intent:, issue: dependency)
+      feature_intent.feature_intent_issues.find_by!(issue: dependency)
     end
 
     # IssueDependency uniqueness is a model validation, so a repeated

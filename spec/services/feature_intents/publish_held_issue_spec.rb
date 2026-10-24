@@ -109,7 +109,6 @@ RSpec.describe FeatureIntents::PublishHeldIssue do
   end
 
   it "links the published issue to its feature, parent, and prerequisites" do
-    create(:feature_intent_issue, feature_intent: feature, issue: prerequisite)
     result = publish
 
     issue = result.issue
@@ -124,6 +123,11 @@ RSpec.describe FeatureIntents::PublishHeldIssue do
     expect(link).to be_present
     expect(link.release_state).to eq("held")
     expect(link.in_tree_dependencies.map(&:issue_id)).to contain_exactly(prerequisite.id)
+    expect(feature.feature_intent_issues.find_by(issue: prerequisite)).to be_present
+
+    admission = FeatureIntents::RunAdmission.call(issue: issue)
+    expect(admission).not_to be_allowed
+    expect(admission.code).to eq("issue_dependencies_incomplete")
   end
 
   it "keeps speculative alternatives visible in Paid without filing GitHub issues for them" do
