@@ -40,6 +40,23 @@ RSpec.describe Projects::Readiness::BuildBootstrapPrompt do
       expect(prompt).to include("later test-writing run owns the intentionally failing red phase")
     end
 
+    it "names only the detector-selected Godot entry points" do
+      project = build(
+        :project,
+        tdd_mode: "strict",
+        readiness_gaps: [ {
+          "kind" => "missing_test_command",
+          "description" => "TDD requires a runnable Godot test command.",
+          "evidence" => { "ecosystem" => "godot" }
+        } ]
+      )
+
+      prompt = described_class.call(project:)
+
+      expect(prompt).to include("bin/install-test-tools and bin/test")
+      expect(prompt).to include("Do not change any other bin/ script")
+    end
+
     it "includes each capability's setup instruction when both have gaps" do
       project = build(
         :project,

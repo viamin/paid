@@ -15,6 +15,10 @@ module Projects
         detector_class = REGISTRY.find { |candidate| candidate.applicable?(project: project, repo_path: repo_path) }
         detector_class.new(project: project, repo_path: repo_path)
       end
+
+      def self.bootstrap_entry_points_for(readiness_gaps:)
+        REGISTRY.flat_map { |detector| detector.bootstrap_entry_points_for(readiness_gaps:) }.uniq
+      end
     end
   end
 end
