@@ -449,6 +449,8 @@ class Project < ApplicationRecord
   validate :priority_labels_valid
   validate :interop_settings_valid
   validate :llm_provider_routing_valid
+  # @spec CONFIDENCE-DELIVERY-014
+  validate :confidence_delivery_enrollment_requires_integrated_delivery, if: :enabling_confidence_delivery_enrollment?
   validate :validate_preferred_docker_host_identifier
 
   scope :active, -> { where(active: true) }
@@ -1298,8 +1300,6 @@ class Project < ApplicationRecord
 
     new_feature_delivery_policy
   end
-
-  validate :confidence_delivery_enrollment_requires_integrated_delivery, if: :enabling_confidence_delivery_enrollment?
 
   def confidence_delivery_enrollment_available?
     FeatureIntents::DeliveryIntegration.available_for?(self)
