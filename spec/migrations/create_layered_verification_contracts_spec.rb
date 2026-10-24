@@ -75,24 +75,33 @@ RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
     expect(obligations.fetch("framework").null).to be(false)
     expect(obligations.fetch("external_identity").null).to be(false)
     expect(obligations.fetch("approval_state").default).to eq("unresolved")
-    expect(connection.foreign_key_exists?(:layered_verification_obligations, :projects)).to be(true)
-    expect(connection.foreign_key_exists?(:layered_verification_obligations,
-      :layered_verification_obligations, column: "superseded_by_id")).to be(true)
+    expect_foreign_key(:layered_verification_obligations, :projects, on_delete: :cascade)
+    expect_foreign_key(:layered_verification_obligations, :layered_verification_obligations,
+      column: "superseded_by_id", on_delete: :nullify)
 
     expect(claims.fetch("obligation_id").null).to be(false)
     expect(claims.fetch("claim_type").null).to be(false)
-    expect(connection.foreign_key_exists?(:layered_verification_correspondence_claims,
-      :layered_verification_obligations, column: "obligation_id")).to be(true)
+    expect_foreign_key(:layered_verification_correspondence_claims, :layered_verification_obligations,
+      column: "obligation_id", on_delete: :cascade)
 
     expect(results.fetch("obligation_id").null).to be(false)
     expect(results.fetch("producer").null).to be(false)
     expect(results.fetch("execution_state").null).to be(false)
     expect(results.fetch("obligation_coverage").null).to be(false)
-    expect(connection.foreign_key_exists?(:layered_verification_check_results,
-      :layered_verification_obligations, column: "obligation_id")).to be(true)
-    expect(connection.foreign_key_exists?(:layered_verification_check_results,
-      :layered_verification_correspondence_claims, column: "correspondence_claim_id")).to be(true)
+    expect_foreign_key(:layered_verification_check_results, :layered_verification_obligations,
+      column: "obligation_id", on_delete: :cascade)
+    expect_foreign_key(:layered_verification_check_results, :layered_verification_correspondence_claims,
+      column: "correspondence_claim_id", on_delete: :cascade)
     expect(connection.foreign_key_exists?(:layered_verification_check_results, :agent_runs)).to be(true)
+  end
+
+  def expect_foreign_key(from_table, to_table, column: nil, on_delete: nil)
+    foreign_key = connection.foreign_keys(from_table).find do |candidate|
+      candidate.to_table == to_table.to_s && (column.nil? || candidate.column == column)
+    end
+
+    expect(foreign_key).to be_present
+    expect(foreign_key.on_delete).to eq(on_delete)
   end
 
   def expect_indexes
