@@ -95,7 +95,8 @@ cross-run status. The no-duplicates rule applies to canonical findings, not
 to the necessary per-report occurrence records.
 
 A `MaintenanceSchedule` (project-scoped, opt-in) captures the same
-objective/scope/guidance/limits shape as a manual run plus recurrence:
+objective/scope/guidance/limits shape and objective admission rule as a manual
+run plus recurrence:
 timezone, next-occurrence computation, non-overlap with an equivalent
 in-flight run, and bounded missed-occurrence catchup. Disabling a schedule
 stops future dispatch without deleting prior reports or cancelling an
@@ -111,9 +112,10 @@ selection also applies the existing authorization of the selected issue or
 PR-creation pathway:
 
 - **Start**: an authorized user supplies a project, optional objective (recipe
-  key), optional scope (paths/symbols), and optional free-text guidance.
-  Response identifies the created run and its resolved (or
-  pending-clarification) scope.
+  key), optional scope (paths/symbols), and optional free-text guidance. A
+  start request must include either a recipe objective or nonblank guidance;
+  scope alone is not an investigation objective. Response identifies the
+  created run and its resolved (or pending-clarification) scope.
 - **Inspect**: an authorized user reads run status, report outcome once
   terminal, and findings with their status.
 - **Cancel**: an authorized user takes an explicit action distinct from

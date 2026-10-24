@@ -33,7 +33,9 @@
       project-scoped start authorization on every surface.
 - [ ] **MAINT-011**: The system shall accept an optional recipe objective, an
       optional scope (paths or symbols), and optional free-text guidance when
-      starting a maintenance run.
+      starting a maintenance run, and shall require at least one recipe
+      objective or nonblank free-text guidance; scope alone shall not admit a
+      run.
 - [ ] **MAINT-012**: When a user supplies named scope targets, the system
       shall resolve them before any check claims coverage of that scope.
 - [ ] **MAINT-013**: If a named scope target is ambiguous or missing, then the
@@ -132,7 +134,8 @@
 
 - [ ] **MAINT-060**: The system shall allow a project to configure a
       maintenance schedule with the same objective/scope/guidance/limits
-      shape as a manual run, opt-in and default disabled.
+      shape and objective admission rule as a manual run, opt-in and default
+      disabled.
 - [ ] **MAINT-061**: The system shall expose each maintenance schedule's
       timezone and next scheduled occurrence.
 - [ ] **MAINT-062**: While an equivalent maintenance run for a schedule is

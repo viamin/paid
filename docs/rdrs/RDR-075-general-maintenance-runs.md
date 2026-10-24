@@ -141,8 +141,8 @@ context, and a distinction between findings and execution failures.
 Introduce a first-class maintenance goal within the existing `AgentRun`
 lifecycle. A maintenance recipe supplies a reusable objective, investigation
 instructions, applicable evidence collectors, and validation guidance. A
-manual run may use a recipe or supply an original question; a catalog entry
-is not required to investigate a user-directed maintenance question.
+manual run may use a recipe or supply a nonblank original question; a catalog
+entry is not required to investigate a user-directed maintenance question.
 
 Each run captures the project, pinned repository revision, objective,
 optional scope, user guidance, effective recipe version, selected tool
