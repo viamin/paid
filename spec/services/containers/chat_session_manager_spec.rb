@@ -79,6 +79,18 @@ RSpec.describe Containers::ChatSessionManager do
       manager.execute_agent_command(prompt: "Fix the bug")
     end
 
+    it "honors a caller-provided execution timeout so bounded callers stay inside their own wall clock" do
+      expect(mock_container).to receive(:exec).with(
+        harness_command,
+        hash_including(wait: 600)
+      ) do |_cmd, **_opts, &block|
+        block&.call(:stdout, "done\n")
+        [ [ "done\n" ], [], 0 ]
+      end
+
+      manager.execute_agent_command(prompt: "Fix the bug", timeout: 600)
+    end
+
     it "passes session_id to harness when resuming" do
       expect(Runners::HarnessExecutionPlan).to receive(:for_runner_key).with(
         runner_key: "claude",
