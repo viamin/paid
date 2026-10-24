@@ -105,6 +105,31 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
     expect(DesignArtifactFinding.sole).to have_attributes(status: "resolved", resolved_at: be_present)
   end
 
+  # @spec DESIGN-RECONCILIATION-001
+  it "resolves the directory-level unavailable sentinel after complete discovery" do
+    sentinel = create(:design_artifact_finding, project:, account: project.account,
+      artifact_path: "docs/rdrs", revision: "main", state: "unverifiable")
+
+    described_class.resolve_removed_rdr_findings(
+      project:, paths: [], directory: "docs/rdrs", file_pattern: "RDR-*.md"
+    )
+
+    expect(sentinel.reload).to have_attributes(status: "resolved", resolved_at: be_present)
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
+  it "keeps an identical finding in another tenant untouched" do
+    other_project = create(:project)
+    other = create(:design_artifact_finding, project: other_project, account: other_project.account,
+      artifact_path: "docs/rdrs/RDR-100.md", revision: revision)
+
+    described_class.resolve_removed_rdr_findings(
+      project:, paths: [], directory: "docs/rdrs", file_pattern: "RDR-*.md"
+    )
+
+    expect(other.reload.status).to eq("open")
+  end
+
   # @spec OPERATOR-INBOX-018
   it "resolves a deferred RDR finding when the underlying RDR is removed after reconciliation" do
     described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])

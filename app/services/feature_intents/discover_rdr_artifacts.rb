@@ -1,11 +1,15 @@
 # frozen_string_literal: true
 
 module FeatureIntents
-  # Lists RDR files using the project's configured convention. File SHA
-  # makes each reconciliation finding refer to an immutable document revision.
+  # Lists configured design artifacts at an immutable repository revision.
+  # Complete discovery is distinct from unavailable coverage so reconciliation
+  # can safely retire only findings disproven by repository evidence.
   # @spec DESIGN-RECONCILIATION-001
   class DiscoverRdrArtifacts
     Artifact = Data.define(:path, :revision, :body)
+    Discovery = Data.define(:artifacts, :revision, :coverage_complete, :directory_status) do
+      def complete? = coverage_complete
+    end
 
     DEFAULT_DIRECTORY = "docs/rdrs"
     DEFAULT_FILE_PATTERN = "RDR-*.md"
@@ -28,12 +32,19 @@ module FeatureIntents
 
     def call
       revision = branch_revision
-      return [ unverifiable_artifact ] unless revision
+      return unavailable_discovery unless revision
 
-      listed_entries = entries(revision)
-      return [ unverifiable_artifact ] unless listed_entries
+      tree = repository_tree(revision)
+      return unavailable_discovery(revision) unless complete_tree?(tree)
 
-      listed_entries.filter_map { |entry| artifact_for(entry, revision) }
+      entries = Array(tree.tree)
+      artifacts = entries.filter_map { |entry| artifact_for(entry, revision) }
+      Discovery.new(
+        artifacts:,
+        revision:,
+        coverage_complete: true,
+        directory_status: directory_status(entries, artifacts)
+      )
     end
 
     private
@@ -50,18 +61,35 @@ module FeatureIntents
       nil
     end
 
-    def entries(revision)
-      Array(project.client.contents(project.full_name, path: convention.directory, ref: revision))
+    def repository_tree(revision)
+      project.client.tree(project.full_name, revision, recursive: true)
     rescue GithubClient::Error, Faraday::Error
       nil
     end
 
-    def unverifiable_artifact
-      Artifact.new(path: convention.directory, revision: project.default_branch, body: nil)
+    def complete_tree?(tree)
+      tree.present? && tree.respond_to?(:tree) && !tree.tree.nil? && !(tree.respond_to?(:truncated) && tree.truncated)
+    end
+
+    def unavailable_discovery(revision = project.default_branch)
+      Discovery.new(
+        artifacts: [ Artifact.new(path: convention.directory, revision:, body: nil) ],
+        revision:,
+        coverage_complete: false,
+        directory_status: :unavailable
+      )
+    end
+
+    def directory_status(entries, artifacts)
+      return :matching_files if artifacts.any?
+      return :absent unless entries.any? { |entry| entry.path == convention.directory || entry.path.start_with?("#{convention.directory}/") }
+      return :empty if entries.any? { |entry| entry.path == convention.directory && entry.type == "tree" }
+
+      :no_matching_files
     end
 
     def artifact_for(entry, revision)
-      return unless entry.type == "file" && File.dirname(entry.path) == convention.directory
+      return unless entry.type == "blob" && File.dirname(entry.path) == convention.directory
       return unless File.fnmatch?(convention.file_pattern, File.basename(entry.path))
 
       Artifact.new(path: entry.path, revision:, body: body_for(entry.path, revision))
