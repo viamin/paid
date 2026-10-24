@@ -8,7 +8,7 @@ module FeatureIntents
   # @spec FACET-CONFIDENCE-012 FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
   class AssessFacet
     include Llm::OutputNormalizer
-    RUBRIC_VERSION = "facet-confidence-v1"
+    RUBRIC_VERSION = "facet-confidence-v2"
     MODEL_VERSION = "claude-sonnet-4-6"
     TIMEOUT = 60
     STATUSES = %w[completed clarification_needed unknown].freeze
@@ -45,7 +45,7 @@ module FeatureIntents
         return supersede! unless current_evidence?
         return fail!("invalid_structured_output") unless valid_payload?(payload)
 
-        attributes = payload.slice("intent_score", "technical_score", "explanation", "evidence_references").merge(
+        attributes = payload.slice("intent_score", "technical_score", "explanation", "inferred_fit", "evidence_references").merge(
           rubric_version: RUBRIC_VERSION, model_version: MODEL_VERSION
         )
         if payload["status"] == "completed"
@@ -84,11 +84,12 @@ module FeatureIntents
     end
 
     def valid_payload?(payload)
-      payload.is_a?(Hash) && payload.keys.sort == %w[evidence_references explanation intent_score status technical_score] &&
-        STATUSES.include?(payload["status"]) && valid_explanation?(payload) && valid_references?(payload) && valid_scores?(payload)
+      payload.is_a?(Hash) && payload.keys.sort == %w[evidence_references explanation inferred_fit intent_score status technical_score] &&
+        STATUSES.include?(payload["status"]) && valid_explanation?(payload) && valid_inferred_fit?(payload) && valid_references?(payload) && valid_scores?(payload)
     end
 
     def valid_explanation?(payload) = payload["explanation"].is_a?(String) && payload["explanation"].strip.present?
+    def valid_inferred_fit?(payload) = payload["inferred_fit"].nil? || payload["inferred_fit"].is_a?(String)
 
     def valid_references?(payload)
       references = payload["evidence_references"]
@@ -111,7 +112,7 @@ module FeatureIntents
         Assess the active candidate direction for this facet using rubric #{RUBRIC_VERSION}.
         Intent certainty measures attributable human direction. Technical confidence measures demonstrated feasibility. They are independent 0-100 integer scores; unknown is null, never a guess.
         Do not count duplicate evidence, UI interactions, or repeated agent suggestions as agreement. An explicit correction supersedes its earlier statement. If collaborators conflict, return clarification_needed instead of selecting a majority.
-        Return only JSON with exactly status, intent_score, technical_score, explanation, evidence_references. status is completed, clarification_needed, or unknown. A completed result requires both scores. Evidence references must be drawn exactly from the supplied active evidence.
+        Return only JSON with exactly status, intent_score, technical_score, inferred_fit, explanation, evidence_references. inferred_fit is a distinct assessment of the candidate's fit, never a human preference; use null when unknown. status is completed, clarification_needed, or unknown. A completed result requires both scores. Evidence references must be drawn exactly from the supplied active evidence.
 
         Facet: #{facet.name}
         Design claim: #{facet.design_claim}

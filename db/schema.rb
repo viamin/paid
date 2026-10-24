@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1903,6 +1903,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_090000) do
     t.integer "evidence_revision", null: false
     t.text "explanation", default: "", null: false
     t.bigint "feature_intent_facet_direction_id", null: false
+    t.text "inferred_fit"
     t.integer "intent_score"
     t.string "model_version", null: false
     t.string "rubric_version", null: false

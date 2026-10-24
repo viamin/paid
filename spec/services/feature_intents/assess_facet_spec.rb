@@ -21,6 +21,7 @@ RSpec.describe FeatureIntents::AssessFacet do
   let(:response) do
     double(success?: true, output: JSON.generate(
       "status" => "completed", "intent_score" => 90, "technical_score" => 75,
+      "inferred_fit" => "Keyboard first directly serves the issue scope.",
       "explanation" => "The explicit keyboard requirement is clear; feasibility needs prototype evidence.",
       "evidence_references" => [ evidence.source_reference ]
     ))
@@ -32,7 +33,7 @@ RSpec.describe FeatureIntents::AssessFacet do
     result = described_class.call(assessment:)
 
     expect(result).to have_attributes(status: "completed", intent_score: 90, technical_score: 75,
-      evidence_references: [ evidence.source_reference ], rubric_version: described_class::RUBRIC_VERSION)
+      inferred_fit: "Keyboard first directly serves the issue scope.", evidence_references: [ evidence.source_reference ], rubric_version: described_class::RUBRIC_VERSION)
     expect(AgentHarness).to have_received(:send_message).with(a_string_including("human_statement"), hash_including(tools: :none))
   end
 
@@ -57,6 +58,7 @@ RSpec.describe FeatureIntents::AssessFacet do
   it "leaves conflicting collaborators unresolved rather than selecting a majority direction" do
     allow(AgentHarness).to receive(:send_message).and_return(double(success?: true, output: JSON.generate(
       "status" => "clarification_needed", "intent_score" => nil, "technical_score" => 80,
+      "inferred_fit" => nil,
       "explanation" => "Collaborators disagree about keyboard-only behavior.", "evidence_references" => [ evidence.source_reference ]
     )))
 
@@ -74,6 +76,7 @@ RSpec.describe FeatureIntents::AssessFacet do
       status = evaluation_case[:intent].nil? ? "unknown" : "completed"
       allow(AgentHarness).to receive(:send_message).and_return(double(success?: true, output: JSON.generate(
         "status" => status, "intent_score" => evaluation_case[:intent], "technical_score" => evaluation_case[:technical],
+        "inferred_fit" => nil,
         "explanation" => evaluation_case[:name], "evidence_references" => [ evidence.source_reference ]
       )))
 

@@ -8,6 +8,8 @@ RSpec.describe PromptAssembly::Sections::AdmittedIntent do
   it "renders the immutable baseline with distinct evidence categories" do
     run = OpenStruct.new(external_metadata: {
       "admitted_intent" => {
+        "design_baseline" => "a" * 40,
+        "design_document_paths" => [ "docs/intent/example.md" ],
         "facets" => [
           {
             "name" => "Navigation",
@@ -25,6 +27,8 @@ RSpec.describe PromptAssembly::Sections::AdmittedIntent do
     section = described_class.call(context)
 
     expect(section.content).to include("intent 90, technical 85")
+    expect(section.content).to include("Admitted design revision: #{'a' * 40}")
+    expect(section.content).to include("docs/intent/example.md")
     expect(section.content).to include("Expressed intent: Keyboard first.")
     expect(section.content).to include("Inferred fit: The selected direction fits the issue.")
     expect(section.content).to include("Demonstrated feasibility: Prototype passed.")
