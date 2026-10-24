@@ -250,7 +250,7 @@ module FeatureIntents
     end
 
     def ownership_table_header?(line)
-      markdown_table_row?(line) && line.match?(/\bowner(?:ship)?\b/i) && line.match?(/\b(?:issue|work)\b/i)
+      markdown_table_row?(line) && line.match?(/\bowner(?:s|ship)?\b/i) && line.match?(/\b(?:issue|work)\b/i)
     end
 
     def markdown_table_row?(line)

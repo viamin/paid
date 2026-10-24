@@ -168,7 +168,8 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
   end
 
-  it "does not treat bare ownership-table references as local issue links in an active RDR" do
+  # @spec DESIGN-RECONCILIATION-001
+  it "recognizes plural ownership headers without treating external bare references as local issue links" do
     forager = create(:project, account: project.account, owner: "viamin", repo: "Forager-iOS")
     [ 4255, 4256 ].each { |number| create(:issue, project: forager, github_number: number) }
     artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
@@ -176,7 +177,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
       body: <<~MARKDOWN
         ## Related Issues
 
-        | Owner | Work |
+        | Owners | Work |
         | --- | --- |
         | viamin/Forager-iOS | [#4255](https://github.com/viamin/Forager-iOS/issues/4255), #4256 |
       MARKDOWN
