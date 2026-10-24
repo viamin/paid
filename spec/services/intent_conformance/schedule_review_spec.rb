@@ -89,6 +89,18 @@ RSpec.describe IntentConformance::ScheduleReview do
     expect(IntentConformanceReviewSchedule.last.approved_design_revision).to eq("scoped-design-v1")
   end
 
+  # @spec CONFIDENCE-DELIVERY-010
+  it "does not schedule against a confidence snapshot before its release completes" do
+    confidence_feature = create(:feature_intent, :confidence_driven, project: project, status: "design_open", approved_design_revision: nil)
+    create(:feature_intent_issue, feature_intent: confidence_feature, issue: issue,
+      release_state: "pending", release_snapshot: { "merged_baseline" => "scoped-design-v1" })
+
+    expect {
+      schedule
+    }.to not_change(IntentConformanceReviewSchedule, :count)
+      .and not_have_enqueued_job(IntentConformance::ReviewJob)
+  end
+
   it "does not schedule when the project has not opted into shadow review or complete enforcement" do
     project.account.tenant_setting!.update!(features: {})
 

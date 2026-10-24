@@ -82,7 +82,7 @@ module IntentConformance
     end
 
     def feature_intent
-      @feature_intent ||= issue.feature_intent
+      @feature_intent ||= confidence_link&.feature_intent || issue.feature_intent
     end
 
     def client
@@ -141,9 +141,10 @@ module IntentConformance
 
     # @spec CONFIDENCE-DELIVERY-010
     def baseline_revision
-      return confidence_link.release_snapshot["merged_baseline"] if confidence_link
+      return confidence_link.release_snapshot["merged_baseline"] if confidence_link&.release_state == "released"
+      return if confidence_link
 
-      feature_intent.approved_design_revision if feature_intent.approval_gated?
+      feature_intent.approved_design_revision if feature_intent&.approval_gated?
     end
 
     def design_document_paths
@@ -153,7 +154,8 @@ module IntentConformance
     end
 
     def confidence_link
-      @confidence_link ||= FeatureIntentIssue.find_by(feature_intent: feature_intent, issue: issue)
+      @confidence_link ||= FeatureIntentIssue.joins(:feature_intent)
+        .find_by(issue_id: issue.id, feature_intents: { delivery_policy: "confidence_driven" })
     end
 
     def diff_entries(diff)

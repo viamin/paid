@@ -98,7 +98,8 @@ module IntentConformance
 
     # @spec CONFIDENCE-DELIVERY-010
     def baseline_revision
-      return confidence_link.release_snapshot["merged_baseline"] if confidence_link
+      return confidence_link.release_snapshot["merged_baseline"] if confidence_link&.release_state == "released"
+      return if confidence_link
 
       feature_intent.approved_design_revision if feature_intent&.approval_gated? && feature_intent.released?
     end

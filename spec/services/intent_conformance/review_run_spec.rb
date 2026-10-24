@@ -236,6 +236,41 @@ RSpec.describe IntentConformance::ReviewRun do
     end
   end
 
+  # @spec CONFIDENCE-DELIVERY-010
+  context "when the issue is linked to approval-gated and confidence-driven features" do
+    let(:confidence_feature) do
+      create(:feature_intent, :confidence_driven,
+        project: project,
+        status: "design_open",
+        approved_design_revision: nil)
+    end
+
+    before do
+      create(:feature_intent_issue, feature_intent: confidence_feature, issue: issue,
+        release_state: "released",
+        release_snapshot: { "merged_baseline" => "scoped-design-v1" },
+        readiness_mapping: { "design_artifacts" => [ { "path" => "docs/rdrs/RDR-1000-scoped.md" } ] })
+      allow(github_client).to receive(:file_content)
+        .with("acme/widgets", path: "docs/rdrs/RDR-1000-scoped.md", ref: "scoped-design-v1")
+        .and_return("# RDR-1000\n\nThe scoped widget SHALL be green.")
+    end
+
+    it "uses the released confidence link rather than the compatibility feature accessor" do
+      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+        outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "Within scope."
+      }.to_json))
+
+      expect(call).to have_attributes(approved_design_revision: "scoped-design-v1")
+    end
+
+    it "does not review using a pending confidence snapshot" do
+      confidence_feature.feature_intent_issues.find_by!(issue: issue).update!(release_state: "pending")
+
+      expect(AgentHarness).not_to receive(:send_message)
+      expect(call).to be_nil
+    end
+  end
+
   # @spec INTENT-CONFORMANCE-REVIEW-003
   context "when the reviewer call is unsuccessful" do
     it "records not_evaluated" do
