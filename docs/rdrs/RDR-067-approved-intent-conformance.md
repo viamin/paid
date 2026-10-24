@@ -45,7 +45,11 @@ content-adjudicated. Its recorded one missed drift count is not reviewer-
 accuracy evidence, and it did not evaluate the promotion rule. An Implemented
 status requires a valid replacement evaluation. The attempted 2026-10-10
 replacement is also invalidated because it was committed before its purported
-events and lacks auditable per-case inputs. Enforcement remains disabled. The RDR-066
+events and lacks auditable per-case inputs. Enforcement remains disabled. On
+2026-10-23, #4594 added the explicitly selected solo-maintainer evaluation
+policy (see the amendment section below) with a blinded labeling workflow;
+the qualifying evaluation run itself remains open operator follow-up. The
+RDR-066
 lifecycle still owns population of `feature_intents.design_document_paths`; an
 empty list correctly yields `not_evaluated`. Although the rollout flags are
 default-off, they are tenant/project opt-ins rather than an enforcement
@@ -230,3 +234,48 @@ and the [2026-10-13 worksheet](../intent/intent-conformance-rollout/shadow-evalu
 therefore record the adjudication criterion and every derived measure as
 unmet. Two independently authenticated humans must adjudicate the frozen
 corpus before an operator records reviewer runs. Enforcement remains disabled.
+
+## 2026-10-23 Solo-Maintainer Evaluation Policy Amendment (#4594)
+
+Paid has one maintainer, so the two-independently-authenticated-humans
+staffing prerequisite above is unsatisfiable as written. Rather than
+fabricating identities or silently weakening the team policy, the approved
+rollout intent
+([intent-conformance-rollout-design.md](../intent/intent-conformance-rollout/intent-conformance-rollout-design.md)
+§Solo-maintainer evaluation policy) adds an **explicitly selected**
+solo-maintainer evaluation policy with these binding rules:
+
+- The team policy remains the default. A ledger with no recorded
+  `evaluation_policy` declaration keeps the two-operator requirement, and
+  historical bot-authored records are never reinterpreted as qualifying
+  solo human evidence.
+- The solo policy is declared once, before any label, naming the single
+  authenticated maintainer. Only that maintainer records reference labels,
+  post-result revisions, and the freeze action, under the existing
+  tenant/project authorization. No additional operator identities are
+  created, and an agent cannot impersonate the human decision.
+- Reference labels are recorded blinded: pinned diff, approved design
+  revision, and supporting context are visible; reviewer outputs and
+  preassigned strata are not, and the real reviewer (through
+  `agent_harness`) runs only after the reference set is frozen. Skipped
+  cases never count as completed, and post-result revisions are appended
+  without overwriting the original blinded labels or the scores derived
+  from them.
+- **Assurance limits:** a solo reference set has no independence and no
+  tie-break; one human's mistake or bias is the reference for every case.
+  It is strictly weaker evidence than the team policy and must be reported
+  next to every measure. Once a project has two operators, the team policy
+  SHOULD be re-run before an independence-sensitive promotion decision.
+
+The measured-rollout workflow (freeze → blinded labeling → freeze → execute
+the real reviewer → reproducible report → explicit human promotion
+decision), the 30-case target, the numerical promotion thresholds, and the
+rollout guard are unchanged. Missing production measures (escaped changes,
+delivery baseline, rework, human time) remain explicitly pending follow-up.
+Implementation acceptance of this workflow is distinct from authorization
+for unattended enforcement: completing labels or a passing evaluation never
+automatically attests issue completion, closes GitHub work, or enables
+enforcement. What can close [#3861](https://github.com/viamin/paid/issues/3861)
+is shipping this workflow with its specs; the qualifying solo (or team)
+evaluation run, its report, and the promotion/rollback decision remain
+rollout follow-ups owned by the operator.

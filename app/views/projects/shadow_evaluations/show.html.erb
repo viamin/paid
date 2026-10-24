@@ -1,0 +1,30 @@
+<%# @spec INTENT-CONFORMANCE-ROLLOUT-005 @spec INTENT-CONFORMANCE-ROLLOUT-006 @spec INTENT-CONFORMANCE-ROLLOUT-009 %>
+<div class="mx-auto max-w-4xl space-y-6 px-4 py-8" data-shadow-evaluation="<%= @evaluation.id %>">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Conformance evaluation</h1>
+      <p class="text-sm text-gray-600">
+        <%= @evaluation.purpose %> · policy <span class="font-medium"><%= @evaluation.policy %></span> ·
+        maintainer <%= @evaluation.solo_maintainer&.email %> · status
+        <span class="font-medium" data-evaluation-status><%= @evaluation.status %></span>
+      </p>
+    </div>
+    <%= link_to "Back to Inbox", inbox_path(project_id: @project, kind: @inbox_context[:inbox_kind], sort: @inbox_context[:inbox_sort], entry_id: @inbox_context[:inbox_entry_id]),
+          data: { turbo_frame: "_top" },
+          class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+  </div>
+
+  <% if @corpus_changed %>
+    <div class="rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+      <strong>The corpus manifest has changed since this evidence generation.</strong>
+      The recorded completion above no longer describes the current corpus: start a new evaluation from
+      the Inbox item for the new manifest, and preserve this record as historical evidence.
+    </div>
+  <% end %>
+
+  <% if @evaluation.labeling? %>
+    <%= render "labeling", evaluation: @evaluation, progress: @progress, case_view: @case_view, project: @project, inbox_context: @inbox_context %>
+  <% else %>
+    <%= render "answers", evaluation: @evaluation, project: @project, inbox_context: @inbox_context %>
+  <% end %>
+</div>
