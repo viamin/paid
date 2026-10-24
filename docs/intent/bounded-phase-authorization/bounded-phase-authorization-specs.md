@@ -40,9 +40,13 @@ Status markers: `[ ]` proposed implementation gap.
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-005** — When pinned intent/acceptance
   expands, policy or permissions change, a new risk appears, or repair-to-scope
   correspondence is unknown or out of scope, the system SHALL visibly require
-  reassessment and SHALL not continue until an authorized actor stops or issues
-  new explicit consent.
-  *Planned tests:* invalidation and reassessment specs.
+  reassessment and SHALL not continue until an authorized actor stops the
+  authorization, supersedes it with newly consented scope, or resumes only the
+  unchanged authorization; a resume SHALL NOT broaden scope and SHALL be
+  re-evaluated when the triggering condition recurs.
+  *Planned tests:* invalidation and reassessment specs, including resumption of
+  an unchanged authorization after a triggering condition resolves without
+  scope expansion (for example a policy change that is restored).
 
 - [ ] **BOUNDED-PHASE-AUTHORIZATION-006** — When semantic correspondence is
   evaluated, the system SHALL use `agent_harness` with bounded evidence and a

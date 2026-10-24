@@ -19,8 +19,10 @@ dependencies, mentions, and unrelated PRs never extend it.
 The authorization stores its author, consent projection, permitted actions,
 intent/acceptance references, policy signature, lifecycle timestamps, and
 audit references. All records use project/account tenant scoping and normal
-actor policy checks. Expiry, completion, revocation, reassessment-required,
-and superseded are terminal for admission until a new explicit authorization.
+actor policy checks. Expiry, completion, revocation, and superseded are
+terminal for admission until a new explicit authorization. Reassessment-
+required pauses admission until an authorized actor resolves it by stopping,
+superseding, or resuming the unchanged authorization.
 
 ## Policy composition
 
@@ -49,8 +51,14 @@ Unavailable or malformed output is `unknown` and fails closed.
 An intent digest change, acceptance expansion, permission/policy change, new
 risk, or `unknown`/`out_of_scope` correspondence transitions the authorization
 to `reassessment_required` under lock and emits an Inbox decision. Only an
-authorized actor can resolve it, by stopping or issuing a newly consented
-authorization. No semantic result bypasses deterministic enforcement.
+authorized actor can resolve it, by stopping the authorization, superseding it
+with a newly consented authorization, or resuming the unchanged authorization
+when the triggering condition resolved without scope expansion — for example a
+policy change that was restored. Resumption transitions back to `active` under
+the same lock after re-verifying policy signature, lineage, and expiry, emits
+an audit event, and never edits the pinned scope; a resumed authorization is
+re-evaluated if any trigger recurs. No semantic result bypasses deterministic
+enforcement.
 
 ## Admission and concurrency
 
@@ -84,7 +92,8 @@ into this record.
 ## Test-first implementation slices
 
 1. Model/audit/policy unit specs establish scope, lineage non-inheritance,
-   lifecycle, revocation, expiry, and endpoint race behavior.
+   lifecycle, revocation, expiry, reassessment resolution (stop, supersede,
+   resume unchanged), and endpoint race behavior.
 2. Effective-policy and queue specs establish exclusive stopping despite
    enabled downstream defaults and admission/dequeue/follow-up rechecks.
 3. Scope-assessment specs establish bounded `agent_harness` input and fail-
