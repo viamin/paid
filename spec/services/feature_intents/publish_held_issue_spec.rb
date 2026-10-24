@@ -25,6 +25,9 @@ class PublishHeldIssueFakeClient
   end
 
   def issue(_repo, number)
+    remote = @remote_items.reverse.find { |candidate| candidate.number == number }
+    return read_back(remote) if remote
+
     created = @created_issues.reverse.find { |entry| entry[:number] == number }
     return remote_issue(number: 4242, body: "missing") unless created
 
@@ -33,6 +36,15 @@ class PublishHeldIssueFakeClient
       title: created[:title],
       body: read_back_body_override || created[:body],
       labels: read_back_labels_override || [ @planning_label ]
+    )
+  end
+
+  def read_back(remote)
+    remote_issue(
+      number: remote.number,
+      title: remote.title,
+      body: read_back_body_override || remote.body,
+      labels: read_back_labels_override || remote.labels.map(&:name)
     )
   end
 
@@ -156,6 +168,20 @@ RSpec.describe FeatureIntents::PublishHeldIssue do
     expect(client.created_issues.length).to eq(1)
     expect(result.issue.github_number).to eq(4242)
     expect(feature.feature_intent_issues.where(issue_id: result.issue.id)).to exist
+  end
+
+  it "raises for retry when a recovered issue no longer has its planning hold" do
+    published = publish
+    published.issue.destroy!
+    FeatureIntentIssue.where(feature_intent: feature).destroy_all
+    client.remote_items << client.remote_issue(
+      number: 4242,
+      body: client.created_issues.first[:body],
+      labels: []
+    )
+
+    expect { publish }.to raise_error(GithubClient::Error, /planning hold was not read back/)
+    expect(feature.feature_intent_issues).to be_empty
   end
 
   it "preserves unrelated labels and human holds on a reused published issue" do
