@@ -33,8 +33,9 @@ module IntentConformance
 
       def self.call(...) = new(...).call
 
-      def initialize(evaluation:)
+      def initialize(evaluation:, cancellation_check: -> { false })
         @evaluation = evaluation
+        @cancellation_check = cancellation_check
       end
 
       def call
@@ -85,16 +86,19 @@ module IntentConformance
       end
 
       def execute_cases
-        @evaluation.update!(status: "executing", execute_started_at: Time.current)
+        @evaluation.update!(status: "running", execute_started_at: Time.current, execution_heartbeat_at: Time.current)
         executed = 0
         failed = 0
 
         @evaluation.corpus.cases.each do |corpus_case|
+          return cancel(executed, failed) if cancellation_requested?
+
           next if evaluated_run_for(corpus_case.fetch("id"))
 
           verdict, failure_reason, model, cost = review_case(corpus_case)
           upsert_run(corpus_case, verdict, failure_reason, model, cost)
           verdict == NOT_EVALUATED ? failed += 1 : executed += 1
+          heartbeat!
         end
 
         complete_or_fail(executed, failed)
@@ -239,6 +243,20 @@ module IntentConformance
         end
         log_executed(executed, failed)
         Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
+      end
+
+      def cancel(executed, failed)
+        @evaluation.update!(status: "cancelled", execution_heartbeat_at: Time.current)
+        log_executed(executed, failed)
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
+      end
+
+      def cancellation_requested?
+        @cancellation_check.call
+      end
+
+      def heartbeat!
+        @evaluation.update_column(:execution_heartbeat_at, Time.current)
       end
 
       def prompt_digest

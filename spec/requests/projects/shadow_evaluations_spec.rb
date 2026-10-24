@@ -10,6 +10,7 @@ require "rails_helper"
 # @spec INTENT-CONFORMANCE-ROLLOUT-006
 # @spec INTENT-CONFORMANCE-ROLLOUT-009
 RSpec.describe "Projects::ShadowEvaluations" do
+  include ActiveJob::TestHelper
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account: account) }
   let(:member) { create(:user, :member, account: account) }
@@ -137,7 +138,8 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("intentionally_drifted")
   end
 
-  it "executes the real reviewer through agent_harness, records failures as not evaluated, and shows the report" do
+  # @spec INTENT-CONFORMANCE-ROLLOUT-010
+  it "queues reviewer execution promptly, then records failures and shows the report" do
     evaluation = start_evaluation_from_committed_corpus!
     label_all!(evaluation)
     freeze!(evaluation)
@@ -145,10 +147,16 @@ RSpec.describe "Projects::ShadowEvaluations" do
     # Corpus cases reference a repository outside this project, so every
     # reviewer attempt fails closed and is recorded as not evaluated —
     # prerequisite validation is never presented as execution.
-    post execute_project_shadow_evaluation_path(project, evaluation)
+    expect {
+      post execute_project_shadow_evaluation_path(project, evaluation)
+    }.to have_enqueued_job(IntentConformanceShadowEvaluationExecutionJob).with(evaluation.id, 1)
+    expect(evaluation.reload).to be_queued
+    expect(response).to redirect_to(project_shadow_evaluation_path(project, evaluation))
+
+    perform_enqueued_jobs
     follow_redirect!
 
-    expect(response.body).to include("not evaluated")
+    expect(response.body).to include("not_evaluated")
     expect(evaluation.reload).to be_failed
     evaluation.runs.each do |run|
       expect(run).to be_not_evaluated
@@ -159,6 +167,20 @@ RSpec.describe "Projects::ShadowEvaluations" do
 
     expect(response.body).to include("Reproducible report")
     expect(response.body).to include("solo")
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-010
+  it "allows an operator to cancel a queued execution from the Inbox-linked evaluation" do
+    evaluation = start_evaluation_from_committed_corpus!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    post execute_project_shadow_evaluation_path(project, evaluation)
+
+    post cancel_project_shadow_evaluation_path(project, evaluation)
+    follow_redirect!
+
+    expect(evaluation.reload).to be_cancelled
+    expect(response.body).to include("cancelled")
   end
 
   it "appends post-result revisions without overwriting the original blinded label" do

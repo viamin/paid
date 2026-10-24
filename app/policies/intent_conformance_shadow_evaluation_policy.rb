@@ -38,6 +38,10 @@ class IntentConformanceShadowEvaluationPolicy < ApplicationPolicy
     operator?
   end
 
+  def cancel?
+    execute?
+  end
+
   private
 
   def project

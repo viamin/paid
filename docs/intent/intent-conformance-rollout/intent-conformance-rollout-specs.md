@@ -118,3 +118,20 @@
   *Code:* `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`,
   `app/controllers/projects/shadow_evaluations_controller.rb`.
   *Test:* `spec/requests/projects/shadow_evaluations_spec.rb`.
+
+- [x] **INTENT-CONFORMANCE-ROLLOUT-010** — After reference labels are frozen,
+  an authorized execution request SHALL enqueue an idempotent background
+  reviewer operation and return promptly. The evaluation SHALL persist
+  queued/running/partial/failed/cancelled/completed state, case-level progress
+  and cost, support authorized cancellation and resume between cases without
+  re-spending evaluated cases, and recover a stale worker heartbeat without
+  fabricating unevaluated results.
+  *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
+  *Code:* `app/services/intent_conformance/shadow_evaluation/schedule_execution.rb`,
+  `app/jobs/intent_conformance_shadow_evaluation_execution_job.rb`,
+  `app/jobs/intent_conformance_shadow_evaluation_recovery_job.rb`,
+  `app/services/intent_conformance/shadow_evaluation/execute_reviewer.rb`.
+  *Test:* `spec/services/intent_conformance/shadow_evaluation/schedule_execution_spec.rb`,
+  `spec/jobs/intent_conformance_shadow_evaluation_execution_job_spec.rb`,
+  `spec/jobs/intent_conformance_shadow_evaluation_recovery_job_spec.rb`,
+  `spec/requests/projects/shadow_evaluations_spec.rb`.
