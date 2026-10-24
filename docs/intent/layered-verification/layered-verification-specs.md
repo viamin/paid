@@ -52,11 +52,19 @@
 
 - [ ] **LAYERED-VERIFY-004** — A `LayeredVerificationObligation`'s
   `approval_state` SHALL only transition to `approved` when its underlying
-  framework record transitions (a merged LID spec/LLD edit, a merged OKF file
-  edit, or a `ChangeIntent#activate!` for an offered CIR); chat exploration,
-  acknowledgment, or deferral in the Inbox SHALL NOT change `approval_state`.
-  A repair request that depends on a clarification still in `proposed` SHALL
-  be rejected with an explicit "clarification not yet approved" reason.
+  framework record's approval is persisted in the target repository (a merged
+  LID spec/LLD edit, a merged OKF file edit, or a merged offered-CIR PR
+  confirmed by re-syncing `external_revision` against its merge SHA, which
+  sets `approved_revision_reference` to that merged commit/PR in the same
+  transition); a `ChangeIntent#activate!` for an offered CIR SHALL record the
+  Paid-side approval decision as provenance and SHALL NOT by itself transition
+  `approval_state`, so an obligation whose offered-CIR PR is unmerged SHALL
+  remain `proposed` with its pending-persistence state visible
+  (`LAYERED-VERIFY-016`) even when its `ChangeIntent` row is `active`; chat
+  exploration, acknowledgment, or deferral in the Inbox SHALL NOT change
+  `approval_state`. A repair request that depends on a clarification still in
+  `proposed` SHALL be rejected with an explicit "clarification not yet
+  approved" reason.
   *Tests:* `spec/models/layered_verification_obligation_spec.rb`
   *Code:* `LayeredVerificationObligation#record_approval!` (#4432)
 

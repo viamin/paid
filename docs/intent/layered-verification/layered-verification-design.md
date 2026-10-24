@@ -136,9 +136,25 @@ text. It stores:
 | `external_revision` | The git SHA (or OKF content digest) the record was last synchronized against. |
 | `scope_description` | The bounded slice of behavior this obligation claims, in the project's own language — never the full source text. |
 | `approval_state` | `proposed` \| `approved` \| `unresolved`. Mirrors the external framework's own approval state; Paid does not grant approval the source repository hasn't recorded. |
-| `approved_revision_reference` | For `lid`/`okf`: the commit/PR that carried the approval. For `paid_offered_cir`: the `ChangeIntent`-shaped row's own id, since the offered record *is* Paid-authored and uses the existing `ChangeIntent` draft→active lifecycle rather than a new one. |
+| `approved_revision_reference` | For every framework — `lid`, `okf`, and `paid_offered_cir` alike — the merged commit/PR in the target repository that carried the approval. For `paid_offered_cir` this is the merge that landed the offered CIR Markdown file, not the `ChangeIntent` row's id: the offered record is canonical only as repository Markdown (`LAYERED-VERIFY-003`), so the `ChangeIntent` draft→active lifecycle (reused, not new) is Paid-side proposal and approval-decision provenance, never the approval reference itself. |
 | `superseded_by_id` | Self-referential, same shape as `ChangeIntent#superseded_by_id`. |
 | `synced_at` | When `external_revision` was last confirmed current. |
+
+**Offered-CIR approval boundary.** The `ChangeIntent` row and the offered-CIR
+repository file are two identities, and this contract does not pretend they
+are atomic: `ChangeIntent#activate!` records the Paid-side approval decision
+(who approved, when, in what scope) but does not by itself transition the
+obligation's `approval_state`. A `paid_offered_cir` obligation transitions to
+`approved` only at the re-sync that follows its offered-CIR PR merging — the
+sync that confirms the canonical file exists in the target repository, sets
+`external_revision` to the merge SHA, and sets `approved_revision_reference`
+to that merged commit/PR in the same transition. Until that re-sync the
+obligation remains `proposed` with its pending-persistence state visible in
+the Inbox (`LAYERED-VERIFY-016`), even though its `ChangeIntent` row is
+already `active`, and a repair request that depends on it is rejected — the
+approval is not canonical until its repository persistence completes, per
+RDR-076 §1 ("dependent repair cannot use that clarification as canonical
+until its required approval and persistence complete").
 
 **Concurrent revisions.** Two audits (or an audit and a manual edit to the
 target repo) can observe different `external_revision`s for the same
@@ -158,10 +174,14 @@ a draft against the obligation's own framework — a `ChangeIntent` draft for
 projects, or a proposed OKF file edit for OKF projects — and only becomes
 `approved` through that framework's own review path. Chat exploration,
 acknowledgment, or deferral in the Inbox never flips `approval_state` itself;
-only the underlying `ChangeIntent#activate!` (or the project's own merged PR,
-re-synced) does. A repair request that depends on a still-`proposed`
-clarification is rejected with an explicit "clarification not yet approved"
-reason, not silently queued.
+only the underlying framework record's approval **persisted in the target
+repository** does — the project's own merged spec/OKF/CIR PR, confirmed by
+re-syncing `external_revision` against its merge SHA. For an offered CIR,
+`ChangeIntent#activate!` records the Paid-side approval decision as
+provenance, and the obligation flips to `approved` only at that post-merge
+re-sync (see **Offered-CIR approval boundary** above). A repair request
+that depends on a still-`proposed` clarification is rejected with an explicit
+"clarification not yet approved" reason, not silently queued.
 
 ## Obligation, correspondence, and evidence identity
 
@@ -484,6 +504,7 @@ project's existing host policy.
 | Canonical EARS prefix | `LAYERED-VERIFY` | `VERIFY-*` (too generic — would collide project-wide); `LAYER-VERIFY-*` (singular, doesn't match the segment or folder name) | Matches the repo's existing `<domain>-VERIFY` convention (`APPLE-VERIFY`, `REVIEW-VERIFY`) and this segment's folder name. |
 | Framework classification source | Effective persisted `projects.lid_mode` (an owner override included) plus request-time OKF bundle presence | Fresh checkout-time LID re-detection at each request | `lid_mode` is the persisted effective mode `lid-detection` owns, not a value derived afresh from the checkout; request-time re-detection would discard an owner's Full/Scoped override whenever the checkout lacks LID artifacts and misroute the project to the `None`/offered-CIR path. Only an explicit re-detect replaces the persisted mode. |
 | Obligation canonical home | Reference the existing framework's own record (LID spec, OKF file, or offered CIR); Paid never duplicates the text | A Paid-native obligation document as the new source of truth | RDR-076 explicitly rejects a parallel obligation store; `ChangeIntent`/OKF already solve durable-intent persistence. |
+| Offered-CIR approval reference | The merged repository commit/PR that landed the offered CIR file; `ChangeIntent#activate!` is Paid-side approval provenance only, and `approval_state` flips only at the post-merge re-sync | The `ChangeIntent` row's own id as `approved_revision_reference` | The offered CIR is canonical only as repository Markdown merged through the project's PR path (`LAYERED-VERIFY-003`); an internal row activated before that merge would mark the obligation approved while the canonical record and its revision do not exist yet, letting a dependent repair proceed against nothing — the exact canonical-source failure RDR-076 §1 rejects. |
 | Audit vs. repair authorization bar | Two separate Pundit checks (`manage_issues?` for audit, `update?` for repair) on two separate tool/controller actions | One shared permission gating both | A shared gate would let a broad grant imply repair authority, collapsing the RDR's audit/repair separation at the one layer meant to enforce it. |
 | Audit/repair run modeling | Two distinct `AgentRun::GOALS` values | One goal with a `mode: audit \| repair` metadata flag | A single goal needs an explicit runtime check to prevent repair behavior on every call site; two goals make "audit cannot repair" true by construction, matching the existing one-goal-per-lifecycle convention (`create_pr` vs `review`). |
 | Finding identity | `(project, obligation external_identity, claim_type, cause_signature)`, with `cause_signature` an AI-judged stable key | Deduplicate by text/description similarity | RDR-076 explicitly rejects textual similarity as sufficient; `cause_signature` mirrors the already-shipped `claim_key` dedup key in `REVIEW-VERIFY-003`. |
