@@ -254,6 +254,24 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(view_targets.map(&:slug)).to eq([ "project_change_intent_show" ])
     end
 
+    it "maps the shadow evaluations controller and views to the shadow evaluation targets" do # @spec INTENT-CONFORMANCE-ROLLOUT-009
+      controller_targets = described_class.call(changed_files: [ "app/controllers/projects/shadow_evaluations_controller.rb" ])
+      new_view_targets = described_class.call(changed_files: [ "app/views/projects/shadow_evaluations/new.html.erb" ])
+      show_view_targets = described_class.call(
+        changed_files: [
+          "app/views/projects/shadow_evaluations/show.html.erb",
+          "app/views/projects/shadow_evaluations/_labeling.html.erb",
+          "app/views/projects/shadow_evaluations/_answers.html.erb"
+        ]
+      )
+
+      expect(controller_targets.map(&:slug)).to eq(
+        [ "project_shadow_evaluation_new", "project_shadow_evaluation_show" ]
+      )
+      expect(new_view_targets.map(&:slug)).to eq([ "project_shadow_evaluation_new" ])
+      expect(show_view_targets.map(&:slug)).to eq([ "project_shadow_evaluation_show" ])
+    end
+
     it "maps the automation phases controller and show view to the automation phases target" do
       controller_targets = described_class.call(changed_files: [ "app/controllers/projects/automation_phases_controller.rb" ])
       view_targets = described_class.call(changed_files: [ "app/views/projects/automation_phases/show.html.erb" ])

@@ -16,12 +16,38 @@ RSpec.describe "Projects::ShadowEvaluations" do
   let(:project) { create(:project, account: account, created_by: owner) }
   let(:manifest_path) { "docs/intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-13.yml" }
   let(:manifest_commit) { `git rev-parse HEAD`.strip }
+  let(:corpus_dir) { Dir.mktmpdir }
 
   before { sign_in owner }
+
+  after { FileUtils.remove_entry(corpus_dir) }
 
   def start_evaluation!(actor: owner)
     post project_shadow_evaluations_path(project),
       params: { purpose: "rdr-067-measured-rollout", policy: "solo", manifest_path: manifest_path, manifest_commit: manifest_commit }
+    evaluation = project.intent_conformance_shadow_evaluations.last
+    expect(response).to redirect_to(project_shadow_evaluation_path(project, evaluation))
+    evaluation
+  end
+
+  # The committed 2026-10-13 corpus pins a frozen reviewer prompt whose digest
+  # the identity gate rejects by design, so reviewer-execution flows start
+  # from a throwaway committed corpus carrying the current reviewer identity
+  # (the same fixture shape the service specs use).
+  def start_evaluation_from_committed_corpus!
+    init_git_repo(corpus_dir)
+    commit = git_write!(corpus_dir, "corpus-manifest.yml",
+      { "cases" => full_strata_corpus_cases, "reviewer" => reviewer_identity }.to_yaml,
+      "add corpus manifest")
+    allow(Rails).to receive(:root).and_return(Pathname.new(corpus_dir))
+
+    post project_shadow_evaluations_path(project),
+      params: {
+        purpose: "rdr-067-measured-rollout", policy: "solo",
+        manifest_path: File.join(corpus_dir, "corpus-manifest.yml"), manifest_commit: commit
+      }
+    allow(Rails).to receive(:root).and_call_original
+
     evaluation = project.intent_conformance_shadow_evaluations.last
     expect(response).to redirect_to(project_shadow_evaluation_path(project, evaluation))
     evaluation
@@ -112,7 +138,7 @@ RSpec.describe "Projects::ShadowEvaluations" do
   end
 
   it "executes the real reviewer through agent_harness, records failures as not evaluated, and shows the report" do
-    evaluation = start_evaluation!
+    evaluation = start_evaluation_from_committed_corpus!
     label_all!(evaluation)
     freeze!(evaluation)
 

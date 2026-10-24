@@ -52,4 +52,5 @@ end
 RSpec.configure do |config|
   config.include ShadowEvaluationGitFixture, :no_db
   config.include ShadowEvaluationGitFixture, file_path: %r{spec/services/intent_conformance/shadow_evaluation/start_spec}
+  config.include ShadowEvaluationGitFixture, file_path: %r{spec/requests/projects/shadow_evaluations}
 end

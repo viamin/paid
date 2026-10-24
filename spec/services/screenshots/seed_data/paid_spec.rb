@@ -100,4 +100,19 @@ RSpec.describe Screenshots::SeedData::Paid do
     expect(marketplace_entry.current_version).to have_attributes(version: 1)
     expect(marketplace_entry.extension_points).to eq([ "workflow_strategies", "prompts" ])
   end
+
+  it "seeds a resumable solo shadow evaluation whose corpus manifest is present" do # @spec INTENT-CONFORMANCE-ROLLOUT-009
+    result = described_class.call
+
+    evaluation = IntentConformanceShadowEvaluation.find(result.dig("shadow_evaluation", "id"))
+    maintainer = User.find(result.dig("user", "id"))
+
+    expect(evaluation.project_id).to eq(result.dig("project", "id"))
+    expect(evaluation).to be_labeling
+    expect(evaluation.policy).to eq("solo")
+    expect(evaluation.purpose).to eq("rdr-067-measured-rollout")
+    expect(evaluation.solo_maintainer).to eq(maintainer)
+    expect(evaluation.corpus.matches_recorded_digest?).to be(true)
+    expect(evaluation.corpus.case_ids).to be_present
+  end
 end
