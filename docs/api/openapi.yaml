@@ -809,6 +809,35 @@ components:
                 properties:
                   kind: {type: string}
                   message: {type: string}
+            decisions:
+              type: array
+              items:
+                type: object
+                required: [id, kind, prompt, design_claim]
+                properties:
+                  id: {type: integer}
+                  kind: {type: string, enum: [question, inferred_decision]}
+                  prompt: {type: string}
+                  design_claim: {type: string}
+            affected_tasks:
+              type: array
+              items:
+                type: object
+                required: [number, title, url]
+                properties:
+                  number: {type: integer}
+                  title: {type: string}
+                  url: {type: string}
+            design_revisions:
+              type: array
+              items:
+                type: object
+                required: [number, revision, state, url]
+                properties:
+                  number: {type: integer}
+                  revision: {type: string}
+                  state: {type: string, enum: [merged, stale, open]}
+                  url: {type: string}
     RetryLimitedEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'

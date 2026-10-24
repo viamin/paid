@@ -686,7 +686,8 @@
   `app/serializers/api/v1/inbox_entry_serializer.rb`.
   *Test:* `spec/services/inbox/feature_decision_context_spec.rb`,
   `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
-  `spec/views/dashboard/inbox_detail_feature_decision_partial_spec.rb`.
+  `spec/views/dashboard/inbox_detail_feature_decision_partial_spec.rb`,
+  `spec/lib/committee/drivers_mobile_inbox_contract_spec.rb`.
 
 - [x] **OPERATOR-INBOX-020** — The traceability-gap Inbox lane, its badge
   count, filter availability, detail and direct-link access, and the supported
