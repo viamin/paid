@@ -92,9 +92,12 @@ module FeatureIntents
     def recovered_remote_issue
       return unless client.respond_to?(:search_issues)
 
-      client.search_issues("repo:#{project.full_name} in:body \"#{marker}\"", per_page: 100).items
+      remote = client.search_issues("repo:#{project.full_name} in:body \"#{marker}\"", per_page: 100).items
         .find { |candidate| candidate.body.to_s.include?(marker) }
-        &.then { |remote| Issues::UpsertFromGithub.call(project:, github_issue: remote) }
+      return unless remote
+
+      verify_read_back(remote)
+      Issues::UpsertFromGithub.call(project:, github_issue: remote)
     end
 
     def create_remote_issue
