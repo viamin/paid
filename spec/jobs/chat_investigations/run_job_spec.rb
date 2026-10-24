@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe ChatInvestigations::RunJob do
+  include_context "without qdrant vector search"
+
   # @spec QUESTION-EXPLORATION-010
   it "uses the low-priority queue with a bounded execution time" do
     expect(described_class.queue_name).to eq("low_priority")
@@ -32,7 +34,9 @@ RSpec.describe ChatInvestigations::RunJob do
 
     described_class.perform_now(investigation.id)
 
-    expect(investigation.reload).to have_attributes(status: "completed", result: "Repository evidence", reserved_cost_cents: 0)
+    expect(investigation.reload).to have_attributes(status: "completed", reserved_cost_cents: 0)
+    expect(investigation.result).to start_with("Knowledge-base search results for this question:")
+    expect(investigation.result).to include("Repository evidence")
   end
 
   it "does not execute queued work after execution is disabled" do

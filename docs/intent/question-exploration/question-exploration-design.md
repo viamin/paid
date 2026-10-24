@@ -145,7 +145,15 @@ Project budgets and execution capabilities bound autonomous investigations;
 reserve/check budget before dispatch, show progress, and support cancellation.
 Interrupted research preserves partial human input. Executable experiments use
 existing isolated previews/containers, never the application's HTML origin.
-Each investigation is a durable, question-scoped record with queued, running,
+An experiment investigation executes its prompt through the question's chat
+workspace runtime (the agent-harness execution plan inside the session's
+isolated container) under a bounded wall clock, and retains the bounded
+output, exit status and truncation evidence on the investigation; readiness
+of a workspace alone is never reported as experimental evidence, and a
+non-zero exit or runtime failure settles as failed while preserving the
+partial output. Research investigations report the knowledge-search scope
+they actually executed, including an explicit no-match outcome. Each
+investigation is a durable, question-scoped record with queued, running,
 authorization-required, completed, failed, and cancelled states. Admission
 locks the project while comparing active reservations with daily and monthly
 hard-stop budgets; a per-run hard stop bounds the individual request. The job
