@@ -46,7 +46,7 @@ RSpec.describe Committee::Drivers do
     end
   end
 
-  # @spec CONFIDENCE-DELIVERY-016
+  # @spec CONFIDENCE-DELIVERY-016 OPERATOR-INBOX-021
   it "documents feature-decision delivery policy and human action payloads" do
     feature_decision = schema.dig("components", "schemas", "FeatureDecisionEntry")
     properties = feature_decision.fetch("allOf").last.fetch("properties")
@@ -63,6 +63,62 @@ RSpec.describe Committee::Drivers do
         "properties" => {
           "kind" => { "type" => "string" },
           "message" => { "type" => "string" }
+        }
+      }
+    )
+  end
+
+  # @spec OPERATOR-INBOX-021
+  it "documents open feature decisions with their design claims" do
+    properties = schema.dig("components", "schemas", "FeatureDecisionEntry").fetch("allOf").last.fetch("properties")
+
+    expect(properties.fetch("decisions")).to include(
+      "type" => "array",
+      "items" => {
+        "type" => "object",
+        "required" => %w[id kind prompt design_claim],
+        "properties" => {
+          "id" => { "type" => "integer" },
+          "kind" => { "type" => "string", "enum" => %w[question inferred_decision] },
+          "prompt" => { "type" => "string" },
+          "design_claim" => { "type" => "string" }
+        }
+      }
+    )
+  end
+
+  # @spec OPERATOR-INBOX-021
+  it "documents the held tasks affected by a feature decision" do
+    properties = schema.dig("components", "schemas", "FeatureDecisionEntry").fetch("allOf").last.fetch("properties")
+
+    expect(properties.fetch("affected_tasks")).to include(
+      "type" => "array",
+      "items" => {
+        "type" => "object",
+        "required" => %w[number title url],
+        "properties" => {
+          "number" => { "type" => "integer" },
+          "title" => { "type" => "string" },
+          "url" => { "type" => "string" }
+        }
+      }
+    )
+  end
+
+  # @spec OPERATOR-INBOX-021
+  it "documents design-PR revisions with their review state" do
+    properties = schema.dig("components", "schemas", "FeatureDecisionEntry").fetch("allOf").last.fetch("properties")
+
+    expect(properties.fetch("design_revisions")).to include(
+      "type" => "array",
+      "items" => {
+        "type" => "object",
+        "required" => %w[number revision state url],
+        "properties" => {
+          "number" => { "type" => "integer" },
+          "revision" => { "type" => "string" },
+          "state" => { "type" => "string", "enum" => %w[merged stale open] },
+          "url" => { "type" => "string" }
         }
       }
     )
