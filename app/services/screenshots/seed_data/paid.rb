@@ -6,6 +6,10 @@ module Screenshots
   module SeedData
     class Paid
       POSTGRES_IMAGE = "postgres:16.15"
+      # Frozen RDR-067 corpus committed in-repo; the labeling screenshot reads
+      # it from disk, so the path must stay checked out with the app.
+      SHADOW_EVALUATION_MANIFEST_PATH =
+        "docs/intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-13.yml"
 
       class << self
         def call
@@ -105,6 +109,22 @@ module Screenshots
             record.decisions_made = "Rejected auto-activating drafts without human review to preserve intent provenance."
             record.status = "draft"
           end
+
+          # Converges the digest on repeat runs so the seeded evaluation always
+          # describes the manifest currently checked out.
+          # @spec INTENT-CONFORMANCE-ROLLOUT-009
+          shadow_evaluation = project.intent_conformance_shadow_evaluations
+            .find_or_initialize_by(purpose: "rdr-067-measured-rollout")
+          shadow_evaluation.assign_attributes(
+            policy: "solo",
+            status: "labeling",
+            manifest_path: SHADOW_EVALUATION_MANIFEST_PATH,
+            manifest_commit: "",
+            manifest_digest: Digest::SHA256.file(Rails.root.join(SHADOW_EVALUATION_MANIFEST_PATH)).hexdigest,
+            solo_maintainer: user,
+            created_by: user
+          )
+          shadow_evaluation.save!
 
           provider = user.runners.subscription.first!
           provider.update!(enabled_for_agent_runs: true, enabled_for_fallback: true)
@@ -430,6 +450,7 @@ module Screenshots
             "knowledge_artifact" => { "id" => knowledge_artifact.id },
             "remediation_decision" => { "id" => remediation_decision.id },
             "change_intent" => { "id" => change_intent.id },
+            "shadow_evaluation" => { "id" => shadow_evaluation.id },
             "installation_project" => { "id" => installation_project.id, "name" => installation_project.name }
           }
         end

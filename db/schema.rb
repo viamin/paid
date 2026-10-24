@@ -2356,6 +2356,67 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_112521) do
     t.index ["project_id"], name: "index_intent_conformance_review_schedules_on_project_id"
   end
 
+  create_table "intent_conformance_shadow_evaluation_labels", comment: "Durable blinded reference labels for one evaluation: save/resume state per case, original outcome preserved, post-result revisions appended alongside (#4594).", force: :cascade do |t|
+    t.string "case_id", null: false, comment: "Case id inside the frozen corpus manifest."
+    t.text "cited_design_claim", comment: "Cited approved design claim for the label."
+    t.datetime "created_at", null: false
+    t.string "outcome", comment: "within_scope | material_drift | uncertain; set when labeled."
+    t.text "reason", comment: "Maintainer's reason for the label."
+    t.datetime "recorded_at", comment: "When the label (or last save) was recorded."
+    t.bigint "recorded_by_id", null: false, comment: "Authenticated maintainer who recorded the label."
+    t.datetime "revised_at", comment: "When the revision was recorded."
+    t.bigint "revised_by_id", comment: "Authenticated maintainer who recorded the revision."
+    t.string "revised_outcome", comment: "Appended post-result revision; never overwrites the original outcome."
+    t.text "revised_reason", comment: "Reason for the post-result revision."
+    t.bigint "shadow_evaluation_id", null: false, comment: "Owning evaluation."
+    t.string "state", default: "pending", null: false, comment: "pending | labeled | skipped. Skipped cases are never counted as completed and block freeze."
+    t.datetime "updated_at", null: false
+    t.index ["recorded_by_id"], name: "idx_on_recorded_by_id_38f8005397"
+    t.index ["revised_by_id"], name: "idx_on_revised_by_id_74dce43a7b"
+    t.index ["shadow_evaluation_id", "case_id"], name: "idx_shadow_evaluation_labels_case", unique: true, comment: "One durable label row per case: saves update in place, giving durable save/resume."
+    t.index ["shadow_evaluation_id"], name: "idx_on_shadow_evaluation_id_faf0701cf6"
+  end
+
+  create_table "intent_conformance_shadow_evaluation_runs", comment: "Executed reviewer run per corpus case: the actual reviewer verdict recorded after the reference set froze (#4594). Failures persist as not_evaluated with a reason.", force: :cascade do |t|
+    t.string "case_id", null: false, comment: "Case id inside the frozen corpus manifest."
+    t.integer "cost_cents", default: 0, null: false, comment: "Reviewer invocation cost when available."
+    t.datetime "created_at", null: false
+    t.text "failure_reason", comment: "Why the reviewer output is missing or failed for this case."
+    t.string "prompt_digest", default: "", null: false, comment: "Digest of the reviewer prompt identity."
+    t.datetime "recorded_at", null: false, comment: "When the run was recorded."
+    t.string "reviewer_model", default: "", null: false, comment: "Model the reviewer ran with."
+    t.string "reviewer_run_id", default: "", null: false, comment: "Identifier for the reviewer invocation that produced this verdict."
+    t.bigint "shadow_evaluation_id", null: false, comment: "Owning evaluation."
+    t.datetime "updated_at", null: false
+    t.string "verdict", default: "not_evaluated", null: false, comment: "within_scope | material_drift | uncertain | not_evaluated."
+    t.index ["shadow_evaluation_id", "case_id"], name: "idx_shadow_evaluation_runs_case", unique: true, comment: "At most one executed reviewer run per case; re-execution retries failures in place."
+    t.index ["shadow_evaluation_id"], name: "idx_on_shadow_evaluation_id_ffb203051f"
+  end
+
+  create_table "intent_conformance_shadow_evaluations", comment: "Solo-maintainer RDR-067 shadow evaluation: one labeling session per evidence generation (project, purpose, frozen corpus manifest digest) with blinded reference labels, executed reviewer runs, and the reproducible report (#4594).", force: :cascade do |t|
+    t.datetime "completed_at", comment: "When every case had an executed reviewer verdict."
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", null: false, comment: "Authenticated operator who started the evaluation."
+    t.datetime "execute_started_at", comment: "When reviewer execution last started."
+    t.datetime "labels_frozen_at", comment: "Set by the explicit finish action; reviewer outputs stay hidden until then."
+    t.text "last_failure_reason", comment: "Why execution ended (or partially ended) without evaluated verdicts for every case."
+    t.string "manifest_commit", default: "", null: false, comment: "Git commit SHA of the frozen corpus manifest."
+    t.string "manifest_digest", default: "", null: false, comment: "SHA-256 of the frozen corpus manifest content; changing the corpus starts a new evidence generation."
+    t.string "manifest_path", null: false, comment: "Repository-relative path of the frozen corpus manifest."
+    t.string "policy", default: "solo", null: false, comment: "Explicitly selected evaluation policy. Only 'solo' is UI-selectable; the team policy stays CLI/ledger-owned."
+    t.bigint "project_id", null: false, comment: "Project whose corpus is evaluated; also the authorization boundary."
+    t.string "purpose", default: "", null: false, comment: "Evaluation purpose key (e.g. 'rdr-067-measured-rollout') linking the originating Inbox item."
+    t.jsonb "report", default: {}, null: false, comment: "Structured reproducible report (identities, labels, verdicts, confusion counts, provenance)."
+    t.text "report_markdown", comment: "Rendered markdown of the reproducible report."
+    t.bigint "solo_maintainer_id", comment: "The single authenticated maintainer declared for a solo evaluation; only this user labels, revises, and freezes."
+    t.string "status", default: "labeling", null: false, comment: "labeling → frozen → executing → completed | failed (see IntentConformanceShadowEvaluation::STATUSES)."
+    t.datetime "updated_at", null: false
+    t.index ["created_by_id"], name: "index_intent_conformance_shadow_evaluations_on_created_by_id"
+    t.index ["project_id", "purpose", "manifest_digest"], name: "idx_shadow_evaluations_one_per_evidence_generation", unique: true, comment: "Repeated Start/Resume actions reuse the same evaluation for the same evidence generation."
+    t.index ["project_id"], name: "index_intent_conformance_shadow_evaluations_on_project_id"
+    t.index ["solo_maintainer_id"], name: "idx_on_solo_maintainer_id_9b501cd90c"
+  end
+
   create_table "intent_conformance_verdicts", comment: "Independent conformance verdicts comparing a feature PR's HEAD against its approved design revision (RDR-067). One row per review run; the latest row for a given PR HEAD is authoritative for auto-merge gating.", force: :cascade do |t|
     t.string "approved_design_revision", null: false, comment: "Merged repository commit SHA of the approved RDR/LID design revision compared against."
     t.jsonb "cited_claims", default: [], null: false, comment: "Approved design claims the reviewer cited, e.g. [{design_ref:, claim_text:}]."
@@ -4626,6 +4687,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_112521) do
   add_foreign_key "intent_conformance_resolutions", "users", column: "resolved_by_id"
   add_foreign_key "intent_conformance_review_schedules", "issues"
   add_foreign_key "intent_conformance_review_schedules", "projects"
+  add_foreign_key "intent_conformance_shadow_evaluation_labels", "intent_conformance_shadow_evaluations", column: "shadow_evaluation_id"
+  add_foreign_key "intent_conformance_shadow_evaluation_labels", "users", column: "recorded_by_id"
+  add_foreign_key "intent_conformance_shadow_evaluation_labels", "users", column: "revised_by_id"
+  add_foreign_key "intent_conformance_shadow_evaluation_runs", "intent_conformance_shadow_evaluations", column: "shadow_evaluation_id"
+  add_foreign_key "intent_conformance_shadow_evaluations", "projects"
+  add_foreign_key "intent_conformance_shadow_evaluations", "users", column: "created_by_id"
+  add_foreign_key "intent_conformance_shadow_evaluations", "users", column: "solo_maintainer_id"
   add_foreign_key "intent_conformance_verdicts", "agent_runs", column: "reviewer_run_id"
   add_foreign_key "intent_conformance_verdicts", "issues"
   add_foreign_key "intent_conformance_verdicts", "projects"

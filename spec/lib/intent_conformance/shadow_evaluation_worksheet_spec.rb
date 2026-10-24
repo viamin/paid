@@ -4,6 +4,7 @@ require "rails_helper"
 require Rails.root.join("lib/intent_conformance/shadow_evaluation_worksheet")
 
 # @spec INTENT-CONFORMANCE-ROLLOUT-003
+# @spec INTENT-CONFORMANCE-ROLLOUT-008
 RSpec.describe IntentConformance::ShadowEvaluationWorksheet, :no_db do
   let(:manifest) { Rails.root.join("tmp/shadow-worksheet-manifest.yml") }
   let(:ledger) { Rails.root.join("tmp/shadow-worksheet-ledger.jsonl") }
@@ -55,6 +56,67 @@ RSpec.describe IntentConformance::ShadowEvaluationWorksheet, :no_db do
     expect(described_class.majority_verdict(agreement)).to eq("accepted")
     expect(described_class.majority_verdict(tie_break)).to eq("accepted")
     expect(described_class.majority_verdict(tie_break.reverse)).to eq("accepted")
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-005 @spec INTENT-CONFORMANCE-ROLLOUT-008
+  it "compiles a solo evaluation with policy provenance, confusion counts, and uncertainty handling" do
+    Dir.mktmpdir do |dir|
+      init_git_repo(dir)
+      manifest_path = File.join(dir, "manifest.yml")
+      ledger_path = File.join(dir, "ledger.jsonl")
+      cases = complete_corpus_cases
+      manifest_commit = git_write!(dir, manifest_path, { "cases" => cases }.to_yaml, "freeze corpus manifest")
+      event_base = { "manifest_commit" => manifest_commit, "manifest_digest" => IntentConformance::ShadowEvaluationLedger.manifest_digest(manifest_path) }
+
+      record_events_in_separate_commits(dir, ledger_path, solo_corpus_events(cases, event_base))
+
+      worksheet = described_class.compile(manifest_path:, ledger_path:, manifest_commit:)
+
+      expect(worksheet).to include("solo maintainer maintainer@paid (explicitly selected; no independence")
+      expect(worksheet).to include("| Uncertainty handling | 10 uncertain references")
+      expect(worksheet).to include("(reference→[within_scope, material_drift, uncertain])")
+      expect(worksheet).to include("| False alarms | 0.0% (0 / 10) | adjudication + shadow_run |")
+      expect(worksheet).to include("| Missed material drift | 10.0% (1 / 10) | adjudication + shadow_run |")
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-008
+  it "lists post-result revisions without letting them change the blinded scores" do
+    Dir.mktmpdir do |dir|
+      init_git_repo(dir)
+      manifest_path = File.join(dir, "manifest.yml")
+      ledger_path = File.join(dir, "ledger.jsonl")
+      cases = complete_corpus_cases
+      manifest_commit = git_write!(dir, manifest_path, { "cases" => cases }.to_yaml, "freeze corpus manifest")
+      event_base = { "manifest_commit" => manifest_commit, "manifest_digest" => IntentConformance::ShadowEvaluationLedger.manifest_digest(manifest_path) }
+
+      events = complete_corpus_events(cases, event_base)
+      # The maintainer retracts the A-02 reference label after seeing the
+      # reviewer's within_scope verdict. The revision is retained evidence,
+      # but the missed-drift measure must keep scoring the original label.
+      revision = event_base.merge(
+        "type" => "label_revision", "event_id" => "rev-a02", "case_id" => "A-02", "operator" => "op-a",
+        "original_verdict" => "material_drift", "revised_verdict" => "within_scope",
+        "reason" => "reviewer cited a non-binding implementation choice", "recorded_at" => "2026-10-10T10:00:00Z"
+      )
+      record_events_in_separate_commits(dir, ledger_path, events + [ revision ])
+
+      worksheet = described_class.compile(manifest_path:, ledger_path:, manifest_commit:)
+
+      expect(worksheet).to include("Post-result label revisions (never rescored)")
+      expect(worksheet).to include("| A-02 | material_drift | within_scope | reviewer cited a non-binding implementation choice |")
+      expect(worksheet).to include("| Missed material drift | 10.0% (1 / 10) | adjudication + shadow_run |")
+    end
+  end
+
+  def solo_corpus_events(cases, event_base = base_event)
+    declaration = event_base.merge("type" => "evaluation_policy", "event_id" => "policy", "policy" => "solo", "maintainer" => "maintainer@paid", "recorded_at" => "2026-10-10T07:00:00Z")
+    adjudications = cases.map do |corpus_case|
+      verdict = human_verdict_for(corpus_case) == "accepted" ? "within_scope" : human_verdict_for(corpus_case)
+      event_base.merge("type" => "adjudication", "event_id" => "#{corpus_case.fetch("id")}-solo", "case_id" => corpus_case.fetch("id"), "operator" => "maintainer@paid", "verdict" => verdict, "cited_design_claim" => "X", "reason" => "Y", "recorded_at" => "2026-10-10T08:01:00Z")
+    end
+    runs = cases.map { |corpus_case| shadow_run_for(corpus_case, event_base) }
+    [ declaration, *adjudications, *runs ]
   end
 
   def events

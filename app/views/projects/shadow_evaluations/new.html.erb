@@ -1,0 +1,64 @@
+<%# @spec INTENT-CONFORMANCE-ROLLOUT-005 @spec INTENT-CONFORMANCE-ROLLOUT-009 %>
+<% purpose = @purpose || "rdr-067-measured-rollout" %>
+<div class="mx-auto max-w-2xl space-y-6 px-4 py-8">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Solo-maintainer conformance evaluation</h1>
+    <p class="mt-1 text-sm text-gray-600">
+      Label a frozen RDR-067 evaluation corpus blinded, freeze the reference set, then execute the real
+      conformance reviewer. Completing labels never enables enforcement or attests issue completion.
+    </p>
+  </div>
+
+  <% if @existing %>
+    <div class="rounded-xl border border-violet-200 bg-violet-50 p-4">
+      <h2 class="text-sm font-semibold text-violet-900">An evaluation already exists for this project</h2>
+      <p class="mt-1 text-sm text-violet-800">
+        Status: <span class="font-medium"><%= @existing.status %></span> ·
+        labels <%= @existing.labels.where(state: "labeled").count %>/<%= @existing.corpus.case_ids.length %>
+        (skipped <%= @existing.labels.where(state: "skipped").count %>).
+        Repeated starts resume the same evaluation for the same evidence generation instead of creating duplicates.
+      </p>
+      <%= link_to @existing.labeling? ? "Resume labeling" : "Open evaluation",
+            project_shadow_evaluation_path(@project, @existing, **@inbox_context),
+            data: { turbo_frame: "_top" },
+            class: "mt-3 inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
+    </div>
+  <% end %>
+
+  <div class="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
+    <%= form_with url: project_shadow_evaluations_path(@project, **@inbox_context), method: :post, class: "space-y-4" do |form| %>
+      <div>
+        <%= form.label :purpose, "Evaluation purpose", class: "block text-sm font-medium text-gray-700" %>
+        <%= form.text_field :purpose, value: purpose, required: true, class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
+        <p class="mt-1 text-xs text-gray-500">Links this evaluation to the originating Inbox item's purpose.</p>
+      </div>
+      <div>
+        <%= form.label :manifest_path, "Frozen corpus manifest (repository path)", class: "block text-sm font-medium text-gray-700" %>
+        <%= form.text_field :manifest_path, required: true,
+              placeholder: "docs/intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-13.yml",
+              class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
+        <p class="mt-1 text-xs text-gray-500">The corpus must be committed and frozen before labeling; its digest binds this evidence generation.</p>
+      </div>
+      <div>
+        <%= form.label :manifest_commit, "Manifest commit SHA (optional)", class: "block text-sm font-medium text-gray-700" %>
+        <%= form.text_field :manifest_commit, placeholder: "long or short commit SHA (optional)",
+              class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
+      </div>
+      <div>
+        <%= form.label :policy, "Evaluation policy", class: "block text-sm font-medium text-gray-700" %>
+        <%= form.select :policy, options_for_select([["Solo maintainer (explicitly selected)", "solo"]], "solo"), {}, disabled: false, class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
+        <p class="mt-1 text-xs text-gray-500">
+          The two-operator team policy remains the default and stays CLI-owned (see the operator runbook). Selecting
+          solo declares you, <%= current_user.email %>, the single maintainer: you alone label, revise, and freeze.
+          Assurance is weaker — no independence, no tie-break.
+        </p>
+      </div>
+      <%= form.submit "Start evaluation",
+            class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
+    <% end %>
+  </div>
+
+  <%= link_to "Back to Inbox", inbox_path(project_id: @project, kind: @inbox_context[:inbox_kind], sort: @inbox_context[:inbox_sort], entry_id: @inbox_context[:inbox_entry_id]),
+        data: { turbo_frame: "_top" },
+        class: "text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
+</div>

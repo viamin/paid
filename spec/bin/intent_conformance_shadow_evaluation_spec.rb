@@ -155,6 +155,72 @@ RSpec.describe "bin/intent-conformance-shadow-evaluation" do # rubocop:disable R
     end
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-005
+  it "records an explicitly selected solo policy declaration with its maintainer" do
+    Dir.mktmpdir do |dir|
+      manifest = File.join(dir, "manifest.yml")
+      ledger = File.join(dir, "ledger.jsonl")
+      File.write(manifest, { "cases" => [ { "id" => "A-01" } ] }.to_yaml)
+
+      _stdout, stderr, status = run_cli("init", "--manifest", manifest, "--ledger", ledger, "--manifest-commit", commit,
+        "--policy", "solo", "--maintainer", "maintainer@paid")
+
+      expect(status.exitstatus).to eq(0), -> { "stderr: #{stderr}" }
+      declaration = JSON.parse(File.read(ledger))
+      expect(declaration).to include("type" => "evaluation_policy", "policy" => "solo", "maintainer" => "maintainer@paid")
+      expect(declaration.fetch("manifest_commit")).to eq(commit)
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-005
+  it "refuses a solo declaration without a maintainer and an unknown policy" do
+    Dir.mktmpdir do |dir|
+      manifest = File.join(dir, "manifest.yml")
+      ledger = File.join(dir, "ledger.jsonl")
+      File.write(manifest, { "cases" => [ { "id" => "A-01" } ] }.to_yaml)
+
+      _stdout, stderr, status = run_cli("init", "--manifest", manifest, "--ledger", ledger, "--manifest-commit", commit, "--policy", "solo")
+      expect(status.exitstatus).to eq(1)
+      expect(stderr).to include("--maintainer is required for the solo policy")
+
+      _stdout, stderr, status = run_cli("init", "--manifest", manifest, "--ledger", ledger, "--manifest-commit", commit,
+        "--policy", "auto", "--maintainer", "maintainer@paid")
+      expect(status.exitstatus).to eq(1)
+      expect(stderr).to include("--policy must be one of team|solo")
+    end
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-007
+  it "points shadow-run at the documented execute command instead of presenting validation as execution" do
+    Dir.mktmpdir do |dir|
+      manifest = File.join(dir, "manifest.yml")
+      ledger = File.join(dir, "ledger.jsonl")
+      cases = complete_corpus_cases
+      File.write(manifest, { "cases" => cases }.to_yaml)
+      manifest_commit = commit_fixture_file(dir, manifest, "freeze corpus manifest")
+
+      solo_ledger_events(cases, manifest, manifest_commit).each do |event|
+        File.open(ledger, "a") { |file| file.puts(JSON.generate(event)) }
+        commit_fixture_file(dir, ledger, "append #{event.fetch("event_id")}")
+      end
+
+      _stdout, stderr, status = run_cli("shadow-run", "--manifest", manifest, "--ledger", ledger, "--manifest-commit", manifest_commit)
+
+      expect(status.exitstatus).to eq(2)
+      expect(stderr).to include("nothing has executed")
+      expect(stderr).to include("intent_conformance:shadow_evaluation:execute")
+    end
+  end
+
+  def solo_ledger_events(cases, manifest, manifest_commit)
+    base = { "manifest_commit" => manifest_commit, "manifest_digest" => Digest::SHA256.file(manifest).hexdigest }
+    declaration = base.merge("type" => "evaluation_policy", "event_id" => "policy", "policy" => "solo", "maintainer" => "maintainer@paid", "recorded_at" => "2026-10-10T07:00:00Z")
+    adjudications = cases.map do |corpus_case|
+      base.merge("type" => "adjudication", "event_id" => "#{corpus_case.fetch("id")}-solo", "case_id" => corpus_case.fetch("id"), "operator" => "maintainer@paid", "verdict" => "within_scope", "cited_design_claim" => "X", "reason" => "Y", "recorded_at" => "2026-10-10T08:01:00Z")
+    end
+    [ declaration, *adjudications ]
+  end
+
   def complete_ledger_events(cases, manifest, manifest_commit)
     base = { "manifest_commit" => manifest_commit, "manifest_digest" => Digest::SHA256.file(manifest).hexdigest }
     freeze = base.merge("type" => "operators_frozen", "event_id" => "freeze", "operators" => %w[op-a op-b], "recorded_at" => "2026-10-10T08:00:00Z")

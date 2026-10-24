@@ -36,8 +36,8 @@ RSpec.describe IntentConformance::ReviewRun do
     described_class.call(project: project, issue: issue, pr_head_sha: pr_head_sha)
   end
 
-  def response_double(output:, success: true, model: "claude-sonnet-4-6")
-    instance_double(AgentHarness::Response, success?: success, output: output, model: model)
+  def response_double(output:, success: true, model: "claude-sonnet-4-6", metadata: {})
+    instance_double(AgentHarness::Response, success?: success, output: output, model: model, metadata: metadata)
   end
 
   before do
