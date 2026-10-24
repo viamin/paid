@@ -4,6 +4,21 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
+  pull-request body, it SHALL use a persisted source-closure disposition derived
+  from the current criterion-level partial-closeout assessment and its
+  source-evidence and intent revisions. It SHALL publish a closing reference
+  only when every assessed criterion is satisfied and no gaps remain; unmet,
+  blocked, report-only, stale, malformed, or absent assessments SHALL publish a
+  non-closing tracking reference. The semantic assessment SHALL use
+  `agent_harness`; deterministic code SHALL validate revision freshness and
+  publish the resulting disposition without granting authority to PR prose.
+  *Code:* `app/services/partial_closeouts/source_closure_disposition.rb`,
+  `app/services/pull_requests/source_closure_body.rb`,
+  `app/temporal/activities/assess_source_closure_activity.rb`.
+  *Test:* `spec/services/partial_closeouts/source_closure_disposition_spec.rb`,
+  `spec/services/pull_requests/source_closure_body_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-025** — When the daily legacy partial-closeout
   reconciliation sweep runs, the system SHALL invoke `ReconcileLegacy` once
   for each active account using the persisted account/run cursor in its chained
