@@ -25,4 +25,13 @@ class FeatureIntentIssue < ApplicationRecord
   def current_readiness_mapping
     prerequisite_mapping&.readiness_payload || readiness_mapping
   end
+
+  # The design revision a released link pins runs and reviews against.
+  # ReleaseIssue snapshots carry the readiness design artifacts rather than a
+  # dedicated merged_baseline key, so the first released artifact's revision
+  # is the baseline, mirroring RunAdmission's admission pin.
+  # @spec CONFIDENCE-DELIVERY-010
+  def released_baseline_revision
+    release_snapshot["merged_baseline"] || release_snapshot.dig("design_artifacts", 0, "revision")
+  end
 end

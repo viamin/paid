@@ -65,8 +65,7 @@ module IntentConformance
     attr_reader :project, :issue, :pr_head_sha
 
     def applicable?
-      feature_intent.present? &&
-        feature_intent.approved_design_revision.present? &&
+      feature_intent.present? && baseline_revision.present? &&
         rollout_enabled?
     end
 
@@ -83,7 +82,7 @@ module IntentConformance
     end
 
     def feature_intent
-      @feature_intent ||= issue.feature_intent
+      @feature_intent ||= confidence_link&.feature_intent || issue.feature_intent
     end
 
     def client
@@ -91,8 +90,8 @@ module IntentConformance
     end
 
     def design_docs
-      @design_docs ||= Array(feature_intent.design_document_paths).first(MAX_DESIGN_DOCS).filter_map do |path|
-        content = client&.file_content(project.full_name, path: path, ref: feature_intent.approved_design_revision)
+      @design_docs ||= design_document_paths.first(MAX_DESIGN_DOCS).filter_map do |path|
+        content = client&.file_content(project.full_name, path: path, ref: baseline_revision)
         next if content.blank?
 
         { path: path, content: sanitized_prompt_text(content, max_length: MAX_DESIGN_DOC_LENGTH) }
@@ -131,13 +130,40 @@ module IntentConformance
     def request_review(diff)
       ReviewerLlm.call(
         repository: project.full_name,
-        revision: feature_intent.approved_design_revision,
+        revision: baseline_revision,
         design_docs: design_docs,
         base_sha: diff[:base_sha],
         head_sha: pr_head_sha,
         diff: diff_entries(diff),
         verification: verification_evidence
       )
+    end
+
+    # @spec CONFIDENCE-DELIVERY-010
+    def baseline_revision
+      return confidence_link.released_baseline_revision if confidence_link&.release_state == "released"
+      return if confidence_link
+
+      feature_intent.approved_design_revision if feature_intent&.approval_gated?
+    end
+
+    # Released links review the design documents admitted at release: the same
+    # immutable release snapshot that pins the baseline. The live readiness
+    # mapping may be revised after release (RunAdmission reconciles that
+    # drift), and its paths need not resolve at the pinned baseline revision.
+    # An unreleased confidence link has no admitted design set at all.
+    # @spec CONFIDENCE-DELIVERY-010
+    def design_document_paths
+      return Array(confidence_link.release_snapshot["design_artifacts"]).filter_map { |artifact| artifact["path"] } if confidence_link&.release_state == "released"
+      return [] if confidence_link
+
+      Array(feature_intent.design_document_paths)
+    end
+
+    def confidence_link
+      @confidence_link ||= FeatureIntentIssue.joins(:feature_intent)
+        .where(issue_id: issue.id, feature_intents: { delivery_policy: "confidence_driven" })
+        .order(:id).first
     end
 
     def diff_entries(diff)
@@ -165,7 +191,7 @@ module IntentConformance
         project: project,
         issue: issue,
         pr_head_sha: pr_head_sha,
-        approved_design_revision: feature_intent.approved_design_revision,
+        approved_design_revision: baseline_revision,
         outcome: validated[:outcome],
         evaluated_at: Time.current,
         reviewer_model: result.model.presence || DEFAULT_MODEL,
@@ -183,7 +209,7 @@ module IntentConformance
         project: project,
         issue: issue,
         pr_head_sha: pr_head_sha,
-        approved_design_revision: feature_intent.approved_design_revision,
+        approved_design_revision: baseline_revision,
         outcome: IntentConformanceVerdict::OUTCOME_NOT_EVALUATED,
         evaluated_at: Time.current,
         reviewer_model: NOT_EVALUATED_REVIEWER_MODEL,

@@ -16,12 +16,16 @@ module FeatureIntents
     def capture
       return {} unless feature_intent&.confidence_driven?
 
+      # Baseline and mapped design paths are pinned from the same immutable
+      # release snapshot the run was admitted against; the live readiness
+      # mapping may be revised after release.
       {
         "policy" => feature_intent.delivery_policy,
         "feature_id" => feature_intent.id,
         "issue_id" => issue.id,
-        "design_baseline" => feature_intent.approved_design_revision,
-        "facets" => applicable_facets.map { |facet| facet_snapshot(facet) }
+        "design_baseline" => issue_link.released_baseline_revision,
+        "design_document_paths" => Array(issue_link.release_snapshot["design_artifacts"]).filter_map { |artifact| artifact["path"] },
+        "facets" => applicable_facets.flat_map { |facet| facet_snapshot(facet) }
       }
     end
 
@@ -30,8 +34,16 @@ module FeatureIntents
     attr_reader :issue
 
     def feature_intent
-      @feature_intent ||= FeatureIntent.joins(:feature_intent_issues)
-        .find_by(feature_intent_issues: { issue_id: issue.id })
+      issue_link&.feature_intent
+    end
+
+    # Pins the same link RunAdmission evaluates first: the lowest-id
+    # confidence-driven link for the issue, so the snapshot handed to builders
+    # describes the design the run was admitted against.
+    def issue_link
+      @issue_link ||= FeatureIntentIssue.joins(:feature_intent).includes(:feature_intent)
+        .where(issue_id: issue.id, feature_intents: { delivery_policy: "confidence_driven" })
+        .order(:id).first
     end
 
     def applicable_facets
@@ -39,18 +51,20 @@ module FeatureIntents
     end
 
     def facet_snapshot(facet)
-      direction = facet.directions.where(status: "active").order(:id).first
+      directions = facet.directions.where(status: "active").order(:id)
+      directions = [ nil ] if directions.empty?
+      directions.map { |direction| direction_snapshot(facet, direction) }
+    end
+
+    def direction_snapshot(facet, direction)
       assessment = current_assessment(direction, facet.evidence_revision)
       {
-        "name" => facet.name,
-        "design_claim" => facet.design_claim,
-        "direction" => direction&.name,
-        "evidence_revision" => facet.evidence_revision,
-        "intent_score" => assessment&.intent_score,
-        "technical_score" => assessment&.technical_score,
-        "inferred_fit" => assessment&.explanation,
-        "expressed_intent" => expressed_intent(facet, direction),
-        "demonstrated_feasibility" => demonstrated_feasibility(facet, direction)
+        "name" => facet.name, "design_claim" => facet.design_claim,
+        "direction" => direction&.name, "evidence_revision" => facet.evidence_revision,
+        "intent_score" => assessment&.intent_score, "technical_score" => assessment&.technical_score,
+        "inferred_fit" => assessment&.inferred_fit,
+        "expressed_intent" => evidence_for(facet, direction, %w[human_statement human_correction]),
+        "demonstrated_feasibility" => evidence_for(facet, direction, %w[repository_fact experiment_result])
       }
     end
 
@@ -58,17 +72,15 @@ module FeatureIntents
       direction&.assessments&.where(evidence_revision: revision, status: "completed")&.order(created_at: :desc)&.first
     end
 
-    def expressed_intent(facet, direction)
-      evidence_for(facet, direction, "human_statement")
-    end
-
-    def demonstrated_feasibility(facet, direction)
-      evidence_for(facet, direction, "repository_fact") + evidence_for(facet, direction, "experiment_result")
-    end
-
-    def evidence_for(facet, direction, source_type)
-      relation = facet.evidence.where(evidence_revision: facet.evidence_revision, source_type: source_type)
-      relation = relation.where(feature_intent_facet_direction: direction) if direction
+    # Evidence summaries mirror the assessor's active evidence (AssessFacet):
+    # every non-superseded row at any revision, so a human statement or
+    # correction stays visible until explicitly superseded. Directionless
+    # rows — the only kind the chat correction path records — are facet-level,
+    # so each active direction entry includes them.
+    # @spec FACET-CONFIDENCE-013
+    def evidence_for(facet, direction, source_types)
+      relation = facet.evidence.where(source_type: source_types, superseded_by: nil)
+      relation = relation.where(feature_intent_facet_direction: [ direction, nil ]) if direction
       relation.order(:id).pluck(:statement)
     end
   end
