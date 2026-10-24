@@ -33,6 +33,7 @@ class AgentRun < ApplicationRecord
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   # @spec LAYERED-VERIFY-013
   GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness layered_verification_audit layered_verification_repair].freeze
+  LAYERED_VERIFICATION_GOALS = %w[layered_verification_audit layered_verification_repair].freeze
   # RDR-056 (Strict TDD): the run-scoped write-guard phase for projects with
   # tdd_mode != "off". nil means the run is not TDD-governed (existing
   # behavior). See Tdd::WriteGuard for the enforced allowed/forbidden matrix.
@@ -1826,6 +1827,11 @@ class AgentRun < ApplicationRecord
   # @spec PROJECT-READINESS-007
   def bootstrap_readiness_goal?
     goal == "bootstrap_readiness"
+  end
+
+  # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
+  def layered_verification_goal?
+    goal.in?(LAYERED_VERIFICATION_GOALS)
   end
 
   def assign_default_tdd_phase
@@ -4443,6 +4449,7 @@ class AgentRun < ApplicationRecord
 
   def invalidate_filter_options_cache_on_change
     return unless destroyed? || previous_changes.slice("status", "agent_type", "goal", "synthetic").present?
+    return unless project
 
     self.class.invalidate_filter_options_cache(
       account_id: project.account_id,

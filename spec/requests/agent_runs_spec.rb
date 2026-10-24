@@ -2313,6 +2313,22 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(inbox_path)
       end
 
+      # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
+      it "does not use the generic manual retry path for layered-verification runs" do
+        audit = create(:agent_run, :failed, project: project, goal: "layered_verification_audit")
+        repair = create(:agent_run, :failed, project: project, goal: "layered_verification_repair", originating_audit_run: audit)
+
+        [ audit, repair ].each do |run|
+          expect {
+            post retry_project_agent_run_path(project, run)
+          }.not_to change(AgentRun, :count)
+
+          expect(response).to redirect_to(project_agent_run_path(project, run))
+          follow_redirect!
+          expect(response.body).to include("Layered-verification runs must be started again")
+        end
+      end
+
       it "does not queue a bootstrap attempt while a rate-limited attempt recovers" do
         # A rate-limited run remains dedup-blocking while its recovery window
         # is pending, even though it is not in UNFINISHED_STATUSES.

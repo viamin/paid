@@ -110,6 +110,17 @@ RSpec.describe Project do
   end
 
   describe "layered verification records" do
+    # @spec LAYERED-VERIFY-013
+    it "destroys an audit and repair pair without raising after commit" do
+      project = create(:project)
+      audit = create(:agent_run, goal: "layered_verification_audit", project: project)
+      repair = create(:agent_run, goal: "layered_verification_repair", project: project, originating_audit_run: audit)
+
+      expect { project.destroy! }
+        .to change(AgentRun, :count).by(-2)
+      expect { repair.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
     # @spec LAYERED-VERIFY-006 @spec LAYERED-VERIFY-007 @spec LAYERED-VERIFY-008
     it "deletes owned records before agent runs when a project is destroyed" do
       project = create(:project)

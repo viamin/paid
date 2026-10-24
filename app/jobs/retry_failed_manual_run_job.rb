@@ -84,11 +84,13 @@ class RetryFailedManualRunJob < ApplicationJob
   # Re-checks eligibility under the row lock: state may have changed since
   # the activity scheduled this job (the project toggle flipped off, the run
   # was already retried, or an operator manually intervened).
-  # @spec MANUAL-RUN-RETRY-005 PROJECT-READINESS-007
+  # @spec MANUAL-RUN-RETRY-005 PROJECT-READINESS-007 LAYERED-VERIFY-011
+  # @spec LAYERED-VERIFY-013
   def eligible_for_retry?(agent_run, attempt)
     attempt <= AgentRun::MAX_MANUAL_RETRY_ATTEMPTS &&
       agent_run.manual? &&
       !agent_run.bootstrap_readiness_goal? &&
+      !agent_run.layered_verification_goal? &&
       agent_run.issue_id.nil? &&
       agent_run.source_pull_request_number.nil? &&
       agent_run.status.in?(AgentRun::FAILURE_STATUSES) &&

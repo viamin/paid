@@ -13,7 +13,7 @@ class CreateLayeredVerificationContracts < ActiveRecord::Migration[8.1]
       t.string :approval_state, null: false, default: "unresolved"
       t.string :approved_revision_reference
       t.references :superseded_by, foreign_key: { to_table: :layered_verification_obligations, on_delete: :nullify }
-      t.references :change_intent, foreign_key: true
+      t.references :change_intent, foreign_key: { on_delete: :nullify }
       t.datetime :synced_at
       t.timestamps
     end

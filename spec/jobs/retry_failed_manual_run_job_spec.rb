@@ -123,6 +123,22 @@ RSpec.describe RetryFailedManualRunJob do
       expect(original.reload.status).to eq("failed")
     end
 
+    # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
+    it "does not retry layered-verification runs" do
+      audit = create(:agent_run, :failed, :manual, :with_custom_prompt,
+        project: project, goal: "layered_verification_audit")
+      repair = create(:agent_run, :failed, :manual, :with_custom_prompt,
+        project: project, goal: "layered_verification_repair", originating_audit_run: audit)
+
+      expect {
+        described_class.new.perform(audit.id, 1)
+        described_class.new.perform(repair.id, 1)
+      }.not_to change(AgentRun, :count)
+
+      expect(audit.reload.status).to eq("failed")
+      expect(repair.reload.status).to eq("failed")
+    end
+
     it "does nothing when the attempt exceeds the retry cap" do
       original = create(:agent_run, :failed, :manual, :with_custom_prompt, project: project, goal: "create_pr")
 

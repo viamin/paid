@@ -620,12 +620,19 @@ module Projects
         notice: "Agent run terminated."
     end
 
+    # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
     def retry
       authorize @agent_run
 
       if @agent_run.bootstrap_readiness_goal?
         redirect_to inbox_path,
           alert: "Bootstrap attempts must be started again from the project setup Inbox entry."
+        return
+      end
+
+      if @agent_run.layered_verification_goal?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Layered-verification runs must be started again from their dedicated entry point."
         return
       end
 

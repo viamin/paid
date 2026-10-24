@@ -76,6 +76,8 @@ RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
     expect(obligations.fetch("external_identity").null).to be(false)
     expect(obligations.fetch("approval_state").default).to eq("unresolved")
     expect_foreign_key(:layered_verification_obligations, :projects, on_delete: :cascade)
+    expect_foreign_key(:layered_verification_obligations, :change_intents,
+      column: "change_intent_id", on_delete: :nullify)
     expect_foreign_key(:layered_verification_obligations, :layered_verification_obligations,
       column: "superseded_by_id", on_delete: :nullify)
 

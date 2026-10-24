@@ -57,7 +57,8 @@ module LayeredVerification
       end
 
       def okf_concept_paths
-        roots.flat_map { |root| Dir.glob(File.join(root, "**", "*.md")).sort }.select { |path| okf_document?(path) }
+        roots.flat_map { |root| Dir.glob(File.join(root, "**", "*.md")).sort }
+          .filter_map { |path| contained_okf_document_path(path) }
       end
 
       def roots
@@ -78,10 +79,14 @@ module LayeredVerification
         File.expand_path(repo_path)
       end
 
-      def okf_document?(path)
-        Knowledge::Okf::Frontmatter.parse(File.read(path)).valid?
+      def contained_okf_document_path(path)
+        resolved_path = File.realpath(path)
+        return unless resolved_path.start_with?("#{repository_root}/")
+        return unless File.file?(resolved_path)
+
+        resolved_path if Knowledge::Okf::Frontmatter.parse(File.read(resolved_path)).valid?
       rescue Errno::ENOENT, Errno::EACCES
-        false
+        nil
       end
     end
   end
