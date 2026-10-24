@@ -1442,20 +1442,22 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.issue).to eq(issue)
         expect(agent_run.initiating_user).to eq(user)
         expect(agent_run.agent_type).to eq("claude_code")
+        expect(agent_run.goal).to eq("create_pr")
         expect(agent_run.status).to eq("queued")
       end
 
       # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-012
-      it "does not create layered-verification runs through the generic manual endpoint" do
+      it "rejects layered-verification goals through the generic manual endpoint" do
         %w[layered_verification_audit layered_verification_repair].each do |goal|
           expect {
             post project_agent_runs_path(project), params: {
               goal: goal,
               custom_prompt: "Audit payment authorization."
             }
-          }.to change(AgentRun, :count).by(1)
+          }.not_to change(AgentRun, :count)
 
-          expect(AgentRun.last.goal).to eq("create_pr")
+          expect(response).to redirect_to(new_project_agent_run_path(project, goal: goal))
+          expect(flash[:alert]).to include("dedicated entry point")
         end
       end
 
@@ -1988,21 +1990,13 @@ RSpec.describe "AgentRuns" do
         expect(parked.manual_review_reason).to be_nil
       end
 
-      it "normalizes an invalid goal to create_pr and uses the create_pr default runner" do
-        owner = project.created_by
-        codex = owner.runners.create!(
-          runner_key: "codex",
-          auth_type: "subscription",
-          enabled_for_agent_runs: true,
-          enabled_for_fallback: true
-        )
-        owner.settings.update!(default_agent_runners_by_goal: { "create_pr" => codex.routing_key })
+      it "rejects an unsupported goal" do
+        expect {
+          post project_agent_runs_path(project), params: { goal: "invalid", issue_id: issue.id }
+        }.not_to change(AgentRun, :count)
 
-        post project_agent_runs_path(project), params: { goal: "invalid", issue_id: issue.id }
-
-        agent_run = AgentRun.last
-        expect(agent_run.goal).to eq("create_pr")
-        expect(agent_run.runner).to eq(codex)
+        expect(response).to redirect_to(new_project_agent_run_path(project, goal: "invalid"))
+        expect(flash[:alert]).to include("Unsupported agent run goal")
       end
 
       context "with goal=review" do

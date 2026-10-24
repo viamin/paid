@@ -8,6 +8,7 @@ module Projects
 
     NoRunnableRunnerError = Class.new(StandardError)
     InvalidDockerHostSelectionError = Containers::ResolveHostForRun::InvalidDockerHostSelectionError
+    InvalidManualGoalError = Class.new(StandardError)
 
     before_action :set_project
     before_action :set_agent_run, only: [
@@ -245,6 +246,8 @@ module Projects
       end
     rescue Automation::ManualStart::Plan::Error => error
       redirect_to new_project_agent_run_path(@project, goal: goal), alert: error.message
+    rescue InvalidManualGoalError => error
+      redirect_to new_project_agent_run_path(@project, goal: params[:goal]), alert: error.message
     end
 
     def quick_create
@@ -1135,7 +1138,14 @@ module Projects
     # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-012
     def manual_create_goal
       goal = params[:goal].presence
-      MANUAL_CREATE_GOALS.include?(goal) ? goal : "create_pr"
+      return "create_pr" unless goal
+      return goal if MANUAL_CREATE_GOALS.include?(goal)
+
+      if goal.in?(AgentRun::LAYERED_VERIFICATION_GOALS)
+        raise InvalidManualGoalError, "Layered-verification runs must be started from their dedicated entry point."
+      end
+
+      raise InvalidManualGoalError, "Unsupported agent run goal: #{goal}"
     end
 
     # @spec AUTOMATION-PHASES-010
