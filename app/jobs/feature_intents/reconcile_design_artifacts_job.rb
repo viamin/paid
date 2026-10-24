@@ -12,6 +12,11 @@ module FeatureIntents
     RELATIONSHIP_LINE_PATTERN = /^\s*(?:[-*]\s+)?(?:\*\*)?(?:implements|closes|fixes|resolves|tracks|depends on|blocked by|related issues?)(?:\s*:)?(?:\*\*)?\s*:?\s+(.+)$/i
     RELATIONSHIP_HEADING_PATTERN = /^\s{0,3}\#{1,6}\s+(?:\*\*)?(?:implements|closes|fixes|resolves|tracks|depends on|blocked by|related issues?)(?:\*\*)?\s*#*\s*$/i
     MARKDOWN_HEADING_PATTERN = /^\s{0,3}\#{1,6}\s+/
+    OWNERSHIP_HEADING_PATTERN = /^\s{0,3}\#{1,6}\s+(?:\*\*)?(?:issue |work |implementation )?ownership(?:\*\*)?\s*$/i
+    GITHUB_ISSUE_URL_PATTERN = %r{https?://github\.com/([\w.-]+)/([\w.-]+)/issues/(\d+)}i
+    QUALIFIED_ISSUE_PATTERN = %r{(?<![\w./-])([\w.-]+/[\w.-]+)#(\d+)}
+    BARE_ISSUE_PATTERN = %r{(?<![\w./-])#(\d+)}
+    FILE_EXTENSION_PATTERN = /\.[a-z0-9]{1,4}\z/i
 
     queue_as :maintenance
 
@@ -191,14 +196,99 @@ module FeatureIntents
     end
 
     def explicit_references(body)
-      relationship_text(body).scan(%r{(?<![\w/-])(?:([\w.-]+/[\w.-]+))?#(\d+)})
-        .map { |repository, number| "#{repository || project.full_name}##{number}" }
-        .uniq
+      references_from(relationship_text(body)) + ownership_table_references(body)
+    end
+
+    def references_from(text, local_bare: true)
+      urls = text.scan(GITHUB_ISSUE_URL_PATTERN).map { |owner, repo, number| "#{owner}/#{repo}##{number}" }
+      without_links_or_urls = text.gsub(/\[[^\]]*\]\([^)]*\)/, "").gsub(%r{https?://\S+}, "")
+      qualified = without_links_or_urls.scan(QUALIFIED_ISSUE_PATTERN).map { |repository, number| "#{repository}##{number}" }
+      bare = local_bare ? without_links_or_urls.scan(BARE_ISSUE_PATTERN).flatten.map { |number| "#{project.full_name}##{number}" } : []
+      (urls + qualified + bare).uniq
+    end
+
+    def ownership_table_references(body)
+      ownership_table_text(body).flat_map do |line|
+        repository = ownership_repository(line)
+        references = references_from(line, local_bare: repository.nil?)
+        references + bare_ownership_references(line, repository)
+      end.uniq
+    end
+
+    def ownership_repository(line)
+      repository = markdown_table_cells(line).first.to_s.strip[/\A([\w.-]+\/[\w.-]+)\z/, 1]
+      repository unless repository&.match?(FILE_EXTENSION_PATTERN)
+    end
+
+    def bare_ownership_references(line, repository)
+      return [] unless repository
+
+      line.gsub(/\[[^\]]*\]\([^)]*\)/, "").gsub(%r{https?://\S+}, "")
+        .scan(BARE_ISSUE_PATTERN).flatten.map { |number| "#{repository}##{number}" }
+    end
+
+    def ownership_table_text(body)
+      rows = []
+      expecting_separator = false
+      in_table = false
+
+      body.to_s.each_line do |line|
+        if expecting_separator
+          in_table = markdown_table_separator?(line)
+          expecting_separator = false
+        elsif in_table && markdown_table_row?(line)
+          rows << line
+        elsif in_table
+          in_table = false
+          expecting_separator = ownership_table_header?(line)
+        else
+          expecting_separator = ownership_table_header?(line)
+        end
+      end
+
+      rows
+    end
+
+    def ownership_table_header?(line)
+      markdown_table_row?(line) && line.match?(/\bowner(?:s|ship)?\b/i) && line.match?(/\b(?:issue|work)\b/i)
+    end
+
+    def markdown_table_row?(line)
+      line.to_s.match?(/^\s*\|?[^|\n]+\|[^|\n]+(?:\|[^|\n]+)*\|?\s*$/)
+    end
+
+    def markdown_table_cells(line)
+      line.to_s.strip.delete_prefix("|").delete_suffix("|").split("|").map(&:strip)
+    end
+
+    def markdown_table_separator?(line)
+      line.to_s.match?(/^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/)
     end
 
     def relationship_text(body)
       in_relationship_section = false
-      body.to_s.each_line.filter_map do |line|
+      in_ownership_table = false
+      lines = body.to_s.each_line.to_a
+      lines.each_with_index.filter_map do |line, index|
+        if line.match?(OWNERSHIP_HEADING_PATTERN)
+          in_relationship_section = false
+          next
+        end
+
+        if ownership_table_header?(line) && markdown_table_separator?(lines[index + 1])
+          in_relationship_section = false
+          in_ownership_table = true
+          next
+        end
+
+        if in_ownership_table
+          if markdown_table_row?(line)
+            next
+          end
+
+          in_ownership_table = false
+        end
+
         if line.match?(RELATIONSHIP_HEADING_PATTERN)
           in_relationship_section = true
           next

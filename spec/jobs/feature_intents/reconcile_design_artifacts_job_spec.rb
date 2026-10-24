@@ -143,6 +143,149 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     expect(DesignArtifactFinding.count).to eq(0)
   end
 
+  it "preserves external URL and ownership-table identities without inventing local references" do
+    forager = create(:project, account: project.account, owner: "viamin", repo: "Forager-iOS")
+    [ 4255, 4256, 4258, 4325 ].each { |number| create(:issue, project: forager, github_number: number) }
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "73558a022fdb2a5db9332bbeac8b22f5d661ad04",
+      body: <<~MARKDOWN
+        Status: Closed (superseded by Paid RDR-074 and its readiness issue tree)
+
+        ## Issue ownership
+
+        | Owner | Work |
+        | --- | --- |
+        | viamin/Forager-iOS | [#4255](https://github.com/viamin/Forager-iOS/issues/4255), #4256, viamin/Forager-iOS#4258, https://github.com/viamin/Forager-iOS/issues/4325 |
+      MARKDOWN
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.find_by(artifact_path: artifact.path)).to have_attributes(state: "deferred", status: "deferred")
+    expect(DesignArtifactAssociation.where(artifact_path: artifact.path).pluck(:issue_identity)).to contain_exactly(
+      "viamin/Forager-iOS#4255", "viamin/Forager-iOS#4256", "viamin/Forager-iOS#4258", "viamin/Forager-iOS#4325"
+    )
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
+  it "recognizes plural ownership headers without treating external bare references as local issue links" do
+    forager = create(:project, account: project.account, owner: "viamin", repo: "Forager-iOS")
+    [ 4255, 4256 ].each { |number| create(:issue, project: forager, github_number: number) }
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
+      body: <<~MARKDOWN
+        ## Related Issues
+
+        | Owners | Work |
+        | --- | --- |
+        | viamin/Forager-iOS | [#4255](https://github.com/viamin/Forager-iOS/issues/4255), #4256 |
+      MARKDOWN
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.pluck(:issue_identity)).to contain_exactly(
+      "viamin/Forager-iOS#4255", "viamin/Forager-iOS#4256"
+    )
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
+  it "keeps mixed local and external ownership references distinct when issue numbers collide" do
+    forager = create(:project, account: project.account, owner: "viamin", repo: "Forager-iOS")
+    create(:issue, project:, github_number: 216)
+    create(:issue, project:, github_number: 4256)
+    [ 4256, 4325 ].each { |number| create(:issue, project: forager, github_number: number) }
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
+      body: <<~MARKDOWN
+        ## Related Issues
+        - #216
+
+        ## Issue ownership
+        | Owner | Work |
+        | --- | --- |
+        | viamin/Forager-iOS | [#4255](https://github.com/viamin/Forager-iOS/issues/4325), #4256, docs/rdrs/RDR-074.md, https://example.com/spec#3 |
+      MARKDOWN
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.pluck(:issue_identity)).to contain_exactly(
+      "acme/widget#216", "viamin/Forager-iOS#4256", "viamin/Forager-iOS#4325"
+    )
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
+  it "does not treat a path in an ownership cell as an external repository" do
+    create(:issue, project:, github_number: 4255)
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
+      body: "## Ownership\n\n| Owner | Issue |\n| --- | --- |\n| docs/rdrs.md | #4255 |"
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.sole.issue_identity).to eq("acme/widget#4255")
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
+  it "does not treat an external issue mentioned in ownership prose as declared evidence" do
+    forager = create(:project, account: project.account, owner: "viamin", repo: "Forager-iOS")
+    create(:issue, project: forager, github_number: 4255)
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
+      body: "The issue owner mentioned viamin/Forager-iOS#4255 during discussion."
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(state: "missing_tree", status: "open")
+    expect(DesignArtifactAssociation.count).to eq(0)
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
+  it "uses relationship references immediately following an ownership table" do
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-020-service-container-architecture.md",
+      revision: "a" * 40,
+      body: <<~MARKDOWN
+        ## Issue ownership
+        | Owner | Work |
+        | --- | --- |
+        | Platform | Pending |
+        ## Related Issues
+        - #216
+      MARKDOWN
+    )
+    create(:issue, project:, github_number: 216)
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.sole.issue_identity).to eq("acme/widget#216")
+  end
+
+  it "keeps denied external ownership coverage unverifiable rather than claiming local work is missing" do
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
+      body: "## Ownership\n\n| Owner | Issue |\n| --- | --- |\n| denied/mobile | #4255 |"
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(state: "unverifiable", status: "open")
+  end
+
   it "uses an exact issue backlink to reconcile an RDR without repairing the document" do
     artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
       path: "docs/rdrs/RDR-020-service-container-architecture.md",
