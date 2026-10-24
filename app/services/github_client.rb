@@ -311,23 +311,19 @@ class GithubClient
     Base64.decode64(data.content).force_encoding("UTF-8")
   end
 
-  # Reports the GitHub entry type at +path+ ("file", "symlink",
-  # "submodule", or "dir" when the path resolves to a directory listing).
-  # Raw non-JSON content responses can only be files, so they report as
-  # "file".
+  # Reports Git tree modes at +paths+ for the supplied commit. Tree modes
+  # preserve symlinks as "120000", unlike the Contents API, which can
+  # dereference an in-repository symlink to its target file.
   #
   # @param repo [String] Repository in "owner/name" format
-  # @param path [String] Path within the repository
-  # @return [String, nil] Reported entry type, or nil when the API reports none
-  # @raise [NotFoundError] if the path does not exist at +ref+
+  # @param paths [Array<String>] Paths within the repository
+  # @return [Hash<String, String, nil>] Git modes indexed by requested path
+  # @raise [NotFoundError] if +ref+ does not exist
   # @raise [AuthenticationError] if access is denied
   # @spec PROJECT-READINESS-008
-  def file_type(repo, path:, ref: nil)
-    data = contents(repo, path: path, ref: ref)
-    return "file" if data.is_a?(String)
-    return "dir" if data.is_a?(Array)
-
-    data&.type
+  def file_modes(repo, paths:, ref:)
+    modes_by_path = tree(repo, ref, recursive: true).tree.index_by(&:path).transform_values(&:mode)
+    paths.index_with { |path| modes_by_path[path] }
   end
 
   def actions_run(repo, run_id)

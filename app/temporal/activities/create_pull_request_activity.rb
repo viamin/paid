@@ -1188,21 +1188,23 @@ module Activities
       entry_points = Projects::Readiness::Detectors.bootstrap_entry_points_for(
         readiness_gaps: agent_run.project.active_readiness_gaps
       )
-      offenders = changed_files.intersection(entry_points).select do |path|
-        bootstrap_entry_point_type(client, agent_run, path) != "file"
-      end
+      changed_entry_points = changed_files.intersection(entry_points)
+      return if changed_entry_points.empty?
+
+      modes = client.file_modes(
+        agent_run.project.full_name,
+        paths: changed_entry_points,
+        ref: agent_run.result_commit_sha
+      )
+      offenders = changed_entry_points.reject { |path| regular_bootstrap_entry_point?(modes[path]) }
       return if offenders.empty?
 
       reason = "authorized bootstrap entry scripts must be present as regular files"
       abort_bootstrap_guard_violation!(agent_run, offenders, changed_files, reason: reason)
     end
 
-    # The compare already proved the result commit resolves, so a NotFound
-    # here means the run deleted the entry point at that commit.
-    def bootstrap_entry_point_type(client, agent_run, path)
-      client.file_type(agent_run.project.full_name, path: path, ref: agent_run.result_commit_sha)
-    rescue GithubClient::NotFoundError
-      "missing"
+    def regular_bootstrap_entry_point?(mode)
+      [ "100644", "100755" ].include?(mode)
     end
 
     def abort_bootstrap_guard_violation!(agent_run, forbidden_files, changed_files, reason:)

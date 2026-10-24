@@ -121,7 +121,7 @@ prefix: PROJECT-READINESS
   pull-request review and are not accepted merely because of their filename.
   It SHALL preserve every `Tdd::WriteGuard` phase semantic unchanged.
   *Code:* `Projects::Readiness::BootstrapWriteGuard`,
-  `Activities::CreatePullRequestActivity`, `GithubClient#file_type`.
+  `Activities::CreatePullRequestActivity`, `GithubClient#file_modes`.
   *Test:* `spec/services/projects/readiness/bootstrap_write_guard_spec.rb`,
   `spec/temporal/activities/create_pull_request_activity_spec.rb`,
   `spec/services/github_client_spec.rb`.
