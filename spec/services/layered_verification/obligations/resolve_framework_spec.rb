@@ -28,6 +28,22 @@ RSpec.describe LayeredVerification::Obligations::ResolveFramework do
     end
   end
 
+  # @spec LAYERED-VERIFY-002
+  it "rejects an OKF bundle symlinked outside the repository" do
+    Dir.mktmpdir do |repo_path|
+      Dir.mktmpdir do |outside|
+        File.write(File.join(outside, "leaked.md"), "---\ntitle: Leaked\n---\nIntent")
+        File.symlink(outside, File.join(repo_path, ".okf"))
+        project = create(:project, lid_mode: nil)
+
+        result = described_class.call(project:, repo_path:)
+
+        expect(result.framework).to eq("paid_offered_cir")
+        expect(result.offers).to contain_exactly("okf_compatible_cir", "lid")
+      end
+    end
+  end
+
   # @spec LAYERED-VERIFY-003
   it "offers repository-persisted CIR and LID when no framework is present" do
     Dir.mktmpdir do |repo_path|

@@ -63,7 +63,12 @@ module LayeredVerification
       def roots
         ([ ".okf" ] + Array(okf_paths)).filter_map do |relative_path|
           path = File.expand_path(relative_path, repository_root)
-          path if path.start_with?("#{repository_root}/") && File.directory?(path)
+          next unless path.start_with?("#{repository_root}/")
+
+          resolved = File.realpath(path)
+          resolved if resolved.start_with?("#{repository_root}/") && File.directory?(resolved)
+        rescue Errno::ENOENT, Errno::EACCES
+          nil
         end.uniq
       end
 
