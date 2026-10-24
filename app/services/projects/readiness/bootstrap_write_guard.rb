@@ -38,7 +38,7 @@ module Projects
         __tests__/
         Tests/
       ].freeze
-      REASON = "bootstrap runs may only change harness configuration and test layout"
+      REASON = "bootstrap runs may only change harness configuration, test layout, and entry scripts selected by current readiness evidence"
 
       Result = Data.define(:valid?, :forbidden_files, :reason)
 
@@ -46,8 +46,9 @@ module Projects
         new(...).call
       end
 
-      def initialize(changed_files:)
+      def initialize(changed_files:, readiness_gaps: [])
         @changed_files = Array(changed_files)
+        @readiness_gaps = Array(readiness_gaps)
       end
 
       def call
@@ -57,10 +58,26 @@ module Projects
 
       private
 
-      attr_reader :changed_files
+      attr_reader :changed_files, :readiness_gaps
 
       def allowed?(path)
-        ALLOWED_EXACT_PATHS.include?(path) || ALLOWED_PREFIXES.any? { |prefix| path.start_with?(prefix) }
+        canonical_relative_path?(path) && allowed_harness_path?(path)
+      end
+
+      def allowed_harness_path?(path)
+        ALLOWED_EXACT_PATHS.include?(path) ||
+          allowed_entry_points.include?(path) ||
+          ALLOWED_PREFIXES.any? { |prefix| path.start_with?(prefix) }
+      end
+
+      def allowed_entry_points
+        @allowed_entry_points ||= Detectors.bootstrap_entry_points_for(readiness_gaps:)
+      end
+
+      def canonical_relative_path?(path)
+        path.is_a?(String) && path.present? &&
+          !path.start_with?("/") && !path.include?("\\") &&
+          Pathname.new(path).cleanpath.to_s == path
       end
     end
   end

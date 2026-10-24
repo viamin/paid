@@ -39,6 +39,19 @@ prefix: PROJECT-READINESS
   `Projects::Readiness::Detectors::Godot`.
   *Test:* `spec/services/projects/readiness_spec.rb`.
 
+- [x] **PROJECT-READINESS-013** — When a Godot checkout has either the
+  installed `addons/gdUnit4/bin/GdUnitCmdTool.gd` command or executable
+  repository-owned `bin/install-test-tools` and `bin/test` entry points, the
+  system SHALL identify its command as configured. It SHALL distinguish an
+  installed command from a command whose dependency setup is required, and
+  SHALL report a missing command when neither supported form exists. The
+  evaluator SHALL not execute setup or test scripts, download dependencies, or
+  treat an addon directory alone, arbitrary filename, CI YAML text, or a prior
+  successful check as command evidence; setup/test execution outcomes remain
+  isolated runtime evidence.
+  *Code:* `Projects::Readiness::Detectors::Godot`.
+  *Test:* `spec/services/projects/readiness_spec.rb`.
+
 - [x] **PROJECT-READINESS-005** — When a project's enabled development or
   verification capability has one or more persisted readiness gaps, the system
   SHALL surface exactly one project-backed `project_setup_pending` Inbox entry
@@ -93,13 +106,28 @@ prefix: PROJECT-READINESS
 - [x] **PROJECT-READINESS-008** — When `bootstrap_readiness` creates or
   reuses a pull request, the system SHALL allow only CI configuration,
   scaffold/project manifests, conventional test-directory layout, and tool
-  configuration files. It SHALL abort changes outside that harness class with
-  the offending file names in the system log. It SHALL preserve every
-  `Tdd::WriteGuard` phase semantic unchanged.
+  configuration files. When current, checkout-backed missing-test-command
+  evidence selects a detector's declared setup contract, it SHALL additionally
+  allow only that detector's exact repository-owned test/setup entry points;
+  for Godot/gdUnit4, those are the paired `bin/install-test-tools` and
+  `bin/test` paths. It SHALL reject arbitrary `bin/` paths, application files,
+  and non-canonical or traversal paths. Every selected entry point SHALL be
+  present as a regular file at the run's result commit. It SHALL resolve a
+  selected path missing from a truncated recursive Git tree through exact
+  non-recursive tree traversal, and SHALL not treat an incomplete listing as
+  proof that the entry point was deleted. Deleted entry points and entry points
+  replaced by symlinks or directories SHALL be rejected as guard violations,
+  not surfaced as raw GitHub API failures. It SHALL abort
+  changes outside that harness class with the offending file names and an
+  actionable reason in the system log. Entry-script contents remain
+  behavior-bearing code: they receive the ordinary isolated execution and
+  pull-request review and are not accepted merely because of their filename.
+  It SHALL preserve every `Tdd::WriteGuard` phase semantic unchanged.
   *Code:* `Projects::Readiness::BootstrapWriteGuard`,
-  `Activities::CreatePullRequestActivity`.
+  `Activities::CreatePullRequestActivity`, `GithubClient#file_modes`.
   *Test:* `spec/services/projects/readiness/bootstrap_write_guard_spec.rb`,
-  `spec/temporal/activities/create_pull_request_activity_spec.rb`.
+  `spec/temporal/activities/create_pull_request_activity_spec.rb`,
+  `spec/services/github_client_spec.rb`.
 
 - [x] **PROJECT-READINESS-009** — When a strict Godot/GDScript project moves
   from missing harness prerequisites through an explicitly started

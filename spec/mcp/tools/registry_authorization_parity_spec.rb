@@ -893,6 +893,15 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "publish_held_issue",
+        denied_user: -> { create(:user, :member, account: other_account) },
+        arguments: -> { { feature_intent_id: create(:feature_intent, :confidence_driven, project: project).id, title: "Denied task", confirmed: true } },
+        ui_call: ->(user) {
+          feature_intent = FeatureIntentPolicy::Scope.new(user, FeatureIntent).resolve.find_by!(project: project)
+          authorize_record!(user, feature_intent, :approve?, policy_class: FeatureIntentPolicy)
+        }
+      },
+      {
         tool_name: "challenge_facet_assessment",
         denied_user: -> {
           project

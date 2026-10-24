@@ -30,8 +30,19 @@ registered in precedence order: specialized detectors first and the
 `Prompts::LanguageCommands` fallback last. Adding an ecosystem therefore
 means adding and registering a detector, rather than extending a central
 language switch. The initial specialized detector covers Godot 4.x + gdUnit4;
-it detects GDScript/Godot or `project.godot`, looks for `test` or `tests`, and
-requires `addons/gdUnit4` as the executable test-harness evidence.
+it detects GDScript/Godot or `project.godot` and looks for `test` or `tests`.
+Its command evidence is either the installed
+`addons/gdUnit4/bin/GdUnitCmdTool.gd` entry point or the supported,
+repository-owned install-on-demand contract: executable `bin/test` plus
+executable `bin/install-test-tools`. The latter records that dependency setup
+is required; it does not claim that setup or tests have succeeded.
+
+Readiness never executes either script, downloads an addon, or infers a
+command from a CI YAML string, an arbitrary filename, or a historical check.
+The isolated agent/CI execution environment owns setup and test execution, and
+retains its exact tool versions, discovered tests, output, and exit status.
+An unavailable or failed setup is execution evidence, not a reason for the
+web/control-plane evaluator to mutate it into a successful readiness result.
 
 When interactive verification is enabled, readiness also validates the
 target-checkout configuration through `Screenshots::RuntimePlan`: it requires
@@ -102,6 +113,31 @@ aborts the run with the offending paths recorded in its system log. This
 structural boundary is not a judgment about whether a configuration is
 runnable; the bootstrap prompt must inspect the actual checkout and configure
 a runnable harness.
+
+An explicitly classified install-on-demand harness may additionally require
+repository-owned entry scripts. The guard obtains those exact paths from the
+same detector that produced current readiness evidence, never from CI text or a
+filename convention. A Godot gap with `ecosystem: godot` and
+`missing_test_command` may therefore create or repair only the paired
+`bin/install-test-tools` and `bin/test` entry points. No other `bin/` path is
+admitted, and absolute, non-canonical, traversal paths and symlinked entry
+scripts are rejected before publication. Each selected entry point must also
+land as a regular file at the run's result commit: a deleted entry point, or a
+symlink or directory substituted for it, aborts as a guard violation naming the
+offending path — never as a raw GitHub API failure. GitHub may truncate a
+recursive tree for a large repository, so a selected path missing from that
+response is resolved by walking its exact non-recursive tree entries; an
+incomplete listing is never evidence that the path was deleted. Scripts are
+behavior-bearing even when their paths are
+classified: the structural guard makes their setup achievable, while isolated
+execution and the ordinary PR review continue to evaluate and approve their
+contents. Bootstrap never gains authority to implement application or gameplay
+behavior.
+
+The #4623 incident report's available failed-run evidence identifies `bin/test`
+as the rejected path; it does not make the remainder of run 14399's diff safe
+by implication. The contract above consequently derives authorization from the
+detector and current gap, not from that historical filename alone.
 
 Verification bootstrap work may additionally change `.paid/screenshots.yml`.
 It is still explicitly admitted, bounded to configuration/harness files, and

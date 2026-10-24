@@ -736,7 +736,10 @@ module Inbox
         :approved_by,
         :feature_intent_decisions,
         :feature_intent_design_prs,
-        feature_intent_issues: { prerequisite_mapping: { prerequisites: [ :feature_intent_facet, :feature_intent_facet_direction ] } }
+        feature_intent_issues: [
+          { issue: :project },
+          { prerequisite_mapping: { prerequisites: [ :feature_intent_facet, :feature_intent_facet_direction ] } }
+        ]
       )
         .order(:created_at, :id)
         .select { |feature_intent| feature_action_required?(feature_intent) }

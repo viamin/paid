@@ -1169,21 +1169,57 @@ module Activities
       changed_files = fetch_changed_files(agent_run, client)
       raise "Bootstrap write guard validation requires changed file data (missing client or commit SHAs)" if changed_files.nil?
 
-      result = Projects::Readiness::BootstrapWriteGuard.call(changed_files: changed_files)
-      return if result.valid?
+      result = Projects::Readiness::BootstrapWriteGuard.call(
+        changed_files: changed_files,
+        readiness_gaps: agent_run.project.active_readiness_gaps
+      )
+      unless result.valid?
+        abort_bootstrap_guard_violation!(agent_run, result.forbidden_files, changed_files, reason: result.reason)
+      end
 
+      reject_non_file_bootstrap_entry_points!(agent_run, client, changed_files)
+    end
+
+    # Entry scripts admitted by readiness evidence must land at the result
+    # commit as regular files. A deleted entry point, or a symlink or
+    # directory in its place, is a deterministic guard violation — not a
+    # raw GitHub API failure — so the run aborts with the offending paths.
+    def reject_non_file_bootstrap_entry_points!(agent_run, client, changed_files)
+      entry_points = Projects::Readiness::Detectors.bootstrap_entry_points_for(
+        readiness_gaps: agent_run.project.active_readiness_gaps
+      )
+      changed_entry_points = changed_files.intersection(entry_points)
+      return if changed_entry_points.empty?
+
+      modes = client.file_modes(
+        agent_run.project.full_name,
+        paths: changed_entry_points,
+        ref: agent_run.result_commit_sha
+      )
+      offenders = changed_entry_points.reject { |path| regular_bootstrap_entry_point?(modes[path]) }
+      return if offenders.empty?
+
+      reason = "authorized bootstrap entry scripts must be present as regular files"
+      abort_bootstrap_guard_violation!(agent_run, offenders, changed_files, reason: reason)
+    end
+
+    def regular_bootstrap_entry_point?(mode)
+      [ "100644", "100755" ].include?(mode)
+    end
+
+    def abort_bootstrap_guard_violation!(agent_run, forbidden_files, changed_files, reason:)
       logger.error(
         message: "agent_execution.bootstrap_write_guard_violation",
         agent_run_id: agent_run.id,
-        forbidden_files: result.forbidden_files,
+        forbidden_files: forbidden_files,
         total_changed: changed_files.size
       )
       agent_run.log!(
         "system",
-        "Bootstrap write guard violation: #{result.reason}. " \
-        "Forbidden files: #{result.forbidden_files.to_sentence}. The run is aborted."
+        "Bootstrap write guard violation: #{reason}. " \
+        "Forbidden files: #{forbidden_files.to_sentence}. The run is aborted."
       )
-      raise "Bootstrap write guard violation: #{result.forbidden_files.join(', ')}"
+      raise "Bootstrap write guard violation: #{forbidden_files.join(', ')}"
     end
 
     def create_feature_pr_title(agent_run)

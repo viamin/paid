@@ -1445,6 +1445,99 @@ RSpec.describe Activities::CreatePullRequestActivity do
         expect { activity.execute(agent_run_id: bootstrap_run.id) }.not_to raise_error
       end
 
+      it "allows the selected Godot test entry point" do
+        bootstrap_run.project.update!(tdd_mode: "strict", readiness_gaps: [ {
+          "kind" => "missing_test_command", "evidence" => { "ecosystem" => "godot" }
+        } ])
+        allow(github_client).to receive_messages(
+          compare_changed_files: [ "bin/test" ],
+          file_modes: { "bin/test" => "100755" }
+        )
+
+        expect { activity.execute(agent_run_id: bootstrap_run.id) }.not_to raise_error
+      end
+
+      it "rejects a symlinked selected entry point" do
+        bootstrap_run.project.update!(tdd_mode: "strict", readiness_gaps: [ {
+          "kind" => "missing_test_command", "evidence" => { "ecosystem" => "godot" }
+        } ])
+        allow(github_client).to receive_messages(
+          compare_changed_files: [ "bin/test" ],
+          file_modes: { "bin/test" => "120000" }
+        )
+
+        expect {
+          activity.execute(agent_run_id: bootstrap_run.id)
+        }.to raise_error(RuntimeError, /Bootstrap write guard violation.*bin\/test/)
+        expect(bootstrap_run.reload.agent_run_logs.where(log_type: "system").pluck(:content).join("\n"))
+          .to include("must be present as regular files").and include("bin/test")
+      end
+
+      it "rejects an in-repository symlink even when Contents reports its target as a file" do
+        bootstrap_run.project.update!(tdd_mode: "strict", readiness_gaps: [ {
+          "kind" => "missing_test_command", "evidence" => { "ecosystem" => "godot" }
+        } ])
+        allow(github_client).to receive_messages(
+          compare_changed_files: [ "bin/test" ],
+          file_modes: { "bin/test" => "120000" }
+        )
+
+        expect {
+          activity.execute(agent_run_id: bootstrap_run.id)
+        }.to raise_error(RuntimeError, /Bootstrap write guard violation.*bin\/test/)
+      end
+
+      it "rejects a deleted selected entry point as a guard violation" do
+        bootstrap_run.project.update!(tdd_mode: "strict", readiness_gaps: [ {
+          "kind" => "missing_test_command", "evidence" => { "ecosystem" => "godot" }
+        } ])
+        allow(github_client).to receive_messages(compare_changed_files: [ "bin/test" ], file_modes: { "bin/test" => nil })
+
+        expect {
+          activity.execute(agent_run_id: bootstrap_run.id)
+        }.to raise_error(RuntimeError, /Bootstrap write guard violation.*bin\/test/)
+        expect(bootstrap_run.reload.agent_run_logs.where(log_type: "system").pluck(:content).join("\n"))
+          .to include("must be present as regular files").and include("bin/test")
+      end
+
+      it "rejects a directory replacing a selected entry point" do
+        bootstrap_run.project.update!(tdd_mode: "strict", readiness_gaps: [ {
+          "kind" => "missing_test_command", "evidence" => { "ecosystem" => "godot" }
+        } ])
+        allow(github_client).to receive_messages(
+          compare_changed_files: [ "bin/test" ],
+          file_modes: { "bin/test" => "040000" }
+        )
+
+        expect {
+          activity.execute(agent_run_id: bootstrap_run.id)
+        }.to raise_error(RuntimeError, /Bootstrap write guard violation.*bin\/test/)
+        expect(bootstrap_run.reload.agent_run_logs.where(log_type: "system").pluck(:content).join("\n"))
+          .to include("must be present as regular files").and include("bin/test")
+      end
+
+      it "names every offending entry point when one was deleted and another symlinked" do
+        bootstrap_run.project.update!(tdd_mode: "strict", readiness_gaps: [ {
+          "kind" => "missing_test_command", "evidence" => { "ecosystem" => "godot" }
+        } ])
+        allow(github_client).to receive_messages(
+          compare_changed_files: [ "bin/install-test-tools", "bin/test" ]
+        )
+        allow(github_client).to receive(:file_modes)
+          .with(
+            project.full_name,
+            paths: [ "bin/install-test-tools", "bin/test" ],
+            ref: bootstrap_run.result_commit_sha
+          )
+          .and_return("bin/install-test-tools" => "120000", "bin/test" => nil)
+
+        expect {
+          activity.execute(agent_run_id: bootstrap_run.id)
+        }.to raise_error(RuntimeError, /Bootstrap write guard violation/)
+        log = bootstrap_run.reload.agent_run_logs.where(log_type: "system").pluck(:content).join("\n")
+        expect(log).to include("bin/install-test-tools").and include("bin/test")
+      end
+
       it "reports behavior-bearing files outside the harness boundary" do
         allow(github_client).to receive(:compare_changed_files)
           .and_return([ ".github/workflows/gdunit.yml", "scripts/player.gd" ])
