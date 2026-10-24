@@ -152,6 +152,21 @@ RSpec.describe FeatureIntents::PublishHeldIssue do
     expect(IssueDependency.where(issue_id: second.issue.id, depends_on_issue_id: prerequisite.id).count).to eq(1)
   end
 
+  it "raises for retry when a locally reused issue no longer has its planning hold" do
+    publish
+    client.read_back_labels_override = []
+
+    expect { publish }.to raise_error(GithubClient::Error, /planning hold was not read back/)
+  end
+
+  it "raises for retry when a locally reused issue no longer has its required links" do
+    publish
+    published_body = client.created_issues.first[:body]
+    client.read_back_body_override = published_body.sub("Sub-issue of ##{parent.github_number}", "")
+
+    expect { publish }.to raise_error(GithubClient::Error, /links were not read back/)
+  end
+
   it "publishes distinct coherent tasks as distinct held issues" do
     first_result = publish
     second_result = publish(title: "Second coherent task")

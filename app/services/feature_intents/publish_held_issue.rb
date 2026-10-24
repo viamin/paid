@@ -75,10 +75,14 @@ module FeatureIntents
 
     # The marker is the stable identity of this task under this feature, so a
     # repeated publication (retry, re-dispatch) reuses the already-filed issue
-    # instead of duplicating it.
+    # instead of duplicating it. Read it back first: GitHub's planning hold and
+    # required links may have changed since the local issue was synchronized.
     def existing_issue
       local = project.issues.where("body LIKE ?", "%#{marker}%").order(:id).first
-      return [ local, true ] if local
+      if local
+        verify_read_back_number(local.github_number)
+        return [ local, true ]
+      end
 
       recovered = recovered_remote_issue
       return [ recovered, true ] if recovered
@@ -148,7 +152,11 @@ module FeatureIntents
     end
 
     def verify_read_back(remote)
-      verified = client.issue(project.full_name, remote.number)
+      verify_read_back_number(remote.number)
+    end
+
+    def verify_read_back_number(number)
+      verified = client.issue(project.full_name, number)
       raise GithubClient::Error, "planning-held issue body was not read back" unless verified.body.to_s.include?(marker)
       raise GithubClient::Error, "planning hold was not read back" unless label_names(verified).include?(PLANNING_LABEL)
 
