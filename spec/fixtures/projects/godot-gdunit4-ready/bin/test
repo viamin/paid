@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+: "${GODOT_BIN:?GODOT_BIN must name the pinned Godot executable}"
+cd "$(dirname "$0")/.."
+exec "${GODOT_BIN}" --headless --path . -s \
+  res://addons/gdUnit4/bin/GdUnitCmdTool.gd --ignoreHeadlessMode -a tests

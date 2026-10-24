@@ -39,6 +39,19 @@ prefix: PROJECT-READINESS
   `Projects::Readiness::Detectors::Godot`.
   *Test:* `spec/services/projects/readiness_spec.rb`.
 
+- [x] **PROJECT-READINESS-013** — When a Godot checkout has either the
+  installed `addons/gdUnit4/bin/GdUnitCmdTool.gd` command or executable
+  repository-owned `bin/install-test-tools` and `bin/test` entry points, the
+  system SHALL identify its command as configured. It SHALL distinguish an
+  installed command from a command whose dependency setup is required, and
+  SHALL report a missing command when neither supported form exists. The
+  evaluator SHALL not execute setup or test scripts, download dependencies, or
+  treat an addon directory alone, arbitrary filename, CI YAML text, or a prior
+  successful check as command evidence; setup/test execution outcomes remain
+  isolated runtime evidence.
+  *Code:* `Projects::Readiness::Detectors::Godot`.
+  *Test:* `spec/services/projects/readiness_spec.rb`.
+
 - [x] **PROJECT-READINESS-005** — When a project's enabled development or
   verification capability has one or more persisted readiness gaps, the system
   SHALL surface exactly one project-backed `project_setup_pending` Inbox entry

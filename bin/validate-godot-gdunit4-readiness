@@ -4,14 +4,11 @@ set -euo pipefail
 # Runs PROJECT-READINESS-009 in an isolated, disposable Godot/gdUnit4 checkout.
 # Nothing downloaded here is written to the Paid working tree.
 readonly GODOT_VERSION="4.4.1"
-readonly GDUNIT4_REF="v5.1.1"
-readonly GDUNIT4_COMMIT="c924c7a01129b346453dd65f8d59e46613658832"
 validation_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly validation_root
 validation_temp_dir="$(mktemp -d)"
 readonly validation_temp_dir
 readonly FIXTURE_DIR="${validation_temp_dir}/godot-gdunit4-ready"
-readonly GDUNIT4_SOURCE_DIR="${validation_temp_dir}/gdunit4-source"
 readonly GODOT_ARCHIVE="${validation_temp_dir}/godot.zip"
 readonly GODOT_DIR="${validation_temp_dir}/godot"
 
@@ -40,14 +37,17 @@ echo "${GODOT_SHA512}  ${GODOT_ARCHIVE}" | sha512sum --check --status
 unzip -q "${GODOT_ARCHIVE}" -d "${GODOT_DIR}"
 
 cp -R "${validation_root}/spec/fixtures/projects/godot-gdunit4-ready/." "${FIXTURE_DIR}"
-rm -rf "${FIXTURE_DIR}/addons/gdUnit4"
-git clone --depth 1 --branch "${GDUNIT4_REF}" https://github.com/godot-gdunit-labs/gdUnit4.git "${GDUNIT4_SOURCE_DIR}"
-test "$(git -C "${GDUNIT4_SOURCE_DIR}" rev-parse HEAD)" = "${GDUNIT4_COMMIT}"
-cp -R "${GDUNIT4_SOURCE_DIR}/addons/gdUnit4" "${FIXTURE_DIR}/addons/gdUnit4"
-chmod +x "${FIXTURE_DIR}/addons/gdUnit4/runtest.sh"
+GODOT_BIN="${GODOT_DIR}/Godot_v${GODOT_VERSION}-stable_linux.${GODOT_ARCH}" \
+  "${FIXTURE_DIR}/bin/install-test-tools"
 
 "${GODOT_DIR}/Godot_v${GODOT_VERSION}-stable_linux.${GODOT_ARCH}" --headless --path "${FIXTURE_DIR}" --editor --quit
 
+if GODOT_BIN="${GODOT_DIR}/Godot_v${GODOT_VERSION}-stable_linux.${GODOT_ARCH}" \
+  "${FIXTURE_DIR}/bin/test"; then
+  echo "Expected intentionally red gdUnit4 fixture to fail" >&2
+  exit 1
+fi
+
 GODOT_GDUNIT4_FIXTURE_PATH="${FIXTURE_DIR}" \
 GODOT_BIN="${GODOT_DIR}/Godot_v${GODOT_VERSION}-stable_linux.${GODOT_ARCH}" \
-bundle exec rspec spec/requests/godot_gdunit4_readiness_lifecycle_spec.rb
+bundle exec rspec spec/requests/godot_gdunit4_readiness_lifecycle_spec.rb --tag godot_gdunit4

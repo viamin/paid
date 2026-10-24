@@ -4,7 +4,7 @@ require "rails_helper"
 require "open3"
 require "ostruct"
 
-# @spec PROJECT-READINESS-005, PROJECT-READINESS-007, PROJECT-READINESS-008, PROJECT-READINESS-009, TDD-GUARD-003
+# @spec PROJECT-READINESS-005, PROJECT-READINESS-007, PROJECT-READINESS-008, PROJECT-READINESS-009, PROJECT-READINESS-013, TDD-GUARD-003
 RSpec.describe "Godot/gdUnit4 readiness lifecycle" do
   let(:account) { create(:account) }
   let(:user) { create(:user, account:) }
@@ -30,8 +30,7 @@ RSpec.describe "Godot/gdUnit4 readiness lifecycle" do
 
     output, status = Open3.capture2e(
       { "GODOT_BIN" => ENV.fetch("GODOT_BIN") },
-      ENV.fetch("GODOT_BIN"), "--headless", "--path", ".", "-s",
-      "res://addons/gdUnit4/bin/GdUnitCmdTool.gd", "--ignoreHeadlessMode", "-a", "tests", chdir: ready_fixture
+      "bin/test", chdir: ready_fixture
     )
 
     expect(status).not_to be_success
