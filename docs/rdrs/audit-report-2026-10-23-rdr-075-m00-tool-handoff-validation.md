@@ -17,9 +17,8 @@
 This is a validation audit, not a closeout. It does not change RDR-073's
 status (already final-accepted per
 [the 2026-10-20 audit](audit-report-2026-10-20-rdr-073-epic-final-acceptance.md))
-and does not promote RDR-075 out of Draft — that requires PR #4308 to merge
-with human review, per this repository's LID workflow stop-for-review
-discipline.
+and does not promote RDR-075 out of Draft — acceptance remains subject to
+human review under this repository's LID workflow stop-for-review discipline.
 
 ## Prerequisite check
 

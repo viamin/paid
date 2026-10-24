@@ -322,7 +322,8 @@ evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
 building a second provisioning path, and keeps investigation separate from
 any repair: a scan never mutates source code or opens a PR on its own.
-**Draft, not yet accepted**: see RDR-075 (design PR #4308, still open) and
+**Draft, not yet accepted**: see RDR-075 (merged to
+`docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
 that acceptance.
 

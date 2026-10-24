@@ -7,9 +7,10 @@ prefix: MAINT
 
 > **Draft — pending design acceptance.** Companion to
 > [`docs/high-level-design.md`](../../high-level-design.md) and the draft
-> [`RDR-075` design in PR #4308](https://github.com/viamin/paid/pull/4308)
-> (`docs/rdrs/RDR-075-general-maintenance-runs.md` once merged). RDR-075 is
-> **Draft** and PR #4308 is open and unmerged. This LLD and its EARS specs are
+> [`RDR-075` design](../../rdrs/RDR-075-general-maintenance-runs.md)
+> (`docs/rdrs/RDR-075-general-maintenance-runs.md`, merged to main via
+> #4308). RDR-075 is still **Status: Draft**, not yet accepted. This LLD and
+> its EARS specs are
 > reviewable contracts produced for the human review gate that RDR
 > acceptance requires; they are not accepted intent and authorize no
 > implementation. See
