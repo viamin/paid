@@ -45,6 +45,28 @@ RSpec.describe Committee::Drivers do
     end
   end
 
+  # @spec CONFIDENCE-DELIVERY-016
+  it "documents feature-decision delivery policy and human action payloads" do
+    feature_decision = schema.dig("components", "schemas", "FeatureDecisionEntry")
+    properties = feature_decision.fetch("allOf").last.fetch("properties")
+
+    expect(properties.fetch("delivery_policy")).to include(
+      "type" => "string",
+      "enum" => %w[approval_gated confidence_driven]
+    )
+    expect(properties.fetch("human_actions")).to include(
+      "type" => "array",
+      "items" => {
+        "type" => "object",
+        "required" => %w[kind message],
+        "properties" => {
+          "kind" => { "type" => "string" },
+          "message" => { "type" => "string" }
+        }
+      }
+    )
+  end
+
   # @spec MOBILE-API-009 MOBILE-API-016
   it "documents only implemented routes with valid bearer requirements and PAT scopes" do
     expect(schema.fetch("paths").keys).to match_array(implemented_paths)

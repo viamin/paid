@@ -769,8 +769,17 @@ components:
         - type: object
           properties:
             kind: {type: string, enum: [feature_decision]}
+            delivery_policy: {type: string, enum: [approval_gated, confidence_driven]}
             ready: {type: boolean}
             blockers: {type: array, items: {}}
+            human_actions:
+              type: array
+              items:
+                type: object
+                required: [kind, message]
+                properties:
+                  kind: {type: string}
+                  message: {type: string}
     RetryLimitedEntry:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
