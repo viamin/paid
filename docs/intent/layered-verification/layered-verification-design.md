@@ -466,6 +466,155 @@ a pass; this reuses the same cancellation semantics every other Paid agent
 run already has (queue, capacity, budgets, isolated execution, logs,
 cancellation) — no new cancellation mechanism.
 
+## Optional automation: PR-triggered and scheduled audits
+
+RDR-076 §2 marks two audit triggers as optional later integrations:
+PR-triggered focused audits
+([#4439](https://github.com/viamin/paid/issues/4439)) and recurring scheduled
+audits through RDR-075 maintenance scheduling
+([#4440](https://github.com/viamin/paid/issues/4440)). Their contracts live in
+this segment because both dispatch the same `layered_verification_audit`
+operation this segment defines; the recurrence machinery a scheduled audit
+uses is owned by the `maintenance-runs` segment
+(`docs/intent/maintenance-runs/`, `MAINT-060`–`MAINT-064`) and is consumed,
+not duplicated. Neither trigger is a prerequisite for core RDR-076 closeout
+(#4438), and neither grants repair authority or creates a merge blocker:
+automatic triggers dispatch audit runs only, so every boundary in
+[Audit-only permissions](#audit-only-permissions-and-separately-authorized-repair)
+— the two Pundit bars, the two run goals, and the no-implicit-enqueue rule —
+applies to them unchanged.
+
+No rollout switch changes here. Both triggers read the existing
+`layered_verification_add_on` guard (`LAYERED-VERIFY-012`) at admission in
+addition to their own explicit, per-project, default-off opt-in
+configuration; no second coordinator or trigger flag is introduced. The
+concrete storage for the opt-in configurations belongs to #4439/#4440
+implementation, not this design.
+
+### PR-triggered focused audits (#4439)
+
+**Admission and opt-in.** A PR-triggered audit is admitted only when the
+`layered_verification_add_on` flag is enabled for the project and the project
+has explicitly opted in to PR-triggered audits — a per-project, default-off
+setting within the add-on's project configuration, never a tenant-wide
+default (RDR-076 §2: "Explicit project opt-in"). The admitted run is a
+`layered_verification_audit` run carrying the pull request's
+`source_pull_request_number`, so the existing partial unique active-PR-run
+index (`idx_agent_runs_unique_active_pr`, one active run per
+`(project_id, source_pull_request_number, goal)`) structurally prevents a
+second active audit for the same pull request — the same mechanism the
+PR-review lanes already rely on (`LAYERED-VERIFY-026`). A trigger arriving
+while an equivalent audit is already active is recorded with its provenance
+(arrival, evaluated head revision, blocking run) and does not queue duplicate
+work; a later trigger event for the current head re-evaluates admission.
+Trigger provenance, current scope, waiting reasons, and links between runs,
+findings, decisions, and pull requests are inspectable, per RDR-076 §2.
+
+**Scope, revision, budget, and deduplication.** A PR-triggered audit pins the
+pull request's head revision at admission and resolves its obligation scope
+to the obligations whose declared scope intersects the pull request's changed
+files — a focused audit of the obligations affected by the PR revision, never
+an automatic full audit of every project obligation (RDR-076 §2: "Do not add
+full layered audits to every PR"). Duplicate-work admission follows RDR-076
+§2's "overlapping requests must not launch duplicate work for the same audit
+scope/revision": an audit request — PR-triggered or manual — whose resolved
+obligation scope and pinned revision match an already-active audit is not
+admitted, regardless of trigger source (`LAYERED-VERIFY-027`). A PR-triggered
+audit whose obligation scope cannot be resolved from the changed files
+surfaces an actionable request — correct the project's trigger configuration
+or request a bounded manual audit — rather than silently broadening to a
+full-project audit, the same anti-silent-broadening rule `MAINT-013` states
+for maintenance runs. Evidence from
+prior audits that the pull request's changes do not invalidate is reused per
+`LAYERED-VERIFY-019` rather than recomputed. Each dispatched audit carries
+the bounded budget configured with the project's PR-trigger opt-in — there is
+no per-trigger budget negotiation — and budget exhaustion remains an
+explicitly incomplete outcome (`LAYERED-VERIFY-020`), never a pass.
+
+**Lifecycle.** A new pull-request head or the pull request's closure does not
+silently cancel an in-flight audit: the run completes against its pinned
+revision, and its evidence and findings stay revision-bound and
+Inbox-actionable; an authorized user may cancel it through the run's existing
+cancellation path, which preserves recorded check results and findings and
+reports the outcome as explicitly incomplete (`LAYERED-VERIFY-029`). A
+cancelled or superseded PR audit never reports success.
+
+**Evidence and Inbox lifecycle.** Findings recorded by a PR-triggered audit
+use the same `LayeredVerificationFinding` identity and deduplication as every
+other audit (`LAYERED-VERIFY-017`): a PR audit reproducing an existing
+unresolved finding attaches an observation — with the PR revision and trigger
+provenance — to that finding rather than creating a second Inbox entry, and a
+clean PR audit creates no Inbox entry (`LAYERED-VERIFY-015`). A pull
+request's merge or closure does not resolve findings; resolution follows
+`LAYERED-VERIFY-024`'s fresh-evidence rule, and the PR link remains visible
+on the finding as trigger provenance.
+
+**No merge gate.** A PR-triggered audit is advisory: it posts no required
+status check, adds no blocking label, and gates no merge by default
+(`LAYERED-VERIFY-028`). Mandatory host policies — CI, security, branch
+protection, code review, approved-intent conformance — run unchanged and
+independently (`LAYERED-VERIFY-021`). Whether PR-triggered findings may
+additionally surface as advisory pull-request comments through the existing
+review publication lifecycle (the layered-verification analog of RDR-075's
+advisory PR audits, #4333) is a deferred decision below; the default surface
+is the Inbox.
+
+### Scheduled audits (#4440)
+
+**Scheduler reuse.** A recurring bounded audit is configured only through the
+maintenance scheduling contract RDR-075 defines (`MAINT-060`–`MAINT-064`):
+opt-in and default disabled, the same sources/scope/budget shape as a manual
+audit request, timezone and next-occurrence exposure, overlap prevention
+against an equivalent in-flight run, bounded missed-occurrence catchup, and
+disable-stops-future-dispatch semantics. The scheduler owns recurrence; this
+segment owns what it dispatches. Each occurrence dispatches the same
+`layered_verification_audit` operation with the same contracts as a manual
+audit — no maintenance-goal wrapper run, no second audit operation (RDR-076
+§2: "It invokes the same audit operation"). Configuring a schedule requires
+the audit-request authorization bar (`ProjectPolicy#manage_issues?`,
+`LAYERED-VERIFY-010`); occurrence dispatch revalidates current state — the
+add-on flag still enabled for the project, the schedule still enabled —
+rather than a per-occurrence user decision, and a scheduled occurrence is
+never dispatched while `layered_verification_add_on` is off for the project
+(`LAYERED-VERIFY-030`). Whether the maintenance scheduler additionally
+requires its own `maintenance_runs` guard for the non-maintenance objectives
+it dispatches is owned by the `maintenance-runs` segment and resolved at
+RDR-075 acceptance; this segment's contract requires only that no guard be
+bypassed.
+
+**Scope, revision, budget, and interruption.** Each occurrence pins the
+then-current requested branch revision and carries the schedule's configured
+budget; the scheduler's non-overlap rule and the same duplicate-work rule
+(same obligation scope and pinned revision) prevent concurrent equivalent
+audits (`LAYERED-VERIFY-031`). An occurrence whose configured sources or
+scope cannot be resolved at dispatch surfaces an actionable Inbox request to
+correct the schedule's configuration rather than silently broadening or
+dropping the occurrence — the same anti-silent-broadening rule
+`MAINT-013`/`MAINT-014` state for manual maintenance runs. Disabling a
+schedule stops future dispatch without cancelling an already-active audit and
+without deleting evidence; cancelling an active audit remains a separate
+explicit action, and interruption, resumption, and budget-exhaustion
+semantics are `LAYERED-VERIFY-020`'s, unchanged.
+
+**Evidence and Inbox lifecycle.** Findings from scheduled audits follow the
+same identity and deduplication (`LAYERED-VERIFY-017`) — a recurring audit
+that reproduces an unresolved finding attaches an observation rather than
+creating Inbox noise, exactly RDR-076 §2's "repeated audits attach new
+observations to the same unresolved scoped finding" — and actionable findings
+surface in the Inbox (`LAYERED-VERIFY-015`, `LAYERED-VERIFY-032`). A
+scheduled dispatch never creates a repair run and never enqueues follow-up
+work (`LAYERED-VERIFY-010`/`-011`; `MAINT-073`'s no-repair-as-scan-side-effect
+rule holds for the audit objective too).
+
+**Dependency boundary.** These contracts are finalized now, but
+scheduled-audit runtime remains explicitly dependent on accepted RDR-075 and
+its scheduling milestone ([#4332](https://github.com/viamin/paid/issues/4332)):
+RDR-075 is still Status: Draft, its LLD/EARS are draft review artifacts, and
+nothing here releases that dependency or authorizes implementation ahead of
+it. The PR-triggered audit contracts above carry no such dependency — #4439
+implements against the core audit capability (#4435/#4434) without waiting
+for maintenance runtime. Neither task blocks core closeout (#4438).
+
 ## Access and tenant boundaries
 
 Source reads, evidence, review packages, and tool invocations go through the
@@ -512,6 +661,11 @@ project's existing host policy.
 | Initial model-check integration | A documented `tlc` command run in the existing isolated execution environment, parsed into `LayeredVerificationCheckResult` | A dedicated TLA+ adapter/service | RDR-076 §3 states a documented command is an acceptable integration and a dedicated adapter is not a prerequisite; a missing tool must produce an explicit gap either way. |
 | Tool surface | Two `Tools::BaseTool` subclasses (audit request, repair request), each declaring its own authorization | One combined tool with a mode parameter | RDR-076 treats "request an audit" and "request a repair" as distinct actions requiring distinct authorization; one tool would need an internal branch duplicating the two-Pundit-check design above. |
 | Stale-action check timing | Re-validate revision/permission/duplicate-run immediately before acting, on every Inbox action | Validate once when the Inbox entry/page is rendered | Mirrors the already-shipped `IntentConformance::VerifyAtMerge` pattern; page-render-time validation goes stale the instant the repository or the user's role changes afterward. |
+| PR-trigger opt-in surface | Per-project, default-off configuration read together with the `layered_verification_add_on` flag | A second per-trigger feature flag; tenant-wide default-on | RDR-076's enablement surface is existing tenant settings plus explicit project selection; a per-trigger flag would fork the one-guard rule `LAYERED-VERIFY-012` already fixes. |
+| PR-trigger run dedup | `source_pull_request_number` + goal on the audit run, reusing the existing partial unique active-PR-run index, plus a scope/revision equivalence check across trigger sources | One audit per push; dedup by textual scope description | RDR-076 §2 forbids duplicate work for the same audit scope/revision; the index is the structural mechanism the PR-review lanes already rely on, and textual similarity is never identity (`LAYERED-VERIFY-017`). |
+| PR-trigger merge posture | Advisory: findings surface through the Inbox; no required status check, blocking label, or merge gate by default | A default merge-blocking status; PR comments as the primary surface | RDR-076 §2 explicitly rejects a new default merge gate; the Inbox is the primary surface for human-actionable findings, and mandatory host policies already run independently. |
+| Scheduled-audit trigger owner | Reuse the RDR-075 maintenance scheduling contract (`MAINT-060`–`MAINT-064`) dispatching the same `layered_verification_audit` operation | A layered-verification-owned scheduler; a maintenance-goal wrapper run | RDR-076 §2 marks the scheduled audit "owned by the maintenance scheduler"; a second scheduler or a wrapper goal would duplicate recurrence machinery and blur the audit operation's contracts. |
+| Scheduled-audit contract timing | Finalize the layered-verification trigger contracts now; defer only the scheduler representation and guard composition to RDR-075 acceptance | Hold all contract drafting until RDR-075 acceptance | The trigger contracts' layered-verification side (admission, scope/revision identity, budgets, evidence/Inbox lifecycle) is decided by the accepted RDR-076; only the recurrence representation genuinely depends on RDR-075's final shape. |
 
 ## Open Questions & Future Decisions
 
@@ -540,6 +694,17 @@ project's existing host policy.
    impact and evidence) against real multi-revision audit data.
 4. Concrete table/column types, indexes, and migration plan belong to #4432
    — this design fixes field names and semantics, not storage DDL.
+5. The concrete scheduler representation of a scheduled audit — whether a
+   `MaintenanceSchedule` row carries a layered-verification audit objective
+   key, or a sibling schedule record reuses the recurrence contract — and
+   whether the scheduler's own `maintenance_runs` guard applies to the
+   non-maintenance objectives it dispatches. Owned by the `maintenance-runs`
+   segment; decided at RDR-075 acceptance / #4332, not here.
+6. Whether PR-triggered audit findings may additionally surface as advisory
+   pull-request comments through the existing review publication lifecycle
+   (the layered-verification analog of RDR-075's advisory PR audits, #4333).
+   Deferred until real PR-triggered audits exist to evaluate; the default
+   surface is the Inbox.
 
 ## Traceability: RDR V1–V20 → EARS → replacement tasks
 
@@ -581,15 +746,26 @@ and verifying-check reruns, #4436), and `-019`/`-020` (change impact and
 resumption, #4435) remain post-milestone; where a listed ID's `*Code:*`
 line also names a later issue (`-009` → #4435, `-014` → #4436), the
 milestone verifies its audit-path scope as carried by #4432–#4433 and
-evaluated at #4434. Full closeout requires all 25 IDs and #4435–#4438;
-optional automation (#4439 PR-triggered audits, #4440 scheduled audits via
-RDR-075) is not required for core closeout and is not mapped to a `V`
-reference because RDR-076 marks both as later, optional integrations.
+evaluated at #4434. Full closeout requires all 25 IDs and #4435–#4438.
+Optional automation is not required for core closeout and is not mapped to a
+`V` reference because RDR-076 marks both as later, optional integrations; its
+accepted slice is allocated as actual canonical EARS in this segment:
+
+| Optional task | EARS IDs | Dependencies |
+| --- | --- | --- |
+| [#4439](https://github.com/viamin/paid/issues/4439) PR-triggered focused audits | LAYERED-VERIFY-026, -027, -028, -029 | #4435, #4434 |
+| [#4440](https://github.com/viamin/paid/issues/4440) Scheduled audits via RDR-075 maintenance scheduling | LAYERED-VERIFY-030, -031, -032 | #4435, #4434, accepted RDR-075 + [#4332](https://github.com/viamin/paid/issues/4332) |
+
+The PR-trigger contracts (#4439) do not await maintenance implementation;
+the scheduled trigger's runtime (#4440) remains explicitly dependent on
+accepted RDR-075 and its scheduling milestone
+(see [Optional automation](#optional-automation-pr-triggered-and-scheduled-audits)).
 
 Per this issue's acceptance criteria, #4432–#4438's own EARS references and
 approved scopes are updated to cite these IDs **after** this planning segment
 merges and is accepted — this document supplies the mapping; it does not
-itself edit those issues.
+itself edit those issues. The same applies to #4439/#4440's
+optional-automation slices (`LAYERED-VERIFY-026`–`-032`).
 
 ## References
 
@@ -613,6 +789,8 @@ itself edit those issues.
 - `docs/intent/lid-aware-agent-runs/`, `docs/intent/focused-agent-runs/` —
   existing `AgentRun` goal/focus precedent for the two new goals.
 - `docs/intent/artifact-storage/` — binary evidence storage reused unchanged.
-- RDR-075 (General Maintenance Runs, reserved per `docs/rdrs/README.md`; not
-  yet a merged standalone RDR document) — owns optional scheduled audits
-  (#4440); this segment does not implement scheduling.
+- [RDR-075](../../rdrs/RDR-075-general-maintenance-runs.md) (General
+  Maintenance Runs, Status: Draft) and `docs/intent/maintenance-runs/`
+  (`MAINT-060`–`MAINT-064`) — own the recurrence machinery the optional
+  scheduled audit (#4440) consumes; this segment owns the trigger contracts
+  (`LAYERED-VERIFY-030`–`-032`) and does not implement scheduling.

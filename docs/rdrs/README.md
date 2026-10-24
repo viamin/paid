@@ -267,8 +267,12 @@ planning; acceptance does not claim that the capability has shipped.
 
 The canonical tracking umbrella is
 [#4385](https://github.com/viamin/paid/issues/4385), with required replacement
-work #4431–#4438 and optional integrations #4439–#4440. The tree is
-planning-held pending accepted LID artifacts; implementation does not depend
+work #4431–#4438 and optional integrations #4439–#4440. Their approved scopes
+live in the accepted `docs/intent/layered-verification/` LLD/EARS — the 25
+core claims for the required tree, and the optional PR-trigger and
+scheduled-audit trigger contracts (`LAYERED-VERIFY-026`–`-032`) for the
+optional pair, whose scheduled runtime additionally awaits accepted RDR-075
+and its scheduling milestone. Implementation does not depend
 on closure of its own umbrella. The previous draft PRs and issue trees are
 superseded by [consolidation PR #4430](https://github.com/viamin/paid/pull/4430).
 Historical audit files retain their original names and numbering; they are
