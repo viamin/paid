@@ -8,7 +8,7 @@ module FeatureIntents
   # @spec FACET-CONFIDENCE-012 FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
   class AssessFacet
     include Llm::OutputNormalizer
-    RUBRIC_VERSION = "facet-confidence-v2"
+    RUBRIC_VERSION = "facet-confidence-v1"
     MODEL_VERSION = "claude-sonnet-4-6"
     TIMEOUT = 60
     STATUSES = %w[completed clarification_needed unknown].freeze
