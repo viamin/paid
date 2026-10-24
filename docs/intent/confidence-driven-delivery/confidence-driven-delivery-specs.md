@@ -1,10 +1,13 @@
 # EARS Specs: Confidence-Driven Delivery
 
 Status: P01 foundation is implemented for `001`, `014`, and `015`; P10
-implements release and unified admission claims `003`–`006` and `009`.
+implements publication, release and unified admission claims `002`–`006` and
+`009`.
 
 - [x] **CONFIDENCE-DELIVERY-001** — When enrolling a feature in confidence-driven delivery, Paid SHALL snapshot an explicitly selected policy; existing features SHALL retain their established policy unless deliberately migrated.
-- [ ] **CONFIDENCE-DELIVERY-002** — When a potential task has coherent purpose and scope but insufficient readiness, Paid SHALL publish a planning-held GitHub issue linked to its feature and prerequisites; speculative alternatives SHALL remain visible in Paid without requiring GitHub issues.
+- [x] **CONFIDENCE-DELIVERY-002** — When a potential task has coherent purpose and scope but insufficient readiness, Paid SHALL publish a planning-held GitHub issue linked to its feature and prerequisites; speculative alternatives SHALL remain visible in Paid without requiring GitHub issues.
+  *Tests:* `spec/services/feature_intents/publish_held_issue_spec.rb`, `spec/mcp/tools/publish_held_issue_spec.rb`.
+  *Code:* `app/services/feature_intents/publish_held_issue.rb`, `app/mcp/tools/publish_held_issue.rb`.
 - [x] **CONFIDENCE-DELIVERY-003** — When a confidence-driven issue's current material facet assessments pass, dependencies permit execution and relevant design documents expressing that scoped intent are merged, Paid SHALL automatically release its workflow-owned planning hold without requiring whole-feature human approval.
   *Tests:* `spec/services/feature_intents/release_issue_spec.rb`.
   *Code:* `app/services/feature_intents/release_issue.rb`.
