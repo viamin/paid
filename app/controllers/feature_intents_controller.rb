@@ -65,7 +65,7 @@ class FeatureIntentsController < ApplicationController
 
     redirect_to inbox_entry_path(feature_decision_entry_id), notice: "Response saved."
   rescue FeatureIntents::RespondToDecision::InvalidResponseError, FeatureIntents::RespondToDecision::StaleDecisionError => e
-    FeatureIntents::ResponseDrafts.save(session, feature_intent: @feature_intent, decision_id: decision.id, answer: params[:answer])
+    save_response_draft(decision) if response_draft_fits_session?
     redirect_to inbox_entry_path(feature_decision_entry_id), alert: e.message
   end
 
@@ -81,5 +81,13 @@ class FeatureIntentsController < ApplicationController
 
   def cancellation_attributes
     params.permit(:cancellation_reason, :replacement_reference).to_h.symbolize_keys
+  end
+
+  def save_response_draft(decision)
+    FeatureIntents::ResponseDrafts.save(session, feature_intent: @feature_intent, decision_id: decision.id, answer: params[:answer])
+  end
+
+  def response_draft_fits_session?
+    params[:answer].to_s.length <= FeatureIntents::ResponseDrafts::MAX_ANSWER_CHARS
   end
 end

@@ -69,7 +69,7 @@ RSpec.describe "dashboard/_inbox_detail_feature_decision", type: :view do
     render partial: "dashboard/inbox_detail_feature_decision",
       locals: { entry: entry_for(feature_intent), scoped_project: nil, selected_kind: Inbox::Queue::FEATURE_DECISION_KIND }
 
-    expect(rendered).to have_css("textarea[name='answer'][required]", count: 2)
+    expect(rendered).to have_css("textarea[name='answer'][required][maxlength='500']", count: 2)
     expect(rendered).to include("Use CSV exports only.", "Correct the inferred direction.")
 
     document = Nokogiri::HTML.fragment(rendered)

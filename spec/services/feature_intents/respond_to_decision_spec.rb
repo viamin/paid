@@ -24,4 +24,15 @@ RSpec.describe FeatureIntents::RespondToDecision do
     expect { described_class.call(decision:, actor:, answer: "Again") }
       .to raise_error(described_class::StaleDecisionError)
   end
+
+  it "rejects a response longer than the session-backed draft limit" do
+    decision = create(:feature_intent_decision)
+    actor = create(:user, account: decision.feature_intent.project.account)
+
+    expect {
+      described_class.call(decision:, actor:, answer: "a" * (FeatureIntents::ResponseDrafts::MAX_ANSWER_CHARS + 1))
+    }.to raise_error(described_class::InvalidResponseError, "Responses must be #{FeatureIntents::ResponseDrafts::MAX_ANSWER_CHARS} characters or fewer.")
+
+    expect(decision.reload).to have_attributes(status: "open", answer: nil)
+  end
 end

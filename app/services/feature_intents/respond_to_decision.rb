@@ -17,6 +17,7 @@ module FeatureIntents
 
     def call
       raise InvalidResponseError, "Enter a response." if answer.blank?
+      raise InvalidResponseError, "Responses must be #{ResponseDrafts::MAX_ANSWER_CHARS} characters or fewer." if answer.length > ResponseDrafts::MAX_ANSWER_CHARS
 
       decision.with_lock do
         raise StaleDecisionError, "This decision was already resolved. Reload to review its current state." unless decision.open?

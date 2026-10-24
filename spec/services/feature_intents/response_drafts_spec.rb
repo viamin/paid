@@ -54,10 +54,10 @@ RSpec.describe FeatureIntents::ResponseDrafts do
     expect(session[described_class::SESSION_KEY]).not_to have_key(feature_intent.id.to_s)
   end
 
-  it "bounds each stored answer so the cookie session cannot overflow" do
-    save_draft(answer: "a" * (described_class::MAX_ANSWER_CHARS + 100))
-
-    expect(described_class.for_feature_intent(session, feature_intent).values.first.length).to eq(described_class::MAX_ANSWER_CHARS)
+  it "rejects an answer that exceeds the cookie-session limit" do
+    expect {
+      save_draft(answer: "a" * (described_class::MAX_ANSWER_CHARS + 1))
+    }.to raise_error(ArgumentError, "Response draft exceeds #{described_class::MAX_ANSWER_CHARS} characters.")
   end
 
   it "retains only the most recent drafts across feature intents" do

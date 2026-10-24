@@ -209,6 +209,19 @@ RSpec.describe "Feature intents" do
     end
 
     # @spec FACET-CONFIDENCE-019
+    it "rejects an oversized response without truncating it into a stale draft" do
+      feature_intent = create(:feature_intent, :ready_for_approval, project: project)
+      decision = create(:feature_intent_decision, :resolved, feature_intent: feature_intent)
+      answer = "a" * (FeatureIntents::ResponseDrafts::MAX_ANSWER_CHARS + 1)
+
+      post respond_to_decision_feature_intent_path(feature_intent, decision_id: decision), params: { answer: answer }
+
+      expect(response).to redirect_to(inbox_entry_path("#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"))
+      expect(flash[:alert]).to eq("Responses must be #{FeatureIntents::ResponseDrafts::MAX_ANSWER_CHARS} characters or fewer.")
+      expect(session[:feature_decision_drafts]).to be_nil
+    end
+
+    # @spec FACET-CONFIDENCE-019
     it "rejects a viewer who can see the project but cannot respond to its decisions" do
       viewer = create(:user, :viewer, account: owner.account)
       feature_intent = create(:feature_intent, :ready_for_approval, project: project)

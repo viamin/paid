@@ -20,7 +20,10 @@ module FeatureIntents
 
     def self.save(session, feature_intent:, decision_id:, answer:)
       feature_key = feature_intent.id.to_s
-      bucket = for_feature_intent(session, feature_intent).merge(decision_id.to_s => answer.to_s.slice(0, MAX_ANSWER_CHARS))
+      answer = answer.to_s
+      raise ArgumentError, "Response draft exceeds #{MAX_ANSWER_CHARS} characters." if answer.length > MAX_ANSWER_CHARS
+
+      bucket = for_feature_intent(session, feature_intent).merge(decision_id.to_s => answer)
       write(session, all(session).except(feature_key).merge(feature_key => bucket))
     end
 
