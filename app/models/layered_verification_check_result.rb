@@ -23,8 +23,22 @@ class LayeredVerificationCheckResult < ApplicationRecord
   validates :execution_state, inclusion: { in: EXECUTION_STATES }
   validates :obligation_coverage, inclusion: { in: OBLIGATION_COVERAGES }
   validates :limitations, presence: true
+  validate :correspondence_claim_belongs_to_obligation, if: -> { correspondence_claim.present? }
+  validate :agent_run_belongs_to_same_project, if: -> { agent_run.present? }
 
   private
+
+  def correspondence_claim_belongs_to_obligation
+    return if correspondence_claim.obligation_id == obligation_id
+
+    errors.add(:correspondence_claim, "must belong to the same obligation")
+  end
+
+  def agent_run_belongs_to_same_project
+    return if agent_run.project_id == obligation.project_id
+
+    errors.add(:agent_run, "must belong to the same project")
+  end
 
   def prevent_mutation!
     raise ImmutableResultError, "check results are append-only"

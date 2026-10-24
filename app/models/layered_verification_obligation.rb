@@ -24,6 +24,8 @@ class LayeredVerificationObligation < ApplicationRecord
   validates :approval_state, inclusion: { in: APPROVAL_STATES }
   validates :external_identity, uniqueness: { scope: [ :project_id, :framework ] }
   validate :change_intent_belongs_to_project
+  validate :superseded_by_belongs_to_same_project, if: -> { superseded_by.present? }
+  validate :superseded_by_is_not_self
 
   def record_approval!(revision:, approval_reference:, persisted:)
     raise ApprovalNotPersistedError, "approval is not persisted in the target repository" unless persisted
@@ -44,5 +46,17 @@ class LayeredVerificationObligation < ApplicationRecord
     return unless change_intent && change_intent.project_id != project_id
 
     errors.add(:change_intent, "must belong to the same project")
+  end
+
+  def superseded_by_belongs_to_same_project
+    return if superseded_by.project_id == project_id
+
+    errors.add(:superseded_by, "must belong to the same project")
+  end
+
+  def superseded_by_is_not_self
+    return unless persisted? && superseded_by_id == id
+
+    errors.add(:superseded_by, "cannot reference itself")
   end
 end
