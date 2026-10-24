@@ -10,9 +10,10 @@
   validated**: the recorded analyzer commands ran in this checkout, not via
   `AgentRun#execute_in_execution_environment`, and no execution-environment
   sidecar request was recorded. The native CLI and sidecar acceptance criteria
-  therefore remain open. RDR-075 remains Draft; this report does not resolve
-  the design's stated blocker, accept the design, or release implementation
-  phases #4328–#4333.
+  therefore remain open, owned by follow-up
+  [#4604](https://github.com/viamin/paid/issues/4604). RDR-075 remains
+  Draft; this report does not resolve the design's stated blocker, accept
+  the design, or release implementation phases #4328–#4333.
 
 This is a validation audit, not a closeout. It does not change RDR-073's
 status (already final-accepted per
@@ -29,7 +30,7 @@ Live GitHub state, checked 2026-10-23:
 | RDR-073 umbrella #4263 | Closed |
 | RDR-073 closeout #4268 | Closed |
 | RDR-073 epic final-acceptance audit | Complete ([2026-10-20](audit-report-2026-10-20-rdr-073-epic-final-acceptance.md)): all 4 phases shipped against every validation criterion, 103 examples passing at that audit |
-| PR #4308 (RDR-075 design) | Open, unmerged, mergeable |
+| PR #4308 (RDR-075 design) | Open, unmerged, mergeable at check time; merged to main at 2026-10-23T23:34Z after this check — see addendum in "Recommended edits" |
 
 RDR-073's prerequisite is satisfied, which is what unblocks this validation
 (the draft's own "Blocked on" line names this report's outcome as the
@@ -279,9 +280,10 @@ than the shipped adapter contract.
 ## Recommended edits to PR #4308
 
 This report does not edit `docs/rdrs/RDR-075-general-maintenance-runs.md`
-directly — that file lives on PR #4308's branch, and a competing edit there
-would risk the exact "competing design PR" problem the issue warns against.
-The PR's author or reviewer should, when next revising PR #4308:
+directly — at check time that file lived on PR #4308's branch, and a
+competing edit there would risk the exact "competing design PR" problem
+the issue warns against. The PR's author or reviewer should, when next
+revising PR #4308:
 
 - Keep the **Blocked on** metadata line: critical assumption 2 remains open
   until a native analyzer and representative sidecar request have each run
@@ -294,13 +296,31 @@ The PR's author or reviewer should, when next revising PR #4308:
   should name `agent_run.execute_in_execution_environment` and make its use
   conditional on the required native-environment validation artifact.
 
+**Addendum (2026-10-24, post-merge):** PR #4308 merged to main at
+2026-10-23T23:34Z, so these edits no longer land on the PR's branch — they
+land as follow-up changes to `docs/rdrs/RDR-075-general-maintenance-runs.md`
+on main. The change resolving this PR's review applies them there directly:
+the Open Questions and Tool-integration edits above are incorporated, and
+the **Blocked on** line is kept with its pending-evidence ownership
+retargeted from #4327 (which closes via this PR) to
+[#4604](https://github.com/viamin/paid/issues/4604), the follow-up issue
+that now owns the two live execution-environment validations.
+
 ## Disposition
 
 This report resolves critical assumption 1 only. Critical assumption 2 remains
-blocked on the two live execution-environment validations described above. It
-does not:
+blocked on the two live execution-environment validations described above,
+owned by [#4604](https://github.com/viamin/paid/issues/4604): because this
+workspace had no Docker client or Docker socket, #4327 closes via the
+resolving PR with its acceptance criterion 2 explicitly deferred to that
+follow-up issue rather than silently satisfied — the concrete question and
+recovery action #4327's execution scope requires, in Paid, not a silent
+planning hold. RDR-075's **Blocked on** line and the `maintenance-runs`
+arrow entry track #4604 as the evidence owner. This report does not:
 
-- Accept RDR-075 or merge PR #4308 — that remains a human review action.
+- Accept RDR-075 — that remains a human review action. (PR #4308 has since
+  merged to main; the merge carries the draft forward and is not
+  acceptance.)
 - Release implementation phases #4328–#4333 — their planning holds stay in
   place until the design and its LID artifacts (HLD update, maintenance
   LLD/EARS) are accepted and merged, per the draft's own Implementation Plan

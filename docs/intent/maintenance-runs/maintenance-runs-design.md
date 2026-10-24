@@ -163,6 +163,12 @@ shipped code in
   repositories, honoring project configuration and manual tool selections.
   A language match authorizes evidence collection only — never a blocking
   gate or an automatic fix.
+- Where no applicable tool or native analyzer exists for the run's
+  objective and repository, the run falls back to a prompt-only
+  investigation: no tool check is "planned" for that run, so a completed
+  prompt-only investigation with no findings reports `clean` (MAINT-044),
+  while a tool check that *was* planned and then failed to run keeps
+  forcing `partial` (MAINT-022).
 
 ## Decisions & Alternatives
 
