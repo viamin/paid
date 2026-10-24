@@ -58,10 +58,10 @@ A maintenance run produces exactly one `MaintenanceReport`, associated
 investigation against another revision is a new run and a new report). The
 report records:
 
-- Its outcome: `clean`, `partial`, `cancelled`, or `budget_exhausted`. There
-  is no `failed` outcome distinct from `partial` — every terminal state
-  reports what was actually covered; a report can never claim `clean` while
-  a check did not complete.
+- Its outcome: `clean`, `completed`, `partial`, `cancelled`, or
+  `budget_exhausted`. There is no `failed` outcome distinct from `partial` —
+  every terminal state reports what was actually covered; a report can never
+  claim `clean` or `completed` while a check did not complete.
 - Which checks/analyzers actually ran to completion, and which did not
   (missing tool, parse failure, truncated analysis, unavailable service),
   so partial coverage is visible rather than silently folded into a clean
@@ -129,20 +129,23 @@ project's tenant.
 
 ## Run-Outcome Contract
 
-A maintenance run's terminal report outcome is one of exactly four values,
+A maintenance run's terminal report outcome is one of exactly five values,
 and the implementation must not collapse them:
 
 | Outcome | Meaning |
 | --- | --- |
 | `clean` | Every check that was supposed to run completed; no findings. |
-| `partial` | At least one finding exists, or at least one planned check did not complete (missing tool, parse failure, timeout, unavailable service) — coverage is visibly incomplete either way. |
+| `completed` | Every check that was supposed to run completed; one or more findings exist. |
+| `partial` | At least one planned check did not complete (missing tool, parse failure, timeout, unavailable service) — coverage is visibly incomplete, whether or not findings exist. |
 | `cancelled` | A user cancelled an in-flight run; evidence collected so far is preserved. |
 | `budget_exhausted` | Cost/time limits were hit before planned checks completed; evidence collected so far is preserved. |
 
-`clean` is a success outcome, not an error — "no findings" is a valid,
-reportable result. `partial`/`cancelled`/`budget_exhausted` must never be
-presented to a user as `clean`; the report's completed-checks list is what
-distinguishes them, not the absence of findings.
+`clean` and `completed` are success outcomes, not errors — a fully covered
+investigation is no less successful for having findings, and "no findings"
+is a valid, reportable result. `partial`/`cancelled`/`budget_exhausted` must
+never be presented to a user as `clean` or `completed`; the report's
+completed-checks list is what distinguishes incomplete coverage, never the
+presence of findings.
 
 ## Tool Integration Contract
 

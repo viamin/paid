@@ -63,15 +63,20 @@
 ## Reports and Findings
 
 - [ ] **MAINT-020**: The system shall produce exactly one `MaintenanceReport`
-      per maintenance run, with a terminal outcome of `clean`, `partial`,
-      `cancelled`, or `budget_exhausted`, and shall preserve that report's
-      finding occurrences and evidence after later scans complete.
+      per maintenance run, with a terminal outcome of `clean`, `completed`,
+      `partial`, `cancelled`, or `budget_exhausted`, and shall preserve that
+      report's finding occurrences and evidence after later scans complete.
+      `clean` and `completed` are success outcomes: `completed` means every
+      planned check completed with one or more findings, and `partial` is
+      reserved for runs where at least one planned check did not complete.
 - [ ] **MAINT-021**: The system shall record, for every maintenance report,
       which checks actually completed and which did not, independent of
       whether findings exist.
 - [ ] **MAINT-022**: If any planned check does not complete (missing tool,
       parse failure, timeout, or unavailable dependency), then the system
-      shall report `partial`, never `clean`.
+      shall report `partial`, never `clean` or `completed`; where every
+      planned check completed and one or more findings exist, the system
+      shall report `completed`, never `partial`.
 - [ ] **MAINT-023**: When a maintenance run is cancelled, the system shall
       preserve all evidence collected up to cancellation and report
       `cancelled`.
