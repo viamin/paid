@@ -24,8 +24,26 @@ authorized by `ProjectPolicy#update?` and recorded as account activity.
 P10 replaces the admission denial with `FeatureIntents::ReleaseIssue` and
 `FeatureIntents::RunAdmission`: a passing scoped-readiness result records an
 immutable release snapshot, reconciles only Paid's planning hold, and is
-rechecked at queue and run admission. P11/P12 still own policy-specific review
-and completion enforcement; selection or enrollment alone never releases work.
+rechecked at queue and run admission. P10 also adds
+`FeatureIntents::PublishHeldIssue`: a coherent-but-not-ready task is published
+as a GitHub issue carrying the workflow-owned `planning` label, explicit
+`Sub-issue of #N` parent text and `Depends on #N` prerequisite lines (the
+project's dependency conventions), and a `FeatureIntentIssue` link that enters
+the tree at `release_state: "held"`. Publication is idempotent per feature and
+task identity: a durable create receipt is committed before GitHub is called,
+then stores GitHub's returned issue identity before local synchronization; a
+retry reconciles that number rather than relying on eventually-consistent body
+search. Local reuse and remote-body recovery cover records lost after a
+completed synchronization. Publication is serialized on a session advisory
+lock without holding row locks across GitHub calls, and reads back the created
+issue — marker, planning label, and dependency lines — before any local link
+is committed. Speculative
+alternatives are recorded deduplicated on the feature
+(`feature_intents.speculative_alternatives`) and never filed as GitHub issues;
+the authorized chat surface is the `publish_held_issue` tool, which reuses
+`FeatureIntentPolicy#approve?` (project issue management). P11/P12 still own
+policy-specific review and completion enforcement; selection or enrollment
+alone never releases work.
 
 ## State and transitions
 
@@ -41,6 +59,14 @@ and completion enforcement; selection or enrollment alone never releases work.
 
 These are behavioral states, not a mandate to duplicate the existing issue and
 run state machines with another status enum.
+
+`FeatureIntents::PublishHeldIssue` owns the speculative → planning-held
+transition for confidence-driven features: coherent work is filed with the
+planning hold and prerequisite links, while speculative alternatives stay in
+Paid on the feature record. Coverage of the facet prerequisite mapping is
+recorded as "unknown" at publication — confirming material coverage is the
+assessor's judgment, so a freshly published issue can never pass readiness by
+absence of evidence.
 
 ## Readiness and admission
 
