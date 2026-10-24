@@ -77,6 +77,19 @@
   `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`,
   `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-028** — When a trusted, open non-PR issue has merged
+  closeout evidence and is held in `manual_review`, the bounded legacy
+  reconciler SHALL perform at most one durable criterion assessment and reuse
+  the existing owner/prerequisite reconciliation path to provide a concrete
+  recovery owner or human action. It SHALL preserve the manual-review state,
+  reason, labels, closure state, normal auto-pick/dequeue guards, and rollout
+  controls; it SHALL not treat a merged PR, closed child, or assessment alone
+  as acceptance. `needs_input`, pauses, untrusted issues, closed issues, and
+  pull requests remain excluded. A terminal reconciliation record SHALL
+  suppress repeated no-change assessments.
+  *Code:* `app/services/partial_closeouts/reconcile_legacy.rb`.
+  *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-001** — When `Issues::CloseoutEvidence` evaluates an
   issue, the system SHALL assemble the closeout evidence set from (a) merged
   PR rows linked to the issue via `parent_issue_id`, (b) merged PR rows matched
