@@ -248,7 +248,14 @@ RSpec.describe IntentConformance::ReviewRun do
     before do
       create(:feature_intent_issue, feature_intent: confidence_feature, issue: issue,
         release_state: "released",
-        release_snapshot: { "merged_baseline" => "scoped-design-v1" },
+        release_snapshot: FeatureIntents::ScopedReadiness.call(project: project, mapping: {
+          "coverage" => "complete",
+          "scope_revision" => "scope-v1",
+          "prerequisites" => [
+            { "id" => "intent", "assessment" => { "status" => "completed", "evidence_revision" => "evidence-v1", "intent_score" => 80, "technical_score" => 80 } }
+          ],
+          "design_artifacts" => [ { "path" => "docs/rdrs/RDR-1000-scoped.md", "required" => true, "merged" => true, "scope_revision" => "scope-v1", "revision" => "scoped-design-v1" } ]
+        }).snapshot,
         readiness_mapping: { "design_artifacts" => [ { "path" => "docs/rdrs/RDR-1000-scoped.md" } ] })
       allow(github_client).to receive(:file_content)
         .with("acme/widgets", path: "docs/rdrs/RDR-1000-scoped.md", ref: "scoped-design-v1")
@@ -261,6 +268,19 @@ RSpec.describe IntentConformance::ReviewRun do
       }.to_json))
 
       expect(call).to have_attributes(approved_design_revision: "scoped-design-v1")
+    end
+
+    it "prefers an explicit merged baseline when the release snapshot records one" do
+      link = confidence_feature.feature_intent_issues.find_by!(issue: issue)
+      link.update!(release_snapshot: link.release_snapshot.merge("merged_baseline" => "explicit-baseline"))
+      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+        outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "Within scope."
+      }.to_json))
+      allow(github_client).to receive(:file_content)
+        .with("acme/widgets", path: "docs/rdrs/RDR-1000-scoped.md", ref: "explicit-baseline")
+        .and_return("# RDR-1000\n\nThe scoped widget SHALL be green.")
+
+      expect(call).to have_attributes(approved_design_revision: "explicit-baseline")
     end
 
     it "does not review using a pending confidence snapshot" do

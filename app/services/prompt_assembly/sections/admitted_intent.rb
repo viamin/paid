@@ -35,8 +35,9 @@ class PromptAssembly::Sections::AdmittedIntent
   end
 
   def format_facet(facet)
+    direction = " (#{facet["direction"]})" if facet["direction"].present?
     [
-      "- #{facet["name"]}: intent #{facet["intent_score"] || "unknown"}, technical #{facet["technical_score"] || "unknown"}",
+      "- #{facet["name"]}#{direction}: intent #{facet["intent_score"] || "unknown"}, technical #{facet["technical_score"] || "unknown"}",
       "  Expressed intent: #{Array(facet["expressed_intent"]).join("; ").presence || "none recorded"}",
       "  Inferred fit: #{facet["inferred_fit"].presence || "none recorded"}",
       "  Demonstrated feasibility: #{Array(facet["demonstrated_feasibility"]).join("; ").presence || "none recorded"}"

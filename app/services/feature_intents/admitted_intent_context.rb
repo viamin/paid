@@ -20,7 +20,7 @@ module FeatureIntents
         "policy" => feature_intent.delivery_policy,
         "feature_id" => feature_intent.id,
         "issue_id" => issue.id,
-        "design_baseline" => issue_link.release_snapshot["merged_baseline"],
+        "design_baseline" => issue_link.released_baseline_revision,
         "design_document_paths" => Array(issue_link.current_readiness_mapping["design_artifacts"]).filter_map { |artifact| artifact["path"] },
         "facets" => applicable_facets.flat_map { |facet| facet_snapshot(facet) }
       }
@@ -34,9 +34,13 @@ module FeatureIntents
       issue_link&.feature_intent
     end
 
+    # Pins the same link RunAdmission evaluates first: the lowest-id
+    # confidence-driven link for the issue, so the snapshot handed to builders
+    # describes the design the run was admitted against.
     def issue_link
       @issue_link ||= FeatureIntentIssue.joins(:feature_intent).includes(:feature_intent, :prerequisite_mapping)
-        .find_by(issue_id: issue.id, feature_intents: { delivery_policy: "confidence_driven" })
+        .where(issue_id: issue.id, feature_intents: { delivery_policy: "confidence_driven" })
+        .order(:id).first
     end
 
     def applicable_facets

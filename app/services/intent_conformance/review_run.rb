@@ -141,7 +141,7 @@ module IntentConformance
 
     # @spec CONFIDENCE-DELIVERY-010
     def baseline_revision
-      return confidence_link.release_snapshot["merged_baseline"] if confidence_link&.release_state == "released"
+      return confidence_link.released_baseline_revision if confidence_link&.release_state == "released"
       return if confidence_link
 
       feature_intent.approved_design_revision if feature_intent&.approval_gated?
@@ -155,7 +155,8 @@ module IntentConformance
 
     def confidence_link
       @confidence_link ||= FeatureIntentIssue.joins(:feature_intent)
-        .find_by(issue_id: issue.id, feature_intents: { delivery_policy: "confidence_driven" })
+        .where(issue_id: issue.id, feature_intents: { delivery_policy: "confidence_driven" })
+        .order(:id).first
     end
 
     def diff_entries(diff)
