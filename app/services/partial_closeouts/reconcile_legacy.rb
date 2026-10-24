@@ -411,19 +411,23 @@ module PartialCloseouts
       end
     end
 
-    # Issues parked in deliberate operator states (`needs_input`,
-    # `manual_review`, paused flag, project pause) carry their own Inbox
-    # lane and their own hold. The legacy sweep must never overwrite
-    # those — the existing state is the operator's truth and the legacy
-    # reconciliation runs alongside it.
+    # A manual-review hold remains the operator's truth, but merged delivery
+    # evidence behind it still needs one bounded reconciliation: otherwise an
+    # enhancement/parser failure can hide the concrete owner or prerequisite
+    # the operator needs to recover. Reconcile never clears the hold; it only
+    # persists its evidence-scoped result and uses the existing owner path.
+    # `needs_input` remains excluded because its unanswered questions are the
+    # required human input, not a technical-recovery trigger.
+    # @spec PARTIAL-CLOSEOUT-028
     def ineligible?(agent_run)
       issue = agent_run.issue
       return true unless issue
       return true if issue.is_pull_request?
       return true unless issue.github_state == "open"
+      return true unless issue.trusted?
 
       paid_state = issue.paid_state.to_s
-      paid_state.in?(%w[needs_input manual_review]) ||
+      paid_state == "needs_input" ||
         issue.paused? ||
         issue.project.paused?
     end
