@@ -421,6 +421,21 @@ transitions already bump via `merge_approval_candidate_state_changed?`).
 A label-only write is cheap to bump on — the cache version is an integer
 bump, and PR label writes are rare relative to issue traffic.
 
+## Shared planning-decision context
+
+`feature_decision` remains one feature-scoped Inbox entry even when its open
+decision holds several linked implementation tasks. `Inbox::FeatureDecisionContext`
+projects the already-authoritative `FeatureDecisionReadiness` result alongside
+the persisted open decision, linked task identities, and current design-PR
+heads. The web pane and API consume that same projection, so an operator can
+see the exact claim, current revision, affected work, and policy-specific next
+action without treating a planning label, a chat reply, or an evidence note as
+design acceptance. The projection performs no assessment or write: inline
+answers continue through `FeatureIntents::RespondToDecision`, and contextual
+chat continues to use the canonical record context. This preserves a
+confidence-driven feature's automatic release path while never manufacturing a
+whole-feature approval boundary.
+
 ## Navigation
 
 The inbox is a top-level nav item (desktop and mobile), placed immediately

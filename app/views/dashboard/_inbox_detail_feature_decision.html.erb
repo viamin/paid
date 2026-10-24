@@ -1,6 +1,7 @@
 <%# @spec FEATURE-APPROVAL-020 CONFIDENCE-DELIVERY-016 OPERATOR-INBOX-019 FACET-CONFIDENCE-019 %>
 <% feature_intent = entry.record %>
 <% readiness = Inbox::FeatureDecisionReadiness.call(feature_intent: feature_intent) %>
+<% decision_context = Inbox::FeatureDecisionContext.call(feature_intent: feature_intent) %>
 <% response_drafts = FeatureIntents::ResponseDrafts.for_feature_intent(session, feature_intent) %>
 <% confidence_driven = feature_intent.confidence_driven? %>
 <div class="space-y-6">
@@ -37,6 +38,37 @@
     <div class="space-y-2">
       <h3 class="text-sm font-semibold text-gray-900">Feature brief</h3>
       <p class="whitespace-pre-line rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600"><%= feature_intent.brief %></p>
+    </div>
+  <% end %>
+
+  <% if decision_context.decisions.any? %>
+    <div class="space-y-2 rounded-xl border border-gray-200 bg-white p-4" data-testid="feature-decision-context">
+      <h3 class="text-sm font-semibold text-gray-900">Planning decision context</h3>
+      <p class="text-sm text-gray-600">Each response re-evaluates the shared planning hold for the linked tasks; it does not approve the feature or prove technical validation.</p>
+      <ul class="space-y-2 text-sm">
+        <% decision_context.decisions.each do |decision| %>
+          <li>
+            <p class="font-medium text-gray-900"><%= decision.prompt %></p>
+            <p class="text-xs text-gray-500">Affects: <%= decision.design_claim %></p>
+          </li>
+        <% end %>
+      </ul>
+      <% if decision_context.tasks.any? %>
+        <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Affected tasks</p>
+        <ul class="list-disc space-y-1 pl-5 text-sm text-gray-600">
+          <% decision_context.tasks.each do |task| %>
+            <li><%= link_to "##{task.number} #{task.title}", task.url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-500" %></li>
+          <% end %>
+        </ul>
+      <% end %>
+      <% if decision_context.design_revisions.any? %>
+        <p class="text-xs font-medium uppercase tracking-wide text-gray-500">Current design revisions</p>
+        <ul class="space-y-1 text-xs text-gray-600">
+          <% decision_context.design_revisions.each do |revision| %>
+            <li><%= link_to "##{revision.number}", revision.url, target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-500" %> · <%= revision.state %> · <code class="break-all"><%= revision.revision %></code></li>
+          <% end %>
+        </ul>
+      <% end %>
     </div>
   <% end %>
 

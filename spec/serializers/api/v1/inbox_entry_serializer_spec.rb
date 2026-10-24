@@ -159,6 +159,22 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload[:human_actions]).not_to include(a_hash_including(kind: "approve"))
     end
 
+    it "serializes the shared planning decision context" do # @spec OPERATOR-INBOX-021
+      feature_intent = create(:feature_intent, :confidence_driven, project: project)
+      decision = create(:feature_intent_decision, feature_intent: feature_intent)
+      issue = create(:issue, project: project, github_number: 73, title: "Validate sidecar")
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+      create(:feature_intent_design_pr, feature_intent: feature_intent, pull_request_number: 74,
+        head_sha: "design-revision", reviewed_head_sha: nil)
+      entry = build_entry(Inbox::Queue::FEATURE_DECISION_KIND, record: feature_intent)
+
+      payload = described_class.render(entry)
+
+      expect(payload[:decisions]).to include(a_hash_including(id: decision.id, prompt: decision.prompt))
+      expect(payload[:affected_tasks]).to include(a_hash_including(number: 73, title: "Validate sidecar"))
+      expect(payload[:design_revisions]).to include(a_hash_including(number: 74, revision: "design-revision", state: "open"))
+    end
+
     it "serializes retry_limited with the push-permission flag and return count" do
       issue = create(:issue, project: project,
         runner_retry_abandon_reason: "All available runners reached the per-issue retry cap (3).",

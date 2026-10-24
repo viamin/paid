@@ -146,11 +146,15 @@ module Api
       # detail partial's inline call).
       def feature_decision_payload
         readiness = Inbox::FeatureDecisionReadiness.call(feature_intent: entry.record)
+        context = Inbox::FeatureDecisionContext.call(feature_intent: entry.record)
         {
           delivery_policy: entry.record.delivery_policy,
           ready: readiness.ready?,
           blockers: readiness.blockers.map { |blocker| { code: blocker.code, message: blocker.message } },
-          human_actions: readiness.human_actions.map { |action| { kind: action.kind, message: action.message } }
+          human_actions: readiness.human_actions.map { |action| { kind: action.kind, message: action.message } },
+          decisions: context.decisions.map(&:to_h),
+          affected_tasks: context.tasks.map(&:to_h),
+          design_revisions: context.design_revisions.map(&:to_h)
         }
       end
 
