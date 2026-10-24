@@ -45,6 +45,15 @@ RSpec.describe FeatureIntents::AdmittedIntentContext do
     expect(snapshot.fetch("design_baseline")).to eq("a" * 40)
   end
 
+  # @spec CONFIDENCE-DELIVERY-007
+  it "pins mapped design paths from the release snapshot rather than the live readiness mapping" do
+    link.update!(readiness_mapping: { "design_artifacts" => [ { "path" => "docs/intent/revised.md" } ] })
+
+    snapshot = described_class.capture(issue: issue)
+
+    expect(snapshot.fetch("design_document_paths")).to eq([ "docs/intent/example.md" ])
+  end
+
   describe "facet evidence" do
     let!(:facet) { create(:feature_intent_facet, feature_intent: feature, issue: issue, evidence_revision: 1) }
     let!(:direction) { create(:feature_intent_facet_direction, feature_intent_facet: facet) }
@@ -75,6 +84,35 @@ RSpec.describe FeatureIntents::AdmittedIntentContext do
       expect(directions).to contain_exactly(direction.name, alternative.name)
       expect(snapshot.fetch("design_baseline")).to eq("a" * 40)
       expect(snapshot.dig("facets", 0, "evidence_revision")).to eq(1)
+    end
+
+    # @spec FACET-CONFIDENCE-013
+    it "shows a directionless human correction in every active direction entry" do
+      FeatureIntentFacetEvidence.create!(account: project.account, feature_intent_facet: facet,
+        statement: "Correction: keyboard navigation is required.",
+        source_type: "human_correction", source_reference: "chat-2", idempotency_key: "evidence-2",
+        occurred_at: Time.current, evidence_revision: 2)
+      facet.update!(evidence_revision: 2)
+
+      entries = described_class.capture(issue: issue).fetch("facets")
+
+      expect(entries.map { |entry| entry.fetch("direction") }).to contain_exactly(direction.name, alternative.name)
+      expect(entries.map { |entry| entry.fetch("expressed_intent") })
+        .to all(include("Correction: keyboard navigation is required."))
+    end
+
+    # @spec FACET-CONFIDENCE-013
+    it "keeps earlier active statements visible when later evidence advances the revision" do
+      FeatureIntentFacetEvidence.create!(account: project.account, feature_intent_facet: facet,
+        statement: "Prototype run passed.",
+        source_type: "experiment_result", source_reference: "run-1", idempotency_key: "evidence-3",
+        occurred_at: Time.current, evidence_revision: 2)
+      facet.update!(evidence_revision: 2)
+
+      snapshot = described_class.capture(issue: issue)
+
+      expect(snapshot.dig("facets", 0, "expressed_intent")).to include("Keep keyboard navigation.")
+      expect(snapshot.dig("facets", 0, "demonstrated_feasibility")).to include("Prototype run passed.")
     end
   end
 end

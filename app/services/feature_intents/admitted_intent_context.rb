@@ -16,12 +16,15 @@ module FeatureIntents
     def capture
       return {} unless feature_intent&.confidence_driven?
 
+      # Baseline and mapped design paths are pinned from the same immutable
+      # release snapshot the run was admitted against; the live readiness
+      # mapping may be revised after release.
       {
         "policy" => feature_intent.delivery_policy,
         "feature_id" => feature_intent.id,
         "issue_id" => issue.id,
         "design_baseline" => issue_link.released_baseline_revision,
-        "design_document_paths" => Array(issue_link.current_readiness_mapping["design_artifacts"]).filter_map { |artifact| artifact["path"] },
+        "design_document_paths" => Array(issue_link.release_snapshot["design_artifacts"]).filter_map { |artifact| artifact["path"] },
         "facets" => applicable_facets.flat_map { |facet| facet_snapshot(facet) }
       }
     end
@@ -38,7 +41,7 @@ module FeatureIntents
     # confidence-driven link for the issue, so the snapshot handed to builders
     # describes the design the run was admitted against.
     def issue_link
-      @issue_link ||= FeatureIntentIssue.joins(:feature_intent).includes(:feature_intent, :prerequisite_mapping)
+      @issue_link ||= FeatureIntentIssue.joins(:feature_intent).includes(:feature_intent)
         .where(issue_id: issue.id, feature_intents: { delivery_policy: "confidence_driven" })
         .order(:id).first
     end
@@ -69,9 +72,15 @@ module FeatureIntents
       direction&.assessments&.where(evidence_revision: revision, status: "completed")&.order(created_at: :desc)&.first
     end
 
+    # Evidence summaries mirror the assessor's active evidence (AssessFacet):
+    # every non-superseded row at any revision, so a human statement or
+    # correction stays visible until explicitly superseded. Directionless
+    # rows — the only kind the chat correction path records — are facet-level,
+    # so each active direction entry includes them.
+    # @spec FACET-CONFIDENCE-013
     def evidence_for(facet, direction, source_types)
-      relation = facet.evidence.where(evidence_revision: facet.evidence_revision, source_type: source_types, superseded_by: nil)
-      relation = relation.where(feature_intent_facet_direction: direction) if direction
+      relation = facet.evidence.where(source_type: source_types, superseded_by: nil)
+      relation = relation.where(feature_intent_facet_direction: [ direction, nil ]) if direction
       relation.order(:id).pluck(:statement)
     end
   end

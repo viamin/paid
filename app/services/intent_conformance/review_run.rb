@@ -147,8 +147,15 @@ module IntentConformance
       feature_intent.approved_design_revision if feature_intent&.approval_gated?
     end
 
+    # Released links review the design documents admitted at release: the same
+    # immutable release snapshot that pins the baseline. The live readiness
+    # mapping may be revised after release (RunAdmission reconciles that
+    # drift), and its paths need not resolve at the pinned baseline revision.
+    # An unreleased confidence link has no admitted design set at all.
+    # @spec CONFIDENCE-DELIVERY-010
     def design_document_paths
-      return Array(confidence_link.current_readiness_mapping["design_artifacts"]).filter_map { |artifact| artifact["path"] } if confidence_link
+      return Array(confidence_link.release_snapshot["design_artifacts"]).filter_map { |artifact| artifact["path"] } if confidence_link&.release_state == "released"
+      return [] if confidence_link
 
       Array(feature_intent.design_document_paths)
     end

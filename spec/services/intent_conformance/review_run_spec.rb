@@ -289,6 +289,23 @@ RSpec.describe IntentConformance::ReviewRun do
       expect(AgentHarness).not_to receive(:send_message)
       expect(call).to be_nil
     end
+
+    # @spec CONFIDENCE-DELIVERY-010
+    it "reviews the design artifacts admitted at release rather than a later revised mapping" do
+      link = confidence_feature.feature_intent_issues.find_by!(issue: issue)
+      link.update!(readiness_mapping: { "design_artifacts" => [ { "path" => "docs/rdrs/RDR-9999-revised.md" } ] })
+      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+        outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "Within scope."
+      }.to_json))
+
+      verdict = call
+
+      expect(verdict).to be_within_scope
+      expect(github_client).to have_received(:file_content)
+        .with("acme/widgets", path: "docs/rdrs/RDR-1000-scoped.md", ref: "scoped-design-v1")
+      expect(github_client).not_to have_received(:file_content)
+        .with("acme/widgets", path: "docs/rdrs/RDR-9999-revised.md", ref: "scoped-design-v1")
+    end
   end
 
   # @spec INTENT-CONFORMANCE-REVIEW-003
