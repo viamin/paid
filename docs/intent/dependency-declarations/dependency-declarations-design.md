@@ -24,9 +24,11 @@ reference is a declaration only when it is in a Markdown list item: unordered
 `-`, `*`, or `+`, or ordered `N.` / `N)`, with an optional `[ ]` or `[x]`
 checklist marker. At section scope, an item marker indented by four or more
 spaces is an indented code block, not a declaration. A list item's continuation
-lines fold into the same item only when they reach its content position, so a wrapped `- #41,` item followed by a
-two-space-indented `#42` declares both references while a one-space line does
-not. Ordinary
+lines fold into the same item only when they reach its content position,
+measured in CommonMark columns with tabs advancing to four-column stops. Thus,
+a wrapped `- #41,` item followed by a two-space-indented `#42` declares both
+references while a one-space line does not, but `-\t#41` followed by a
+two-space-indented `#42` does not. Ordinary
 section prose, including implementation inventories, is not a dependency
 declaration, and neither is fenced-code content: a fenced block preserved in a
 section body is code, not Markdown list structure, so list-style lines inside it

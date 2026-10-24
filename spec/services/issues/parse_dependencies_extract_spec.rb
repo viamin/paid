@@ -182,6 +182,17 @@ RSpec.describe Issues::ParseDependencies, :no_db do
       expect(cross_deps).to eq({})
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-006
+    it "measures tab-delimited list item indentation in CommonMark columns" do
+      local_deps, cross_deps = described_class.extract(
+        body: "## Dependencies\n-\t#41\n  #42\n",
+        comments: []
+      )
+
+      expect(local_deps).to eq(41 => false)
+      expect(cross_deps).to eq({})
+    end
+
     it "uses issue.body when body is not passed explicitly" do
       issue = Data.define(:body).new("Depends on #9043")
 

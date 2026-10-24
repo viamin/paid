@@ -287,7 +287,7 @@ module Issues
         match = LIST_ITEM_PATTERN.match(line)
         if match
           flush_list_item(item, local_deps, cross_deps)
-          continuation_indentation = match[1].length
+          continuation_indentation = markdown_columns(match[1])
           item = match[2]
         elsif item && continuation_line?(line, continuation_indentation)
           item = "#{item} #{line.strip}"
@@ -310,7 +310,12 @@ module Issues
     def continuation_line?(line, indentation)
       return false unless line.match?(CONTINUATION_LINE_PATTERN)
 
-      line[/\A[ \t]*/].length >= indentation
+      markdown_columns(line[/\A[ \t]*/]) >= indentation
+    end
+
+    # Tabs advance to the next four-column stop in CommonMark indentation.
+    def markdown_columns(text)
+      text.each_char.reduce(0) { |columns, char| char == "\t" ? columns + 4 - (columns % 4) : columns + 1 }
     end
 
     # Extracts refs from inline "Depends on" / "Blocked by" / deployment patterns.
