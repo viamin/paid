@@ -35,9 +35,20 @@ RSpec.describe AgentRun do
     expect(repair).to be_valid
   end
 
+  # @spec LAYERED-VERIFY-013
+  it "deletes repairs with their originating audit" do
+    audit = create(:agent_run, goal: "layered_verification_audit")
+    repair = create(:agent_run, goal: "layered_verification_repair", project: audit.project, originating_audit_run: audit)
+
+    expect { audit.destroy! }.to change(described_class, :count).by(-2)
+    expect { repair.reload }.to raise_error(ActiveRecord::RecordNotFound)
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:project) }
     it { is_expected.to belong_to(:issue).optional }
+    it { is_expected.to belong_to(:originating_audit_run).class_name("AgentRun").optional }
+    it { is_expected.to have_many(:repair_runs).class_name("AgentRun").dependent(:delete_all) }
     it { is_expected.to have_many(:agent_run_logs).dependent(:destroy) }
     it { is_expected.to have_many(:agent_run_phases).dependent(:destroy) }
     it { is_expected.to have_many(:orchestration_decisions).dependent(:nullify) }

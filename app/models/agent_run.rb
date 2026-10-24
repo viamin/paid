@@ -215,6 +215,9 @@ class AgentRun < ApplicationRecord
   belongs_to :configuration_bundle, optional: true
   belongs_to :initiating_user, class_name: "User", optional: true
   belongs_to :originating_audit_run, class_name: "AgentRun", optional: true
+  # @spec LAYERED-VERIFY-013
+  has_many :repair_runs, class_name: "AgentRun", foreign_key: :originating_audit_run_id,
+    dependent: :delete_all, inverse_of: :originating_audit_run
 
   has_many :agent_run_logs, dependent: :destroy
   has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy
