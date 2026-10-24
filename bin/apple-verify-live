@@ -234,9 +234,9 @@ end
 
 def preflight_failures(project_id, image_digest, validate_control_plane:)
   failures = []
-  failures << "APPLE_VERIFICATION_HOST_URL is not configured" if ENV.fetch("APPLE_VERIFICATION_HOST_URL", "").empty?
-  failures << "APPLE_VERIFICATION_HOST_TOKEN is not configured" if ENV.fetch("APPLE_VERIFICATION_HOST_TOKEN", "").empty?
-  failures << "APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN is not configured" if ENV.fetch("APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN", "").empty?
+  failures << "APPLE_VERIFICATION_HOST_URL is not configured" if ENV.fetch("APPLE_VERIFICATION_HOST_URL", "").strip.empty?
+  failures << "APPLE_VERIFICATION_HOST_TOKEN is not configured" if ENV.fetch("APPLE_VERIFICATION_HOST_TOKEN", "").strip.empty?
+  failures << "APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN is not configured" if ENV.fetch("APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN", "").strip.empty?
   failures << "--project is required (Paid project id for the validation run)" if project_id.nil?
   failures << "--image is required (approved Apple verification image digest)" if image_digest.nil?
   return failures unless validate_control_plane && project_id && failures.empty?

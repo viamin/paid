@@ -49,6 +49,24 @@ RSpec.describe AppleVerification::LiveValidation::Suite, "#plan" do
     end
   end
 
+  it "rejects whitespace-only host configuration values" do
+    environment = {
+      "APPLE_VERIFICATION_HOST_URL" => " ",
+      "APPLE_VERIFICATION_HOST_TOKEN" => " ",
+      "APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN" => " "
+    }
+
+    stdout, _stderr, status = Open3.capture3(
+      environment, script_path, "--plan", "--project", "1", "--image", "sha256:approved"
+    )
+
+    expect(status).to be_success
+    expect(stdout).to include("APPLE_VERIFICATION_HOST_URL is not configured")
+    expect(stdout).to include("APPLE_VERIFICATION_HOST_TOKEN is not configured")
+    expect(stdout).to include("APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN is not configured")
+    expect(stdout).not_to include("Preflight: ready")
+  end
+
   def script_path
     Rails.root.join("bin/apple-verify-live").to_s
   end
