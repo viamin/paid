@@ -732,6 +732,19 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:record)).to include(feature_intent)
     end
 
+    # @spec CONFIDENCE-DELIVERY-016
+    it "admits confidence-driven work only for a concrete human decision" do
+      feature_intent = create(:feature_intent, :confidence_driven, project: project, status: "design_open")
+      issue = create(:issue, project: project)
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: issue, readiness_mapping: {})
+
+      expect(described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)).not_to include(have_attributes(record: feature_intent))
+
+      create(:feature_intent_decision, feature_intent: feature_intent, kind: "question")
+
+      expect(described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)).to include(have_attributes(record: feature_intent))
+    end
+
     # @spec FEATURE-APPROVAL-013
     it "keeps an approved intent with a stale required design PR in the action Inbox" do
       feature_intent = create(:feature_intent, :approved_waiting_for_merge, project: project)
@@ -1216,10 +1229,11 @@ RSpec.describe Inbox::Queue do
       expect(multi_row_queries).to eq(single_row_queries)
     end
 
-    # @spec FEATURE-APPROVAL-013
-    it "batch-preloads decision, design-PR, and approver lookups for feature_decision entries instead of querying per row" do
+    # @spec FEATURE-APPROVAL-013 @spec CONFIDENCE-DELIVERY-016
+    it "batch-preloads feature-decision readiness inputs instead of querying per row" do
       create(:feature_intent, :approved_waiting_for_merge, project: project)
       create_feature_decision_feature
+      create_confidence_feature_decision_feature
       single_row_queries = count_queries do
         described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
       end
@@ -1228,6 +1242,8 @@ RSpec.describe Inbox::Queue do
       create(:feature_intent, :approved_waiting_for_merge, project: project)
       create_feature_decision_feature
       create_feature_decision_feature
+      create_confidence_feature_decision_feature
+      create_confidence_feature_decision_feature
       multi_row_queries = count_queries do
         described_class.call(user: user, kind: described_class::FEATURE_DECISION_KIND)
       end
@@ -1699,6 +1715,15 @@ RSpec.describe Inbox::Queue do
     create(:feature_intent_decision, feature_intent: feature_intent, kind: "question")
     create(:feature_intent_decision, :inferred_decision, feature_intent: feature_intent)
     create(:feature_intent_design_pr, :stale, feature_intent: feature_intent)
+    feature_intent
+  end
+
+  def create_confidence_feature_decision_feature
+    feature_intent = create(:feature_intent, :confidence_driven, project: project)
+    issue = create(:issue, project: project)
+    issue_link = create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+    create(:feature_intent_issue_prerequisite_mapping, feature_intent_issue: issue_link)
+    create(:feature_intent_decision, feature_intent: feature_intent, kind: "question")
     feature_intent
   end
 

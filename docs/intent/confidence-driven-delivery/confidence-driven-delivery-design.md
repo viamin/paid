@@ -93,6 +93,18 @@ Approval-gated features retain their exact-head/latest-approved-design guards.
 This dispatch must also govern Inbox reasons so it cannot request an approval
 that the active policy does not require.
 
+## Inbox action projection
+
+The shared `feature_decision` lane dispatches by the immutable feature policy.
+Approval-gated records retain `ApprovalReadiness`, revision-bound Mark approved,
+and stale-design handling. Confidence-driven records evaluate linked issue
+mappings through `ScopedReadiness`. They enter the action Inbox only for an
+open recorded human question or direction decision; assessment, investigation,
+dependency waits, and ready scopes remain progress or history. The web and API
+name the policy, scoped blockers, and concrete recovery action. They never turn
+an answer or evidence correction into approval, release, admission, or a
+completion claim.
+
 ## Follow-up and completion protocol
 
 Classify a new finding against affected scope with agent judgment. Prefer

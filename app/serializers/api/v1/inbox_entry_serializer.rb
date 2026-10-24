@@ -145,10 +145,12 @@ module Api
       # deterministic in-memory check, not an extra query (mirrors the web
       # detail partial's inline call).
       def feature_decision_payload
-        readiness = FeatureIntents::ApprovalReadiness.call(feature_intent: entry.record)
+        readiness = Inbox::FeatureDecisionReadiness.call(feature_intent: entry.record)
         {
+          delivery_policy: entry.record.delivery_policy,
           ready: readiness.ready?,
-          blockers: readiness.blockers.map { |blocker| { code: blocker.code, message: blocker.message } }
+          blockers: readiness.blockers.map { |blocker| { code: blocker.code, message: blocker.message } },
+          human_actions: readiness.human_actions.map { |action| { kind: action.kind, message: action.message } }
         }
       end
 

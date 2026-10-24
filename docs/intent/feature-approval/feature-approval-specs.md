@@ -145,6 +145,10 @@
 
 ## Inbox surface
 
+Approval-gated requirements in this section apply only to features whose
+immutable delivery policy is `approval_gated`; confidence-driven delivery owns
+its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
+
 - [x] **FEATURE-APPROVAL-020** — When an Inbox-authorized member declines an
   eligible feature proposal, including one in `discovering` with a pending
   clarity assessment, the system SHALL require a structured reason, optionally

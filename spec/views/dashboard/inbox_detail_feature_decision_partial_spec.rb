@@ -52,4 +52,16 @@ RSpec.describe "dashboard/_inbox_detail_feature_decision", type: :view do
 
     expect(queries.grep(/"feature_intent_issues"."issue_id" = /)).to be_empty
   end
+
+  it "does not render Mark approved for confidence-driven work" do # @spec CONFIDENCE-DELIVERY-016
+    confidence_feature = create(:feature_intent, :confidence_driven, project: project)
+    create(:feature_intent_decision, feature_intent: confidence_feature, kind: "question")
+
+    document = Nokogiri::HTML.fragment(render_detail(confidence_feature.reload))
+
+    expect(document.text).to include("Confidence-driven delivery")
+    expect(document.text).to include("Human action required")
+    expect(document.text).not_to include("Mark approved")
+    expect(document.at_css('[data-testid="feature-decision-action-answer_or_clarify"]')).to be_present
+  end
 end
