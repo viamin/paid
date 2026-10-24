@@ -60,12 +60,13 @@ class FeatureIntentsController < ApplicationController
   def respond_to_decision
     authorize @feature_intent, :approve?, policy_class: FeatureIntentPolicy
     decision = @feature_intent.feature_intent_decisions.find(params[:decision_id])
+    response_drafts = flash[:feature_decision_drafts] || {}
     FeatureIntents::RespondToDecision.call(decision:, actor: current_user, answer: params[:answer])
-    flash[:feature_decision_drafts]&.delete(decision.id.to_s)
+    flash[:feature_decision_drafts] = response_drafts.except(decision.id.to_s)
 
     redirect_to inbox_entry_path(feature_decision_entry_id), notice: "Response saved."
   rescue FeatureIntents::RespondToDecision::InvalidResponseError, FeatureIntents::RespondToDecision::StaleDecisionError => e
-    flash[:feature_decision_drafts] = { params[:decision_id].to_s => params[:answer].to_s }
+    flash[:feature_decision_drafts] = response_drafts.merge(params[:decision_id].to_s => params[:answer].to_s)
     redirect_to inbox_entry_path(feature_decision_entry_id), alert: e.message
   end
 

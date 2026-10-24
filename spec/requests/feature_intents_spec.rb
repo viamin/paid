@@ -168,4 +168,20 @@ RSpec.describe "Feature intents" do
       )
     end
   end
+
+  describe "POST /feature_intents/:id/decisions/:decision_id/respond" do
+    # @spec FACET-CONFIDENCE-019
+    it "preserves an unrelated invalid-response draft after saving a response" do
+      feature_intent = create(:feature_intent, :ready_for_approval, project: project)
+      unsaved_decision = create(:feature_intent_decision, feature_intent: feature_intent)
+      answered_decision = create(:feature_intent_decision, feature_intent: feature_intent)
+
+      post respond_to_decision_feature_intent_path(feature_intent, decision_id: unsaved_decision), params: { answer: " " }
+      post respond_to_decision_feature_intent_path(feature_intent, decision_id: answered_decision), params: { answer: "Use CSV exports only." }
+
+      expect(response).to redirect_to(inbox_entry_path("#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"))
+      expect(flash[:feature_decision_drafts]).to eq(unsaved_decision.id.to_s => " ")
+      expect(answered_decision.reload).to have_attributes(status: "resolved", answer: "Use CSV exports only.", resolved_by: owner)
+    end
+  end
 end
