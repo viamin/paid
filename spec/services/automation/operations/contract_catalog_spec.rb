@@ -12,10 +12,39 @@ RSpec.describe Automation::Operations::ContractCatalog do
     expect(described_class).to be_complete
   end
 
+  it "distinguishes shipped capabilities from follow-up scope with concrete evidence" do
+    expect(described_class.shipped_capabilities).to include(
+      "exception_incident_handling",
+      "incident_issue_filing",
+      "incident_triage",
+      "auto_release_evaluation"
+    )
+    expect(described_class.follow_up_capabilities).to include(
+      "incoming_error_reports",
+      "deployment_execution"
+    )
+    expect(described_class.contracts).to all(have_attributes(evidence: a_string_including("app/")))
+  end
+
   it "documents every catalogued capability" do
     described_class.capability_names.each do |capability|
       expect(documentation).to include(capability)
     end
+  end
+
+  it "documents every catalogued evidence reference" do
+    described_class.contracts.each do |contract|
+      contract.evidence.split("; ").each do |reference|
+        expect(documentation).to include(reference)
+      end
+    end
+  end
+
+  it "records the evidence matrix and follow-up boundary in canonical intent" do
+    expect(documentation).to include("## Shipped capability evidence")
+    expect(documentation).to include("## Explicit follow-up scope")
+    expect(documentation).to include("RDR-075")
+    expect(documentation).to include("RDR-076")
   end
 
   it "states that no autonomous operational remediation is included" do
@@ -29,9 +58,10 @@ RSpec.describe Automation::Operations::ContractCatalog do
   end
 
   it "keeps release and deployment validation behind its own subordinate controls" do
-    contract = described_class.contracts.find { |item| item.capability == "release_deployment_validation" }
+    contract = described_class.contracts.find { |item| item.capability == "auto_release_evaluation" }
 
-    expect(contract.activation_policy).to include("release or deployment control")
+    expect(contract.activation_policy).to include("release control")
+    expect(described_class.follow_up_capabilities).to include("deployment_execution")
   end
 
   it "names the project-independent platform request categories" do
