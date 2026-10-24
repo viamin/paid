@@ -10,7 +10,10 @@ module IntentConformance
     # @spec INTENT-CONFORMANCE-ROLLOUT-006
     class CaseView
       BLIND_FIELDS = %w[id repository base_sha head_sha approved_design_revision].freeze
-      CONTEXT_FIELDS = %w[design_document_paths context notes rationale].freeze
+      # Corpus selection rationale, free-text notes, and arbitrary context can
+      # encode the expected outcome. The blinded surface exposes only declared
+      # design artifact paths, which the evidence action validates separately.
+      CONTEXT_FIELDS = %w[design_document_paths].freeze
 
       def initialize(evaluation:, case_id:, actor:)
         @evaluation = evaluation
