@@ -62,7 +62,7 @@ RSpec.describe Issues::ParseDependencies, :no_db do
           - #41,
             #42
           - [ ] Awaits work on
-            owner/repo#43
+                owner/repo#43
         BODY
         comments: []
       )
@@ -95,6 +95,43 @@ RSpec.describe Issues::ParseDependencies, :no_db do
       expect(cross_deps).to eq({})
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-007
+    it "keeps a fenced block open when it contains a different fence delimiter" do
+      local_deps, cross_deps = described_class.extract(
+        body: <<~BODY,
+          ## Dependencies
+          ```text
+          ~~~
+          - #4326
+          ```
+        BODY
+        comments: []
+      )
+
+      expect(local_deps).to eq({})
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-007
+    it "requires a closing fence at least as long as its opening fence" do
+      local_deps, cross_deps = described_class.extract(
+        body: <<~BODY,
+          ## Dependencies
+          ````text
+          - #4326
+          ```
+          - #4327
+          ````
+
+          - #41
+        BODY
+        comments: []
+      )
+
+      expect(local_deps).to eq(41 => false)
+      expect(cross_deps).to eq({})
+    end
+
     # @spec DEPENDENCY-DECLARATIONS-002, DEPENDENCY-DECLARATIONS-006
     it "does not admit indented prose that follows no list item" do
       local_deps, _cross_deps = described_class.extract(
@@ -107,6 +144,27 @@ RSpec.describe Issues::ParseDependencies, :no_db do
       )
 
       expect(local_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-006
+    it "requires continuation lines to reach the list item's content indentation" do
+      local_deps, cross_deps = described_class.extract(
+        body: <<~BODY,
+          ## Dependencies
+          - #41
+           #42
+          1. #43
+           #44
+          - #45
+            #46
+          1. #47
+             #48
+        BODY
+        comments: []
+      )
+
+      expect(local_deps).to eq(41 => false, 43 => false, 45 => false, 46 => false, 47 => false, 48 => false)
+      expect(cross_deps).to eq({})
     end
 
     it "uses issue.body when body is not passed explicitly" do

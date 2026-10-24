@@ -117,8 +117,9 @@ module Issues
     DEPENDENCY_HEADING_PATTERN = /\bdependenc(?:y|ies)\b/i
     CHILD_LISTING_HEADING_PATTERN = /\b(?:child\s+issues?|sub[- ]?issues?|sub[- ]?tasks?)\b/i
     MARKDOWN_HEADING_PATTERN = /^[ \t]{0,3}\#{1,6}[ \t]+(.+?)\s*#*\s*$/
-    FENCED_CODE_BLOCK_PATTERN = /^[ \t]{0,3}(```|~~~)/
-    LIST_ITEM_PATTERN = /^[ \t]*(?:[-+*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?(.+)$/
+    FENCED_CODE_BLOCK_PATTERN = /^[ \t]{0,3}(`{3,}|~{3,})/
+    CLOSING_FENCE_PATTERN = /\A[ \t]{0,3}(`{3,}|~{3,})[ \t]*(?:\r?\n)?\z/
+    LIST_ITEM_PATTERN = /^([ \t]*(?:[-+*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?)(.+)$/
     # Indented non-blank content: a continuation of the preceding list item.
     CONTINUATION_LINE_PATTERN = /^[ \t]+\S/
 
@@ -276,6 +277,7 @@ module Issues
     # not list structure.
     def extract_list_item_refs(text, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-006, DEPENDENCY-DECLARATIONS-007
       item = nil
+      continuation_indentation = nil
 
       each_markdown_line(text) do |line, in_fenced_code_block|
         next if in_fenced_code_block
@@ -283,12 +285,14 @@ module Issues
         match = LIST_ITEM_PATTERN.match(line)
         if match
           flush_list_item(item, local_deps, cross_deps)
-          item = match[1]
-        elsif item && line.match?(CONTINUATION_LINE_PATTERN)
+          continuation_indentation = match[1].length
+          item = match[2]
+        elsif item && continuation_line?(line, continuation_indentation)
           item = "#{item} #{line.strip}"
         elsif !line.strip.empty?
           flush_list_item(item, local_deps, cross_deps)
           item = nil
+          continuation_indentation = nil
         end
       end
 
@@ -299,6 +303,12 @@ module Issues
       return unless item
 
       extract_all_refs(item, local_deps, cross_deps, requires_deployment: false)
+    end
+
+    def continuation_line?(line, indentation)
+      return false unless line.match?(CONTINUATION_LINE_PATTERN)
+
+      line[/\A[ \t]*/].length >= indentation
     end
 
     # Extracts refs from inline "Depends on" / "Blocked by" / deployment patterns.
@@ -517,12 +527,23 @@ module Issues
     def each_markdown_line(text)
       return enum_for(__method__, text) unless block_given?
 
-      in_fenced_code_block = false
+      opening_fence = nil
 
       text.to_s.scan(/.*?(?:\r?\n|\z)/) do |line|
-        yield line, in_fenced_code_block
-        in_fenced_code_block = !in_fenced_code_block if line.match?(FENCED_CODE_BLOCK_PATTERN)
+        yield line, opening_fence.present?
+        opening_fence = updated_fence(line, opening_fence)
       end
+    end
+
+    def updated_fence(line, opening_fence)
+      return FENCED_CODE_BLOCK_PATTERN.match(line)&.[](1) unless opening_fence
+
+      closes_fenced_code_block?(line, opening_fence) ? nil : opening_fence
+    end
+
+    def closes_fenced_code_block?(line, opening_fence)
+      closing_fence = CLOSING_FENCE_PATTERN.match(line)&.[](1)
+      closing_fence && closing_fence[0] == opening_fence[0] && closing_fence.length >= opening_fence.length
     end
 
     def markdown_heading_text(line)
