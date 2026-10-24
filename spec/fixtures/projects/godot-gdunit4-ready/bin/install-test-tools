@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+readonly GDUNIT4_REF="v5.1.1"
+readonly GDUNIT4_COMMIT="c924c7a01129b346453dd65f8d59e46613658832"
+source_dir="$(mktemp -d)"
+readonly source_dir
+
+cd "$(dirname "$0")/.."
+
+cleanup() {
+  rm -rf "${source_dir}"
+}
+trap cleanup EXIT
+
+git clone --depth 1 --branch "${GDUNIT4_REF}" https://github.com/godot-gdunit-labs/gdUnit4.git "${source_dir}"
+test "$(git -C "${source_dir}" rev-parse HEAD)" = "${GDUNIT4_COMMIT}"
+mkdir -p addons
+rm -rf addons/gdUnit4
+cp -R "${source_dir}/addons/gdUnit4" addons/gdUnit4
+chmod +x addons/gdUnit4/runtest.sh
