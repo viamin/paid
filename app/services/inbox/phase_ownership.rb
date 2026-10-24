@@ -226,12 +226,20 @@ module Inbox
     # of a project's Operations phase, and never gain execution authority.
     # A request with no project at all, a notification about a runner's
     # credentials, or an account-level notification with no subject is one.
+    # Unverifiable reconciliation coverage is an access problem, not coding
+    # work, so a disabled coding phase can never hide it.
+    # @spec INBOX-PHASE-RELEVANCE-001 @spec OPERATOR-INBOX-020
     def platform_request?(entry)
       return true if entry.project.nil?
+      return true if unverifiable_coverage_request?(entry)
       return false unless entry.record.is_a?(Notification)
 
       subject = entry.record.subject
       subject.nil? || subject.is_a?(Runner) || subject.is_a?(Account)
+    end
+
+    def unverifiable_coverage_request?(entry)
+      entry.traceability_gap? && entry.record.try(:unverifiable?)
     end
 
     def record_id_for(entry)

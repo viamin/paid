@@ -266,11 +266,11 @@ module Inbox
       Project.where(id: visible_project_ids).select(&:readiness_blocked?).to_h { |project| [ project.id, 1 ] }
     end
 
-    # @spec DESIGN-RECONCILIATION-001
+    # @spec DESIGN-RECONCILIATION-001 @spec OPERATOR-INBOX-020
     def traceability_gap_by_project
       return {} if visible_project_ids.empty?
 
-      DesignArtifactFinding.open_findings.where(project_id: visible_project_ids).group(:project_id).count
+      DesignArtifactFinding.actionable_findings.where(project_id: visible_project_ids).group(:project_id).count
     end
 
     def preload_runner_users(notifications)

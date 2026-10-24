@@ -21,6 +21,115 @@ RSpec.describe FeatureIntents::PersistDesignArtifactFindings do
     expect(finding.evidence).to include("No explicit qualified issue links were found")
   end
 
+  # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
+  it "persists a draft artifact's informational finding as deferred without inventing an operator decision" do
+    described_class.call(
+      project:, revision:, artifacts: [ artifact.merge(status: "Draft") ], issues: []
+    )
+
+    expect(DesignArtifactFinding.sole).to have_attributes(
+      state: "deferred", status: "deferred",
+      resolution_state: nil, resolution_actor: nil, resolved_at: nil
+    )
+    expect(project.design_artifact_findings.actionable_findings).to be_empty
+  end
+
+  # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
+  it "reconciles a previously open informational finding back out of the open action status" do
+    create(:design_artifact_finding, project:, account: project.account,
+      artifact_path: artifact[:path], revision:, state: "deferred", status: "open",
+      evidence: [ "Artifact status is Draft" ])
+
+    described_class.call(
+      project:, revision:, artifacts: [ artifact.merge(status: "Draft") ], issues: []
+    )
+
+    expect(project.design_artifact_findings.open_findings).to be_empty
+    expect(project.design_artifact_findings.actionable_findings).to be_empty
+    expect(project.design_artifact_findings.where(state: "deferred", status: "deferred")).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-020
+  it "invalidates the inbox cache when reconciliation retires a fingerprint-matched noisy finding" do
+    fingerprint = Digest::SHA256.hexdigest([ project.id, artifact[:path], revision, "deferred" ].join(":"))
+    create(:design_artifact_finding, project:, account: project.account,
+      artifact_path: artifact[:path], revision:, fingerprint:, state: "deferred", status: "open",
+      evidence: [ "Artifact status is Draft" ])
+    allow(Dashboard::CacheVersion).to receive(:bump).and_call_original
+
+    described_class.call(
+      project:, revision:, artifacts: [ artifact.merge(status: "Draft") ], issues: []
+    )
+
+    expect(Dashboard::CacheVersion).to have_received(:bump)
+      .with(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+  end
+
+  # @spec OPERATOR-INBOX-020
+  it "does not resurrect an unchanged informational finding on revision refresh" do
+    described_class.call(
+      project:, revision:, artifacts: [ artifact.merge(status: "Superseded") ], issues: []
+    )
+
+    travel_to(1.day.from_now) do
+      described_class.call(
+        project:, revision: "b" * 40, artifacts: [ artifact.merge(status: "Superseded") ], issues: []
+      )
+    end
+
+    expect(project.design_artifact_findings.count).to eq(1)
+    expect(project.design_artifact_findings.sole).to have_attributes(
+      revision: "b" * 40, state: "deferred", status: "deferred"
+    )
+    expect(project.design_artifact_findings.open_findings).to be_empty
+  end
+
+  # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
+  it "resolves the informational record and surfaces actionable work when a draft artifact becomes active" do
+    described_class.call(
+      project:, revision:, artifacts: [ artifact.merge(status: "Draft") ], issues: []
+    )
+    informational = DesignArtifactFinding.sole
+
+    described_class.call(project:, revision: "b" * 40, artifacts: [ artifact ], issues: [])
+
+    expect(informational.reload).to have_attributes(status: "resolved", resolved_at: be_present)
+    expect(project.design_artifact_findings.actionable_findings.sole).to have_attributes(
+      revision: "b" * 40, state: "missing_tree", status: "open"
+    )
+  end
+
+  # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
+  it "resolves the open actionable finding when an active artifact becomes superseded" do
+    described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
+    actionable = DesignArtifactFinding.sole
+
+    described_class.call(
+      project:, revision: "b" * 40, artifacts: [ artifact.merge(status: "Superseded") ], issues: []
+    )
+
+    expect(actionable.reload).to have_attributes(status: "resolved", resolved_at: be_present)
+    expect(project.design_artifact_findings.actionable_findings).to be_empty
+    expect(project.design_artifact_findings.where(state: "deferred")).to be_present
+  end
+
+  # @spec OPERATOR-INBOX-020
+  it "preserves an operator decision recorded on an informational finding" do
+    described_class.call(
+      project:, revision:, artifacts: [ artifact.merge(status: "Draft") ], issues: []
+    )
+    finding = DesignArtifactFinding.sole
+    finding.update!(status: "dismissed", resolution_state: "dismissed", resolution_reason: "Tracked elsewhere")
+
+    described_class.call(
+      project:, revision: "b" * 40, artifacts: [ artifact.merge(status: "Draft") ], issues: []
+    )
+
+    expect(DesignArtifactFinding.sole).to have_attributes(
+      status: "dismissed", resolution_reason: "Tracked elsewhere"
+    )
+  end
+
   it "resolves an earlier finding when current explicit links cover the artifact" do
     described_class.call(project:, revision:, artifacts: [ artifact ], issues: [])
 

@@ -59,6 +59,40 @@ RSpec.describe Inbox::Queue do
       )
     end
 
+    # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
+    it "excludes informational deferred-state findings even while their status is open" do
+      draft = create(:design_artifact_finding, project:, account: account, state: "deferred", status: "open",
+        artifact_path: "docs/rdrs/RDR-063.md", evidence: [ "Artifact status is Draft" ])
+      superseded = create(:design_artifact_finding, project:, account: account, state: "deferred", status: "open",
+        artifact_path: "docs/rdrs/RDR-005.md", evidence: [ "Artifact status is Superseded" ])
+
+      entries = described_class.call(user: user, kind: described_class::TRACEABILITY_GAP_KIND)
+
+      expect(entries.map(&:record)).not_to include(draft, superseded)
+    end
+
+    # @spec OPERATOR-INBOX-020
+    it "stops resolving informational findings through detail and direct links" do
+      draft = create(:design_artifact_finding, project:, account: account, state: "deferred", status: "open",
+        evidence: [ "Artifact status is Draft" ])
+
+      entry_id = "#{described_class::TRACEABILITY_GAP_KIND}:#{draft.id}"
+
+      expect(described_class.find_entry(user:, entry_id:)).to be_nil
+    end
+
+    # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
+    it "presents an unverifiable finding as a coverage problem, not a traceability gap" do
+      create(:design_artifact_finding, project:, account: account, state: "unverifiable",
+        artifact_path: "docs/rdrs/RDR-064.md", evidence: [ "GitHub coverage was incomplete" ])
+
+      entry = described_class.call(user: user, kind: described_class::TRACEABILITY_GAP_KIND).sole
+
+      expect(entry.title).to eq("Coverage unavailable: docs/rdrs/RDR-064.md")
+      expect(entry.summary).to include("coverage could not be read")
+      expect(entry.summary).not_to include("Traceability gap")
+    end
+
     # @spec DESIGN-RECONCILIATION-001 @spec INBOX-FOUNDATION-006
     it "excludes resolved and unauthorized traceability gaps" do
       resolved = create(:design_artifact_finding, project:, account: account, status: "resolved", resolved_at: Time.current)
