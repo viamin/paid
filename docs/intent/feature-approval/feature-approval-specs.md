@@ -213,7 +213,19 @@
   or unverifiable. Closed work alone SHALL NOT establish semantic implementation
   coverage. Failed or partial
   GitHub reads SHALL yield `unverifiable`, not an absence finding, and SHALL
-  NOT resolve a prior open finding for the artifact; draft and
+  NOT resolve a prior open finding for the artifact. The system SHALL establish
+  a configured design directory's absence only from a complete non-truncated
+  repository tree, or an equivalently verified parent listing, at the same
+  pinned revision; a contents-endpoint 404 alone SHALL remain unavailable
+  coverage. An authoritatively absent directory, an empty directory, and a
+  directory containing no matching configured files SHALL be successful empty
+  discovery, regardless of LID adoption. Missing/deleted repositories,
+  authentication or permission failures, transient failures, truncated
+  listings, and unreadable matching artifacts SHALL remain unavailable.
+  Complete successful discovery SHALL resolve stale matching-file findings and
+  the directory-level unavailable sentinel when they are absent, without
+  resolving unrelated paths or operator history; incomplete discovery SHALL
+  not perform that cleanup. draft and
   superseded/deferred artifacts SHALL not be treated as missing merely from
   their status. Findings SHALL retain cited evidence and last successful
   coverage, be deduplicated by artifact/revision, and SHALL NOT automatically

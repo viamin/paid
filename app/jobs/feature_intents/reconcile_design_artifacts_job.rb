@@ -63,11 +63,12 @@ module FeatureIntents
     end
 
     def reconcile_rdr_artifacts
-      artifacts = DiscoverRdrArtifacts.call(project:)
-      artifacts.each do |artifact|
-        reconcile(rdr_artifact(artifact), revision: artifact.revision, coverage_complete: !artifact.body.nil?)
+      discovery = DiscoverRdrArtifacts.call(project:)
+      discovery.artifacts.each do |artifact|
+        reconcile(rdr_artifact(artifact), revision: artifact.revision,
+          coverage_complete: discovery.complete? && !artifact.body.nil?)
       end
-      resolve_removed_rdr_findings(artifacts) if rdr_directory_discovered?(artifacts)
+      resolve_removed_rdr_findings(discovery.artifacts) if discovery.complete?
     end
 
     def resolve_removed_rdr_findings(artifacts)
@@ -75,10 +76,6 @@ module FeatureIntents
       PersistDesignArtifactFindings.resolve_removed_rdr_findings(
         project:, paths: artifacts.map(&:path), directory: convention.directory, file_pattern: convention.file_pattern
       )
-    end
-
-    def rdr_directory_discovered?(artifacts)
-      artifacts.none? { |artifact| artifact.path == DiscoverRdrArtifacts.convention_for(project).directory && artifact.body.nil? }
     end
 
     def reconcile_project_artifacts
