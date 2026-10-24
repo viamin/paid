@@ -2,7 +2,7 @@
 
 # @spec FEATURE-APPROVAL-012 @spec FEATURE-APPROVAL-013 @spec FEATURE-APPROVAL-020
 class FeatureIntentsController < ApplicationController
-  before_action :set_feature_intent, only: %i[approve cancel reopen]
+  before_action :set_feature_intent, only: %i[approve cancel reopen respond_to_decision]
 
   # Background discovery and cancellation history remain reachable here rather
   # than becoming non-actionable entries in the Inbox queue.
@@ -54,6 +54,19 @@ class FeatureIntentsController < ApplicationController
     user_not_authorized
   rescue FeatureIntent::InvalidTransitionError => e
     redirect_to feature_intents_path, alert: e.message
+  end
+
+  # @spec FACET-CONFIDENCE-019
+  def respond_to_decision
+    authorize @feature_intent, :approve?, policy_class: FeatureIntentPolicy
+    decision = @feature_intent.feature_intent_decisions.find(params[:decision_id])
+    FeatureIntents::RespondToDecision.call(decision:, actor: current_user, answer: params[:answer])
+    flash[:feature_decision_drafts]&.delete(decision.id.to_s)
+
+    redirect_to inbox_entry_path(feature_decision_entry_id), notice: "Response saved."
+  rescue FeatureIntents::RespondToDecision::InvalidResponseError, FeatureIntents::RespondToDecision::StaleDecisionError => e
+    flash[:feature_decision_drafts] = { params[:decision_id].to_s => params[:answer].to_s }
+    redirect_to inbox_entry_path(feature_decision_entry_id), alert: e.message
   end
 
   private
