@@ -100,6 +100,38 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifacts do
     expect(result.findings.map(&:state)).to all(eq("deferred"))
   end
 
+  # @spec OPERATOR-INBOX-020
+  it "shares one actionability rule between the result and persisted findings" do
+    result = described_class.call(
+      project:,
+      revision: "a" * 40,
+      artifacts: [
+        { path: "docs/rdrs/RDR-101.md", status: "Superseded" },
+        { path: "docs/rdrs/RDR-103.md", related_issues: [ "acme/widget#10", "acme/widget#99" ] }
+      ],
+      issues:
+    )
+
+    expect(result.findings.map(&:state)).to contain_exactly("deferred", "partial_tree")
+    expect(result.actionable_findings.map(&:state)).to contain_exactly("partial_tree")
+    result.findings.each do |finding|
+      expect(DesignArtifactFinding.actionable_state?(finding.state)).to eq(result.actionable_findings.include?(finding))
+    end
+  end
+
+  # @spec OPERATOR-INBOX-020
+  it "keeps an unverifiable coverage failure actionable" do
+    result = described_class.call(
+      project:,
+      revision: "a" * 40,
+      artifacts: [ { path: "docs/rdrs/RDR-063.md", related_issues: [] } ],
+      issues: [],
+      coverage_complete: false
+    )
+
+    expect(result.actionable_findings.map(&:state)).to eq(%w[unverifiable])
+  end
+
   it "distinguishes a partial explicit tree from stale local metadata" do
     result = described_class.call(
       project:,

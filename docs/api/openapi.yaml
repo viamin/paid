@@ -237,6 +237,35 @@ paths:
                 $ref: '#/components/schemas/FeatureIntentResponse'
         default:
           $ref: '#/components/responses/Error'
+  /projects/{project_id}/design_artifact_findings:
+    parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema: {type: integer}
+    get:
+      operationId: listDesignArtifactFindings
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      responses:
+        '200':
+          description: |
+            Actionable design-artifact findings for the project. Informational
+            deferred-state findings (draft/superseded/historical artifacts) are
+            retained durably but excluded; unverifiable coverage failures stay
+            listed as access/coverage problems.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [findings]
+                properties:
+                  findings:
+                    type: array
+                    items: {$ref: '#/components/schemas/DesignArtifactFinding'}
+        default:
+          $ref: '#/components/responses/Error'
   /projects/{project_id}/design_artifact_findings/{id}/repair_document_links:
     parameters:
       - name: project_id
@@ -830,6 +859,22 @@ components:
             revision: {type: string}
             state: {type: string, enum: [missing_tree, partial_tree, stale_metadata, deferred, unverifiable]}
             evidence: {type: array, items: {type: string}}
+            covered_at: {type: string, format: date-time}
+            recommended_action: {type: string}
+    DesignArtifactFinding:
+      type: object
+      required: [id, artifact_path, revision, state, evidence, covered_at, status]
+      properties:
+        id: {type: integer}
+        artifact_path: {type: string}
+        revision: {type: string}
+        state: {type: string, enum: [missing_tree, partial_tree, stale_metadata, deferred, unverifiable]}
+        evidence: {type: array, items: {type: string}}
+        covered_at: {type: string, format: date-time}
+        status: {type: string, enum: [open, assigned, deferred, dismissed, resolved]}
+        resolution_state: {type: string, nullable: true}
+        resolution_reason: {type: string, nullable: true}
+        resolution_issue_id: {type: integer, nullable: true}
   headers:
     ETag:
       description: Strong validator for polling. Send this value as If-None-Match on the next poll.

@@ -53,6 +53,22 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(0)
     end
 
+    # @spec OPERATOR-INBOX-020 DESIGN-RECONCILIATION-001
+    it "does not count informational deferred-state findings, keeping badge and list parity" do
+      create(:design_artifact_finding, project: project, account: account, state: "deferred", status: "open")
+
+      expect(described_class.call(user: user)).to eq(0)
+      expect(Inbox::Queue.call(user: user, kind: Inbox::Queue::TRACEABILITY_GAP_KIND)).to be_empty
+    end
+
+    # @spec OPERATOR-INBOX-020
+    it "counts unverifiable coverage failures so an access problem stays visible" do
+      create(:design_artifact_finding, project: project, account: account, state: "unverifiable")
+
+      expect(described_class.call(user: user)).to eq(1)
+      expect(Inbox::Queue.call(user: user, kind: Inbox::Queue::TRACEABILITY_GAP_KIND)).to be_present
+    end
+
     it "counts needs_input candidates, merge approvals, and open plan reviews" do
       create(:issue, :needs_input, project: project)
       create(:issue, :needs_input, project: project)

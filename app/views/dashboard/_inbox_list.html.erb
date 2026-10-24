@@ -24,7 +24,7 @@
           <div class="min-w-0">
             <div class="flex items-center gap-2">
               <span class="rounded-full px-2 py-0.5 text-xs font-medium <%= entry.change_intent_draft? || entry.partial_closeout? ? 'bg-violet-100 text-violet-800' : entry.plan_review? || entry.project_setup_pending? ? 'bg-amber-100 text-amber-800' : entry.merge_approval? ? 'bg-emerald-100 text-emerald-800' : entry.action_required? ? 'bg-rose-100 text-rose-800' : entry.escalated_pr? ? 'bg-orange-100 text-orange-800' : entry.manual_review? ? 'bg-purple-100 text-purple-800' : entry.intent_conformance? ? 'bg-red-100 text-red-800' : entry.feature_decision? ? 'bg-teal-100 text-teal-800' : entry.retry_limited? ? 'bg-orange-100 text-orange-800' : entry.test_review_pending? ? 'bg-yellow-100 text-yellow-800' : 'bg-sky-100 text-sky-800' %>">
-                <%= entry.kind.tr("_", " ").titleize %>
+                <%= entry.badge_label %>
               </span>
               <% if entry.retry_limited? && entry.issue %>
                 <span class="rounded-full px-2 py-0.5 text-xs font-medium <%= entry.issue.push_permission_abandoned? ? 'bg-orange-100 text-orange-700' : 'bg-red-50 text-red-700' %>">

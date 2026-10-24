@@ -30,6 +30,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
   end
 
+  # @spec OPERATOR-INBOX-020
   it "does not treat a synced draft design pull request without links as missing" do
     design_pr.update!(draft: true)
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
@@ -37,7 +38,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     described_class.perform_now(project.id, design_pr.pull_request_number)
 
     expect(DesignArtifactFinding.sole).to have_attributes(
-      artifact_path: "pull/100", revision: design_pr.head_sha, state: "deferred", status: "open"
+      artifact_path: "pull/100", revision: design_pr.head_sha, state: "deferred", status: "deferred"
     )
   end
 
@@ -60,6 +61,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
   end
 
+  # @spec OPERATOR-INBOX-020
   it "does not treat draft, deferred, superseded, or historical RDRs without links as missing" do
     [ "Draft", "Deferred", "Superseded", "Historical" ].each do |status|
       artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
@@ -72,7 +74,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
       described_class.perform_now(project.id)
 
       expect(DesignArtifactFinding.find_by!(artifact_path: artifact.path)).to have_attributes(
-        state: "deferred", status: "open"
+        state: "deferred", status: "deferred"
       )
     end
   end

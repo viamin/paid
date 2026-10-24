@@ -6,6 +6,13 @@
 class DesignArtifactFinding < ApplicationRecord
   STATES = %w[missing_tree partial_tree stale_metadata deferred unverifiable].freeze
   STATUSES = %w[open assigned deferred dismissed resolved].freeze
+  # One shared actionability contract (also reused by
+  # ReconcileDesignArtifacts::Result#actionable_findings): a finding whose
+  # state is informational records an intentional artifact status. It is kept
+  # for inspection but implies no concrete human action, so it never enters
+  # the Inbox lane, badge, filters, or supported API action listings.
+  # @spec OPERATOR-INBOX-020
+  INFORMATIONAL_STATES = %w[deferred].freeze
 
   belongs_to :account
   belongs_to :project
@@ -19,9 +26,16 @@ class DesignArtifactFinding < ApplicationRecord
 
   scope :open_findings, -> { where(status: "open") }
   scope :pending_findings, -> { where(status: %w[open assigned deferred dismissed]) }
+  scope :actionable_findings, -> { open_findings.where.not(state: INFORMATIONAL_STATES) }
 
   belongs_to :resolution_actor, class_name: "User", optional: true
   belongs_to :resolution_issue, class_name: "Issue", optional: true
+
+  class << self
+    def actionable_state?(state) = !INFORMATIONAL_STATES.include?(state)
+
+    def informational_state?(state) = INFORMATIONAL_STATES.include?(state)
+  end
 
   def resolve!
     update!(status: "resolved", resolved_at: Time.current)
@@ -30,6 +44,10 @@ class DesignArtifactFinding < ApplicationRecord
   def decision_pending?
     status.in?(%w[assigned deferred dismissed])
   end
+
+  def informational? = !self.class.actionable_state?(state)
+
+  def unverifiable? = state == "unverifiable"
 
   private
 
