@@ -237,8 +237,25 @@ module FeatureIntents
 
     def relationship_text(body)
       in_relationship_section = false
+      in_ownership_table = false
       body.to_s.each_line.filter_map do |line|
-        if line.match?(RELATIONSHIP_HEADING_PATTERN) || line.match?(OWNERSHIP_HEADING_PATTERN)
+        if line.match?(OWNERSHIP_HEADING_PATTERN)
+          in_relationship_section = false
+          next
+        end
+
+        if ownership_table_header?(line)
+          in_relationship_section = false
+          in_ownership_table = true
+          next
+        end
+
+        if in_ownership_table
+          in_ownership_table = false unless line.start_with?("|")
+          next
+        end
+
+        if line.match?(RELATIONSHIP_HEADING_PATTERN)
           in_relationship_section = true
           next
         end

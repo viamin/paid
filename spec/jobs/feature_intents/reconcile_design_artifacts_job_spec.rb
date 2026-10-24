@@ -168,6 +168,29 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
   end
 
+  it "does not treat bare ownership-table references as local issue links in an active RDR" do
+    forager = create(:project, account: project.account, owner: "viamin", repo: "Forager-iOS")
+    [ 4255, 4256 ].each { |number| create(:issue, project: forager, github_number: number) }
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
+      body: <<~MARKDOWN
+        ## Related Issues
+
+        | Owner | Work |
+        | --- | --- |
+        | viamin/Forager-iOS | [#4255](https://github.com/viamin/Forager-iOS/issues/4255), #4256 |
+      MARKDOWN
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.pluck(:issue_identity)).to contain_exactly(
+      "viamin/Forager-iOS#4255", "viamin/Forager-iOS#4256"
+    )
+  end
+
   it "keeps denied external ownership coverage unverifiable rather than claiming local work is missing" do
     artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
       path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
