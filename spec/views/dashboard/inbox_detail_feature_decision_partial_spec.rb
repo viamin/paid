@@ -42,6 +42,20 @@ RSpec.describe "dashboard/_inbox_detail_feature_decision", type: :view do
     expect(document.at_css(%(li [data-testid="feature-intent-hold"]))).to be_present
   end
 
+  # @spec OPERATOR-INBOX-021
+  it "renders the shared planning context with affected tasks and design revisions" do
+    decision = create(:feature_intent_decision, feature_intent:, prompt: "Which validation evidence is required?")
+    issue = create(:issue, project:, github_number: 91, title: "Run live validation")
+    create(:feature_intent_issue, feature_intent:, issue:)
+    create(:feature_intent_design_pr, feature_intent:, pull_request_number: 92,
+      head_sha: "planning-revision", reviewed_head_sha: nil)
+
+    document = Nokogiri::HTML.fragment(render_detail(feature_intent.reload))
+
+    context = document.at_css('[data-testid="feature-decision-context"]')
+    expect(context.text).to include(decision.prompt, "#91 Run live validation", "planning-revision")
+  end
+
   it "loads the tree's feature-intent links through preloads, not per-issue queries" do
     3.times do |i|
       issue = create(:issue, project: project, github_number: 100 + i)

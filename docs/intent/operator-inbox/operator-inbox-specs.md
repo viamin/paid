@@ -673,6 +673,22 @@
   `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
   `spec/views/dashboard/inbox_detail_feature_decision_partial_spec.rb`.
 
+- [x] **OPERATOR-INBOX-021** — When a shared planning decision is actionable,
+  the Inbox detail and supported API SHALL project the existing deterministic
+  feature-decision readiness assessment with the open decision, its exact
+  affected design claim, linked held tasks, current design-PR revision(s), and
+  the policy-specific next action. This projection SHALL use one feature
+  identity for all linked tasks, SHALL not manufacture approval for
+  confidence-driven delivery, and SHALL remain read-only: a response still
+  flows through the canonical decision service and re-evaluates readiness.
+  *Code:* `app/services/inbox/feature_decision_context.rb`,
+  `app/views/dashboard/_inbox_detail_feature_decision.html.erb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb`.
+  *Test:* `spec/services/inbox/feature_decision_context_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
+  `spec/views/dashboard/inbox_detail_feature_decision_partial_spec.rb`,
+  `spec/lib/committee/drivers_mobile_inbox_contract_spec.rb`.
+
 - [x] **OPERATOR-INBOX-020** — The traceability-gap Inbox lane, its badge
   count, filter availability, detail and direct-link access, and the supported
   API surfaces SHALL share one actionability rule with reconciliation and the

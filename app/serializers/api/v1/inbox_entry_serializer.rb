@@ -139,18 +139,19 @@ module Api
         { action: decision.action, reason: decision.reason, created_at: decision.created_at&.iso8601 }
       end
 
-      # entry.record is the FeatureIntent itself; readiness is recomputed
-      # from its preloaded associations (Inbox::Queue eager-loads
-      # feature_intent_decisions/feature_intent_design_prs), so this is a
-      # deterministic in-memory check, not an extra query (mirrors the web
-      # detail partial's inline call).
+      # entry.record is the FeatureIntent itself. Inbox::Queue preloads every
+      # association consumed below, so payload projection stays in memory.
       def feature_decision_payload
         readiness = Inbox::FeatureDecisionReadiness.call(feature_intent: entry.record)
+        context = Inbox::FeatureDecisionContext.call(feature_intent: entry.record, readiness:)
         {
           delivery_policy: entry.record.delivery_policy,
           ready: readiness.ready?,
           blockers: readiness.blockers.map { |blocker| { code: blocker.code, message: blocker.message } },
-          human_actions: readiness.human_actions.map { |action| { kind: action.kind, message: action.message } }
+          human_actions: readiness.human_actions.map { |action| { kind: action.kind, message: action.message } },
+          decisions: context.decisions.map(&:to_h),
+          affected_tasks: context.tasks.map(&:to_h),
+          design_revisions: context.design_revisions.map(&:to_h)
         }
       end
 
