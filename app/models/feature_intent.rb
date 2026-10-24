@@ -39,6 +39,7 @@ class FeatureIntent < ApplicationRecord
   belongs_to :cancelled_by, class_name: "User", optional: true
 
   has_many :feature_intent_issues, dependent: :destroy
+  has_many :issue_publications, class_name: "FeatureIntentIssuePublication", dependent: :destroy
   has_many :issues, through: :feature_intent_issues
   has_many :delivery_telemetry_issues, -> { excluding_body }, through: :feature_intent_issues, source: :issue
   has_many :feature_intent_decisions, dependent: :destroy
