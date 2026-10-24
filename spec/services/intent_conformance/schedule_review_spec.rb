@@ -37,6 +37,24 @@ RSpec.describe IntentConformance::ScheduleReview do
       approved_design_revision: feature_intent.approved_design_revision, **attributes)
   end
 
+  # Production release snapshots come from ScopedReadiness via ReleaseIssue and
+  # carry no dedicated merged_baseline key; the first design artifact's merged
+  # revision is the baseline every consumer must fall back to.
+  def released_snapshot
+    FeatureIntents::ScopedReadiness.call(project: project, mapping: readiness_mapping).snapshot
+  end
+
+  def readiness_mapping
+    {
+      "coverage" => "complete",
+      "scope_revision" => "scope-v1",
+      "prerequisites" => [
+        { "id" => "intent", "assessment" => { "status" => "completed", "evidence_revision" => "evidence-v1", "intent_score" => 80, "technical_score" => 80 } }
+      ],
+      "design_artifacts" => [ { "path" => "docs/rdrs/RDR-1000-scoped.md", "required" => true, "merged" => true, "scope_revision" => "scope-v1", "revision" => "c" * 40 } ]
+    }
+  end
+
   it "enqueues one review for an unreviewed released intent" do
     expect {
       schedule
@@ -69,6 +87,60 @@ RSpec.describe IntentConformance::ScheduleReview do
 
   it "does not schedule PRs without a released intent and approved revision" do
     feature_intent.update!(status: "revising", approved_design_revision: nil)
+
+    expect {
+      schedule
+    }.to not_change(IntentConformanceReviewSchedule, :count)
+      .and not_have_enqueued_job(IntentConformance::ReviewJob)
+  end
+
+  # @spec CONFIDENCE-DELIVERY-010
+  it "schedules a confidence-driven review against the issue release baseline" do
+    confidence_feature = create(:feature_intent, :confidence_driven, project: project, status: "design_open", approved_design_revision: nil)
+    create(:feature_intent_issue, feature_intent: confidence_feature, issue: issue,
+      release_state: "released", release_snapshot: released_snapshot)
+
+    expect {
+      schedule
+    }.to change(IntentConformanceReviewSchedule, :count).by(1)
+
+    expect(IntentConformanceReviewSchedule.last.approved_design_revision).to eq("c" * 40)
+  end
+
+  # @spec CONFIDENCE-DELIVERY-010
+  it "prefers an explicit merged baseline when the release snapshot records one" do
+    confidence_feature = create(:feature_intent, :confidence_driven, project: project, status: "design_open", approved_design_revision: nil)
+    create(:feature_intent_issue, feature_intent: confidence_feature, issue: issue,
+      release_state: "released", release_snapshot: released_snapshot.merge("merged_baseline" => "explicit-baseline"))
+
+    expect {
+      schedule
+    }.to change(IntentConformanceReviewSchedule, :count).by(1)
+
+    expect(IntentConformanceReviewSchedule.last.approved_design_revision).to eq("explicit-baseline")
+  end
+
+  # @spec CONFIDENCE-DELIVERY-010
+  it "pins the first confidence link by id when an issue serves several designs" do
+    first_feature = create(:feature_intent, :confidence_driven, project: project, status: "design_open", approved_design_revision: nil)
+    create(:feature_intent_issue, feature_intent: first_feature, issue: issue,
+      release_state: "released", release_snapshot: released_snapshot)
+    later_feature = create(:feature_intent, :confidence_driven, project: project, status: "design_open", approved_design_revision: nil)
+    create(:feature_intent_issue, feature_intent: later_feature, issue: issue,
+      release_state: "released", release_snapshot: released_snapshot.merge("merged_baseline" => "later-baseline"))
+
+    expect {
+      schedule
+    }.to change(IntentConformanceReviewSchedule, :count).by(1)
+
+    expect(IntentConformanceReviewSchedule.last.approved_design_revision).to eq("c" * 40)
+  end
+
+  # @spec CONFIDENCE-DELIVERY-010
+  it "does not schedule against a confidence snapshot before its release completes" do
+    confidence_feature = create(:feature_intent, :confidence_driven, project: project, status: "design_open", approved_design_revision: nil)
+    create(:feature_intent_issue, feature_intent: confidence_feature, issue: issue,
+      release_state: "pending", release_snapshot: released_snapshot)
 
     expect {
       schedule
