@@ -192,6 +192,22 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
   end
 
   # @spec DESIGN-RECONCILIATION-001
+  it "does not treat an external issue mentioned in ownership prose as declared evidence" do
+    forager = create(:project, account: project.account, owner: "viamin", repo: "Forager-iOS")
+    create(:issue, project: forager, github_number: 4255)
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
+      body: "The issue owner mentioned viamin/Forager-iOS#4255 during discussion."
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(state: "missing_tree", status: "open")
+    expect(DesignArtifactAssociation.count).to eq(0)
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
   it "uses relationship references immediately following an ownership table" do
     artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
       path: "docs/rdrs/RDR-020-service-container-architecture.md",

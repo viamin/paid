@@ -217,41 +217,57 @@ module FeatureIntents
     end
 
     def ownership_table_text(body)
+      rows = []
+      expecting_separator = false
       in_table = false
-      body.to_s.each_line.filter_map do |line|
-        if in_table && !line.start_with?("|")
-          in_table = false
-          nil
+
+      body.to_s.each_line do |line|
+        if expecting_separator
+          in_table = markdown_table_separator?(line)
+          expecting_separator = false
+        elsif in_table && markdown_table_row?(line)
+          rows << line
         elsif in_table
-          line
-        elsif ownership_table_header?(line)
-          in_table = true
-          line
+          in_table = false
+          expecting_separator = ownership_table_header?(line)
+        else
+          expecting_separator = ownership_table_header?(line)
         end
       end
+
+      rows
     end
 
     def ownership_table_header?(line)
-      line.match?(/\bowner(?:ship)?\b/i) && line.match?(/\b(?:issue|work)\b/i)
+      markdown_table_row?(line) && line.match?(/\bowner(?:ship)?\b/i) && line.match?(/\b(?:issue|work)\b/i)
+    end
+
+    def markdown_table_row?(line)
+      line.to_s.match?(/^\s*\|?[^|\n]+\|[^|\n]+(?:\|[^|\n]+)*\|?\s*$/)
+    end
+
+    def markdown_table_separator?(line)
+      line.to_s.match?(/^\s*\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?\s*$/)
     end
 
     def relationship_text(body)
       in_relationship_section = false
       in_ownership_table = false
-      body.to_s.each_line.filter_map do |line|
+      lines = body.to_s.each_line.to_a
+      lines.each_with_index.filter_map do |line, index|
         if line.match?(OWNERSHIP_HEADING_PATTERN)
           in_relationship_section = false
           next
         end
 
-        if ownership_table_header?(line)
+        if ownership_table_header?(line) && markdown_table_separator?(lines[index + 1])
           in_relationship_section = false
           in_ownership_table = true
           next
         end
 
         if in_ownership_table
-          if line.start_with?("|")
+          if markdown_table_row?(line)
             next
           end
 
