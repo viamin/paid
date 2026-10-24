@@ -134,6 +134,21 @@ RSpec.describe Inbox::Queue do
       )
     end
 
+    # @spec INBOX-PHASE-RELEVANCE-003
+    it "keeps merge approvals accessible in Disabled phases when merge is disabled" do
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "merge" => false },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      })
+      pull_request = create_merge_approval_pr(labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ])
+
+      expect(described_class.call(user:, kind: described_class::MERGE_APPROVAL_KIND)).to be_empty
+      expect(described_class.call(user:, kind: described_class::MERGE_APPROVAL_KIND,
+        scope: described_class::DISABLED_PHASES_SCOPE)).to contain_exactly(have_attributes(issue: pull_request))
+    end
+
     # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
     it "surfaces a manual merge decision for a clear PR when auto-merge and auto-pick are off" do
       project.update!(auto_merge_mode: "off", auto_pick_enabled: false)

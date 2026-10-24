@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_23_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_23_112521) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2243,6 +2243,40 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_000000) do
     t.index ["scheduled_at"], name: "index_good_jobs_on_scheduled_at", where: "(finished_at IS NULL)"
   end
 
+  create_table "inbox_removals", force: :cascade do |t|
+    t.datetime "cleared_at", comment: "When a qualifying return event restored the request."
+    t.datetime "created_at", null: false
+    t.string "entry_kind", null: false
+    t.bigint "project_id"
+    t.datetime "removed_at", null: false
+    t.string "request_key", null: false
+    t.string "request_occurrence", null: false, comment: "Occurrence token at removal time; a newer occurrence makes the request eligible again."
+    t.string "responsible_phase"
+    t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["project_id", "responsible_phase"], name: "index_inbox_removals_on_project_id_and_responsible_phase"
+    t.index ["project_id"], name: "index_inbox_removals_on_project_id"
+    t.index ["user_id", "request_key", "request_occurrence"], name: "index_inbox_removals_user_request_occurrence", unique: true
+    t.index ["user_id"], name: "index_inbox_removals_on_user_id"
+  end
+
+  create_table "inbox_request_ownerships", force: :cascade do |t|
+    t.string "classification_state", default: "classified", null: false, comment: "classified | unknown | platform"
+    t.datetime "classified_at", null: false
+    t.datetime "created_at", null: false
+    t.string "entry_kind", null: false
+    t.bigint "origin_id"
+    t.string "origin_kind", comment: "Originating work: issue | pull_request | run | project | notification."
+    t.bigint "project_id"
+    t.bigint "record_id", null: false
+    t.string "request_key", null: false, comment: "Stable request identity: \"<kind>:<record_id>\"."
+    t.string "responsible_phase", comment: "Phase that owns the request; NULL for platform requests."
+    t.datetime "updated_at", null: false
+    t.index ["project_id", "responsible_phase"], name: "idx_on_project_id_responsible_phase_049615cd29"
+    t.index ["project_id"], name: "index_inbox_request_ownerships_on_project_id"
+    t.index ["request_key"], name: "index_inbox_request_ownerships_on_request_key", unique: true
+  end
+
   create_table "integration_credentials", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.string "auth_kind", null: false
@@ -3355,6 +3389,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_000000) do
     t.boolean "auto_scan_security", default: false, null: false
     t.string "automation_label_name", default: "paid-automation", null: false
     t.boolean "automation_on_label_enabled", default: true, null: false
+    t.jsonb "automation_phase_settings", default: {}, null: false, comment: "RDR-077 phase defaults: { \"phases\" => { \"coding\" => true }, \"release\" => false, \"deployment\" => false }. Empty means derive from current capability columns."
     t.integer "code_scanning_interval_hours", default: 24, null: false
     t.datetime "code_scanning_permission_error_at", comment: "Timestamp of the most recent 403 (missing security_events/code_scanning_alerts:read permission) hit while scanning for code scanning alerts. Used to back off retrying a scan that will fail identically until a human fixes the token/App permission, without waiting the full code_scanning_interval_hours window. Cleared on the next successful scan."
     t.string "code_scanning_scan_error_kind", comment: "Current code-scanning coverage failure classification: not_configured, permission, rate_limited, or transient."
@@ -4340,6 +4375,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_000000) do
     t.index ["reset_password_token"], name: "index_users_on_reset_password_token", unique: true
   end
 
+  create_table "work_item_continuation_grants", force: :cascade do |t|
+    t.datetime "completed_at", comment: "When the endpoint's work landed. A completed grant is not reactivated by reopening work."
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id"
+    t.string "endpoint", null: false, comment: "Last phase the grant covers: issue_preparation, coding, or merge."
+    t.bigint "issue_id", null: false
+    t.bigint "project_id", null: false
+    t.datetime "revoked_at"
+    t.bigint "revoked_by_id"
+    t.string "source", default: "manual_start", null: false, comment: "How the grant was created. Only manual_start is supported today."
+    t.string "start_phase", null: false, comment: "Phase the manual action started in; the grant covers it and later delivery phases."
+    t.datetime "updated_at", null: false
+    t.index ["created_by_id"], name: "index_work_item_continuation_grants_on_created_by_id"
+    t.index ["issue_id", "revoked_at", "completed_at"], name: "index_continuation_grants_active_lookup"
+    t.index ["issue_id"], name: "index_work_item_continuation_grants_on_issue_id"
+    t.index ["project_id", "issue_id", "endpoint"], name: "index_continuation_grants_work_item_endpoint"
+    t.index ["project_id"], name: "index_work_item_continuation_grants_on_project_id"
+    t.index ["revoked_by_id"], name: "index_work_item_continuation_grants_on_revoked_by_id"
+  end
+
   create_table "workflow_states", force: :cascade do |t|
     t.datetime "completed_at"
     t.datetime "created_at", null: false
@@ -4618,6 +4673,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_000000) do
   add_foreign_key "github_installations", "accounts"
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
+  add_foreign_key "inbox_removals", "projects"
+  add_foreign_key "inbox_removals", "users"
+  add_foreign_key "inbox_request_ownerships", "projects"
   add_foreign_key "integration_credentials", "accounts"
   add_foreign_key "integration_credentials", "users", column: "created_by_id"
   add_foreign_key "intent_conformance_decisions", "intent_conformance_verdicts", column: "verdict_id"
@@ -4814,6 +4872,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_23_000000) do
   add_foreign_key "user_settings", "provider_api_keys", column: "kb_embedding_provider_api_key_id", on_delete: :restrict
   add_foreign_key "user_settings", "users"
   add_foreign_key "users", "accounts"
+  add_foreign_key "work_item_continuation_grants", "issues"
+  add_foreign_key "work_item_continuation_grants", "projects"
+  add_foreign_key "work_item_continuation_grants", "users", column: "created_by_id"
+  add_foreign_key "work_item_continuation_grants", "users", column: "revoked_by_id"
   add_foreign_key "workflow_states", "projects"
   add_foreign_key "worktrees", "agent_runs", on_delete: :nullify
   add_foreign_key "worktrees", "projects", on_delete: :cascade

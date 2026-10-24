@@ -21,6 +21,7 @@ RSpec.describe Tools::Registry do
       trigger_readiness_bootstrap
       cancel_agent_run
       request_issue_continuation
+      request_acceptance_audit
       resolve_issue_closeout
       record_change_intent
       invite_account_member

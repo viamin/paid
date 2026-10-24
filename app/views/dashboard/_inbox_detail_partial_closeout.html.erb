@@ -161,6 +161,13 @@
       <p class="text-sm text-gray-600">No criterion-level evidence is recorded. Treat every unassessed criterion as unknown, not complete.</p>
     <% end %>
     <p class="rounded-md bg-gray-50 p-3 text-sm text-gray-700"><span class="font-medium">Next action:</span> <%= assessment.next_action["explanation"] %></p>
+    <% if assessment.stale? && policy(entry.project).run_agent? %>
+      <%= button_to "Run acceptance audit",
+            request_acceptance_audit_project_agent_runs_path(entry.project),
+            params: { issue_id: issue.id, return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
+            class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500",
+            data: { turbo_confirm: "Queue one report-only acceptance audit for ##{issue.github_number}? It will not create implementation work." } %>
+    <% end %>
   </div>
 
   <div class="space-y-3">

@@ -44,6 +44,22 @@ RSpec.describe Activities::MarkPrReadyActivity do
         expect(issue.reload.pr_review_phase).to eq("ready")
       end
 
+      # @spec AUTOMATION-PHASES-008
+      it "completes a coding grant so reopening the PR does not restore authorization" do
+        FeatureFlags.enable!(:automation_phases, project:)
+        project.update!(automation_phase_settings: {
+          "phases" => { "coding" => false }, "release" => false, "deployment" => false
+        })
+        grant = create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "coding")
+
+        activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
+        issue.update!(pr_review_phase: "restarted")
+
+        decision = Automation::EffectivePolicy.call(project:, phase: "coding", work_item: issue, trigger: :automatic)
+        expect(grant.reload).to be_completed
+        expect(decision).not_to be_permitted
+      end
+
       it "adds the paid-ready label" do
         activity.execute(project_id: project.id, pr_number: 42, issue_id: issue.id)
 

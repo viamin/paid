@@ -2,12 +2,13 @@
 
 module Inbox
   module PathHelper
-    # @spec INBOX-FOUNDATION-009
-    def inbox_query_params(project: nil, kind: nil, sort: params[:sort], **overrides)
+    # @spec INBOX-FOUNDATION-009 @spec INBOX-PHASE-RELEVANCE-002
+    def inbox_query_params(project: nil, kind: nil, sort: params[:sort], scope: params[:scope], **overrides)
       {
         project_id: project&.id,
         kind: kind,
-        sort: sort
+        sort: sort,
+        scope: scope
       }.compact.merge(overrides)
     end
 
