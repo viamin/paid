@@ -10,6 +10,16 @@ RSpec.describe AgentRun do
     Rails.cache.clear
   end
 
+  # @spec LAYERED-VERIFY-013
+  it "keeps layered-verification audit and repair goals distinct" do
+    expect(described_class::GOALS).to include("layered_verification_audit", "layered_verification_repair")
+
+    repair = build(:agent_run, goal: "layered_verification_repair")
+
+    expect(repair).to be_invalid
+    expect(repair.errors[:originating_audit_run]).to include("can't be blank")
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:project) }
     it { is_expected.to belong_to(:issue).optional }

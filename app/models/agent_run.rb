@@ -31,7 +31,8 @@ class AgentRun < ApplicationRecord
   # cannot retroactively alter a run's review behavior. @spec REVIEW-DEPTH-005
   REVIEW_DEPTHS = Project::REVIEW_DEPTHS
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
-  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness].freeze
+  # @spec LAYERED-VERIFY-013
+  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness layered_verification_audit layered_verification_repair].freeze
   # RDR-056 (Strict TDD): the run-scoped write-guard phase for projects with
   # tdd_mode != "off". nil means the run is not TDD-governed (existing
   # behavior). See Tdd::WriteGuard for the enforced allowed/forbidden matrix.
@@ -213,6 +214,7 @@ class AgentRun < ApplicationRecord
   belongs_to :runner, -> { with_discarded }, optional: true
   belongs_to :configuration_bundle, optional: true
   belongs_to :initiating_user, class_name: "User", optional: true
+  belongs_to :originating_audit_run, class_name: "AgentRun", optional: true
 
   has_many :agent_run_logs, dependent: :destroy
   has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy
@@ -285,6 +287,8 @@ class AgentRun < ApplicationRecord
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :goal, presence: true, inclusion: { in: GOALS }
+  validates :originating_audit_run, presence: true, if: :layered_verification_repair?
+  validate :originating_audit_run_is_audit, if: :layered_verification_repair?
   validates :focus, presence: true, inclusion: { in: FOCUSES }
   # @spec REVIEW-DEPTH-005 — the column is null: false with a DB-level
   # "balanced" default, so an explicit nil fails validation cleanly here
@@ -3393,6 +3397,16 @@ class AgentRun < ApplicationRecord
   end
 
   private
+
+  def layered_verification_repair?
+    goal == "layered_verification_repair"
+  end
+
+  def originating_audit_run_is_audit
+    return if originating_audit_run&.goal == "layered_verification_audit"
+
+    errors.add(:originating_audit_run, "must be a layered-verification audit run")
+  end
 
   def resolve_networking_policy(networking_policy)
     networking_policy || Containers::Provision.networking_policy_for(agent_run: self, project: project)
