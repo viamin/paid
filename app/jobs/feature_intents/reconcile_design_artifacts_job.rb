@@ -14,8 +14,9 @@ module FeatureIntents
     MARKDOWN_HEADING_PATTERN = /^\s{0,3}\#{1,6}\s+/
     OWNERSHIP_HEADING_PATTERN = /^\s{0,3}\#{1,6}\s+(?:\*\*)?(?:issue |work |implementation )?ownership(?:\*\*)?\s*$/i
     GITHUB_ISSUE_URL_PATTERN = %r{https?://github\.com/([\w.-]+)/([\w.-]+)/issues/(\d+)}i
-    QUALIFIED_ISSUE_PATTERN = %r{(?<![\w/-])([\w.-]+/[\w.-]+)#(\d+)}
-    BARE_ISSUE_PATTERN = %r{(?<![\w/-])#(\d+)}
+    QUALIFIED_ISSUE_PATTERN = %r{(?<![\w./-])([\w.-]+/[\w.-]+)#(\d+)}
+    BARE_ISSUE_PATTERN = %r{(?<![\w./-])#(\d+)}
+    FILE_EXTENSION_PATTERN = /\.[a-z0-9]{1,4}\z/i
 
     queue_as :maintenance
 
@@ -200,20 +201,30 @@ module FeatureIntents
 
     def references_from(text, local_bare: true)
       urls = text.scan(GITHUB_ISSUE_URL_PATTERN).map { |owner, repo, number| "#{owner}/#{repo}##{number}" }
-      without_link_labels = text.gsub(/\[[^\]]*\]\([^)]*\)/, "")
-      qualified = without_link_labels.scan(QUALIFIED_ISSUE_PATTERN).map { |repository, number| "#{repository}##{number}" }
-      bare = local_bare ? without_link_labels.scan(BARE_ISSUE_PATTERN).flatten.map { |number| "#{project.full_name}##{number}" } : []
+      without_links_or_urls = text.gsub(/\[[^\]]*\]\([^)]*\)/, "").gsub(%r{https?://\S+}, "")
+      qualified = without_links_or_urls.scan(QUALIFIED_ISSUE_PATTERN).map { |repository, number| "#{repository}##{number}" }
+      bare = local_bare ? without_links_or_urls.scan(BARE_ISSUE_PATTERN).flatten.map { |number| "#{project.full_name}##{number}" } : []
       (urls + qualified + bare).uniq
     end
 
     def ownership_table_references(body)
       ownership_table_text(body).flat_map do |line|
-        repositories = line.scan(%r{\b([\w.-]+/[\w.-]+)\b}).flatten.reject do |repository|
-          repository.start_with?("github.com/") || repository.end_with?("/issues")
-        end.uniq
-        references = references_from(line, local_bare: repositories.empty?)
-        references + (repositories.one? ? line.scan(BARE_ISSUE_PATTERN).flatten.map { |number| "#{repositories.first}##{number}" } : [])
+        repository = ownership_repository(line)
+        references = references_from(line, local_bare: repository.nil?)
+        references + bare_ownership_references(line, repository)
       end.uniq
+    end
+
+    def ownership_repository(line)
+      repository = markdown_table_cells(line).first.to_s.strip[/\A([\w.-]+\/[\w.-]+)\z/, 1]
+      repository unless repository&.match?(FILE_EXTENSION_PATTERN)
+    end
+
+    def bare_ownership_references(line, repository)
+      return [] unless repository
+
+      line.gsub(/\[[^\]]*\]\([^)]*\)/, "").gsub(%r{https?://\S+}, "")
+        .scan(BARE_ISSUE_PATTERN).flatten.map { |number| "#{repository}##{number}" }
     end
 
     def ownership_table_text(body)
@@ -244,6 +255,10 @@ module FeatureIntents
 
     def markdown_table_row?(line)
       line.to_s.match?(/^\s*\|?[^|\n]+\|[^|\n]+(?:\|[^|\n]+)*\|?\s*$/)
+    end
+
+    def markdown_table_cells(line)
+      line.to_s.strip.delete_prefix("|").delete_suffix("|").split("|").map(&:strip)
     end
 
     def markdown_table_separator?(line)

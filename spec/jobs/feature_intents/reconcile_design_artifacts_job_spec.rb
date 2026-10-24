@@ -192,6 +192,49 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
   end
 
   # @spec DESIGN-RECONCILIATION-001
+  it "keeps mixed local and external ownership references distinct when issue numbers collide" do
+    forager = create(:project, account: project.account, owner: "viamin", repo: "Forager-iOS")
+    create(:issue, project:, github_number: 216)
+    create(:issue, project:, github_number: 4256)
+    [ 4256, 4325 ].each { |number| create(:issue, project: forager, github_number: number) }
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
+      body: <<~MARKDOWN
+        ## Related Issues
+        - #216
+
+        ## Issue ownership
+        | Owner | Work |
+        | --- | --- |
+        | viamin/Forager-iOS | [#4255](https://github.com/viamin/Forager-iOS/issues/4325), #4256, docs/rdrs/RDR-074.md, https://example.com/spec#3 |
+      MARKDOWN
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.pluck(:issue_identity)).to contain_exactly(
+      "acme/widget#216", "viamin/Forager-iOS#4256", "viamin/Forager-iOS#4325"
+    )
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
+  it "does not treat a path in an ownership cell as an external repository" do
+    create(:issue, project:, github_number: 4255)
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
+      body: "## Ownership\n\n| Owner | Issue |\n| --- | --- |\n| docs/rdrs.md | #4255 |"
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.sole.issue_identity).to eq("acme/widget#4255")
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
   it "does not treat an external issue mentioned in ownership prose as declared evidence" do
     forager = create(:project, account: project.account, owner: "viamin", repo: "Forager-iOS")
     create(:issue, project: forager, github_number: 4255)
