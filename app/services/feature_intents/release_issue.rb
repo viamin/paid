@@ -65,7 +65,7 @@ module FeatureIntents
     end
 
     def unknown_planning_label?
-      issue.labels.include?(PLANNING_LABEL) && !confidence_links.any?(&:workflow_owned_planning_hold?)
+      links.any? && issue.labels.include?(PLANNING_LABEL) && !confidence_links.any?(&:workflow_owned_planning_hold?)
     end
 
     def hold_for_unknown_planning_label

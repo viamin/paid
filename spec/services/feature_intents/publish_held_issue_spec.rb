@@ -193,6 +193,26 @@ RSpec.describe FeatureIntents::PublishHeldIssue do
     expect(published.link.readiness_mapping.dig("planning_hold", "task_kind")).to eq("implementation")
   end
 
+  it "rejects a planning publication retried as implementation before read-back" do # @spec CONFIDENCE-DELIVERY-017
+    published = publish(task_kind: "planning")
+
+    expect { publish }.to raise_error(ArgumentError, /task_kind conflicts with the existing publication/)
+    expect(published.link.reload.planning_task?).to be(true)
+  end
+
+  it "preserves an operator override when reusing a planning publication" do # @spec CONFIDENCE-DELIVERY-017
+    published = publish(task_kind: "planning")
+    published.link.update!(readiness_mapping: published.link.readiness_mapping.deep_merge(
+      "planning_hold" => { "operator_override" => true }
+    ))
+
+    result = publish(task_kind: "planning")
+
+    expect(result).to be_reused
+    expect(result.link.reload.planning_task?).to be(false)
+    expect(result.link.readiness_mapping.dig("planning_hold", "operator_override")).to be(true)
+  end
+
   it "recovers a remotely created issue whose local record was lost" do
     published = publish
     published.issue.destroy!

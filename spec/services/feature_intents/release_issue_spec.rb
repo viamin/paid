@@ -169,8 +169,13 @@ RSpec.describe FeatureIntents::ReleaseIssue do
   end
 
   # @spec CONFIDENCE-DELIVERY-006
-  it "removes an externally re-added planning label when every design already released" do
-    link.update!(release_state: "released", released_at: Time.current, release_snapshot: { "scope_revision" => "scope-v1", "preserved" => true })
+  it "removes an externally re-added planning label when every design already released without a hold receipt" do # @spec CONFIDENCE-DELIVERY-006, CONFIDENCE-DELIVERY-017
+    link.update!(
+      readiness_mapping: mapping.except("planning_hold"),
+      release_state: "released",
+      released_at: Time.current,
+      release_snapshot: { "scope_revision" => "scope-v1", "preserved" => true }
+    )
 
     result = described_class.call(issue: issue)
 

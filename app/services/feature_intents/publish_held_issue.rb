@@ -50,12 +50,12 @@ module FeatureIntents
       return Result.new(issue: nil, link: nil, reused: false, speculative_alternatives: []) unless feature_intent.confidence_driven?
 
       issue, reused = with_publication_lock { publish_issue }
-      ensure_task_kind_consistent!(feature_intent.feature_intent_issues.find_by(issue: issue))
       attach_parent(issue)
       # Dependency edges are recorded before the feature link so
       # AttachFromAgentRun can mirror them as in-tree prerequisite edges.
       attach_dependencies(issue)
       link = link_issue(issue)
+      ensure_task_kind_consistent!(link)
       record_planning_hold_contract(link)
       record_facet_prerequisites(link)
       alternatives = record_speculative_alternatives
@@ -85,6 +85,7 @@ module FeatureIntents
     def existing_issue
       local = project.issues.where("body LIKE ?", "%#{marker}%").order(:id).first
       if local
+        ensure_task_kind_consistent!(publication_link(local))
         verify_read_back_number(local.github_number)
         return [ local, true ]
       end
@@ -102,7 +103,7 @@ module FeatureIntents
       remote = remote_issue_with_marker
       return unless remote
 
-      verify_read_back(remote)
+      verify_remote_reuse(remote)
       Issues::UpsertFromGithub.call(project:, github_issue: remote)
     end
 
@@ -116,7 +117,7 @@ module FeatureIntents
       remote = receipt.remote_issue_number ? client.issue(project.full_name, receipt.remote_issue_number) : remote_issue_with_marker
       raise GithubClient::Error, "planning-held issue creation is pending remote reconciliation" unless remote
 
-      verify_read_back(remote)
+      verify_remote_reuse(remote)
       record_remote_issue!(receipt, remote) unless receipt.remote_issue_number
       [ Issues::UpsertFromGithub.call(project:, github_issue: remote), true ]
     end
@@ -158,6 +159,12 @@ module FeatureIntents
 
     def verify_read_back(remote)
       verify_read_back_number(remote.number)
+    end
+
+    def verify_remote_reuse(remote)
+      existing_issue = project.issues.find_by(github_number: remote.number)
+      ensure_task_kind_consistent!(publication_link(existing_issue)) if existing_issue
+      verify_read_back(remote)
     end
 
     def verify_read_back_number(number)
@@ -212,6 +219,10 @@ module FeatureIntents
       feature_intent.feature_intent_issues.find_by!(issue: issue)
     end
 
+    def publication_link(issue)
+      feature_intent.feature_intent_issues.find_by(issue: issue)
+    end
+
     # The publication marker identifies one durable task. A retry must not
     # change its admission semantics by replacing its persisted task kind.
     # @spec CONFIDENCE-DELIVERY-017
@@ -231,7 +242,7 @@ module FeatureIntents
       contract = {
         "owner" => FeatureIntentIssue::PAID_HOLD_OWNER,
         "task_kind" => task_kind,
-        "operator_override" => false,
+        "operator_override" => link.readiness_mapping.dig("planning_hold", "operator_override") || false,
         "reason" => "Awaiting the scoped planning release condition.",
         "release_condition" => "Current scoped readiness and dependencies permit implementation.",
         "scope_revision" => "published-#{digest}",
