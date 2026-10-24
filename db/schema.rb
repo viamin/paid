@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_053959) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2032,6 +2032,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_053959) do
     t.index ["feature_intent_facet_id"], name: "idx_on_feature_intent_facet_id_5eef7ee3f6"
     t.index ["feature_intent_issue_prerequisite_mapping_id", "feature_intent_facet_id", "feature_intent_facet_direction_id"], name: "index_issue_prerequisites_unique_mapping", unique: true
     t.index ["feature_intent_issue_prerequisite_mapping_id"], name: "idx_on_feature_intent_issue_prerequisite_mapping_id_d60e1156f7"
+  end
+
+  create_table "feature_intent_issue_publications", comment: "Durable GitHub issue-create receipts for planning-held feature work.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "feature_intent_id", null: false
+    t.bigint "remote_issue_id", comment: "GitHub issue node id recorded immediately after creation."
+    t.integer "remote_issue_number", comment: "GitHub issue number used to reconcile a failed local sync."
+    t.string "task_digest", limit: 16, null: false, comment: "Stable planning-held task identity."
+    t.datetime "updated_at", null: false
+    t.index ["feature_intent_id", "task_digest"], name: "index_feature_intent_issue_publications_on_task", unique: true
+    t.index ["feature_intent_id"], name: "index_feature_intent_issue_publications_on_feature_intent_id"
   end
 
   create_table "feature_intent_issues", comment: "Links feature intent records to their issue trees (implementation issues and PR issues).", force: :cascade do |t|
@@ -4666,6 +4677,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_053959) do
   add_foreign_key "feature_intent_issue_prerequisites", "feature_intent_facet_directions", on_delete: :restrict
   add_foreign_key "feature_intent_issue_prerequisites", "feature_intent_facets", on_delete: :restrict
   add_foreign_key "feature_intent_issue_prerequisites", "feature_intent_issue_prerequisite_mappings", on_delete: :cascade
+  add_foreign_key "feature_intent_issue_publications", "feature_intents"
   add_foreign_key "feature_intent_issues", "feature_intents"
   add_foreign_key "feature_intent_issues", "issues"
   add_foreign_key "feature_intents", "projects"

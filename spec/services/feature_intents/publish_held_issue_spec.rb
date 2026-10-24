@@ -6,12 +6,13 @@ require "rails_helper"
 # and can simulate an interrupted local sync via searchable remote items.
 class PublishHeldIssueFakeClient
   attr_reader :created_issues, :remote_items
-  attr_accessor :read_back_body_override, :read_back_labels_override
+  attr_accessor :create_response_title_override, :read_back_body_override, :read_back_labels_override
 
   def initialize(planning_label:)
     @planning_label = planning_label
     @created_issues = []
     @remote_items = []
+    @create_response_title_override = nil
     @read_back_body_override = nil
     @read_back_labels_override = nil
     @next_number = 4242
@@ -21,7 +22,7 @@ class PublishHeldIssueFakeClient
     @next_number += 1
     number = @next_number
     @created_issues << { repo: repo, title: title, body: body, labels: labels, number: number }
-    remote_issue(number: number, title: title, body: body, labels: labels)
+    remote_issue(number: number, title: create_response_title_override || title, body: body, labels: labels)
   end
 
   def issue(_repo, number)
@@ -168,6 +169,21 @@ RSpec.describe FeatureIntents::PublishHeldIssue do
     expect(client.created_issues.length).to eq(1)
     expect(result.issue.github_number).to eq(4242)
     expect(feature.feature_intent_issues.where(issue_id: result.issue.id)).to exist
+  end
+
+  it "recovers the create receipt after local upsert fails before search visibility" do
+    client.create_response_title_override = ""
+
+    expect { publish }.to raise_error(ActiveRecord::RecordInvalid)
+    receipt = FeatureIntentIssuePublication.sole
+    expect(receipt.remote_issue_number).to eq(client.created_issues.first[:number])
+
+    client.create_response_title_override = nil
+    result = publish
+
+    expect(result).to be_reused
+    expect(result.issue.github_number).to eq(receipt.remote_issue_number)
+    expect(client.created_issues.length).to eq(1)
   end
 
   it "raises for retry when a recovered issue no longer has its planning hold" do

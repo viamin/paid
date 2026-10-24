@@ -70,7 +70,7 @@ module FeatureIntents
     def marker = "<!-- paid:planning-held:#{feature_intent.id}:#{digest} -->"
 
     def publish_issue
-      existing_issue || create_remote_issue
+      existing_issue || reconcile_receipted_issue || create_remote_issue
     end
 
     # The marker is the stable identity of this task under this feature, so a
@@ -90,17 +90,32 @@ module FeatureIntents
     # local upsert; recover that issue from its remote body rather than file a
     # duplicate.
     def recovered_remote_issue
-      return unless client.respond_to?(:search_issues)
-
-      remote = client.search_issues("repo:#{project.full_name} in:body \"#{marker}\"", per_page: 100).items
-        .find { |candidate| candidate.body.to_s.include?(marker) }
+      remote = remote_issue_with_marker
       return unless remote
 
       verify_read_back(remote)
       Issues::UpsertFromGithub.call(project:, github_issue: remote)
     end
 
+    # A receipt prevents a retry from issuing another create while the first
+    # create may still be invisible to GitHub search. Once GitHub has returned
+    # an issue number, reconciliation reads that exact issue instead.
+    def reconcile_receipted_issue
+      receipt = publication_receipt
+      return unless receipt
+
+      remote = receipt.remote_issue_number ? client.issue(project.full_name, receipt.remote_issue_number) : remote_issue_with_marker
+      raise GithubClient::Error, "planning-held issue creation is pending remote reconciliation" unless remote
+
+      verify_read_back(remote)
+      record_remote_issue!(receipt, remote) unless receipt.remote_issue_number
+      [ Issues::UpsertFromGithub.call(project:, github_issue: remote), true ]
+    end
+
     def create_remote_issue
+      receipt = reserve_publication!
+      return reconcile_receipted_issue if receipt.remote_issue_number
+
       remote = client.create_issue(
         project.full_name,
         title: title.truncate(255),
@@ -108,8 +123,28 @@ module FeatureIntents
         labels: [ PLANNING_LABEL ]
       )
       verify_read_back(remote)
+      record_remote_issue!(receipt, remote)
       issue = Issues::UpsertFromGithub.call(project:, github_issue: remote)
       [ issue, false ]
+    end
+
+    def publication_receipt
+      FeatureIntentIssuePublication.find_by(feature_intent:, task_digest: digest)
+    end
+
+    def reserve_publication!
+      FeatureIntentIssuePublication.create_or_find_by!(feature_intent:, task_digest: digest)
+    end
+
+    def record_remote_issue!(receipt, remote)
+      receipt.update!(remote_issue_id: remote.id, remote_issue_number: remote.number)
+    end
+
+    def remote_issue_with_marker
+      return unless client.respond_to?(:search_issues)
+
+      client.search_issues("repo:#{project.full_name} in:body \"#{marker}\"", per_page: 100).items
+        .find { |candidate| candidate.body.to_s.include?(marker) }
     end
 
     def verify_read_back(remote)
