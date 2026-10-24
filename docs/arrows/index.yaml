@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-23
+last_updated: 2026-10-24
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -718,6 +718,15 @@ arrows:
     status: MAPPED
     sampled: 2026-10-11
     next: "Implement chat bootstrap API-key step (#4281) and onboarding chat read/write tools, persona, and product docs (#4282), tracked by umbrella #4280"
+  maintenance-runs:
+    title: General Maintenance Runs
+    path: docs/intent/maintenance-runs/maintenance-runs-design.md
+    specs: docs/intent/maintenance-runs/maintenance-runs-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: MAPPED
+    sampled: 2026-10-23
+    next: "Draft LLD/EARS only; RDR-075 remains Status: Draft (merged to main via #4308) and no implementation exists. Tool-handoff validation audit is complete (audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md); critical assumption 2 live evidence is owned by #4604. Blocked on design acceptance before #4328-#4333 implementation phases release."
   marketplace-tool-sidecars:
     title: Marketplace Tool Sidecars
     path: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-design.md

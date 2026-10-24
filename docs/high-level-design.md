@@ -316,6 +316,17 @@ from that one schema. Native surfaces are inbox and chat only; everything
 else stays web-only, and refresh is polling with `ETag`/`304` support rather
 than push. See `docs/intent/mobile-api/`.
 
+A planned general maintenance capability extends manual and recurring
+repository investigations — focused, issue-less questions and durable,
+evidence-backed reports — without requiring a feature issue or PR first.
+It consumes the marketplace tool-attachment and sidecar lifecycle rather than
+building a second provisioning path, and keeps investigation separate from
+any repair: a scan never mutates source code or opens a PR on its own.
+**Draft, not yet accepted**: see RDR-075 (merged to
+`docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
+`docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
+that acceptance.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the
