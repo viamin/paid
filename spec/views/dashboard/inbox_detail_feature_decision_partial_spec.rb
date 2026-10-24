@@ -59,6 +59,7 @@ RSpec.describe "dashboard/_inbox_detail_feature_decision", type: :view do
 
     document = Nokogiri::HTML.fragment(render_detail(confidence_feature.reload))
 
+    expect(document.text).to include("Confidence-driven delivery")
     expect(document.text).to include("Human action required")
     expect(document.text).not_to include("Mark approved")
     expect(document.at_css('[data-testid="feature-decision-action-answer_or_clarify"]')).to be_present

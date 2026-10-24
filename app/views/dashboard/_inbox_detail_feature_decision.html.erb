@@ -4,6 +4,9 @@
 <% confidence_driven = feature_intent.confidence_driven? %>
 <div class="space-y-6">
   <div class="rounded-xl border <%= readiness.ready? ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50" %> p-4">
+    <% if confidence_driven %>
+      <p class="text-xs font-medium uppercase tracking-wide text-indigo-700">Confidence-driven delivery</p>
+    <% end %>
     <h3 class="text-sm font-semibold <%= readiness.ready? ? "text-emerald-900" : "text-amber-900" %>">
       <%= confidence_driven ? (readiness.actionable? ? "Human action required" : "Scoped readiness") : (readiness.ready? ? "Ready for approval" : "Held") %>
     </h3>
