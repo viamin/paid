@@ -251,8 +251,11 @@ module FeatureIntents
         end
 
         if in_ownership_table
-          in_ownership_table = false unless line.start_with?("|")
-          next
+          if line.start_with?("|")
+            next
+          end
+
+          in_ownership_table = false
         end
 
         if line.match?(RELATIONSHIP_HEADING_PATTERN)

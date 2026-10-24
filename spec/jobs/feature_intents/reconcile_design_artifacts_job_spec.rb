@@ -191,6 +191,29 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
   end
 
+  # @spec DESIGN-RECONCILIATION-001
+  it "uses relationship references immediately following an ownership table" do
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-020-service-container-architecture.md",
+      revision: "a" * 40,
+      body: <<~MARKDOWN
+        ## Issue ownership
+        | Owner | Work |
+        | --- | --- |
+        | Platform | Pending |
+        ## Related Issues
+        - #216
+      MARKDOWN
+    )
+    create(:issue, project:, github_number: 216)
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.sole.issue_identity).to eq("acme/widget#216")
+  end
+
   it "keeps denied external ownership coverage unverifiable rather than claiming local work is missing" do
     artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
       path: "docs/rdrs/RDR-003-project-readiness-bootstrap.md", revision: "a" * 40,
