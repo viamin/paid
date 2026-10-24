@@ -84,11 +84,15 @@ module IntentConformance
       def valid_sha?(value) = value.is_a?(String) && value.match?(SHA)
 
       def valid_repository?
-        repository.split("/").length == 2 && repository.split("/").all? { |segment| segment.match?(PATH_SEGMENT) }
+        repository.split("/", -1).length == 2 && valid_segments?(repository)
       end
 
       def valid_path?(value)
-        value.is_a?(String) && value.present? && value.split("/").all? { |segment| segment.match?(PATH_SEGMENT) }
+        value.is_a?(String) && value.present? && valid_segments?(value)
+      end
+
+      def valid_segments?(value)
+        value.split("/", -1).all? { |segment| segment.present? && segment != "." && segment != ".." && segment.match?(PATH_SEGMENT) }
       end
 
       def diff_url = "https://github.com/#{repository}/compare/#{base_sha}...#{head_sha}"

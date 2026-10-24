@@ -54,6 +54,17 @@ RSpec.describe IntentConformance::ShadowEvaluation::Evidence do
     expect(call(kind: "design_document", path: "../secrets")).not_to be_available
   end
 
+  it "rejects declared design artifacts with dot-segment paths" do
+    corpus_case["design_document_paths"] = [ "docs/../LICENSE", "./docs/RDR-999.md", "docs/" ]
+
+    [ "docs/../LICENSE", "./docs/RDR-999.md", "docs/" ].each do |path|
+      result = call(kind: "design_document", path:)
+
+      expect(result).not_to be_available
+      expect(result.error).to eq("approved design artifact path is invalid")
+    end
+  end
+
   it "rejects non-string pinned revisions" do
     evaluation.update!(manifest_digest: "")
     corpus_case["base_sha"] = 1
