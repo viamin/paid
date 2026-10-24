@@ -57,4 +57,27 @@ RSpec.describe Projects::Readiness::Record do
 
     expect(project.reload.readiness_gaps).to be_empty
   end
+
+  it "replaces a stale missing Godot command gap with target-checkout install-on-demand evidence" do # @spec PROJECT-READINESS-006 PROJECT-READINESS-013
+    project = create(:project, tdd_mode: "strict", primary_language: "GDScript", readiness_gaps: [ {
+      "kind" => "missing_test_command", "description" => "stale", "evidence" => { "ecosystem" => "godot" }
+    } ])
+    previous_version = Dashboard::CacheVersion.current(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+
+    Dir.mktmpdir do |repo_path|
+      FileUtils.mkdir_p(File.join(repo_path, ".github/workflows"))
+      FileUtils.mkdir_p(File.join(repo_path, "tests"))
+      FileUtils.mkdir_p(File.join(repo_path, "bin"))
+      File.write(File.join(repo_path, ".github/workflows/gdunit4.yml"), "name: gdUnit4\n")
+      File.write(File.join(repo_path, "bin/install-test-tools"), "#!/bin/sh\nexit 1\n")
+      File.write(File.join(repo_path, "bin/test"), "#!/bin/sh\nexit 1\n")
+      FileUtils.chmod("u+x", File.join(repo_path, "bin/install-test-tools"))
+      FileUtils.chmod("u+x", File.join(repo_path, "bin/test"))
+
+      described_class.call(project:, repo_path:)
+    end
+
+    expect(project.reload.readiness_gaps).to be_empty
+    expect(Dashboard::CacheVersion.current(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)).to be > previous_version
+  end
 end

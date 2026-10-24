@@ -33,7 +33,7 @@ module Projects
         raise NotImplementedError
       end
 
-      # @return [Boolean] whether a runnable test command is configured
+      # @return [Boolean] whether a repository-owned test command is configured
       def test_command_configured?
         raise NotImplementedError
       end

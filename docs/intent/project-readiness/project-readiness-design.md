@@ -30,8 +30,19 @@ registered in precedence order: specialized detectors first and the
 `Prompts::LanguageCommands` fallback last. Adding an ecosystem therefore
 means adding and registering a detector, rather than extending a central
 language switch. The initial specialized detector covers Godot 4.x + gdUnit4;
-it detects GDScript/Godot or `project.godot`, looks for `test` or `tests`, and
-requires `addons/gdUnit4` as the executable test-harness evidence.
+it detects GDScript/Godot or `project.godot` and looks for `test` or `tests`.
+Its command evidence is either the installed
+`addons/gdUnit4/bin/GdUnitCmdTool.gd` entry point or the supported,
+repository-owned install-on-demand contract: executable `bin/test` plus
+executable `bin/install-test-tools`. The latter records that dependency setup
+is required; it does not claim that setup or tests have succeeded.
+
+Readiness never executes either script, downloads an addon, or infers a
+command from a CI YAML string, an arbitrary filename, or a historical check.
+The isolated agent/CI execution environment owns setup and test execution, and
+retains its exact tool versions, discovered tests, output, and exit status.
+An unavailable or failed setup is execution evidence, not a reason for the
+web/control-plane evaluator to mutate it into a successful readiness result.
 
 When interactive verification is enabled, readiness also validates the
 target-checkout configuration through `Screenshots::RuntimePlan`: it requires

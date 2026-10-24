@@ -1,5 +1,5 @@
 ; Engine configuration file.
-; The gdUnit4 addon is provisioned by bin/validate-godot-gdunit4-readiness.
+; The gdUnit4 addon is provisioned by bin/install-test-tools.
 config_version=5
 
 [application]
