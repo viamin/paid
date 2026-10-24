@@ -27,6 +27,28 @@ RSpec.describe AppleVerification::LiveValidation::Suite, "#plan" do
     end
   end
 
+  it "prints a ready plan for a complete request without connecting to the control plane" do
+    Dir.mktmpdir("apple-verify-live-spec") do |directory|
+      probe_path = File.join(directory, "boot_probe.rb")
+      File.write(probe_path, 'at_exit { warn "RAILS_BOOTED=#{defined?(Rails::Application) ? true : false}" }')
+      environment = {
+        "APPLE_VERIFICATION_HOST_URL" => "https://apple-worker.example.test",
+        "APPLE_VERIFICATION_HOST_TOKEN" => "host-token",
+        "APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN" => "guest-token",
+        "DATABASE_URL" => "postgresql://unsafe-role@localhost:1/paid",
+        "RUBYOPT" => "-r#{probe_path}"
+      }
+
+      stdout, stderr, status = Open3.capture3(
+        environment, script_path, "--plan", "--project", "1", "--image", "sha256:approved", chdir: directory
+      )
+
+      expect(status).to be_success, -> { "stdout: #{stdout}\nstderr: #{stderr}" }
+      expect(stdout).to include("Preflight: ready")
+      expect(stderr).to include("RAILS_BOOTED=false")
+    end
+  end
+
   def script_path
     Rails.root.join("bin/apple-verify-live").to_s
   end

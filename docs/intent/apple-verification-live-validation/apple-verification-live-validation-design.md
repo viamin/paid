@@ -104,10 +104,11 @@ issues (#3936, #3937, #3940, #3941) have not landed yet.
 
 The `--plan` path loads only the static scenario matrix and validates
 command-line/environment presence. It intentionally does not boot Rails or
-connect to the control plane, so an operator can see host-credential and
-request-input gaps even when the control-plane database is unavailable or its
-runtime role is correctly rejected. A complete execution request boots the
-control plane before validating the project, flag, and active image.
+connect to the control plane, even when the operator supplies every execution
+request input, so an operator can see a dependency-free request preflight when
+the control-plane database is unavailable or its runtime role is correctly
+rejected. A complete `--run` execution request boots the control plane before
+validating the project, flag, and active image.
 
 ## Report
 
