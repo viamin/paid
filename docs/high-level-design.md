@@ -175,6 +175,21 @@ actionable owner or a clearly routed operator prerequisite. The parent retains
 the PR evidence and explicit dependency edges; a merged audit alone is never
 proof that its acceptance criteria passed.
 
+A project may also host the layered-verification add-on: a bounded capability
+that checks correspondence between approved business intent and its
+representations (specs, formal models, tests, code) without treating a
+passing check within one representation as proof of agreement across
+representations. Its unit of work is a scoped business obligation, not a PR.
+Audit and repair are deliberately separate operations with separate
+authorization: an audit investigates, records evidence, and raises findings;
+only a separately authorized repair can change canonical intent, models,
+specs, tests, or code, and a completed audit or an approved clarification
+never triggers one automatically. The add-on reuses Paid's existing execution,
+knowledge, approval, and Inbox infrastructure rather than introducing a
+parallel intent store or a new decision surface; a project's own LID, OKF, or
+offered CIR records remain the canonical home for the obligations it checks.
+See `docs/intent/layered-verification/`.
+
 ## Approach: All LLM Calls Through One Interface
 
 Every LLM interaction in the application goes through the `agent_harness` gem —
