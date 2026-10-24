@@ -50,6 +50,7 @@ module FeatureIntents
       return Result.new(issue: nil, link: nil, reused: false, speculative_alternatives: []) unless feature_intent.confidence_driven?
 
       issue, reused = with_publication_lock { publish_issue }
+      ensure_task_kind_consistent!(feature_intent.feature_intent_issues.find_by(issue: issue))
       attach_parent(issue)
       # Dependency edges are recorded before the feature link so
       # AttachFromAgentRun can mirror them as in-tree prerequisite edges.
@@ -209,6 +210,16 @@ module FeatureIntents
     def link_issue(issue)
       AttachFromAgentRun.attach_issue(feature_intent:, issue:)
       feature_intent.feature_intent_issues.find_by!(issue: issue)
+    end
+
+    # The publication marker identifies one durable task. A retry must not
+    # change its admission semantics by replacing its persisted task kind.
+    # @spec CONFIDENCE-DELIVERY-017
+    def ensure_task_kind_consistent!(link)
+      stored_task_kind = link&.readiness_mapping&.dig("planning_hold", "task_kind").presence
+      return if stored_task_kind.blank? || stored_task_kind == task_kind
+
+      raise ArgumentError, "task_kind conflicts with the existing publication"
     end
 
     # The existing readiness mapping is the durable per-task contract. Keeping

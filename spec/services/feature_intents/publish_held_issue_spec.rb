@@ -183,6 +183,16 @@ RSpec.describe FeatureIntents::PublishHeldIssue do
     expect(FeatureIntents::RunAdmission.call(issue: result.issue).code).to eq("issue_dependencies_incomplete")
   end
 
+  it "rejects a reused publication with a conflicting task kind" do # @spec CONFIDENCE-DELIVERY-017
+    published = publish
+
+    expect { publish(task_kind: "planning") }.to raise_error(
+      ArgumentError, /task_kind conflicts with the existing publication/
+    )
+    expect(published.link.reload.planning_task?).to be(false)
+    expect(published.link.readiness_mapping.dig("planning_hold", "task_kind")).to eq("implementation")
+  end
+
   it "recovers a remotely created issue whose local record was lost" do
     published = publish
     published.issue.destroy!

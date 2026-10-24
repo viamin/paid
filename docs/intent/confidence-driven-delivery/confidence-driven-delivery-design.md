@@ -105,7 +105,9 @@ and is never blanket-removed. A `planning` task that prepares the design or
 approval evidence is not subject to the implementation approval gate, but an
 independent label or dependency still controls its eligibility. Reconciliation
 never enables rollout or activation; it returns work only to canonical queue
-admission.
+admission. Task kind is immutable for the marker-identified publication, so a
+retry with a conflicting kind is rejected rather than changing its admission
+semantics.
 
 Serialize the transition between an unstarted scope edit and run admission.
 Admission either receives the revised ready scope or the already-started run
