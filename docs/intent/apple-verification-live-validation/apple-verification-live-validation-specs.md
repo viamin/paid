@@ -60,3 +60,10 @@
   section for the next RDR-068 closeout.
   *Tests:* `spec/services/apple_verification/live_validation/report_spec.rb`
   *Code:* `AppleVerification::LiveValidation::Report`
+- [x] **APPLE-LIVE-008** — When invoked with `--plan` without a complete
+  execution request, `bin/apple-verify-live` SHALL print the static scenario
+  matrix and missing-input preflight findings without booting Rails or
+  connecting to the control-plane database; execution requests SHALL still
+  boot the control plane before project, flag, and image validation.
+  *Tests:* `spec/services/apple_verification/live_validation/suite_plan_spec.rb`
+  *Code:* `bin/apple-verify-live`

@@ -20,6 +20,9 @@ require "bundler/setup"
 require "optparse"
 require "time"
 
+require_relative "../app/services/apple_verification/live_validation/scenario"
+require_relative "../app/services/apple_verification/live_validation/suite"
+
 def usage
   <<~USAGE
     Usage:
@@ -68,7 +71,9 @@ OptionParser.new do |opts|
   opts.on("-h", "--help") { puts usage; exit 0 }
 end.parse!
 
-require_relative "../config/environment"
+def load_control_plane!
+  require_relative "../config/environment"
+end
 
 # ---------------------------------------------------------------------------
 # Production ports wired from the shipped control-plane objects
@@ -229,34 +234,35 @@ end
 
 def preflight_failures(project_id, image_digest)
   failures = []
-  failures << "APPLE_VERIFICATION_HOST_URL is not configured" if ENV["APPLE_VERIFICATION_HOST_URL"].blank?
-  failures << "APPLE_VERIFICATION_HOST_TOKEN is not configured" if ENV["APPLE_VERIFICATION_HOST_TOKEN"].blank?
-  failures << "APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN is not configured" if ENV["APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN"].blank?
+  failures << "APPLE_VERIFICATION_HOST_URL is not configured" if ENV.fetch("APPLE_VERIFICATION_HOST_URL", "").empty?
+  failures << "APPLE_VERIFICATION_HOST_TOKEN is not configured" if ENV.fetch("APPLE_VERIFICATION_HOST_TOKEN", "").empty?
+  failures << "APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN is not configured" if ENV.fetch("APPLE_VERIFICATION_GUEST_EXECUTOR_TOKEN", "").empty?
   failures << "--project is required (Paid project id for the validation run)" if project_id.nil?
   failures << "--image is required (approved Apple verification image digest)" if image_digest.nil?
+  return failures unless project_id && failures.empty?
 
   # The project, feature-flag, and image lookups cross the FORCE ROW LEVEL
   # SECURITY tenant policy on projects (and its account-scoped joins); a
   # fresh script connection carries neither paid.current_account_id nor
   # paid.bypass_tenant_rls, so these must run with system access like the
   # --run path below or every project lookup reads as "not found".
+  load_control_plane!
   TenantContext.with_system_access do
-    if project_id && failures.empty?
-      project = Project.find_by(id: project_id)
-      failures << "project #{project_id} not found" if project.nil?
-      if project
-        unless FeatureFlags.enabled?(:apple_verification_workers, project:)
-          failures << "apple_verification_workers flag is disabled for project #{project_id}"
-        end
-        unless project.account.apple_verification_images.schedulable.exists?(digest: image_digest)
-          failures << "no active Apple verification image with digest #{image_digest}"
-        end
+    project = Project.find_by(id: project_id)
+    failures << "project #{project_id} not found" if project.nil?
+    if project
+      unless FeatureFlags.enabled?(:apple_verification_workers, project:)
+        failures << "apple_verification_workers flag is disabled for project #{project_id}"
+      end
+      unless project.account.apple_verification_images.schedulable.exists?(digest: image_digest)
+        failures << "no active Apple verification image with digest #{image_digest}"
       end
     end
   end
   failures
 end
 
+# @spec APPLE-LIVE-008
 def print_plan
   puts "RDR-068 live validation scenario matrix (issue #3978)\n\n"
   AppleVerification::LiveValidation::Suite::SCENARIOS.each do |scenario|
@@ -288,6 +294,8 @@ unless preflight.empty?
   warn "See docs/rdrs/live-validation-runbook-rdr-068.md."
   exit 1
 end
+
+load_control_plane!
 
 TenantContext.with_system_access do
   project = Project.find(options.fetch(:project_id))
