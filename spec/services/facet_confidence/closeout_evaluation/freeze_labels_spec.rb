@@ -115,6 +115,25 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
     expect(evaluation.reload).to be_labeling
   end
 
+  it "refuses a rival freeze that committed behind a stale labeling read" do
+    # The two-tab double-submit mirror of the RecordLabel race: both requests
+    # loaded the evaluation while it was still labeling; the first froze the
+    # set and compiled the report, and only afterwards does the stale request
+    # reach its own freeze. The frozen state must be re-checked under the
+    # evaluation row lock so an already-frozen set — and its compiled report
+    # and freeze timestamp — is never overwritten.
+    label_all!
+    stale = FacetConfidenceEvaluation.find(evaluation.id)
+    expect(described_class.call(evaluation: evaluation, actor: owner)).to be_success
+    frozen_at = evaluation.reload.labels_frozen_at
+
+    result = described_class.call(evaluation: stale, actor: owner)
+
+    expect(result).not_to be_success
+    expect(result.error).to include("already frozen")
+    expect(evaluation.reload.labels_frozen_at).to eq(frozen_at)
+  end
+
   it "refuses to freeze against a changed corpus manifest" do
     label_all!
     evaluation.update!(corpus_digest: "changed-digest")

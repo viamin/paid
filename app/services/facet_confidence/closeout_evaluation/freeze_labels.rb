@@ -6,8 +6,11 @@ module FacetConfidence
     # while any case is unlabeled or skipped (skips are never silently counted
     # as completed), re-checks the frozen corpus digest, and compiles the
     # reproducible report in the same transaction so a frozen evaluation
-    # always carries its report. Frozen expectations become visible only from
-    # here on.
+    # always carries its report. The recheck and the freeze itself run under
+    # the evaluation's row lock — the same row RecordLabel locks before
+    # persisting a judgment — so the report is compiled from exactly the
+    # committed label set, exactly once. Frozen expectations become visible
+    # only from here on.
     # @spec FACET-CONFIDENCE-021
     class FreezeLabels
       Result = Data.define(:success, :error, :evaluation) do
@@ -26,20 +29,12 @@ module FacetConfidence
         return failure("only the operator who started the evaluation is its sole reference judge") unless @actor&.id == @evaluation.created_by_id
         return failure("corpus manifest changed since the evaluation was created — start a new evaluation") unless @evaluation.corpus.matches_recorded_digest?
 
-        case_ids = @evaluation.corpus.case_ids
-        done_ids = @evaluation.labels.where(state: %w[labeled skipped]).pluck(:case_id)
-        unlabeled = case_ids.count - done_ids.length
-        skipped = @evaluation.labels.where(state: "skipped").count
-        if unlabeled.positive? || skipped.positive?
-          return failure("every corpus case needs a labeled reference judgment before freezing (#{unlabeled} unlabeled, #{skipped} skipped)")
-        end
-
-        ActiveRecord::Base.transaction do
-          @evaluation.update!(status: "frozen", labels_frozen_at: Time.current)
-          CompileReport.call(evaluation: @evaluation)
-        end
-        log_frozen
-        Result.new(success: true, error: nil, evaluation: @evaluation)
+        # with_lock commits when the block ends, so the row lock is held for
+        # the recheck, the freeze, and the report compile; only a committed
+        # freeze reaches the completion log.
+        result = @evaluation.with_lock { freeze }
+        log_frozen if result.success?
+        result
       rescue ActiveRecord::RecordInvalid => error
         failure(error.record.errors.full_messages.to_sentence)
       end
@@ -47,6 +42,31 @@ module FacetConfidence
       private
 
       attr_reader :evaluation, :actor
+
+      # Runs entirely inside the row-lock transaction opened by call: the
+      # locked reload refreshes the lifecycle status and label state, so a
+      # judgment save, a skip, or a rival freeze that committed after this
+      # request read the evaluation is seen here — the set the report is
+      # compiled from is exactly the committed label state, frozen once.
+      def freeze
+        return failure("reference judgments are already frozen") unless @evaluation.labeling?
+
+        unlabeled, skipped = outstanding_counts
+        if unlabeled.positive? || skipped.positive?
+          return failure("every corpus case needs a labeled reference judgment before freezing (#{unlabeled} unlabeled, #{skipped} skipped)")
+        end
+
+        @evaluation.update!(status: "frozen", labels_frozen_at: Time.current)
+        CompileReport.call(evaluation: @evaluation)
+        Result.new(success: true, error: nil, evaluation: @evaluation)
+      end
+
+      def outstanding_counts
+        done_ids = @evaluation.labels.where(state: %w[labeled skipped]).pluck(:case_id)
+        unlabeled = @evaluation.corpus.case_ids.count - done_ids.length
+        skipped = @evaluation.labels.where(state: "skipped").count
+        [ unlabeled, skipped ]
+      end
 
       def log_frozen
         Rails.logger.info(
