@@ -25,9 +25,9 @@ RSpec.describe IntentConformance::ShadowEvaluation::CompileReport do
     freeze!(evaluation)
   end
 
-  def record_run(case_id:, verdict:, failure_reason: nil)
+  def record_run(case_id:, verdict:, failure_reason: nil, cost_cents: 25)
     evaluation.runs.create!(case_id: case_id, verdict: verdict, failure_reason: failure_reason,
-      reviewer_run_id: "run-#{case_id}", reviewer_model: "claude-sonnet-4-6", prompt_digest: "digest", cost_cents: 25, recorded_at: Time.current)
+      reviewer_run_id: "run-#{case_id}", reviewer_model: "claude-sonnet-4-6", prompt_digest: "digest", cost_cents: cost_cents, recorded_at: Time.current)
   end
 
   it "refuses to compile before reviewer runs exist" do
@@ -71,6 +71,16 @@ RSpec.describe IntentConformance::ShadowEvaluation::CompileReport do
     expect(report.dig("measures", "human_time")).to include("not established")
     expect(report.fetch("promotion_decision")).to include("not established")
     expect(evaluation.reload.report_markdown).to include("Solo-Maintainer Shadow Evaluation Report")
+  end
+
+  it "keeps review cost unestablished when an evaluated run lacks cost provenance" do
+    freeze_with_labels!
+    record_run(case_id: "A-01", verdict: "within_scope", cost_cents: 25)
+    record_run(case_id: "A-02", verdict: "within_scope", cost_cents: 0)
+
+    report = described_class.call(evaluation: evaluation).report
+
+    expect(report.dig("measures", "review_cost_cents")).to include("not established")
   end
 
   it "keeps post-result revisions out of the blinded scores and lists them separately" do

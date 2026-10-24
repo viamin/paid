@@ -92,7 +92,7 @@ module IntentConformance
           "uncertainty_handling" => uncertainty_handling(pairs),
           "confusion_counts" => confusion_counts(pairs),
           "not_evaluated_cases" => pairs.count { |_case_id, label, run| run.nil? || run.not_evaluated? },
-          "review_cost_cents" => @evaluation.runs.sum(:cost_cents),
+          "review_cost_cents" => review_cost_cents,
           "escaped_changes" => "not established — production follow-up required",
           "delivery_baseline" => "not established — production follow-up required",
           "rework" => "not established — production follow-up required",
@@ -130,6 +130,16 @@ module IntentConformance
         uncertain_references = pairs.count { |_case_id, label, _run| label.outcome == "uncertain" }
         reviewer_uncertain = pairs.count { |_case_id, _label, run| run.present? && run.verdict == "uncertain" }
         "#{uncertain_references} uncertain references, #{reviewer_uncertain} reviewer uncertain verdicts (uncertain never counts as agreement)"
+      end
+
+      # ReviewerLlm records zero when the harness omits optional cost
+      # metadata. Do not present that sentinel as a measured zero-cost run.
+      def review_cost_cents
+        runs = @evaluation.runs.to_a.select(&:evaluated?)
+        return "not established — no evaluated reviewer output" if runs.empty?
+        return "not established — cost provenance is unavailable for one or more evaluated reviewer runs" if runs.any? { |run| run.cost_cents.zero? }
+
+        runs.sum(&:cost_cents)
       end
 
       def confusion_counts(pairs)
