@@ -366,6 +366,17 @@ Rails.application.routes.draw do
         post :revise
       end
     end
+    # Facet-confidence closeout evaluation (#4596): blinded reference
+    # judgments over the frozen RDR-070 corpus, freeze, and the compiled
+    # report that returns to the originating Inbox item.
+    resources :facet_confidence_evaluations, only: [ :new, :show, :create ],
+      controller: "projects/facet_confidence_evaluations" do
+      member do
+        post :label
+        post :skip
+        post :freeze
+      end
+    end
     post :detect_services, on: :member
     resource :context_intake, only: [ :show, :create, :update ],
       controller: "knowledge/context_intake" do

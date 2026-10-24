@@ -125,6 +125,7 @@ class Issue < ApplicationRecord
                                         inverse_of: :depends_on_issue
   has_many :dependents, through: :reverse_issue_dependencies, source: :issue
   has_many :continuation_requests, class_name: "IssueContinuationRequest", dependent: :destroy
+  has_many :facet_confidence_evaluations, dependent: :destroy
   has_one :open_continuation_request, -> { open }, class_name: "IssueContinuationRequest"
   belongs_to :closeout_resolved_by, class_name: "User", optional: true
 

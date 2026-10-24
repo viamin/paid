@@ -147,3 +147,20 @@ pending measured run. The packet deliberately says that scores are policy
 assessments rather than calibrated probabilities, and that a completed
 evaluation neither closes the source issue nor enables delivery or changes the
 default 80/80 thresholds.
+
+Start/Resume begins one persisted evaluation per originating closeout, pinned
+to the frozen corpus digest: repeated clicks resume the same evaluation, and a
+changed corpus digest is a new evidence generation that supersedes the old
+record rather than mutating it. The operator who starts the evaluation is its
+sole reference judge. They record one blinded reference judgment per corpus
+case — verdict status, intent band, technical band, readiness, one cited
+evidence reference, and a reason — while the case shape, selection rationale,
+and frozen expectations stay hidden from the labeling surface; a judgment's
+readiness must follow from its judged bands (no averaging across axes).
+Freezing requires every case labeled (skips block), re-checks the corpus
+digest, and compiles the reproducible report comparing the frozen judgments
+with the frozen expected bands, including citation compliance for cases that
+name required or forbidden evidence. The report is retained on the evaluation
+and reachable from the originating Inbox item. Judgments and the report are
+evidence only: they never close the source issue, enable delivery, or change
+the 80/80 defaults.

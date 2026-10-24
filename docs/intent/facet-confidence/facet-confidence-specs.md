@@ -6,7 +6,9 @@ context for `002`–`005`, `012`–`014`; P08 implements `006` and `007`; P09
 implements `009` through `012`. The RDR-070 corpus deliverable (#4573)
 implements `016`–`018`: the frozen assessment corpus, per-run provenance, and
 outcome metrics machinery; operator-executed measured runs remain pending and
-the worksheet records them as not established.
+the worksheet records them as not established. The closeout evaluation entry
+point (#4596) implements `020`–`021`: the Inbox packet and the persisted
+blinded reference-judgment flow over the frozen corpus.
 
 - [x] **FACET-CONFIDENCE-001** — When assessing a feature or issue facet, Paid SHALL represent intent certainty and technical confidence separately on a 0–100 scale and SHALL represent unknown values explicitly rather than inventing human intent.
   *Tests:* `spec/models/feature_intent_facet_assessment_spec.rb`.
@@ -60,6 +62,9 @@ the worksheet records them as not established.
   *Tests:* `spec/lib/facet_confidence/assessment_outcome_report_spec.rb`.
 - [x] **FACET-CONFIDENCE-019** — When an authorized operator responds to an open feature-decision Inbox item, Paid SHALL persist the explicit statement, actor, and resolution on that existing decision and trigger the established clarity reassessment; it SHALL reject blank, stale, or over-500-character submissions, SHALL NOT truncate a submitted draft, SHALL NOT infer structured choices from decision prose, and SHALL NOT treat the response as feature approval or execution authorization.
 
-- [ ] **FACET-CONFIDENCE-020** — When a partial-closeout Inbox item requires a facet-confidence closeout evaluation, Paid SHALL display the frozen corpus, rubric, model, input and source revisions with Start/Resume evaluation guidance; if a prerequisite is unresolved, it SHALL display that prerequisite's recorded owner and recovery route rather than represent the evaluation as ready. Starting or completing this evaluation SHALL NOT close the source issue, enable delivery, or change the 80/80 defaults.
-  *Tests:* `spec/services/feature_intents/respond_to_decision_spec.rb`, `spec/services/feature_intents/response_drafts_spec.rb`, `spec/requests/feature_intents_spec.rb`, `spec/views/dashboard/inbox_detail_feature_decision_partial_spec.rb`.
-  *Code:* `app/services/feature_intents/respond_to_decision.rb`, `app/services/feature_intents/response_drafts.rb`, `app/controllers/feature_intents_controller.rb`, `app/views/dashboard/_inbox_detail_feature_decision.html.erb`.
+- [x] **FACET-CONFIDENCE-020** — When a partial-closeout Inbox item requires a facet-confidence closeout evaluation, Paid SHALL display the frozen corpus, rubric, model, input and source revisions with a Start/Resume control that starts or resumes one persisted evaluation for that item's originating closeout, pinned to the frozen corpus digest; if the closeout records unresolved blockers, it SHALL display each blocker's recorded owner and recovery route rather than represent the evaluation as ready. Starting or completing this evaluation SHALL NOT close the source issue, enable delivery, or change the 80/80 defaults.
+  *Tests:* `spec/services/facet_confidence/closeout_evaluation_packet_spec.rb`, `spec/services/facet_confidence/closeout_evaluation/start_spec.rb`, `spec/requests/projects/facet_confidence_evaluations_spec.rb`.
+  *Code:* `app/services/facet_confidence/closeout_evaluation_packet.rb`, `app/services/facet_confidence/closeout_evaluation/start.rb`, `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+- [x] **FACET-CONFIDENCE-021** — While a facet-confidence closeout evaluation is open, the operator who started it SHALL be its sole reference judge and SHALL record one blinded reference judgment per corpus case (verdict status, intent band, technical band, readiness, one cited evidence reference, and reason); the corpus shape, selection rationale, and frozen expectations SHALL stay hidden until every case is labeled and the judge freezes the reference set, and the compiled report comparing the frozen judgments with the frozen expected bands SHALL be retained on the evaluation and reachable from the originating Inbox item.
+  *Tests:* `spec/services/facet_confidence/closeout_evaluation/record_label_spec.rb`, `spec/services/facet_confidence/closeout_evaluation/freeze_labels_spec.rb`, `spec/requests/projects/facet_confidence_evaluations_spec.rb`.
+  *Code:* `app/services/facet_confidence/closeout_evaluation/`, `app/controllers/projects/facet_confidence_evaluations_controller.rb`, `app/views/projects/facet_confidence_evaluations/`.
