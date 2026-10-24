@@ -81,7 +81,7 @@ module AppleVerification
           expectation: :report_written)
       ].freeze
 
-      SCENARIOS_BY_ID = SCENARIOS.index_by(&:id).freeze
+      SCENARIOS_BY_ID = SCENARIOS.to_h { |scenario| [ scenario.id, scenario ] }.freeze
       GROUPS = SCENARIOS.group_by(&:group).transform_values(&:freeze).freeze
 
       module_function

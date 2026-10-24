@@ -109,6 +109,17 @@ remains default-off. Umbrella #3930 stays open; #4274 stays open pending an
 operator provisioning a real macOS/Tart worker host and re-running the
 harness.
 
+## 2026-10-24 Preflight record
+
+The [2026-10-24 preflight record](live-validation-2026-10-24-rdr-068.md)
+re-ran `bin/apple-verify-live --plan` without booting Rails and again recorded
+the missing host URL, host token, guest-executor token, validation project,
+and active image digest. It does not satisfy any live acceptance criterion.
+The plan command remains observable even when the available database role is
+properly rejected by the runtime-role guard; a real run still requires an
+application role that passes that guard. #4274 remains blocked on the macOS
+operator prerequisites and the feature remains default-off.
+
 ## Problem Statement
 
 Paid can build and preview web applications because its Linux agent containers can run the application and expose a browser-accessible preview. Native Apple applications require macOS, Xcode, Apple SDKs, and Simulator. Paid and its paid-agents currently run in Linux containers on a macOS laptop, so they cannot verify iOS, iPadOS, or native macOS projects within their existing execution environment.
