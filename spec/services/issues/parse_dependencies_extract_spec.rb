@@ -54,6 +54,61 @@ RSpec.describe Issues::ParseDependencies, :no_db do
       expect(cross_deps).to eq({})
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-006
+    it "extracts refs folded into list-item continuation lines" do
+      local_deps, cross_deps = described_class.extract(
+        body: <<~BODY,
+          ## Dependencies
+          - #41,
+            #42
+          - [ ] Awaits work on
+            owner/repo#43
+        BODY
+        comments: []
+      )
+
+      expect(local_deps).to eq(41 => false, 42 => false)
+      expect(cross_deps).to eq([ "owner", "repo", 43 ] => false)
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-007
+    it "ignores list-style lines inside fenced code blocks in a dependency section" do
+      local_deps, cross_deps = described_class.extract(
+        body: <<~BODY,
+          ## Dependencies
+          Declaration style to avoid:
+
+          ```text
+          - #4326
+          ```
+
+          ~~~
+          - #4327
+          ~~~
+
+          - #41
+        BODY
+        comments: []
+      )
+
+      expect(local_deps).to eq(41 => false)
+      expect(cross_deps).to eq({})
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-002, DEPENDENCY-DECLARATIONS-006
+    it "does not admit indented prose that follows no list item" do
+      local_deps, _cross_deps = described_class.extract(
+        body: <<~BODY,
+          ## Dependencies
+          Filed implementation tree:
+            #4326 (umbrella), #4327–#4333 (phases)
+        BODY
+        comments: []
+      )
+
+      expect(local_deps).to eq({})
+    end
+
     it "uses issue.body when body is not passed explicitly" do
       issue = Data.define(:body).new("Depends on #9043")
 

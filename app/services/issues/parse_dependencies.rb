@@ -119,6 +119,8 @@ module Issues
     MARKDOWN_HEADING_PATTERN = /^[ \t]{0,3}\#{1,6}[ \t]+(.+?)\s*#*\s*$/
     FENCED_CODE_BLOCK_PATTERN = /^[ \t]{0,3}(```|~~~)/
     LIST_ITEM_PATTERN = /^[ \t]*(?:[-+*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?(.+)$/
+    # Indented non-blank content: a continuation of the preceding list item.
+    CONTINUATION_LINE_PATTERN = /^[ \t]+\S/
 
     attr_reader :issue, :adjacency, :comments, :body
 
@@ -267,13 +269,36 @@ module Issues
       extract_list_item_refs(scratch, local_deps, cross_deps)
     end
 
-    def extract_list_item_refs(text, local_deps, cross_deps)
-      text.each_line do |line|
-        match = LIST_ITEM_PATTERN.match(line)
-        next unless match
+    # Extracts bare refs from Markdown list items. Indented continuation lines
+    # fold into the preceding item (CommonMark list semantics), so a wrapped
+    # "- #41,\n  #42" item declares both refs. Fenced-code lines are skipped:
+    # markdown_sections preserves them in the section body, but they are code,
+    # not list structure.
+    def extract_list_item_refs(text, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-006, DEPENDENCY-DECLARATIONS-007
+      item = nil
 
-        extract_all_refs(match[1], local_deps, cross_deps, requires_deployment: false)
+      each_markdown_line(text) do |line, in_fenced_code_block|
+        next if in_fenced_code_block
+
+        match = LIST_ITEM_PATTERN.match(line)
+        if match
+          flush_list_item(item, local_deps, cross_deps)
+          item = match[1]
+        elsif item && line.match?(CONTINUATION_LINE_PATTERN)
+          item = "#{item} #{line.strip}"
+        elsif !line.strip.empty?
+          flush_list_item(item, local_deps, cross_deps)
+          item = nil
+        end
       end
+
+      flush_list_item(item, local_deps, cross_deps)
+    end
+
+    def flush_list_item(item, local_deps, cross_deps)
+      return unless item
+
+      extract_all_refs(item, local_deps, cross_deps, requires_deployment: false)
     end
 
     # Extracts refs from inline "Depends on" / "Blocked by" / deployment patterns.

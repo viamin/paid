@@ -22,9 +22,13 @@ semantics.
 Under a Markdown heading containing `Dependency` or `Dependencies`, a bare
 reference is a declaration only when it is in a Markdown list item: unordered
 `-`, `*`, or `+`, or ordered `N.` / `N)`, with an optional `[ ]` or `[x]`
-checklist marker. Ordinary section prose, including implementation inventories,
-is not a dependency declaration. A subsequent heading ends the dependency
-section; child/sub-issue sections remain excluded from inline parsing.
+checklist marker. A list item's indented continuation lines fold into the same
+item, so a wrapped `- #41,` / `  #42` item declares both references. Ordinary
+section prose, including implementation inventories, is not a dependency
+declaration, and neither is fenced-code content: a fenced block preserved in a
+section body is code, not Markdown list structure, so list-style lines inside it
+are not declarations. A subsequent heading ends the dependency section;
+child/sub-issue sections remain excluded from inline parsing.
 
 ## Shared Consumers
 
