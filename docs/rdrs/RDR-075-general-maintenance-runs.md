@@ -9,10 +9,13 @@
 - **Type**: Architecture
 - **Priority**: —
 - **Related RDRs**: [RDR-073](RDR-073-marketplace-tool-sidecars.md), [RDR-031](RDR-031-focused-agent-runs.md), [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md), [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-054](RDR-054-prompt-assembly-service.md)
-- **Related Issues**: [#4326](https://github.com/viamin/paid/issues/4326) (umbrella), [#4327](https://github.com/viamin/paid/issues/4327) (planning/tool handoff), [#4334](https://github.com/viamin/paid/issues/4334) (closeout)
+- **Related Issues**: [#4326](https://github.com/viamin/paid/issues/4326) (umbrella), [#4327](https://github.com/viamin/paid/issues/4327) (planning/tool handoff), [#4604](https://github.com/viamin/paid/issues/4604) (deferred live execution-environment validations), [#4334](https://github.com/viamin/paid/issues/4334) (closeout)
 - **Blocked on**: Validating the batch-analyzer checkout-access and
   batch-invocation contract against RDR-073's shipped attachment lifecycle
-  (Critical assumption 2), owned by [#4327](https://github.com/viamin/paid/issues/4327)
+  (Critical assumption 2). Recorded by [#4327](https://github.com/viamin/paid/issues/4327)'s
+  [2026-10-23 audit](audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md);
+  the two pending live validations are owned by
+  [#4604](https://github.com/viamin/paid/issues/4604)
 
 ## Dependencies
 
@@ -28,9 +31,13 @@ Implementation of RDR-075 remains blocked on Critical assumption 2: RDR-073's
 service-oriented image/port contract does not by itself establish checkout
 access or batch invocation for maintenance analyzers, so that handoff must be
 validated against the shipped attachment contract before implementation
-proceeds past planning. Acceptance of this design does not release that
+proceeds past planning. #4327's 2026-10-23 audit resolved the static half
+(issue-less matching and the native-CLI execution contract); the two live
+execution-environment validations it could not run in a Docker-less workspace
+are owned by [#4604](https://github.com/viamin/paid/issues/4604). Acceptance
+of this design does not release that
 dependency. Future RDR-075 planning and implementation issues must carry the
-explicit dependency on [#4327](https://github.com/viamin/paid/issues/4327)'s
+explicit dependency on [#4604](https://github.com/viamin/paid/issues/4604)'s
 validation outcome; a bare RDR reference does not block auto-pick.
 
 ## Problem Statement
@@ -134,8 +141,8 @@ context, and a distinction between findings and execution failures.
 Introduce a first-class maintenance goal within the existing `AgentRun`
 lifecycle. A maintenance recipe supplies a reusable objective, investigation
 instructions, applicable evidence collectors, and validation guidance. A
-manual run may use a recipe or supply an original question; a catalog entry
-is not required to investigate a user-directed maintenance question.
+manual run may use a recipe or supply a nonblank original question; a catalog
+entry is not required to investigate a user-directed maintenance question.
 
 Each run captures the project, pinned repository revision, objective,
 optional scope, user guidance, effective recipe version, selected tool
@@ -174,13 +181,14 @@ them against code and intent, and produces a durable report tied to the run.
 It does not require a separate agent session per stage; the implementation
 must justify additional calls with measured improvements.
 
-Each finding records its category, code locations/symbols, claim, supporting
-evidence, known counterevidence, proposed action, validation plan, and
-verification disposition. Raw tool confidence remains separate from the
-agent's assessment. Similarity alone does not establish that code should be
-shared; absence of static references or test coverage does not establish
-that code can be deleted. Framework callbacks, reflection, external APIs,
-intentional independence, and compatibility obligations must be considered.
+Each report-specific finding occurrence records its category, code
+locations/symbols, claim, supporting evidence, known counterevidence,
+proposed action, validation plan, and verification disposition. Raw tool
+confidence remains separate from the agent's assessment. Similarity alone does
+not establish that code should be shared; absence of static references or test
+coverage does not establish that code can be deleted. Framework callbacks,
+reflection, external APIs, intentional independence, and compatibility
+obligations must be considered.
 
 A report distinguishes actionable findings, unresolved candidates, deliberate
 exceptions, and coverage limitations. A completed investigation with no
@@ -189,12 +197,14 @@ or unavailable services cannot be represented as a clean scan; partial
 reports identify which checks actually completed. Cancellation and budget
 exhaustion preserve collected evidence and visibly incomplete coverage.
 
-Findings persist across runs with project- and recipe-scoped identity based
-on the claim and affected symbols, not only shifting line numbers. Repeated
-scans update occurrences rather than generating repeated repair work.
-Dismissals retain reasons; materially changed evidence requires reassessment.
-Repository-owned exceptions remain reviewable project intent, and stale
-exceptions are reported rather than silently carried forever.
+Canonical findings persist across runs with project- and recipe-scoped
+identity based on the claim and affected symbols, not only shifting line
+numbers. Each report retains immutable, report-specific finding occurrences
+and evidence; repeated scans create a later occurrence of the same canonical
+finding rather than generating repeated repair work or rewriting an earlier
+report. Dismissals retain reasons; materially changed evidence requires
+reassessment. Repository-owned exceptions remain reviewable project intent,
+and stale exceptions are reported rather than silently carried forever.
 
 ### Tool integration
 
@@ -202,7 +212,12 @@ Use RDR-073 marketplace attachments and matching to make tools available.
 Maintenance adapters describe analyzer capabilities, invocation, input scope,
 output parsing, exit-code meanings, version compatibility, and limitations.
 They reference marketplace entries or existing in-container tools rather than
-owning a second provisioning catalog.
+owning a second provisioning catalog: native CLI analyzers invoke
+`AgentRun#execute_in_execution_environment` — the shipped contract
+`PreCommitRequirements::Evaluate` already uses, per the 2026-10-23 handoff
+audit — once the required native-environment validation artifact
+([#4604](https://github.com/viamin/paid/issues/4604)) confirms the selected
+analyzer is available in the agent image.
 
 Resolve capabilities per relevant package/ecosystem when a repository is
 polyglot. Honor project configuration and manual selections. A language match
@@ -313,14 +328,17 @@ Recurring schedules remain explicitly opt-in after rollout.
 The implementation issue tree is filed under the linked umbrella. Planned
 implementation remains held until the design and required LID artifacts are
 finalized and merged. The umbrella, planning task, and each child explicitly
-depend on viamin/paid#4263 (closed; satisfied) and on #4327's Critical
-assumption 2 validation outcome, with phase dependencies controlling
-sequencing beyond planning. Closeout tracks the umbrella with non-closing
+depend on viamin/paid#4263 (closed; satisfied) and on the Critical
+assumption 2 validation outcome — recorded by #4327 and now owned by
+[#4604](https://github.com/viamin/paid/issues/4604) — with phase
+dependencies controlling sequencing beyond planning. Closeout tracks the
+umbrella with non-closing
 language; only its final audit closes it.
 
 ### Filed issue tree
 
-- [#4327](https://github.com/viamin/paid/issues/4327): Plan maintenance intent and validate the RDR-073 tool handoff
+- [#4327](https://github.com/viamin/paid/issues/4327): Plan maintenance intent and validate the RDR-073 tool handoff (closing via PR #4601; deferred live evidence owned by [#4604](https://github.com/viamin/paid/issues/4604))
+- [#4604](https://github.com/viamin/paid/issues/4604): Collect the deferred live execution-environment validations for the M00 tool handoff
 - [#4328](https://github.com/viamin/paid/issues/4328): Add manual report-only maintenance runs with scope and guidance
 - [#4329](https://github.com/viamin/paid/issues/4329): Persist maintenance reports, evidence, coverage and recurring finding identity
 - [#4330](https://github.com/viamin/paid/issues/4330): Integrate tool-assisted unnecessary-code recipes through RDR-073
@@ -370,8 +388,13 @@ existence of the general maintenance capability.
 
 ## Open Questions Before Finalization
 
-- Which batch invocation/checkout-access contract does completed RDR-073
-  expose, and which maintenance adapter extensions remain necessary?
+- Batch invocation/checkout access is statically understood (2026-10-23
+  handoff audit): native CLI analyzers use the existing
+  `AgentRun#execute_in_execution_environment` contract against the pinned
+  checkout, and sidecars are network-reachable only, with no bind mount.
+  Which adapter extensions remain necessary is decided by the two live
+  execution-environment validations owned by
+  [#4604](https://github.com/viamin/paid/issues/4604).
 - What report/finding schema and API responses best fit existing run and
   knowledge artifacts without treating reports as PR outputs or quality scores?
 - Which initial analyzer versions and project configurations produce useful
