@@ -23,7 +23,10 @@ module Tools
         properties: {
           position: { type: "integer", description: "One-based linked question position" },
           kind: { type: "string", enum: ChatInvestigation::KINDS, description: "research or experiment" },
-          prompt: { type: "string", description: "The bounded question to investigate" },
+          prompt: {
+            type: "string",
+            description: "The bounded question to investigate; experiment prompts execute as a task in the question's isolated chat workspace and retain the output"
+          },
           estimated_cost_cents: { type: "integer", minimum: 0, description: "Maximum budget reservation in cents" },
           confirmed: { type: "boolean", description: "True after the user approves this investigation" }
         },

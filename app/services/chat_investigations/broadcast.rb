@@ -8,8 +8,9 @@ module ChatInvestigations
         investigation_id: investigation.id,
         question_position: investigation.clarifying_question_progress.position,
         status: investigation.status,
-        result: investigation.result
-      })
+        result: investigation.result,
+        progress: investigation.metadata["progress"]
+      }.compact)
     end
   end
 end

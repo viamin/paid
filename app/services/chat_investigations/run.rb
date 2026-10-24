@@ -4,10 +4,12 @@ module ChatInvestigations
   class Run
     class Error < StandardError; end
     class WorkspaceUnavailableError < Error; end
+    class ExperimentFailedError < Error; end
 
     INTERRUPTED_RESULT = "Execution was interrupted before completion."
     WORKSPACE_UNAVAILABLE_RESULT = "Isolated workspace is unavailable"
-    WORKSPACE_READY_RESULT = "An isolated workspace is ready for this experiment."
+    RESEARCH_RESULT_HEADER = "Knowledge-base search results for this question:"
+    NO_RESEARCH_EVIDENCE_RESULT = "No project knowledge-base evidence matched this investigation."
 
     def self.call(...)
       new(...).call
@@ -20,7 +22,8 @@ module ChatInvestigations
     def call
       return unless start
 
-      complete(result_for_investigation)
+      result = result_for_investigation
+      complete(result) if result
     rescue StandardError => error
       fail(error)
     end
@@ -102,25 +105,50 @@ module ChatInvestigations
     end
 
     def research_result
-      results = Knowledge::Search.call(project: investigation.project, query: investigation.prompt, mode: "hybrid", limit: 10)
-      results.fetch(:results, []).map { |entry| entry[:content].to_s }.join("\n\n")
+      contents = Knowledge::Search.call(project: investigation.project, query: investigation.prompt, mode: "hybrid", limit: 10)
+        .fetch(:results, []).map { |entry| entry[:content].to_s }.reject(&:blank?)
+      return NO_RESEARCH_EVIDENCE_RESULT if contents.blank?
+
+      "#{RESEARCH_RESULT_HEADER}\n\n#{contents.join("\n\n")}"
     end
 
-    # Experiments need the isolated workspace. A ready session reuses the live
+    # Experiments run their prompt inside the question's isolated workspace and
+    # retain the execution output as evidence. A ready session reuses the live
     # container; a pending/provisioning session already has a provision in
     # flight, and provisioning again would orphan the live container for a
     # duplicate (Containers::ProvisionForChat has no readiness guard).
     def experiment_result
+      ensure_ready_workspace
+      return unless mark_executing!
+
+      execution = ChatInvestigations::ExecuteExperiment.call(investigation:)
+      raise ExperimentFailedError, execution.result_text unless execution.success?
+
+      execution.result_text
+    end
+
+    def ensure_ready_workspace
       chat_session = investigation.chat_session.reload
-      return WORKSPACE_READY_RESULT if chat_session.container_ready?
+      return if chat_session.container_ready?
       if chat_session.container_pending? || chat_session.container_provisioning?
         raise WorkspaceUnavailableError, WORKSPACE_UNAVAILABLE_RESULT
       end
 
       ChatSessions::ProvisionWorkspace.call(chat_session:)
       raise WorkspaceUnavailableError, WORKSPACE_UNAVAILABLE_RESULT unless chat_session.reload.container_ready?
+    end
 
-      WORKSPACE_READY_RESULT
+    # Long work exposes progress: flip the durable progress marker and tell the
+    # conversation before the bounded experiment starts. A cancellation that
+    # landed between start and here wins — the run stops without executing.
+    def mark_executing!
+      investigation.with_lock do
+        return false unless investigation.status == "running"
+
+        investigation.update!(metadata: investigation.metadata.merge("progress" => "executing"))
+      end
+      ChatInvestigations::Broadcast.call(investigation)
+      true
     end
 
     def complete(result)

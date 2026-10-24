@@ -24,7 +24,18 @@ module Containers
 
     class Error < StandardError; end
     class ContainerNotRunning < Error; end
-    class ExecutionError < Error; end
+
+    # Raised when container exec fails; carries the output streamed before the
+    # failure so bounded callers can retain it as partial evidence.
+    class ExecutionError < Error
+      attr_reader :stdout, :stderr
+
+      def initialize(msg, stdout: nil, stderr: nil)
+        @stdout = stdout
+        @stderr = stderr
+        super(msg)
+      end
+    end
 
     EXECUTE_TIMEOUT = 1.hour.to_i
     MAX_SESSION_DURATION = 4.hours
@@ -45,8 +56,11 @@ module Containers
     #
     # @param prompt [String] The prompt/task for the agent
     # @param session_id [String, nil] Session ID for resuming a previous session
+    # @param timeout [Integer] Wall-clock exec timeout in seconds; bounded
+    #   callers (e.g. chat investigations, which live under a job-level
+    #   perform_timeout) pass their own tighter ceiling
     # @return [Result] with stdout, stderr, exit_code, and extracted session_id
-    def execute_agent_command(prompt:, session_id: nil)
+    def execute_agent_command(prompt:, session_id: nil, timeout: EXECUTE_TIMEOUT)
       ensure_container_running!
 
       plan = build_execution_plan(prompt: prompt, session_id: session_id)
@@ -56,7 +70,7 @@ module Containers
       stdout_buffer = []
       stderr_buffer = []
 
-      exec_options = { wait: EXECUTE_TIMEOUT }
+      exec_options = { wait: timeout.to_i }
       exec_options[:Env] = plan.env.map { |k, v| "#{k}=#{v}" } if plan.env.present?
 
       exec_result = Containers.backend.exec_in_container(
@@ -101,7 +115,11 @@ module Containers
       end
     rescue Docker::Error::DockerError => e
       log("execute.failed", error: e.message)
-      raise ExecutionError, "Docker exec error: #{e.message}"
+      raise ExecutionError.new(
+        "Docker exec error: #{e.message}",
+        stdout: stdout_buffer&.join,
+        stderr: stderr_buffer&.join
+      )
     end
 
     # Resets the idle timeout on the chat session, clamped to MAX_SESSION_DURATION
