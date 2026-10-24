@@ -102,6 +102,14 @@ control-plane objects; specs wire fakes. Missing optional ports
 degrade to gaps, which is the desired behavior when the surrounding
 issues (#3936, #3937, #3940, #3941) have not landed yet.
 
+The `--plan` path loads only the static scenario matrix and validates
+command-line/environment presence. It intentionally does not boot Rails or
+connect to the control plane, even when the operator supplies every execution
+request input, so an operator can see a dependency-free request preflight when
+the control-plane database is unavailable or its runtime role is correctly
+rejected. A complete `--run` execution request boots the control plane before
+validating the project, flag, and active image.
+
 ## Report
 
 `AppleVerification::LiveValidation::Report` renders the Markdown
@@ -121,6 +129,7 @@ requirements live in the runbook (`docs/rdrs/live-validation-runbook-rdr-068.md`
 | Network probes through the real validator | Denial behavior and audit writes are the acceptance evidence; re-implementing them would test a copy. | Asserting against fixtures, which proves nothing live. |
 | Isolation evidence via a diagnostics provider | The guest protocol is closed-vocabulary by design; the harness must not add shell access to read guest state. | Running shell probes from the harness, which would violate RDR-068's own trust boundary. |
 | Gaps for missing mechanisms | The harness runs today, before #3936/#3937/#3940/#3941 land, and records exactly what is missing. | Failing the suite on unshipped dependencies, which would block all evidence collection. |
+| Dependency-free plan mode | Operators need a usable fail-closed preflight before database-backed execution validation is possible. | Booting Rails for `--plan`, which can hide the actual host-configuration gaps behind an unrelated database boot failure. |
 
 ## Relationships
 
