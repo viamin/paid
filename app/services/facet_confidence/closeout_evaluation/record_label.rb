@@ -8,6 +8,11 @@ module FacetConfidence
     # citation drawn from that case's evidence. Saves are upserts, so
     # save/resume is durable; a skipped case stays skipped (never completed)
     # until explicitly judged.
+    #
+    # The guards and the label write run under the evaluation's row lock — the
+    # same row FreezeLabels updates when it freezes and compiles the report —
+    # so a save from one tab can never mutate reference judgments after a
+    # freeze from another tab has derived its report.
     # @spec FACET-CONFIDENCE-021
     class RecordLabel
       Result = Data.define(:success, :error, :label) do
@@ -24,6 +29,20 @@ module FacetConfidence
       end
 
       def call
+        @evaluation.with_lock { record }
+      rescue ActiveRecord::RecordNotUnique
+        retry_unique_collision
+      end
+
+      private
+
+      attr_reader :evaluation, :actor, :case_id, :judgment
+
+      # Runs entirely inside the row-lock transaction opened by call: the
+      # locked reload refreshes the lifecycle status, so a FreezeLabels commit
+      # that landed after this request read the evaluation is seen here,
+      # before any write, instead of letting the save mutate a frozen set.
+      def record
         return failure("reference judgments are frozen; the compiled report is the evidence") unless @evaluation.labeling?
         return failure("only the operator who started the evaluation is its sole reference judge") unless @actor&.id == @evaluation.created_by_id
 
@@ -34,18 +53,20 @@ module FacetConfidence
         end
 
         persist(build_label(@evaluation.labels.find_or_initialize_by(case_id: @case_id)))
-      rescue ActiveRecord::RecordNotUnique
-        # A double-submit of the same case races find_or_initialize_by: both
-        # requests build a new row and the loser's insert hits the unique
-        # (evaluation, case_id) index. The winner's row is the durable
-        # save/resume state, so the loser retries once as an in-place update
-        # instead of surfacing the index race as a 500.
-        persist(build_label(@evaluation.labels.find_by!(case_id: @case_id)))
       end
 
-      private
-
-      attr_reader :evaluation, :actor, :case_id, :judgment
+      # A double-submit of the same case races find_or_initialize_by: both
+      # requests build a new row and the loser's insert hits the unique
+      # (evaluation, case_id) index. The winner's row is the durable
+      # save/resume state, so the loser retries once as an in-place update
+      # (re-acquiring the row lock and re-checking the frozen state first)
+      # instead of surfacing the index race as a 500.
+      def retry_unique_collision
+        @evaluation.with_lock do
+          return failure("reference judgments are frozen; the compiled report is the evidence") unless @evaluation.labeling?
+          persist(build_label(@evaluation.labels.find_by!(case_id: @case_id)))
+        end
+      end
 
       def persist(label)
         return failure(label.errors.full_messages.to_sentence) unless label.save

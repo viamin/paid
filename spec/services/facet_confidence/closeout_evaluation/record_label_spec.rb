@@ -105,4 +105,20 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::RecordLabel do
     expect(result).not_to be_success
     expect(result.error).to include("frozen")
   end
+
+  it "refuses recording when freezing commits behind a stale labeling read" do
+    # The two-tab race from review: this request loaded the evaluation while
+    # it was still labeling, FreezeLabels then froze the set and compiled the
+    # report, and only afterwards does the stale request reach its save. The
+    # frozen state must be re-checked under the evaluation row lock, never
+    # trusted from the in-memory instance.
+    stale = FacetConfidenceEvaluation.find(evaluation.id)
+    evaluation.update!(status: "frozen", labels_frozen_at: Time.current)
+
+    result = described_class.call(evaluation: stale, actor: owner, case_id: "FC-CORPUS-01", judgment: judgment)
+
+    expect(result).not_to be_success
+    expect(result.error).to include("frozen")
+    expect(stale.labels.count).to eq(0)
+  end
 end
