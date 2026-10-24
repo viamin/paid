@@ -19,6 +19,8 @@ RSpec.describe ApplicationJob, :no_db do
         GithubTokenValidationJob
         HandleExceptionJob
         HumanFeedbackCollectionJob
+        IntentConformanceShadowEvaluationExecutionJob
+        IntentConformanceShadowEvaluationRecoveryJob
         ModelsSyncJob
         ProcessRunQueueJob
         ProjectHealthCheckJob

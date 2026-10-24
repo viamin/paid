@@ -2,12 +2,14 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20261023000000_create_intent_conformance_shadow_evaluations")
+require Rails.root.join("db/migrate/20261024234037_add_execution_lifecycle_to_intent_conformance_shadow_evaluations")
 
 RSpec.describe CreateIntentConformanceShadowEvaluations, :aggregate_failures do
   # @spec INTENT-CONFORMANCE-ROLLOUT-005 @spec INTENT-CONFORMANCE-ROLLOUT-007
   self.use_transactional_tests = false
 
   let(:migration) { described_class.new }
+  let(:execution_lifecycle_migration) { AddExecutionLifecycleToIntentConformanceShadowEvaluations.new }
   let(:connection) { ActiveRecord::Base.connection }
 
   around do |example|
@@ -22,6 +24,7 @@ RSpec.describe CreateIntentConformanceShadowEvaluations, :aggregate_failures do
 
     if tables_existed.any? { |_table, existed| existed }
       migration.up
+      execution_lifecycle_migration.up
     end
     clear_schema_metadata!
   end
