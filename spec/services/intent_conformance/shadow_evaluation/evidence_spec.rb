@@ -54,6 +54,17 @@ RSpec.describe IntentConformance::ShadowEvaluation::Evidence do
     expect(call(kind: "design_document", path: "../secrets")).not_to be_available
   end
 
+  it "rejects non-string pinned revisions" do
+    evaluation.update!(manifest_digest: "")
+    corpus_case["base_sha"] = 1
+    File.write(manifest_path, { "cases" => [ corpus_case ] }.to_yaml)
+
+    result = call(kind: "diff")
+
+    expect(result).not_to be_available
+    expect(result.error).to eq("pinned diff has an invalid revision")
+  end
+
   it "reports inaccessible pinned evidence as unavailable without a branch fallback" do
     allow(client).to receive(:compare).and_raise(GithubClient::NotFoundError, "not found")
 
@@ -83,5 +94,39 @@ RSpec.describe IntentConformance::ShadowEvaluation::Evidence do
 
     expect(result).not_to be_available
     expect(result.error).to eq("corpus manifest changed since the evaluation was created — start a new evaluation")
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-010
+  it "reports a removed corpus manifest as unavailable evidence" do
+    evaluation.corpus.resolved_path
+    FileUtils.remove_file(manifest_path)
+
+    result = call(kind: "diff")
+
+    expect(result).not_to be_available
+    expect(result.url).to be_nil
+    expect(result.error).to eq("pinned evidence is unavailable")
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-010
+  it "reports a removed corpus manifest as unavailable evidence before its path is resolved" do
+    evaluation
+    FileUtils.remove_file(manifest_path)
+
+    result = call(kind: "diff")
+
+    expect(result).not_to be_available
+    expect(result.error).to eq("pinned evidence is unavailable")
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-010
+  it "reports an invalid corpus manifest as unavailable evidence" do
+    evaluation.update!(manifest_digest: "")
+    File.write(manifest_path, "cases: [")
+
+    result = call(kind: "diff")
+
+    expect(result).not_to be_available
+    expect(result.error).to eq("pinned evidence is unavailable")
   end
 end

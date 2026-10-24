@@ -36,7 +36,10 @@ module IntentConformance
         return unavailable("repository access is not configured") unless client
 
         kind == "diff" ? diff : design_document
-      rescue GithubClient::Error
+      rescue GithubClient::Error,
+        IntentConformance::ShadowEvaluationCorpus::MissingManifest,
+        Errno::ENOENT,
+        Psych::Exception
         unavailable("pinned evidence is unavailable")
       end
 
@@ -78,7 +81,7 @@ module IntentConformance
         Array(corpus_case["design_document_paths"]).include?(path)
       end
 
-      def valid_sha?(value) = value.match?(SHA)
+      def valid_sha?(value) = value.is_a?(String) && value.match?(SHA)
 
       def valid_repository?
         repository.split("/").length == 2 && repository.split("/").all? { |segment| segment.match?(PATH_SEGMENT) }
