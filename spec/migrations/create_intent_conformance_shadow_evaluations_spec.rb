@@ -7,18 +7,11 @@ RSpec.describe CreateIntentConformanceShadowEvaluations, :aggregate_failures do
   # @spec INTENT-CONFORMANCE-ROLLOUT-005 @spec INTENT-CONFORMANCE-ROLLOUT-007
   self.use_transactional_tests = false
 
-  TABLES = %w[
-    intent_conformance_shadow_evaluations
-    intent_conformance_shadow_evaluation_labels
-    intent_conformance_shadow_evaluation_runs
-  ].freeze
-
   let(:migration) { described_class.new }
   let(:connection) { ActiveRecord::Base.connection }
 
   around do |example|
-    tables_existed = TABLES.to_h { |table| [ table, connection.table_exists?(table) ] }
-    rls_existed = TABLES.to_h { |table| [ table, tenant_policy_present?(table) ] }
+    tables_existed = shadow_evaluation_tables.to_h { |table| [ table, connection.table_exists?(table) ] }
 
     teardown_shadow_evaluation_tables!
     clear_schema_metadata!
@@ -36,32 +29,40 @@ RSpec.describe CreateIntentConformanceShadowEvaluations, :aggregate_failures do
   it "creates the shadow evaluation tables with one-per-generation indexes and tenant RLS" do
     migration.up
 
-    TABLES.each { |table| expect(connection.data_source_exists?(table)).to be(true) }
+    shadow_evaluation_tables.each { |table| expect(connection.data_source_exists?(table)).to be(true) }
     expect_schema
     expect_indexes
-    TABLES.each { |table| expect_rls_on(table) }
+    shadow_evaluation_tables.each { |table| expect_rls_on(table) }
   end
 
   it "rolls back cleanly" do
     migration.up
 
     expect { migration.down }.not_to raise_error
-    TABLES.each { |table| expect(connection.data_source_exists?(table)).to be(false) }
+    shadow_evaluation_tables.each { |table| expect(connection.data_source_exists?(table)).to be(false) }
   end
 
   private
 
+  def shadow_evaluation_tables
+    %w[
+      intent_conformance_shadow_evaluations
+      intent_conformance_shadow_evaluation_labels
+      intent_conformance_shadow_evaluation_runs
+    ]
+  end
+
   def clear_schema_metadata!
     connection.schema_cache.clear!
-    TABLES.each { |table| connection.schema_cache.clear_data_source_cache!(table) }
+    shadow_evaluation_tables.each { |table| connection.schema_cache.clear_data_source_cache!(table) }
     IntentConformanceShadowEvaluation.reset_column_information
     IntentConformanceShadowEvaluationLabel.reset_column_information
     IntentConformanceShadowEvaluationRun.reset_column_information
   end
 
-  # TABLES is parent-first; children must drop before their parent.
+  # The list is parent-first; children must drop before their parent.
   def teardown_shadow_evaluation_tables!
-    TABLES.reverse_each { |table| connection.drop_table(table, if_exists: true) }
+    shadow_evaluation_tables.reverse_each { |table| connection.drop_table(table, if_exists: true) }
   end
 
   def expect_schema
