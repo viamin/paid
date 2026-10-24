@@ -76,6 +76,15 @@ RSpec.describe DesignArtifactFinding do
   end
 
   # @spec OPERATOR-INBOX-019 DESIGN-RECONCILIATION-001
+  describe "#unverifiable?" do
+    it "identifies coverage that could not be read" do
+      finding = build(:design_artifact_finding, state: "unverifiable")
+
+      expect(finding).to be_unverifiable
+    end
+  end
+
+  # @spec OPERATOR-INBOX-019 DESIGN-RECONCILIATION-001
   describe ".actionable_findings" do
     it "excludes informational deferred-state findings even while status is open" do
       project = create(:project)

@@ -156,7 +156,7 @@ module Inbox
       # access/coverage problem and must not wear the traceability-gap label.
       # @spec OPERATOR-INBOX-019
       def badge_label
-        return "Coverage Unavailable" if traceability_gap? && record.try(:state) == "unverifiable"
+        return "Coverage Unavailable" if traceability_gap? && record.try(:unverifiable?)
 
         kind.tr("_", " ").titleize
       end
@@ -958,13 +958,13 @@ module Inbox
     end
 
     def traceability_title(finding)
-      return "Coverage unavailable: #{finding.artifact_path}" if finding.state == "unverifiable"
+      return "Coverage unavailable: #{finding.artifact_path}" if finding.unverifiable?
 
       "Traceability gap: #{finding.artifact_path}"
     end
 
     def traceability_summary(finding)
-      return "GitHub coverage could not be read for this artifact; restore access or retry. No implementation gap is claimed." if finding.state == "unverifiable"
+      return "GitHub coverage could not be read for this artifact; restore access or retry. No implementation gap is claimed." if finding.unverifiable?
 
       finding.state.humanize
     end

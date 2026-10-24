@@ -47,6 +47,8 @@ class DesignArtifactFinding < ApplicationRecord
 
   def informational? = !self.class.actionable_state?(state)
 
+  def unverifiable? = state == "unverifiable"
+
   private
 
   def inbox_visibility_changed?

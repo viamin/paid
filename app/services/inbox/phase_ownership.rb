@@ -239,7 +239,7 @@ module Inbox
     end
 
     def unverifiable_coverage_request?(entry)
-      entry.traceability_gap? && entry.record.try(:state) == "unverifiable"
+      entry.traceability_gap? && entry.record.try(:unverifiable?)
     end
 
     def record_id_for(entry)
