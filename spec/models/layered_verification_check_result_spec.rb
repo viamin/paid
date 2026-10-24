@@ -25,4 +25,22 @@ RSpec.describe LayeredVerificationCheckResult do
     expect { result.update!(limitations: "changed") }
       .to raise_error(described_class::ImmutableResultError)
   end
+
+  # @spec LAYERED-VERIFY-008
+  it "keeps claim and run evidence inside the recorded obligation" do
+    obligation = create(:layered_verification_obligation)
+    foreign_claim = create(:layered_verification_correspondence_claim)
+    foreign_run = create(:agent_run)
+
+    mismatched_claim = build(:layered_verification_check_result, obligation: obligation,
+      correspondence_claim: foreign_claim)
+
+    expect(mismatched_claim).to be_invalid
+    expect(mismatched_claim.errors[:correspondence_claim]).to include("must belong to the same obligation")
+
+    mismatched_run = build(:layered_verification_check_result, obligation: obligation, agent_run: foreign_run)
+
+    expect(mismatched_run).to be_invalid
+    expect(mismatched_run.errors[:agent_run]).to include("must belong to the same project")
+  end
 end

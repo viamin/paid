@@ -1,5 +1,9 @@
+# frozen_string_literal: true
+
+# @spec LAYERED-VERIFY-004 @spec LAYERED-VERIFY-006
+# @spec LAYERED-VERIFY-007 @spec LAYERED-VERIFY-008
 class CreateLayeredVerificationContracts < ActiveRecord::Migration[8.1]
-  def change
+  def up
     create_table :layered_verification_obligations do |t|
       t.references :project, null: false, foreign_key: true
       t.string :framework, null: false
@@ -44,6 +48,110 @@ class CreateLayeredVerificationContracts < ActiveRecord::Migration[8.1]
       t.jsonb :cost, null: false, default: {}
       t.text :limitations, null: false
       t.timestamps
+    end
+
+    enable_rls
+  end
+
+  def down
+    drop_table :layered_verification_check_results
+    drop_table :layered_verification_correspondence_claims
+    drop_table :layered_verification_obligations
+  end
+
+  private
+
+  # RLS is the documented exception to the Rails-helper rule (AGENTS.md):
+  # PostgreSQL row-level security and CREATE POLICY have no equivalent
+  # helper, so the SQL stays minimal and isolated to this block. Tenancy is
+  # keyed through the project (directly for obligations, or through the
+  # owning obligation for claims and check results).
+  def enable_rls
+    safety_assured do
+      %i[
+        layered_verification_obligations
+        layered_verification_correspondence_claims
+        layered_verification_check_results
+      ].each do |table|
+        execute "ALTER TABLE #{table} ENABLE ROW LEVEL SECURITY"
+        execute "ALTER TABLE #{table} FORCE ROW LEVEL SECURITY"
+      end
+
+      execute <<~SQL
+        CREATE POLICY tenant_isolation ON layered_verification_obligations
+        AS PERMISSIVE
+        FOR ALL
+        USING (
+          paid_tenant_bypass() OR (
+            EXISTS (
+              SELECT 1 FROM projects
+              WHERE projects.id = layered_verification_obligations.project_id
+                AND projects.account_id = paid_current_account_id()
+            )
+          )
+        )
+        WITH CHECK (
+          paid_tenant_bypass() OR (
+            EXISTS (
+              SELECT 1 FROM projects
+              WHERE projects.id = layered_verification_obligations.project_id
+                AND projects.account_id = paid_current_account_id()
+            )
+          )
+        )
+      SQL
+
+      execute <<~SQL
+        CREATE POLICY tenant_isolation ON layered_verification_correspondence_claims
+        AS PERMISSIVE
+        FOR ALL
+        USING (
+          paid_tenant_bypass() OR (
+            EXISTS (
+              SELECT 1 FROM layered_verification_obligations o
+              INNER JOIN projects ON projects.id = o.project_id
+              WHERE o.id = layered_verification_correspondence_claims.obligation_id
+                AND projects.account_id = paid_current_account_id()
+            )
+          )
+        )
+        WITH CHECK (
+          paid_tenant_bypass() OR (
+            EXISTS (
+              SELECT 1 FROM layered_verification_obligations o
+              INNER JOIN projects ON projects.id = o.project_id
+              WHERE o.id = layered_verification_correspondence_claims.obligation_id
+                AND projects.account_id = paid_current_account_id()
+            )
+          )
+        )
+      SQL
+
+      execute <<~SQL
+        CREATE POLICY tenant_isolation ON layered_verification_check_results
+        AS PERMISSIVE
+        FOR ALL
+        USING (
+          paid_tenant_bypass() OR (
+            EXISTS (
+              SELECT 1 FROM layered_verification_obligations o
+              INNER JOIN projects ON projects.id = o.project_id
+              WHERE o.id = layered_verification_check_results.obligation_id
+                AND projects.account_id = paid_current_account_id()
+            )
+          )
+        )
+        WITH CHECK (
+          paid_tenant_bypass() OR (
+            EXISTS (
+              SELECT 1 FROM layered_verification_obligations o
+              INNER JOIN projects ON projects.id = o.project_id
+              WHERE o.id = layered_verification_check_results.obligation_id
+                AND projects.account_id = paid_current_account_id()
+            )
+          )
+        )
+      SQL
     end
   end
 end

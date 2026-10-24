@@ -289,6 +289,7 @@ class AgentRun < ApplicationRecord
   validates :goal, presence: true, inclusion: { in: GOALS }
   validates :originating_audit_run, presence: true, if: :layered_verification_repair?
   validate :originating_audit_run_is_audit, if: :layered_verification_repair?
+  validate :originating_audit_run_belongs_to_same_project, if: -> { originating_audit_run.present? }
   validates :focus, presence: true, inclusion: { in: FOCUSES }
   # @spec REVIEW-DEPTH-005 — the column is null: false with a DB-level
   # "balanced" default, so an explicit nil fails validation cleanly here
@@ -3406,6 +3407,12 @@ class AgentRun < ApplicationRecord
     return if originating_audit_run&.goal == "layered_verification_audit"
 
     errors.add(:originating_audit_run, "must be a layered-verification audit run")
+  end
+
+  def originating_audit_run_belongs_to_same_project
+    return if originating_audit_run.project_id == project_id
+
+    errors.add(:originating_audit_run, "must belong to the same project")
   end
 
   def resolve_networking_policy(networking_policy)

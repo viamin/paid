@@ -34,4 +34,21 @@ RSpec.describe LayeredVerificationObligation do
       approval_state: "approved", external_revision: "abc123", approved_revision_reference: "pr#1"
     )
   end
+
+  # @spec LAYERED-VERIFY-006
+  it "keeps the supersession chain inside one project" do
+    project = create(:project)
+    obligation = create(:layered_verification_obligation, project: project)
+    foreign = create(:layered_verification_obligation)
+
+    cross_project = build(:layered_verification_obligation, project: project, superseded_by: foreign)
+
+    expect(cross_project).to be_invalid
+    expect(cross_project.errors[:superseded_by]).to include("must belong to the same project")
+
+    obligation.superseded_by = obligation
+
+    expect(obligation).to be_invalid
+    expect(obligation.errors[:superseded_by]).to include("cannot reference itself")
+  end
 end
