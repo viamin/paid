@@ -26,6 +26,25 @@ RSpec.describe PullRequests::DependenciesResolved do
     end
   end
 
+  context "when a dependency section contains an implementation inventory" do
+    let(:body) do
+      <<~BODY
+        ## Dependencies
+        - #41
+
+        Filed implementation tree: #42, #43, and #44.
+      BODY
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-005
+    it "checks only the declared list-item dependency" do
+      expect(collector).to receive(:dependency_resolved?).with(number: 41).and_return(true)
+      expect(collector).not_to receive(:dependency_resolved?).with(number: 42)
+
+      expect(call).to be(true)
+    end
+  end
+
   context "when a same-repo dependency is resolved" do
     let(:body) { "Depends on #41" }
 

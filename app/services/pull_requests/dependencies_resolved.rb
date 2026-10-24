@@ -23,7 +23,7 @@ module PullRequests
       @logger = logger
     end
 
-    def call
+    def call # @spec DEPENDENCY-DECLARATIONS-005
       local_deps, cross_deps = Issues::ParseDependencies.extract(
         body: @issue.body,
         comments: @collector.dependency_comment_bodies(issue: @issue)

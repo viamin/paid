@@ -118,6 +118,7 @@ module Issues
     CHILD_LISTING_HEADING_PATTERN = /\b(?:child\s+issues?|sub[- ]?issues?|sub[- ]?tasks?)\b/i
     MARKDOWN_HEADING_PATTERN = /^[ \t]{0,3}\#{1,6}[ \t]+(.+?)\s*#*\s*$/
     FENCED_CODE_BLOCK_PATTERN = /^[ \t]{0,3}(```|~~~)/
+    LIST_ITEM_PATTERN = /^[ \t]*(?:[-+*]|\d+[.)])[ \t]+(?:\[[ xX]\][ \t]+)?(.+)$/
 
     attr_reader :issue, :adjacency, :comments, :body
 
@@ -240,7 +241,7 @@ module Issues
     # sections are stripped before inline extraction so dependency phrases
     # describing inter-sub-issue relationships are not attributed to the
     # current issue.
-    def extract_body_refs(body, local_deps, cross_deps)
+    def extract_body_refs(body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-004
       markdown_sections(body, heading_pattern: DEPENDENCY_HEADING_PATTERN).each do |section_body|
         extract_section_refs(section_body, local_deps, cross_deps)
       end
@@ -249,11 +250,10 @@ module Issues
       extract_inline_refs(inline_text, local_deps, cross_deps)
     end
 
-    # Within a "## Dependencies" section, recognise both explicit
-    # "awaits/depends on/blocked by deployment of #N" phrasing and the shorter
-    # list-item style "- Deployment of #N". Remaining refs are treated as
-    # plain dependencies.
-    def extract_section_refs(section_body, local_deps, cross_deps)
+    # Within a "## Dependencies" section, recognise deployment directives and
+    # bare references only in Markdown list items. This keeps implementation
+    # inventories in ordinary prose from becoming unintended prerequisites.
+    def extract_section_refs(section_body, local_deps, cross_deps) # @spec DEPENDENCY-DECLARATIONS-001, DEPENDENCY-DECLARATIONS-002, DEPENDENCY-DECLARATIONS-003
       scratch = section_body.dup
       scratch = scratch.gsub(NON_DEPENDENCY_PATTERN, "")
 
@@ -264,7 +264,16 @@ module Issues
         scratch = scratch.gsub(pattern, "")
       end
 
-      extract_all_refs(scratch, local_deps, cross_deps, requires_deployment: false)
+      extract_list_item_refs(scratch, local_deps, cross_deps)
+    end
+
+    def extract_list_item_refs(text, local_deps, cross_deps)
+      text.each_line do |line|
+        match = LIST_ITEM_PATTERN.match(line)
+        next unless match
+
+        extract_all_refs(match[1], local_deps, cross_deps, requires_deployment: false)
+      end
     end
 
     # Extracts refs from inline "Depends on" / "Blocked by" / deployment patterns.
