@@ -112,9 +112,12 @@ prefix: PROJECT-READINESS
   for Godot/gdUnit4, those are the paired `bin/install-test-tools` and
   `bin/test` paths. It SHALL reject arbitrary `bin/` paths, application files,
   and non-canonical or traversal paths. Every selected entry point SHALL be
-  present as a regular file at the run's result commit: deleted entry points
-  and entry points replaced by symlinks or directories SHALL be rejected as
-  guard violations, not surfaced as raw GitHub API failures. It SHALL abort
+  present as a regular file at the run's result commit. It SHALL resolve a
+  selected path missing from a truncated recursive Git tree through exact
+  non-recursive tree traversal, and SHALL not treat an incomplete listing as
+  proof that the entry point was deleted. Deleted entry points and entry points
+  replaced by symlinks or directories SHALL be rejected as guard violations,
+  not surfaced as raw GitHub API failures. It SHALL abort
   changes outside that harness class with the offending file names and an
   actionable reason in the system log. Entry-script contents remain
   behavior-bearing code: they receive the ordinary isolated execution and

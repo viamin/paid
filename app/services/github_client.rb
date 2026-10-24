@@ -65,6 +65,9 @@ class GithubClient
     end
   end
 
+  # Raised when GitHub cannot provide a complete tree listing for an exact path lookup.
+  class IncompleteTreeError < Error; end
+
   # Project credentials can be backed by a shared token client, so comment
   # policy belongs in a project-scoped decorator rather than on that shared
   # instance. All other GitHub operations, including PR body updates, pass
@@ -322,8 +325,11 @@ class GithubClient
   # @raise [AuthenticationError] if access is denied
   # @spec PROJECT-READINESS-008
   def file_modes(repo, paths:, ref:)
-    modes_by_path = tree(repo, ref, recursive: true).tree.index_by(&:path).transform_values(&:mode)
-    paths.index_with { |path| modes_by_path[path] }
+    result_tree = tree(repo, ref, recursive: true)
+    modes_by_path = result_tree.tree.index_by(&:path).transform_values(&:mode)
+    return paths.index_with { |path| modes_by_path[path] } unless result_tree.truncated
+
+    paths.index_with { |path| modes_by_path[path] || file_mode_from_path(repo, path, ref) }
   end
 
   def actions_run(repo, run_id)
@@ -1366,6 +1372,21 @@ class GithubClient
   end
 
   private
+
+  def file_mode_from_path(repo, path, ref)
+    tree_at_path = tree(repo, ref)
+    segments = path.split("/")
+    segments.each_with_index do |segment, index|
+      raise IncompleteTreeError, "GitHub tree response was truncated while resolving #{path}" if tree_at_path.truncated
+
+      entry = tree_at_path.tree.find { |candidate| candidate.path == segment }
+      return unless entry
+      return entry.mode if index == segments.length - 1
+      return unless entry.type == "tree"
+
+      tree_at_path = tree(repo, entry.sha)
+    end
+  end
 
   def dependabot_alert_payload(alert, remediation_pull_requests)
     dependency = alert.dependency

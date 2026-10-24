@@ -1792,6 +1792,23 @@ RSpec.describe GithubClient do
 
       expect(client.file_modes(repo, paths: [ "bin/test" ], ref: "head456")).to eq("bin/test" => nil)
     end
+
+    it "resolves missing paths through non-recursive trees when the recursive tree is truncated" do
+      stub_request(:get, "#{api_base}/repos/#{repo}/git/trees/head456")
+        .with(query: { "recursive" => "true" })
+        .to_return(status: 200, body: { tree: [], truncated: true }.to_json,
+          headers: { "Content-Type" => "application/json" })
+      stub_request(:get, "#{api_base}/repos/#{repo}/git/trees/head456")
+        .with(query: {})
+        .to_return(status: 200, body: { tree: [ { path: "bin", mode: "040000", type: "tree", sha: "binsha" } ] }.to_json,
+          headers: { "Content-Type" => "application/json" })
+      stub_request(:get, "#{api_base}/repos/#{repo}/git/trees/binsha")
+        .with(query: {})
+        .to_return(status: 200, body: { tree: [ { path: "test", mode: "100755", type: "blob" } ] }.to_json,
+          headers: { "Content-Type" => "application/json" })
+
+      expect(client.file_modes(repo, paths: [ "bin/test" ], ref: "head456")).to eq("bin/test" => "100755")
+    end
   end
 
   describe "#resolve_review_thread" do
