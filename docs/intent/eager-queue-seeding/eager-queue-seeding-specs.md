@@ -46,6 +46,23 @@
   *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`,
   `spec/models/project_spec.rb`, `spec/models/issue_spec.rb`.
 
+## Empty-queue diagnosis
+
+- [x] **EAGER-QUEUE-017** — When a visible user's upcoming queue contains no
+  queued runs, the dashboard SHALL derive a bounded, read-only diagnosis from
+  the canonical auto-pick candidate scope and persisted queued/active-run
+  state. It SHALL distinguish eligible-but-unseeded work, active work without
+  a waiting backlog, deliberate dependency/decision holds, policy/resource
+  pauses, healthy emptiness, and unavailable diagnosis. Eligible candidates
+  SHALL remain distinct from queued or running work; an unavailable query
+  SHALL be displayed as unknown coverage and SHALL NOT authorize recovery or
+  be represented as no work.
+  *Code:* `app/services/dashboard/queue_diagnosis.rb`,
+  `app/controllers/dashboard_controller.rb`,
+  `app/views/dashboard/_queue_preview.html.erb`.
+  *Test:* `spec/services/dashboard/queue_diagnosis_spec.rb`,
+  `spec/requests/dashboard_spec.rb`.
+
 ## Dequeue-time eligibility recheck
 
 - [x] **EAGER-QUEUE-005** — When the scheduler is about to claim a queued

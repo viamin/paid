@@ -35,6 +35,37 @@ gate.
   (`find_each`) and delegates to `EnqueueEligible` per issue. No bulk SQL
   upsert; correctness and auditability over throughput.
 
+## Empty-queue diagnosis
+
+An empty upcoming-queue preview is a display of queued `AgentRun` records, not
+a statement that a project has no open work. `Dashboard::QueueDiagnosis`
+therefore evaluates the same `DefaultCandidateSource.eligible_scope` used by
+the scheduler for the dashboard user's visible projects, alongside queued and
+active runs. It reports one of the following mechanically-derived states:
+
+- `runnable_unseeded` — an eligible issue has no unfinished run, so the
+  existing event path or periodic sweep can seed it;
+- `active_work` — no waiting eligible work exists while an unfinished run is
+  already progressing;
+- `backend_nonempty` — a persisted queued run is currently excluded from the
+  rendered scheduler preview, so the operator can refresh or inspect its
+  admission state rather than mistake filtered backend content for no work;
+- `held` — open work is excluded by an existing dependency, decision, or
+  normal admission control;
+- `paused` — an account, project, quality, or auto-pick policy intentionally
+  prevents admission;
+- `healthy` — there is neither waiting eligible work nor a contradictory
+  queue condition; or
+- `unknown` — the diagnostic query could not be completed.
+
+The diagnosis is read-only and bounded to a small per-project sample of
+eligible-but-unseeded issues. It never clears labels, holds, pauses, approval
+policy, or tenancy boundaries. A diagnosis failure is visible as unknown
+coverage and is never interpreted as an empty backlog. The existing
+`AutoPickEligibilitySweepJob`, its admission gate, and `BulkEnqueueEligible`
+remain the only periodic recovery path; their active-run uniqueness and job
+concurrency controls prevent duplicate work.
+
 ## Seeding triggers (reactive, not tick-based)
 
 Seeding happens on issue-lifecycle events, not on a cron tick:

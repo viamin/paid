@@ -36,6 +36,7 @@
       </div>
     </div>
   <% else %>
+    <% diagnosis = local_assigns[:queue_diagnosis] %>
     <% paused_autopick = Array(local_assigns[:paused_projects]).count(&:auto_pick_enabled?) %>
     <% if paused_autopick.positive? %>
       <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
@@ -48,7 +49,32 @@
         </p>
       </div>
     <% else %>
-      <p class="mt-4 text-sm text-gray-500">No queued runs for your projects.</p>
+      <% if diagnosis.present? %>
+        <div class="mt-4 rounded-md bg-gray-50 p-3 text-sm text-gray-700" data-testid="queue-diagnosis">
+          <% case diagnosis.state %>
+          <% when :runnable_unseeded %>
+            <p><strong><%= diagnosis.eligible_count %> eligible <%= "issue".pluralize(diagnosis.eligible_count) %></strong> are not queued yet.</p>
+            <% if diagnosis.unseeded_issues.any? %>
+              <p class="mt-1 text-gray-500">Waiting to seed: <%= diagnosis.unseeded_issues.map { |issue| "##{issue.github_number}" }.join(", ") %>.</p>
+            <% end %>
+          <% when :active_work %>
+            <p><strong><%= diagnosis.active_count %> active <%= "run".pluralize(diagnosis.active_count) %></strong>; no eligible work is waiting in the queue.</p>
+          <% when :backend_nonempty %>
+            <p><strong><%= diagnosis.queued_count %> queued <%= "run".pluralize(diagnosis.queued_count) %></strong> exist in the backend but are not currently rendered in this preview.</p>
+          <% when :held %>
+            <p>Open work is currently held by existing dependency, decision, or admission controls.</p>
+          <% when :paused %>
+            <p>Automatic work is deliberately paused by project or account policy.</p>
+          <% when :unknown %>
+            <p>Queue diagnosis is unavailable, so Paid cannot confirm whether work is waiting.</p>
+          <% else %>
+            <p>No queued runs for your projects.</p>
+          <% end %>
+          <p class="mt-1 text-gray-500"><%= diagnosis.recovery_action %></p>
+        </div>
+      <% else %>
+        <p class="mt-4 text-sm text-gray-500">No queued runs for your projects.</p>
+      <% end %>
     <% end %>
   <% end %>
 </div>

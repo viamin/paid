@@ -1378,6 +1378,19 @@ RSpec.describe "Dashboard" do
       expect(frame["src"]).to be_nil
       expect(frame.to_html).to include("Upcoming Queue")
     end
+
+    # @spec EAGER-QUEUE-017
+    it "explains eligible work that is not yet represented by a queued run" do
+      project.update!(auto_pick_enabled: true)
+      issue = create(:issue, project:, github_state: "open", paid_state: "new")
+
+      get dashboard_queue_preview_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("eligible issue")
+      expect(response.body).to include("Waiting to seed: ##{issue.github_number}")
+      expect(response.body).to include("automatic eligibility sweep will seed this work")
+    end
   end
 
   describe "GET /dashboard/live" do
