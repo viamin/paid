@@ -24,6 +24,20 @@
     </div>
   <% end %>
 
+  <%# Capability-aware execution validation for technical prerequisites: the
+      panel inspects execution-host and tool/authorization policy and offers
+      the bounded evidence action. Lazily loaded so queue rendering never
+      probes execution hosts. @spec PREREQ-EVIDENCE-001 %>
+  <% if notification.source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE &&
+        entry.issue &&
+        policy(entry.project).run_agent? %>
+    <%= turbo_frame_tag dom_id(entry.issue, :prerequisite_validation),
+          src: execution_capabilities_project_agent_runs_path(
+            entry.project, issue_id: entry.issue.id, panel_id: dom_id(entry.issue, :prerequisite_validation)
+          ),
+          loading: "lazy" %>
+  <% end %>
+
   <% if entry.action_url.present? && entry.action_url != inbox_entry_path(entry) %>
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to "Open linked action",

@@ -325,6 +325,9 @@ Rails.application.routes.draw do
       post :resume_manual_review, on: :collection
       post :clear_retry_abandonment, on: :collection
       get :docker_host_options, on: :collection
+      get :execution_capabilities, on: :collection
+      post :validate_prerequisite, on: :collection
+      post :cancel_prerequisite_validation, on: :collection
     end
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pre_commit_requirements"

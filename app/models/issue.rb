@@ -126,6 +126,7 @@ class Issue < ApplicationRecord
   has_many :dependents, through: :reverse_issue_dependencies, source: :issue
   has_many :continuation_requests, class_name: "IssueContinuationRequest", dependent: :destroy
   has_one :open_continuation_request, -> { open }, class_name: "IssueContinuationRequest"
+  has_many :prerequisite_validations, dependent: :nullify
   belongs_to :closeout_resolved_by, class_name: "User", optional: true
 
   validates :github_issue_id, presence: true, uniqueness: { scope: :project_id }

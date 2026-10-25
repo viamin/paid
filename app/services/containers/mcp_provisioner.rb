@@ -341,6 +341,16 @@ module Containers
       project = agent_run.project
       return [] unless project
 
+      self.class.allowed_images_for_project(project)
+    end
+
+    # Union of `allowed_service_images` configured on every admin/owner
+    # `UserSetting` for the project's account — the same allowlist surface the
+    # image gate enforces at provisioning time. Public so capability-aware
+    # surfaces (e.g. Prerequisites::CapabilityReport) can report the current
+    # policy without duplicating the query.
+    # @spec TOOL-SIDECAR-006
+    def self.allowed_images_for_project(project)
       admin_user_ids = AccountMembership
         .where(account_id: project.account_id, role: [ :admin, :owner ])
         .select(:user_id)

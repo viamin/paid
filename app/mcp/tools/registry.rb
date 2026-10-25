@@ -18,6 +18,8 @@ module Tools
       "Tools::RequestIssueContinuation",
       "Tools::RequestAcceptanceAudit",
       "Tools::ResolveIssueCloseout",
+      "Tools::StartPrerequisiteValidation",
+      "Tools::CancelPrerequisiteValidation",
       "Tools::GetAgentRun",
       "Tools::ListAgentRuns",
       "Tools::CancelAgentRun",

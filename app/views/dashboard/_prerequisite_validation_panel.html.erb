@@ -1,0 +1,179 @@
+<%# Capability-aware prerequisite evidence validation panel (#4643).
+    Rendered for a prerequisite owner issue from the prerequisite Inbox item
+    (action_required pane) and the partial-closeout human-evidence section.
+    Locals: project, issue, capability_report (nil when not yet inspected),
+    validation (latest PrerequisiteValidation or nil).
+    @spec PREREQ-EVIDENCE-001 @spec PREREQ-EVIDENCE-005 @spec PREREQ-EVIDENCE-006
+    @spec PREREQ-EVIDENCE-007 %>
+<% validation = local_assigns[:validation] %>
+<% capability_report = local_assigns[:capability_report] %>
+<% current_scope_digest = Prerequisites::CapabilityReport.scope_digest_for(project: project) %>
+<% validation_stale = validation&.stale?(current_scope_digest) %>
+<div class="space-y-3 rounded-xl border border-gray-200 bg-white p-4" data-prerequisite-validation-panel>
+  <div class="flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+    <h3 class="text-sm font-semibold text-gray-900">Execution-evidence validation</h3>
+    <span class="text-xs text-gray-500">
+      <% if validation %>
+        <%= validation.status.humanize %> ·
+        <% if validation.completed_at %>completed <%= time_ago_in_words(validation.completed_at) %> ago<% else %>started <%= time_ago_in_words(validation.started_at || validation.created_at) %> ago<% end %>
+      <% else %>
+        No validation has run for this prerequisite yet.
+      <% end %>
+    </span>
+  </div>
+
+  <p class="text-sm text-gray-600">
+    Runs the requested execution evidence inside this project's isolated execution environment —
+    a fresh pinned run container, a read-only native analyzer, and (when authorized) an allowlisted
+    tool-sidecar interaction — and links the artifacts here. It never closes this prerequisite or the
+    issue, and it never enables flags or allowlists by itself.
+  </p>
+
+  <% if capability_report.present? %>
+    <div class="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+      <h4 class="text-sm font-medium text-gray-700">Execution capabilities</h4>
+      <ul class="space-y-1 text-xs text-gray-600">
+        <% capability_report.hosts.each do |host, payload| %>
+          <li>
+            <span class="font-medium <%= payload[:healthy] ? "text-green-700" : "text-red-700" %>"><%= host %></span>
+            — <%= payload[:healthy] ? "ready" : "not ready: #{payload[:failing_check]}" %>
+            <% unless payload[:healthy] %><span class="block pl-4 text-gray-500"><%= payload[:remediation_hint] %></span><% end %>
+          </li>
+        <% end %>
+        <li>
+          Tool sidecars: <span class="font-medium <%= capability_report.tool_sidecars_enabled? ? "text-green-700" : "text-amber-700" %>"><%= capability_report.tool_sidecars_enabled? ? "enabled" : "flag off" %></span>
+          <% unless capability_report.tool_sidecars_enabled? %>
+            <span class="block pl-4 text-gray-500">Authorized action: <%= capability_report.tool_sidecar_authorized_action %></span>
+          <% end %>
+        </li>
+        <li>
+          Selected tool entry:
+          <% if capability_report.tool_entry %>
+            <span class="font-medium"><%= capability_report.tool_entry["name"] %></span>
+            (<code class="break-all"><%= capability_report.tool_image %></code>)
+            — <%= capability_report.tool_image_allowed ? "image allowlisted" : "image not allowlisted" %>
+            <% unless capability_report.tool_image_allowed %>
+              <span class="block pl-4 text-gray-500">Authorized action: <%= capability_report.tool_image_authorized_action %></span>
+            <% end %>
+          <% else %>
+            none published.
+            <span class="block pl-4 text-gray-500">Authorized action: <%= Prerequisites::CapabilityReport::TOOL_ENTRY_MISSING_ACTION %></span>
+          <% end %>
+        </li>
+      </ul>
+    </div>
+  <% end %>
+
+  <% if validation && validation.blockers.any? %>
+    <div class="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+      <h4 class="text-sm font-semibold text-amber-900">Blocked capabilities — exact authorized actions</h4>
+      <ul class="space-y-1 text-xs text-amber-900">
+        <% validation.blockers.each do |blocker| %>
+          <li>
+            <span class="font-medium"><%= blocker["check"].to_s.humanize %>:</span> <%= blocker["reason"] %>
+            <span class="block pl-4 text-amber-800">Authorized action: <%= blocker["authorized_action"] %></span>
+          </li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <% if validation && validation.result["checks"].present? %>
+    <div class="space-y-2">
+      <h4 class="text-sm font-medium text-gray-700">Evidence</h4>
+      <% if validation_stale %>
+        <p class="rounded-md bg-amber-50 p-2 text-xs text-amber-900">
+          Policy inputs changed since this validation ran (flag, allowlist, or selected tool). Its
+          evidence is stale — run a fresh validation before assessing against it.
+        </p>
+      <% end %>
+      <% Array(validation.result["checks"]).each do |check, evidence| %>
+        <% next unless evidence.is_a?(Hash) %>
+        <details class="rounded-lg border border-gray-200 p-3 text-sm">
+          <summary class="cursor-pointer font-medium text-gray-700">
+            <%= check.to_s.humanize %> —
+            <span class="<%= case evidence["status"] when "succeeded" then "text-green-700" when "failed" then "text-red-700" when "blocked" then "text-amber-700" else "text-gray-500" end %>">
+              <%= evidence["status"] %>
+            </span>
+            <% if evidence["exit_code"].present? %><span class="text-xs text-gray-500">(exit <%= evidence["exit_code"] %>)</span><% end %>
+          </summary>
+          <% if evidence["reason"].present? %><p class="mt-1 text-xs text-gray-600"><%= evidence["reason"] %></p><% end %>
+          <% if evidence["authorized_action"].present? %><p class="mt-1 text-xs text-amber-800">Authorized action: <%= evidence["authorized_action"] %></p><% end %>
+          <% if evidence["command"].present? %><p class="mt-1 break-all text-xs text-gray-500"><code><%= evidence["command"] %></code></p><% end %>
+          <% if evidence["stdout"].present? %><pre class="mt-1 max-h-40 overflow-auto rounded bg-gray-50 p-2 text-xs text-gray-700"><%= evidence["stdout"] %></pre><% end %>
+          <% if evidence["stderr"].present? %><pre class="mt-1 max-h-40 overflow-auto rounded bg-gray-50 p-2 text-xs text-red-700"><%= evidence["stderr"] %></pre><% end %>
+          <% if evidence["entry"].present? %>
+            <p class="mt-1 text-xs text-gray-500">
+              Tool: <%= evidence["entry"]["name"] %> (<code class="break-all"><%= evidence.dig("entry", "image") %></code>)
+            </p>
+          <% end %>
+          <% Array(evidence["endpoints"]).each do |endpoint| %>
+            <p class="mt-1 break-all text-xs text-gray-500">Endpoint: <code><%= endpoint["url"] %></code></p>
+          <% end %>
+        </details>
+      <% end %>
+      <% if (identity = validation.result["checkout"].presence) && identity["base_commit_sha"].present? %>
+        <p class="text-xs text-gray-500">
+          Pinned checkout <code class="break-all"><%= identity["base_commit_sha"] %></code>
+          <% if validation.result.dig("image", "reference").present? %>
+            · image <code class="break-all"><%= validation.result.dig("image", "reference") %></code>
+          <% end %>
+        </p>
+      <% end %>
+      <% if validation.agent_run.present? %>
+        <p class="text-xs">
+          <%= link_to "View evidence run",
+                project_agent_run_path(project, validation.agent_run_id),
+                data: { turbo_frame: "_top" },
+                class: "text-indigo-600 hover:text-indigo-900" %>
+        </p>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if policy(project).run_agent? %>
+    <% if validation&.active? %>
+      <%= button_to "Cancel validation ##{validation.id}",
+            cancel_prerequisite_validation_project_agent_runs_path(project),
+            params: { validation_id: validation.id, issue_id: issue.id, return_to: inbox_path(**inbox_query_params) },
+            form: { data: { turbo_frame: "_top" } },
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50",
+            data: { turbo_confirm: "Cancel validation ##{validation.id}? Evidence collected so far is preserved and the environment is cleaned up." } %>
+      <p class="text-xs text-gray-500">A validation is in progress. Its progress and evidence appear here when it finishes.</p>
+    <% else %>
+      <%= form_with url: validate_prerequisite_project_agent_runs_path(project),
+            data: { turbo_frame: "_top" },
+            class: "space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3" do |form| %>
+        <%= form.hidden_field :issue_id, value: issue.id %>
+        <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params) %>
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <div class="flex-1">
+            <%= form.label :analyzer_command, "Native analyzer command (optional)", for: "analyzer_command_#{issue.id}", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_field :analyzer_command,
+                  id: "analyzer_command_#{issue.id}",
+                  maxlength: PrerequisiteValidation::MAX_ANALYZER_COMMAND_LENGTH,
+                  placeholder: PrerequisiteValidation::DEFAULT_ANALYZER_COMMAND,
+                  class: "mt-1 min-w-0 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+            <p class="mt-1 text-xs text-gray-500">
+              Runs read-only inside the isolated run container against the pinned checkout. Defaults to the
+              agent image's <code>scc</code> probe plus a checkout-identity check.
+            </p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <%= form.check_box :include_tool_sidecar, id: "include_tool_sidecar_#{issue.id}", checked: true, class: "rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" %>
+          <%= form.label :include_tool_sidecar, "Include the allowlisted tool-sidecar interaction", for: "include_tool_sidecar_#{issue.id}", class: "text-sm text-gray-700" %>
+        </div>
+        <%= form.submit validation ? "Run a fresh validation" : "Start execution-evidence validation",
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500",
+              data: { turbo_confirm: "Run one bounded validation in #{project.full_name}'s isolated execution environment? It provisions a fresh pinned run, executes the analyzer (and the tool sidecar when authorized), records the evidence, and cleans up." } %>
+      <% end %>
+    <% end %>
+  <% end %>
+
+  <p class="text-xs text-gray-500">
+    Missing execution evidence keeps this prerequisite open. The validation only attaches evidence —
+    reviewing, dismissing, or resolving the prerequisite stays with the operator, and the GitHub issue
+    closes only through its normal flow.
+  </p>
+</div>

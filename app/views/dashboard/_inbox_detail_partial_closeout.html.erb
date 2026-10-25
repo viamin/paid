@@ -218,6 +218,16 @@
             what the run should do with the evidence.
           </p>
         </div>
+        <% if policy(entry.project).run_agent? %>
+          <%# Capability-aware validation for technical execution evidence
+              (#4643): lazy panel, never probed during queue rendering.
+              @spec PREREQ-EVIDENCE-001 %>
+          <%= turbo_frame_tag dom_id(issue, :prerequisite_validation),
+                src: execution_capabilities_project_agent_runs_path(
+                  entry.project, issue_id: issue.id, panel_id: dom_id(issue, :prerequisite_validation)
+                ),
+                loading: "lazy" %>
+        <% end %>
     <% end %>
   </div>
 

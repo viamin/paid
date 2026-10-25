@@ -381,6 +381,64 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **prerequisite_flash(result)
     end
 
+    # Live capability inspection for a prerequisite Inbox item: execution-host
+    # readiness through the provisioner interface plus current tool/authorization
+    # policy. Read-only — never provisions, never mutates flags or allowlists.
+    # @spec PREREQ-EVIDENCE-001
+    def execution_capabilities
+      authorize @project, :run_agent?
+
+      @issue = resolve_issue
+      @capability_report = Prerequisites::CapabilityReport.call(project: @project)
+      @prerequisite_validation = @issue ? PrerequisiteValidation.latest_for_issue(@issue) : nil
+
+      render partial: "dashboard/prerequisite_validation_frame",
+        locals: { panel_id: params[:panel_id].presence || "prerequisite_validation_#{@issue&.id}",
+                  project: @project, issue: @issue,
+                  capability_report: @capability_report, validation: @prerequisite_validation }
+    end
+
+    # Starts one bounded execution validation for a prerequisite owner issue.
+    # The Inbox pane is the origin; the validation row plus its job are the
+    # durable progress surface. Mirrors the OPERATOR-INBOX recovery-action
+    # shape (authorize :run_agent?, service result → flash, safe redirect).
+    # @spec PREREQ-EVIDENCE-002 @spec PREREQ-EVIDENCE-007
+    def validate_prerequisite
+      authorize @project, :run_agent?
+
+      issue = resolve_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      result = Prerequisites::StartValidation.call(
+        issue: issue,
+        actor: current_user,
+        include_tool_sidecar: ActiveModel::Type::Boolean.new.cast(params[:include_tool_sidecar]) != false,
+        analyzer_command: params[:analyzer_command].presence
+      )
+      if result.success?
+        audit_event("prerequisite_validation.started",
+          metadata: { prerequisite_validation_id: result.validation.id, issue_id: issue.id, project_name: @project.name })
+        redirect_to safe_return_target || dashboard_path,
+          notice: "Validation ##{result.validation.id} queued. It will run in the project's isolated execution environment and link its evidence here."
+      else
+        redirect_to safe_return_target || dashboard_path, alert: result.message
+      end
+    end
+
+    # Cancels an active validation; the executor preserves collected evidence
+    # and still cleans up the provisioned environment.
+    # @spec PREREQ-EVIDENCE-007
+    def cancel_prerequisite_validation
+      authorize @project, :run_agent?
+
+      validation = @project.prerequisite_validations.find(params[:validation_id])
+      result = Prerequisites::CancelValidation.call(validation)
+      redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Validation ##{validation.id} cancelled.")
+    end
+
     # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
     # @spec OPERATOR-INBOX-002C
     def unblock_escalation

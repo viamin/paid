@@ -1,0 +1,9 @@
+<%# Lazy frame wrapper for the prerequisite validation panel: loaded on view
+    from the prerequisite Inbox item so queue rendering never probes hosts.
+    Locals: panel_id, project, issue, capability_report, validation %>
+<%= turbo_frame_tag panel_id do %>
+  <% if issue %>
+    <%= render partial: "dashboard/prerequisite_validation_panel",
+          locals: { project: project, issue: issue, capability_report: local_assigns[:capability_report], validation: local_assigns[:validation] } %>
+  <% end %>
+<% end %>

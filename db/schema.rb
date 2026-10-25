@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_25_212500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3213,6 +3213,33 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
     t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "chk_pre_commit_requirements_exclusive_scope"
   end
 
+  create_table "prerequisite_validations", comment: "Capability-aware execution validations that collect technical prerequisite evidence for a prerequisite owner issue.", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Tenant that owns the validation."
+    t.bigint "agent_run_id", comment: "Synthetic run that carried the execution evidence."
+    t.string "analyzer_command", comment: "Bounded, operator-selected native analyzer command (defaults to the read-only scc probe)."
+    t.jsonb "blockers", default: [], null: false, comment: "Array of {check, reason, authorized_action} entries naming the exact authorized setup/approval action."
+    t.jsonb "capability_snapshot", default: {}, null: false, comment: "Host readiness, rollout-flag, allowlist, and tool-entry state captured when the validation ran."
+    t.datetime "completed_at", comment: "When the validation reached a terminal status."
+    t.datetime "created_at", null: false
+    t.boolean "include_tool_sidecar", default: true, null: false, comment: "Whether the tool-sidecar interaction check was requested."
+    t.bigint "issue_id", comment: "Prerequisite owner issue the evidence links back to."
+    t.bigint "project_id", null: false, comment: "Project whose execution infrastructure was validated."
+    t.bigint "requested_by_id", comment: "Operator who started the validation."
+    t.jsonb "result", default: {}, null: false, comment: "Per-check evidence: stdout/stderr/exit status, image/checkout/tool identity, endpoint response, cleanup evidence."
+    t.string "scope_digest", default: "", null: false, comment: "Digest of the policy inputs (flag state, allowlist, selected tool entry) captured at start."
+    t.datetime "started_at", comment: "When execution began (nil while pending)."
+    t.string "status", default: "pending", null: false, comment: "pending | running | succeeded | partial | failed | cancelled | unavailable | blocked"
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_prerequisite_validations_on_account_id"
+    t.index ["agent_run_id"], name: "index_prerequisite_validations_on_agent_run_id"
+    t.index ["issue_id", "created_at", "id"], name: "index_prerequisite_validations_issue_created"
+    t.index ["issue_id"], name: "index_prerequisite_validations_on_issue_id"
+    t.index ["issue_id"], name: "index_prerequisite_validations_one_active_per_issue", unique: true, where: "((status)::text = ANY ((ARRAY['pending'::character varying, 'running'::character varying])::text[]))"
+    t.index ["project_id", "created_at", "id"], name: "index_prerequisite_validations_project_created"
+    t.index ["project_id"], name: "index_prerequisite_validations_on_project_id"
+    t.index ["requested_by_id"], name: "index_prerequisite_validations_on_requested_by_id"
+  end
+
   create_table "preview_provision_states", comment: "Shared baseline snapshots for overlapping preview/screenshot provisioning on the same agent run.", force: :cascade do |t|
     t.integer "active_count", default: 0, null: false, comment: "Number of in-flight preview provisions currently sharing this baseline snapshot."
     t.bigint "agent_run_id", null: false
@@ -3995,6 +4022,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
     t.index ["account_id"], name: "index_service_containers_on_account_id"
   end
 
+  create_table "solid_cable_messages", force: :cascade do |t|
+    t.binary "channel", null: false
+    t.bigint "channel_hash", null: false
+    t.datetime "created_at", null: false
+    t.binary "payload", null: false
+    t.index ["channel"], name: "index_solid_cable_messages_on_channel"
+    t.index ["channel_hash"], name: "index_solid_cable_messages_on_channel_hash"
+    t.index ["created_at"], name: "index_solid_cable_messages_on_created_at"
+  end
+
   create_table "strategies", comment: "Scoped orchestration strategies selected for workflow decisions.", force: :cascade do |t|
     t.bigint "account_id", comment: "Owning account for account-scoped and project-scoped strategies."
     t.datetime "created_at", null: false
@@ -4775,6 +4812,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
+  add_foreign_key "prerequisite_validations", "accounts"
+  add_foreign_key "prerequisite_validations", "projects"
+  add_foreign_key "prerequisite_validations", "users", column: "requested_by_id"
   add_foreign_key "preview_provision_states", "agent_runs", on_delete: :cascade
   add_foreign_key "preview_sessions", "accounts", on_delete: :cascade
   add_foreign_key "preview_sessions", "agent_runs"

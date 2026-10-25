@@ -171,6 +171,16 @@ absent, the description is also the entry summary. `Notifications::Publish`
 rejects a blocking notification that has neither a non-blank description nor
 remediation guidance, so every Action Required entry has meaningful context.
 
+A partial-closeout prerequisite entry (source
+`PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE`) additionally offers the
+capability-aware execution validation owned by
+[`prerequisite-evidence-validation`](../prerequisite-evidence-validation/prerequisite-evidence-validation-design.md):
+the pane inspects current execution-host and tool/authorization capabilities
+through the existing provisioner interfaces and offers the bounded
+start/cancel/retry action whose durable evidence links back to the
+prerequisite owner without resolving the item or closing the owner
+(`PREREQ-EVIDENCE-001`–`007`).
+
 ### `merge_approval`
 
 Backed by the PR scanner's persisted current-head policy snapshot on `Issue`.
