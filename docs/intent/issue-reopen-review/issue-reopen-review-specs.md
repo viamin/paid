@@ -30,3 +30,15 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resolves a
+  reopen-review Inbox item, the system SHALL require a non-blank decision
+  reason and the current synchronized issue revision, record the actor,
+  decision, reason and revision in the account activity audit, and only then
+  either record completion or resume supported implementation work. A stale
+  revision or queued/running issue run SHALL retain the hold without creating
+  a second run.
+  *Tests:* `spec/services/manual_reviews/cause_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
+  *Code:* `ManualReviews::Cause`, `ManualReviews::RecordReopenDecision`,
+  `Projects::AgentRunsController`.

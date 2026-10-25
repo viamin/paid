@@ -86,6 +86,7 @@ module Inbox
       :action_url,
       :guidance,
       :closeout_status,
+      :manual_review_cause,
       keyword_init: true
     ) do
       def to_param
@@ -681,6 +682,7 @@ module Inbox
     # @spec OPERATOR-INBOX-002D
     def manual_review_entries
       ordered_manual_review_issues.map do |issue|
+        cause = ManualReviews::Cause.call(issue: issue)
         Entry.new(
           id: "#{MANUAL_REVIEW_KIND}:#{issue.id}",
           kind: MANUAL_REVIEW_KIND,
@@ -692,7 +694,8 @@ module Inbox
           tasks: [],
           summary_text: issue.manual_review_reason.presence || "Manual review required.",
           title_text: nil,
-          action_url: nil
+          action_url: nil,
+          manual_review_cause: cause
         )
       end
     end

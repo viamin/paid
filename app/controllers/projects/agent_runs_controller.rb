@@ -417,6 +417,34 @@ module Projects
         return
       end
 
+      recovery = ManualReviews::Cause.call(issue: issue)
+      active_run = issue.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).order(created_at: :asc).first
+      if active_run
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Run ##{active_run.id} (#{active_run.goal}) is already queued or running; reconcile that work before resuming this hold."
+        return
+      end
+
+      case recovery.kind
+      when ManualReviews::Cause::DEPENDENCY
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This issue is still waiting on its dependency and will be reevaluated when it resolves."
+      when ManualReviews::Cause::SCANNER
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Scanner recurrence requires the supported security-remediation action, not an enhancement retry."
+      when ManualReviews::Cause::UNKNOWN
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This manual-review hold has unknown provenance and cannot be resumed automatically."
+      when ManualReviews::Cause::REOPEN
+        resume_reopen_review(issue)
+      else
+        queue_manual_enhancement(issue)
+      end
+    rescue ArgumentError => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
+    end
+
+    def queue_manual_enhancement(issue)
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
@@ -981,6 +1009,31 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005
+    def resume_reopen_review(issue)
+      ManualReviews::RecordReopenDecision.call(
+        issue: issue,
+        actor: current_user,
+        decision: params[:reopen_review_decision],
+        reason: params[:reopen_review_reason],
+        evidence_revision: params[:evidence_revision]
+      )
+
+      if params[:reopen_review_decision] == "complete"
+        redirect_to safe_return_target || dashboard_path, notice: "Reopen-review decision recorded; no remaining work was selected."
+        return
+      end
+
+      create_enhance_issue_runs_and_redirect(
+        issue_ids: [ issue.id ],
+        on_error_path: safe_return_target || dashboard_path,
+        success_path: safe_return_target || dashboard_path,
+        custom_prompt: nil,
+        goal: "enhance_issue",
+        priority_tier: nil
+      )
     end
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap
