@@ -45,7 +45,7 @@ existing execution and Inbox behavior is untouched.
 ```
 
 `Automation::PhaseSettings` is the only reader. A project with no stored
-configuration reads derived defaults (`Automation::Phases::DerivedSettings`) so
+configuration reads derived defaults (`Automation::PhaseSettings#derive`) so
 pre-existing projects keep their effective capabilities:
 
 | Phase | Derived from |
