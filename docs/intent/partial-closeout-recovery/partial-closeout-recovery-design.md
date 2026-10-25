@@ -111,6 +111,20 @@ paid_state edit and never a blanket guard lift:
   cancel and supersede — the walk explains the authority, it never
   substitutes for it.
 
+The diagnostic walk also mirrors the two persisted exclusions that are not
+dependency edges: open native (non-PR) children and active
+`partial_closeout.prerequisite` notifications. It identifies every matching
+child by its issue number and GitHub link, and every notification by its
+persisted identity, source, title, and requested evidence. These are additive
+with dependency and other holds. A native child remains work that must be
+resolved on its own merits; an active prerequisite notification remains a
+human evidence or policy-decision boundary. Diagnostics never close children,
+dismiss notifications, infer completion, or substitute a solo policy for a
+recorded human-review requirement merely to admit a continuation. The same
+`CloseoutStatus` result drives the Inbox lane, detail and count decisions,
+continuation refusals, and supported API/tool responses; `unavailable` is
+reserved for a scoped admission rejection that no diagnostic can establish.
+
 For Inbox lane construction, `StalledCloseouts` batch-loads the evidence and
 persisted diagnostic inputs for each project's candidates before evaluating
 individual `CloseoutStatus` values. The per-issue status still produces the

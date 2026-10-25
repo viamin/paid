@@ -177,6 +177,20 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       expect(result.message).to include("#44")
     end
 
+    # @spec PARTIAL-CLOSEOUT-030
+    it "refuses an active human prerequisite with its persisted identity and requested evidence" do
+      merged_partial_pr(number: 12)
+      notification = create(:notification, :error, account: account, subject: issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+        title: "Select review policy", description: "A maintainer must select one policy.")
+
+      result = request_continuation
+
+      expect(result.code).to eq(:human_prerequisite)
+      expect(result.message).to include("Notification ##{notification.id}")
+      expect(result.message).to include("A maintainer must select one policy")
+    end
+
     it "refuses an untrusted creator's issue" do
       merged_partial_pr(number: 12)
       issue.update!(github_creator_login: "random-stranger")
@@ -221,7 +235,7 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       expect(IssueContinuationRequest.count).to eq(0)
     end
 
-    it "refuses instead of queueing a run another eligibility guard would cancel at dequeue" do
+    it "refuses an open native child instead of queueing a run dequeue would cancel" do
       # A guard the targeted blocker walk does not enumerate (here: an open
       # non-PR sub-issue keeps the parent out of every eligible scope) must
       # refuse up front with its reason, never queue a run the dequeue-time
@@ -239,8 +253,8 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       result = request_continuation
 
       expect(result.success?).to be(false)
-      expect(result.code).to eq(:unavailable)
-      expect(result.message).to include("exact guard is unavailable")
+      expect(result.code).to eq(:open_native_children)
+      expect(result.message).to include("#55")
       expect(issue.agent_runs).to be_empty
       expect(IssueContinuationRequest.count).to eq(0)
     end
