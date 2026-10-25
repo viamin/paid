@@ -62,7 +62,7 @@ module FeatureIntents
 
     def unknown_planning_label?
       issue.labels.include?(PLANNING_LABEL) &&
-        (!confidence_links.any?(&:workflow_owned_planning_hold?) || planning_task_link?)
+        !confidence_links.all?(&:workflow_owned_planning_hold?)
     end
 
     # A shared GitHub label cannot distinguish Paid's implementation hold from

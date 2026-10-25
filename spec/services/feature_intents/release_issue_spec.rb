@@ -187,6 +187,26 @@ RSpec.describe FeatureIntents::ReleaseIssue do
     expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
   end
 
+  it "retains a planning label when a released shared design lacks a Paid-owned hold receipt" do # @spec CONFIDENCE-DELIVERY-017
+    link.update!(release_state: "released", released_at: Time.current)
+    legacy_feature = create(:feature_intent, :confidence_driven, project: project)
+    legacy_link = create(:feature_intent_issue,
+      feature_intent: legacy_feature,
+      issue: issue,
+      readiness_mapping: mapping.except("planning_hold"),
+      release_state: "released",
+      released_at: Time.current)
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(result.reason).to include("ownership")
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(link.reload).to have_attributes(release_state: "released", release_error: nil)
+    expect(legacy_link.reload).to have_attributes(release_state: "released", release_error: nil)
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
   it "removes a re-added planning label when a released design has a Paid-owned hold receipt" do # @spec CONFIDENCE-DELIVERY-017
     link.update!(release_state: "released", released_at: Time.current)
 
