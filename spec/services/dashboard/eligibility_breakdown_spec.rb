@@ -99,6 +99,31 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(bd.other_excluded).to eq(1)
     end
 
+    # @spec AUTO-PICK-QUEUE-014
+    it "identifies eligible work that has not reached the scheduler queue" do
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+
+      breakdown = described_class.call(user: user).first
+
+      expect(breakdown.eligible).to eq(1)
+      expect(breakdown.queued).to eq(0)
+      expect(breakdown.active).to eq(0)
+      expect(breakdown.queue_state).to eq(:unseeded_runnable)
+    end
+
+    # @spec AUTO-PICK-QUEUE-014
+    it "does not diagnose an empty waiting queue as a stall while work is active" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :running, project: project, issue: issue)
+
+      breakdown = described_class.call(user: user).first
+
+      expect(breakdown.eligible).to eq(0)
+      expect(breakdown.queued).to eq(0)
+      expect(breakdown.active).to eq(1)
+      expect(breakdown.queue_state).to eq(:active_work)
+    end
+
     it "does not double-count recoverable-completed issues in both eligible and completed" do
       issue = create(:issue, project: project, github_state: "open", paid_state: "completed")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,

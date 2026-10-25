@@ -175,6 +175,21 @@
 
 ## Tier-infeasibility gating
 
+- [x] **AUTO-PICK-QUEUE-014** — When the dashboard reports Auto-Pick
+  eligibility, it SHALL separately count canonical eligible candidates,
+  schedulable queued runs, and capacity-inflight runs for each visible project.
+  With no queued work, an eligible candidate SHALL be identified as runnable
+  but unseeded and direct the operator to the bounded scheduler recovery;
+  with no queued work and active execution, the dashboard SHALL identify an
+  active-work/no-waiting-backlog state rather than a stall. The diagnosis SHALL
+  preserve project/account visibility and all existing pause and admission
+  controls, and rendering it SHALL not invoke semantic assessment, execute a
+  repository, or mutate remote state.
+  *Tests:* `spec/services/dashboard/eligibility_breakdown_spec.rb`,
+  `spec/requests/dashboard_spec.rb`.
+  *Code:* `app/services/dashboard/eligibility_breakdown.rb`,
+  `app/views/dashboard/_eligibility_breakdown.html.erb`.
+
 - [x] **AUTO-PICK-QUEUE-011** — When an issue's most recent model selection
   pins a tier that no runner the project's owner has enabled for agent runs
   can satisfy (per the shared `Runners::TierCapability` contract), Auto-Pick

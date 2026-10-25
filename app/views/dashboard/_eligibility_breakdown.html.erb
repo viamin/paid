@@ -24,6 +24,23 @@
                   <%= bd.eligible %> eligible
                 </span>
               <% end %>
+              <% case bd.queue_state %>
+              <% when :unseeded_runnable %>
+                <span class="inline-flex items-center gap-1 text-amber-700" title="These issues pass the canonical auto-pick candidate rules but have no scheduler run yet.">
+                  <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+                  <%= bd.eligible %> runnable but not queued
+                </span>
+              <% when :active_work %>
+                <span class="inline-flex items-center gap-1 text-blue-700" title="The waiting queue is empty because current work is already executing.">
+                  <span class="h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                  <%= pluralize(bd.active, "active run") %>; no waiting backlog
+                </span>
+              <% when :queued_work %>
+                <span class="inline-flex items-center gap-1 text-blue-700">
+                  <span class="h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                  <%= pluralize(bd.queued, "queued run") %>
+                </span>
+              <% end %>
               <% if bd.needs_input.positive? %>
                 <%= link_to inbox_path(project_id: bd.project.id, kind: Inbox::Queue::CLARIFYING_QUESTIONS_KIND),
                       class: "inline-flex items-center gap-1 text-amber-700 hover:text-amber-800",
@@ -70,6 +87,9 @@
                 <span class="text-gray-400">No eligible issues</span>
               <% end %>
             </div>
+            <% if bd.queue_state == :unseeded_runnable %>
+              <p class="mt-2 text-xs text-amber-700">Queue seeding is awaiting recovery. Refresh after the next scheduler pass; existing holds and admission controls remain in effect.</p>
+            <% end %>
           </div>
         <% end %>
       </div>

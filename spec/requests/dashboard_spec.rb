@@ -1013,6 +1013,16 @@ RSpec.describe "Dashboard" do
       expect(link.text).to include("1 needs input")
       expect(link["data-turbo-frame"]).to eq("_top")
     end
+
+    # @spec AUTO-PICK-QUEUE-014
+    it "explains that eligible work has not yet been seeded into an empty queue" do
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+
+      get dashboard_eligibility_breakdown_path
+
+      expect(response.body).to include("1 runnable but not queued")
+      expect(response.body).to include("Queue seeding is awaiting recovery")
+    end
   end
 
   describe "GET /dashboard/needs_input" do

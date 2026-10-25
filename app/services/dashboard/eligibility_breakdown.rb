@@ -7,6 +7,7 @@ module Dashboard
     ProjectBreakdown = Struct.new(
       :project, :total_open, :eligible, :needs_input,
       :skip_label, :completed, :in_progress, :manual_review, :other_excluded,
+      :queued, :active, :queue_state,
       keyword_init: true
     )
 
@@ -64,6 +65,8 @@ module Dashboard
       eligible_scope = Automation::Strategies::AutoPick::DefaultCandidateSource
         .eligible_scope(project, tier_feasibility: tier_feasibility)
       eligible_count = eligible_scope.count
+      queued_count = scheduler_queue_scope(project).count
+      active_count = AgentRun.capacity_inflight.where(project: project).count
 
       # Count all non-eligible issues in a single conditional-aggregation query.
       excluded = open.where.not(id: eligible_scope.select(:id))
@@ -87,8 +90,41 @@ module Dashboard
         needs_input: needs_input, skip_label: skip_label,
         completed: completed, in_progress: in_progress,
         manual_review: manual_review,
-        other_excluded: other
+        other_excluded: other,
+        queued: queued_count,
+        active: active_count,
+        queue_state: queue_state_for(
+          eligible: eligible_count,
+          queued: queued_count,
+          active: active_count,
+          total_open: eligible_count + excluded_total
+        )
       )
+    end
+
+    # This is intentionally a mechanical comparison of the canonical candidate
+    # scope and scheduler queue. It does not infer why an issue is blocked from
+    # its title or body; the eligibility buckets and Inbox remain the provenance
+    # for holds. A queue can therefore be empty and healthy while work runs.
+    # @spec AUTO-PICK-QUEUE-014
+    def queue_state_for(eligible:, queued:, active:, total_open:)
+      return :queued_work if queued.positive?
+      return :unseeded_runnable if eligible.positive?
+      return :active_work if active.positive?
+      return :held if total_open.positive?
+
+      :idle
+    end
+
+    # `schedulable_queued_with_priority` projects queue-order aliases for the
+    # preview. PostgreSQL cannot use those aliased expressions in a COUNT, so
+    # keep its canonical membership predicates while omitting presentation data.
+    def scheduler_queue_scope(project)
+      AgentRun.queued
+        .joins(project: :account)
+        .where(project: project, accounts: { scheduler_paused_at: nil }, projects: { scheduler_paused_at: nil })
+        .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
+        .where("agent_runs.trigger_type = 'manual' OR projects.paused = FALSE")
     end
 
     def count_skip_labeled(excluded_scope, analyzable_count, project)

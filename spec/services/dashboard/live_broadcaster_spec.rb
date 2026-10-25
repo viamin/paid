@@ -54,6 +54,16 @@ RSpec.describe Dashboard::LiveBroadcaster do
       expect_live_dashboard_sections_to_broadcast(queue_preview: true)
     end
 
+    # @spec AUTO-PICK-QUEUE-014
+    it "refreshes eligibility diagnosis with queue changes" do
+      described_class.call(account: account, agent_run: agent_run, refresh_queue_preview: true)
+
+      expect(Turbo::StreamsChannel).to have_received(:broadcast_replace_to).with(
+        [ account, :live_dashboard ],
+        hash_including(target: "dashboard-eligibility-breakdown", partial: "dashboard/eligibility_breakdown_frame")
+      )
+    end
+
     it "does not use wildcard cache invalidation" do
       allow(Rails.cache).to receive(:delete_matched).and_call_original
 

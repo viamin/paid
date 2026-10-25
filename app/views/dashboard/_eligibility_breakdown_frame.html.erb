@@ -1,0 +1,11 @@
+<%# @spec AUTO-PICK-QUEUE-014 %>
+<% frame_options = {} %>
+<% frame_options[:src] = local_assigns[:src] if local_assigns[:src].present? %>
+
+<%= turbo_frame_tag "dashboard-eligibility-breakdown", **frame_options do %>
+  <% if local_assigns.key?(:breakdowns) %>
+    <%= render "dashboard/eligibility_breakdown", breakdowns: breakdowns %>
+  <% else %>
+    <div class="motion-safe:animate-pulse motion-reduce:animate-none rounded-lg bg-gray-100 h-32"></div>
+  <% end %>
+<% end %>

@@ -94,6 +94,18 @@ badge. The dashboard's eligibility breakdown continues to report the actual
 guards that exclude open issues, so a workflow-state drift cannot become an
 invisible block.
 
+## Empty queue diagnosis
+
+The dashboard distinguishes the canonical candidate scope from the scheduler's
+queued runs and from capacity-inflight runs. An empty waiting queue is healthy
+when work is already active. When candidates are eligible but no schedulable
+queued run exists, the dashboard reports an unseeded handoff and directs the
+operator to wait for the bounded scheduler recovery rather than clearing
+labels or bypassing admission. When neither applies, the existing eligibility
+buckets and Inbox lanes remain the provenance for dependency, decision,
+policy, and human holds. The dashboard performs no semantic assessment,
+repository execution, or remote mutation while rendering this explanation.
+
 ## Epic umbrella acceptance audits
 
 The `epic` label identifies an umbrella issue; it is not an Auto-Pick hold by

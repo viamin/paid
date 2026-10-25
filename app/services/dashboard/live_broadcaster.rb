@@ -15,7 +15,7 @@ module Dashboard
     def call
       broadcast_live_stats
       broadcast_active_runs
-      broadcast_queue_preview if refresh_queue_preview?
+      broadcast_queue_surfaces if refresh_queue_preview?
       # Paused runs are intentionally NOT broadcast here. The paused-runs
       # partial calls policy(run).resume? per-run, which requires a request
       # context (current_user) the broadcaster does not have. The section
@@ -62,12 +62,23 @@ module Dashboard
       )
     end
 
-    def broadcast_queue_preview
+    # Queue membership changes alter both the preview and the diagnosis. Send
+    # each as a lazy frame so the request remains user-scoped; broadcasting a
+    # pre-rendered eligibility breakdown here would leak one owner's projects
+    # to another owner in the same account.
+    # @spec AUTO-PICK-QUEUE-014
+    def broadcast_queue_surfaces
       Turbo::StreamsChannel.broadcast_replace_to(
         stream_name,
         target: "dashboard-queue-preview",
         partial: "dashboard/queue_preview_frame",
         locals: { src: Rails.application.routes.url_helpers.dashboard_queue_preview_path }
+      )
+      Turbo::StreamsChannel.broadcast_replace_to(
+        stream_name,
+        target: "dashboard-eligibility-breakdown",
+        partial: "dashboard/eligibility_breakdown_frame",
+        locals: { src: Rails.application.routes.url_helpers.dashboard_eligibility_breakdown_path }
       )
     end
 
