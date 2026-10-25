@@ -43,6 +43,11 @@ class DashboardController < ApplicationController
     render partial: "dashboard/eligibility_breakdown", locals: { breakdowns: @eligibility_breakdown }
   end
 
+  def queue_diagnosis
+    @queue_diagnosis = Dashboard::QueueDiagnosis.call(user: current_user)
+    render partial: "dashboard/queue_diagnosis", locals: { diagnosis: @queue_diagnosis }
+  end
+
   def queue_preview
     load_queue_preview
     render partial: "dashboard/queue_preview_frame",

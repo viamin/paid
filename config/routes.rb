@@ -51,6 +51,7 @@ Rails.application.routes.draw do
   get "dashboard/performance", to: "dashboard#performance", as: :dashboard_performance
   get "dashboard/decision_metrics", to: "dashboard#decision_metrics", as: :dashboard_decision_metrics
   get "dashboard/eligibility_breakdown", to: "dashboard#eligibility_breakdown", as: :dashboard_eligibility_breakdown
+  get "dashboard/queue_diagnosis", to: "dashboard#queue_diagnosis", as: :dashboard_queue_diagnosis
   get "dashboard/queue_preview", to: "dashboard#queue_preview", as: :dashboard_queue_preview
   get "dashboard/recent_activity", to: "dashboard#recent_activity", as: :dashboard_recent_activity
   get "dashboard/runner_health", to: "dashboard#runner_health", as: :dashboard_runner_health

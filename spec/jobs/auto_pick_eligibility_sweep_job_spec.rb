@@ -21,12 +21,13 @@ RSpec.describe AutoPickEligibilitySweepJob, :no_db do
 
   before do
     stub_const("Project", Class.new do
-      attr_reader :id, :account_id, :created_by_id
+      attr_reader :id, :account_id, :created_by_id, :account
 
-      def initialize(id)
+      def initialize(id, account: nil)
         @id = id
         @account_id = nil
         @created_by_id = nil
+        @account = account
       end
 
       def self.active; end
@@ -97,5 +98,21 @@ RSpec.describe AutoPickEligibilitySweepJob, :no_db do
       project: project,
       skip_project_gate: true
     )
+  end
+
+  # @spec QUEUE-HANDOFF-003
+  it "invalidates dashboard list content after recovering an unseeded handoff" do
+    account = Object.new
+    project = Project.new(606, account: account)
+    created_run = double(previously_new_record?: true)
+
+    stub_projects(project)
+    allow(Issues::AutoPickProjectGate).to receive(:call).with(project, hash_including(:owner)).and_return(true)
+    allow(Issues::BulkEnqueueEligible).to receive(:call).and_return([ created_run ])
+    allow(Dashboard::CacheVersion).to receive(:bump)
+
+    described_class.perform_now
+
+    expect(Dashboard::CacheVersion).to have_received(:bump).with(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
   end
 end

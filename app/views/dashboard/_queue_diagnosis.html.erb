@@ -1,0 +1,37 @@
+<%# @spec QUEUE-HANDOFF-001 QUEUE-HANDOFF-002 %>
+<%= turbo_frame_tag "dashboard-queue-diagnosis" do %>
+  <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <h3 class="text-base font-semibold text-gray-900">Upcoming Queue diagnosis</h3>
+        <p class="mt-1 text-sm text-gray-500">
+          Eligible candidates and scheduler work are separate facts.
+        </p>
+      </div>
+      <% label = diagnosis.state.to_s.humanize %>
+      <span class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-700"><%= label %></span>
+    </div>
+
+    <% if diagnosis.refresh_recommended? %>
+      <p class="mt-3 text-sm text-amber-700">Diagnosis is unavailable; this does not prove there is no work.</p>
+      <%= link_to "Refresh diagnosis", dashboard_queue_diagnosis_path,
+        class: "mt-3 inline-flex text-sm font-medium text-indigo-600 hover:text-indigo-500" %>
+    <% else %>
+      <dl class="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <div><dt class="text-gray-500">Open</dt><dd class="font-semibold text-gray-900"><%= diagnosis.open_count %></dd></div>
+        <div><dt class="text-gray-500">Eligible</dt><dd class="font-semibold text-gray-900"><%= diagnosis.eligible_count %></dd></div>
+        <div><dt class="text-gray-500">Queued</dt><dd class="font-semibold text-gray-900"><%= diagnosis.queued_count %></dd></div>
+        <div><dt class="text-gray-500">In flight</dt><dd class="font-semibold text-gray-900"><%= diagnosis.active_count %></dd></div>
+      </dl>
+      <% if diagnosis.state == :unseeded_work %>
+        <p class="mt-3 text-sm text-amber-700">
+          <%= pluralize(diagnosis.unseeded_issue_ids.size, "eligible issue") %> has no automatic handoff. The bounded eligibility sweep will retry through normal admission controls.
+        </p>
+      <% elsif diagnosis.state == :held_work %>
+        <p class="mt-3 text-sm text-gray-600">Open issues are currently held by their existing dependency, decision, policy, or pause controls. Inspect Auto-Pick Eligibility and Inbox for the owning action.</p>
+      <% elsif diagnosis.state == :active_work %>
+        <p class="mt-3 text-sm text-green-700">No waiting handoff was found; work is active.</p>
+      <% end %>
+    <% end %>
+  </div>
+<% end %>

@@ -26,9 +26,11 @@ class AutoPickEligibilitySweepJob < ApplicationJob
     key: "auto_pick_eligibility_sweep"
   )
 
+  # @spec QUEUE-HANDOFF-003
   def perform
     processed = 0
     enqueued = 0
+    changed_accounts = []
 
     scope = eligible_projects
     owners_by_project = batch_resolve_owners(scope)
@@ -38,7 +40,9 @@ class AutoPickEligibilitySweepJob < ApplicationJob
 
       runs = Issues::BulkEnqueueEligible.call(project: project, skip_project_gate: true)
       processed += 1
-      enqueued += runs.count(&:previously_new_record?)
+      created = runs.count(&:previously_new_record?)
+      enqueued += created
+      changed_accounts << project.account if created.positive?
     rescue => e
       Rails.logger.error(
         message: "auto_pick_eligibility_sweep.project_failed",
@@ -52,6 +56,7 @@ class AutoPickEligibilitySweepJob < ApplicationJob
       processed_projects: processed,
       enqueued_runs: enqueued
     )
+    changed_accounts.uniq.each { |account| Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE) }
   end
 
   private
