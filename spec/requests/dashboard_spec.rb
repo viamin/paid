@@ -1378,6 +1378,18 @@ RSpec.describe "Dashboard" do
       expect(frame["src"]).to be_nil
       expect(frame.to_html).to include("Upcoming Queue")
     end
+
+    # @spec AUTO-PICK-QUEUE-017
+    it "explains an empty preview with runnable candidates instead of claiming there is no work" do
+      Rails.cache.clear
+      project.update!(auto_pick_enabled: true)
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+
+      get dashboard_queue_preview_path
+
+      expect(response.body).to include("runnable but not yet queued")
+      expect(response.body).to include("eligible issue")
+    end
   end
 
   describe "GET /dashboard/live" do

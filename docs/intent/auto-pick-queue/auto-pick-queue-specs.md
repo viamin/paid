@@ -4,6 +4,24 @@
 > `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 > Each ID is a grep target across specs, tests, and code (`grep -r AUTO-PICK-QUEUE-001`).
 
+## Empty Queue Diagnosis
+
+- [x] **AUTO-PICK-QUEUE-017** — When an authorized dashboard user sees an empty
+  Upcoming Queue, the system SHALL derive a diagnosis from the canonical
+  eligibility breakdown and scheduler queue relations, retaining separate
+  eligible-candidate, queued-run, and active-run counts. It SHALL distinguish
+  active work with no waiting backlog, runnable-but-unseeded work, deliberate
+  dependency/decision holds, policy pauses, healthy no-backlog, and unavailable
+  coverage. It SHALL link held work to the existing Inbox rather than infer
+  semantic recovery during rendering; a query failure SHALL show unknown
+  coverage and a refresh action, never proof that no work exists. Queue cache
+  invalidation and live frame refresh SHALL prevent stale rendered-empty
+  content from appearing current.
+  *Code:* `Dashboard::EligibilityBreakdown`, `Dashboard::QueueDiagnosis`,
+  `Dashboard::QueuePreview`, `DashboardController`.
+  *Test:* `spec/services/dashboard/queue_diagnosis_spec.rb`,
+  `spec/requests/dashboard_spec.rb`.
+
 ## Toggle Lifecycle
 
 - [x] **AUTO-PICK-QUEUE-001** — When a project has Auto-Pick disabled, the

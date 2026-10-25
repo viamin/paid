@@ -94,6 +94,28 @@ badge. The dashboard's eligibility breakdown continues to report the actual
 guards that exclude open issues, so a workflow-state drift cannot become an
 invisible block.
 
+## Empty queue diagnosis
+
+An empty Upcoming Queue is an observation about queued runs, not a conclusion
+about open issues or scheduler health. The account dashboard derives an
+empty-queue diagnosis from the existing `Dashboard::EligibilityBreakdown`
+candidate calculation and the scheduler's visible queued and in-flight run
+relations. It preserves the separate counts for eligible candidates, queued
+runs, and active work.
+
+The diagnosis reports one of these bounded mechanical states: active work
+with no waiting backlog; runnable candidates that have not been seeded;
+deliberate dependency, decision, or policy holds; no waiting backlog; or
+unknown coverage when a required query fails. A quality/scheduler pause is a
+policy state, never a queue failure. Held work links to the existing Inbox,
+whose lane details remain the issue-level provenance and supported recovery
+actions; dashboard rendering does not reassess repositories, invoke an LLM,
+or mutate remote state.
+
+Queue membership changes invalidate the same list cache used by both the
+preview and diagnosis. A live replacement reloads the frame from its endpoint,
+so a stale rendered-empty preview is not presented as a current diagnosis.
+
 ## Epic umbrella acceptance audits
 
 The `epic` label identifies an umbrella issue; it is not an Auto-Pick hold by

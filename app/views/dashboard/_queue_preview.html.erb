@@ -36,6 +36,7 @@
       </div>
     </div>
   <% else %>
+    <% diagnosis = local_assigns[:queue_diagnosis] %>
     <% paused_autopick = Array(local_assigns[:paused_projects]).count(&:auto_pick_enabled?) %>
     <% if paused_autopick.positive? %>
       <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
@@ -48,7 +49,35 @@
         </p>
       </div>
     <% else %>
-      <p class="mt-4 text-sm text-gray-500">No queued runs for your projects.</p>
+      <% if diagnosis&.covered? %>
+        <div class="mt-4 rounded-md bg-gray-50 p-3 text-sm text-gray-700" data-queue-diagnosis-state="<%= diagnosis.state %>">
+          <p>
+            <% case diagnosis.state %>
+            <% when :active_work %>
+              No waiting backlog: <%= pluralize(diagnosis.active_count, "run") %> is active.
+            <% when :runnable_unseeded %>
+              <%= pluralize(diagnosis.eligible_count, "eligible issue") %> is runnable but not yet queued.
+            <% when :held %>
+              No runnable backlog: <%= diagnosis.blockers.sum { |blocker| blocker[:count] } %> issue holds need attention.
+            <% when :policy_paused %>
+              Queue admission is deliberately paused by project or scheduler policy.
+            <% else %>
+              No queued runs for your projects. No waiting eligible candidates were found.
+            <% end %>
+          </p>
+          <p class="mt-1 text-gray-500"><%= diagnosis.next_action %></p>
+          <% if diagnosis.blockers.any? %>
+            <p class="mt-1"><%= link_to "Inspect issue holds in Inbox", inbox_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %></p>
+          <% end %>
+        </div>
+      <% elsif diagnosis %>
+        <div class="mt-4 rounded-md bg-amber-50 p-3 text-sm text-amber-800" data-queue-diagnosis-state="unknown">
+          Queue diagnosis is unavailable, so this empty preview does not prove there is no work.
+          <%= link_to "Refresh", dashboard_queue_preview_path, class: "font-medium underline" %>.
+        </div>
+      <% else %>
+        <p class="mt-4 text-sm text-gray-500">No queued runs for your projects.</p>
+      <% end %>
     <% end %>
   <% end %>
 </div>
