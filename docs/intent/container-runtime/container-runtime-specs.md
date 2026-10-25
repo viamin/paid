@@ -4,6 +4,24 @@
 > capacity model.
 > Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 
+- [x] **CONTAINER-RUNTIME-048** — When a failed workflow retains its Docker
+  environment for diagnostics, retention SHALL stop the container on its
+  recorded backend before persisting the retention expiry, preserve its
+  container and workspace volumes, tolerate an already-stopped container, and
+  propagate stop failures without recording a new successful retention.
+  *Tests:* `spec/temporal/activities/retain_container_activity_spec.rb`.
+  *Code:* `Activities::RetainContainerActivity`.
+
+- [x] **CONTAINER-RUNTIME-049** — When a local Unix-socket Docker daemon and
+  Linux host report identical total memory, capacity admission SHALL cap its
+  Docker-derived available-memory budget by nonnegative Linux `MemAvailable`
+  before applying its spike reserve. Missing or mismatched host data SHALL
+  preserve the Docker budget; remote/Swarm capacity SHALL NOT use the control
+  plane's local host data.
+  *Tests:* `spec/services/containers/backends/local_docker_spec.rb`,
+  `spec/services/capacity/docker_snapshot_spec.rb`.
+  *Code:* `Containers::Backends::LocalDocker#system_info`, `Capacity::DockerSnapshot`.
+
 - [x] **CONTAINER-RUNTIME-001** — When an agent run is provisioned without an
   explicit `worktree_path`, the system SHALL use a per-run Docker named volume
   for `/workspace` so the repository clone happens inside the container. When a

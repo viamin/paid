@@ -5,6 +5,12 @@ require "rails_helper"
 RSpec.describe Activities::RetainContainerActivity do
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
+  let(:container) { instance_double(Docker::Container, info: { "State" => { "Running" => true } }) }
+
+  before do
+    allow(Docker::Container).to receive(:get).with("abc123").and_return(container)
+    allow(container).to receive(:stop).with(timeout: 10)
+  end
 
   describe "#execute" do
     it "sets container_retained_until on the agent run" do
@@ -18,7 +24,31 @@ RSpec.describe Activities::RetainContainerActivity do
         expect(result[:retained_until]).to be_present
         agent_run.reload
         expect(agent_run.container_retained_until).to eq(4.hours.from_now)
+        expect(container).to have_received(:stop).with(timeout: 10)
       end
+    end
+
+    # @spec CONTAINER-RUNTIME-048
+    it "does not record retention when Docker cannot stop the workload" do
+      agent_run = create(:agent_run, :failed, project:, container_id: "abc123")
+      allow(container).to receive(:stop).and_raise(Docker::Error::ServerError, "daemon unavailable")
+
+      expect { activity.execute(agent_run_id: agent_run.id) }.to raise_error(Docker::Error::ServerError)
+      expect(agent_run.reload.container_retained_until).to be_nil
+    end
+
+    # @spec CONTAINER-RUNTIME-048
+    it "retains an already-stopped container without starting or deleting it" do
+      agent_run = create(:agent_run, :failed, project:, container_id: "abc123")
+      allow(container).to receive(:info).and_return("State" => { "Running" => false })
+      allow(container).to receive(:delete)
+      allow(container).to receive(:start)
+
+      expect(activity.execute(agent_run_id: agent_run.id)[:retained]).to be(true)
+      expect(container).not_to have_received(:stop)
+      expect(container).not_to have_received(:delete)
+      expect(container).not_to have_received(:start)
+      expect(agent_run.reload.container_id).to eq("abc123")
     end
 
     it "returns retained: false when agent run has no container" do

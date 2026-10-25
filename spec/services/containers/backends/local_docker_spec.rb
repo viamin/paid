@@ -9,6 +9,39 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
   let(:network) { instance_double(Docker::Network) }
   let(:volume) { instance_double(Docker::Volume) }
 
+  # @spec CONTAINER-RUNTIME-049
+  describe "local host memory evidence" do
+    before do
+      allow(Docker).to receive_messages(info: { "MemTotal" => 16_384 }, url: "unix:///var/run/docker.sock")
+      allow(File).to receive(:read).and_call_original
+      allow(File).to receive(:read).with("/proc/meminfo").and_return("MemTotal: 16 kB\nMemAvailable: 3 kB\n")
+    end
+
+    it "includes available VM memory when host and daemon totals match" do
+      expect(backend.system_info).to include("PaidHostMemAvailable" => 3_072)
+    end
+
+    it "does not substitute the control plane's memory for a different host" do
+      allow(Docker).to receive(:info).and_return("MemTotal" => 32_768)
+      expect(backend.system_info).not_to have_key("PaidHostMemAvailable")
+    end
+
+    it "preserves Docker capacity when procfs is unavailable" do
+      allow(File).to receive(:read).with("/proc/meminfo").and_raise(Errno::ENOENT)
+      expect(backend.system_info).to eq("MemTotal" => 16_384)
+    end
+
+    it "ignores local host memory for a TCP Docker endpoint" do
+      allow(Docker).to receive(:url).and_return("tcp://another-host:2376")
+      expect(backend.system_info).not_to have_key("PaidHostMemAvailable")
+    end
+
+    it "does not invent available memory when the kernel field is missing" do
+      allow(File).to receive(:read).with("/proc/meminfo").and_return("MemTotal: 16 kB\n")
+      expect(backend.system_info).not_to have_key("PaidHostMemAvailable")
+    end
+  end
+
   it "reports the local backend identifier" do
     expect(backend.identifier).to eq("local")
   end

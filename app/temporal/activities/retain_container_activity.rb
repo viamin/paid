@@ -15,6 +15,7 @@ module Activities
     LOW_DISK_RETENTION_HOURS = 1
     LOW_DISK_THRESHOLD_PERCENT = 85
 
+    # @spec CONTAINER-RUNTIME-048
     def execute(input)
       agent_run_id = input[:agent_run_id]
       agent_run = AgentRun.find_by(id: agent_run_id)
@@ -28,6 +29,7 @@ module Activities
 
       return { agent_run_id: agent_run_id, retained: false } if agent_run.container_id.blank?
 
+      stop_retained_container(agent_run)
       retention_hours = compute_retention_hours
       retained_until = retention_hours.hours.from_now
       agent_run.update!(container_retained_until: retained_until)
@@ -44,6 +46,12 @@ module Activities
     end
 
     private
+
+    def stop_retained_container(agent_run)
+      backend = Containers.backend_for(agent_run.container_host)
+      container = backend.get_container(agent_run.container_id)
+      backend.stop_container(container, timeout: 10) if container.info.dig("State", "Running")
+    end
 
     def compute_retention_hours
       if disk_pressure?
