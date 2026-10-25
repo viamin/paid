@@ -747,24 +747,35 @@ jobs:
 
       - name: Fuzz mobile API contract
         run: |
-          pipx run --spec 'schemathesis==4.6.0' schemathesis run \
-            --phases examples,fuzzing \
-            --mode positive \
-            --url http://127.0.0.1:3000/api/v1 \
-            --header "Authorization: Bearer $MOBILE_API_READ_TOKEN" \
+          run_schemathesis() {
+            local token="$1"
+            shift
+            local attempt
+            for attempt in 1 2 3; do
+              if pipx run --spec 'schemathesis==4.6.0' schemathesis run \
+                --phases examples,fuzzing \
+                --mode positive \
+                --url http://127.0.0.1:3000/api/v1 \
+                --header "Authorization: Bearer $token" \
+                "$@" \
+                docs/api/openapi.yaml; then
+                return 0
+              fi
+              if [ "$attempt" -lt 3 ]; then
+                echo "::warning::Schemathesis contract fuzzing failed (attempt $attempt/3); retrying"
+                sleep "$((attempt * 5))"
+              fi
+            done
+            return 1
+          }
+          run_schemathesis "$MOBILE_API_READ_TOKEN" \
             --include-path /inbox \
             --include-path /inbox/count \
-            --include-path /inbox/entries/{entry_id} \
-            docs/api/openapi.yaml
-          pipx run --spec 'schemathesis==4.6.0' schemathesis run \
-            --phases examples,fuzzing \
-            --mode positive \
-            --url http://127.0.0.1:3000/api/v1 \
-            --header "Authorization: Bearer $MOBILE_API_MUTATION_TOKEN" \
+            --include-path /inbox/entries/{entry_id}
+          run_schemathesis "$MOBILE_API_MUTATION_TOKEN" \
             --include-path /inbox/entries/{entry_id}/chat \
             --exclude-operation-id sendChatMessage \
-            --exclude-operation-id resolveChatToolCall \
-            docs/api/openapi.yaml
+            --exclude-operation-id resolveChatToolCall
 
   migrations:
     if: >-

@@ -154,11 +154,12 @@ RSpec.describe CiWorkflowFile, :no_db do
     fuzz_command = step_run(schemathesis_job, "Fuzz mobile API contract")
 
     expect(fuzz_command).to include(
+      "for attempt in 1 2 3", "Schemathesis contract fuzzing failed",
       "schemathesis==4.6.0", "--include-path /inbox/entries/{entry_id}",
       "--include-path /inbox/entries/{entry_id}/chat",
       "--phases examples,fuzzing", "--mode positive",
-      "Authorization: Bearer $MOBILE_API_READ_TOKEN",
-      "Authorization: Bearer $MOBILE_API_MUTATION_TOKEN",
+      'run_schemathesis "$MOBILE_API_READ_TOKEN"',
+      'run_schemathesis "$MOBILE_API_MUTATION_TOKEN"',
       "--exclude-operation-id sendChatMessage",
       "--exclude-operation-id resolveChatToolCall"
     )
