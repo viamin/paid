@@ -35,6 +35,37 @@ every policy decision reads it through `Automation::RolloutGuard.enabled?`
 `Automation::EffectivePolicy` returns a permitted `legacy_policy` decision, so
 existing execution and Inbox behavior is untouched.
 
+### Pilot management, coordinated activation, and rollback protection
+
+The #4511 acceptance requires these release controls to be confirmed and
+documented; they bind whoever operates the flag, and #4518's closeout audit
+records the per-project verification.
+
+- **Authorized pilot management.** The enablement surface is the authorized
+  feature-flag management path: a per-project actor gate through
+  `FeatureFlags.enable!(:automation_phases, project:)` or a tenant override in
+  `tenant_settings.features` (both read through `Automation::RolloutGuard`).
+  The project phase-settings surface (`Projects::AutomationPhasesController`)
+  requires `update?` authorization and shows the rollout state, active grants,
+  and migration preview, so a pilot operator manages phase policy only through
+  an authorized, visible surface.
+- **Coordinated activation.** Before enabling a pilot, the operator reviews
+  `Automation::Phases::MigrationPreview` (project settings page or the
+  `preview` action): derived phase defaults, Inbox entries that would leave
+  the default Inbox, label-enabled work that would lose automatic execution,
+  and the active-grant count. A pilot is enabled only after phase mappings,
+  capability configuration, grant storage, and Inbox classification are
+  validated together (the flag's `rollout_plan`), and preview happens before
+  activation because the preview is read-only and enables nothing.
+- **Rollback protection for active grants.** A project must not be rolled back
+  (flag disabled for that project) while `WorkItemContinuationGrant.active`
+  records exist for it: the operator finishes or explicitly revokes each grant
+  and reconciles affected queued work first, because the pre-phase policy
+  cannot safely interpret those grants. `MigrationPreview`'s `active_grants`
+  count and the phase-settings active-grant list (with revocation) expose
+  exactly what a rollback would have to absorb, so rollback cannot proceed
+  blind.
+
 ## Project phase defaults
 
 `projects.automation_phase_settings` (jsonb) stores:
