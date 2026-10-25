@@ -5,7 +5,7 @@
 # repair), not to the run that happened to carry the manual start. Additional or
 # child issues never inherit it.
 #
-# @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-008
+# @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-008 @spec AUTOMATION-PHASES-009
 class WorkItemContinuationGrant < ApplicationRecord
   SOURCES = %w[manual_start].freeze
 
@@ -18,6 +18,8 @@ class WorkItemContinuationGrant < ApplicationRecord
   validates :endpoint, presence: true, inclusion: { in: Automation::Phases::CONTINUATION_ENDPOINTS }
   validates :source, presence: true, inclusion: { in: SOURCES }
   validate :endpoint_follows_start_phase
+  validate :issue_belongs_to_project
+  validate :audit_actors_belong_to_project_account
 
   scope :active, -> { where(revoked_at: nil, completed_at: nil) }
   scope :revoked, -> { where.not(revoked_at: nil) }
@@ -68,5 +70,29 @@ class WorkItemContinuationGrant < ApplicationRecord
     return if start_phase.blank? || endpoint.blank?
 
     errors.add(:endpoint, "must be the start phase or a later delivery phase") if covered_phases.empty?
+  end
+
+  # A grant is a tenant-scoped authorization record. Keeping both its work
+  # item and audit actors within the project's account prevents a direct model
+  # caller from persisting an authority edge across tenant boundaries.
+  # @spec AUTOMATION-PHASES-009
+  def issue_belongs_to_project
+    return if project.blank? || issue.blank? || issue.project_id == project.id
+
+    errors.add(:issue, "must belong to the grant project")
+  end
+
+  def audit_actors_belong_to_project_account
+    return if project.blank?
+
+    validate_audit_actor(:created_by)
+    validate_audit_actor(:revoked_by)
+  end
+
+  def validate_audit_actor(actor_name)
+    actor = public_send(actor_name)
+    return if actor.blank? || actor.account_id == project.account_id
+
+    errors.add(actor_name, "must belong to the grant project's account")
   end
 end

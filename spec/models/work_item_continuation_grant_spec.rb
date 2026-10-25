@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-008
+# @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-008 @spec AUTOMATION-PHASES-009
 RSpec.describe WorkItemContinuationGrant do
   let(:account) { create(:account) }
   let(:user) { create(:user, account:) }
@@ -32,6 +32,22 @@ RSpec.describe WorkItemContinuationGrant do
     grant = build(:work_item_continuation_grant, source: "deployment_engine")
 
     expect(grant).not_to be_valid
+  end
+
+  it "rejects a grant whose work item belongs to another project" do
+    other_issue = create(:issue)
+    grant = build(:work_item_continuation_grant, project:, issue: other_issue)
+
+    expect(grant).not_to be_valid
+    expect(grant.errors[:issue]).to include("must belong to the grant project")
+  end
+
+  it "rejects a grant recorded with an actor from another account" do
+    other_user = create(:user, account: create(:account))
+    grant = build(:work_item_continuation_grant, project:, issue:, created_by: other_user)
+
+    expect(grant).not_to be_valid
+    expect(grant.errors[:created_by]).to include("must belong to the grant project's account")
   end
 
   describe "completion" do
