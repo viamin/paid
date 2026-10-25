@@ -333,6 +333,36 @@ RDR-073 extension can be decided from an unprovisioned environment; retain
 the existing direction that an extension is filed only if a completed live
 validation identifies a checkout-dependent sidecar need.
 
+## #4604 execution-environment capability check — 2026-10-25
+
+**Result: still not executed; do not close #4604.** This follow-up checked the
+supported execution lifecycle rather than treating the absence of a host
+socket as a platform conclusion. The installed code resolves every current
+execution backend, including remote-Docker and Swarm transports, through
+`ExecutionRunners::LocalDockerRunner`; that runner provisions through
+`Containers::Provision` and therefore needs a reachable Docker daemon. This
+worker has no `docker`, `podman`, or `nerdctl` client, no `/var/run/docker.sock`
+or `/run/docker.sock`, and no configured `DOCKER_*` endpoint. It cannot
+provision the required fresh `AgentRun` or its paired sidecar.
+
+The worker was also given a `DATABASE_URL`, but Rails correctly refused to
+boot against its `agent` PostgreSQL role because that role has `SUPERUSER` and
+`BYPASSRLS`. The runtime-role guard prevents using that role to inspect or
+create tenant data. This audit did not disable or bypass that guard. It is a
+second independent local prerequisite failure, not evidence that Paid lacks a
+Docker-capable execution worker elsewhere.
+
+No native-analyzer or sidecar command was attempted, and no `AgentRun`,
+sidecar, checkout, image, stdout, stderr, exit-code, or cleanup artifact was
+created in this environment. The two acceptance artifacts remain uncollected.
+The recovery action is to run both scenarios on a Paid worker that has a
+reachable Docker daemon (local socket or configured supported Docker host) and
+a non-superuser application database role. That worker must provision a fresh
+run against its pinned checkout, retain the returned execution results, and
+verify cleanup through the normal run/tool lifecycle. Do not infer either
+artifact from this capability check and do not release #4328–#4333 or decide
+on an RDR-073 extension until that evidence exists.
+
 ## Disposition
 
 This report resolves critical assumption 1 only. Critical assumption 2 remains
@@ -355,12 +385,12 @@ arrow entry track #4604 as the evidence owner. This report does not:
 - Determine whether an upstream RDR-073 extension is needed — that decision
   follows the required native and sidecar execution evidence.
 
-The #4604 revalidation on 2026-10-24 confirms that those two evidence
-artifacts remain blocked specifically by the absence of a Docker-capable
-execution environment. RDR-075 remains Draft, its `maintenance-runs` arrow
-remains a draft-only mapping, and implementation phases #4328–#4333 remain
-unreleased. Move the validation to a Docker-capable environment rather than
-inferring live lifecycle behavior from static tests or host-only commands.
+The #4604 capability checks on 2026-10-24 and 2026-10-25 confirm that the two
+evidence artifacts remain uncollected in this worker. RDR-075 remains Draft,
+its `maintenance-runs` arrow remains a draft-only mapping, and implementation
+phases #4328–#4333 remain unreleased. Move the validation to a Docker-capable
+Paid execution worker rather than inferring live lifecycle behavior from
+static tests, host-only commands, or an unavailable local environment.
 
 Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
 an HLD pointer) are reviewable drafts for the same pending human-review gate,
