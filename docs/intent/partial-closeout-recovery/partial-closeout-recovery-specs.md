@@ -4,6 +4,20 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When an authorized Inbox operator submits
+  durable prerequisite evidence, the system SHALL bind it to one exact
+  prerequisite identity and the source/intent revisions it addresses, record
+  actor, provenance, explanation, and an explicit `pending_validation`
+  outcome, and keep the prerequisite unresolved. A stale generation, missing
+  explanation, unsupported evidence type, or malformed URL SHALL be rejected.
+  Dismissing the notification remains a personal removal action; it neither
+  validates evidence nor releases the scheduling guard. Only a later explicit
+  evidence disposition may resolve the occurrence.
+  *Code:* `app/services/partial_closeouts/submit_prerequisite_evidence.rb`,
+  `app/models/notification.rb`.
+  *Test:* `spec/services/partial_closeouts/submit_prerequisite_evidence_spec.rb`,
+  `spec/models/notification_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its

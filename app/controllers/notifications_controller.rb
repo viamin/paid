@@ -51,6 +51,25 @@ class NotificationsController < ApplicationController
     end
   end
 
+  # Candidate evidence remains separate from personal dismissal. The service
+  # preserves actor and revision provenance and never resolves the prerequisite.
+  def submit_evidence
+    @notification = policy_scope(Notification).find(params[:id])
+    authorize @notification, :dismiss?
+
+    result = PartialCloseouts::SubmitPrerequisiteEvidence.call(
+      notification: @notification, actor: current_user,
+      prerequisite_id: params[:prerequisite_id], evidence_type: params[:evidence_type],
+      reference: params[:reference], explanation: params[:explanation]
+    )
+    if result.success?
+      redirect_back fallback_location: notifications_path,
+        notice: "Evidence submitted for validation; it has not resolved the prerequisite."
+    else
+      redirect_back fallback_location: notifications_path, alert: result.error
+    end
+  end
+
   def mark_all_read
     authorize Notification
     policy_scope(Notification).active.unread.update_all(read_at: Time.current)

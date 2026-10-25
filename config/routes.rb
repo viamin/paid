@@ -31,6 +31,7 @@ Rails.application.routes.draw do
   resources :notifications, only: [ :index ] do
     patch :read, on: :member
     patch :dismiss, on: :member
+    post :submit_evidence, on: :member
     post :mark_all_read, on: :collection
   end
   resources :remediation_decisions, only: [ :show ] do

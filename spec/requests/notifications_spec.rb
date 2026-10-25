@@ -168,6 +168,29 @@ RSpec.describe "Notifications" do
     end
   end
 
+  describe "POST /notifications/:id/submit_evidence" do
+    it "records prerequisite evidence as pending validation without resolving it" do # @spec PARTIAL-CLOSEOUT-030
+      project = create(:project, account: account)
+      issue = create(:issue, project: project, github_state: "open")
+      notification = create(:notification, :error, account: account, subject: issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+        metadata: {
+          "source_revision" => Issues::CloseoutEvidence.call(issue).digest,
+          "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
+          "prerequisites" => [ { "id" => "evidence:0", "criterion" => "Pilot", "requirement" => "Attach results" } ]
+        })
+
+      post submit_evidence_notification_path(notification), params: {
+        prerequisite_id: "evidence:0", evidence_type: "url", reference: "https://example.test/results",
+        explanation: "The linked report contains the requested measured result."
+      }
+
+      expect(response).to redirect_to(notifications_path)
+      expect(notification.reload.resolved_at).to be_nil
+      expect(notification.metadata.fetch("evidence_submissions").sole.fetch("outcome")).to eq("pending_validation")
+    end
+  end
+
   describe "POST /notifications/mark_all_read" do
     it "marks all unread notifications as read" do
       n1 = create(:notification, account: account)

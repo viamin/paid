@@ -299,6 +299,16 @@ reason, and `Issues::ResolveCloseout` refuses the legacy canned sentence
 structurally (no semantic approval heuristic). Actor and evidence-generation
 digest recording is unchanged.
 
+### Submitted prerequisite evidence
+
+Human prerequisite notifications carry immutable per-occurrence identities and
+the source and intent revisions assessed when they were published. An Inbox
+submission records its durable reference, explanation, actor provenance, and a
+`pending_validation` disposition against that identity. Submission, a green
+run, a URL, and notification dismissal are not acceptance satisfaction and do
+not release scheduling. A changed source or intent revision makes the submitted
+candidate stale rather than allowing it to satisfy a replacement prerequisite.
+
 The continuation offer explains its authorization semantics: one run, other
 holds still apply, and the reason should describe remaining work plus the
 expected evidence (with short examples for fresh acceptance audits,

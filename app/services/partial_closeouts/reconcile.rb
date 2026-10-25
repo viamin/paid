@@ -55,7 +55,7 @@ module PartialCloseouts
       gaps.each_with_index do |gap, index|
         if human_gap?(gap)
           record_gap!(index, gap, status: "awaiting_operator")
-          human_gaps << gap
+          human_gaps << [ index, gap ]
         else
           reconcile_agent_gap(gap, index)
         end
@@ -177,12 +177,13 @@ module PartialCloseouts
         account: agent_run.project.account, subject: agent_run.issue,
         source: PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
         title: operator_prerequisite_title(human_gaps),
-        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n")
+        description: human_gaps.map { |_index, gap| operator_prerequisite_step(gap) }.join("\n"),
+        metadata: prerequisite_metadata(human_gaps)
       )
     end
 
     def operator_prerequisite_title(human_gaps)
-      criteria = human_gaps.map { |gap| gap["criterion"] }
+      criteria = human_gaps.map { |_index, gap| gap["criterion"] }
       if criteria.one?
         "#{criteria.first} needs operator action"
       else
@@ -195,6 +196,17 @@ module PartialCloseouts
     # "review the prerequisite" placeholder (#4119).
     def operator_prerequisite_step(gap)
       "#{gap["criterion"]}: #{gap["next_step"].to_s.strip}"
+    end
+
+    def prerequisite_metadata(human_gaps)
+      {
+        "source_revision" => assessment["source_revision"],
+        "intent_revision" => assessment["intent_revision"],
+        "prerequisites" => human_gaps.map do |index, gap|
+          { "id" => "#{agent_run.id}:#{index}", "criterion" => gap["criterion"],
+            "requirement" => gap["prerequisite"] || gap["next_step"], "next_action" => gap["next_step"] }
+        end
+      }
     end
 
     def publish_parent_dependencies!

@@ -24,6 +24,27 @@
     </div>
   <% end %>
 
+  <% if notification.source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE %>
+    <div class="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Submit prerequisite evidence</h3>
+      <p class="text-sm text-amber-800">A submitted link, artifact, run, or report is pending validation. It does not resolve this prerequisite or attest issue completion.</p>
+      <% Array(notification.metadata.to_h["prerequisites"]).each do |prerequisite| %>
+        <%= form_with url: submit_evidence_notification_path(notification), class: "space-y-2 border-t border-amber-200 pt-3" do |form| %>
+          <%= form.hidden_field :prerequisite_id, value: prerequisite["id"] %>
+          <p class="text-sm font-medium text-amber-900"><%= prerequisite["criterion"] %></p>
+          <p class="text-xs text-amber-800"><%= prerequisite["requirement"] %></p>
+          <%= form.select :evidence_type, PartialCloseouts::SubmitPrerequisiteEvidence::TYPES.map { |type| [ type.humanize, type ] }, {}, class: "rounded-md border-gray-300 text-sm" %>
+          <%= form.url_field :reference, required: true, placeholder: "https://… or durable artifact reference", class: "w-full rounded-md border-gray-300 text-sm" %>
+          <%= form.text_area :explanation, required: true, rows: 2, maxlength: 2000, placeholder: "Explain how this evidence meets the exact prerequisite.", class: "w-full rounded-md border-gray-300 text-sm" %>
+          <%= form.submit "Submit for validation", class: "rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-500" %>
+        <% end %>
+      <% end %>
+      <% Array(notification.metadata.to_h["evidence_submissions"]).each do |submission| %>
+        <p class="text-xs text-amber-900"><%= submission["outcome"].to_s.humanize %>: <%= submission["reasoning"] %></p>
+      <% end %>
+    </div>
+  <% end %>
+
   <% if entry.action_url.present? && entry.action_url != inbox_entry_path(entry) %>
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to "Open linked action",
