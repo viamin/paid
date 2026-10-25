@@ -177,6 +177,29 @@ recording completion, so a continuation cannot dispatch after the attestation.
   work reuses the existing `create_issue` tool (dependency wording is parsed
   by the existing sync parser).
 
+### Technical prerequisite execution evidence
+
+An originating partial-closeout Inbox item may queue one fresh, synthetic,
+report-only `analyze_issue` run to collect a bounded technical prerequisite
+probe. `ExecutionPrerequisites::Prepare` deduplicates active attempts and
+`ExecutionPrerequisites::Validate` inspects the selected execution runner's
+declared capabilities against the target backend before provisioning. A missing
+Docker socket in the control-plane process is therefore not evidence that no
+execution host is available.
+
+The probe uses the existing `provision_execution_environment`,
+`execute_in_execution_environment`, and `cleanup_execution_environment`
+lifecycle and persists its pinned checkout identity, tool snapshot, stdout,
+stderr, exit status, result state, and cleanup result on the AgentRun. The
+only currently supported native command is a fixed runtime probe; no Inbox
+input becomes a shell command, and no host socket or host-shell capability is
+granted. If an attached tool sidecar needs the disabled
+`marketplace_tool_sidecars` rollout, the run records `unavailable` and tells
+the operator to enable the scoped pilot flag instead of retrying unchanged
+infrastructure. Failed, unavailable, and partial artifacts remain evidence of
+an open prerequisite; only a successful artifact can inform later canonical
+assessment.
+
 ### Legacy reconciliation: `PartialCloseouts::ReconcileLegacy`
 
 The `partial-closeout-reconciliation-v1` Temporal patch only intercepts new

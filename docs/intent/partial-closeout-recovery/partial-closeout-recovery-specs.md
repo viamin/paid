@@ -518,3 +518,20 @@
   `spec/services/inbox/chat_context_spec.rb`,
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-028** — When an authorized operator starts technical
+  prerequisite validation from the originating partial-closeout Inbox item,
+  the system SHALL create or resume one bounded synthetic AgentRun and inspect
+  the selected runner/backend capabilities before provision. It SHALL use the
+  normal isolated provision, execute, and cleanup lifecycle; persist the
+  pinned-checkout identity, selected native analyzer/tool snapshot, stdout,
+  stderr, exit status, result state, and cleanup evidence; and distinguish
+  unavailable, failed, and successful attempts. The action SHALL use only a
+  fixed allowlisted probe, never host-shell or Docker-socket access. When a
+  required tool-sidecar rollout is disabled, it SHALL record an unavailable
+  artifact with the exact scoped-flag action rather than enabling the flag or
+  retrying an unchanged capability failure.
+  *Code:* `ExecutionPrerequisites::Prepare`,
+  `ExecutionPrerequisites::Validate`,
+  `Projects::AgentRunsController#validate_technical_prerequisite`.
+  *Test:* `spec/services/execution_prerequisites/validate_spec.rb`.
