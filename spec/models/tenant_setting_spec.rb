@@ -104,6 +104,14 @@ RSpec.describe TenantSetting do
       expect(setting.features).to eq({})
     end
 
+    it "never resolves an operational goal as the default goal" do
+      account = create(:account)
+      setting = described_class.create!(account: account,
+        agent_settings: { "default_goal" => "prerequisite_validation" })
+
+      expect(setting.default_goal).to eq("create_pr")
+    end
+
     it "has empty configuration namespace defaults" do
       setting = described_class.new(account: create(:account))
       expect(setting.runner_preferences).to eq({})

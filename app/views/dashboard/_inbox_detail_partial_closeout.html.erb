@@ -219,6 +219,19 @@
           </p>
         </div>
     <% end %>
+
+    <%# Capability-aware evidence collection for linked prerequisite issues
+        (#4604-like): inspect execution-host capability and tool/authorization
+        policy through the provisioner's own interfaces, then offer the
+        bounded validation action (PREREQ-EXEC). %>
+    <% prerequisite_issues = issue.issue_dependencies.includes(:depends_on_issue)
+          .map(&:depends_on_issue).compact.select { |dependency| dependency.github_state == "open" && !dependency.is_pull_request? } %>
+    <% if policy(entry.project).run_agent? %>
+      <%= render "dashboard/prerequisite_execution_validation",
+            project: entry.project,
+            issue: issue,
+            prerequisites: prerequisite_issues %>
+    <% end %>
   </div>
 
   <div class="flex flex-wrap items-center gap-3">

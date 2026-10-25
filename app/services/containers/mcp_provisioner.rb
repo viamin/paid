@@ -338,7 +338,15 @@ module Containers
 
     # @spec TOOL-SIDECAR-006
     def account_allowed_images_for(agent_run)
-      project = agent_run.project
+      self.class.account_allowed_images_for(project: agent_run.project)
+    end
+
+    # The union of `allowed_service_images` configured on every admin/owner
+    # UserSetting for the project's account — the same surface the runtime
+    # image gate fails closed on. Shared with capability inspection
+    # (`PrerequisiteExecutions::Capabilities`) so a preflight report can
+    # never disagree with what provisioning would actually allow.
+    def self.account_allowed_images_for(project:)
       return [] unless project
 
       admin_user_ids = AccountMembership

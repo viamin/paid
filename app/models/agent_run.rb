@@ -31,7 +31,10 @@ class AgentRun < ApplicationRecord
   # cannot retroactively alter a run's review behavior. @spec REVIEW-DEPTH-005
   REVIEW_DEPTHS = Project::REVIEW_DEPTHS
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
-  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness].freeze
+  # prerequisite_validation is the bounded, synthetic capability-aware run a
+  # PrerequisiteExecutionValidation executes through the normal
+  # provision/execute/cleanup contract (PREREQ-EXEC).
+  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness prerequisite_validation].freeze
   # RDR-056 (Strict TDD): the run-scoped write-guard phase for projects with
   # tdd_mode != "off". nil means the run is not TDD-governed (existing
   # behavior). See Tdd::WriteGuard for the enforced allowed/forbidden matrix.
@@ -215,6 +218,9 @@ class AgentRun < ApplicationRecord
   belongs_to :initiating_user, class_name: "User", optional: true
 
   has_many :agent_run_logs, dependent: :destroy
+  # The bounded prerequisite-evidence validation this synthetic run executes
+  # for, when the run is a prerequisite_validation run (PREREQ-EXEC).
+  has_one :prerequisite_execution_validation
   has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy
   has_many :container_pool_entries, dependent: :nullify
   has_many :token_usages, dependent: :destroy

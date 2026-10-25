@@ -1,0 +1,130 @@
+<%# Progress and evidence for one bounded prerequisite-evidence validation
+    attempt. @spec PREREQ-EXEC-016 %>
+<% validation = @validation %>
+<% identity = validation.evidence["identity"] || {} %>
+<% cleanup = validation.evidence["cleanup"] || {} %>
+<div class="mx-auto max-w-4xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">Execution-evidence validation</h1>
+      <p class="mt-1 text-sm text-gray-600">
+        <%= @project.full_name %><% if validation.issue %>#<%= validation.issue.github_number %><% end %> ·
+        branch <code class="text-xs"><%= validation.branch %></code> ·
+        started <%= time_ago_in_words(validation.created_at) %> ago
+      </p>
+    </div>
+    <span class="rounded-full px-3 py-1 text-sm font-medium <%= validation.succeeded? ? "bg-green-100 text-green-800" : (validation.active? ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800") %>">
+      <%= validation.status.humanize %><%= " (stale evidence)" if validation.stale? %>
+    </span>
+  </div>
+
+  <% if validation.last_error.present? %>
+    <p class="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800"><%= validation.last_error %></p>
+  <% end %>
+
+  <% if validation.missing_requirements.any? %>
+    <div class="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h2 class="text-sm font-semibold text-amber-900">Missing capability or authorization</h2>
+      <ul class="space-y-2">
+        <% validation.missing_requirements.each do |requirement| %>
+          <li class="text-sm text-amber-900">
+            <span class="font-medium"><%= requirement["kind"].to_s.humanize %>:</span> <%= requirement["message"] %>
+            <p class="mt-1 text-xs text-amber-800">Authorized action — <%= requirement["authorized_action"] %></p>
+          </li>
+        <% end %>
+      </ul>
+      <p class="text-xs text-amber-800">
+        Paid will not silently enable flags or retry an unchanged capability failure. Resolve the authorized action, then start again.
+      </p>
+    </div>
+  <% end %>
+
+  <div class="grid gap-4 sm:grid-cols-2">
+    <div class="space-y-2 rounded-xl border border-gray-200 bg-white p-4">
+      <h2 class="text-sm font-semibold text-gray-900">Capability snapshot (at start)</h2>
+      <p class="text-sm text-gray-600">
+        Environment: <span class="font-medium"><%= validation.capability_snapshot["environment_available"] ? "available" : "unavailable" %></span>
+        · compatible hosts: <%= Array(validation.capability_snapshot["compatible_hosts"]).join(", ").presence || "none" %>
+      </p>
+      <p class="text-sm text-gray-600">
+        Tool sidecars: <span class="font-medium"><%= validation.capability_snapshot["tool_flag_enabled"] ? "enabled" : "flag off" %></span>
+      </p>
+    </div>
+    <div class="space-y-2 rounded-xl border border-gray-200 bg-white p-4">
+      <h2 class="text-sm font-semibold text-gray-900">Identity evidence</h2>
+      <dl class="space-y-1 text-sm text-gray-600">
+        <dt class="font-medium text-gray-700">Checkout</dt>
+        <dd class="break-all"><code class="text-xs"><%= identity.dig("checkout", "branch") %> @ <%= identity.dig("checkout", "commit").presence || "not reached" %></code></dd>
+        <dt class="font-medium text-gray-700">Run container</dt>
+        <dd class="break-all"><code class="text-xs"><%= identity.dig("run", "image").presence || "—" %> <%= "(#{identity.dig('run', 'container_host')})" if identity.dig("run", "container_host").present? %></code></dd>
+        <dt class="font-medium text-gray-700">Tool</dt>
+        <dd class="break-all"><code class="text-xs"><%= identity.dig("tool", "image").presence || "none contracted" %></code></dd>
+        <dt class="font-medium text-gray-700">Cleanup</dt>
+        <dd>run container: <%= cleanup["run_container"].presence || "not reached" %> · sidecars: <%= cleanup["sidecars"].presence || "not reached" %></dd>
+      </dl>
+    </div>
+  </div>
+
+  <div class="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
+    <h2 class="text-sm font-semibold text-gray-900">Steps</h2>
+    <% if validation.steps.any? %>
+      <ul class="space-y-3">
+        <% validation.steps.each do |step| %>
+          <li class="rounded-lg border border-gray-200 p-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <p class="text-sm font-medium text-gray-900"><%= step["key"].to_s.humanize %></p>
+              <span class="text-xs font-medium uppercase <%= step["status"] == "succeeded" ? "text-green-700" : "text-red-700" %>">
+                <%= step["status"] %> <%= "exit #{step['exit_code']}" if step.key?("exit_code") %>
+              </span>
+            </div>
+            <p class="mt-1 break-all text-xs text-gray-500"><code><%= step["command"] %></code></p>
+            <% if step["endpoint"].present? %>
+              <p class="mt-1 break-all text-xs text-gray-500">endpoint <code><%= step["endpoint"] %></code></p>
+            <% end %>
+            <% if step["stdout"].present? %>
+              <details class="mt-2">
+                <summary class="cursor-pointer text-xs font-medium text-gray-600">stdout</summary>
+                <pre class="mt-1 max-h-64 overflow-auto rounded bg-gray-50 p-2 text-xs text-gray-700"><%= step["stdout"] %></pre>
+              </details>
+            <% end %>
+            <% if step["stderr"].present? %>
+              <details class="mt-1">
+                <summary class="cursor-pointer text-xs font-medium text-gray-600">stderr</summary>
+                <pre class="mt-1 max-h-64 overflow-auto rounded bg-gray-50 p-2 text-xs text-gray-700"><%= step["stderr"] %></pre>
+              </details>
+            <% end %>
+            <% if step["error_message"].present? %>
+              <p class="mt-1 text-xs text-red-700"><%= step["error_class"] %>: <%= step["error_message"] %></p>
+            <% end %>
+          </li>
+        <% end %>
+      </ul>
+    <% else %>
+      <p class="text-sm text-gray-600">No steps recorded yet.</p>
+    <% end %>
+  </div>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <%= link_to "Back to Inbox", inbox_path, data: { turbo_frame: "_top" },
+          class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    <% if validation.issue %>
+      <%= link_to "View prerequisite issue", validation.issue.github_url, target: "_blank", rel: "noopener noreferrer",
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    <% end %>
+    <% if policy(@project).run_agent? && validation.active? %>
+      <%= button_to "Cancel validation", cancel_project_prerequisite_validation_path(@project, validation),
+            params: { return_to: project_prerequisite_validation_path(@project, validation) },
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-red-700 ring-1 ring-inset ring-red-300 hover:bg-red-50",
+            data: { turbo_confirm: "Cancel this validation attempt? Evidence collected so far is preserved." } %>
+    <% elsif policy(@project).run_agent? && validation.terminal? %>
+      <%= button_to "Revalidate", retry_project_prerequisite_validation_path(@project, validation),
+            params: { return_to: project_prerequisite_validation_path(@project, validation) },
+            class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
+    <% end %>
+  </div>
+
+  <p class="text-xs text-gray-500">
+    Evidence collected here is attached to the prerequisite only. It never closes, comments on, or re-labels the GitHub issue —
+    missing execution evidence keeps the owner open for canonical assessment.
+  </p>
+</div>

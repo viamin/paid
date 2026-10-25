@@ -1,0 +1,144 @@
+<%# Capability-aware prerequisite evidence collection, surfaced from the
+    prerequisite Inbox item: capability report, exact authorized setup
+    actions for every missing requirement, and the bounded validation
+    action per linked prerequisite issue.
+    @spec PREREQ-EXEC-015 @spec PREREQ-EXEC-017 %>
+<% project = local_assigns[:project] %>
+<% parent_issue = local_assigns[:issue] %>
+<% prerequisites = Array(local_assigns[:prerequisites]) %>
+<% capability_report = PrerequisiteExecutions::Capabilities.call(project: project) %>
+<% tool_entries = project.account.marketplace_entries.active.with_entry_type("tool").where.not(current_version_id: nil).ordered.to_a %>
+<% latest_validations = PrerequisiteExecutionValidation.where(issue_id: prerequisites.map(&:id))
+      .newest_first.index_by(&:issue_id) %>
+<div class="space-y-3 rounded-xl border border-gray-200 bg-white p-4" data-prerequisite-execution-validation>
+  <h3 class="text-sm font-semibold text-gray-900">Execution-evidence validation</h3>
+  <p class="text-sm text-gray-600">
+    Collect technical prerequisite evidence (pinned run, native analyzer, allowlisted tool-sidecar interaction)
+    through Paid's isolated execution infrastructure — not the agent workspace that reported it unavailable.
+  </p>
+
+  <div class="space-y-1 rounded-lg bg-gray-50 p-3 text-sm">
+    <p class="text-gray-700">
+      Execution environment:
+      <span class="font-medium <%= capability_report.environment_available? ? "text-green-700" : "text-red-700" %>">
+        <%= capability_report.environment_available? ? "available" : "unavailable" %>
+      </span>
+      · hosts: <%= capability_report.compatible_host_identifiers.join(", ").presence || "no placement-ready backend" %>
+    </p>
+    <p class="text-gray-700">
+      Tool sidecars:
+      <span class="font-medium <%= capability_report.tool_flag_enabled ? "text-green-700" : "text-amber-700" %>">
+        <%= capability_report.tool_flag_enabled ? "enabled" : "flag off" %></span>
+    </p>
+    <% capability_report.missing.each do |requirement| %>
+      <p class="text-xs text-amber-800">
+        <%= requirement.message %> Authorized action — <%= requirement.authorized_action %>
+      </p>
+    <% end %>
+    <% if tool_entries.any? && !capability_report.tool_flag_enabled %>
+      <p class="text-xs text-amber-800">
+        Sidecar evidence additionally requires the marketplace_tool_sidecars flag. Authorized action —
+        <%= PrerequisiteExecutions::Capabilities::TOOL_FLAG_ENABLE_ACTION %>
+      </p>
+    <% end %>
+  </div>
+
+  <% if prerequisites.any? %>
+    <% prerequisites.each do |prerequisite| %>
+      <% latest = latest_validations[prerequisite.id] %>
+      <div class="space-y-2 rounded-lg border border-gray-200 p-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="text-sm font-medium text-gray-900">
+            Prerequisite #<%= prerequisite.github_number %>
+            <%= link_to "view", prerequisite.github_url, target: "_blank", rel: "noopener noreferrer",
+                  class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+          </p>
+          <% if latest %>
+            <span class="flex items-center gap-2 text-xs text-gray-600">
+              <span class="rounded-full px-2 py-0.5 font-medium <%= latest.succeeded? ? "bg-green-100 text-green-800" : (latest.active? ? "bg-blue-100 text-blue-800" : "bg-gray-100 text-gray-800") %>">
+                <%= latest.status %><%= " · stale" if latest.stale? %>
+              </span>
+              <%= link_to "evidence", project_prerequisite_validation_path(project, latest),
+                    data: { turbo_frame: "_top" },
+                    class: "font-medium text-indigo-600 hover:text-indigo-900" %>
+            </span>
+          <% end %>
+        </div>
+
+        <% if latest&.active? %>
+          <% if policy(project).run_agent? %>
+            <%= button_to "Cancel validation", cancel_project_prerequisite_validation_path(project, latest),
+                  params: { return_to: inbox_path },
+                  class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-red-700 ring-1 ring-inset ring-red-300 hover:bg-red-50" %>
+          <% end %>
+        <% else %>
+          <% if latest&.unavailable? && latest.missing_requirements.any? %>
+            <ul class="space-y-1">
+              <% latest.missing_requirements.each do |requirement| %>
+                <li class="text-xs text-amber-800">
+                  <%= requirement["message"] %> Authorized action — <%= requirement["authorized_action"] %>
+                </li>
+              <% end %>
+            </ul>
+          <% end %>
+          <% if policy(project).run_agent? %>
+            <%= form_with url: project_prerequisite_validations_path(project),
+                  data: { turbo_frame: "_top" },
+                  class: "flex flex-col gap-2" do |form| %>
+              <%= form.hidden_field :issue_id, value: prerequisite.id %>
+              <%= form.hidden_field :return_to, value: inbox_path %>
+              <div class="grid gap-2 sm:grid-cols-[1fr_10rem]">
+                <div class="flex flex-col gap-1">
+                  <%= form.label :native_command, "Native analyzer command", for: "prereq_native_command_#{prerequisite.id}", class: "text-xs font-medium text-gray-700" %>
+                  <%= form.text_field :native_command,
+                        id: "prereq_native_command_#{prerequisite.id}",
+                        required: true,
+                        placeholder: "e.g. rubocop --format json app/services",
+                        class: "min-w-0 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
+                </div>
+                <div class="flex flex-col gap-1">
+                  <%= form.label :branch, "Pinned branch", for: "prereq_branch_#{prerequisite.id}", class: "text-xs font-medium text-gray-700" %>
+                  <%= form.text_field :branch,
+                        id: "prereq_branch_#{prerequisite.id}",
+                        value: project.default_branch,
+                        required: true,
+                        class: "min-w-0 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
+                </div>
+              </div>
+              <% if tool_entries.any? %>
+                <div class="flex flex-col gap-1">
+                  <%= form.label :marketplace_entry_id, "Tool sidecar (optional)", for: "prereq_tool_#{prerequisite.id}", class: "text-xs font-medium text-gray-700" %>
+                  <%= form.select :marketplace_entry_id,
+                        options_for_select(tool_entries.map { |entry| [ entry.name, entry.id ] }, nil),
+                        { include_blank: "No tool sidecar" },
+                        id: "prereq_tool_#{prerequisite.id}",
+                        class: "rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
+                </div>
+              <% end %>
+              <div class="flex items-center gap-3">
+                <%= form.submit "Collect execution evidence",
+                      class: "inline-flex self-start items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500",
+                      data: { turbo_confirm: "Run the bounded evidence validation in an isolated Paid execution environment?" } %>
+                <% if latest&.terminal? %>
+                  <%= button_to "Revalidate", retry_project_prerequisite_validation_path(project, latest),
+                        params: { return_to: inbox_path },
+                        form: { class: "inline-flex" },
+                        class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+                <% end %>
+              </div>
+            <% end %>
+          <% end %>
+        <% end %>
+      </div>
+    <% end %>
+  <% else %>
+    <p class="text-sm text-gray-600">
+      No linked open prerequisite issues. Link one above to offer evidence collection for it.
+    </p>
+  <% end %>
+
+  <p class="text-xs text-gray-500">
+    Runs only in the normal isolated execution environment — no host shell access, no Docker-socket mount,
+    standard image allowlists and hardening. Evidence never closes the prerequisite issue by itself.
+  </p>
+</div>

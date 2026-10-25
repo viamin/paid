@@ -298,9 +298,14 @@ class TenantSetting < ApplicationRecord
     effective_agent_settings["marketplace_auto_attach_required"] == true
   end
 
+  # Goals that only Paid itself creates through their owning operator
+  # surfaces — they are valid AgentRun goals but must never become a
+  # tenant-wide default goal for queued work.
+  OPERATIONAL_GOALS = %w[prerequisite_validation].freeze
+
   def default_goal
     goal = effective_agent_settings["default_goal"].presence
-    return goal if AgentRun::GOALS.include?(goal)
+    return goal if goal && AgentRun::GOALS.include?(goal) && OPERATIONAL_GOALS.exclude?(goal)
 
     DEFAULT_AGENT_SETTINGS.fetch("default_goal")
   end

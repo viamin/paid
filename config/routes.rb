@@ -328,6 +328,13 @@ Rails.application.routes.draw do
     end
     resources :pre_commit_requirements, only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/pre_commit_requirements"
+    # Capability-aware prerequisite-evidence validation (PREREQ-EXEC).
+    resources :prerequisite_validations, only: [ :create, :show ],
+      controller: "projects/prerequisite_validations" do
+      get :capabilities, on: :collection
+      post :cancel, on: :member
+      post :retry, on: :member
+    end
     resources :egress_allowlist_entries,
       only: [ :index, :show, :create, :update, :destroy ],
       controller: "projects/egress_allowlist_entries"

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_25_000448) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3213,6 +3213,34 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
     t.check_constraint "NOT (project_id IS NOT NULL AND user_id IS NOT NULL)", name: "chk_pre_commit_requirements_exclusive_scope"
   end
 
+  create_table "prerequisite_execution_validations", force: :cascade do |t|
+    t.bigint "agent_run_id"
+    t.string "branch", null: false
+    t.jsonb "capability_snapshot", default: {}, null: false
+    t.jsonb "contract", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.jsonb "evidence", default: {}, null: false
+    t.datetime "finished_at"
+    t.bigint "initiated_by_id"
+    t.bigint "issue_id"
+    t.text "last_error"
+    t.bigint "project_id", null: false
+    t.string "scope_digest", null: false
+    t.boolean "stale", default: false, null: false
+    t.datetime "started_at"
+    t.string "status", default: "pending", null: false
+    t.jsonb "steps", default: [], null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_prerequisite_execution_validations_on_agent_run_id"
+    t.index ["initiated_by_id"], name: "index_prerequisite_execution_validations_on_initiated_by_id"
+    t.index ["issue_id", "created_at"], name: "index_prereq_validations_on_issue_created"
+    t.index ["issue_id"], name: "index_prereq_validations_one_active_per_issue", unique: true, where: "((status)::text = ANY ((ARRAY['pending'::character varying, 'preparing'::character varying, 'running'::character varying])::text[]))"
+    t.index ["issue_id"], name: "index_prerequisite_execution_validations_on_issue_id"
+    t.index ["project_id", "created_at"], name: "index_prereq_validations_on_project_created"
+    t.index ["project_id"], name: "index_prerequisite_execution_validations_on_project_id"
+    t.index ["scope_digest"], name: "index_prereq_validations_on_scope_digest"
+  end
+
   create_table "preview_provision_states", comment: "Shared baseline snapshots for overlapping preview/screenshot provisioning on the same agent run.", force: :cascade do |t|
     t.integer "active_count", default: 0, null: false, comment: "Number of in-flight preview provisions currently sharing this baseline snapshot."
     t.bigint "agent_run_id", null: false
@@ -4775,6 +4803,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
   add_foreign_key "pre_commit_requirements", "accounts", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "projects", on_delete: :cascade
   add_foreign_key "pre_commit_requirements", "users", on_delete: :cascade
+  add_foreign_key "prerequisite_execution_validations", "agent_runs"
+  add_foreign_key "prerequisite_execution_validations", "issues"
+  add_foreign_key "prerequisite_execution_validations", "projects"
+  add_foreign_key "prerequisite_execution_validations", "users", column: "initiated_by_id"
   add_foreign_key "preview_provision_states", "agent_runs", on_delete: :cascade
   add_foreign_key "preview_sessions", "accounts", on_delete: :cascade
   add_foreign_key "preview_sessions", "agent_runs"

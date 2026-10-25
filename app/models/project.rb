@@ -340,6 +340,8 @@ class Project < ApplicationRecord
   has_many :project_mcp_servers, dependent: :destroy
   has_many :mcp_server_definitions, through: :project_mcp_servers
   has_many :pre_commit_requirements, dependent: :destroy
+  # Capability-aware prerequisite-evidence validation attempts (PREREQ-EXEC).
+  has_many :prerequisite_execution_validations, dependent: :destroy
   has_many :quality_gate_events, dependent: :destroy
   has_many :quality_thresholds, dependent: :destroy
   has_many :pr_templates, dependent: :destroy

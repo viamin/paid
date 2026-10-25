@@ -544,7 +544,8 @@ module ApplicationHelper
     "analyze_issue" => "Issue Analysis",
     "lid_planning" => "LID Planning",
     "create_feature" => "Feature Creation",
-    "bootstrap_readiness" => "Bootstrap Readiness"
+    "bootstrap_readiness" => "Bootstrap Readiness",
+    "prerequisite_validation" => "Prerequisite Validation"
   }.freeze
 
   AGENT_RUN_FOCUS_LABELS = {

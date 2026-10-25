@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-24
+last_updated: 2026-10-25
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -746,6 +746,15 @@ arrows:
     audited: 2026-10-20
     sampled: 2026-10-20
     next: "Run the RDR-073 epic final acceptance audit (#4263); rule-scoping predicates and their EARS evidence are complete."
+  prerequisite-evidence-execution:
+    title: Prerequisite Evidence Execution
+    path: docs/intent/prerequisite-evidence-execution/prerequisite-evidence-execution-design.md
+    specs: docs/intent/prerequisite-evidence-execution/prerequisite-evidence-execution-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-10-25
+    next: "Capability-aware Inbox action shipped (#4643). The live #4604 artifacts still require a Docker-capable execution host: use the Inbox action there, or resolve its listed setup actions first."
   layered-verification:
     title: Layered Verification of Business Intent and Implementation
     path: docs/intent/layered-verification/layered-verification-design.md
