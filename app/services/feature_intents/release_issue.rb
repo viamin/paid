@@ -25,11 +25,12 @@ module FeatureIntents
       return Result.new(released: true, reason: nil) if confidence_links.empty?
       return hold_for_dependencies unless issue.ready_to_work?
       return reconcile_planning_task if links.empty? && planning_task_link?
-      return hold_for_unknown_planning_label if unknown_planning_label?
+      return hold_for_unknown_planning_label if links.empty? && unknown_planning_label?
       return reconcile_released_projection if links.empty?
 
       readiness_by_link = links.to_h { |link| [ link, assess(link) ] }
       return hold(readiness_by_link) if readiness_by_link.any? { |_link, readiness| !readiness.ready? }
+      return hold_for_unknown_planning_label if unknown_planning_label?
 
       snapshots = readiness_by_link.to_h { |link, readiness| [ link, snapshot_for(link, readiness) ] }
       links.each { |link| mark_pending(link, snapshots[link]) }

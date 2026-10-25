@@ -130,7 +130,7 @@ RSpec.describe FeatureIntents::ReleaseIssue do
     expect(issue.reload.labels).to contain_exactly("human-hold")
   end
 
-  it "keeps the issue held when any design the issue serves is not ready" do
+  it "records readiness blockers before reconciling a legacy shared planning label" do # @spec CONFIDENCE-DELIVERY-003, CONFIDENCE-DELIVERY-017
     second_feature = create(:feature_intent, :confidence_driven, project: project)
     second_link = create(:feature_intent_issue, feature_intent: second_feature, issue: issue, readiness_mapping: {})
 
