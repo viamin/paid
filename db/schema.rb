@@ -1903,6 +1903,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
     t.integer "evidence_revision", null: false
     t.text "explanation", default: "", null: false
     t.bigint "feature_intent_facet_direction_id", null: false
+    t.text "inferred_fit"
     t.integer "intent_score"
     t.string "model_version", null: false
     t.string "rubric_version", null: false

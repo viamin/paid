@@ -15,6 +15,21 @@ approved-intent segments. Policy selection is explicit, not inferred from
 which score or approval happens to pass. Enrollment is disabled until the
 admission, review and completion integrations are complete.
 
+`FeatureIntents::DeliveryIntegration` is the final P12 enablement guard. It
+requires the default-off `confidence_driven_delivery` feature flag, the
+P10 release/admission, P11 conformance, and P12 completion entry points to be
+wired, and the project's policy-specific conformance review to be enforced —
+the complete `approved_intent_amendments` plus `intent_conformance_enforcement`
+pair, the same gate `IntentConformance::ScheduleReview` and
+`IntentConformance::ReviewRun` apply before any review runs. Wiring checks
+alone (a loaded class such as the approval-gated merge signal, which is a
+deliberate no-op for confidence-driven features) never satisfy this
+prerequisite, and shadow review is read-only and never changes execution
+eligibility. Only then may an authorized project enable enrollment. The
+project setting remains the auditable per-project choice; disabling it or the
+rollout flag preserves existing snapshots, held work, evidence, and active
+runs.
+
 P01 implements this boundary with `projects.new_feature_delivery_policy`,
 `projects.confidence_delivery_enrollment_enabled`, and immutable
 `feature_intents.delivery_policy`. Both project fields default to the existing
@@ -109,6 +124,15 @@ eligibility. Reconciliation never enables rollout or activation; it returns
 work only to canonical queue admission. Task kind is immutable for the
 marker-identified publication, so a retry with a conflicting kind is rejected
 rather than changing its admission semantics.
+
+Confidence-driven PRs receive an independent conformance review against that
+issue link's immutable release snapshot: its merged baseline, mapped design
+documents, and admitted scope. Detected drift is recorded as tracked forward
+work under the confidence-driven policy. Review scheduling does not require a
+feature-wide approval or approved-design revision, and later evidence alone
+does not impose an approval-gated amendment pause or merge block. Ordinary CI,
+security, quality, current-head, authorization, and merge checks remain
+independent requirements.
 
 Serialize the transition between an unstarted scope edit and run admission.
 Admission either receives the revised ready scope or the already-started run

@@ -24,7 +24,7 @@ module IntentConformance
     attr_reader :project, :issue, :pr_head_sha
 
     def applicable?
-      issue.is_pull_request? && feature_intent&.released? && feature_intent.approved_design_revision.present? &&
+      issue.is_pull_request? && baseline_revision.present? &&
         pr_head_sha.present? && rollout_enabled?
     end
 
@@ -32,32 +32,26 @@ module IntentConformance
     # enforcement reviews require the complete enforcement pair; the amendment
     # flag alone must not silently start reviews.
     def rollout_enabled?
-      FeatureFlags.enabled?(:intent_conformance_shadow_review, project: project) ||
-        enforcement_enabled?
-    end
-
-    def enforcement_enabled?
-      FeatureFlags.enabled?(:approved_intent_amendments, project: project) &&
-        FeatureFlags.enabled?(:intent_conformance_enforcement, project: project)
+      IntentConformance::Rollout.shadow_or_enforcement_enabled?(project)
     end
 
     def feature_intent = @feature_intent ||= issue.feature_intent
 
     def current_verdict?
       IntentConformanceVerdict.current_for(issue: issue, head_sha: pr_head_sha)&.current_for?(
-        pr_head_sha: pr_head_sha, approved_design_revision: feature_intent.approved_design_revision
+        pr_head_sha: pr_head_sha, approved_design_revision: baseline_revision
       )
     end
 
     def existing_schedule
-      IntentConformanceReviewSchedule.find_by(issue:, pr_head_sha:, approved_design_revision: feature_intent.approved_design_revision)
+      IntentConformanceReviewSchedule.find_by(issue:, pr_head_sha:, approved_design_revision: baseline_revision)
     end
 
     def schedule_new_review
       return cap_reached if pending_cap_reached?
 
       enqueue(IntentConformanceReviewSchedule.create!(
-        project:, issue:, pr_head_sha:, approved_design_revision: feature_intent.approved_design_revision, enqueued_at: Time.current
+        project:, issue:, pr_head_sha:, approved_design_revision: baseline_revision, enqueued_at: Time.current
       ))
     end
 
@@ -85,15 +79,29 @@ module IntentConformance
 
     def cap_reached
       Rails.logger.warn(message: "intent_conformance.review_schedule_capped", project_id: project.id, issue_id: issue.id, pr_head_sha:,
-        approved_design_revision: feature_intent.approved_design_revision)
+        approved_design_revision: baseline_revision)
       nil
     end
 
     def enqueue(schedule)
       IntentConformance::ReviewJob.perform_later(project.id, schedule.id)
       Rails.logger.info(message: "intent_conformance.review_scheduled", project_id: project.id, issue_id: issue.id, pr_head_sha:,
-        approved_design_revision: feature_intent.approved_design_revision, schedule_id: schedule.id)
+        approved_design_revision: baseline_revision, schedule_id: schedule.id)
       schedule
+    end
+
+    # @spec CONFIDENCE-DELIVERY-010
+    def baseline_revision
+      return confidence_link.released_baseline_revision if confidence_link&.release_state == "released"
+      return if confidence_link
+
+      feature_intent.approved_design_revision if feature_intent&.approval_gated? && feature_intent.released?
+    end
+
+    def confidence_link
+      @confidence_link ||= FeatureIntentIssue.joins(:feature_intent)
+        .where(issue_id: issue.id, feature_intents: { delivery_policy: "confidence_driven" })
+        .order(:id).first
     end
   end
 end

@@ -75,7 +75,7 @@ module FeatureIntents
       return reconcile_changed_scope(link) unless link.release_snapshot["scope_revision"] == readiness.snapshot["scope_revision"]
 
       allowed(
-        link.release_snapshot["merged_baseline"] || readiness.snapshot.dig("design_artifacts", 0, "revision"),
+        link.released_baseline_revision,
         snapshot: link.release_snapshot
       )
     end
