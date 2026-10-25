@@ -97,6 +97,15 @@ arrows:
     status: OK
     audited: 2026-10-23
     next: "Extend normalized pipeline-event ingestion when a CI provider exposes more detailed timing data."
+  queue-diagnosis:
+    title: Queue Diagnosis
+    path: docs/intent/queue-diagnosis/queue-diagnosis-design.md
+    specs: docs/intent/queue-diagnosis/queue-diagnosis-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-10-25
+    next: "Keep recovery bounded through the existing admission and closeout-reconciliation services."
   agent-instruction-navigation:
     title: Agent Instruction Navigation
     path: docs/intent/agent-instruction-navigation/agent-instruction-navigation-design.md

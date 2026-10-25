@@ -36,6 +36,7 @@
       </div>
     </div>
   <% else %>
+    <% diagnoses = Array(local_assigns[:queue_diagnosis]) %>
     <% paused_autopick = Array(local_assigns[:paused_projects]).count(&:auto_pick_enabled?) %>
     <% if paused_autopick.positive? %>
       <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
@@ -49,6 +50,39 @@
       </div>
     <% else %>
       <p class="mt-4 text-sm text-gray-500">No queued runs for your projects.</p>
+    <% end %>
+    <% diagnoses.each do |diagnosis| %>
+      <div class="mt-3 rounded-md bg-slate-50 p-3 text-sm text-slate-700">
+        <% if diagnosis.state == :unknown %>
+          <p>Queue diagnosis is unavailable. Refresh to retry; unavailable data is not treated as an empty backlog.</p>
+        <% else %>
+          <p>
+            <strong><%= diagnosis.project.full_name %>:</strong>
+            <%= diagnosis.state.to_s.humanize %>
+            (<%= pluralize(diagnosis.eligible_count, "eligible candidate") %>,
+            <%= pluralize(diagnosis.queued_count, "queued run") %>,
+            <%= pluralize(diagnosis.active_count, "active run") %>).
+            <% case diagnosis.next_action %>
+            <% when :wait_for_eligibility_sweep %>
+              The bounded eligibility sweep will seed admitted work; normal policy is preserved.
+            <% when :open_inbox %>
+              <%= link_to "Review the actionable Inbox", inbox_path(project_id: diagnosis.project.id), class: "font-medium underline", data: { turbo_frame: "_top" } %>.
+            <% when :resume_project %>
+              This project is deliberately paused; resume it only when ready.
+            <% when :review_automation_policy %>
+              Review its automation policy and authorization.
+            <% end %>
+          </p>
+          <% if diagnosis.items.any? %>
+            <ul class="mt-2 list-disc pl-5 text-xs">
+              <% diagnosis.items.each do |item| %>
+                <li><%= link_to "##{item.issue.github_number} #{item.issue.title}", project_issue_path(diagnosis.project, item.issue), data: { turbo_frame: "_top" }, class: "underline" %> — <%= item.kind.to_s.humanize %></li>
+              <% end %>
+            </ul>
+          <% end %>
+        <% end %>
+        <p class="mt-1 text-xs text-slate-500">Assessed <%= time_ago_in_words(diagnosis.assessed_at) %> ago.</p>
+      </div>
     <% end %>
   <% end %>
 </div>
