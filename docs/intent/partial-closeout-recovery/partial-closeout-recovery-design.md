@@ -177,6 +177,24 @@ recording completion, so a continuation cannot dispatch after the attestation.
   work reuses the existing `create_issue` tool (dependency wording is parsed
   by the existing sync parser).
 
+### Technical prerequisite validation
+
+An authorized recovery action may prepare and execute a bounded technical
+validation on a fresh, pinned `AgentRun`. It queries the existing backend
+scheduler for compatible isolated hosts rather than treating a missing Docker
+socket in the operator's local workspace as host unavailability. The action
+records the selected image, checkout, analyzer identity, stdout, stderr, exit
+status, tool endpoint response, terminal state, and cleanup outcome in the
+run's durable verification result.
+
+Native analyzers execute only through
+`AgentRun#execute_in_execution_environment`. Tool-sidecar requests execute
+from that same isolated run and only against the endpoint provisioned from its
+existing allowlisted attachment. A disabled `marketplace_tool_sidecars` flag,
+missing compatible backend, or absent endpoint produces an unavailable result
+with the required setup or authorization action; it never enables a flag,
+mounts a Docker socket, or retries an unchanged capability failure.
+
 ### Legacy reconciliation: `PartialCloseouts::ReconcileLegacy`
 
 The `partial-closeout-reconciliation-v1` Temporal patch only intercepts new

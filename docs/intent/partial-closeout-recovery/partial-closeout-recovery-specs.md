@@ -4,6 +4,21 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When an authorized technical prerequisite
+  validation is prepared from recovery work, the system SHALL select a
+  compatible isolated execution backend through the existing scheduler and
+  SHALL record the pinned image and checkout, authorized analyzer identity,
+  stdout, stderr, exit status, selected tool endpoint response, terminal
+  outcome, and cleanup evidence on the `AgentRun`. Native commands and
+  sidecar requests SHALL run only through
+  `AgentRun#execute_in_execution_environment`; no control-plane shell or
+  Docker socket is exposed. A missing backend, disabled tool-sidecar rollout,
+  absent attachment endpoint, cancellation, or execution failure SHALL remain
+  visibly unavailable, partial, or failed and SHALL not silently enable policy
+  or repeat unchanged capability failures.
+  *Code:* `app/services/prerequisite_validations/execute.rb`.
+  *Test:* `spec/services/prerequisite_validations/execute_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its
