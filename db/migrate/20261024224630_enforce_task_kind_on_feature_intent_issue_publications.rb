@@ -16,8 +16,6 @@ class EnforceTaskKindOnFeatureIntentIssuePublications < ActiveRecord::Migration[
   end
 
   def down
-    add_check_constraint :feature_intent_issue_publications, "task_kind IS NOT NULL",
-      name: TASK_KIND_PRESENT_CONSTRAINT, validate: false
     change_column_null :feature_intent_issue_publications, :task_kind, true
   end
 end

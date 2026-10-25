@@ -248,6 +248,44 @@ RSpec.describe FeatureIntents::ReleaseIssue do
     expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
   end
 
+  it "releases a legacy Paid hold identified by its implementation publication receipt" do # @spec CONFIDENCE-DELIVERY-017
+    link.update!(readiness_mapping: mapping.except("planning_hold"))
+    FeatureIntentIssuePublication.create!(
+      feature_intent: feature,
+      task_digest: "legacy-hold",
+      task_kind: "implementation",
+      remote_issue_id: 1,
+      remote_issue_number: issue.github_number
+    )
+
+    result = described_class.call(issue: issue)
+
+    expect(result).to be_released
+    expect(project.client).to have_received(:remove_label_from_issue).with(project.full_name, issue.github_number, "planning")
+    expect(link.reload).to have_attributes(release_state: "released", release_error: nil)
+    expect(issue.reload.labels).to contain_exactly("human-hold")
+  end
+
+  it "retains a legacy hold when its feature receipt belongs to another issue" do # @spec CONFIDENCE-DELIVERY-017
+    link.update!(readiness_mapping: mapping.except("planning_hold"))
+    other_issue = create(:issue, project: project)
+    FeatureIntentIssuePublication.create!(
+      feature_intent: feature,
+      task_digest: "other-issue",
+      task_kind: "implementation",
+      remote_issue_id: 2,
+      remote_issue_number: other_issue.github_number
+    )
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(result.reason).to include("ownership")
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(link.reload).to have_attributes(release_state: "held")
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
   it "reconciles an unlabelled planning task to the released candidate state" do # @spec CONFIDENCE-DELIVERY-017
     planning_issue = create(:issue, project: project, labels: [])
     planning_link = create(:feature_intent_issue,

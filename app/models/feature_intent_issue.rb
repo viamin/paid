@@ -42,12 +42,16 @@ class FeatureIntentIssue < ApplicationRecord
   end
 
   # A generic GitHub label has no inherent ownership. Only the durable receipt
-  # written by PublishHeldIssue authorizes ReleaseIssue to remove it.
+  # written by PublishHeldIssue authorizes ReleaseIssue to remove it. Receipts
+  # predate the planning-hold JSON contract, so a matching implementation
+  # publication also establishes ownership for an already-published link.
   # @spec CONFIDENCE-DELIVERY-017
   def workflow_owned_planning_hold?
-    planning_hold.fetch("owner", nil) == PAID_HOLD_OWNER &&
+    return true if planning_hold.fetch("owner", nil) == PAID_HOLD_OWNER &&
       planning_hold.fetch("task_kind", nil) == "implementation" &&
       planning_hold.fetch("operator_override", false) != true
+
+    receipted_implementation_hold?
   end
 
   # The design revision a released link pins runs and reviews against.
@@ -68,5 +72,11 @@ class FeatureIntentIssue < ApplicationRecord
 
   def planning_hold
     readiness_mapping.fetch("planning_hold", {}).to_h.deep_stringify_keys
+  end
+
+  def receipted_implementation_hold?
+    feature_intent.issue_publications.any? do |publication|
+      publication.remote_issue_number == issue.github_number && publication.task_kind == "implementation"
+    end
   end
 end

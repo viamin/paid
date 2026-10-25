@@ -114,9 +114,11 @@ planning-hold contract: affected scope, concrete reason, Paid ownership,
 release condition, scope/evidence revision, publication provenance, task kind,
 and an explicit operator-override field. This extends the task's existing
 readiness record rather than creating a second admission store. A
-Paid-owned `implementation` hold may be reconciled after scoped readiness;
-an unknown legacy `planning` label remains visible for operator reconciliation
-and is never blanket-removed. A `planning` task that prepares the design or
+Paid-owned `implementation` hold may be reconciled after scoped readiness; a
+pre-contract publication receipt matching the feature and issue identity is
+ownership evidence for its legacy implementation hold. An unknown legacy
+`planning` label remains visible for operator reconciliation and is never
+blanket-removed. A `planning` task that prepares the design or
 approval evidence is not subject to the implementation approval gate. Its link
 is reconciled to the released candidate state without a scoped-readiness
 snapshot, while independent labels and dependencies still control its

@@ -16,7 +16,7 @@ class AddTaskKindToFeatureIntentIssuePublications < ActiveRecord::Migration[8.1]
   end
 
   def down
-    remove_check_constraint :feature_intent_issue_publications, name: TASK_KIND_PRESENT_CONSTRAINT
+    remove_check_constraint :feature_intent_issue_publications, name: TASK_KIND_PRESENT_CONSTRAINT, if_exists: true
     remove_column :feature_intent_issue_publications, :task_kind
   end
 end

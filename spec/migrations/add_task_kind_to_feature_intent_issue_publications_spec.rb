@@ -43,6 +43,22 @@ RSpec.describe AddTaskKindToFeatureIntentIssuePublications, :aggregate_failures 
     expect(task_kind_column.null).to be(false)
   end
 
+  it "restores nullable legacy receipts when only the enforcement migration rolls back" do # @spec CONFIDENCE-DELIVERY-017
+    migration.migrate(:up)
+    receipt_class.reset_column_information
+    enforcement_migration.migrate(:up)
+    enforcement_migration.migrate(:down)
+    receipt_class.reset_column_information
+
+    receipt = receipt_class.create!(feature_intent_id: feature_intent.id, task_digest: "rollback-legacy")
+
+    expect(task_kind_column.null).to be(true)
+    expect(connection.check_constraints(:feature_intent_issue_publications).map(&:name))
+      .not_to include(EnforceTaskKindOnFeatureIntentIssuePublications::TASK_KIND_PRESENT_CONSTRAINT)
+  ensure
+    receipt&.destroy!
+  end
+
   private
 
   def task_kind_column

@@ -49,7 +49,7 @@ module FeatureIntents
     # not unique); each confidence-driven link owns a distinct readiness
     # mapping.
     def confidence_links
-      @confidence_links ||= FeatureIntentIssue.includes(:feature_intent, :prerequisite_mapping)
+      @confidence_links ||= FeatureIntentIssue.includes({ feature_intent: :issue_publications }, :prerequisite_mapping)
         .where(issue_id: issue.id)
         .order(:id)
         .select { |link| link.feature_intent.confidence_driven? }
