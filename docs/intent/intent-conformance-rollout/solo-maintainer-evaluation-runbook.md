@@ -70,19 +70,31 @@ The explicit **Finish labeling** action refuses while any case is unlabeled
 or skipped. Freezing stamps the reference labels; from that point answers
 become visible and execution is allowed.
 
-## 5. Execute the real reviewer (documented command)
+## 5. Execute the real reviewer (queued, cancellable)
 
-After freeze, run the actual conformance reviewer for every case through
+After freeze, queue the actual conformance reviewer for every case through
 `agent_harness` with either the UI action or the documented command:
 
 ```bash
 bin/rails "intent_conformance:shadow_evaluation:execute[<evaluation-id>]"
 ```
 
-The command records actual verdicts, reviewer model, prompt digest, cost,
+Both paths authorize and enqueue the same idempotent background job; the
+request or command returns immediately. The evaluation screen (and the
+originating Inbox item) shows durable execution state — queued, running,
+partial, failed, cancelled, or completed — with per-case progress and cost.
+The screen refreshes while execution is queued or running, and offers an
+authorized **Cancel** action that stops between cases, preserves every
+recorded run, and never fabricates unevaluated results.
+
+The job records actual verdicts, reviewer model, prompt digest, cost,
 and per-case failures. Missing or failed reviewer output is recorded as not
 evaluated — prerequisite validation alone is never presented as execution.
-Re-running the command retries cases that lack an evaluated verdict.
+Re-running the command (or the UI action) retries only cases that lack an
+evaluated verdict, so completed-case spend is never repeated. A killed
+worker or lost execution lock never strands an evaluation as executing: a
+bounded recovery sweep resumes or fails it, and the UI action can resume a
+stale execution directly.
 
 For the repository-visible JSONL ledger, the operator appends the recorded
 `shadow_run` events with the CLI `append` command after the run, one event

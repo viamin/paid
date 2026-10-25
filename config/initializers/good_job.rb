@@ -151,6 +151,12 @@ Rails.application.configure do
       queue: "maintenance",
       description: "Daily bounded reconciliation of legacy partial closeouts"
     },
+    shadow_evaluation_execution_recovery: {
+      cron: "8-59/15 * * * *",
+      class: "IntentConformance::ShadowEvaluation::RecoveryJob",
+      queue: "maintenance",
+      description: "Bounded recovery of stranded shadow-evaluation reviewer executions (killed worker or lost lock)"
+    },
     design_artifact_reconciliation_sweep: {
       cron: "0 6 * * *",
       class: "FeatureIntents::DesignArtifactReconciliationSweepJob",

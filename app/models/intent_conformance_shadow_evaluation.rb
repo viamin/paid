@@ -3,14 +3,16 @@
 # Solo-maintainer RDR-067 shadow evaluation session (#4594). One row per
 # evidence generation (project, purpose, frozen corpus manifest digest):
 # repeated Start/Resume clicks reuse the same evaluation. The labeling
-# lifecycle is labeling → frozen → executing → completed | failed; reference
-# labels and reviewer runs live on the association records and answers stay
-# hidden from the labeling surface until `labels_frozen_at` is set.
+# lifecycle is labeling → frozen → queued → executing →
+# completed | partial | failed | cancelled; reference labels and reviewer
+# runs live on the association records and answers stay hidden from the
+# labeling surface until `labels_frozen_at` is set.
 #
 # @spec INTENT-CONFORMANCE-ROLLOUT-005
 # @spec INTENT-CONFORMANCE-ROLLOUT-006
+# @spec INTENT-CONFORMANCE-ROLLOUT-011
 class IntentConformanceShadowEvaluation < ApplicationRecord
-  STATUSES = %w[labeling frozen executing completed failed].freeze
+  STATUSES = %w[labeling frozen queued executing completed partial failed cancelled].freeze
   POLICIES = IntentConformance::ShadowEvaluationPolicy::POLICIES
   OUTCOMES = IntentConformance::ShadowEvaluationPolicy::LABELS
 
@@ -27,14 +29,22 @@ class IntentConformanceShadowEvaluation < ApplicationRecord
   validates :manifest_path, presence: true
   validates :solo_maintainer, presence: true, if: -> { policy == "solo" }
   validates :purpose, presence: true
+  validates :execution_attempts, numericality: { greater_than_or_equal_to: 0, only_integer: true }
 
   scope :latest_first, -> { order(created_at: :desc, id: :desc) }
 
   def labeling? = status == "labeling"
-  def frozen? = %w[frozen executing completed failed].include?(status)
+  def frozen? = %w[frozen queued executing completed partial failed cancelled].include?(status)
+  def queued? = status == "queued"
   def executing? = status == "executing"
   def completed? = status == "completed"
+  def partial? = status == "partial"
   def failed? = status == "failed"
+  def cancelled? = status == "cancelled"
+
+  # An execution lifecycle state (queued or executing) — the states where a
+  # background job owns the evaluation and duplicate submissions must refuse.
+  def execution_pending? = queued? || executing?
 
   def answers_visible? = labels_frozen_at.present?
 
@@ -48,6 +58,21 @@ class IntentConformanceShadowEvaluation < ApplicationRecord
 
   def progress
     { total: corpus_case_ids.length, labeled: labels.where(state: "labeled").count, skipped: labels.where(state: "skipped").count }
+  end
+
+  # Durable per-case execution progress and spend (#4642): evaluated counts
+  # only real reviewer verdicts; a missing or failed output stays
+  # not_evaluated and is never presented as evaluated.
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  def execution_progress
+    recorded_runs = runs.to_a
+    evaluated = recorded_runs.count(&:evaluated?)
+    {
+      total: corpus_case_ids.length,
+      evaluated: evaluated,
+      not_evaluated: recorded_runs.count - evaluated,
+      cost_cents: recorded_runs.sum(&:cost_cents)
+    }
   end
 
   def corpus

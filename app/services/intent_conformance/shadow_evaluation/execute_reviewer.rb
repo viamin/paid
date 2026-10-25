@@ -9,12 +9,18 @@ module IntentConformance
     # or failed reviewer output is recorded as not_evaluated and never
     # counted as agreement. Re-running retries cases that lack an evaluated
     # verdict. Prerequisite validation alone is never presented as
-    # execution.
+    # execution. Runs from the background ExecuteJob (#4642): it honors a
+    # requested cancellation between cases (preserving collected evidence,
+    # never fabricating unevaluated results), records a per-case heartbeat
+    # for stranded-worker recovery, and reports a partial state when only
+    # some cases evaluated.
     # @spec INTENT-CONFORMANCE-ROLLOUT-006
     # @spec INTENT-CONFORMANCE-ROLLOUT-007
+    # @spec INTENT-CONFORMANCE-ROLLOUT-011
     class ExecuteReviewer
-      Result = Data.define(:success, :error, :evaluation, :executed, :failed) do
+      Result = Data.define(:success, :error, :evaluation, :executed, :failed, :cancelled) do
         def success? = success
+        def cancelled? = cancelled
       end
 
       MAX_DESIGN_DOCS = 10
@@ -33,6 +39,27 @@ module IntentConformance
 
       def self.call(...) = new(...).call
 
+      # A report identifies a specific reviewer configuration, so execution
+      # must neither substitute ReviewerLlm's default model nor run a prompt
+      # whose identity differs from the manifest's frozen provenance. Shared
+      # by the enqueue path so prerequisite identity failures are answered
+      # in the originating HTTP response (#4642).
+      def self.identity_error(evaluation)
+        identity = evaluation.corpus.reviewer_identity
+        if identity.fetch("model").blank?
+          "corpus manifest reviewer model is required"
+        elsif identity.fetch("prompt_version") != ReviewerLlm::PROMPT_VERSION
+          "corpus manifest reviewer prompt version is not executable"
+        elsif identity.fetch("prompt_sha256") != prompt_digest
+          "corpus manifest reviewer prompt digest does not match the executable prompt"
+        end
+      end
+
+      def self.prompt_digest
+        require "digest"
+        Digest::SHA256.hexdigest(ReviewerLlm::PROMPT)
+      end
+
       def initialize(evaluation:)
         @evaluation = evaluation
       end
@@ -41,7 +68,7 @@ module IntentConformance
         return failure("reviewer execution requires a frozen reference label set") unless @evaluation.answers_visible?
         return failure("corpus manifest changed since reference labels were frozen — start a new evaluation") unless @evaluation.corpus.matches_recorded_digest?
         return failure("no corpus cases to evaluate") if @evaluation.corpus.case_ids.empty?
-        identity_error = reviewer_identity_error
+        identity_error = self.class.identity_error(@evaluation)
         return failure(identity_error) if identity_error
 
         unless try_lock!
@@ -54,10 +81,13 @@ module IntentConformance
         end
 
         begin
+          return cancel! if cancellation_requested?
           execute_cases
         ensure
           unlock!
         end
+      rescue ShadowEvaluationCorpus::MissingManifest => error
+        failure(error.message)
       end
 
       private
@@ -85,15 +115,18 @@ module IntentConformance
       end
 
       def execute_cases
-        @evaluation.update!(status: "executing", execute_started_at: Time.current)
+        @evaluation.update!(status: "executing", execute_started_at: Time.current, execute_heartbeat_at: Time.current)
         executed = 0
         failed = 0
 
         @evaluation.corpus.cases.each do |corpus_case|
+          return cancel! if cancellation_requested?
+
           next if evaluated_run_for(corpus_case.fetch("id"))
 
           verdict, failure_reason, model, cost = review_case(corpus_case)
           upsert_run(corpus_case, verdict, failure_reason, model, cost)
+          heartbeat!
           verdict == NOT_EVALUATED ? failed += 1 : executed += 1
         end
 
@@ -101,6 +134,36 @@ module IntentConformance
       rescue ShadowEvaluationCorpus::MissingManifest => error
         @evaluation.update!(status: "failed", last_failure_reason: error.message)
         failure(error.message)
+      end
+
+      # Per-case heartbeat (#4642): a stale heartbeat with a free execution
+      # lock is the signal that a worker died mid-run, so recovery and
+      # re-enqueue can distinguish it from a merely slow provider call.
+      def heartbeat!
+        @evaluation.update_columns(execute_heartbeat_at: Time.current)
+      end
+
+      # Cooperative cancellation (#4642): an authorized CancelExecution sets
+      # the flag; the loop observes it at each case boundary and stops with
+      # the terminal cancelled state. Recorded runs are preserved exactly as
+      # executed and unvisited cases stay without a verdict — nothing is
+      # fabricated for them. Read through a dedicated query: reloading the
+      # in-memory evaluation would drop its association cache mid-loop.
+      def cancellation_requested?
+        IntentConformanceShadowEvaluation.where(id: @evaluation.id).pick(:cancel_requested_at).present?
+      end
+
+      def cancel!
+        @evaluation.update!(
+          status: "cancelled",
+          last_failure_reason: "execution cancelled by operator; collected reviewer evidence is preserved"
+        )
+        Rails.logger.info(
+          message: "intent_conformance.shadow_evaluation_execute_cancelled",
+          project_id: @evaluation.project_id,
+          shadow_evaluation_id: @evaluation.id
+        )
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed: 0, failed: 0, cancelled: true)
       end
 
       def evaluated_run_for(case_id)
@@ -126,15 +189,6 @@ module IntentConformance
         return [ NOT_EVALUATED, "reviewer_model_mismatch", result.model, result.cost_cents ] unless result.model == reviewer_model
 
         [ result.validated[:outcome], nil, result.model, result.cost_cents ]
-      end
-
-      # A report identifies a specific reviewer configuration, so execution
-      # must neither substitute ReviewerLlm's default model nor run a prompt
-      # whose identity differs from the manifest's frozen provenance.
-      def reviewer_identity_error
-        return "corpus manifest reviewer model is required" if reviewer_model.blank?
-        return "corpus manifest reviewer prompt version is not executable" unless reviewer_prompt_version == ReviewerLlm::PROMPT_VERSION
-        "corpus manifest reviewer prompt digest does not match the executable prompt" unless reviewer_prompt_digest == prompt_digest
       end
 
       def reviewer_identity
@@ -231,19 +285,26 @@ module IntentConformance
         )
       end
 
+      # Terminal state reflects ALL persisted evidence, not just this pass:
+      # completed means every corpus case holds an evaluated verdict; partial
+      # means at least one does (earlier or this pass) while others do not;
+      # failed means nothing evaluated. A retry after a partial pass never
+      # re-spends on completed cases, so the retained verdicts keep counting.
       def complete_or_fail(executed, failed)
-        if failed.zero?
+        unevaluated = @evaluation.corpus.case_ids.count { |case_id| evaluated_run_for(case_id).nil? }
+        if unevaluated.zero?
           @evaluation.update!(status: "completed", completed_at: Time.current, last_failure_reason: nil)
+        elsif @evaluation.runs.where.not(verdict: NOT_EVALUATED).exists?
+          @evaluation.update!(status: "partial", completed_at: nil, last_failure_reason: "#{unevaluated} case(s) ended without an evaluated reviewer verdict")
         else
-          @evaluation.update!(status: "failed", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
+          @evaluation.update!(status: "failed", completed_at: nil, last_failure_reason: "#{unevaluated} case(s) ended without an evaluated reviewer verdict")
         end
         log_executed(executed, failed)
-        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed, cancelled: false)
       end
 
       def prompt_digest
-        require "digest"
-        Digest::SHA256.hexdigest(ReviewerLlm::PROMPT)
+        self.class.prompt_digest
       end
 
       def project
@@ -298,7 +359,7 @@ module IntentConformance
       end
 
       def failure(message)
-        Result.new(success: false, error: message, evaluation: nil, executed: 0, failed: 0)
+        Result.new(success: false, error: message, evaluation: nil, executed: 0, failed: 0, cancelled: false)
       end
     end
   end

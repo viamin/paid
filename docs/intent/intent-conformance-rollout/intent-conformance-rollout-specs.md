@@ -76,19 +76,46 @@
   `spec/services/intent_conformance/shadow_evaluation/execute_reviewer_spec.rb`.
 
 - [ ] **INTENT-CONFORMANCE-ROLLOUT-007** — After reference labels are frozen,
-  a documented command or job SHALL execute the actual conformance reviewer
-  for every corpus case through `agent_harness` and record actual verdicts,
-  reviewer model, prompt digest, cost, and failures; missing or failed
-  reviewer output SHALL be recorded as not evaluated rather than counted as
-  agreement, and prerequisite validation alone SHALL NOT be presented as
-  execution.
+  an authorized request or documented command SHALL execute the actual
+  conformance reviewer for every corpus case through `agent_harness` and
+  record actual verdicts, reviewer model, prompt digest, cost, and failures;
+  missing or failed reviewer output SHALL be recorded as not evaluated rather
+  than counted as agreement, and prerequisite validation alone SHALL NOT be
+  presented as execution.
   *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
   *Code:* `app/services/intent_conformance/reviewer_llm.rb`,
   `app/services/intent_conformance/shadow_evaluation/execute_reviewer.rb`,
+  `app/jobs/intent_conformance/shadow_evaluation/execute_job.rb`,
   `lib/tasks/intent_conformance.rake`,
   `bin/intent-conformance-shadow-evaluation`.
   *Test:* `spec/services/intent_conformance/shadow_evaluation/execute_reviewer_spec.rb`,
+  `spec/jobs/intent_conformance/shadow_evaluation/execute_job_spec.rb`,
   `spec/bin/intent_conformance_shadow_evaluation_spec.rb`.
+
+- [ ] **INTENT-CONFORMANCE-ROLLOUT-011** — Reviewer execution SHALL run as an
+  idempotent background job: the originating request SHALL only authorize
+  and enqueue the operation and return promptly. The evaluation SHALL expose
+  queued/running/partial/failed/cancelled/completed execution state with
+  per-case progress and cost; duplicate submission SHALL be refused while an
+  execution is queued or running; an authorized cancellation SHALL stop
+  execution between cases, preserve recorded evidence, and never fabricate
+  unevaluated results; a killed worker, expired request, or lost execution
+  lock SHALL NOT strand an evaluation indefinitely as executing (per-case
+  heartbeats plus lock probing SHALL support bounded recovery); retry SHALL
+  resume only cases without an evaluated verdict so completed-case spend is
+  never repeated; available reports SHALL compile through the existing
+  service when execution records runs; and equivalent commands/tools SHALL
+  reuse the same lifecycle and permission checks.
+  *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
+  *Code:* `app/services/intent_conformance/shadow_evaluation/enqueue_execution.rb`,
+  `app/services/intent_conformance/shadow_evaluation/cancel_execution.rb`,
+  `app/jobs/intent_conformance/shadow_evaluation/execute_job.rb`,
+  `app/jobs/intent_conformance/shadow_evaluation/recovery_job.rb`,
+  `app/controllers/projects/shadow_evaluations_controller.rb`.
+  *Test:* `spec/services/intent_conformance/shadow_evaluation/enqueue_execution_spec.rb`,
+  `spec/services/intent_conformance/shadow_evaluation/cancel_execution_spec.rb`,
+  `spec/jobs/intent_conformance/shadow_evaluation/`,
+  `spec/requests/projects/shadow_evaluations_spec.rb`.
 
 - [ ] **INTENT-CONFORMANCE-ROLLOUT-008** — The evaluation record SHALL produce
   a reproducible report with exact case/rubric/model/prompt/design
@@ -108,7 +135,8 @@
 
 - [ ] **INTENT-CONFORMANCE-ROLLOUT-009** — The originating partial-closeout
   Inbox item SHALL offer Start evaluation / Resume labeling with labeling
-  progress and queued/running/failed/completed execution state, SHALL resume
+  progress and queued/running/partial/failed/cancelled/completed execution
+  state, SHALL resume
   the existing evaluation for the same evidence generation instead of
   duplicating it, SHALL return to the same Inbox context without accepting
   an arbitrary external return URL, and finishing labels or a passing

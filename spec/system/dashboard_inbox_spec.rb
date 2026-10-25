@@ -36,10 +36,15 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
   # clarifying-question entry. Stub the client so the inbox page can build
   # under WebMock without reaching for the network.
   let(:github_client) { instance_double(GithubClient, issue_comments: []) }
+  # Throwaway corpus manifest backing for the shadow-evaluation inbox
+  # example; removed whether or not the example created it.
+  let(:evaluation_manifest_dir) { Dir.mktmpdir }
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
   end
+
+  after { FileUtils.remove_entry(evaluation_manifest_dir) if File.directory?(evaluation_manifest_dir) }
 
   def sign_in_as(user)
     visit new_user_session_path
@@ -169,6 +174,36 @@ RSpec.describe "Inbox split pane", system_driver: :rack_test, type: :system do
     form = page.find(%(form[action="#{request_continuation_project_agent_runs_path(project)}"]))
     expect(form).to have_field("Reason for continuation", type: :textarea)
     expect(form).to have_button("Request continuation")
+  end
+
+  # The Inbox item is the durable surface an operator leaves the page from:
+  # queued/running/partial/failed/cancelled/completed execution state stays
+  # visible here without holding the request open (#4642).
+  it "shows the shadow-evaluation execution state on the partial-closeout item" do # @spec INTENT-CONFORMANCE-ROLLOUT-009 @spec INTENT-CONFORMANCE-ROLLOUT-011
+    issue = create(:issue, project:, github_number: 205, paid_state: "in_progress")
+    create(:issue, :pull_request, project:, github_number: 206, github_state: "closed",
+      pr_review_phase: "merged", parent_issue_id: issue.id)
+    create_queued_evaluation_for_inbox!
+
+    sign_in_as(user)
+    visit inbox_entry_path("partial_closeout:#{issue.id}", project_id: project.id,
+      kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
+
+    panel = page.find("[data-shadow-evaluation-inbox]")
+    expect(panel).to have_content("Status: queued")
+    expect(panel).to have_content("reviewer execution queued — progress and cancellation on the evaluation screen")
+    expect(panel).to have_link("Open evaluation and report")
+  end
+
+  # Inbox execution-state example support: a queued evaluation backed by a
+  # throwaway corpus manifest (the inbox panel reads the corpus for counts).
+  def create_queued_evaluation_for_inbox!
+    manifest_path = File.join(evaluation_manifest_dir, "corpus-manifest.yml")
+    File.write(manifest_path, { "cases" => [ { "id" => "A-01" }, { "id" => "A-02" } ] }.to_yaml)
+    create(:intent_conformance_shadow_evaluation, project: project, solo_maintainer: user, created_by: user,
+      purpose: "rdr-067-measured-rollout", status: "queued", labels_frozen_at: Time.current,
+      manifest_path: manifest_path, manifest_digest: Digest::SHA256.file(manifest_path).hexdigest,
+      execute_heartbeat_at: Time.current)
   end
 
   it "embeds an empty inbox_kind when the All tab is active so the submit preserves the mixed scope" do

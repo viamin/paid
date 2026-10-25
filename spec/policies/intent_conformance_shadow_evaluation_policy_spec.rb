@@ -23,6 +23,13 @@ RSpec.describe IntentConformanceShadowEvaluationPolicy do
     expect(described_class.new(maintainer, evaluation)).to be_execute
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011 — cancellation shares the execute
+  # boundary: any project operator may stop costly execution.
+  it "lets any account operator cancel a queued or running execution" do
+    expect(described_class.new(member, evaluation)).to be_cancel
+    expect(described_class.new(maintainer, evaluation)).to be_cancel
+  end
+
   it "restricts labeling, freezing, and revising to the declared solo maintainer" do
     expect(described_class.new(maintainer, evaluation)).to be_label
     expect(described_class.new(maintainer, evaluation)).to be_freeze
@@ -41,6 +48,7 @@ RSpec.describe IntentConformanceShadowEvaluationPolicy do
     expect(policy).not_to be_create
     expect(policy).not_to be_label
     expect(policy).not_to be_execute
+    expect(policy).not_to be_cancel
   end
 
   it "denies anonymous users" do

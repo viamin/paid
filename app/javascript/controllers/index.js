@@ -112,6 +112,9 @@ application.register("runner-weights", RunnerWeightsController)
 import ScreenshotConfigController from "./screenshot_config_controller"
 application.register("screenshot-config", ScreenshotConfigController)
 
+import ShadowEvaluationRefreshController from "./shadow_evaluation_refresh_controller"
+application.register("shadow-evaluation-refresh", ShadowEvaluationRefreshController)
+
 import SortableController from "./sortable_controller"
 application.register("sortable", SortableController)
 

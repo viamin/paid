@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20261023000000_create_intent_conformance_shadow_evaluations")
+require Rails.root.join("db/migrate/20261025182824_add_execution_lifecycle_to_intent_conformance_shadow_evaluations")
 
 RSpec.describe CreateIntentConformanceShadowEvaluations, :aggregate_failures do
   # @spec INTENT-CONFORMANCE-ROLLOUT-005 @spec INTENT-CONFORMANCE-ROLLOUT-007
@@ -22,6 +23,10 @@ RSpec.describe CreateIntentConformanceShadowEvaluations, :aggregate_failures do
 
     if tables_existed.any? { |_table, existed| existed }
       migration.up
+      # Later migrations extend these tables (the #4642 execution-lifecycle
+      # columns); re-apply them so the shared test schema is fully restored
+      # for every spec that runs after this one.
+      AddExecutionLifecycleToIntentConformanceShadowEvaluations.new.up
     end
     clear_schema_metadata!
   end

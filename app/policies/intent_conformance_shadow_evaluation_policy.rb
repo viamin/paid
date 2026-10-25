@@ -42,6 +42,13 @@ class IntentConformanceShadowEvaluationPolicy < ApplicationPolicy
     operator?
   end
 
+  # Cancellation shares the execute boundary (#4642): any project operator
+  # may stop costly execution; the evidence already collected is preserved.
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  def cancel?
+    execute?
+  end
+
   private
 
   def project

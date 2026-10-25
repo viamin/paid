@@ -244,4 +244,66 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     expect(second.executed).to eq(2)
     expect(evaluation.reload).to be_completed
   end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011 — an authorized cancellation stops
+  # execution between cases: collected evidence is preserved and nothing is
+  # fabricated for the unvisited cases.
+  it "stops between cases when cancellation is requested, preserving collected evidence" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message) do
+      evaluation.update_column(:cancel_requested_at, Time.current)
+      llm_response("within_scope")
+    end
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).to be_success
+    expect(result).to be_cancelled
+    expect(AgentHarness).to have_received(:send_message).once
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs.count).to eq(1)
+    expect(evaluation.runs.find_by(case_id: "A-01")).to be_evaluated
+    expect(evaluation.runs.find_by(case_id: "A-02")).to be_nil
+  end
+
+  it "refuses to start a new execution pass while a cancellation is already requested" do
+    prepare_frozen!
+    evaluation.update_column(:cancel_requested_at, Time.current)
+    allow(AgentHarness).to receive(:send_message)
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).to be_success
+    expect(result).to be_cancelled
+    expect(AgentHarness).not_to have_received(:send_message)
+    expect(evaluation.runs).to be_empty
+  end
+
+  it "marks a mixed outcome partial while keeping the not-evaluated failure reason" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message).and_return(
+      llm_response("within_scope"),
+      instance_double(AgentHarness::Response, success?: false, model: nil, output: nil, metadata: {})
+    )
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).to be_success
+    expect(result.executed).to eq(1)
+    expect(result.failed).to eq(1)
+    expect(evaluation.reload).to be_partial
+    expect(evaluation.last_failure_reason).to include("without an evaluated reviewer verdict")
+  end
+
+  it "records a per-case heartbeat while executing" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message).and_return(llm_response("within_scope"))
+
+    described_class.call(evaluation: evaluation)
+
+    expect(evaluation.reload.execute_heartbeat_at).to be >= evaluation.execute_started_at
+  end
 end

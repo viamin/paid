@@ -126,12 +126,24 @@ Paid's project authorization and presentation patterns:
 3. **Freeze.** The explicit finish action refuses to freeze while any case
    is unlabeled or skipped, then stamps the reference set frozen. Answers
    (strata and reviewer outputs) become visible only from freeze onward.
-4. **Execute.** After freeze, the real conformance reviewer runs for every
-   case through `agent_harness` (the documented operator command or the
-   equivalent UI action), recording actual verdicts, reviewer model, prompt
-   digest, cost, and failures. Missing or failed reviewer output is recorded
-   as not evaluated; prerequisite validation alone is never presented as
-   execution.
+4. **Execute.** After freeze, an authorized operator action (or the
+    documented command) **enqueues an idempotent background execution** —
+    the originating request only authorizes and enqueues; it never runs the
+    reviewer inline. The evaluation carries a durable execution lifecycle
+    (`queued` → `executing` → `completed` | `partial` | `failed` |
+    `cancelled`) with per-case progress and cost. Duplicate submissions are
+    refused while an execution is queued or running; retry resumes by
+    re-running only cases without an evaluated verdict, so completed-case
+    spend is never repeated. An authorized cancellation stops execution
+    between cases, preserves every recorded run, and never fabricates
+    unevaluated results. A killed worker, expired request, or lost execution
+    lock must not strand an evaluation as executing: per-case heartbeats plus
+    lock probing let the next authorized action (and a bounded recovery
+    sweep) resume or fail it. The real reviewer runs for every remaining
+    case through `agent_harness`, recording actual verdicts, reviewer model,
+    prompt digest, cost, and failures. Missing or failed reviewer output is
+    recorded as not evaluated; prerequisite validation alone is never
+    presented as execution.
 5. **Review and revise.** Disagreements surface for maintainer review after
    the run. A post-result revision is appended with its own reason and
    timestamp; it never overwrites the original blinded label, and blinded

@@ -96,19 +96,33 @@ module Projects
       redirect_for(result, success_notice: "Reference labels frozen. You can now execute the reviewer.")
     end
 
-    # Runs the documented end-to-end execution path — the same service as
-    # `bin/rails "intent_conformance:shadow_evaluation:execute[<id>]"`.
+    # Authorizes and enqueues the idempotent background execution — the same
+    # lifecycle as `bin/rails "intent_conformance:shadow_evaluation:execute[<id>]"`.
+    # The request returns promptly; prerequisite failures are answered here,
+    # and durable progress/cancellation live on the evaluation screen.
+    # @spec INTENT-CONFORMANCE-ROLLOUT-011
     def execute
       authorize @evaluation
 
-      result = IntentConformance::ShadowEvaluation::ExecuteReviewer.call(evaluation: @evaluation)
+      result = IntentConformance::ShadowEvaluation::EnqueueExecution.call(evaluation: @evaluation, actor: current_user)
       if result.success?
-        IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: @evaluation)
         redirect_to evaluation_path(@evaluation),
-          notice: "Reviewer executed: #{result.executed} evaluated, #{result.failed} not evaluated."
+          notice: result.resumed ? "Reviewer execution requeued after an interruption — progress appears on this screen." : "Reviewer execution queued — progress appears on this screen."
       else
         redirect_to evaluation_path(@evaluation), alert: result.error
       end
+    end
+
+    # Authorized cancellation of a queued or running execution (#4642): a
+    # queued execution stops before any reviewer spend; a running one stops
+    # between cases with every recorded run preserved.
+    # @spec INTENT-CONFORMANCE-ROLLOUT-011
+    def cancel
+      authorize @evaluation
+
+      result = IntentConformance::ShadowEvaluation::CancelExecution.call(evaluation: @evaluation, actor: current_user)
+      redirect_for(result,
+        success_notice: result.cancelled? ? "Execution cancelled — no reviewer spend for this attempt." : "Cancellation requested — execution stops after the current case; collected evidence is preserved.")
     end
 
     def revise

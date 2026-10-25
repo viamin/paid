@@ -55,6 +55,36 @@ RSpec.describe IntentConformanceShadowEvaluation do
     ensure
       FileUtils.remove_entry(dir)
     end
+
+    # @spec INTENT-CONFORMANCE-ROLLOUT-011 — durable execution lifecycle
+    # states with per-case progress and cost.
+    it "exposes the asynchronous execution states and pending guard" do
+      evaluation = build(:intent_conformance_shadow_evaluation)
+
+      expect(described_class::STATUSES).to include("queued", "executing", "partial", "cancelled")
+      expect(evaluation).not_to be_execution_pending
+      %w[queued executing partial failed cancelled completed].each do |status|
+        expect(build(:intent_conformance_shadow_evaluation, status: status)).to be_frozen
+      end
+      expect(build(:intent_conformance_shadow_evaluation, status: "queued")).to be_execution_pending
+      expect(build(:intent_conformance_shadow_evaluation, status: "executing")).to be_execution_pending
+    end
+
+    it "reports execution progress with evaluated counts and spend" do
+      dir = Dir.mktmpdir
+      manifest_path = File.join(dir, "corpus-manifest.yml")
+      File.write(manifest_path, { "cases" => [ { "id" => "A-01" }, { "id" => "A-02" } ] }.to_yaml)
+      evaluation = create(:intent_conformance_shadow_evaluation, manifest_path: manifest_path,
+        manifest_digest: Digest::SHA256.file(manifest_path).hexdigest)
+      create(:intent_conformance_shadow_evaluation_run, shadow_evaluation: evaluation, case_id: "A-01",
+        verdict: "within_scope", cost_cents: 42, recorded_at: Time.current)
+      create(:intent_conformance_shadow_evaluation_run, shadow_evaluation: evaluation, case_id: "A-02",
+        verdict: "not_evaluated", failure_reason: "unsuccessful_response", cost_cents: 7, recorded_at: Time.current)
+
+      expect(evaluation.execution_progress).to eq(total: 2, evaluated: 1, not_evaluated: 1, cost_cents: 49)
+    ensure
+      FileUtils.remove_entry(dir)
+    end
   end
 
   describe IntentConformanceShadowEvaluationRun do

@@ -355,7 +355,8 @@ Rails.application.routes.draw do
     resources :intent_conformance_decisions, only: [ :create ],
       controller: "projects/intent_conformance_decisions"
     # Solo-maintainer RDR-067 shadow evaluation (#4594): blinded labeling
-    # screen, freeze, reviewer execution, revisions, and report.
+    # screen, freeze, asynchronous reviewer execution with progress and
+    # cancellation (#4642), revisions, and report.
     resources :shadow_evaluations, only: [ :new, :show, :create ],
       controller: "projects/shadow_evaluations" do
       member do
@@ -364,6 +365,7 @@ Rails.application.routes.draw do
         post :skip
         post :freeze
         post :execute
+        post :cancel
         post :revise
       end
     end
