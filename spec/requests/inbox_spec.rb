@@ -446,13 +446,16 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("human-only evaluation")
     end
 
-    it "surfaces the requested human evidence and resumption rules" do
+    it "surfaces the requested human evidence and distinguishes dismissal from verification" do # @spec PARTIAL-CLOSEOUT-030
       render_guided_pane
 
       expect(response.body).to include("Pilot latency results")
       expect(response.body).to include("who must supply it")
       expect(response.body).to include("resumes automatically")
       expect(response.body).to include("deliberate continuation")
+      expect(response.body).to include("Dismissing this item only removes it from your Inbox")
+      expect(response.body).to include("does not verify evidence or release")
+      expect(response.body).to include("scheduling. When an agent-owned prerequisite")
     end
 
     # @spec PARTIAL-CLOSEOUT-023

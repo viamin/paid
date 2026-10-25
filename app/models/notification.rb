@@ -16,8 +16,8 @@ class Notification < ApplicationRecord
   validate :blocking_requires_error_severity
 
   after_commit :bump_inbox_cache_version, if: :saved_change_to_action_required_membership?
-  # When an operator dismisses — or the system resolves — a partial-closeout
-  # human prerequisite notification, the auto-pick eligibility block in
+  # When the system resolves a verified partial-closeout human prerequisite
+  # notification, the auto-pick eligibility block in
   # {Automation::Strategies::AutoPick::DefaultCandidateSource#partial_closeout_prerequisite_block_issue_ids}
   # lifts for the parent issue (#4119). Mirror the dependency-resolved eager
   # re-enqueue ({Issue#enqueue_newly_unblocked_dependents}) so the parent
@@ -103,13 +103,12 @@ class Notification < ApplicationRecord
     Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
   end
 
-  def partial_closeout_prerequisite_released?
+  def partial_closeout_prerequisite_released? # @spec PARTIAL-CLOSEOUT-030
     return false unless source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE
     return false unless subject.is_a?(Issue)
 
-    dismissed_now = saved_change_to_dismissed_at? && attribute_before_last_save("dismissed_at").nil?
     resolved_now = saved_change_to_resolved_at? && attribute_before_last_save("resolved_at").nil?
-    dismissed_now || resolved_now
+    resolved_now
   end
 
   def enqueue_partial_closeout_subject_on_release

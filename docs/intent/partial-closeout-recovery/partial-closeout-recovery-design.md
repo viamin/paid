@@ -376,6 +376,10 @@ those revisions change.
 
 ## Alternatives considered
 
+- *Treat Inbox dismissal as evidence verification*: rejected. Dismissal is
+  personal notification management; only the canonical evidence assessment
+  may resolve a prerequisite or release scheduling.
+
 - *Lift the merged-PR guard via paid_state*: explicitly rejected — the guard is
   deliberately state-independent (#3432/#3588 review follow-up).
 - *Blanket "clear blocker" action*: rejected by the issue; recovery actions are
