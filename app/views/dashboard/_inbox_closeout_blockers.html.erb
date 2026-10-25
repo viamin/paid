@@ -1,14 +1,22 @@
-<%# @spec PARTIAL-CLOSEOUT-010 %>
+<%# @spec PARTIAL-CLOSEOUT-010 @spec PARTIAL-CLOSEOUT-030 %>
 <% if blockers.any? %>
   <ul class="mt-3 space-y-2 text-sm text-violet-800">
     <% blockers.each do |blocker| %>
       <li>
         <p><%= blocker.message %></p>
         <% if blocker.evidence.present? %>
-          <p class="text-xs text-violet-700">Evidence: <%= blocker.evidence.except("attempt_url").to_json %></p>
+          <p class="text-xs text-violet-700">Evidence: <%= blocker.evidence.except("attempt_url", "urls").to_json %></p>
           <% if blocker.evidence["attempt_url"].present? %>
             <%= link_to "View scanner alert", blocker.evidence["attempt_url"], target: "_blank", rel: "noopener noreferrer", class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
           <% end %>
+        <% end %>
+        <% Array(blocker.evidence["urls"]).each do |link| %>
+          <% url = link["url"].to_s %>
+          <% next unless url.match?(%r{\A(https?://|/)}).present? %>
+          <% external = url.start_with?("http") %>
+          <%= link_to link["label"], url,
+                **(external ? { target: "_blank", rel: "noopener noreferrer" } : { data: { turbo_frame: "_top" } }),
+                class: "mr-2 text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
         <% end %>
         <% if blocker.recovery.present? %><p class="text-xs text-violet-700">Next step: <%= blocker.recovery %></p><% end %>
       </li>

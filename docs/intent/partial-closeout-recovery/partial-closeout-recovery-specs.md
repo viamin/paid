@@ -4,6 +4,42 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When the blocker walk explains a scoped
+  admission refusal, the system SHALL attribute every guard it can read from
+  persisted admission state: open native non-PR sub-issues (mirroring
+  `without_open_non_pr_subissues`, exempting children parked in
+  `recommend_close`/`completed`, and not re-naming children an explicit
+  `IssueDependency` edge already reports) and active human-prerequisite
+  notifications (mirroring
+  `partial_closeout_prerequisite_block_issue_ids`), each with exact identities
+  (child numbers, GitHub links, notification id, title, age, Inbox link, and
+  assessment provenance) and a supported recovery action, and SHALL enumerate
+  simultaneous blockers rather than only the first. A human-prerequisite
+  blocker SHALL distinguish an unresolved human decision or evidence request
+  from missing implementation, and SHALL NOT dismiss the notification, close
+  children, or infer completion to make admission pass. When the guidance
+  predates the current closeout evidence generation or a later explicitly
+  recorded policy selection (for example a solo-maintainer evaluation
+  policy), the explanation SHALL reconcile it as stale with the change named
+  and route recovery through a fresh bounded acceptance audit or an explicit
+  human decision — never a silent policy substitution or automatic dismissal.
+  Inbox detail, chat context, API/MCP tools, and continuation and audit
+  refusals SHALL use the same reasons; the unknown-guard fallback SHALL
+  remain only for genuinely undiagnosed guards. Report-only acceptance
+  audits deliberately share the implementation admission gates, and the
+  Inbox SHALL say so and name the supported evidence route instead of
+  offering an action that returns an unexplained denial (#4630).
+  *Code:* `app/services/issues/closeout_status.rb`,
+  `app/services/partial_closeouts/reconcile.rb`,
+  `app/views/dashboard/_inbox_closeout_blockers.html.erb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/issues/request_continuation_spec.rb`,
+  `spec/services/issues/request_acceptance_audit_spec.rb`,
+  `spec/services/issues/stalled_closeouts_spec.rb`,
+  `spec/requests/inbox_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its

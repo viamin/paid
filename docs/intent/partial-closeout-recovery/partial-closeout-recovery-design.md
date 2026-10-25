@@ -102,7 +102,21 @@ paid_state edit and never a blanket guard lift:
   the unmet prerequisites explained to the user. A targeted blocker walk
   (`CloseoutStatus.admission_blockers`) returns structured, additive reasons
   from persisted admission-guard evidence, including scanner attempt, analysis,
-  and alert links for synthetic findings; a residual preflight then settles admission with the
+  and alert links for synthetic findings; open native non-PR sub-issues (the
+  exact children `without_open_non_pr_subissues` excludes, minus children an
+  explicit `IssueDependency` edge already reports, with `recommend_close`/
+  `completed` children exempt); and active partial-closeout
+  human-prerequisite notifications (the rows
+  `partial_closeout_prerequisite_block_issue_ids` excludes) with their exact
+  requested evidence, Inbox link, and assessment provenance. The
+  human-prerequisite blocker distinguishes an unresolved human decision or
+  evidence request from missing implementation and never dismisses the
+  notification, closes a child, or infers completion to make admission pass;
+  when its guidance predates the current evidence generation or a later
+  explicitly recorded policy selection (for example a solo-maintainer
+  evaluation policy), it is reconciled as stale with the change named, and
+  recovery routes through a fresh bounded acceptance audit or an explicit
+  human decision — never a silent policy substitution. A residual preflight then settles admission with the
   exact scoped `eligible_for_dequeue?` decision the dequeue recheck enforces
   (evaluated from one shared set of project inputs per `StalledCloseouts`
   project batch), so a request the walk
@@ -352,7 +366,11 @@ reuses an open request whose persisted mode and run goal match the requested
 operation: a request that would authorize a different operation is refused with
 the open authorization named, so an implementation continuation is never
 reported as an acceptance audit and vice versa. All ordinary
-continuation guards remain authoritative.
+continuation guards remain authoritative: audits deliberately share the
+implementation admission gates (one authorization lane, no parallel rules),
+the Inbox pane says so, and any refusal returns the same structured blocker
+reasons — with the supported evidence route named — instead of an
+unexplained denial behind an actionable-looking audit button (#4630).
 
 ### Held-delivery reconciliation (#4614)
 

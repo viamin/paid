@@ -222,26 +222,55 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
     end
 
     it "refuses instead of queueing a run another eligibility guard would cancel at dequeue" do
-      # A guard the targeted blocker walk does not enumerate (here: an open
-      # non-PR sub-issue keeps the parent out of every eligible scope) must
-      # refuse up front with its reason, never queue a run the dequeue-time
-      # recheck would cancel and supersede (#4130 review).
+      # A guard the targeted blocker walk does not enumerate (here: the
+      # originating run recorded a PR number inside the PR-sync grace window
+      # with no local closed-unmerged PR row, #3432) must refuse up front with
+      # its reason, never queue a run the dequeue-time recheck would cancel
+      # and supersede (#4130 review).
       merged_partial_pr(number: 12)
-      create(
-        :issue,
-        project: project,
-        github_state: "open",
-        paid_state: "in_progress",
-        parent_issue_id: issue.id,
-        github_number: 55
-      )
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr",
+        pull_request_number: 12, completed_at: 5.minutes.ago)
 
       result = request_continuation
 
       expect(result.success?).to be(false)
       expect(result.code).to eq(:unavailable)
       expect(result.message).to include("exact guard is unavailable")
-      expect(issue.agent_runs).to be_empty
+      expect(issue.agent_runs.count).to eq(1)
+      expect(IssueContinuationRequest.count).to eq(0)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-030
+    it "refuses with the open native sub-issue reason instead of the unknown guard (#4323-like)" do
+      merged_partial_pr(number: 12)
+      create(:issue, project: project, github_state: "open", paid_state: "in_progress",
+        parent_issue_id: issue.id, github_number: 55)
+
+      result = request_continuation
+
+      expect(result.success?).to be(false)
+      expect(result.code).to eq(:open_sub_issues)
+      expect(result.message).to include("#55")
+      expect(issue.agent_runs.count).to eq(0)
+      expect(IssueContinuationRequest.count).to eq(0)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-030
+    it "refuses with the human-prerequisite reason and keeps the notification active (#3861-like)" do
+      merged_partial_pr(number: 12)
+      notification = create(:notification, :error, account: account, subject: issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+        title: "Human adjudication needs operator action",
+        description: "Two independent reviewers: record both adjudications on the issue")
+
+      result = request_continuation
+
+      expect(result.success?).to be(false)
+      expect(result.code).to eq(:human_prerequisite)
+      expect(result.message).to include("Human adjudication needs operator action")
+      expect(result.message).to include("not missing implementation")
+      expect(notification.reload.active?).to be(true)
+      expect(issue.agent_runs.count).to eq(0)
       expect(IssueContinuationRequest.count).to eq(0)
     end
 

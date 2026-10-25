@@ -517,6 +517,58 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("Link a prerequisite")
       expect(response.body).to include(link_prerequisite_project_agent_runs_path(project))
     end
+
+    # @spec PARTIAL-CLOSEOUT-030
+    it "renders the native-child blocker with the child's exact link" do
+      blocked_issue = create(:issue, project: project, github_number: 520, paid_state: "in_progress")
+      create(:issue, :pull_request, project: project, github_number: 521, github_state: "closed",
+        pr_review_phase: "merged", parent_issue: blocked_issue, created_at: 2.days.ago)
+      create(:issue, project: project, github_number: 522, github_state: "open",
+        paid_state: "in_progress", parent_issue: blocked_issue)
+
+      get inbox_entry_path(
+        entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, blocked_issue),
+        project_id: project.id,
+        kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND
+      )
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("#522")
+      expect(response.body).to include("https://github.com/acme/alpha/issues/522")
+      expect(response.body).not_to include("exact guard is unavailable")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-030
+    it "renders the human-prerequisite blocker with its Inbox link and decision framing" do
+      blocked_issue = create(:issue, project: project, github_number: 530, paid_state: "in_progress")
+      create(:issue, :pull_request, project: project, github_number: 531, github_state: "closed",
+        pr_review_phase: "merged", parent_issue: blocked_issue, created_at: 2.days.ago)
+      create(:notification, :error, account: account, subject: blocked_issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+        title: "Human adjudication needs operator action",
+        description: "Two independent reviewers: record both adjudications",
+        action_url: "/inbox/action_required:777")
+
+      get inbox_entry_path(
+        entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, blocked_issue),
+        project_id: project.id,
+        kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND
+      )
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Human adjudication needs operator action")
+      expect(response.body).to include("not missing implementation")
+      expect(response.body).to include("/inbox/action_required:777")
+      expect(response.body).not_to include("exact guard is unavailable")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-030
+    it "explains that report-only audits share the implementation admission gates" do
+      render_guided_pane
+
+      expect(response.body).to include("share the same admission gates")
+      expect(response.body).to include("blockers listed above")
+    end
   end
 
   # @spec CHANGE-INTENT-INBOX-001

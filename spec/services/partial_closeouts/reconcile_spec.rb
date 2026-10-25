@@ -100,6 +100,19 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(notifications.first.description).to include("security sign-off: Approve the audit in the portal.")
   end
 
+  # @spec PARTIAL-CLOSEOUT-030
+  it "records the assessment provenance on the prerequisite notification" do
+    described_class.call(agent_run: run, assessment: gaps([
+      { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the approved macOS pilot." }
+    ]))
+
+    notification = Notification.where(subject: parent, blocking: true).sole
+    expect(notification.metadata).to include(
+      "agent_run_id" => run.id,
+      "gap_criteria" => [ "macOS acceptance" ]
+    )
+  end
+
   it "does not attach the parent issue to itself when reuse guesses its number" do
     created = OpenStruct.new(number: 447, html_url: "https://example.test/issues/447", id: 447, title: "Finish dispatch", body: "")
     allow(client).to receive(:create_issue).and_return(created)

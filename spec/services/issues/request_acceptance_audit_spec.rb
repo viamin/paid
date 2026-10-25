@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Issues::RequestAcceptanceAudit do
+RSpec.describe Issues::RequestAcceptanceAudit do # @spec PARTIAL-CLOSEOUT-027
   let(:account) { create(:account) }
   let(:user) { create(:user, account:) }
   let(:project) { create(:project, account:, created_by: user, owner: "acme", repo: "alpha") }
@@ -47,5 +47,23 @@ RSpec.describe Issues::RequestAcceptanceAudit do
     expect(result.message).to include("implementation continuation")
     expect(issue.agent_runs.count).to eq(1)
     expect(implementation.request.reload.status).to eq("queued")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "refuses through the shared implementation gates with the same specific human-prerequisite reason" do
+    create(:issue, :pull_request, project:, github_number: 12, github_state: "closed",
+      pr_review_phase: "merged", parent_issue: issue, created_at: 2.days.ago)
+    notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+      title: "Human adjudication needs operator action",
+      description: "Two independent reviewers: record both adjudications on the issue")
+
+    result = described_class.call(issue:, actor: user)
+
+    expect(result.success?).to be(false)
+    expect(result.code).to eq(:human_prerequisite)
+    expect(result.message).to include("Human adjudication needs operator action")
+    expect(notification.reload.active?).to be(true)
+    expect(issue.agent_runs.count).to eq(0)
   end
 end

@@ -14,11 +14,14 @@ module Issues
   # deliberate holds with their own lanes — they surface as blockers, not as
   # stalls.
   # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-004 @spec PARTIAL-CLOSEOUT-012
+  # @spec PARTIAL-CLOSEOUT-030
   class CloseoutStatus
     Blocker = Struct.new(:code, :message, :evidence, :recovery, keyword_init: true)
     Inputs = Struct.new(:evidence_by_issue_id, :prerequisites_by_issue_id,
       :open_requests_by_issue_id, :active_run_issue_ids, :feature_links_by_issue_id,
-      :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id, keyword_init: true)
+      :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id,
+      :prerequisite_notifications_by_issue_id, :open_children_by_issue_id,
+      :solo_policy_selected_at_by_project_id, keyword_init: true)
 
     # Blockers that are deliberate operator states or active work rather than
     # a partial-closeout stall; the lane must not surface them.
@@ -70,7 +73,7 @@ module Issues
       evidence = inputs&.evidence_by_issue_id&.fetch(issue.id) || CloseoutEvidence.call(issue)
       eligible_ids = eligible_issue_ids || admissible_issue_ids(issue)
       prerequisites = inputs&.prerequisites_by_issue_id&.fetch(issue.id) || prerequisite_labels(issue)
-      blockers = admission_blockers(issue, prerequisites: prerequisites, inputs: inputs)
+      blockers = admission_blockers(issue, prerequisites: prerequisites, inputs: inputs, evidence: evidence)
       if blockers.empty? && evidence.present?
         blockers = [ residual_eligibility_blocker(issue, continuation_eligible_issue_ids) ].compact
       end
@@ -109,9 +112,50 @@ module Issues
         active_run_issue_ids: AgentRun.where(issue_id: issue_ids, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).distinct.pluck(:issue_id).to_set,
         feature_links_by_issue_id: feature_links,
         analysis_backoff_reset_by_project_id: reset_at,
-        scanner_attempts_by_issue_id: scanner_attempts
+        scanner_attempts_by_issue_id: scanner_attempts,
+        prerequisite_notifications_by_issue_id: prerequisite_notifications_for(issues),
+        open_children_by_issue_id: open_native_children_for(issues),
+        solo_policy_selected_at_by_project_id: issues.group_by(&:project_id).transform_values do |project_issues|
+          IntentConformanceShadowEvaluation.where(project: project_issues.first.project, policy: "solo").maximum(:created_at)
+        end
       )
     end
+
+    # Active human-prerequisite notifications, grouped by parent issue id and
+    # account-scoped exactly like the candidate source's
+    # +partial_closeout_prerequisite_block_issue_ids+ query.
+    def self.prerequisite_notifications_for(issues)
+      notifications = Hash.new { |hash, key| hash[key] = [] }
+      issues.group_by { |issue| issue.project.account_id }.each do |account_id, account_issues|
+        Notification.where(
+          account_id: account_id,
+          source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+          subject_type: "Issue"
+        ).where(resolved_at: nil, dismissed_at: nil)
+          .where(subject_id: account_issues.map(&:id))
+          .order(:id).each { |notification| notifications[notification.subject_id] << notification }
+      end
+      notifications
+    end
+    private_class_method :prerequisite_notifications_for
+
+    # Open non-PR children the `without_open_non_pr_subissues` guard excludes,
+    # grouped by parent issue id. Children parked in a non-blocking open state
+    # (`recommend_close`/`completed`) are exempt, mirroring the guard's SQL,
+    # and the project match keeps the same-project discipline.
+    def self.open_native_children_for(issues)
+      children = Issue.where(
+        parent_issue_id: issues.map(&:id), is_pull_request: false, github_state: "open"
+      ).where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES).order(:github_number)
+      project_id_by_parent_id = issues.index_by(&:id).transform_values(&:project_id)
+      grouped = Hash.new { |hash, key| hash[key] = [] }
+      children.each do |child|
+        parent_id = child.parent_issue_id
+        grouped[parent_id] << child if project_id_by_parent_id.fetch(parent_id, child.project_id) == child.project_id
+      end
+      grouped
+    end
+    private_class_method :open_native_children_for
 
     def self.prerequisite_labels_for(issues)
       labels = Hash.new { |hash, key| hash[key] = [] }
@@ -152,8 +196,10 @@ module Issues
     # Each diagnostic interrogates the same persisted state consumed by the
     # candidate source. Keep this list additive: simultaneous guards must all
     # be visible rather than having the first one conceal the rest.
-    def self.admission_blockers(issue, prerequisites: prerequisite_labels(issue), inputs: nil)
-      prerequisite_blockers(issue, labels: prerequisites) + operator_pause_blockers(issue) +
+    # @spec PARTIAL-CLOSEOUT-030
+    def self.admission_blockers(issue, prerequisites: prerequisite_labels(issue), inputs: nil, evidence: nil)
+      prerequisite_blockers(issue, labels: prerequisites) + native_child_blockers(issue, prerequisites:, inputs:) +
+        human_prerequisite_blockers(issue, evidence:, inputs:) + operator_pause_blockers(issue) +
         run_in_flight_blockers(issue, inputs:) + trust_blockers(issue) + feature_hold_blockers(issue, inputs:) +
         analysis_backoff_blockers(issue, inputs:) + scanner_verification_blockers(issue, inputs:)
     end
@@ -192,6 +238,123 @@ module Issues
         evidence: { "prerequisites" => labels },
         recovery: "Resolve the listed prerequisite work or update its dependency link, then request continuation again."
       ) ]
+    end
+
+    # Mirrors `without_open_non_pr_subissues` in the candidate source: an open
+    # native (non-PR) sub-issue that is not itself parked for closure keeps
+    # the parent out of every eligible scope. Children an explicit
+    # IssueDependency edge already reports stay with +prerequisite_blockers+,
+    # so one child is never named twice; this blocker owns the children no
+    # dependency edge covers (#4323). A human closes the child on GitHub when
+    # it is done — the explanation never closes children or infers completion
+    # to make admission pass.
+    # @spec PARTIAL-CLOSEOUT-030
+    def self.native_child_blockers(issue, prerequisites: prerequisite_labels(issue), inputs: nil)
+      children = inputs ? inputs.open_children_by_issue_id.fetch(issue.id, []) : open_native_children_for([ issue ])[issue.id]
+      covered_numbers = prerequisites.filter_map { |label| label.delete_prefix("#").to_i if label.start_with?("#") }.to_set
+      blocking = children.reject { |child| covered_numbers.include?(child.github_number) }
+      return [] if blocking.empty?
+
+      numbers = blocking.map { |child| "##{child.github_number}" }.join(", ")
+      [ Blocker.new(
+        code: :open_sub_issues,
+        message: "Open sub-issue(s) #{numbers} keep this issue out of scheduling: the parent is held until each " \
+                 "child is completed or closed on GitHub.",
+        evidence: native_child_evidence(issue, blocking),
+        recovery: "Finish the open sub-issue work (an agent may run it), or have a human close it on GitHub; " \
+                  "children parked for closure or completed are already exempt. Linking a child as an explicit " \
+                  "prerequisite does not lift this guard."
+      ) ]
+    end
+
+    def self.native_child_evidence(issue, blocking)
+      {
+        "children" => blocking.map { |child| { "number" => child.github_number, "url" => child.github_url, "paid_state" => child.paid_state } },
+        "issue_url" => issue.github_url,
+        "urls" => [ { "label" => "View sub-issue ##{blocking.first.github_number}", "url" => blocking.first.github_url } ]
+      }
+    end
+
+    # Mirrors `partial_closeout_prerequisite_block_issue_ids` in the candidate
+    # source: an active (undismissed, unresolved) human-prerequisite
+    # notification whose subject is this issue holds it out of scheduling
+    # (NO-OUTPUT-ISSUE-007). The blocker distinguishes an unresolved human
+    # decision or evidence request from missing implementation, and never
+    # dismisses the notification or infers completion to make admission pass:
+    # the operator completes the named step and dismisses the Inbox item
+    # (which re-enqueues this issue), or the system resolves it when the
+    # issue closes.
+    # @spec PARTIAL-CLOSEOUT-030
+    def self.human_prerequisite_blockers(issue, evidence: nil, inputs: nil)
+      notifications = if inputs
+        inputs.prerequisite_notifications_by_issue_id.fetch(issue.id, [])
+      else
+        prerequisite_notifications_for([ issue ])[issue.id]
+      end
+      notifications.map { |notification| human_prerequisite_blocker(issue, notification, evidence:, inputs:) }
+    end
+
+    def self.human_prerequisite_blocker(issue, notification, evidence:, inputs:)
+      staleness = prerequisite_guidance_staleness(issue, notification, evidence:, inputs:)
+      Blocker.new(
+        code: :human_prerequisite,
+        message: "An unresolved human prerequisite holds this issue out of scheduling (Inbox notification " \
+                 "##{notification.id}: #{notification.title}) — a pending human decision or evidence request, " \
+                 "not missing implementation.",
+        evidence: human_prerequisite_evidence(issue, notification, staleness),
+        recovery: human_prerequisite_recovery(notification, staleness)
+      )
+    end
+
+    def self.human_prerequisite_evidence(issue, notification, staleness)
+      {
+        "notification_id" => notification.id,
+        "notification_url" => notification.action_url,
+        "title" => notification.title,
+        "requested_at" => notification.created_at.utc.iso8601,
+        "issue_url" => issue.github_url,
+        "guidance_stale" => staleness[:reasons].any?,
+        "stale_reasons" => staleness[:reasons],
+        "assessment_run_id" => notification.metadata["agent_run_id"],
+        "urls" => [ { "label" => "Open the prerequisite notification in the Inbox", "url" => notification.action_url } ]
+      }.compact
+    end
+
+    # Deterministic staleness reconciliation for recorded human guidance: the
+    # explanation names exactly what changed after the guidance was written —
+    # newer terminal closeout evidence (a new evidence generation supersedes
+    # the assessed state) or a later explicitly recorded evaluation-policy
+    # selection. Recovery routes through a fresh bounded audit or an explicit
+    # human decision; a team policy is never silently replaced with solo and
+    # valid unresolved human evidence is never discarded.
+    def self.prerequisite_guidance_staleness(issue, notification, evidence:, inputs: nil)
+      reasons = []
+      terminal_at = evidence&.terminal_at
+      if terminal_at.present? && terminal_at > notification.created_at
+        reasons << "newer terminal closeout evidence (#{terminal_at.utc.iso8601})"
+      end
+      selected_at = if inputs
+        inputs.solo_policy_selected_at_by_project_id[issue.project_id]
+      else
+        IntentConformanceShadowEvaluation.where(project: issue.project, policy: "solo").maximum(:created_at)
+      end
+      if selected_at.present? && selected_at > notification.created_at
+        reasons << "an explicit solo-maintainer evaluation policy selection (#{selected_at.utc.iso8601})"
+      end
+      { reasons: reasons }
+    end
+
+    def self.human_prerequisite_recovery(notification, staleness)
+      recovery = +"Complete the human step notification ##{notification.id} names and submit the evidence where it " \
+                  "says, then dismiss that Inbox notification yourself — dismissal re-enqueues this issue " \
+                  "automatically. Paid never dismisses it or treats it as satisfied for you."
+      if staleness[:reasons].any?
+        recovery << " The guidance predates #{staleness[:reasons].join(' and ')}; request a fresh bounded " \
+                    "acceptance audit for a current assessment before acting on it. If an explicit policy " \
+                    "selection replaced the policy the guidance assumed, that choice stays explicit — never a " \
+                    "silent swap from a team policy to solo — and unresolved human evidence is never discarded."
+      end
+      recovery
     end
 
     def self.operator_pause_blockers(issue)

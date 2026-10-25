@@ -177,7 +177,14 @@ module PartialCloseouts
         account: agent_run.project.account, subject: agent_run.issue,
         source: PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
         title: operator_prerequisite_title(human_gaps),
-        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n")
+        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n"),
+        # Assessment provenance keeps the guidance inspectable from the Inbox
+        # blocker alone: which run assessed it and which criteria it named
+        # (#4630). Nothing here substitutes for a human decision.
+        metadata: {
+          "agent_run_id" => agent_run.id,
+          "gap_criteria" => human_gaps.map { |gap| gap["criterion"] }
+        }
       )
     end
 

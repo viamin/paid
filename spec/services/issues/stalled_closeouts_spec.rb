@@ -59,7 +59,8 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
       expect(queries.grep(/SELECT .*FROM "issues"/)).to have_attributes(size: 1)
     end
 
-    it "keeps a stall held by a non-walked eligibility guard in the lane with an unavailable-guard reason" do # @spec PARTIAL-CLOSEOUT-012
+    # @spec PARTIAL-CLOSEOUT-030
+    it "keeps a stall held by an open native sub-issue in the lane with the exact child reason" do
       merged_pr_row(number: 12, parent_issue_id: issue.id)
       create(
         :issue,
@@ -69,6 +70,19 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
         parent_issue_id: issue.id,
         github_number: 55
       )
+
+      pairs = described_class.pairs_for(project)
+
+      expect(pairs.map { |pair| pair.issue.id }).to contain_exactly(issue.id)
+      expect(pairs.first.status.blocker_codes).to contain_exactly(:open_sub_issues)
+      expect(pairs.first.status.reason).to include("#55")
+    end
+
+    it "keeps a stall held by a non-walked eligibility guard in the lane with an unavailable-guard reason" do # @spec PARTIAL-CLOSEOUT-012
+      merged_pr_row(number: 12, parent_issue_id: issue.id)
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr",
+        pull_request_number: 12, pull_request_url: "https://github.com/acme/alpha/pull/12",
+        completed_at: 5.minutes.ago)
 
       pairs = described_class.pairs_for(project)
 
@@ -86,7 +100,10 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
         expect(described_class.pairs_for(project).map { |pair| pair.issue.id }).to contain_exactly(issue.id)
       end
 
-      expect(queries.grep(/FROM "notifications"/)).to have_attributes(size: 1)
+      # One constant query per project for the eligibility id build, plus one
+      # for the diagnostic notification rows themselves (#4630); neither grows
+      # with the candidate count.
+      expect(queries.grep(/FROM "notifications"/)).to have_attributes(size: 2)
     end
   end
 
