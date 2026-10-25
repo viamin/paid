@@ -38,7 +38,7 @@ class FeatureIntentIssue < ApplicationRecord
   # can independently hold the planning task.
   # @spec CONFIDENCE-DELIVERY-017
   def planning_task?
-    planning_task_contract? && planning_hold.fetch("operator_override", false) != true
+    planning_task_contract? && !operator_override?
   end
 
   # A generic GitHub label has no inherent ownership. Only the durable receipt
@@ -49,7 +49,7 @@ class FeatureIntentIssue < ApplicationRecord
   def workflow_owned_planning_hold?
     return true if planning_hold.fetch("owner", nil) == PAID_HOLD_OWNER &&
       planning_hold.fetch("task_kind", nil) == "implementation" &&
-      planning_hold.fetch("operator_override", false) != true
+      !operator_override?
 
     receipted_implementation_hold?
   end
@@ -72,6 +72,13 @@ class FeatureIntentIssue < ApplicationRecord
 
   def planning_hold
     readiness_mapping.fetch("planning_hold", {}).to_h.deep_stringify_keys
+  end
+
+  # JSON contracts can arrive from persisted agent output, so normalize the
+  # override flag instead of requiring an in-memory Ruby boolean. A string
+  # "true" must retain the operator hold just like true does.
+  def operator_override?
+    ActiveModel::Type::Boolean.new.cast(planning_hold.fetch("operator_override", false)) == true
   end
 
   def receipted_implementation_hold?
