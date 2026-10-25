@@ -23,10 +23,9 @@ RSpec.describe AddTaskKindToFeatureIntentIssuePublications, :aggregate_failures 
     enforcement_migration.migrate(:up) if task_kind_column.null
     receipt_class.reset_column_information
     FeatureIntentIssuePublication.reset_column_information
-    if defined?(@feature_intent) && feature_intent.persisted?
-      FeatureIntentIssuePublication.where(feature_intent: feature_intent).delete_all
-      feature_intent.destroy!
-    end
+    receipt = FeatureIntentIssuePublication.find_by(task_digest: "legacy-receipt")
+    FeatureIntent.find_by_id(receipt.feature_intent_id)&.destroy! if receipt
+    receipt&.destroy!
   end
 
   # @spec CONFIDENCE-DELIVERY-017

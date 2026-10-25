@@ -58,6 +58,6 @@ class FeatureIntentIssue < ApplicationRecord
   end
 
   def planning_hold
-    current_readiness_mapping.fetch("planning_hold", {}).to_h.deep_stringify_keys
+    readiness_mapping.fetch("planning_hold", {}).to_h.deep_stringify_keys
   end
 end
