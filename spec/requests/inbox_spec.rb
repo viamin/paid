@@ -455,6 +455,18 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("deliberate continuation")
     end
 
+    # @spec PARTIAL-CLOSEOUT-030
+    it "renders the active human-prerequisite blocker with its supported notification link" do
+      notification = Notification.where(subject: guided_issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE).last
+
+      render_guided_pane
+
+      expect(response.body).to include("Active partial-closeout human prerequisite notification")
+      expect(response.body).to include("Open prerequisite notification ##{notification.id}")
+      expect(response.body).to include("/inbox/action_required:#{notification.id}")
+    end
+
     # @spec PARTIAL-CLOSEOUT-023
     it "shows stale criterion evidence and prevents a duplicate run on an open owner on narrow layouts" do
       owner = create(:issue, project:, github_state: "open", github_number: 512)

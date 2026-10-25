@@ -59,7 +59,7 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
       expect(queries.grep(/SELECT .*FROM "issues"/)).to have_attributes(size: 1)
     end
 
-    it "keeps a stall held by a non-walked eligibility guard in the lane with an unavailable-guard reason" do # @spec PARTIAL-CLOSEOUT-012
+    it "keeps a stall held by a native-child eligibility guard in the lane with its exact reason" do # @spec PARTIAL-CLOSEOUT-030
       merged_pr_row(number: 12, parent_issue_id: issue.id)
       create(
         :issue,
@@ -73,8 +73,8 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
       pairs = described_class.pairs_for(project)
 
       expect(pairs.map { |pair| pair.issue.id }).to contain_exactly(issue.id)
-      expect(pairs.first.status.reason).to include("exact guard is unavailable")
-      expect(pairs.first.status.blockers.first.recovery).to include("Investigate")
+      expect(pairs.first.status.reason).to include("#55")
+      expect(pairs.first.status.blockers.first.recovery).to include("own acceptance evidence")
     end
 
     it "builds partial-closeout eligibility inputs once per project" do # @spec PARTIAL-CLOSEOUT-002 PARTIAL-CLOSEOUT-004
@@ -86,7 +86,9 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
         expect(described_class.pairs_for(project).map { |pair| pair.issue.id }).to contain_exactly(issue.id)
       end
 
-      expect(queries.grep(/FROM "notifications"/)).to have_attributes(size: 1)
+      # One query builds canonical eligibility inputs; the other batch-loads
+      # exact notification evidence for closeout diagnostics.
+      expect(queries.grep(/FROM "notifications"/)).to have_attributes(size: 2)
     end
   end
 

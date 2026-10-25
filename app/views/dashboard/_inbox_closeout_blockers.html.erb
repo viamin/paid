@@ -9,6 +9,13 @@
           <% if blocker.evidence["attempt_url"].present? %>
             <%= link_to "View scanner alert", blocker.evidence["attempt_url"], target: "_blank", rel: "noopener noreferrer", class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
           <% end %>
+          <% Array(blocker.evidence["links"]).each do |link| %>
+            <% next if link["url"].blank? %>
+            <%= link_to link["label"], link["url"],
+                  target: ("_blank" if link["url"].start_with?("http://", "https://")),
+                  rel: ("noopener noreferrer" if link["url"].start_with?("http://", "https://")),
+                  class: "mr-2 text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+          <% end %>
         <% end %>
         <% if blocker.recovery.present? %><p class="text-xs text-violet-700">Next step: <%= blocker.recovery %></p><% end %>
       </li>

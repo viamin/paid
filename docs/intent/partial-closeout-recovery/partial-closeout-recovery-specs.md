@@ -190,6 +190,22 @@
   `spec/services/issues/stalled_closeouts_spec.rb` (including a query-count
   regression for the shared input build).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When a partial-closeout issue is excluded by
+  an open native non-PR child or an active `partial_closeout.prerequisite`
+  notification, `CloseoutStatus` SHALL report each authoritative exclusion
+  additively rather than falling back to an unavailable guard. Native-child
+  diagnostics SHALL identify and link the open child even without a duplicate
+  `IssueDependency`; notification diagnostics SHALL identify the active
+  notification, its requested human evidence or decision, and its supported
+  action link, account-scoped to the issue's tenant. Recovery SHALL preserve
+  unresolved child work and human evidence, and SHALL require an explicit
+  policy selection when changed policy or evidence makes guidance stale. The
+  same blockers SHALL drive Inbox detail/count behavior, continuation and
+  report-only audit refusal, and tool/API context.
+  *Code:* `app/services/issues/closeout_status.rb`,
+  `app/views/dashboard/_inbox_closeout_blockers.html.erb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-005** — When a queued continuation run is considered
   for dispatch, the system SHALL recheck its scoped authorization at dequeue
   and run start (`AgentRuns::RecheckIssueEligibility` continuation branch,

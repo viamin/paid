@@ -101,7 +101,8 @@ paid_state edit and never a blanket guard lift:
   manual review, paused flags, and unmet dependencies all still apply — with
   the unmet prerequisites explained to the user. A targeted blocker walk
   (`CloseoutStatus.admission_blockers`) returns structured, additive reasons
-  from persisted admission-guard evidence, including scanner attempt, analysis,
+  from persisted admission-guard evidence, including exact open native-child
+  identities and active human-prerequisite notification evidence, alongside scanner attempt, analysis,
   and alert links for synthetic findings; a residual preflight then settles admission with the
   exact scoped `eligible_for_dequeue?` decision the dequeue recheck enforces
   (evaluated from one shared set of project inputs per `StalledCloseouts`
@@ -110,6 +111,17 @@ paid_state edit and never a blanket guard lift:
   than a guessed guard, and is refused up front instead of queueing a run dequeue would
   cancel and supersede — the walk explains the authority, it never
   substitutes for it.
+
+Native children and active `partial_closeout.prerequisite` notifications are
+authoritative admission exclusions even when no `IssueDependency` exists.
+Their diagnostics identify each child or notification, carry the relevant
+evidence and safe link, and state the supported recovery. A child remains its
+own open work item until its own acceptance evidence supports completion. A
+human prerequisite preserves the named decision or evidence; if its referenced
+policy or evidence changes, reconciliation must expose an explicit policy
+selection rather than silently substituting a solo policy, dismissing the
+notification, or inferring completion. The same additive diagnostics feed the
+Inbox, API/tool context, continuation, and report-only audit refusals.
 
 For Inbox lane construction, `StalledCloseouts` batch-loads the evidence and
 persisted diagnostic inputs for each project's candidates before evaluating
