@@ -72,13 +72,7 @@ module IntentConformance
     # Shadow review must be explicitly opted into. Normal reviews require the
     # complete enforcement pair and cannot silently run as shadow evaluation.
     def rollout_enabled?
-      FeatureFlags.enabled?(:intent_conformance_shadow_review, project: project) ||
-        enforcement_enabled?
-    end
-
-    def enforcement_enabled?
-      FeatureFlags.enabled?(:approved_intent_amendments, project: project) &&
-        FeatureFlags.enabled?(:intent_conformance_enforcement, project: project)
+      IntentConformance::Rollout.shadow_or_enforcement_enabled?(project)
     end
 
     def feature_intent

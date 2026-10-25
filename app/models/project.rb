@@ -449,6 +449,8 @@ class Project < ApplicationRecord
   validate :priority_labels_valid
   validate :interop_settings_valid
   validate :llm_provider_routing_valid
+  # @spec CONFIDENCE-DELIVERY-014
+  validate :confidence_delivery_enrollment_requires_integrated_delivery, if: :enabling_confidence_delivery_enrollment?
   validate :validate_preferred_docker_host_identifier
 
   scope :active, -> { where(active: true) }
@@ -1289,13 +1291,29 @@ class Project < ApplicationRecord
     operating_mode == "human_led_feature_factory"
   end
 
-  # @spec CONFIDENCE-DELIVERY-001 @spec CONFIDENCE-DELIVERY-015
+  # @spec CONFIDENCE-DELIVERY-001 @spec CONFIDENCE-DELIVERY-014 @spec CONFIDENCE-DELIVERY-015
   # Enrollment is deliberately separate from selection. Turning it off affects
   # only features created later; a FeatureIntent owns its immutable snapshot.
   def feature_delivery_policy_for_new_features
     return "approval_gated" unless confidence_delivery_enrollment_enabled?
+    return "approval_gated" unless FeatureIntents::DeliveryIntegration.available_for?(self)
 
     new_feature_delivery_policy
+  end
+
+  def confidence_delivery_enrollment_available?
+    FeatureIntents::DeliveryIntegration.available_for?(self)
+  end
+
+  def confidence_delivery_enrollment_requires_integrated_delivery
+    return if confidence_delivery_enrollment_available?
+
+    errors.add(:confidence_delivery_enrollment_enabled,
+      "requires the confidence-driven delivery integration rollout and conformance review enforcement")
+  end
+
+  def enabling_confidence_delivery_enrollment?
+    will_save_change_to_confidence_delivery_enrollment_enabled? && confidence_delivery_enrollment_enabled?
   end
 
   def effective_quality_gate_settings
