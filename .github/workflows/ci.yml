@@ -726,6 +726,16 @@ jobs:
                 github_created_at: Time.current,
                 github_updated_at: Time.current
               )
+              ChatSession.create!(
+                account: account,
+                created_by: user,
+                project: project,
+                clarifying_question_issue: issue,
+                title: "Clarifying questions for paid/mobile-api-fixture#4241",
+                status: "active",
+                container_capability: "none",
+                clone_manifest: []
+              )
               read_token = PersonalAccessToken.create_for!(user: user, name: "CI read fuzzing")
               mutation_token = PersonalAccessToken.create_for!(user: user, name: "CI mutation fuzzing")
               File.open(ENV.fetch("GITHUB_ENV"), "a") do |file|

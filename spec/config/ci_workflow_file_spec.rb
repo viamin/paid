@@ -172,8 +172,9 @@ RSpec.describe CiWorkflowFile, :no_db do
     pact_fixture_step = step_run(pact_job, "Create mobile API bearer token")
 
     expect(fixture_step).to include(
-      "GithubToken.create!", "Project.create!", "Issue.create!",
+      "GithubToken.create!", "Project.create!", "Issue.create!", "ChatSession.create!",
       "id: 4_241", 'paid_state: "needs_input"', "needs_input_questions:",
+      "clarifying_question_issue: issue",
       "allowed_github_usernames: [ \"mobile-schema-fuzzer\" ]",
       "MOBILE_API_READ_TOKEN", "MOBILE_API_MUTATION_TOKEN"
     )
