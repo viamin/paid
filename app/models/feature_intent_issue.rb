@@ -47,9 +47,10 @@ class FeatureIntentIssue < ApplicationRecord
   # publication also establishes ownership for an already-published link.
   # @spec CONFIDENCE-DELIVERY-017
   def workflow_owned_planning_hold?
+    return false if operator_override?
+
     return true if planning_hold.fetch("owner", nil) == PAID_HOLD_OWNER &&
-      planning_hold.fetch("task_kind", nil) == "implementation" &&
-      !operator_override?
+      planning_hold.fetch("task_kind", nil) == "implementation"
 
     receipted_implementation_hold?
   end

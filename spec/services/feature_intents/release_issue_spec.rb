@@ -364,6 +364,23 @@ RSpec.describe FeatureIntents::ReleaseIssue do
     expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
   end
 
+  it "preserves a string-serialized operator override on an implementation hold" do # @spec CONFIDENCE-DELIVERY-004, CONFIDENCE-DELIVERY-017
+    link.update!(readiness_mapping: mapping.deep_merge("planning_hold" => { "operator_override" => "true" }))
+    FeatureIntentIssuePublication.create!(
+      feature_intent: feature,
+      task_digest: "overridden-hold",
+      task_kind: "implementation",
+      remote_issue_id: 1,
+      remote_issue_number: issue.github_number
+    )
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
   it "preserves a string-serialized operator override on a planning task" do # @spec CONFIDENCE-DELIVERY-004, CONFIDENCE-DELIVERY-017
     planning_feature = create(:feature_intent, :confidence_driven, project: project)
     create(:feature_intent_issue,
