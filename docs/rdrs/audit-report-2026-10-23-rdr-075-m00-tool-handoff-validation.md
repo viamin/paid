@@ -333,6 +333,33 @@ RDR-073 extension can be decided from an unprovisioned environment; retain
 the existing direction that an extension is filed only if a completed live
 validation identifies a checkout-dependent sidecar need.
 
+## #4604 execution-environment capability check — 2026-10-25
+
+**Result: not executed; this workspace still cannot use Paid's supported
+execution lifecycle.** The follow-up checked both the local engine surface
+and the application lifecycle before attempting either acceptance scenario:
+
+- `docker`, `podman`, and `nerdctl` are unavailable; neither
+  `/var/run/docker.sock` nor `/run/docker.sock` exists; and no `DOCKER_*`
+  endpoint is configured.
+- After dependencies were installed and `bin/rails db:prepare` completed, a
+  read-only `bin/rails runner` probe was stopped by
+  `Database::RuntimeRoleGuard`: the supplied `DATABASE_URL` role is a
+  PostgreSQL superuser with `BYPASSRLS`. The guard correctly refuses to boot
+  application code with that role, so this check did not bypass it to inspect
+  remote-host configuration or construct an `AgentRun`.
+
+This is a capability and recovery record, not either required artifact. It
+does not establish that Paid lacks a Docker-capable execution environment,
+does not change runtime/tool rollout policy, and does not justify closing
+[#4604](https://github.com/viamin/paid/issues/4604). Run both validations in
+a supported environment that supplies (1) a reachable, approved Docker
+backend and (2) a non-superuser application database role that passes the
+runtime guard. Use the normal `AgentRun` provisioning and tool lifecycle
+there; do not substitute host commands, database-guard bypasses, or a
+manually created container. Preserve the resulting artifacts here before
+releasing any dependent phase.
+
 ## Disposition
 
 This report resolves critical assumption 1 only. Critical assumption 2 remains
