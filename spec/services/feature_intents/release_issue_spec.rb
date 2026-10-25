@@ -169,7 +169,7 @@ RSpec.describe FeatureIntents::ReleaseIssue do
   end
 
   # @spec CONFIDENCE-DELIVERY-006
-  it "removes an externally re-added planning label when every design already released without a hold receipt" do # @spec CONFIDENCE-DELIVERY-006, CONFIDENCE-DELIVERY-017
+  it "retains a planning label when every design released without a Paid-owned hold receipt" do # @spec CONFIDENCE-DELIVERY-017
     link.update!(
       readiness_mapping: mapping.except("planning_hold"),
       release_state: "released",
@@ -179,10 +179,21 @@ RSpec.describe FeatureIntents::ReleaseIssue do
 
     result = described_class.call(issue: issue)
 
-    expect(result).to be_released
-    expect(project.client).to have_received(:remove_label_from_issue).with(project.full_name, issue.github_number, "planning")
+    expect(result).not_to be_released
+    expect(result.reason).to include("ownership")
+    expect(project.client).not_to have_received(:remove_label_from_issue)
     expect(link.reload).to have_attributes(release_state: "released", release_error: nil)
     expect(link.release_snapshot).to include("preserved" => true)
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
+  it "removes a re-added planning label when a released design has a Paid-owned hold receipt" do # @spec CONFIDENCE-DELIVERY-017
+    link.update!(release_state: "released", released_at: Time.current)
+
+    result = described_class.call(issue: issue)
+
+    expect(result).to be_released
+    expect(project.client).to have_received(:remove_label_from_issue).with(project.full_name, issue.github_number, "planning")
     expect(issue.reload.labels).to contain_exactly("human-hold")
   end
 
