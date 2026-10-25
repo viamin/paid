@@ -307,7 +307,12 @@ round-limit copy when `EnhanceIssueActivity` sets the state directly without
 going through that service) as its summary, and `manual_review_started_at`
 (falling back to `updated_at` for legacy rows predating the column —
 `ISSUE-ENHANCEMENT-012`) as its waiting-since timestamp. The detail pane
-offers a "Start enhancement run" action that queues a manual `enhance_issue`
+classifies the hold from durable reopen-review, dependency, scanner-verification,
+and enhancement provenance before it offers an action. Enhancement stops retain
+the existing manual retry and question-answer forms; a reopen review requires
+its validation decision; unresolved dependencies remain a linked wait; scanner
+recurrence exposes its scanner evidence; and an unrecognised cause remains
+visibly investigable. The enhancement action queues a manual `enhance_issue`
 run for the issue: per `ISSUE-ENHANCEMENT-011`, automatic picking excludes
 `manual_review` and only an explicit operator-triggered run resumes work —
 the queueing is the resume, so (unlike `unblock_escalation`, which clears

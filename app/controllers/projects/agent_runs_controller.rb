@@ -407,7 +407,7 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -417,6 +417,28 @@ module Projects
         return
       end
 
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue)
+      if recovery.active_run
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Work is already queued or running for this issue (run ##{recovery.active_run.id}); reconcile it before resuming."
+        return
+      end
+      if recovery.action == :wait_for_dependency
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This issue is still blocked by a dependency. Resolve the dependency before resuming work."
+        return
+      end
+      if recovery.action == :investigate || recovery.action == :review_scanner_evidence
+        redirect_to safe_return_target || dashboard_path, alert: recovery.message
+        return
+      end
+      unless reopen_review_decision_valid?(recovery)
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Confirm the reopen review and provide the validation reason before resuming work."
+        return
+      end
+
+      record_reopen_review_decision(issue) if recovery.cause == :reopen_review
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
@@ -1032,6 +1054,21 @@ module Projects
       else
         "This issue is no longer waiting for manual review."
       end
+    end
+
+    def reopen_review_decision_valid?(recovery)
+      return true unless recovery.cause == :reopen_review
+
+      params[:reopen_review_confirmed] == "1" && params[:reopen_reason].to_s.strip.present?
+    end
+
+    def record_reopen_review_decision(issue)
+      Audit::RecordEvent.call(
+        action: "issue.reopen_review_validated",
+        actor: current_user,
+        subject: issue,
+        metadata: { reason: params[:reopen_reason].to_s.strip, prior_closure_reason: issue.reopen_reason }
+      )
     end
 
     def cancel_in_flight_execution_for_resume!

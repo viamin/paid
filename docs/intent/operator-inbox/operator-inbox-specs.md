@@ -726,3 +726,16 @@
   `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
   `spec/requests/inbox_spec.rb`,
   `spec/requests/api/v1/design_artifact_findings_spec.rb`.
+
+- [x] **OPERATOR-INBOX-002H** - When an Inbox item is in `manual_review`, the
+  system SHALL classify its recovery from durable reopen-review, dependency,
+  scanner-verification, and enhancement provenance, leaving unrecognised
+  provenance visibly unknown. It SHALL not queue enhancement work for an
+  unresolved dependency, a scanner recurrence, an unknown hold, or while an
+  incompatible run is queued or running. A reopen-review action SHALL record
+  its authorized validation decision and reason before continuation.
+  *Test:* `spec/services/inbox/manual_review_recovery_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`,
+  `Projects::AgentRunsController`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.

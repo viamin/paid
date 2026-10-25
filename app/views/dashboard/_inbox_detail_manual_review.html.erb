@@ -1,9 +1,18 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec OPERATOR-INBOX-002D ISSUE-REOPEN-REVIEW-005 %>
+<% recovery = Inbox::ManualReviewRecovery.call(issue: entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.cause == :reopen_review %>
+        This issue was reopened after closure. Record why its current intent still requires work before resuming it.
+      <% elsif recovery.cause == :dependency %>
+        This issue is waiting for dependency work. Resolving or updating that dependency will reevaluate the hold.
+      <% elsif recovery.cause == :scanner_recurrence %>
+        Scanner evidence shows a recurrence. Review that evidence before authorizing new remediation.
+      <% elsif recovery.cause == :unknown %>
+        Paid retained this hold because its provenance is unknown. Investigate it before starting new work.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
         Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
@@ -30,6 +39,31 @@
     </div>
   <% end %>
 
+  <% if recovery.cause == :dependency %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Blocking dependencies</h3>
+      <ul class="mt-2 list-disc pl-5 text-sm text-amber-900">
+        <% recovery.dependencies.each do |dependency| %>
+          <% if dependency.is_a?(Issue) %>
+            <li><%= link_to "#{dependency.project.full_name}##{dependency.github_number}", dependency.github_url, target: "_blank", rel: "noopener noreferrer", class: "underline" %></li>
+          <% else %>
+            <li><%= dependency.external_ref %></li>
+          <% end %>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <% if recovery.cause == :reopen_review %>
+    <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900">
+      <h3 class="font-semibold">Prior closure and remaining scope</h3>
+      <p class="mt-1"><%= entry.issue.reopen_reason.presence || "The issue was reopened after its prior closure." %></p>
+      <% if entry.issue.partial_completion_reason.present? %>
+        <p class="mt-1">Remaining scope: <%= entry.issue.partial_completion_reason %></p>
+      <% end %>
+    </div>
+  <% end %>
+
   <%# @spec ISSUE-ENHANCEMENT-011
       The terminal round's preserved clarifying questions ARE the manual
       review this state asks for: render the same answer form the
@@ -42,7 +76,14 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && recovery.action == :record_reopen_decision %>
+      <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id), method: :post, class: "flex flex-wrap items-end gap-3", data: { turbo_frame: "_top" } do |form| %>
+        <label class="text-sm text-gray-700"><%= form.check_box :reopen_review_confirmed %> I validated the original closure and remaining scope</label>
+        <%= form.text_field :reopen_reason, required: true, placeholder: "Validation reason", class: "rounded-md border-gray-300 text-sm" %>
+        <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+        <%= form.submit "Record validation and start enhancement", class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white" %>
+      <% end %>
+    <% elsif policy(entry.project).run_agent? && recovery.action.in?([:retry_enhancement, :answer_questions]) %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,
