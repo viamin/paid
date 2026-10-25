@@ -47,6 +47,14 @@ GoodJob remains the mechanism for lightweight asynchronous work such as cron
 sweeps, notifications, cleanup, and health checks. Durable multi-step agent
 execution does not run in GoodJob; it is delegated to Temporal.
 
+The development Procfile runs GoodJob in a dedicated `jobs` process using
+`bin/jobs`. Puma uses external execution mode with its cron scheduler disabled;
+the jobs process owns cron and startup housekeeping. Maintenance therefore
+cannot retain its heap inside Puma. The processes still share host memory and
+the development supervisor's lifecycle; this separation is not a host memory
+limit or independent process restart policy. Other deployments may explicitly
+select their execution mode.
+
 Development code reload must complete even when an Action Cable broadcast is
 pending. Solid Cable 4.1 batches broadcasts through a Rails executor worker, so
 its shutdown is deferred only while the Rails unload lock is held. Outside code

@@ -17,16 +17,23 @@ module FeatureIntents
     QUALIFIED_ISSUE_PATTERN = %r{(?<![\w./-])([\w.-]+/[\w.-]+)#(\d+)}
     BARE_ISSUE_PATTERN = %r{(?<![\w./-])#(\d+)}
     FILE_EXTENSION_PATTERN = /\.[a-z0-9]{1,4}\z/i
+    COALESCING_WINDOW = 30.seconds
 
     queue_as :maintenance
 
     good_job_control_concurrency_with(
-      total_limit: 1,
       enqueue_limit: 1,
+      perform_limit: 1,
       key: -> { "design_artifact_reconciliation_#{arguments.first}_#{arguments.second}" }
     )
 
     discard_on ActiveRecord::RecordNotFound
+    around_perform :profile_memory
+
+    # @spec DESIGN-RECONCILIATION-002
+    def self.enqueue_for(project_id)
+      set(wait: COALESCING_WINDOW).perform_later(project_id)
+    end
 
     def perform(project_id, pull_request_number = nil)
       @project = Project.find(project_id)
@@ -39,6 +46,36 @@ module FeatureIntents
     private
 
     attr_reader :project
+
+    # Measurements describe this process, including concurrent work, rather
+    # than an isolated Ruby heap for this job. VmHWM is the process lifetime peak.
+    # @spec DESIGN-RECONCILIATION-002
+    def profile_memory
+      started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      allocated_before = GC.stat(:total_allocated_objects)
+      memory_before = process_memory
+      completed = false
+      @reconciled_artifact_count = 0
+      logger.info(message: "feature_intents.reconciliation_started", project_id: arguments.first,
+        job_id:, rss_kb: memory_before[:rss_kb])
+      yield
+      completed = true
+    ensure
+      memory_after = process_memory
+      logger.info(message: "feature_intents.reconciliation_finished", project_id: arguments.first, job_id:,
+        status: completed ? "completed" : "failed", artifacts_reconciled: @reconciled_artifact_count,
+        duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round(1),
+        allocated_objects: GC.stat(:total_allocated_objects) - allocated_before,
+        rss_before_kb: memory_before[:rss_kb], rss_after_kb: memory_after[:rss_kb],
+        process_peak_rss_kb: memory_after[:peak_rss_kb])
+    end
+
+    def process_memory
+      status = File.read("/proc/self/status")
+      { rss_kb: status[/^VmRSS:\s+(\d+)/, 1]&.to_i, peak_rss_kb: status[/^VmHWM:\s+(\d+)/, 1]&.to_i }
+    rescue Errno::ENOENT, Errno::EACCES
+      {}
+    end
 
     def design_pull_request(pull_request_number)
       FeatureIntentDesignPr.joins(:feature_intent).includes(feature_intent: { issues: :project }).find_by(
@@ -102,6 +139,7 @@ module FeatureIntents
         project:, revision:, artifacts: [ artifact.merge(associated_issues:) ], issues:,
         coverage_complete: coverage_complete && artifact.fetch(:coverage_complete, true) && complete
       )
+      @reconciled_artifact_count += 1
     end
 
     def rdr_artifact(artifact)

@@ -41,6 +41,20 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
     end
   end
 
+  # @spec RAILS-CONTROL-PLANE-011
+  describe "development process isolation" do
+    let(:processes) do
+      Rails.root.join("Procfile.dev").read.lines.filter_map do |line|
+        line.split(":", 2).map(&:strip) if line.match?(/\A\w+:/)
+      end.to_h
+    end
+
+    it "keeps GoodJob execution and cron out of Puma and starts the dedicated worker" do
+      expect(processes.fetch("web")).to include("GOOD_JOB_EXECUTION_MODE=external", "GOOD_JOB_ENABLE_CRON=false")
+      expect(processes.fetch("jobs")).to include("GOOD_JOB_ENABLE_CRON=true", "GOOD_JOB_BOOTSTRAP_ON_START=true", "bin/jobs")
+    end
+  end
+
   describe "startup bootstrap" do
     it "runs for the Rails server process" do
       expect(Paid::GoodJobConfig.bootstrap_startup_jobs?(server_process: true)).to be(true)
