@@ -127,11 +127,28 @@ Paid's project authorization and presentation patterns:
    is unlabeled or skipped, then stamps the reference set frozen. Answers
    (strata and reviewer outputs) become visible only from freeze onward.
 4. **Execute.** After freeze, the real conformance reviewer runs for every
-   case through `agent_harness` (the documented operator command or the
-   equivalent UI action), recording actual verdicts, reviewer model, prompt
-   digest, cost, and failures. Missing or failed reviewer output is recorded
-   as not evaluated; prerequisite validation alone is never presented as
-   execution.
+   case through `agent_harness`. Execution is a queued-job lifecycle, not
+   request-bound work: the UI/API request only authorizes and enqueues an
+   idempotent `ShadowEvaluations::ExecuteJob` (freeze-before-execution, the
+   pinned corpus/model/prompt/design identity, blinding, and the advisory
+   execution lock are unchanged), then returns promptly. The evaluation
+   record carries the execution state — `queued → running → completed |
+   partial | failed | cancelled` — with per-case progress (evaluated / total,
+   recorded cost) visible on the evaluation screen. Any project operator may
+   request cancellation; it takes effect between cases, preserves collected
+   evidence, and never fabricates unevaluated results — remaining cases
+   simply have no run row, and the compiled report keeps the affected
+   measures `not established`. A cancelled, partial, or failed execution can
+   be retried/resumed: the retry skips cases that already hold an evaluated
+   verdict, so completed-case spend is never repeated. A killed worker,
+   expired request, or lost lock cannot strand the record as executing: the
+   executor heartbeats after every case, and the periodic recovery sweep
+   returns stale `queued`/`running` evaluations to a retryable state with
+   the collected evidence preserved. The documented command
+   `bin/rails "intent_conformance:shadow_evaluation:execute[<id>]"`
+   (and `…:cancel[<id>]`) drive the same lifecycle inline. Missing or failed
+   reviewer output is recorded as not evaluated; prerequisite validation
+   alone is never presented as execution.
 5. **Review and revise.** Disagreements surface for maintainer review after
    the run. A post-result revision is appended with its own reason and
    timestamp; it never overwrites the original blinded label, and blinded

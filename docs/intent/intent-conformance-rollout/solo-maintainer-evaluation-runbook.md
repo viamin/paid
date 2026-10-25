@@ -70,19 +70,35 @@ The explicit **Finish labeling** action refuses while any case is unlabeled
 or skipped. Freezing stamps the reference labels; from that point answers
 become visible and execution is allowed.
 
-## 5. Execute the real reviewer (documented command)
+## 5. Execute the real reviewer (queued job)
 
-After freeze, run the actual conformance reviewer for every case through
-`agent_harness` with either the UI action or the documented command:
+After freeze, queue the actual conformance reviewer for every case through
+`agent_harness`. The UI action (or the documented command below) only
+authorizes and enqueues an idempotent background job — the corpus never runs
+inside the request:
 
 ```bash
 bin/rails "intent_conformance:shadow_evaluation:execute[<evaluation-id>]"
 ```
 
-The command records actual verdicts, reviewer model, prompt digest, cost,
+The evaluation screen shows the durable execution state (`queued → running →
+completed | partial | failed | cancelled`) with per-case progress and
+recorded cost, refreshing while execution is active. Any project operator may
+request cancellation — it takes effect between cases, preserves collected
+evidence, and never fabricates unevaluated results:
+
+```bash
+bin/rails "intent_conformance:shadow_evaluation:cancel[<evaluation-id>]"
+```
+
+The execution records actual verdicts, reviewer model, prompt digest, cost,
 and per-case failures. Missing or failed reviewer output is recorded as not
 evaluated — prerequisite validation alone is never presented as execution.
-Re-running the command retries cases that lack an evaluated verdict.
+A retry (UI action or the same command) resumes from the collected evidence
+and only evaluates cases that lack an evaluated verdict, so completed-case
+spend is never repeated. A killed worker, expired request, or lost lock is
+recovered by the periodic sweep: the evaluation returns to a retryable
+state with its evidence preserved rather than staying stuck as executing.
 
 For the repository-visible JSONL ledger, the operator appends the recorded
 `shadow_run` events with the CLI `append` command after the run, one event

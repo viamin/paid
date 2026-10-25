@@ -9,12 +9,23 @@ module IntentConformance
     # or failed reviewer output is recorded as not_evaluated and never
     # counted as agreement. Re-running retries cases that lack an evaluated
     # verdict. Prerequisite validation alone is never presented as
-    # execution.
+    # execution. Runs inside the queued ExecuteJob (#4642): it heartbeats
+    # after every case so the recovery sweep can distinguish a live worker
+    # from a stranded one, honors a cancellation request on case boundaries,
+    # and reports the terminal execution state from the cumulative evidence
+    # (completed | partial | failed | cancelled).
     # @spec INTENT-CONFORMANCE-ROLLOUT-006
     # @spec INTENT-CONFORMANCE-ROLLOUT-007
+    # @spec INTENT-CONFORMANCE-ROLLOUT-011
     class ExecuteReviewer
-      Result = Data.define(:success, :error, :evaluation, :executed, :failed) do
+      Result = Data.define(:success, :error, :evaluation, :executed, :failed, :cancelled, :unowned) do
         def success? = success
+
+        # This invocation may not write the evaluation's execution state:
+        # another holder owns the advisory lock, or a recovery sweep already
+        # returned the record to a retryable state. Callers only revert
+        # their own queued claim, never another owner's state.
+        def unowned? = unowned
       end
 
       MAX_DESIGN_DOCS = 10
@@ -23,6 +34,8 @@ module IntentConformance
       MAX_PATCH_LENGTH = 800
       NOT_EVALUATED = "not_evaluated"
       VERDICTS = IntentConformance::ShadowEvaluationPolicy::LABELS
+      CANCEL_REQUESTED = "cancelled by operator"
+      OWNERSHIP_LOST = "execution ownership lost"
 
       # Namespaces this execution lock apart from the other pg_advisory_lock
       # callers in app/services (each picks its own constant; see
@@ -35,6 +48,10 @@ module IntentConformance
 
       def initialize(evaluation:)
         @evaluation = evaluation
+        # Capture the project reference before any per-case reload: reload
+        # clears the association cache, and the repository identity must
+        # stay pinned to the project this execution started with.
+        @project = evaluation.project
       end
 
       def call
@@ -50,7 +67,7 @@ module IntentConformance
             project_id: @evaluation.project_id,
             shadow_evaluation_id: @evaluation.id
           )
-          return failure("reviewer execution is already in progress for this evaluation; retry once it finishes")
+          return unowned_failure("reviewer execution is already in progress for this evaluation; retry once it finishes")
         end
 
         begin
@@ -85,22 +102,46 @@ module IntentConformance
       end
 
       def execute_cases
-        @evaluation.update!(status: "executing", execute_started_at: Time.current)
+        @evaluation.update!(status: "running", execute_started_at: Time.current, execute_heartbeat_at: Time.current)
         executed = 0
         failed = 0
+        stop = nil
 
         @evaluation.corpus.cases.each do |corpus_case|
+          stop = stop_reason
+          break if stop
+
           next if evaluated_run_for(corpus_case.fetch("id"))
 
           verdict, failure_reason, model, cost = review_case(corpus_case)
           upsert_run(corpus_case, verdict, failure_reason, model, cost)
           verdict == NOT_EVALUATED ? failed += 1 : executed += 1
+          heartbeat!
         end
 
-        complete_or_fail(executed, failed)
+        finish(executed:, failed:, stop:)
       rescue ShadowEvaluationCorpus::MissingManifest => error
         @evaluation.update!(status: "failed", last_failure_reason: error.message)
         failure(error.message)
+      end
+
+      # Case-boundary checks read a fresh row (status, cancellation request)
+      # rather than reloading the in-memory record: reload would drop the
+      # pinned project/association references this execution started with.
+      # An operator cancellation request stops the run with the collected
+      # evidence preserved, and losing ownership of the running state
+      # (recovery sweep marked a stale worker interrupted) stops the loop
+      # without writing terminal state over the recovery decision.
+      def stop_reason
+        status, cancel_requested_at = IntentConformanceShadowEvaluation.where(id: @evaluation.id).pick(:status, :cancel_requested_at)
+        return CANCEL_REQUESTED if cancel_requested_at.present?
+        return OWNERSHIP_LOST unless %w[running executing].include?(status)
+
+        nil
+      end
+
+      def heartbeat!
+        @evaluation.update_column(:execute_heartbeat_at, Time.current)
       end
 
       def evaluated_run_for(case_id)
@@ -231,14 +272,40 @@ module IntentConformance
         )
       end
 
-      def complete_or_fail(executed, failed)
-        if failed.zero?
-          @evaluation.update!(status: "completed", completed_at: Time.current, last_failure_reason: nil)
-        else
-          @evaluation.update!(status: "failed", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
+      # Terminal state from the cumulative evidence across every case of the
+      # frozen corpus, not just this pass: a retry that completes the
+      # remaining cases ends completed, one that ends mid-way with collected
+      # verdicts ends partial, and an untouched corpus ends failed. Neither
+      # interruption nor cancellation ever fabricates an evaluated verdict.
+      def finish(executed:, failed:, stop: nil)
+        return unowned_failure("execution ownership was lost before the pass finished; the record already reflects a recoverable state") if stop == OWNERSHIP_LOST
+        if stop == CANCEL_REQUESTED || cancel_requested_in_row?
+          CancelExecution.finalize(@evaluation,
+            reason: "cancelled by operator — collected evidence preserved; retry to evaluate the remaining cases")
+          return Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed, cancelled: true, unowned: false)
         end
-        log_executed(executed, failed)
-        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
+
+        progress = @evaluation.execution_progress
+        terminal_status =
+          if progress[:total].positive? && progress[:evaluated] == progress[:total]
+            "completed"
+          elsif progress[:evaluated].positive?
+            "partial"
+          else
+            "failed"
+          end
+        @evaluation.update!(
+          status: terminal_status,
+          completed_at: terminal_status == "completed" ? Time.current : @evaluation.completed_at,
+          last_failure_reason: terminal_status == "completed" ? nil : "#{progress[:total] - progress[:evaluated]} case(s) ended without an evaluated reviewer verdict"
+        )
+        log_executed(executed, failed, terminal_status)
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed, cancelled: false, unowned: false)
+      end
+
+      # Fresh read: a cancellation may have landed during the final case.
+      def cancel_requested_in_row?
+        IntentConformanceShadowEvaluation.where(id: @evaluation.id).pick(:cancel_requested_at).present?
       end
 
       def prompt_digest
@@ -247,20 +314,21 @@ module IntentConformance
       end
 
       def project
-        @project ||= @evaluation.project
+        @project
       end
 
       def client
         @client ||= project.client
       end
 
-      def log_executed(executed, failed)
+      def log_executed(executed, failed, terminal_status = nil)
         Rails.logger.info(
           message: "intent_conformance.shadow_evaluation_executed",
           project_id: project.id,
           shadow_evaluation_id: @evaluation.id,
           executed_count: executed,
-          failed_count: failed
+          failed_count: failed,
+          terminal_status: terminal_status
         )
       end
 
@@ -298,7 +366,11 @@ module IntentConformance
       end
 
       def failure(message)
-        Result.new(success: false, error: message, evaluation: nil, executed: 0, failed: 0)
+        Result.new(success: false, error: message, evaluation: nil, executed: 0, failed: 0, cancelled: false, unowned: false)
+      end
+
+      def unowned_failure(message)
+        Result.new(success: false, error: message, evaluation: @evaluation, executed: 0, failed: 0, cancelled: false, unowned: true)
       end
     end
   end

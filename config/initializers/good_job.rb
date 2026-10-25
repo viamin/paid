@@ -404,6 +404,12 @@ Rails.application.configure do
       cron: "11-59/5 * * * *",
       class: "AppleVerificationRetryJob",
       description: "Re-enqueue retryable Apple verification infrastructure failures (APPLE-ATTEMPT-010)"
+    },
+    intent_conformance_shadow_execution_recovery: {
+      cron: "12-59/10 * * * *",
+      queue: "maintenance",
+      class: "IntentConformance::ShadowEvaluations::RecoveryJob",
+      description: "Return stale queued/running shadow-evaluation executions to a retryable state (#4642)"
     }
   }
 end

@@ -1,9 +1,13 @@
 <%# Post-freeze surface: answers (strata, reviewer outputs) are visible here.
     Disagreements surface for maintainer review; revisions append without
-    overwriting originals. @spec INTENT-CONFORMANCE-ROLLOUT-007 @spec INTENT-CONFORMANCE-ROLLOUT-008 %>
+    overwriting originals. Execution is the #4642 queued-job lifecycle:
+    queued/running show durable progress plus authorized cancellation;
+    partial/failed/cancelled offer retry/resume of the remaining cases.
+    @spec INTENT-CONFORMANCE-ROLLOUT-007 @spec INTENT-CONFORMANCE-ROLLOUT-008 @spec INTENT-CONFORMANCE-ROLLOUT-011 %>
 <% cases = evaluation.corpus.cases %>
 <% labels = evaluation.labels.index_by(&:case_id) %>
 <% runs = evaluation.runs.index_by(&:case_id) %>
+<% progress = evaluation.execution_progress %>
 
 <div class="rounded-xl border border-gray-200 bg-white p-4">
   <div class="flex flex-wrap items-center justify-between gap-3">
@@ -13,10 +17,19 @@
         Frozen <%= evaluation.labels_frozen_at&.strftime("%Y-%m-%d %H:%M UTC") %> · answers visible from here on.
         Execution state: <span data-evaluation-execution><%= evaluation.status %></span><% if evaluation.last_failure_reason.present? %> — <%= evaluation.last_failure_reason %><% end %>.
       </p>
+      <p class="mt-1 text-xs text-gray-500" data-execution-progress>
+        Cases evaluated <%= progress[:evaluated] %>/<%= progress[:total] %> ·
+        not evaluated <%= progress[:not_evaluated] %> · reviewer cost recorded <%= number_to_currency(progress[:cost_cents].to_f / 100, precision: 2) %>.
+      </p>
     </div>
-    <% if evaluation.frozen? || evaluation.failed? %>
-      <%= button_to "Execute reviewer now", execute_project_shadow_evaluation_path(project, evaluation, **inbox_context),
-            form: { data: { turbo_frame: "_top", turbo_confirm: "Run the real conformance reviewer for every case through agent_harness? Costs apply." } },
+    <% if evaluation.execution_active? %>
+      <%= button_to "Cancel execution", cancel_project_shadow_evaluation_path(project, evaluation, **inbox_context),
+            form: { data: { turbo_frame: "_top", turbo_confirm: "Stop reviewer execution after the current case? Collected evidence is preserved." } },
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-red-700 ring-1 ring-inset ring-red-300 hover:bg-red-50" %>
+    <% elsif evaluation.frozen? || evaluation.partial? || evaluation.failed? || evaluation.cancelled? %>
+      <%= button_to evaluation.runs.exists? ? "Resume execution" : "Queue reviewer execution",
+            execute_project_shadow_evaluation_path(project, evaluation, **inbox_context),
+            form: { data: { turbo_frame: "_top", turbo_confirm: "Queue the real conformance reviewer for every remaining case through agent_harness? Costs apply." } },
             class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
     <% end %>
   </div>
@@ -44,6 +57,7 @@
         <th class="py-2 pr-3">Stratum</th>
         <th class="py-2 pr-3">Reference</th>
         <th class="py-2 pr-3">Reviewer</th>
+        <th class="py-2 pr-3">Cost</th>
         <th class="py-2 pr-3">Revision</th>
       </tr>
     </thead>
@@ -60,6 +74,7 @@
           <td class="py-2 pr-3 text-gray-600"><%= corpus_case["stratum"] %></td>
           <td class="py-2 pr-3"><code><%= label&.outcome %></code></td>
           <td class="py-2 pr-3"><code><%= run&.verdict %></code><% if run&.failure_reason.present? %> <span class="text-xs text-red-700"><%= run.failure_reason %></span><% end %></td>
+          <td class="py-2 pr-3 text-xs text-gray-600"><%= run.present? ? number_to_currency(run.cost_cents.to_f / 100, precision: 2) : nil %></td>
           <td class="py-2 pr-3 text-xs text-gray-600">
             <% if label&.revised? %>
               <%= label.revised_outcome %> (was <%= label.outcome %>)

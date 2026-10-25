@@ -44,9 +44,19 @@
                 project_shadow_evaluation_path(entry.project, shadow_evaluation, **inbox_context),
                 data: { turbo_frame: "_top" },
                 class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
-          <% if shadow_evaluation.completed? || shadow_evaluation.failed? %>
+          <% if shadow_evaluation.execution_active? %>
+            <span class="text-xs text-violet-700" data-evaluation-execution="active">
+              reviewer execution <%= shadow_evaluation.status %> — open the evaluation to watch progress or cancel
+            </span>
+          <% elsif shadow_evaluation.completed? || shadow_evaluation.partial? || shadow_evaluation.failed? || shadow_evaluation.cancelled? %>
             <span class="text-xs <%= shadow_evaluation.completed? ? "text-green-700" : "text-red-700" %>">
-              <%= shadow_evaluation.completed? ? "reviewer execution completed" : "reviewer execution failed — retry from the evaluation screen" %>
+              <% if shadow_evaluation.completed? %>
+                reviewer execution completed
+              <% elsif shadow_evaluation.cancelled? %>
+                reviewer execution cancelled — retry from the evaluation screen
+              <% else %>
+                reviewer execution <%= shadow_evaluation.status %> — retry from the evaluation screen
+              <% end %>
             </span>
           <% end %>
         </div>

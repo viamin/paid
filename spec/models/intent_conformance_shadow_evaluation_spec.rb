@@ -57,6 +57,50 @@ RSpec.describe IntentConformanceShadowEvaluation do
     end
   end
 
+  describe "execution lifecycle helpers" do
+    # @spec INTENT-CONFORMANCE-ROLLOUT-011
+    it "exposes the queued/running execution states and a legacy executing record" do
+      evaluation = create(:intent_conformance_shadow_evaluation)
+
+      expect(evaluation).not_to be_execution_active
+
+      evaluation.status = "queued"
+      expect(evaluation).to be_queued
+      expect(evaluation).to be_execution_active
+
+      evaluation.status = "running"
+      expect(evaluation).to be_running
+      expect(evaluation).to be_execution_active
+
+      # Pre-#4642 in-flight rows remain valid and count as running.
+      evaluation.status = "executing"
+      expect(evaluation).to be_running
+      expect(evaluation).to be_execution_active
+
+      evaluation.status = "cancelled"
+      expect(evaluation).to be_cancelled
+      expect(evaluation).not_to be_execution_active
+    end
+
+    it "derives durable per-case progress and recorded cost from the run rows" do
+      dir = Dir.mktmpdir
+      begin
+        manifest_path = File.join(dir, "corpus-manifest.yml")
+        File.write(manifest_path, { "cases" => [ { "id" => "A-01" }, { "id" => "A-02" } ] }.to_yaml)
+        evaluation = create(:intent_conformance_shadow_evaluation, manifest_path: manifest_path,
+          manifest_digest: Digest::SHA256.file(manifest_path).hexdigest)
+        create(:intent_conformance_shadow_evaluation_run, shadow_evaluation: evaluation, case_id: "A-01",
+          verdict: "within_scope", cost_cents: 40)
+        create(:intent_conformance_shadow_evaluation_run, shadow_evaluation: evaluation, case_id: "A-02",
+          verdict: "not_evaluated", cost_cents: 2)
+
+        expect(evaluation.execution_progress).to eq(total: 2, evaluated: 1, not_evaluated: 1, cost_cents: 42)
+      ensure
+        FileUtils.remove_entry(dir)
+      end
+    end
+  end
+
   describe IntentConformanceShadowEvaluationRun do
     it "rejects an unknown verdict" do
       run = build(:intent_conformance_shadow_evaluation_run, verdict: "approved")

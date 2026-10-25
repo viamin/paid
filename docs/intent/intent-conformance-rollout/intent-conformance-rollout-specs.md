@@ -85,9 +85,11 @@
   *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
   *Code:* `app/services/intent_conformance/reviewer_llm.rb`,
   `app/services/intent_conformance/shadow_evaluation/execute_reviewer.rb`,
+  `app/jobs/intent_conformance/shadow_evaluations/execute_job.rb`,
   `lib/tasks/intent_conformance.rake`,
   `bin/intent-conformance-shadow-evaluation`.
   *Test:* `spec/services/intent_conformance/shadow_evaluation/execute_reviewer_spec.rb`,
+  `spec/jobs/intent_conformance/shadow_evaluations/execute_job_spec.rb`,
   `spec/bin/intent_conformance_shadow_evaluation_spec.rb`.
 
 - [ ] **INTENT-CONFORMANCE-ROLLOUT-008** — The evaluation record SHALL produce
@@ -118,6 +120,33 @@
   *Code:* `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`,
   `app/controllers/projects/shadow_evaluations_controller.rb`.
   *Test:* `spec/requests/projects/shadow_evaluations_spec.rb`.
+
+- [ ] **INTENT-CONFORMANCE-ROLLOUT-011** — When an operator triggers reviewer
+  execution after the reference set is frozen, the system SHALL only
+  authorize and enqueue an idempotent background job (never run the corpus
+  inside the HTTP request), SHALL expose the queued/running/partial/failed/
+  cancelled/completed execution state with per-case progress and recorded
+  cost on the evaluation surface, and SHALL offer an authorized
+  cancellation/retry/resume action. Cancellation SHALL take effect between
+  cases, preserve collected evidence, and never fabricate unevaluated
+  results; retry SHALL skip cases that already hold an evaluated verdict so
+  completed-case spend is never repeated. A killed worker, expired request,
+  or lost lock SHALL NOT strand an evaluation as executing: heartbeat
+  staleness SHALL return the record to a retryable state with evidence
+  preserved. The documented execute/cancel commands SHALL drive the same
+  lifecycle and permission boundary.
+  *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
+  *Code:* `app/services/intent_conformance/shadow_evaluation/enqueue_execution.rb`,
+  `app/services/intent_conformance/shadow_evaluation/cancel_execution.rb`,
+  `app/jobs/intent_conformance/shadow_evaluations/execute_job.rb`,
+  `app/jobs/intent_conformance/shadow_evaluations/recovery_job.rb`,
+  `app/controllers/projects/shadow_evaluations_controller.rb`,
+  `lib/tasks/intent_conformance.rake`.
+  *Test:* `spec/services/intent_conformance/shadow_evaluation/enqueue_execution_spec.rb`,
+  `spec/services/intent_conformance/shadow_evaluation/cancel_execution_spec.rb`,
+  `spec/services/intent_conformance/shadow_evaluation/execute_reviewer_spec.rb`,
+  `spec/jobs/intent_conformance/shadow_evaluations/`,
+  `spec/requests/projects/shadow_evaluations_spec.rb`.
 
 - [ ] **INTENT-CONFORMANCE-ROLLOUT-010** — Before a blinded labeler can open
   case evidence, the system SHALL authorize the project request, SHALL refuse

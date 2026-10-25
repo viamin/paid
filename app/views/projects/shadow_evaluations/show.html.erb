@@ -1,4 +1,10 @@
 <%# @spec INTENT-CONFORMANCE-ROLLOUT-005 @spec INTENT-CONFORMANCE-ROLLOUT-006 @spec INTENT-CONFORMANCE-ROLLOUT-009 %>
+<%# Durable progress for the queued/running execution lifecycle (#4642):
+    refresh the page while execution is active so the operator can leave and
+    return to current per-case progress. @spec INTENT-CONFORMANCE-ROLLOUT-011 %>
+<% content_for :head do %>
+  <meta http-equiv="refresh" content="10">
+<% end if @evaluation.execution_active? %>
 <div class="mx-auto max-w-4xl space-y-6 px-4 py-8" data-shadow-evaluation="<%= @evaluation.id %>">
   <div class="flex flex-wrap items-center justify-between gap-3">
     <div>

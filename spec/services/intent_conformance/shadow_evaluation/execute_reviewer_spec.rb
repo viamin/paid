@@ -4,6 +4,7 @@ require "rails_helper"
 
 # @spec INTENT-CONFORMANCE-ROLLOUT-006
 # @spec INTENT-CONFORMANCE-ROLLOUT-007
+# @spec INTENT-CONFORMANCE-ROLLOUT-011
 RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account: account) }
@@ -74,6 +75,76 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     runs = evaluation.runs.index_by(&:case_id)
     expect(runs["A-01"]).to have_attributes(verdict: "within_scope", reviewer_model: "claude-sonnet-4-6", cost_cents: 42, failure_reason: nil)
     expect(runs["A-01"].prompt_digest).to be_present
+  end
+
+  it "marks the evaluation running while it executes and heartbeats after every case" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    statuses = []
+    allow(AgentHarness).to receive(:send_message) do
+      statuses << evaluation.reload.status
+      llm_response("within_scope")
+    end
+
+    described_class.call(evaluation: evaluation)
+
+    expect(statuses).to all(eq("running"))
+    expect(evaluation.reload).to be_completed
+    expect(evaluation.execute_heartbeat_at).to be_within(2.seconds).of(Time.current)
+  end
+
+  it "ends partial when only some cases hold an evaluated verdict" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    responses = [ llm_response("within_scope"),
+                  instance_double(AgentHarness::Response, success?: false, model: nil, output: nil, metadata: {}) ]
+    allow(AgentHarness).to receive(:send_message).and_return(*responses)
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).to be_success
+    expect(result.executed).to eq(1)
+    expect(result.failed).to eq(1)
+    expect(evaluation.reload).to be_partial
+    expect(evaluation.last_failure_reason).to include("1 case(s) ended without an evaluated reviewer verdict")
+  end
+
+  it "honors a cancellation request between cases, preserving evidence and fabricating nothing" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    # The operator cancels while the first reviewer invocation is in flight;
+    # the loop stops at the next case boundary.
+    allow(AgentHarness).to receive(:send_message) do
+      evaluation.update_column(:cancel_requested_at, Time.current)
+      llm_response("within_scope")
+    end
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result.cancelled).to be(true)
+    expect(AgentHarness).to have_received(:send_message).once
+    evaluation.reload
+    expect(evaluation).to be_cancelled
+    expect(evaluation.cancelled_at).to be_present
+    expect(evaluation.runs.count).to eq(1)
+    expect(evaluation.runs.first).not_to be_not_evaluated
+    expect(evaluation.last_failure_reason).to include("collected evidence preserved")
+  end
+
+  it "stops without writing terminal state when a recovery sweep took ownership back mid-run" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message) do
+      evaluation.update_column(:status, "partial")
+      llm_response("within_scope")
+    end
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).not_to be_success
+    expect(result.unowned?).to be(true)
+    expect(AgentHarness).to have_received(:send_message).once
+    expect(evaluation.reload.status).to eq("partial")
   end
 
   it "executes the reviewer pinned by the manifest" do

@@ -2,12 +2,14 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20261023000000_create_intent_conformance_shadow_evaluations")
+require Rails.root.join("db/migrate/20261025000000_add_execution_lifecycle_to_intent_conformance_shadow_evaluations")
 
 RSpec.describe CreateIntentConformanceShadowEvaluations, :aggregate_failures do
   # @spec INTENT-CONFORMANCE-ROLLOUT-005 @spec INTENT-CONFORMANCE-ROLLOUT-007
   self.use_transactional_tests = false
 
   let(:migration) { described_class.new }
+  let(:lifecycle_migration) { AddExecutionLifecycleToIntentConformanceShadowEvaluations.new }
   let(:connection) { ActiveRecord::Base.connection }
 
   around do |example|
@@ -22,6 +24,11 @@ RSpec.describe CreateIntentConformanceShadowEvaluations, :aggregate_failures do
 
     if tables_existed.any? { |_table, existed| existed }
       migration.up
+      # Restore the full current schema (follow-up migrations included) so
+      # later examples in this process see the lifecycle columns. The
+      # follow-up is change-style, so it must run through migrate(:up) —
+      # the inherited Migration#up is a no-op.
+      lifecycle_migration.migrate(:up)
     end
     clear_schema_metadata!
   end
