@@ -381,6 +381,24 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **prerequisite_flash(result)
     end
 
+    # Records a revision-bound candidate; the following report-only audit is
+    # the semantic authority and may still find it insufficient or stale.
+    # @spec PARTIAL-CLOSEOUT-030
+    def submit_prerequisite_evidence
+      authorize @project, :run_agent?
+      issue = resolve_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      result = PartialCloseouts::SubmitPrerequisiteEvidence.call(
+        issue:, actor: current_user, criterion_index: params[:criterion_index], evidence_type: params[:evidence_type],
+        reference: params[:reference].to_s, revision: params[:revision].to_s, explanation: params[:explanation].to_s
+      )
+      redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Evidence submitted; request an acceptance audit to validate it.")
+    end
+
     # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
     # @spec OPERATOR-INBOX-002C
     def unblock_escalation

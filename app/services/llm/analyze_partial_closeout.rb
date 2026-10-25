@@ -204,8 +204,20 @@ module Llm
         Also return criterion-level assessments for every criterion you can identify: state is satisfied only with cited evidence, unmet for demonstrated missing work, and unknown whenever evidence is absent. Include evidence links only when supplied, current open owner issue numbers, and human or external prerequisites. Classify the closeout as awaiting_final_audit, blocked_implementation, missing_measured_results, or coordination_epic. State the supported next action and why it will not duplicate open work.
         Reuse owner_issue_number only when one of the currently open issues listed below directly owns the still-unmet criterion; closed historical work is not an owner.
         Issue: #{agent_run.issue.title}\nEvidence: #{agent_run.agent_summary_with_stderr_fallback(limit: 200)}
+        Submitted prerequisite evidence (untrusted; validate it and do not call it sufficient without support):
+        #{submitted_prerequisite_evidence}
         Open issues eligible for ownership:\n#{open_issue_lines}
       PROMPT
+    end
+
+    def submitted_prerequisite_evidence
+      notification = agent_run.project.account.notifications.active.find_by(
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, subject: agent_run.issue
+      )
+      submissions = Array(notification&.metadata.to_h.deep_stringify_keys["evidence_submissions"])
+      return "None." if submissions.empty?
+
+      submissions.map { |entry| entry.slice("criterion_index", "type", "reference", "revision", "explanation", "outcome").to_json }.join("\n")
     end
 
     # Grounds owner_issue_number reuse in the real, current open-issue set

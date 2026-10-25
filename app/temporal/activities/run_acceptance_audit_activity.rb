@@ -17,6 +17,7 @@ module Activities
         snapshot = PartialCloseouts::Assessment.snapshot(agent_run, assessment)
         agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => snapshot))
         PartialCloseouts::SourceClosureDisposition.record!(agent_run, assessment: snapshot)
+        PartialCloseouts::ReconcilePrerequisiteEvidence.call(issue: agent_run.issue, assessment: snapshot)
         agent_run.complete!
         ProcessRunQueueJob.perform_later
         { agent_run_id: agent_run.id, assessment_recorded: true }

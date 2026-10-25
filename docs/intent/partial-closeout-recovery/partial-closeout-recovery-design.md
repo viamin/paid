@@ -27,6 +27,26 @@ delivers visibility + authorized recovery on its own.
 
 ## Design
 
+### Human prerequisite evidence
+
+Human-prerequisite notifications retain their scheduling authority until a
+bounded acceptance audit has semantically assessed current, revision-bound
+evidence. An authorized operator submits one candidate against an exact
+prerequisite occurrence with evidence type/reference, revision, explanation,
+actor and provenance. Candidates are `pending_validation`, then become
+`sufficient`, `insufficient`, or `stale`; unavailable audit output remains
+pending rather than being represented as acceptance. Durable links, artifacts,
+existing runs, reports, and evaluations are candidates, never sufficient on
+their own.
+
+The audit receives submissions as untrusted context through the existing
+`agent_harness` closeout assessment. It may mark a candidate sufficient only
+when the corresponding current criterion is assessed satisfied. Resolving a
+notification requires sufficient evidence for every occurrence it owns; it
+releases only that notification's parent issue through the existing eligibility
+and continuation delegation. Notification dismissal remains a personal UI
+removal and does not release scheduling or attest acceptance.
+
 ### Evidence: `Issues::CloseoutEvidence`
 
 One value object computes the *closeout evidence* for an issue and a stable

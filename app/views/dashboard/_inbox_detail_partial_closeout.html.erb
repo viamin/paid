@@ -210,13 +210,20 @@
         <div class="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
           <h4 class="text-sm font-semibold text-amber-900">Human evidence requested</h4>
           <p class="whitespace-pre-line text-sm text-amber-900"><%= human_prerequisite.description %></p>
-          <p class="text-xs text-amber-800">
-            Each line names the requested evidence, who must supply it, and the exact step. Submit the evidence
-            where the step says (usually a comment or linked artifact on the prerequisite), then link that work
-            here. When an agent-owned prerequisite closes, scheduling resumes automatically; supplied human
-            evidence never retries an agent by itself — afterwards, request a deliberate continuation and say
-            what the run should do with the evidence.
-          </p>
+          <p class="text-xs text-amber-800">Personal dismissal only removes this notification from your view; it does not satisfy the prerequisite or release scheduling.</p>
+          <% Array(human_prerequisite.metadata.to_h.deep_stringify_keys["prerequisites"]).each_with_index do |prerequisite, index| %>
+            <%= form_with url: submit_prerequisite_evidence_project_agent_runs_path(entry.project), class: "grid gap-2 rounded border border-amber-300 bg-white p-3" do |form| %>
+              <%= form.hidden_field :issue_id, value: issue.id %>
+              <%= form.hidden_field :criterion_index, value: index %>
+              <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+              <p class="text-sm font-medium text-gray-900">Submit evidence: <%= prerequisite["criterion"] %></p>
+              <%= form.select :evidence_type, PartialCloseouts::SubmitPrerequisiteEvidence::TYPES.map { |type| [type.humanize, type] }, {}, class: "rounded-md border-gray-300 text-sm" %>
+              <%= form.text_field :reference, required: true, placeholder: "Durable URL or existing record reference", class: "rounded-md border-gray-300 text-sm" %>
+              <%= form.text_field :revision, required: true, placeholder: "Exact revision, run ID, or report version", class: "rounded-md border-gray-300 text-sm" %>
+              <%= form.text_area :explanation, required: true, rows: 2, placeholder: "Why this evidence satisfies the named prerequisite", class: "rounded-md border-gray-300 text-sm" %>
+              <%= form.submit "Submit for validation", class: "justify-self-start rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-500" %>
+            <% end %>
+          <% end %>
         </div>
     <% end %>
   </div>

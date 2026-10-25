@@ -518,3 +518,23 @@
   `spec/services/inbox/chat_context_spec.rb`,
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-030** — When an authorized operator submits evidence
+  from a partial-closeout Inbox item, the system SHALL record the exact
+  prerequisite occurrence, current evidence and intent revisions, actor,
+  provenance, evidence type/reference/revision, and explanation as
+  `pending_validation`. A URL, comment, artifact, report, run, evaluation,
+  green result, or dismissal alone SHALL NOT satisfy acceptance; links SHALL
+  be structurally validated and a bounded existing acceptance audit through
+  `agent_harness` SHALL receive submissions as untrusted evidence.
+  *Code:* `app/services/partial_closeouts/submit_prerequisite_evidence.rb`,
+  `app/services/llm/analyze_partial_closeout.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-031** — When a current acceptance audit assesses a
+  submitted prerequisite, the system SHALL record `sufficient`,
+  `insufficient`, or `stale` with reasoning, resolve only a notification whose
+  every prerequisite occurrence is sufficient, and reuse normal eligibility
+  reassessment. Personal notification dismissal SHALL remain distinct from
+  satisfaction and SHALL NOT release the scheduling guard.
+  *Code:* `app/services/partial_closeouts/reconcile_prerequisite_evidence.rb`,
+  `app/models/notification.rb`.

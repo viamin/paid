@@ -173,12 +173,28 @@ module PartialCloseouts
     def publish_operator_prerequisites!(human_gaps)
       return if human_gaps.empty?
 
+      existing = agent_run.project.account.notifications.find_by(
+        source: PREREQUISITE_NOTIFICATION_SOURCE, subject: agent_run.issue
+      )
       Notifications::Publish.call(
         account: agent_run.project.account, subject: agent_run.issue,
         source: PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
         title: operator_prerequisite_title(human_gaps),
-        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n")
+        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n"),
+        metadata: prerequisite_metadata(human_gaps, existing)
       )
+    end
+
+    def prerequisite_metadata(human_gaps, existing)
+      existing_metadata = existing&.metadata.to_h.deep_stringify_keys
+      {
+        "prerequisites" => human_gaps.map.with_index { |gap, index|
+          { "index" => index, "criterion" => gap["criterion"], "next_step" => gap["next_step"],
+            "source_revision" => Issues::CloseoutEvidence.call(agent_run.issue).digest,
+            "intent_revision" => Assessment.intent_revision_for(agent_run.issue) }
+        },
+        "evidence_submissions" => Array(existing_metadata["evidence_submissions"])
+      }
     end
 
     def operator_prerequisite_title(human_gaps)
