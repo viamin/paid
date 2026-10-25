@@ -518,3 +518,21 @@
   `spec/services/inbox/chat_context_spec.rb`,
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-030** — When an open partial-closeout issue is
+  excluded by either `without_open_non_pr_subissues` or an active
+  `partial_closeout.prerequisite` notification, `CloseoutStatus` SHALL mirror
+  that authoritative exclusion as an additive structured blocker. A native
+  child blocker SHALL identify every qualifying child and link to it; a human
+  prerequisite blocker SHALL identify the active notification, its source,
+  title, requested evidence, and action link. Both SHALL give a recovery route
+  that preserves unresolved work and human evidence: the system SHALL not
+  close children, dismiss notifications, infer completion, or silently replace
+  a team policy merely to admit work. Inbox detail/count behavior, chat/API
+  context, implementation continuations, and report-only audits SHALL use the
+  same status; `unavailable` remains only for a genuinely unwalked guard.
+  *Code:* `app/services/issues/closeout_status.rb`,
+  `app/services/inbox/chat_context.rb`,
+  `app/views/dashboard/_inbox_closeout_blockers.html.erb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/issues/request_continuation_spec.rb`.
