@@ -38,6 +38,12 @@ RSpec.describe FeatureIntents::DeliveryIntegration do
     expect(described_class.available_for?(project)).to be(false)
   end
 
+  it "fails closed when a required integration entry point is unavailable" do
+    hide_const("FeatureIntents::ReleaseIssue")
+
+    expect(described_class.wiring_available?).to be(false)
+  end
+
   def enable_review_enforcement
     FeatureFlags.enable!(:approved_intent_amendments, project: project)
     FeatureFlags.enable!(:intent_conformance_enforcement, project: project)

@@ -19,6 +19,8 @@ module FeatureIntents
         CompleteForwardWork.respond_to?(:complete) &&
         IntentConformance::ScheduleReview.respond_to?(:call) &&
         IntentConformance::ReviewRun.respond_to?(:call)
+    rescue NameError
+      false
     end
 
     # The P11 prerequisite is the review that actually applies to
