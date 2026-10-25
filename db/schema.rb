@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_25_233414) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2407,10 +2407,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
   end
 
   create_table "intent_conformance_shadow_evaluations", comment: "Solo-maintainer RDR-067 shadow evaluation: one labeling session per evidence generation (project, purpose, frozen corpus manifest digest) with blinded reference labels, executed reviewer runs, and the reproducible report (#4594).", force: :cascade do |t|
+    t.datetime "cancellation_requested_at", comment: "Operator request to stop after the current case; collected evidence remains intact."
+    t.datetime "cancelled_at", comment: "When a queued or running reviewer execution cooperatively stopped."
     t.datetime "completed_at", comment: "When every case had an executed reviewer verdict."
     t.datetime "created_at", null: false
     t.bigint "created_by_id", null: false, comment: "Authenticated operator who started the evaluation."
     t.datetime "execute_started_at", comment: "When reviewer execution last started."
+    t.integer "execution_attempts", default: 0, null: false, comment: "Number of worker attempts for the current evidence generation."
+    t.datetime "execution_heartbeat_at", comment: "Last durable execution progress signal, used to recover an interrupted worker."
     t.datetime "labels_frozen_at", comment: "Set by the explicit finish action; reviewer outputs stay hidden until then."
     t.text "last_failure_reason", comment: "Why execution ended (or partially ended) without evaluated verdicts for every case."
     t.string "manifest_commit", default: "", null: false, comment: "Git commit SHA of the frozen corpus manifest."
@@ -2428,6 +2432,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
     t.index ["project_id", "purpose", "manifest_digest"], name: "idx_shadow_evaluations_one_per_evidence_generation", unique: true, comment: "Repeated Start/Resume actions reuse the same evaluation for the same evidence generation."
     t.index ["project_id"], name: "index_intent_conformance_shadow_evaluations_on_project_id"
     t.index ["solo_maintainer_id"], name: "idx_on_solo_maintainer_id_9b501cd90c"
+    t.index ["status", "execution_heartbeat_at"], name: "idx_shadow_evaluations_execution_recovery"
   end
 
   create_table "intent_conformance_verdicts", comment: "Independent conformance verdicts comparing a feature PR's HEAD against its approved design revision (RDR-067). One row per review run; the latest row for a given PR HEAD is authoritative for auto-merge gating.", force: :cascade do |t|

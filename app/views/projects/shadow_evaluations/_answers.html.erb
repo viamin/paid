@@ -11,17 +11,24 @@
       <h2 class="text-sm font-semibold text-gray-900">Reference set frozen</h2>
       <p class="text-xs text-gray-500">
         Frozen <%= evaluation.labels_frozen_at&.strftime("%Y-%m-%d %H:%M UTC") %> · answers visible from here on.
-        Execution state: <span data-evaluation-execution><%= evaluation.status %></span><% if evaluation.last_failure_reason.present? %> — <%= evaluation.last_failure_reason %><% end %>.
+        Execution state: <span data-evaluation-execution><%= evaluation.status %></span> ·
+        <%= evaluation.execution_progress[:completed] %>/<%= evaluation.execution_progress[:total] %> evaluated ·
+        <%= number_to_currency(evaluation.execution_progress[:cost_cents] / 100.0) %> recorded cost<% if evaluation.last_failure_reason.present? %> — <%= evaluation.last_failure_reason %><% end %>.
       </p>
     </div>
-    <% if evaluation.frozen? || evaluation.failed? %>
-      <%= button_to "Execute reviewer now", execute_project_shadow_evaluation_path(project, evaluation, **inbox_context),
+    <% if evaluation.frozen? || evaluation.failed? || evaluation.partial? || evaluation.cancelled? %>
+      <%= button_to "Queue reviewer execution", execute_project_shadow_evaluation_path(project, evaluation, **inbox_context),
             form: { data: { turbo_frame: "_top", turbo_confirm: "Run the real conformance reviewer for every case through agent_harness? Costs apply." } },
             class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
     <% end %>
+    <% if evaluation.execution_active? %>
+      <%= button_to "Cancel execution", cancel_project_shadow_evaluation_path(project, evaluation, **inbox_context),
+            form: { data: { turbo_frame: "_top", turbo_confirm: "Stop after the current case? Collected evidence will be preserved." } },
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    <% end %>
   </div>
   <p class="mt-2 text-xs text-gray-500">
-    Equivalent documented command: <code>bin/rails "intent_conformance:shadow_evaluation:execute[<%= evaluation.id %>]"</code>.
+    Execution is queued and may be cancelled between cases. Retry resumes only cases without an evaluated verdict.
     Prerequisite validation alone is never execution.
   </p>
 </div>

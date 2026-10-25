@@ -143,7 +143,7 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
 
     expect(result).to be_success
     expect(result.failed).to eq(2)
-    expect(evaluation.reload).to be_failed
+    expect(evaluation.reload).to be_partial
     expect(evaluation.last_failure_reason).to include("without an evaluated reviewer verdict")
     evaluation.runs.each do |run|
       expect(run).to be_not_evaluated
@@ -243,5 +243,19 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     expect(second).to be_success
     expect(second.executed).to eq(2)
     expect(evaluation.reload).to be_completed
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  it "cancels between cases without fabricating unevaluated results" do
+    prepare_frozen!
+    evaluation.update!(status: "running", cancellation_requested_at: Time.current)
+    allow(AgentHarness).to receive(:send_message)
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).to be_success
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs).to be_empty
+    expect(AgentHarness).not_to have_received(:send_message)
   end
 end
