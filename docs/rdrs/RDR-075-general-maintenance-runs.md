@@ -18,7 +18,12 @@
   [#4604](https://github.com/viamin/paid/issues/4604). Its 2026-10-24
   revalidation found no Docker client, socket, or alternate local engine, so
   the required native-analyzer and sidecar artifacts remain uncollected and
-  must run in a Docker-capable execution environment.
+  must run in a Docker-capable execution environment. A 2026-10-25
+  supported-lifecycle availability check likewise produced no live artifact:
+  the supplied environment had no configured `docker_hosts` record and its
+  superuser database role was correctly rejected by the runtime-role guard.
+  That recovery record does not close [#4604](https://github.com/viamin/paid/issues/4604)
+  or release any implementation phase.
 
 ## Dependencies
 

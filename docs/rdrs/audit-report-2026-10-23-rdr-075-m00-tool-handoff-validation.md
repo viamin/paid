@@ -333,6 +333,33 @@ RDR-073 extension can be decided from an unprovisioned environment; retain
 the existing direction that an extension is filed only if a completed live
 validation identifies a checkout-dependent sidecar need.
 
+## #4604 supported-lifecycle availability check — 2026-10-25
+
+**Result: not executed; this remains a recovery record, not a validation
+artifact.** The supplied workspace was prepared with `bundle install`, `yarn
+install`, and `bin/rails db:prepare`. It has no `docker` client, Docker socket,
+or `DOCKER_*` endpoint. This alone is not evidence that Paid lacks execution
+capacity, so the supported lifecycle was checked as far as this environment
+permits: a read-only query found zero configured `docker_hosts` records. A
+Rails lifecycle invocation was then refused by the application's
+`Database::RuntimeRoleGuard`, because the supplied `DATABASE_URL` role has
+`SUPERUSER` and `BYPASSRLS`; that guard was not bypassed.
+
+No fresh `AgentRun`, pinned-checkout native analyzer invocation, sidecar
+endpoint request, or cleanup verification was attempted. Consequently, this
+check supplies neither acceptance artifact and must not be used to close
+[#4604](https://github.com/viamin/paid/issues/4604), release RDR-075 phases,
+or decide an RDR-073 extension.
+
+**Recovery:** repeat both scenarios in a Docker-capable Paid environment with
+a configured execution host, a non-superuser application role accepted by the
+runtime guard, and the specifically authorized `marketplace_tool_sidecars`
+pilot enabled for the validation project. Provision through the normal run/tool
+lifecycle, retain the native and sidecar artifacts requested above, and only
+then update this report's disposition, RDR-075's `Blocked on` metadata, and
+the `maintenance-runs` arrow. Do not bypass rollout flags or substitute
+host-only commands for either artifact.
+
 ## Disposition
 
 This report resolves critical assumption 1 only. Critical assumption 2 remains
@@ -357,10 +384,13 @@ arrow entry track #4604 as the evidence owner. This report does not:
 
 The #4604 revalidation on 2026-10-24 confirms that those two evidence
 artifacts remain blocked specifically by the absence of a Docker-capable
-execution environment. RDR-075 remains Draft, its `maintenance-runs` arrow
-remains a draft-only mapping, and implementation phases #4328–#4333 remain
-unreleased. Move the validation to a Docker-capable environment rather than
-inferring live lifecycle behavior from static tests or host-only commands.
+execution environment. The 2026-10-25 supported-lifecycle availability check
+did not alter that disposition: it found no configured execution host in this
+supplied environment and did not bypass the database runtime-role guard.
+RDR-075 remains Draft, its `maintenance-runs` arrow remains a draft-only
+mapping, and implementation phases #4328–#4333 remain unreleased. Move the
+validation to a Docker-capable environment rather than inferring live
+lifecycle behavior from static tests or host-only commands.
 
 Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
 an HLD pointer) are reviewable drafts for the same pending human-review gate,
