@@ -339,7 +339,16 @@ any repair: a scan never mutates source code or opens a PR on its own.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
-that acceptance.
+that acceptance. The proposed optimization recipe family is a catalog within
+that maintenance contract, not a separate run type: a curated selection may
+guide an audit while a free-text objective remains available. Its semantic
+assessment is performed through `agent_harness`; code retains only
+deterministic authorization, guard, budget, revalidation, and idempotency
+gates. A report remains the default outcome. The only proposed exception is a
+separately authorized, per-run, off-by-default optimization election that may
+queue a bounded repair through the existing repair pathway. It excludes
+security findings pending a dedicated approval, never makes stale evidence
+current, and does not enable rollout or change the draft status of RDR-075.
 
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container

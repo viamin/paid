@@ -62,6 +62,34 @@
       on every surface and the existing authorization of the selected repair
       creation pathway.
 
+## Optimization Recipe Catalog and Semantic Assessment
+
+- [ ] **MAINT-030**: The system shall provide the optimization catalog entries
+      performance, design/architecture, code duplication, security hardening,
+      cost/resource efficiency, maintainability/readability, and test
+      coverage/quality as code-defined catalog metadata containing a display
+      name, audit description, default metric hints, and an underlying recipe
+      reference where one exists. (#4493)
+- [ ] **MAINT-031**: When an authorized user starts a maintenance run from the
+      UI, authenticated API, or MCP surface, the system shall expose the same
+      optimization catalog selection and free-text scope behavior on each
+      surface, and shall permit a run without a catalog selection. (#4493)
+- [ ] **MAINT-032**: When an optimization catalog key is selected, the system
+      shall snapshot that key with the maintenance run and retain it across
+      retries; if the key is unmapped, the system shall admit the request as a
+      custom-objective maintenance run rather than fail it. (#4493)
+- [ ] **MAINT-033**: When an optimization recipe produces a finding, the
+      system shall retain its recipe-specific evidence, metric hints, raw tool
+      provenance where present, and counterevidence in the report occurrence,
+      and shall represent a prompt-only path or incomplete tool coverage
+      honestly. (#4494, #4496)
+- [ ] **MAINT-034**: When the system assesses an optimization finding's
+      semantic relevance, recommendation scope, counterevidence, or confidence
+      against a requested threshold, it shall obtain that assessment through
+      `agent_harness` in a structured response and shall not substitute raw
+      analyzer scores, keywords, or calibrated numerical semantics in
+      application code. (#4494, #4495, #4496)
+
 ## Reports and Findings
 
 - [ ] **MAINT-020**: The system shall produce exactly one `MaintenanceReport`
@@ -157,5 +185,39 @@
 - [ ] **MAINT-072**: The system shall link every repair issue/PR-creation run
       back to its source maintenance report and finding.
 - [ ] **MAINT-073**: The system shall never create a repair issue or
-      PR-creation run as a direct side effect of a maintenance scan without
-      an explicit user selection.
+      PR-creation run as a direct side effect of a maintenance scan unless the
+      source run has the explicitly authorized optimization auto-queue election
+      defined by MAINT-074 through MAINT-081.
+- [ ] **MAINT-074**: Where `maintenance_runs` is enabled and an authorized
+      user explicitly elects optimization auto-queue at run start, the system
+      shall snapshot that election, its requested confidence threshold, and
+      explicit per-repair cost/time limits; where the election is omitted, the
+      run shall remain report-only and require manual repair selection. (#4495)
+- [ ] **MAINT-075**: When an optimization report reaches a terminal outcome,
+      the system shall consider a finding for auto-queue only through the
+      existing authorized bounded-repair pathway, retaining links to the source
+      report and canonical finding. (#4495)
+- [ ] **MAINT-076**: When an auto-queue election names a confidence threshold,
+      the system shall queue only a finding whose `agent_harness` structured
+      assessment qualifies for that recorded threshold, and shall leave every
+      nonqualifying finding available for manual selection. (#4495)
+- [ ] **MAINT-077**: Before auto-queueing an optimization repair, the system
+      shall deterministically enforce the maintenance guard, recorded election,
+      structured-assessment validity, existing repair-path authorization,
+      category exclusion, explicit per-repair budgets, source provenance, and
+      idempotency. (#4495)
+- [ ] **MAINT-078**: When repeated reports contain the same canonical
+      optimization finding identity, the system shall not create duplicate
+      automatic repair work for that identity. (#4495)
+- [ ] **MAINT-079**: If an auto-queued repair target revision differs from the
+      source report revision, then the system shall require MAINT-071 evidence
+      revalidation before applying the recommendation and shall surface a
+      failed or unavailable revalidation without silently authorizing repair.
+      (#4495)
+- [ ] **MAINT-080**: When an auto-queued repair exhausts its recorded cost or
+      time budget, the system shall preserve its collected evidence and shall
+      not expand its scope or budget implicitly. (#4495)
+- [ ] **MAINT-081**: When an optimization finding is categorized as security
+      hardening, the system shall exclude it from auto-queue and keep its
+      repair manual-selection-only until a separately accepted security repair
+      policy authorizes otherwise. (#4496)

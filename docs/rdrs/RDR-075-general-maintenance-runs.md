@@ -249,6 +249,44 @@ links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
 outside the initial scope and requires a separately approved policy.
 
+### Optimization recipes and bounded automatic repair policy
+
+Optimization is a recipe family within the maintenance recipe mechanism, not
+a new maintenance goal. A code-defined catalog supplies curated types and
+their display metadata, default metric hints, and recipe references; its menu
+is a convenience over that catalog, not an enum that narrows the maintenance
+run contract. A user may still start a custom-objective run, and an unmapped
+catalog selection resolves to that custom-objective path rather than failing
+admission. The initial catalog categories are performance, design/
+architecture, code duplication, security hardening, cost/resource efficiency,
+maintainability/readability, and test coverage/quality.
+
+For every recipe, tools collect bounded evidence and `agent_harness` performs
+the semantic assessment of whether a candidate supports a recommendation.
+The resulting structured assessment may carry the confidence decision used by
+an optimization election, but it is not a calibrated probability or a
+repository-wide numerical truth. The policy snapshot supplies the requested
+threshold; application code structurally validates the response and
+deterministically enforces the snapshot, authorization, revision,
+idempotency, category, and budget gates. Code does not infer semantic
+eligibility from keywords, tool scores, or other proxy rules.
+
+The default remains report-only. A separately approved optimization policy may
+allow an authorized user to elect auto-queue for one run at its start. That
+immutable election records its requested confidence threshold and explicit
+per-repair cost/time limits. After the report completes, only findings whose
+agent assessment meets the recorded threshold may enter the existing bounded
+repair pathway; the report remains complete and findings that do not qualify
+remain available for manual selection. An auto-queued repair preserves the
+source report and canonical finding provenance, is idempotent for repeated
+occurrences of that canonical finding, and must revalidate against a changed
+repair checkout before applying a recommendation. Exhaustion preserves
+collected evidence. Security-hardening findings remain manual-selection-only
+until a dedicated accuracy and safety policy is approved. This policy is
+reviewable draft intent for [#4493](https://github.com/viamin/paid/issues/4493)
+through [#4496](https://github.com/viamin/paid/issues/4496); it does not
+authorize implementation, rollout, or a tenant/recipe default.
+
 ### PR integration
 
 The evidence and verification components should be reusable for PR audits.
@@ -348,6 +386,16 @@ language; only its final audit closes it.
 - [#4331](https://github.com/viamin/paid/issues/4331): Turn selected maintenance findings into bounded repair work
 - [#4332](https://github.com/viamin/paid/issues/4332): Schedule opt-in recurring maintenance with budgets and overlap prevention
 - [#4333](https://github.com/viamin/paid/issues/4333): Reuse maintenance evidence for advisory PR audits
+- [#4492](https://github.com/viamin/paid/issues/4492): Tracking umbrella for
+  optimization recipes (not an executable prerequisite)
+- [#4493](https://github.com/viamin/paid/issues/4493): Optimization recipe
+  catalog and curated type menu
+- [#4494](https://github.com/viamin/paid/issues/4494): First optimization
+  recipes — code duplication, maintainability, performance
+- [#4495](https://github.com/viamin/paid/issues/4495): Opt-in auto-queue of
+  bounded repair runs after optimization reports
+- [#4496](https://github.com/viamin/paid/issues/4496): Staged follow-on
+  optimization recipes — security, cost, architecture, tests
 - [#4334](https://github.com/viamin/paid/issues/4334): Validate and close out general maintenance runs
 
 ## Validation

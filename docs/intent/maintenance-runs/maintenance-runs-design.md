@@ -52,6 +52,11 @@ model. Each run persists, immutably once started:
   analyzer version string captured at invocation time).
 - `cost_limit`/`time_limit` snapshots, consistent with existing run budget
   fields.
+- For an optimization run, its optional catalog type and an optional
+  auto-queue election. The election is absent by default and, when present,
+  immutably snapshots the requested confidence threshold and explicit
+  per-repair cost/time limits; it is neither a tenant-wide nor recipe-wide
+  default.
 
 A maintenance run produces exactly one `MaintenanceReport`, associated
 1:1 with the run (reports are not retried in place — a retry or a new
@@ -200,6 +205,71 @@ shipped code in
   while a tool check that *was* planned and then failed to run keeps
   forcing `partial` (MAINT-022).
 
+## Optimization Recipe and Bounded Repair Policy
+
+Optimization is a catalogued maintenance recipe family, not a new run type or
+a hard-coded objective enum. A code-defined catalog entry provides a stable
+key, display name, audit description, default metric hints, and a reference to
+the underlying recipe when one exists. The initial curated entries are
+performance, design/architecture, code duplication, security hardening,
+cost/resource efficiency, maintainability/readability, and test
+coverage/quality. UI, authenticated API, and MCP start surfaces render the
+same catalog and preserve the chosen key in the run snapshot. A user can omit
+the selection and supply a custom objective; an unmapped selected key follows
+that custom-objective path rather than rejecting the request. Scope remains
+free-form and recommendations remain bounded by the ordinary maintenance
+scope contract.
+
+Recipe instructions and tool evidence give `agent_harness` the semantic work:
+assessing relevance, counterevidence, intended independence, recommendation
+scope, and whether the finding meets a requested confidence threshold. The
+structured result records the assessment and supporting evidence separately
+from raw analyzer scores. A confidence threshold is a policy input to that
+assessment, not a calibrated numerical guarantee or a code-defined semantic
+scale. Application code may validate the response shape and compare its
+threshold-qualified result to the immutable election, but it must not replace
+the assessment with keyword matching, score heuristics, or any other semantic
+proxy.
+
+Every optimization run is report-only unless an authorized user explicitly
+elects bounded auto-queue at run start. An election is off by default and is
+scoped to that one run; omitted election behaves exactly like ordinary manual
+repair selection. On terminal report production, a qualifying finding may be
+sent only through the existing M04 repair pathway. Before creating work, code
+must deterministically enforce the `maintenance_runs` guard, the recorded
+election, schema validity, existing repair-path authorization, explicit
+per-repair cost/time budgets, category exclusion, source provenance, and
+idempotency. Repeated occurrences of the same canonical finding must not
+create duplicate automatic repair work. If the repair checkout revision differs
+from the source report, the M04 revalidation contract runs before the
+recommendation can apply; a failed or unavailable revalidation remains
+visible and never becomes an implicit authorization. Budget exhaustion retains
+the evidence already collected.
+
+Security-hardening findings are excluded from auto-queue and remain
+manual-selection-only until a separately accepted accuracy/safety policy says
+otherwise. This exception does not create a broader security-repair authority.
+Disabling `maintenance_runs` prevents new optimization admissions and
+auto-queues without deleting reports or cancelling already-active repair
+runs. These are draft contracts only: acceptance and merged canonical
+artifacts remain prerequisites to implementation and do not enable rollout.
+
+### Optimization delivery mapping
+
+| Scoped claim | Executable issue | Dependency and boundary |
+| --- | --- | --- |
+| Catalog shape, curated type menu, custom-objective fallback, and snapshot retention | [#4493](https://github.com/viamin/paid/issues/4493) | Builds on M01; uses the existing `maintenance_runs` guard. |
+| Code-duplication, maintainability/readability, and performance recipes with honest evidence | [#4494](https://github.com/viamin/paid/issues/4494) | Builds on M02/M03 and the catalog; no repair authority follows. |
+| Per-run auto-queue election, semantic confidence assessment, deterministic gates, budgets, revalidation, and idempotency | [#4495](https://github.com/viamin/paid/issues/4495) | Builds on M04 and this accepted policy; security stays excluded. |
+| Security, cost/resource, architecture, and test-quality recipes | [#4496](https://github.com/viamin/paid/issues/4496) | Staged after the initial recipes; security repairs remain manual-only. |
+
+[#4492](https://github.com/viamin/paid/issues/4492) is the tracking umbrella,
+not an executable prerequisite or an implementation authority. This design
+preparation is tracked by [#4636](https://github.com/viamin/paid/issues/4636).
+The owner must record acceptance of these exact draft revisions through the
+existing review/Inbox process before the canonical artifacts merge; until then
+#4636 remains open and no runtime child is released.
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
@@ -207,7 +277,8 @@ shipped code in
 | New run type vs. custom prompt on an existing goal | New `"maintenance"` `AgentRun` goal | Custom prompts on existing creation goals | A custom prompt cannot represent report-only success, recurring finding identity, or a maintenance-shaped scope without overloading an unrelated goal's semantics (RDR-075 draft, Alternatives Considered). |
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
-| Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Repair handoff | Separate, explicitly authorized issue/PR-creation run selected manually by default; a per-run optimization election may auto-queue only through the same pathway | Automatic cleanup during the scan; tenant-wide or recipe-default auto-repair | The ordinary default remains explicit human selection. The narrow owner decision for optimization preserves the existing pathway's authorization, scope, revalidation, budget, and provenance constraints while avoiding a global repair authority. |
+| Optimization confidence | `agent_harness` gives a structured threshold-qualified semantic assessment; code enforces the recorded policy result | Calibrated numeric confidence in code; raw analyzer score or keyword threshold | Semantic relevance and confidence belong to the model. Deterministic code may enforce a returned policy result but cannot manufacture calibrated semantic meaning. |
 
 ## Open Questions & Future Decisions
 
@@ -241,9 +312,10 @@ shipped code in
 
 - Not a tool marketplace, matching engine, or provisioning system — that is
   RDR-073's territory, consumed here, not duplicated.
-- Not an automatic-repair mechanism — a scan never deletes source code or
-  opens a PR as a side effect; repair is a separate, explicitly authorized
-  run.
+- Not a general automatic-repair mechanism — a scan never deletes source code
+  or opens a PR by default. Only the separately accepted, per-run optimization
+  election may queue a bounded repair through the existing authorized path;
+  security findings remain manual-only.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.
