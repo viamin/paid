@@ -1308,7 +1308,8 @@ class Project < ApplicationRecord
   def confidence_delivery_enrollment_requires_integrated_delivery
     return if confidence_delivery_enrollment_available?
 
-    errors.add(:confidence_delivery_enrollment_enabled, "requires the confidence-driven delivery integration rollout")
+    errors.add(:confidence_delivery_enrollment_enabled,
+      "requires the confidence-driven delivery integration rollout and conformance review enforcement")
   end
 
   def enabling_confidence_delivery_enrollment?

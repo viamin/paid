@@ -37,7 +37,7 @@ integrated enrollment guard in `014`.
 - [x] **CONFIDENCE-DELIVERY-013** — While implementing confidence-driven features, Paid SHALL use feature flags where feasible and SHALL require follow-up completion before declaring readiness for activation; impossible isolation SHALL NOT itself pause in-flight work, and activation SHALL follow project release policy.
   *Tests:* `spec/services/feature_intents/complete_forward_work_spec.rb`.
   *Code:* `app/services/feature_intents/complete_forward_work.rb`.
-- [x] **CONFIDENCE-DELIVERY-014** — When enabling automatic confidence-driven release, Paid SHALL require admission, policy-specific review and completion wiring to be available; shadow assessment alone SHALL NOT change execution eligibility.
+- [x] **CONFIDENCE-DELIVERY-014** — When enabling automatic confidence-driven release, Paid SHALL require admission, policy-specific review and completion wiring to be available and SHALL require the project's policy-specific conformance review to be enforced; shadow assessment alone SHALL NOT change execution eligibility.
   *Tests:* `spec/services/feature_intents/delivery_integration_spec.rb`, `spec/models/feature_intent_spec.rb`.
   *Code:* `app/services/feature_intents/delivery_integration.rb`, `app/models/project.rb`.
 - [x] **CONFIDENCE-DELIVERY-015** — When confidence-driven enrollment is disabled, Paid SHALL preserve existing feature policy snapshots, evidence and run state and SHALL NOT automatically release held issues or pause active runs.

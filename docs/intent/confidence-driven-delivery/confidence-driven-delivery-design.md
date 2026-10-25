@@ -16,11 +16,19 @@ which score or approval happens to pass. Enrollment is disabled until the
 admission, review and completion integrations are complete.
 
 `FeatureIntents::DeliveryIntegration` is the final P12 enablement guard. It
-requires the default-off `confidence_driven_delivery` feature flag and the
+requires the default-off `confidence_driven_delivery` feature flag, the
 P10 release/admission, P11 conformance, and P12 completion entry points to be
-available before an authorized project can enable enrollment. The project
-setting remains the auditable per-project choice; disabling it or the rollout
-flag preserves existing snapshots, held work, evidence, and active runs.
+wired, and the project's policy-specific conformance review to be enforced —
+the complete `approved_intent_amendments` plus `intent_conformance_enforcement`
+pair, the same gate `IntentConformance::ScheduleReview` and
+`IntentConformance::ReviewRun` apply before any review runs. Wiring checks
+alone (a loaded class such as the approval-gated merge signal, which is a
+deliberate no-op for confidence-driven features) never satisfy this
+prerequisite, and shadow review is read-only and never changes execution
+eligibility. Only then may an authorized project enable enrollment. The
+project setting remains the auditable per-project choice; disabling it or the
+rollout flag preserves existing snapshots, held work, evidence, and active
+runs.
 
 P01 implements this boundary with `projects.new_feature_delivery_policy`,
 `projects.confidence_delivery_enrollment_enabled`, and immutable

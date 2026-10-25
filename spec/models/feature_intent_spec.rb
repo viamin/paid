@@ -12,6 +12,16 @@ RSpec.describe FeatureIntent do
         .to raise_error(ActiveRecord::RecordInvalid, /confidence-driven delivery integration rollout/)
     end
 
+    it "rejects enrollment with the rollout flag enabled but conformance review enforcement absent" do # @spec CONFIDENCE-DELIVERY-014
+      project = create(:project, new_feature_delivery_policy: "confidence_driven")
+      FeatureFlags.enable!(:confidence_driven_delivery, project: project)
+
+      expect { project.update!(confidence_delivery_enrollment_enabled: true) }
+        .to raise_error(ActiveRecord::RecordInvalid, /conformance review enforcement/)
+
+      expect(project.reload.confidence_delivery_enrollment_enabled).to be(false)
+    end
+
     it "defaults existing and newly created records to the approval-gated policy" do
       expect(described_class.new.delivery_policy).to eq("approval_gated")
     end

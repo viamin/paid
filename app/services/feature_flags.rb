@@ -19,7 +19,7 @@ class FeatureFlags
       name: :confidence_driven_delivery,
       owner: "confidence-driven-delivery",
       intent: "Gate confidence-driven feature enrollment until the P10 admission, P11 policy-specific review, and P12 completion path are integrated and verified together.",
-      rollout_plan: "Default-off. Enable for an authorized pilot project only after the P10–P12 integration checks pass; project enrollment remains an independent, auditable choice. Disabling the flag preserves existing policy snapshots, held work, evidence, and active runs.",
+      rollout_plan: "Default-off. Enable for an authorized pilot project only after the P10–P12 integration checks pass and the project enforces the policy-specific conformance review (approved_intent_amendments plus intent_conformance_enforcement, so every confidence-driven PR is reviewed against its admitted baseline; shadow review alone never enables enrollment); project enrollment remains an independent, auditable choice. Disabling the flag preserves existing policy snapshots, held work, evidence, and active runs.",
       cleanup_criteria: "Remove only after the RDR-071 final acceptance audit verifies the integrated delivery path as the default for every project."
     ),
     context_intake_agent_questions: Definition.new(

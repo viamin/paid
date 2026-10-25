@@ -107,6 +107,8 @@ RSpec.describe Tools::UpdateProjectSettings do
 
     it "authorizes and audits confidence-delivery enrollment changes" do # @spec CONFIDENCE-DELIVERY-001
       FeatureFlags.enable!(:confidence_driven_delivery, project: project)
+      FeatureFlags.enable!(:approved_intent_amendments, project: project)
+      FeatureFlags.enable!(:intent_conformance_enforcement, project: project)
       expect {
         call(settings: {
           "new_feature_delivery_policy" => "confidence_driven",
