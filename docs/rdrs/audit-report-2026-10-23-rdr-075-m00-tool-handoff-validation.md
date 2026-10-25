@@ -362,6 +362,33 @@ remains a draft-only mapping, and implementation phases #4328–#4333 remain
 unreleased. Move the validation to a Docker-capable environment rather than
 inferring live lifecycle behavior from static tests or host-only commands.
 
+## #4604 supported-lifecycle capability check — 2026-10-25
+
+**Result: not executed; this remains an open evidence-collection task.** This
+follow-up used Paid's application lifecycle rather than treating the absence
+of a shell `docker` client as conclusive. In the supplied isolated
+environment, `Containers.backend` resolved to `Containers::Backends::LocalDocker`
+(`identifier: "local"`), while the database held zero `DockerHost` records
+and zero placement-ready Docker hosts. `Containers.backend.ping` then failed
+with `Excon::Error::Socket` because `/var/run/docker.sock` is absent. No
+`CONTAINER_BACKEND`, `REMOTE_DOCKER_*`, or `CONTAINER_BACKENDS_CONFIG`
+configuration selected a remote or multi-host backend.
+
+Consequently, this environment has no supported Paid run/tool lifecycle with
+which to provision the fresh run required by either scenario. No native
+analyzer, `tool_sidecar`, or cleanup was attempted, and this check creates no
+native-analyzer or sidecar artifact. It must not be used to satisfy either
+acceptance criterion or to close [#4604](https://github.com/viamin/paid/issues/4604).
+
+**Recovery:** run both scenarios in a Paid deployment with a configured,
+reachable Docker backend (a mounted local daemon or a registered ready remote
+host), an image/check-out source, and the required pilot authorization for
+RDR-073's `marketplace_tool_sidecars` guard. Provision the run and the
+allowlisted sidecar through that lifecycle, preserve the two required result
+artifacts here, and only then decide whether a checkout-dependent sidecar
+needs an RDR-073 extension. This check leaves runtime/tool rollout policy
+unchanged.
+
 Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
 an HLD pointer) are reviewable drafts for the same pending human-review gate,
 not accepted intent.
