@@ -339,7 +339,11 @@ any repair: a scan never mutates source code or opens a PR on its own.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
-that acceptance.
+that acceptance. The proposed optimization-recipe extension is likewise
+preparation only: it adds a curated report-first catalog and a separately
+owner-accepted, per-run bounded-repair election, with security findings kept
+manual-only. It neither enables the default-off `maintenance_runs` guard nor
+authorizes automatic repair; see `docs/intent/optimization-recipes/`.
 
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container

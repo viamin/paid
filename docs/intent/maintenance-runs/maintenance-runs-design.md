@@ -36,6 +36,14 @@ tool attachment, matching, provisioning, or sidecar hardening — that remains
 [`marketplace-tool-sidecars`](../marketplace-tool-sidecars/marketplace-tool-sidecars-design.md),
 consumed rather than duplicated.
 
+The proposed [optimization-recipes extension](../optimization-recipes/optimization-recipes-design.md)
+consumes this contract for curated objectives and an owner-accepted,
+per-run bounded-repair election. It does not alter this base delivery's
+report-only default or authorize runtime behavior while either design remains
+unaccepted. Any later exception to the no-direct-repair rule must satisfy the
+extension's explicit election, deterministic gates, and M04 repair pathway;
+security findings remain manual-only unless separately authorized.
+
 ## Storage Contract
 
 A maintenance run is a new `AgentRun` goal (`"maintenance"`), not a new
@@ -208,6 +216,7 @@ shipped code in
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
 | Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Optimization auto-queue extension | Separate owner-accepted per-run election through the existing repair pathway | A tenant-wide default or scan-side repair | The extension preserves report-only default, deterministic policy gates, and M04 authorization; it is inactive pending acceptance. |
 
 ## Open Questions & Future Decisions
 
