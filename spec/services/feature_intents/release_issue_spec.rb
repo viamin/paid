@@ -217,6 +217,37 @@ RSpec.describe FeatureIntents::ReleaseIssue do
     expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
   end
 
+  it "reconciles an unlabelled planning task to the released candidate state" do # @spec CONFIDENCE-DELIVERY-017
+    planning_issue = create(:issue, project: project, labels: [])
+    planning_link = create(:feature_intent_issue,
+      feature_intent: feature,
+      issue: planning_issue,
+      readiness_mapping: mapping.merge("planning_hold" => mapping.fetch("planning_hold").merge("task_kind" => "planning")))
+
+    result = described_class.call(issue: planning_issue)
+
+    expect(result).to be_released
+    expect(planning_link.reload).to have_attributes(release_state: "released", release_error: nil)
+    expect(planning_link.release_snapshot).to eq({})
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+  end
+
+  it "keeps a planning task held while an independent dependency is open" do # @spec CONFIDENCE-DELIVERY-017
+    planning_issue = create(:issue, project: project, labels: [])
+    create(:feature_intent_issue,
+      feature_intent: feature,
+      issue: planning_issue,
+      readiness_mapping: mapping.merge("planning_hold" => mapping.fetch("planning_hold").merge("task_kind" => "planning")))
+    dependency = create(:issue, project: project, github_state: "open")
+    create(:issue_dependency, issue: planning_issue, depends_on_issue: dependency)
+
+    result = described_class.call(issue: planning_issue)
+
+    expect(result).not_to be_released
+    expect(result.reason).to eq("Issue has unresolved dependencies.")
+    expect(planning_issue.feature_intent_issues.first.reload.release_state).to eq("held")
+  end
+
   it "preserves a planning-task operator hold shared with ready implementation work" do # @spec CONFIDENCE-DELIVERY-004, CONFIDENCE-DELIVERY-017
     planning_feature = create(:feature_intent, :confidence_driven, project: project)
     create(:feature_intent_issue,

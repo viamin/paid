@@ -102,12 +102,13 @@ readiness record rather than creating a second admission store. A
 Paid-owned `implementation` hold may be reconciled after scoped readiness;
 an unknown legacy `planning` label remains visible for operator reconciliation
 and is never blanket-removed. A `planning` task that prepares the design or
-approval evidence is not subject to the implementation approval gate, but an
-independent label or dependency still controls its eligibility. Reconciliation
-never enables rollout or activation; it returns work only to canonical queue
-admission. Task kind is immutable for the marker-identified publication, so a
-retry with a conflicting kind is rejected rather than changing its admission
-semantics.
+approval evidence is not subject to the implementation approval gate. Its link
+is reconciled to the released candidate state without a scoped-readiness
+snapshot, while independent labels and dependencies still control its
+eligibility. Reconciliation never enables rollout or activation; it returns
+work only to canonical queue admission. Task kind is immutable for the
+marker-identified publication, so a retry with a conflicting kind is rejected
+rather than changing its admission semantics.
 
 Serialize the transition between an unstarted scope edit and run admission.
 Admission either receives the revised ready scope or the already-started run
