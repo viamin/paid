@@ -44,13 +44,6 @@
 
 ## Background Work
 
-- [x] **RAILS-CONTROL-PLANE-011** — When the development Procfile starts the
-  application, Puma SHALL enqueue GoodJob work in external mode with cron
-  disabled, and a dedicated `bin/jobs` process SHALL execute the queues with
-  cron and startup housekeeping enabled.
-  *Tests:* `spec/config/good_job_configuration_spec.rb`.
-  *Code:* `Procfile.dev`, `bin/jobs`.
-
 - [x] **RAILS-CONTROL-PLANE-003** — The control plane SHALL use GoodJob as its
   lightweight Rails background executor with `async_server` as the default
   execution mode and a declared cron schedule for recurring maintenance and

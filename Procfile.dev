@@ -1,5 +1,4 @@
-web: GOOD_JOB_EXECUTION_MODE=external GOOD_JOB_ENABLE_CRON=false bin/rails server -b 0.0.0.0
-jobs: GOOD_JOB_ENABLE_CRON=true GOOD_JOB_BOOTSTRAP_ON_START=true bin/jobs
+web: bin/rails server -b 0.0.0.0
 js: yarn build --watch
 css: yarn build:css --watch
 preview_tunnel: bin/preview-tunnel-server
