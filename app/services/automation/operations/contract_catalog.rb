@@ -12,7 +12,7 @@ module Automation
     #
     # @spec AUTOMATION-PHASES-018
     module ContractCatalog
-      REQUIRED_FIELDS = %i[capability status signal_source activation_policy response_scope limits escalation handoff evidence].freeze
+      REQUIRED_FIELDS = %i[capability status signal_source activation_policy response_scope limits escalation completion handoff evidence].freeze
 
       Contract = Struct.new(*REQUIRED_FIELDS, keyword_init: true) do
         def complete?
@@ -29,6 +29,7 @@ module Automation
           response_scope: "Fingerprints, records, rate-limits, classifies, and notifies an ExceptionIncident.",
           limits: "Five occurrences per fingerprint per hour and 500 incident occurrences per account per hour.",
           escalation: "P1 incidents publish error notifications; actionable project incidents may be handed to issue filing.",
+          completion: "The exception is logged, or its occurrence is recorded on an ExceptionIncident after applicable filing and notification are attempted.",
           handoff: "An incident handoff does not authorize issue preparation or coding; normal delivery policy remains required.",
           evidence: "app/services/exception_handler/handle.rb; spec/services/exception_handler/handle_spec.rb"
         ),
@@ -40,6 +41,7 @@ module Automation
           response_scope: "Creates one GitHub issue or appends an occurrence comment to its existing issue.",
           limits: "One filing claim per incident with a five-minute stale-claim recovery window.",
           escalation: "GitHub failures release the claim for retry; concurrent filing retries rather than creating duplicate issues.",
+          completion: "A new GitHub issue is recorded on the incident, an occurrence comment is added to its existing issue, or a recoverable filing failure releases its claim.",
           handoff: "Creating a remediation issue does not authorize issue preparation or coding; only independently applicable delivery policy can do so.",
           evidence: "app/services/exception_handler/issue_filer.rb; spec/services/exception_handler/issue_filer_spec.rb"
         ),
@@ -51,6 +53,7 @@ module Automation
           response_scope: "Routes blocking project notifications to the operator Inbox with their existing severity, evidence, and recovery action.",
           limits: "Per-user notification budget and notification severity gates.",
           escalation: "Notification backlog escalates per docs/intent/notification-severity.",
+          completion: "The blocking notification is routed to the operator Inbox with its recovery action, or the incident is closed without a delivery handoff.",
           handoff: "Triage either hands off to a delivery phase through explicit authorization or closes the incident.",
           evidence: "app/services/inbox/phase_ownership.rb; spec/services/inbox/phase_ownership_spec.rb"
         ),
@@ -62,6 +65,7 @@ module Automation
           response_scope: "Evaluates and may merge an eligible release PR; it does not publish an artifact or deploy software.",
           limits: "One evaluation per project at a time and configured release granularity.",
           escalation: "Parse, CI, and expected merge failures are recorded as auto-merge attempts for the release PR.",
+          completion: "The eligible release PR is merged, or its evaluation records the CI, parse, or expected merge outcome without deploying software.",
           handoff: "A merged release PR does not authorize deployment; deployment remains an unshipped, separately controlled follow-up.",
           evidence: "app/temporal/activities/evaluate_auto_release_activity.rb; app/jobs/auto_release_evaluation_job.rb; spec/jobs/auto_release_evaluation_job_spec.rb"
         ),
@@ -73,6 +77,7 @@ module Automation
           response_scope: "No runtime response exists beyond normal issue handling.",
           limits: "No dedicated persistence, deduplication, or rate limit exists.",
           escalation: "No dedicated Inbox classification or escalation exists.",
+          completion: "No operational completion exists until a future producer defines and verifies a dedicated intake and response outcome.",
           handoff: "A future producer must create a remediation issue without granting issue preparation or coding authority.",
           evidence: "app/services/exception_handler/issue_filer.rb; app/models/issue.rb"
         ),
@@ -84,6 +89,7 @@ module Automation
           response_scope: "No deployment, deployment validation, or operational regression handoff exists.",
           limits: "No deployment budget or delivery executor exists.",
           escalation: "No deployment failure notification path exists.",
+          completion: "No operational completion exists until a future executor defines and verifies deployment and validation outcomes.",
           handoff: "A future deployment capability must remain independently authorized from release and coding.",
           evidence: "app/services/automation/phase_settings.rb; app/services/automation/feature_activation.rb"
         )

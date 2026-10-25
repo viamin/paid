@@ -8,8 +8,20 @@ RSpec.describe Automation::Operations::ContractCatalog do
     File.read(Rails.root.join("docs/intent/automation-phases/operations-ownership.md"))
   end
 
-  it "declares a signal source, activation policy, response scope, limits, escalation, and handoff for every capability" do
+  it "declares a signal source, activation policy, response scope, limits, escalation, completion meaning, and handoff for every capability" do
     expect(described_class).to be_complete
+  end
+
+  it "documents a completion meaning for every capability" do
+    incomplete_contract = described_class::Contract.new(
+      **described_class.contracts.first.to_h.merge(completion: " ")
+    )
+
+    expect(incomplete_contract).not_to be_complete
+
+    described_class.contracts.each do |contract|
+      expect(documentation).to include(contract.completion)
+    end
   end
 
   it "distinguishes shipped capabilities from follow-up scope with concrete evidence" do
@@ -43,6 +55,7 @@ RSpec.describe Automation::Operations::ContractCatalog do
   it "records the evidence matrix and follow-up boundary in canonical intent" do
     expect(documentation).to include("## Shipped capability evidence")
     expect(documentation).to include("## Explicit follow-up scope")
+    expect(documentation).to include("Completion meaning")
     expect(documentation).to include("RDR-075")
     expect(documentation).to include("RDR-076")
   end
