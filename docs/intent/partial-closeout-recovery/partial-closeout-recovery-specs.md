@@ -4,6 +4,17 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When a partial-closeout prerequisite needs
+  technical execution evidence, Paid SHALL inspect the selected runner's
+  declared capabilities and tool-sidecar rollout policy before executing a
+  bounded command only in the AgentRun's isolated environment. It SHALL persist
+  runner capability, image/checkout, stdout/stderr/exit status, endpoint, and
+  cleanup evidence; a missing compatible backend or rollout authorization SHALL
+  be unavailable with the required setup action and SHALL never be enabled or
+  retried silently. No host shell or Docker socket is exposed to untrusted code.
+  *Code:* `app/services/partial_closeouts/execution_evidence_validation.rb`.
+  *Test:* `spec/services/partial_closeouts/execution_evidence_validation_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its

@@ -374,6 +374,23 @@ continues to bind its criterion evidence to the current closeout digest and
 issue-intent revision; a later explicit acceptance audit is required when
 those revisions change.
 
+### Capability-aware technical prerequisite validation (#4643)
+
+Technical prerequisite evidence is collected from a selected execution runner,
+not inferred from the control-plane worker's Docker socket. Before execution,
+the validation action inspects the runner's declared capabilities and current
+tool-sidecar policy. It then provisions a fresh AgentRun environment, uses its
+pinned checkout, runs the bounded native command through
+`execute_in_execution_environment`, and tears it down through the normal
+runner lifecycle. The run retains bounded stdout, stderr, exit status, runner
+capabilities, image/checkout identity, endpoints, and cleanup evidence.
+
+If a compatible backend, rollout flag, or authorized tool is unavailable, the
+recorded outcome is unavailable with the exact setup action. The action never
+enables rollout policy, mounts a host Docker socket, or exposes host shell
+access to untrusted code. Failed, partial, cancelled, and unavailable evidence
+cannot satisfy a prerequisite.
+
 ## Alternatives considered
 
 - *Lift the merged-PR guard via paid_state*: explicitly rejected — the guard is
