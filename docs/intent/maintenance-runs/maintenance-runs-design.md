@@ -36,6 +36,63 @@ tool attachment, matching, provisioning, or sidecar hardening — that remains
 [`marketplace-tool-sidecars`](../marketplace-tool-sidecars/marketplace-tool-sidecars-design.md),
 consumed rather than duplicated.
 
+## Optimization Recipe Family and Bounded Auto-Queue Policy
+
+The optimization family is a catalog within the maintenance recipe mechanism,
+not a new `AgentRun` goal, a second tool catalog, or a hard enum persisted on
+runs. The initial catalog presents these types wherever a maintenance run can
+start: Performance, Design / Architecture, Code Duplication, Security
+Hardening, Cost / Resource Efficiency, Maintainability / Readability, and Test
+Coverage & Quality. An entry has a display name, investigation description,
+default metric hints, and an optional recipe-definition reference. Adding a
+type adds a catalog/recipe entry; an unmapped type is retained as a
+custom-objective maintenance request rather than rejected. A user may start a
+run without a catalog selection. The selected type, resolved recipe, scope,
+guidance, and defaults are snapshots, retained across retries.
+
+Scope bounds the recommendation and any repair, not the evidence available to
+assess it. A recipe may inspect callers, tests, framework entry points, and
+design documents outside the requested scope, but reports must identify that
+supporting inspection and any coverage gaps. A recommendation that requires a
+repair beyond the requested scope requires explicit human authorization.
+
+Recipes supply investigation instructions, applicable collectors, validation
+guidance, and metric hints. Code Duplication, Maintainability / Readability,
+and Performance are the first executable recipes (#4494): duplication and
+complexity evidence may use available tools; performance begins prompt-first.
+Tool output is evidence, never a repair decision. `agent_harness` makes the
+semantic assessment and returns a structured finding assessment that explains
+supporting and counterevidence, a verification disposition, and an ordered
+repair-confidence level. The level is an auditable qualitative judgment, not
+a calibrated probability or a numerical quality score. Code must not infer
+semantic eligibility from titles, labels, keywords, or tool scores.
+
+The proposed automatic-repair exception (#4495) is deliberately narrower than
+the base report-only contract. At run start, an authorized user may elect an
+auto-queue policy with an ordered confidence threshold and explicit per-repair
+cost and time caps. The election is omitted by default, is never a tenant-wide
+or recipe default, and is recorded with the run snapshot. The report remains
+complete even when no finding qualifies; manual selection remains available.
+At report completion, deterministic code may queue a repair only when all of
+these gates pass: the `maintenance_runs` guard remains enabled for new
+admissions; the run has the recorded election; `agent_harness` returned a
+well-formed assessment at or above the elected ordered threshold; the finding
+is not Security Hardening; the finding is open and has not changed since its
+assessment; the requested repair is bounded to that finding; the explicit
+budget is valid; and no prior auto-queued repair exists for that finding
+identity and policy snapshot. The gate records a visible non-dispatch reason;
+it does not silently drop a candidate.
+
+An auto-queued repair uses the existing M04 repair pathway, carries provenance
+to the source report, finding, policy snapshot, and budget, and retains M04's
+revision revalidation. A moved repair checkout or stale finding blocks
+application until revalidation produces current evidence; failure remains
+visible. Repeated occurrences cannot create duplicate repair work. Security
+Hardening findings are report-only and manually selectable until a separate
+owner-approved accuracy and blast-radius policy changes that default deny.
+The same restriction applies to the staged OPT-04 recipes until their own
+evidence and policy prerequisites are satisfied.
+
 ## Storage Contract
 
 A maintenance run is a new `AgentRun` goal (`"maintenance"`), not a new
@@ -131,7 +188,10 @@ PR-creation pathway:
 - **Select repair**: an authorized user chooses one or more findings to
   become a bounded issue or PR-creation run through existing authorized
   pathways — this create path is a new run/issue through existing creation
-  goals, not a new side-effecting action hung off the maintenance report.
+  goals, not a new side-effecting action hung off the maintenance report. The
+  proposed optimization auto-queue exception is limited to a recorded,
+  authorized run-start election and the gates in this LLD; it remains inactive
+  until owner acceptance and implementation.
 
 All three surfaces are gated by the `maintenance_runs` guard (below); none
 of the three may admit a maintenance run while the guard is off for the
@@ -208,6 +268,26 @@ shipped code in
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
 | Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Optimization catalog | Code-defined catalog with custom-objective fallback | A persisted enum; project-admin authoring in the first delivery | The catalog can evolve without migrations while every selected value remains an auditable run snapshot; authoring policy is outside this family (#4493). |
+| Auto-queue qualification | `agent_harness` qualitative assessment plus deterministic ordered threshold and gates | A calibrated numeric score; keyword/tool-score eligibility; automatic repair for all findings | Semantic judgment must remain in the model boundary, while authorization, budgets, category deny rules, freshness, and idempotency are enforceable in code. An ordered level is reviewable without asserting false calibration (#4495). |
+| Security repair | Manual selection only | Applying the general optimization auto-queue policy to security findings | Security findings have distinct accuracy and blast-radius risks. A separate accepted policy is required before automatic repair can be considered (#4496). |
+
+## Delivery Mapping and Acceptance Boundary
+
+| Claim | Executable deliverable | Boundary |
+| --- | --- | --- |
+| Catalog, curated type menu, custom fallback, and run snapshot | [#4493](https://github.com/viamin/paid/issues/4493) | Depends on accepted base maintenance intent and this accepted policy; remains behind `maintenance_runs`. |
+| Duplication, maintainability, and prompt-first performance recipes with honest evidence | [#4494](https://github.com/viamin/paid/issues/4494) | Reuses report/finding and tool contracts; does not authorize automatic repair. |
+| Per-run auto-queue election, qualitative threshold, deterministic gates, bounded budgets, revalidation, and idempotency | [#4495](https://github.com/viamin/paid/issues/4495) | Requires M04 repair handoff; no tenant-wide default and no security auto-queue. |
+| Security, cost, architecture, and test-quality follow-on recipes | [#4496](https://github.com/viamin/paid/issues/4496) | Staged after evidence; security repairs remain manual-only pending separate policy. |
+| Family coordination and final evidence audit | [#4492](https://github.com/viamin/paid/issues/4492) | Tracking umbrella only; it is not an implementation prerequisite or a source of repair authority. |
+
+This is a reviewable preparation revision, not owner acceptance. Its concrete
+Inbox decision is: **accept or amend the catalog and bounded auto-queue policy
+in this LLD/EARS, while retaining RDR-075 acceptance and #4604 as independent
+implementation prerequisites.** A preparation PR uses `Tracks #4636`, not a
+closing reference; #4636 remains open until an authorized owner records
+acceptance and the canonical artifacts merge.
 
 ## Open Questions & Future Decisions
 
@@ -241,9 +321,11 @@ shipped code in
 
 - Not a tool marketplace, matching engine, or provisioning system — that is
   RDR-073's territory, consumed here, not duplicated.
-- Not an automatic-repair mechanism — a scan never deletes source code or
-  opens a PR as a side effect; repair is a separate, explicitly authorized
-  run.
+- Not a generally automatic-repair mechanism — a scan never deletes source
+  code or opens a PR as a side effect. Repair is a separate, explicitly
+  authorized run; the proposed optimization auto-queue exception is inactive
+  unless its owner accepts this exact policy and implementation satisfies its
+  gates.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.

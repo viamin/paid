@@ -334,8 +334,17 @@ A planned general maintenance capability extends manual and recurring
 repository investigations — focused, issue-less questions and durable,
 evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
-building a second provisioning path, and keeps investigation separate from
-any repair: a scan never mutates source code or opens a PR on its own.
+building a second provisioning path. Its optimization recipe family is a
+catalog of owner-selected audit objectives, not a separate run type or tool
+catalog: recommendations may inspect supporting evidence beyond a requested
+scope, but repair authority stays bounded to the approved finding. Semantic
+assessment belongs to `agent_harness`; the control plane applies only
+deterministic authorization, feature-guard, budget, revision, and idempotency
+gates. A scan never mutates source code or opens a PR on its own. A proposed
+per-run, opt-in auto-queue policy is a narrowly bounded exception that remains
+draft until the owner accepts it: it may queue only eligible non-security
+optimization findings through the existing repair pathway after every gate
+passes. It is not a rollout authorization.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending

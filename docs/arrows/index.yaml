@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-24
+last_updated: 2026-10-25
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -734,8 +734,8 @@ arrows:
     parent: PAID
     taxonomy: runtime
     status: MAPPED
-    sampled: 2026-10-24
-    next: "Draft LLD/EARS only; RDR-075 remains Status: Draft (merged to main via #4308) and no implementation exists. #4604 revalidated its tool-handoff evidence environment on 2026-10-24: no Docker client, socket, or alternate local engine was available, so critical assumption 2's native-analyzer and sidecar artifacts remain uncollected. Move both validations to a Docker-capable environment; do not release #4328-#4333 before design acceptance and that evidence."
+    sampled: 2026-10-25
+    next: "Draft LLD/EARS only; #4636 prepares the optimization catalog and bounded auto-queue policy for owner acceptance. #4492 is tracking only; #4493-#4496 are executable after the accepted policy, accepted RDR-075, and #4604 live tool-handoff evidence. Auto-queue remains per-run opt-in, security-repair remains manual-only, and no runtime admission or rollout is enabled."
   marketplace-tool-sidecars:
     title: Marketplace Tool Sidecars
     path: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-design.md

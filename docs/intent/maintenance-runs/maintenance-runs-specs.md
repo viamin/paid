@@ -158,4 +158,62 @@
       back to its source maintenance report and finding.
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
-      an explicit user selection.
+      an explicit user selection or a recorded opt-in auto-queue policy that
+      satisfies MAINT-086 through MAINT-090.
+
+## Optimization Recipe Family and Bounded Auto-Queue
+
+- [ ] **MAINT-080**: The system shall expose a code-defined optimization
+      catalog with Performance, Design / Architecture, Code Duplication,
+      Security Hardening, Cost / Resource Efficiency, Maintainability /
+      Readability, and Test Coverage & Quality entries; each entry shall
+      provide a display name, investigation description, default metric hints,
+      and an optional recipe-definition reference.
+- [ ] **MAINT-081**: The system shall permit an authorized user to start a
+      maintenance run with or without an optimization catalog selection through
+      the UI, authenticated API, and MCP surface with equivalent authorization,
+      and shall retain a selected type and resolved recipe in the immutable run
+      snapshot across retries.
+- [ ] **MAINT-082**: If a submitted optimization type has no catalog entry,
+      then the system shall preserve it as a custom-objective maintenance run
+      rather than reject the request or coerce it to another recipe.
+- [ ] **MAINT-083**: The system shall treat requested optimization scope as a
+      bound on recommendations and repairs, not on supporting evidence
+      inspection, and shall disclose out-of-scope supporting inspection and
+      coverage limitations in the report.
+- [ ] **MAINT-084**: The system shall obtain semantic finding assessment only
+      through `agent_harness`, including supporting evidence,
+      counterevidence, verification disposition, and an ordered qualitative
+      repair-confidence level, and shall not represent that level as a
+      calibrated numeric probability or derive it from keywords, labels, or
+      raw tool scores.
+- [ ] **MAINT-085**: The system shall make Code Duplication,
+      Maintainability / Readability, and Performance recipe reports preserve
+      their collector provenance and honestly identify prompt-only or partial
+      coverage; similarity, complexity, or absent static references alone
+      shall not establish a repair recommendation.
+- [ ] **MAINT-086**: The system shall leave automatic repair disabled unless
+      an authorized user elects an auto-queue policy for that run at start;
+      the election, ordered confidence threshold, and explicit per-repair cost
+      and time caps shall be immutable run-snapshot data, and omission shall
+      preserve report-only behavior.
+- [ ] **MAINT-087**: On report completion, the system shall auto-queue a
+      repair only through the existing authorized repair pathway when the
+      `maintenance_runs` guard permits new admission, a recorded election
+      exists, the structured `agent_harness` assessment meets the elected
+      ordered threshold, the finding is open and current, the repair remains
+      bounded to that finding, the explicit budget is valid, and no repair
+      with the same finding identity and policy snapshot was previously
+      auto-queued.
+- [ ] **MAINT-088**: When an auto-queue candidate fails an authorization,
+      guard, threshold, category, freshness, scope, budget, or idempotency
+      gate, the system shall retain the report and record a visible
+      non-dispatch reason without creating repair work.
+- [ ] **MAINT-089**: The system shall link each auto-queued repair to its
+      source report, finding, policy snapshot, and budget; if its repair
+      checkout has moved or the finding evidence is stale, the system shall
+      require visible revalidation before applying the recommendation.
+- [ ] **MAINT-090**: The system shall exclude Security Hardening findings
+      from auto-queue and allow their repair only through manual selection
+      until a separately accepted security-repair policy authorizes a narrower
+      exception.

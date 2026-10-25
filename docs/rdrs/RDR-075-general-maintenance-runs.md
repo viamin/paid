@@ -247,7 +247,10 @@ Maintenance scans are report-only. A user can select findings to create
 bounded repair issues or normal PR-creation runs, preserving source-report
 links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
-outside the initial scope and requires a separately approved policy.
+outside the initial scope and requires a separately approved policy. The
+optimization-family proposal is a reviewable policy prerequisite, not that
+approval: until its exact LLD/EARS revision is accepted, it authorizes neither
+auto-queueing nor runtime behavior.
 
 ### PR integration
 
@@ -309,7 +312,12 @@ Recurring schedules remain explicitly opt-in after rollout.
 1. **Prerequisites and LID planning:** RDR-073 final acceptance, acceptance of
    this recommendation, and validation of the tool handoff assumptions.
    Update the HLD and create the maintenance LLD/EARS segment and arrow
-   references before implementation. Resolve storage/API contracts there.
+   references before implementation. Resolve storage/API contracts there. The
+   optimization recipe family and its proposed bounded auto-queue exception
+   require their own accepted LLD/EARS prerequisite (#4636); #4492 is tracking
+   only, while #4493–#4496 are executable deliverables. Acceptance of that
+   policy does not waive this RDR's base acceptance or the #4604 evidence
+   dependency.
 2. **Manual maintenance lifecycle:** maintenance goal, admission and rollout
    guard, objective/scope/guidance snapshots, report-only execution and
    successful empty outcomes. Provide UI and API/MCP entry points together.
