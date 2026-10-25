@@ -249,6 +249,35 @@ links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
 outside the initial scope and requires a separately approved policy.
 
+### Optimization recipe preparation
+
+The proposed optimization family is a future consumer of this recipe and
+repair-handoff contract, not a revision of the initial maintenance scope. Its
+catalog, first recipes, auto-queue policy, and staged follow-ons are tracked by
+[#4493](https://github.com/viamin/paid/issues/4493)–[#4496](https://github.com/viamin/paid/issues/4496);
+[#4492](https://github.com/viamin/paid/issues/4492) is coordination only.
+The reviewable policy artifact is
+[`optimization-recipes`](../intent/optimization-recipes/optimization-recipes-design.md)
+and its EARS companion, prepared by [#4636](https://github.com/viamin/paid/issues/4636).
+
+The policy records the product-owner decisions captured in #4495: a repair
+election is per-run and default-off; qualifying findings retain the report and
+use explicit per-repair budgets; repair scope remains bounded; repeated finding
+identity does not create duplicate repair work; and a moved revision requires
+revalidation through the normal repair path. An agent makes the semantic
+finding assessment through `agent_harness`; deterministic code does not
+re-interpret that assessment and instead applies the election, guard, budget,
+idempotency, and revalidation gates. The threshold's representation and
+defaults are implementation design, not a newly asserted calibrated numerical
+meaning. Security-hardening findings are manual-selection-only until a
+dedicated policy review accepts otherwise.
+
+This is documentation-only preparation. It does not itself satisfy the
+separate-policy approval required above, admit a maintenance run, change the
+`maintenance_runs` default-off guard, or authorize rollout. #4636 remains
+open pending human acceptance of the precise HLD/LLD/EARS revision; its
+preparation PR uses `Tracks #4636` rather than closing language.
+
 ### PR integration
 
 The evidence and verification components should be reusable for PR audits.

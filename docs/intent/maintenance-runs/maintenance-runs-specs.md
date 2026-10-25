@@ -156,6 +156,7 @@
       recommendation.
 - [ ] **MAINT-072**: The system shall link every repair issue/PR-creation run
       back to its source maintenance report and finding.
-- [ ] **MAINT-073**: The system shall never create a repair issue or
-      PR-creation run as a direct side effect of a maintenance scan without
-      an explicit user selection.
+- [ ] **MAINT-073**: For a maintenance recipe without a separately accepted
+      automatic-repair policy, the system shall never create a repair issue or
+      PR-creation run as a direct side effect of a maintenance scan without an
+      explicit user selection.

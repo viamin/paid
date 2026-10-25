@@ -336,10 +336,21 @@ evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
 building a second provisioning path, and keeps investigation separate from
 any repair: a scan never mutates source code or opens a PR on its own.
+The proposed optimization recipe family is a catalog consumer of that same
+maintenance contract, not a second maintenance lifecycle. Its broad scopes
+bound recommendations but not the supporting evidence an investigation may
+inspect; reports must identify evidence, counterevidence, coverage limits, and
+any recommendation that crosses the requested scope. A separately proposed
+per-run opt-in policy may later queue only bounded repairs after deterministic
+guard, budget, duplicate-work, and stale-evidence checks. Semantic assessment
+is performed through `agent_harness`; code only enforces the resulting
+authorization and resource policy. Security-hardening repairs remain manual
+selection only unless a later policy is accepted. This proposal neither
+changes the default-off `maintenance_runs` guard nor authorizes runtime work.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
-`docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
-that acceptance.
+`docs/intent/maintenance-runs/` and `docs/intent/optimization-recipes/` for
+the reviewable LLD/EARS contracts pending that acceptance.
 
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
