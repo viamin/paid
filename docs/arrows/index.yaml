@@ -735,7 +735,7 @@ arrows:
     taxonomy: runtime
     status: MAPPED
     sampled: 2026-10-24
-    next: "Draft LLD/EARS only; RDR-075 remains Status: Draft (merged to main via #4308) and no implementation exists. #4604 revalidated its tool-handoff evidence environment on 2026-10-24: no Docker client, socket, or alternate local engine was available, so critical assumption 2's native-analyzer and sidecar artifacts remain uncollected. Move both validations to a Docker-capable environment; do not release #4328-#4333 before design acceptance and that evidence."
+    next: "Draft LLD/EARS only; RDR-075 remains Status: Draft (merged to main via #4308) and no implementation exists. #4604's 2026-10-25 acquisition attempt still could not reach a supported execution environment: no local or remote Docker endpoint was configured, and the supplied database role could not establish the tenant-scoped lifecycle. Critical assumption 2's native-analyzer and sidecar artifacts remain uncollected. Run both through a tenant-scoped, Docker-capable Paid environment; do not release #4328-#4333 before design acceptance and that evidence."
   marketplace-tool-sidecars:
     title: Marketplace Tool Sidecars
     path: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-design.md

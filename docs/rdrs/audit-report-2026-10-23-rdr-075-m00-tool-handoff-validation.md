@@ -333,6 +333,36 @@ RDR-073 extension can be decided from an unprovisioned environment; retain
 the existing direction that an extension is filed only if a completed live
 validation identifies a checkout-dependent sidecar need.
 
+## #4604 execution-environment acquisition attempt — 2026-10-25
+
+**Result: not executed; this agent workspace cannot reach a supported
+execution environment.** The attempt installed the application dependencies
+and checked the available execution configuration without changing product
+state. There is no Docker, Podman, or nerdctl client; no Docker or containerd
+socket is present; and neither `DOCKER_HOST` nor `REMOTE_DOCKER_HOST` is
+configured. Although the workspace supplies a PostgreSQL URL, the application
+cannot use it for a supported run lifecycle: its runtime role guard rejects
+the supplied role because it has `SUPERUSER` and `BYPASSRLS`, rather than the
+required tenant-constrained application role. Consequently the workspace
+cannot inspect or select an account's configured Docker host through
+`TenantContext`, provision an `AgentRun`, or access the protected pilot
+configuration.
+
+This observation is limited to this agent workspace. It does **not** establish
+that Paid lacks a Docker-capable execution environment, and it does not close
+[#4604](https://github.com/viamin/paid/issues/4604). It records no native CLI
+or sidecar acceptance artifact.
+
+**Recovery:** rerun the two scenarios through Paid's supported lifecycle in a
+tenant-scoped environment with (1) a placement-ready Docker host, (2) a
+tenant-constrained application database role, and (3) the specifically
+authorized `marketplace_tool_sidecars` pilot. Preserve the native analyzer's
+returned `stdout`, `stderr`, `exit_code`, image/check-out identity, and
+run-container cleanup; then preserve the paired sidecar endpoint, response
+shape, exit code, and sidecar/run cleanup. Only those artifacts can update the
+disposition, unblock RDR-075, or support a decision on a checkout-access
+extension to RDR-073.
+
 ## Disposition
 
 This report resolves critical assumption 1 only. Critical assumption 2 remains
@@ -355,12 +385,13 @@ arrow entry track #4604 as the evidence owner. This report does not:
 - Determine whether an upstream RDR-073 extension is needed — that decision
   follows the required native and sidecar execution evidence.
 
-The #4604 revalidation on 2026-10-24 confirms that those two evidence
-artifacts remain blocked specifically by the absence of a Docker-capable
-execution environment. RDR-075 remains Draft, its `maintenance-runs` arrow
-remains a draft-only mapping, and implementation phases #4328–#4333 remain
-unreleased. Move the validation to a Docker-capable environment rather than
-inferring live lifecycle behavior from static tests or host-only commands.
+The #4604 revalidation on 2026-10-24 and the 2026-10-25 acquisition attempt
+confirm that those two evidence artifacts remain uncollected. RDR-075 remains
+Draft, its `maintenance-runs` arrow remains a draft-only mapping, and
+implementation phases #4328–#4333 remain unreleased. Move the validation to a
+tenant-scoped, Docker-capable Paid environment rather than inferring live
+lifecycle behavior from static tests, host-only commands, or an unavailable
+agent workspace.
 
 Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
 an HLD pointer) are reviewable drafts for the same pending human-review gate,
