@@ -333,6 +333,33 @@ RDR-073 extension can be decided from an unprovisioned environment; retain
 the existing direction that an extension is filed only if a completed live
 validation identifies a checkout-dependent sidecar need.
 
+## #4604 execution-environment capability check — 2026-10-26
+
+**Result: not executed; no supported execution backend is available from this
+workspace.** The follow-up checked the environment before attempting either
+acceptance scenario. `docker`, `podman`, and `nerdctl` are absent; neither
+`/var/run/docker.sock` nor `/run/docker.sock` exists; and no `DOCKER_*`,
+`REMOTE_DOCKER_*`, or Swarm backend configuration is present. The repository
+therefore selects its local backend, but it has no local daemon to which that
+backend can connect.
+
+No host command, mock, Docker-client installation, or change to
+`marketplace_tool_sidecars` substitutes for the required Paid lifecycle.
+This capability check creates neither required acceptance artifact and does
+not change the issue's open status, RDR-075's Draft status, the implementation
+hold, or the provisional conclusion about a possible upstream RDR-073
+extension.
+
+Recovery remains to run both scenarios through Paid in an authorized
+Docker-capable environment: first, a fresh pinned `AgentRun` invoking a
+bounded read-only native analyzer through
+`execute_in_execution_environment(..., stream: false)` and recording returned
+output, exit code, identity, and run cleanup; second, an allowlisted
+`tool_sidecar` endpoint call from its paired `AgentRun`, recording endpoint,
+response shape, exit code, and sidecar plus run cleanup. Only those artifacts
+can resolve Critical assumption 2 and determine whether a checkout-dependent
+sidecar extension is needed.
+
 ## Disposition
 
 This report resolves critical assumption 1 only. Critical assumption 2 remains
@@ -355,7 +382,7 @@ arrow entry track #4604 as the evidence owner. This report does not:
 - Determine whether an upstream RDR-073 extension is needed — that decision
   follows the required native and sidecar execution evidence.
 
-The #4604 revalidation on 2026-10-24 confirms that those two evidence
+The #4604 capability checks on 2026-10-24 and 2026-10-26 confirm that those two evidence
 artifacts remain blocked specifically by the absence of a Docker-capable
 execution environment. RDR-075 remains Draft, its `maintenance-runs` arrow
 remains a draft-only mapping, and implementation phases #4328–#4333 remain
