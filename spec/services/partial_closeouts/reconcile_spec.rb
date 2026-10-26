@@ -100,6 +100,26 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(notifications.first.description).to include("security sign-off: Approve the audit in the portal.")
   end
 
+  it "reconciles stale human prerequisite guidance without dismissing fresh evidence" do # @spec PARTIAL-CLOSEOUT-027
+    notification = Notifications::Publish.call(
+      account: project.account, subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+      severity: :error, blocking: true, title: "Two reviewers required", description: "Two reviewers must decide."
+    )
+
+    described_class.call(agent_run: run, assessment: gaps([
+      { "criterion" => "policy selection", "kind" => "human", "next_step" => "One authorized maintainer must select the current policy." }
+    ]))
+
+    expect(notification.reload).to be_active
+    expect(notification.title).to eq("policy selection needs operator action")
+    expect(notification.description).to include("One authorized maintainer")
+
+    described_class.call(agent_run: run, assessment: gaps([]))
+
+    expect(notification.reload.resolved_at).to be_present
+    expect(notification.dismissed_at).to be_nil
+  end
+
   it "does not attach the parent issue to itself when reuse guesses its number" do
     created = OpenStruct.new(number: 447, html_url: "https://example.test/issues/447", id: 447, title: "Finish dispatch", body: "")
     allow(client).to receive(:create_issue).and_return(created)

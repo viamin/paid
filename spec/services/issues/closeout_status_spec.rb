@@ -115,7 +115,7 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     expect(status.reason).to include("backoff")
   end
 
-  it "surfaces a non-walked eligibility guard via the scoped preflight instead of the duplicate-work fallback" do
+  it "explains open native child work instead of reporting an unavailable guard" do # @spec PARTIAL-CLOSEOUT-027
     merged_partial_pr(number: 12)
     create(
       :issue,
@@ -129,9 +129,55 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     status = described_class.call(issue)
 
     expect(status.stalled?).to be(true)
+    expect(status.blocker_codes).to contain_exactly(:open_native_children)
+    expect(status.reason).to include("#55")
+    expect(status.blockers.first.evidence.fetch("children")).to include(
+      hash_including("issue_id" => Issue.last.id, "github_number" => 55)
+    )
+    expect(status.blockers.first.recovery).to include("do not close")
+  end
+
+  it "explains active human prerequisite notifications without treating dismissal as recovery" do # @spec PARTIAL-CLOSEOUT-027
+    merged_partial_pr(number: 12)
+    notification = create(:notification, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, severity: :error,
+      blocking: true, title: "Human policy selection required",
+      description: "Choose the required review policy.", action_url: "/inbox/action_required:2777")
+
+    status = described_class.call(issue)
+
+    expect(status.blocker_codes).to contain_exactly(:human_prerequisites)
+    blocker = status.blockers.first
+    expect(blocker.message).to include("Notification ##{notification.id}", "Human policy selection required")
+    expect(blocker.evidence.fetch("notifications")).to include(
+      hash_including("id" => notification.id, "action_url" => "/inbox/action_required:2777")
+    )
+    expect(blocker.recovery).to include("human evidence or policy decision", "do not dismiss")
+  end
+
+  it "reports native-child and human-prerequisite guards together" do # @spec PARTIAL-CLOSEOUT-027
+    merged_partial_pr(number: 12)
+    create(:issue, project: project, github_state: "open", parent_issue_id: issue.id, github_number: 55)
+    create(:notification, account: account, subject: issue, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+      severity: :error, blocking: true, title: "Human evidence required", description: "Attach the report.")
+
+    expect(described_class.call(issue).blocker_codes).to contain_exactly(:open_native_children, :human_prerequisites)
+  end
+
+  it "does not expose another account's prerequisite notification" do # @spec PARTIAL-CLOSEOUT-027
+    merged_partial_pr(number: 12)
+    create(:notification, account: create(:account), subject: issue, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+      severity: :error, blocking: true, title: "Foreign evidence", description: "Do not expose this.")
+
+    expect(described_class.call(issue).blocker_codes).to be_empty
+  end
+
+  it "retains unavailable for a scoped rejection with no diagnosed guard" do # @spec PARTIAL-CLOSEOUT-027
+    merged_partial_pr(number: 12)
+
+    status = described_class.call(issue, eligible_issue_ids: [], continuation_eligible_issue_ids: [])
+
     expect(status.blocker_codes).to contain_exactly(:unavailable)
-    expect(status.reason).to include("unavailable")
-    expect(status.blockers.first.recovery).to include("Investigate")
   end
 
   it "reports every material blocker, including scanner verification evidence, without treating a merge as a fix" do

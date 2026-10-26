@@ -148,6 +148,23 @@
   `app/services/issues/closeout_status.rb`, `app/services/issues/stalled_closeouts.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-027** — When canonical scoped admission excludes a
+  partial-closeout issue because it has open native non-pull-request children
+  or active `partial_closeout.prerequisite` notifications, the system SHALL
+  report each authoritative exclusion as an additive structured blocker with
+  the child or notification identity, available evidence and links, and a
+  recovery route. A human-prerequisite blocker SHALL direct the operator to
+  supply or record the required human evidence or policy decision and SHALL
+  not imply that dismissing the notification, closing a child, or inferring
+  completion is an admissible recovery. Inbox detail/count, continuation
+  refusal, and authorized chat/API context SHALL use the same blockers;
+  `unavailable` remains only for exclusions not diagnosed by the walk.
+  *Code:* `app/services/issues/closeout_status.rb`,
+  `app/views/dashboard/_inbox_closeout_blockers.html.erb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/issues/request_continuation_spec.rb`,
+  `spec/services/issues/stalled_closeouts_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-003** — When an authorized user requests a
   continuation for such an issue, the system SHALL persist an
   `IssueContinuationRequest` recording the actor, a required reason, the

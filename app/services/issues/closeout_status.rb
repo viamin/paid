@@ -18,7 +18,8 @@ module Issues
     Blocker = Struct.new(:code, :message, :evidence, :recovery, keyword_init: true)
     Inputs = Struct.new(:evidence_by_issue_id, :prerequisites_by_issue_id,
       :open_requests_by_issue_id, :active_run_issue_ids, :feature_links_by_issue_id,
-      :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id, keyword_init: true)
+      :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id,
+      :native_children_by_issue_id, :prerequisite_notifications_by_issue_id, keyword_init: true)
 
     # Blockers that are deliberate operator states or active work rather than
     # a partial-closeout stall; the lane must not surface them.
@@ -109,7 +110,9 @@ module Issues
         active_run_issue_ids: AgentRun.where(issue_id: issue_ids, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).distinct.pluck(:issue_id).to_set,
         feature_links_by_issue_id: feature_links,
         analysis_backoff_reset_by_project_id: reset_at,
-        scanner_attempts_by_issue_id: scanner_attempts
+        scanner_attempts_by_issue_id: scanner_attempts,
+        native_children_by_issue_id: open_native_children_for(issues),
+        prerequisite_notifications_by_issue_id: active_prerequisite_notifications_for(issues)
       )
     end
 
@@ -144,6 +147,28 @@ module Issues
     end
     private_class_method :prerequisite_labels_for
 
+    def self.open_native_children_for(issues)
+      Issue.joins("INNER JOIN issues parent_issues ON parent_issues.id = issues.parent_issue_id")
+        .where(parent_issues: { id: issues.map(&:id) })
+        .where("issues.project_id = parent_issues.project_id")
+        .where(is_pull_request: false, github_state: "open")
+        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+        .order(:github_number, :id).to_a.group_by(&:parent_issue_id)
+    end
+    private_class_method :open_native_children_for
+
+    def self.active_prerequisite_notifications_for(issues)
+      account_id_by_issue_id = issues.to_h { |issue| [ issue.id, issue.project.account_id ] }
+      notifications = Notification.where(
+        account_id: issues.map { |issue| issue.project.account_id }.uniq,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+        subject_type: "Issue", subject_id: issues.map(&:id), resolved_at: nil, dismissed_at: nil
+      ).order(:id).to_a
+      notifications.select { |notification| notification.account_id == account_id_by_issue_id[notification.subject_id] }
+        .group_by(&:subject_id)
+    end
+    private_class_method :active_prerequisite_notifications_for
+
     def self.admissible_issue_ids(issue)
       Automation::Strategies::AutoPick::DefaultCandidateSource
         .eligible_scope(issue.project).pluck(:id)
@@ -155,7 +180,8 @@ module Issues
     def self.admission_blockers(issue, prerequisites: prerequisite_labels(issue), inputs: nil)
       prerequisite_blockers(issue, labels: prerequisites) + operator_pause_blockers(issue) +
         run_in_flight_blockers(issue, inputs:) + trust_blockers(issue) + feature_hold_blockers(issue, inputs:) +
-        analysis_backoff_blockers(issue, inputs:) + scanner_verification_blockers(issue, inputs:)
+        analysis_backoff_blockers(issue, inputs:) + scanner_verification_blockers(issue, inputs:) +
+        native_child_blockers(issue, inputs:) + human_prerequisite_blockers(issue, inputs:)
     end
 
     # The scoped preflight is the admission authority. If it rejects after all
@@ -289,6 +315,54 @@ module Issues
 
       [ scanner_blocker(issue, attempt) ]
     end
+
+    # Mirrors DefaultCandidateSource#without_open_non_pr_subissues. Native
+    # children are not dependency rows, so prerequisite_labels cannot explain
+    # this authoritative exclusion.
+    # @spec PARTIAL-CLOSEOUT-027
+    def self.native_child_blockers(issue, inputs: nil)
+      children = inputs ? inputs.native_children_by_issue_id.fetch(issue.id, []) : open_native_children_for([ issue ])[issue.id] || []
+      return [] if children.empty?
+
+      labels = children.map { |child| "##{child.github_number}" }
+      [ Blocker.new(
+        code: :open_native_children,
+        message: "Open native child work (#{labels.join(', ')}) keeps this issue out of automatic scheduling.",
+        evidence: { "children" => children.map { |child| native_child_evidence(child) } },
+        recovery: "Resolve the listed child work or move it to a non-blocking state; do not close it merely to admit this issue."
+      ) ]
+    end
+
+    # Mirrors DefaultCandidateSource#partial_closeout_prerequisite_block_issue_ids.
+    # The notification is the durable human decision/evidence record; admission
+    # diagnostics must never prescribe dismissing it as a scheduling shortcut.
+    # @spec PARTIAL-CLOSEOUT-027
+    def self.human_prerequisite_blockers(issue, inputs: nil)
+      notifications = if inputs
+        inputs.prerequisite_notifications_by_issue_id.fetch(issue.id, [])
+      else
+        active_prerequisite_notifications_for([ issue ])[issue.id] || []
+      end
+      return [] if notifications.empty?
+
+      labels = notifications.map { |notification| "Notification ##{notification.id} (#{notification.title})" }
+      [ Blocker.new(
+        code: :human_prerequisites,
+        message: "Active human prerequisite #{labels.join(', ')} keeps this issue out of automatic scheduling.",
+        evidence: { "notifications" => notifications.map { |notification| notification_evidence(notification) } },
+        recovery: "Supply or record the required human evidence or policy decision through the listed notification; do not dismiss it merely to admit this issue."
+      ) ]
+    end
+
+    def self.native_child_evidence(child)
+      { "issue_id" => child.id, "github_number" => child.github_number, "url" => child.github_url }
+    end
+    private_class_method :native_child_evidence
+
+    def self.notification_evidence(notification)
+      notification.attributes.slice("id", "title", "description", "action_url")
+    end
+    private_class_method :notification_evidence
 
     def self.scanner_blocker(issue, attempt)
       code, state, recovery = scanner_state(attempt)

@@ -77,7 +77,13 @@ deliberate operator or lane states, not stalls), has no work in flight
 against the current evidence generation. The detail pane shows the source
 PR/run links, the recorded completion outcome, unresolved prerequisites
 (blocking dependencies), and the exact reason automatic continuation cannot
-proceed.
+proceed. The diagnostic walk also mirrors the candidate source's open
+native-child exclusion and active `partial_closeout.prerequisite` notification
+exclusion. It identifies every open blocking child and every active human
+prerequisite notification, including their links and evidence, alongside other
+simultaneous guards. Resolving a human notification remains a human evidence or
+policy decision; the diagnostic never dismisses it, closes a child, or infers
+completion to admit the parent.
 
 ### Recovery: `IssueContinuationRequest` (scoped authorization)
 
@@ -98,8 +104,9 @@ paid_state edit and never a blanket guard lift:
   merged-PR and no-code guards for the authorized issue. Active-run
   uniqueness, tenant isolation, trust, feature release/design revision holds,
   analysis backoff, tier feasibility, budgets, skip labels, needs-input,
-  manual review, paused flags, and unmet dependencies all still apply — with
-  the unmet prerequisites explained to the user. A targeted blocker walk
+  manual review, paused flags, unmet dependencies, open native children, and
+  active partial-closeout human-prerequisite notifications all still apply —
+  with their authoritative records explained to the user. A targeted blocker walk
   (`CloseoutStatus.admission_blockers`) returns structured, additive reasons
   from persisted admission-guard evidence, including scanner attempt, analysis,
   and alert links for synthetic findings; a residual preflight then settles admission with the

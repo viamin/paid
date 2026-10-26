@@ -16,7 +16,7 @@ module PartialCloseouts
 
     def call # @spec NO-OUTPUT-ISSUE-007
       validate!
-      publish_operator_prerequisites!(reconcile_gaps)
+      reconcile_operator_prerequisites!(reconcile_gaps)
       publish_parent_dependencies!
       finalize!
     rescue GithubClient::Error => e
@@ -170,14 +170,22 @@ module PartialCloseouts
       owner if owner && owner.id != agent_run.issue.id
     end
 
-    def publish_operator_prerequisites!(human_gaps)
-      return if human_gaps.empty?
+    # @spec PARTIAL-CLOSEOUT-027
+    def reconcile_operator_prerequisites!(human_gaps)
+      return resolve_operator_prerequisites! if human_gaps.empty?
 
       Notifications::Publish.call(
         account: agent_run.project.account, subject: agent_run.issue,
         source: PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
         title: operator_prerequisite_title(human_gaps),
         description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n")
+      )
+    end
+
+    def resolve_operator_prerequisites!
+      Notifications::Resolve.call(
+        account: agent_run.project.account, subject: agent_run.issue,
+        source: PREREQUISITE_NOTIFICATION_SOURCE
       )
     end
 
