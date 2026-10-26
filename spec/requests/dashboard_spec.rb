@@ -346,6 +346,20 @@ RSpec.describe "Dashboard" do
         expect(Dashboard::RecentActivity).not_to have_received(:call)
       end
 
+      # @spec QUEUE-DIAGNOSIS-001
+      it "loads the queue diagnosis separately from the dashboard shell" do
+        allow(Dashboard::QueueDiagnosis).to receive(:call).and_call_original
+
+        get dashboard_path
+
+        expect(response.body).to include("dashboard-queue-diagnosis")
+        expect(Dashboard::QueueDiagnosis).not_to have_received(:call)
+
+        get dashboard_queue_diagnosis_path
+
+        expect(response.body).to include("Queue diagnosis")
+      end
+
       it "renders the recent activity frame with the activity stream" do
         create(:agent_run, project: project, status: "completed", completed_at: 1.minute.ago, duration_seconds: 42)
 

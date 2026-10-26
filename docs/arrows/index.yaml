@@ -52,6 +52,15 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  queue-diagnosis:
+    title: Queue Diagnosis
+    path: docs/intent/queue-diagnosis/queue-diagnosis-design.md
+    specs: docs/intent/queue-diagnosis/queue-diagnosis-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-10-25
+    next: "Keep diagnosis read-only and reuse canonical admission and scheduler data."
   dependency-declarations:
     title: Dependency Declarations
     path: docs/intent/dependency-declarations/dependency-declarations-design.md

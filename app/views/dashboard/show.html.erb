@@ -66,6 +66,13 @@
         </turbo-frame>
       </div>
 
+      <turbo-frame id="dashboard-queue-diagnosis"
+        data-dashboard-frames-target="frame"
+        data-dashboard-frames-src="<%= dashboard_queue_diagnosis_path %>"
+        class="mt-6 block">
+        <div class="motion-safe:animate-pulse motion-reduce:animate-none rounded-lg bg-gray-100 h-24"></div>
+      </turbo-frame>
+
       <turbo-frame id="dashboard-eligibility-breakdown"
         data-dashboard-frames-target="frame"
         data-dashboard-frames-src="<%= dashboard_eligibility_breakdown_path %>"
