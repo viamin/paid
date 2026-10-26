@@ -58,6 +58,26 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
   end
 
   # @spec PARTIAL-CLOSEOUT-030
+  it "records a flat resolved image identity and digest" do
+    agent_run.record_runtime_image_selection!(
+      "requested_image" => "paid-agent:latest",
+      "resolved_image" => "registry.example/paid-agent@sha256:abc",
+      "digest" => "sha256:abc"
+    )
+    stub_compatible_host
+    stub_provisioning
+    stub_command_execution
+
+    result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+
+    expect(result.evidence).to include(
+      "image" => "registry.example/paid-agent@sha256:abc",
+      "image_digest" => "sha256:abc"
+    )
+    expect(result.evidence.fetch("image_selection")).to include("resolved_image" => "registry.example/paid-agent@sha256:abc")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
   it "plans the inspected host so the container lands on the host the capability decision approved" do
     stub_compatible_host
     stub_provisioning
@@ -80,12 +100,28 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(agent_run).to receive(:execute_in_execution_environment).with(
       [ "analyzer", "--version" ],
       stream: false,
+      timeout: described_class::COMMAND_TIMEOUT,
       env: { "PAID_TOOL_SIDECAR_ENDPOINTS" => '[{"name":"analyzer","url":"http://analyzer:8080"}]' }
     ).ordered.and_return(stdout: "analyzer 1.0", stderr: "", exit_code: 0)
 
     expect(execution_runner).to receive(:cleanup_mcp_servers).with(agent_run:).ordered
 
     described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "passes a reviewed shell recipe through unchanged" do
+    stub_compatible_host
+    stub_provisioning
+    command = "bundle exec rubocop | tee rubocop.log"
+    expect(agent_run).to receive(:execute_in_execution_environment).with(
+      command,
+      timeout: described_class::COMMAND_TIMEOUT,
+      stream: false,
+      env: { "PAID_TOOL_SIDECAR_ENDPOINTS" => '[{"name":"analyzer","url":"http://analyzer:8080"}]' }
+    ).and_return(stdout: "", stderr: "", exit_code: 0)
+
+    described_class.call(agent_run:, native_command: command, execution_runner:)
   end
 
   # @spec PARTIAL-CLOSEOUT-030
@@ -177,6 +213,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     allow(agent_run).to receive(:execute_in_execution_environment).with(
       [ "analyzer", "--version" ],
       stream: false,
+      timeout: described_class::COMMAND_TIMEOUT,
       env: { "PAID_TOOL_SIDECAR_ENDPOINTS" => '[{"name":"analyzer","url":"http://analyzer:8080"}]' }
     ).and_return(stdout:, stderr:, exit_code:)
   end

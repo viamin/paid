@@ -16,13 +16,15 @@ RSpec.describe Containers::McpProvisioner do
       expect(described_class.for(agent_run).backend).to eq(backend)
     end
 
-    it "resolves the admitted host when the run has not been provisioned yet" do
+    it "uses the active backend when the run has no recorded host" do
       backend = instance_double(Containers::Backends::Base)
       agent_run = create(:agent_run, container_host: nil)
       allow(agent_run).to receive(:workspace_volume_host).and_return(nil)
-      allow(Containers).to receive(:backend_for).with(nil).and_return(backend)
+      allow(Containers).to receive(:backend).and_return(backend)
+      allow(Containers).to receive(:backend_for).and_call_original
 
       expect(described_class.for(agent_run).backend).to eq(backend)
+      expect(Containers).not_to have_received(:backend_for)
     end
   end
 

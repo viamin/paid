@@ -72,7 +72,8 @@ module Containers
     # @return [McpProvisioner]
     # @spec CONTAINER-RUNTIME-033
     def self.for(agent_run)
-      new(backend: Containers.backend_for(agent_run.workspace_volume_host))
+      host = agent_run.workspace_volume_host
+      new(backend: host.present? ? Containers.backend_for(host) : Containers.backend)
     end
 
     def initialize(backend: Containers.backend)

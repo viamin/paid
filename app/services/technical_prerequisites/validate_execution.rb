@@ -15,6 +15,7 @@ module TechnicalPrerequisites
   # @spec PARTIAL-CLOSEOUT-030
   class ValidateExecution
     MAX_OUTPUT_BYTES = 20_000
+    COMMAND_TIMEOUT = 9.minutes
     Result = Data.define(:status, :evidence, :setup_action) do
       def success? = status == "completed"
     end
@@ -100,7 +101,7 @@ module TechnicalPrerequisites
     end
 
     def capture(command, env:)
-      result = agent_run.execute_in_execution_environment(command, stream: false, env:)
+      result = agent_run.execute_in_execution_environment(command, timeout: COMMAND_TIMEOUT, stream: false, env:)
       output(result[:stdout], result[:stderr], result[:exit_code])
     rescue Containers::Provision::ExecutionError => error
       output(error.stdout, error.stderr, error.exit_code)
@@ -140,12 +141,28 @@ module TechnicalPrerequisites
     def base_evidence
       {
         "recorded_at" => Time.current.iso8601,
-        "image" => agent_run.external_metadata["runtime_image"] || Containers::Provision::DEFAULTS[:image],
+        **runtime_image_evidence,
         "requested_checkout" => agent_run.base_commit_sha,
         "checkout" => nil,
         "tool_identity" => agent_run.tool_sidecar_snapshot.map { |tool| tool.slice("name", "image", "version") },
         "cleanup" => { "attempted" => true }
       }
+    end
+
+    def runtime_image_evidence
+      recorded_selection = agent_run.reload.runtime_image_selection
+      selection = if recorded_selection.is_a?(Hash)
+        recorded_selection
+      elsif recorded_selection.present?
+        { "resolved_image" => recorded_selection }
+      else
+        {}
+      end
+      {
+        "image" => selection["resolved_image"] || selection["requested_image"] || Containers::Provision::DEFAULTS[:image],
+        "image_digest" => selection["digest"],
+        "image_selection" => selection.presence
+      }.compact
     end
 
     def cleanup
@@ -177,11 +194,10 @@ module TechnicalPrerequisites
     end
 
     def validate_command!(command)
-      unless command.is_a?(Array) && command.any? && command.all? { |part| part.is_a?(String) && part.present? }
-        raise ArgumentError, "validation commands must be non-empty argument arrays"
-      end
+      return command if command.is_a?(String) && command.present?
+      return command if command.is_a?(Array) && command.any? && command.all? { |part| part.is_a?(String) && part.present? }
 
-      command
+      raise ArgumentError, "validation commands must be non-empty strings or argument arrays"
     end
   end
 end

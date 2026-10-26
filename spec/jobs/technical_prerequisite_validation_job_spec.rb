@@ -8,7 +8,7 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
     create(:agent_run, :queued, project:, base_commit_sha: "a" * 40, synthetic: true,
       external_metadata: {
         "technical_prerequisite_validation" => {
-          "requirement_id" => 1, "requirement_name" => "audit", "command" => [ "bin/audit" ], "source_run_id" => 1
+          "requirement_id" => 1, "requirement_name" => "audit", "command" => "bin/audit", "source_run_id" => 1
         }
       })
   end
@@ -18,8 +18,17 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
   end
 
   # @spec PARTIAL-CLOSEOUT-030
+  it "uses a bounded low-priority worker for isolated network and container execution" do
+    expect(described_class.queue_name).to eq("low_priority")
+    expect(described_class.perform_timeout).to eq(10.minutes.to_i)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
   it "completes the run when the validation succeeds" do
-    allow(TechnicalPrerequisites::ValidateExecution).to receive(:call).and_return(validation_result("completed"))
+    expect(TechnicalPrerequisites::ValidateExecution).to receive(:call) do
+      expect(Current.account).to eq(project.account)
+      validation_result("completed")
+    end
 
     described_class.perform_now(agent_run.id)
 

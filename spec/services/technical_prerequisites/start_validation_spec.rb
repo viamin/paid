@@ -18,7 +18,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
       goal: "technical_prerequisite_validation"
     )
     expect(result.agent_run.external_metadata.dig("technical_prerequisite_validation", "command"))
-      .to eq([ "bin/audit", "--quick" ])
+      .to eq("bin/audit --quick")
     expect(TechnicalPrerequisiteValidationJob).to have_been_enqueued.with(result.agent_run.id)
   end
 
@@ -51,15 +51,16 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
   end
 
   # @spec PARTIAL-CLOSEOUT-030
-  it "refuses a reviewed recipe with malformed shell quoting" do
+  it "preserves reviewed recipe shell syntax for the isolated execution environment" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40)
-    requirement = create(:pre_commit_requirement, project:, account: project.account, command: "bin/audit '")
+    command = "RAILS_ENV=test bundle exec rspec && echo done | tee validation.log"
+    requirement = create(:pre_commit_requirement, project:, account: project.account, command:)
 
     result = described_class.call(source_run:, requirement:, actor: project.created_by)
 
-    expect(result).not_to be_success
-    expect(result.agent_run).to be_nil
+    expect(result).to be_success
+    expect(result.agent_run.external_metadata.dig("technical_prerequisite_validation", "command")).to eq(command)
   end
 
   # @spec PARTIAL-CLOSEOUT-030

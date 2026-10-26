@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 class TechnicalPrerequisiteValidationJob < ApplicationJob
-  queue_as :default
+  queue_as :low_priority
+  self.perform_timeout = 10.minutes
 
   discard_on ActiveRecord::RecordNotFound
 

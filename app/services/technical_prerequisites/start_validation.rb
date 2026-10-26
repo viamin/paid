@@ -1,7 +1,5 @@
 # frozen_string_literal: true
 
-require "shellwords"
-
 module TechnicalPrerequisites
   # Creates the fresh, pinned operational run used by an authorized Inbox
   # validation. Commands come only from persisted reviewed requirements.
@@ -22,7 +20,7 @@ module TechnicalPrerequisites
     def call
       return failure("Select a run with a pinned checkout.") if source_run.base_commit_sha.blank?
       return failure("Select an enabled validation recipe for this project.") unless allowed_requirement?
-      return failure("The selected validation recipe has an invalid command.") unless parsed_command
+      return failure("The selected validation recipe has an invalid command.") unless reviewed_command
 
       run = create_validation_run!
       # Enqueued after the run is committed: the job claims the run by id, and
@@ -68,7 +66,7 @@ module TechnicalPrerequisites
         RECIPE_KEY => {
           "requirement_id" => requirement.id,
           "requirement_name" => requirement.name,
-          "command" => parsed_command,
+          "command" => reviewed_command,
           "source_run_id" => source_run.id
         }
       )
@@ -82,10 +80,10 @@ module TechnicalPrerequisites
       run.reload
     end
 
-    def parsed_command
-      @parsed_command ||= Shellwords.split(requirement.command).presence
-    rescue ArgumentError
-      nil
+    # Requirements are reviewed shell recipes. Preserve their text so this
+    # validation follows the same `sh -c` execution path as pre-commit checks.
+    def reviewed_command
+      @reviewed_command ||= requirement.command if requirement.command.is_a?(String) && requirement.command.present?
     end
 
     def failure(message)
