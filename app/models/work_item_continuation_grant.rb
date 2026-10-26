@@ -6,6 +6,7 @@
 # child issues never inherit it.
 #
 # @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-008
+# @spec AUTOMATION-PHASES-009
 class WorkItemContinuationGrant < ApplicationRecord
   SOURCES = %w[manual_start].freeze
 
@@ -17,7 +18,10 @@ class WorkItemContinuationGrant < ApplicationRecord
   validates :start_phase, presence: true, inclusion: { in: Automation::Phases::ALL }
   validates :endpoint, presence: true, inclusion: { in: Automation::Phases::CONTINUATION_ENDPOINTS }
   validates :source, presence: true, inclusion: { in: SOURCES }
+  validates :created_by, presence: true
   validate :endpoint_follows_start_phase
+  validate :work_item_belongs_to_project
+  validate :audit_actors_belong_to_project_account
 
   scope :active, -> { where(revoked_at: nil, completed_at: nil) }
   scope :revoked, -> { where.not(revoked_at: nil) }
@@ -68,5 +72,25 @@ class WorkItemContinuationGrant < ApplicationRecord
     return if start_phase.blank? || endpoint.blank?
 
     errors.add(:endpoint, "must be the start phase or a later delivery phase") if covered_phases.empty?
+  end
+
+  def work_item_belongs_to_project
+    return unless issue && project
+    return if issue.project_id == project.id
+
+    errors.add(:issue, "must belong to the grant project")
+  end
+
+  def audit_actors_belong_to_project_account
+    validate_actor_account(:created_by)
+    validate_actor_account(:revoked_by)
+  end
+
+  def validate_actor_account(actor_name)
+    actor = public_send(actor_name)
+    return unless actor && project
+    return if actor.account_id == project.account_id
+
+    errors.add(actor_name, "must belong to the grant project account")
   end
 end

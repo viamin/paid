@@ -34,6 +34,27 @@ RSpec.describe WorkItemContinuationGrant do
     expect(grant).not_to be_valid
   end
 
+  it "rejects a grant whose work item belongs to another project" do
+    grant = build(:work_item_continuation_grant, project:, issue: create(:issue))
+
+    expect(grant).not_to be_valid
+    expect(grant.errors[:issue]).to include("must belong to the grant project")
+  end
+
+  it "rejects an audit actor outside the project account" do
+    grant = build(:work_item_continuation_grant, project:, issue:, created_by: create(:user))
+
+    expect(grant).not_to be_valid
+    expect(grant.errors[:created_by]).to include("must belong to the grant project account")
+  end
+
+  it "requires the author recorded for the manual authorization" do
+    grant = build(:work_item_continuation_grant, project:, issue:, created_by: nil)
+
+    expect(grant).not_to be_valid
+    expect(grant.errors[:created_by]).to include("can't be blank")
+  end
+
   describe "completion" do
     it "completes when the endpoint's work lands" do
       grant = create(:work_item_continuation_grant, project:, issue:)

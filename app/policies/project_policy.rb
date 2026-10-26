@@ -26,6 +26,13 @@ class ProjectPolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin, :member) || has_project_role?
   end
 
+  # RDR-077 §3: continuation through a non-merge delivery phase delegates
+  # the same project-scoped authority as starting the work manually.
+  # @spec AUTOMATION-PHASES-009
+  def delegate_automation?
+    run_agent?
+  end
+
   # @spec APPLE-VERIFY-002
   # @spec APPLE-VERIFY-003
   # RDR-077 §3: only users who may delegate the covered actions may create a

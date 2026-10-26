@@ -102,5 +102,19 @@ RSpec.describe Automation::ManualStart::Plan do
     it "permits a non-merge continuation for a user who can start work" do
       expect { plan(user: member, continuation: true, endpoint: "coding").build_grant(issue:) }.not_to raise_error
     end
+
+    it "rejects a non-merge continuation from an actor outside the project account" do
+      outsider = create(:user)
+
+      expect { plan(user: outsider, continuation: true, endpoint: "coding").build_grant(issue:) }
+        .to raise_error(described_class::PermissionDenied, /permission to delegate this action/)
+    end
+
+    it "rejects a continuation grant for work outside the project" do
+      other_issue = create(:issue)
+
+      expect { plan(continuation: true, endpoint: "coding").build_grant(issue: other_issue) }
+        .to raise_error(described_class::WorkItemOutsideProject, /does not belong to this project/)
+    end
   end
 end
