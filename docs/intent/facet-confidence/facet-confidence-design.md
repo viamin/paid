@@ -133,7 +133,8 @@ and follow-ups through
 `bin/facet-confidence-assessment-evaluation`; the current measured values are
 recorded in
 [`assessment-evaluation-2026-10-23/`](assessment-evaluation-2026-10-23/README.md)
-and remain not established until the operator-executed runs exist.
+records the 2026-10-26 provider-unavailability failures. Verdict-derived
+measures remain not established until the pinned model returns a corpus run.
 
 ## Closeout evaluation entry point
 

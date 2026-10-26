@@ -5,8 +5,8 @@ for `001` and `008`; P06 implements assessment generation and persisted chat
 context for `002`–`005`, `012`–`014`; P08 implements `006` and `007`; P09
 implements `009` through `012`. The RDR-070 corpus deliverable (#4573)
 implements `016`–`018`: the frozen assessment corpus, per-run provenance, and
-outcome metrics machinery; operator-executed measured runs remain pending and
-the worksheet records them as not established. The closeout evaluation entry
+outcome metrics machinery; recorded provider-unavailability runs leave
+verdict-derived measures not established. The closeout evaluation entry
 point (#4596) implements `020`–`021`: the Inbox packet and the persisted
 blinded reference-judgment flow over the frozen corpus.
 
