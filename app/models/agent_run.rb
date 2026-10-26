@@ -1838,6 +1838,13 @@ class AgentRun < ApplicationRecord
     goal.in?(LAYERED_VERIFICATION_GOALS)
   end
 
+  # The audit request persists its bounded inputs before queueing, so retries,
+  # cancellation, and project history all describe the same work.
+  # @spec LAYERED-VERIFY-013
+  def layered_verification_audit_request
+    external_metadata.fetch("layered_verification_audit", {})
+  end
+
   def assign_default_tdd_phase
     return if tdd_phase.present?
     return unless create_pr_goal?
@@ -4096,6 +4103,8 @@ class AgentRun < ApplicationRecord
     # create_feature derives its prompt from Prompts::BuildForCreateFeature
     # and external_metadata["feature_brief"], so it needs no issue or source PR.
     return if create_feature_goal?
+    # A bounded audit derives its prompt from its persisted obligation scope.
+    return if goal == "layered_verification_audit" && layered_verification_audit_request["obligation_ids"].present?
     return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
 
     errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")

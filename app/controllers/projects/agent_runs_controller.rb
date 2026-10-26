@@ -351,6 +351,21 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Acceptance audit queued.")
     end
 
+    # The project action uses the same request service as contextual chat/MCP.
+    # The confirmation page supplies the explicit scope rather than inferring an
+    # issue, because audits are deliberately issue-less.
+    # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-014
+    def request_layered_verification_audit
+      result = LayeredVerification::Audits::Request.call(
+        project: @project, user: current_user, obligation_ids: Array(params[:obligation_ids])
+      )
+      audit_event("agent_run.created", metadata: { agent_run_id: result.agent_run.id, project_name: @project.name,
+        goal: result.agent_run.goal, scope_count: result.scope.size, budget_tokens: result.budget })
+      redirect_to project_agent_run_path(@project, result.agent_run), notice: "Layered-verification audit queued."
+    rescue LayeredVerification::AuditAccess::FeatureDisabledError, LayeredVerification::AuditAccess::UnauthorizedError, ArgumentError => error
+      redirect_to project_path(@project), alert: error.message
+    end
+
     # Records the operator's attestation that the recorded closeout evidence
     # completes the issue (evidence-gated; see Issues::ResolveCloseout).
     # @spec PARTIAL-CLOSEOUT-007
