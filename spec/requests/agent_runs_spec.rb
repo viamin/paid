@@ -2719,6 +2719,29 @@ RSpec.describe "AgentRuns" do
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/validate_reopen_review" do
+    let(:reopened_issue) do
+      create(:issue, project: project, paid_state: "manual_review",
+        manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+    end
+
+    before { sign_in user }
+
+    # @spec ISSUE-REOPEN-REVIEW-005
+    it "records an authorized revision-bound decision without clearing the hold" do
+      expect {
+        post validate_reopen_review_project_agent_runs_path(project), params: {
+          issue_id: reopened_issue.id,
+          revision: reopened_issue.github_updated_at.iso8601,
+          reason: "The remaining live validation must be collected."
+        }
+      }.to change(DecisionRecord, :count).by(1)
+
+      expect(reopened_issue.reload).to be_reopen_review_pending
+      expect(response).to redirect_to(dashboard_path)
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/clear_retry_abandonment" do
     let(:capped_issue) do
       create(:issue,

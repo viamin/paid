@@ -30,3 +30,15 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When a reopened issue is in manual review,
+  the Inbox SHALL require an authorized operator to record a non-blank
+  intent-validation decision against the current synchronized issue revision
+  before offering continuation. The shared recovery service SHALL classify
+  dependencies, scanner recurrences, enhancement stops, and unknown holds from
+  durable provenance; it SHALL not clear a dependency or unknown hold with an
+  enhancement retry, and SHALL surface queued/running work before continuation.
+  *Tests:* `spec/services/manual_reviews/recovery_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `ManualReviews::Recovery`, `Projects::AgentRunsController`, Inbox
+  manual-review detail.

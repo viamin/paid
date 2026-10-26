@@ -1,9 +1,16 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec OPERATOR-INBOX-002D ISSUE-REOPEN-REVIEW-005 %>
+<% recovery = ManualReviews::Recovery.call(issue: entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.action == :record_decision %>
+        This reopened issue needs a recorded validation of its prior closure and remaining scope before work can continue.
+      <% elsif recovery.action == :wait %>
+        This issue is waiting on a real dependency. Acknowledging it does not waive that dependency.
+      <% elsif recovery.action == :recover_scanner %>
+        A scanner-confirmed recurrence needs its scanner recovery, not another enhancement run.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
         Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
@@ -11,12 +18,36 @@
     </p>
   </div>
 
+  <% if recovery.action == :record_decision && policy(entry.project).run_agent? %>
+    <%= form_with url: validate_reopen_review_project_agent_runs_path(entry.project), method: :post, class: "space-y-3" do |form| %>
+      <%= hidden_field_tag :issue_id, entry.issue.id %>
+      <%= hidden_field_tag :revision, entry.issue.github_updated_at.iso8601 %>
+      <%= hidden_field_tag :return_to, inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+      <%= form.label :reason, "Closure and remaining-scope decision", class: "block text-sm font-semibold text-gray-900" %>
+      <%= form.text_area :reason, required: true, rows: 3, class: "block w-full rounded-md border-gray-300" %>
+      <%= form.submit "Record validation decision", class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white" %>
+    <% end %>
+  <% end %>
+
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
     <p class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
       <%= entry.summary %>
     </p>
   </div>
+
+  <% if recovery.action == :wait %>
+    <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      <p>Dependency owner action: resolve the blocking work, then refresh this Inbox item for reevaluation.</p>
+      <% recovery.dependencies.each do |dependency| %>
+        <% if dependency.respond_to?(:github_url) %>
+          <%= link_to "##{dependency.github_number}", dependency.github_url, target: "_blank", rel: "noopener noreferrer", class: "mr-2 underline" %>
+        <% else %>
+          <span class="mr-2"><%= dependency.external_ref %></span>
+        <% end %>
+      <% end %>
+    </div>
+  <% end %>
 
   <%# A scanner-confirmed recurrence routes through manual_review, not the
       partial_closeout lane (SecurityAlerts::VerifyRemediationAttempt#fail!
@@ -42,7 +73,7 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if recovery.action == :resume_enhancement && recovery.blocking_runs.empty? && policy(entry.project).run_agent? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

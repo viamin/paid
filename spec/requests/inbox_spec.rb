@@ -1018,6 +1018,24 @@ RSpec.describe "Inbox" do
     )
   end
 
+  # @spec ISSUE-REOPEN-REVIEW-005
+  it "requires a revision-bound decision for a reopened issue before offering enhancement recovery" do
+    reopened = create_manual_review_issue(
+      title: "Reopened validation",
+      github_number: 512,
+      reason: Issue::REOPEN_REVIEW_REQUIRED_REASON
+    )
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, reopened),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    document = Nokogiri::HTML(response.body)
+    form = document.at_css(%(form[action="#{validate_reopen_review_project_agent_runs_path(project)}"]))
+    expect(form).to be_present
+    expect(response.body).to include("Record validation decision")
+    expect(response.body).not_to include("Start enhancement run")
+  end
+
   # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
   it "renders the clarifying-questions answer form for a manual_review issue with preserved terminal-round questions" do
     parked = create_manual_review_issue(

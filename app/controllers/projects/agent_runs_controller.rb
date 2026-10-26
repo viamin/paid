@@ -420,6 +420,16 @@ module Projects
         return
       end
 
+      recovery = ManualReviews::Recovery.call(issue: issue)
+      unless recovery.action == :resume_enhancement
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_recovery_alert(recovery)
+        return
+      end
+      if recovery.blocking_runs.any?
+        redirect_to safe_return_target || dashboard_path, alert: active_manual_review_run_alert(recovery)
+        return
+      end
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
@@ -428,6 +438,23 @@ module Projects
         goal: "enhance_issue",
         priority_tier: nil
       )
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005
+    def validate_reopen_review
+      authorize @project, :run_agent?
+
+      issue = resolve_manual_review_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = ManualReviews::Recovery.new(issue: issue)
+      recovery.record_reopen_validation!(actor: current_user, reason: params[:reason], revision: params[:revision])
+      redirect_to safe_return_target || dashboard_path, notice: "Reopen intent validation recorded. You can now retry analysis."
+    rescue ArgumentError => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
     end
 
     # Operator-driven counterpart to
@@ -1049,6 +1076,14 @@ module Projects
       else
         "This issue is no longer waiting for manual review."
       end
+    end
+
+    def manual_review_recovery_alert(recovery)
+      "This hold requires #{recovery.action.to_s.tr('_', ' ')}: #{recovery.message}"
+    end
+
+    def active_manual_review_run_alert(recovery)
+      "Work is already queued or running (run #{recovery.blocking_runs.first.id}); reconcile it before resuming this hold."
     end
 
     def cancel_in_flight_execution_for_resume!

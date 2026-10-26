@@ -21,11 +21,25 @@ review reason. The Inbox exposes this state to an operator, and ordinary
 automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
-An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+An operator records an immutable, revision-bound validation decision and reason
+before continuing a reopened issue. The decision is bound to the synchronized
+GitHub revision, names the original closure and remaining scope review, and is
+audited with its authorized actor. Only then may the Inbox offer the existing
+manual analysis continuation. A stale revision must be refreshed instead of
+being silently accepted.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
+
+## Cause-specific Inbox recovery
+
+`ManualReviews::Recovery` classifies a manual-review entry from durable
+provenance, not from the free-form display reason. Pending reopen review needs
+the revision-bound decision; real unresolved dependencies remain waits;
+scanner-confirmed recurrences retain scanner recovery; enhancement-originated
+stops retain their question forms and enhancement retry. An entry with no
+recognized provenance stays visibly unknown and is not cleared by a generic
+retry. Before continuation, the same service reports queued or running work so
+the operator reuses or reconciles it rather than creating a competing run.
 
 ## Chat-tool policy
 
