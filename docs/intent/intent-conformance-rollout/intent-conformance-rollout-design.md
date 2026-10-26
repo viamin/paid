@@ -126,12 +126,18 @@ Paid's project authorization and presentation patterns:
 3. **Freeze.** The explicit finish action refuses to freeze while any case
    is unlabeled or skipped, then stamps the reference set frozen. Answers
    (strata and reviewer outputs) become visible only from freeze onward.
-4. **Execute.** After freeze, the real conformance reviewer runs for every
-   case through `agent_harness` (the documented operator command or the
-   equivalent UI action), recording actual verdicts, reviewer model, prompt
-   digest, cost, and failures. Missing or failed reviewer output is recorded
-   as not evaluated; prerequisite validation alone is never presented as
-   execution.
+4. **Execute.** After freeze, an authorized operator queues the real
+   conformance reviewer through the durable GoodJob lifecycle; the request
+   returns without provider work. The worker runs every incomplete case
+   through `agent_harness`, recording actual verdicts, reviewer model, prompt
+   digest, cost, and failures. The lifecycle exposes queued, running,
+   partial, failed, cancelled, and completed states, per-case progress and
+   cost. Cancellation is cooperative between cases, preserves collected
+   evidence, and never invents results for unfinished cases. Retries and
+   interrupted-worker recovery reuse completed case rows and retry only gaps;
+   a lost advisory lock or worker cannot leave an evaluation running forever.
+   Missing or failed reviewer output is recorded as not evaluated; prerequisite
+   validation alone is never presented as execution.
 5. **Review and revise.** Disagreements surface for maintainer review after
    the run. A post-result revision is appended with its own reason and
    timestamp; it never overwrites the original blinded label, and blinded

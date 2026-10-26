@@ -13,7 +13,7 @@ module IntentConformance
     # @spec INTENT-CONFORMANCE-ROLLOUT-006
     # @spec INTENT-CONFORMANCE-ROLLOUT-007
     class ExecuteReviewer
-      Result = Data.define(:success, :error, :evaluation, :executed, :failed) do
+      Result = Data.define(:success, :error, :evaluation, :executed, :failed, :cancelled) do
         def success? = success
       end
 
@@ -85,15 +85,18 @@ module IntentConformance
       end
 
       def execute_cases
-        @evaluation.update!(status: "executing", execute_started_at: Time.current)
+        @evaluation.update!(status: "running", execute_started_at: Time.current, execution_started_at: Time.current,
+          execution_heartbeat_at: Time.current)
         executed = 0
         failed = 0
 
         @evaluation.corpus.cases.each do |corpus_case|
+          return cancelled(executed, failed) if cancellation_requested?
           next if evaluated_run_for(corpus_case.fetch("id"))
 
           verdict, failure_reason, model, cost = review_case(corpus_case)
           upsert_run(corpus_case, verdict, failure_reason, model, cost)
+          @evaluation.update!(execution_heartbeat_at: Time.current)
           verdict == NOT_EVALUATED ? failed += 1 : executed += 1
         end
 
@@ -232,13 +235,25 @@ module IntentConformance
       end
 
       def complete_or_fail(executed, failed)
-        if failed.zero?
+        total_failed = @evaluation.runs.where(verdict: NOT_EVALUATED).count
+        total_evaluated = @evaluation.runs.where.not(verdict: NOT_EVALUATED).count
+        if total_failed.zero? && total_evaluated == @evaluation.corpus.case_ids.length
           @evaluation.update!(status: "completed", completed_at: Time.current, last_failure_reason: nil)
         else
-          @evaluation.update!(status: "failed", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
+          status = total_evaluated.zero? ? "failed" : "partial"
+          @evaluation.update!(status: status, last_failure_reason: "#{total_failed} case(s) ended without an evaluated reviewer verdict")
         end
         log_executed(executed, failed)
-        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed, cancelled: false)
+      end
+
+      def cancelled(executed, failed)
+        @evaluation.update!(status: "cancelled", last_failure_reason: "execution cancelled by an authorized operator")
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed, cancelled: true)
+      end
+
+      def cancellation_requested?
+        @evaluation.class.where(id: @evaluation.id).pick(:cancel_requested_at).present?
       end
 
       def prompt_digest
@@ -298,7 +313,7 @@ module IntentConformance
       end
 
       def failure(message)
-        Result.new(success: false, error: message, evaluation: nil, executed: 0, failed: 0)
+        Result.new(success: false, error: message, evaluation: nil, executed: 0, failed: 0, cancelled: false)
       end
     end
   end

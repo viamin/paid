@@ -10,7 +10,7 @@
 # @spec INTENT-CONFORMANCE-ROLLOUT-005
 # @spec INTENT-CONFORMANCE-ROLLOUT-006
 class IntentConformanceShadowEvaluation < ApplicationRecord
-  STATUSES = %w[labeling frozen executing completed failed].freeze
+  STATUSES = %w[labeling frozen queued running partial failed cancelled completed].freeze
   POLICIES = IntentConformance::ShadowEvaluationPolicy::POLICIES
   OUTCOMES = IntentConformance::ShadowEvaluationPolicy::LABELS
 
@@ -31,8 +31,13 @@ class IntentConformanceShadowEvaluation < ApplicationRecord
   scope :latest_first, -> { order(created_at: :desc, id: :desc) }
 
   def labeling? = status == "labeling"
-  def frozen? = %w[frozen executing completed failed].include?(status)
-  def executing? = status == "executing"
+  def frozen? = !labeling?
+  def queued? = status == "queued"
+  def running? = status == "running"
+  def executing? = queued? || running?
+  def partial? = status == "partial"
+  def cancelled? = status == "cancelled"
+  def cancel_requested? = cancel_requested_at.present?
   def completed? = status == "completed"
   def failed? = status == "failed"
 

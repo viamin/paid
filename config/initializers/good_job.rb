@@ -106,6 +106,12 @@ Rails.application.configure do
       cron: "2-59/5 * * * *",
       class: "StaleRunDetectorJob"
     },
+    recover_shadow_evaluation_executions: {
+      cron: "4-59/5 * * * *",
+      class: "RecoverShadowEvaluationExecutionsJob",
+      queue: "maintenance",
+      description: "Requeue interrupted intent-conformance reviewer evaluations"
+    },
     docker_orphan_cleanup: {
       cron: "3-59/5 * * * *",
       class: "DockerOrphanCleanupJob",

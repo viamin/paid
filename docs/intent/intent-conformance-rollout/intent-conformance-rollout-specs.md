@@ -75,16 +75,22 @@
   *Test:* `spec/requests/projects/shadow_evaluations_spec.rb`,
   `spec/services/intent_conformance/shadow_evaluation/execute_reviewer_spec.rb`.
 
-- [ ] **INTENT-CONFORMANCE-ROLLOUT-007** — After reference labels are frozen,
-  a documented command or job SHALL execute the actual conformance reviewer
-  for every corpus case through `agent_harness` and record actual verdicts,
-  reviewer model, prompt digest, cost, and failures; missing or failed
-  reviewer output SHALL be recorded as not evaluated rather than counted as
-  agreement, and prerequisite validation alone SHALL NOT be presented as
-  execution.
+- [x] **INTENT-CONFORMANCE-ROLLOUT-007** — After reference labels are frozen,
+  an authorized request SHALL enqueue an idempotent durable execution rather
+  than performing reviewer work in the request. The worker SHALL execute the
+  actual conformance reviewer for every incomplete corpus case through
+  `agent_harness`, record queued/running/partial/failed/cancelled/completed
+  state plus actual verdicts, reviewer model, prompt digest, per-case cost,
+  and failures, and support authorized cooperative cancellation, retry, and
+  interrupted-worker recovery without re-spending completed cases. Missing or
+  failed reviewer output SHALL be recorded as not evaluated rather than
+  counted as agreement, and prerequisite validation alone SHALL NOT be
+  presented as execution.
   *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
   *Code:* `app/services/intent_conformance/reviewer_llm.rb`,
   `app/services/intent_conformance/shadow_evaluation/execute_reviewer.rb`,
+  `app/services/intent_conformance/shadow_evaluation/enqueue_reviewer.rb`,
+  `app/jobs/shadow_evaluation_reviewer_job.rb`,
   `lib/tasks/intent_conformance.rake`,
   `bin/intent-conformance-shadow-evaluation`.
   *Test:* `spec/services/intent_conformance/shadow_evaluation/execute_reviewer_spec.rb`,
@@ -106,7 +112,7 @@
   *Test:* `spec/services/intent_conformance/shadow_evaluation/compile_report_spec.rb`,
   `spec/lib/intent_conformance/shadow_evaluation_worksheet_spec.rb`.
 
-- [ ] **INTENT-CONFORMANCE-ROLLOUT-009** — The originating partial-closeout
+- [x] **INTENT-CONFORMANCE-ROLLOUT-009** — The originating partial-closeout
   Inbox item SHALL offer Start evaluation / Resume labeling with labeling
   progress and queued/running/failed/completed execution state, SHALL resume
   the existing evaluation for the same evidence generation instead of

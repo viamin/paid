@@ -149,7 +149,25 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("intentionally_drifted")
   end
 
-  it "executes the real reviewer through agent_harness, records failures as not evaluated, and shows the report" do
+  # @spec INTENT-CONFORMANCE-ROLLOUT-007 — cancellation is an authorized,
+  # cooperative boundary that retains any already-recorded evidence.
+  it "allows an operator to cancel queued execution without deleting evidence" do
+    evaluation = start_evaluation_from_committed_corpus!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    evaluation.runs.create!(case_id: "A-01", verdict: "within_scope", reviewer_run_id: "r1", reviewer_model: "m",
+      prompt_digest: "d", cost_cents: 4, recorded_at: Time.current)
+
+    post execute_project_shadow_evaluation_path(project, evaluation)
+    post cancel_project_shadow_evaluation_path(project, evaluation)
+    follow_redirect!
+
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs.find_by(case_id: "A-01")).to be_evaluated
+    expect(response.body).to include("Completed case evidence is preserved")
+  end
+
+  it "queues reviewer execution promptly, then records failures and shows the report" do
     evaluation = start_evaluation_from_committed_corpus!
     label_all!(evaluation)
     freeze!(evaluation)
@@ -160,7 +178,13 @@ RSpec.describe "Projects::ShadowEvaluations" do
     post execute_project_shadow_evaluation_path(project, evaluation)
     follow_redirect!
 
-    expect(response.body).to include("not evaluated")
+    expect(response.body).to include("Reviewer execution queued")
+    expect(evaluation.reload).to be_queued
+
+    ShadowEvaluationReviewerJob.perform_now(evaluation.id)
+    get project_shadow_evaluation_path(project, evaluation)
+
+    expect(response.body).to include("not_evaluated")
     expect(evaluation.reload).to be_failed
     evaluation.runs.each do |run|
       expect(run).to be_not_evaluated
