@@ -342,6 +342,13 @@ module Workflows
 
         agent_step_succeeded = true
 
+        if goal == "layered_verification_audit" && Temporalio::Workflow.patched("layered-verification-audit-completion-v1")
+          audit_result = run_activity(Activities::CompleteLayeredVerificationAuditActivity,
+            { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
+
+          return { success: true, agent_run_id: agent_run_id, coverage: audit_result[:coverage] }
+        end
+
         # @spec ISSUE-ENHANCEMENT-006 ISSUE-ENHANCEMENT-014
         if goal == "enhance_issue"
           # Containerized enhance_issue: the agent explored the repo and

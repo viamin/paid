@@ -53,7 +53,7 @@ module Tools
       run = LayeredVerification::Audits::Request.call(
         project: project_for(payload.fetch("project_id")), user: current_user,
         obligation_ids: payload.fetch("obligation_ids"), target_revision: payload.fetch("target_revision"),
-        budget: payload.fetch("budget"), selections: payload.fetch("plan").transform_values { |plan| { "selected_checks" => plan["selected_checks"], "fit" => plan["fit"], "exclusions" => plan["exclusions"], "required_inputs" => plan["required_inputs"], "assumptions" => plan["assumptions"], "resource_expectations" => plan["resource_expectations"], "residual_gaps" => plan["residual_gaps"] } }
+        budget: payload.fetch("budget"), selections: payload.fetch("plan")
       )
       { id: run.id, status: run.status, goal: run.goal }
     end

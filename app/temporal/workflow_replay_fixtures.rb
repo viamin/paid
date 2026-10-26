@@ -116,6 +116,9 @@ module WorkflowReplayFixtures
         "CleanupServicesActivity" => ->(_input) { {} },
         "CleanupWorktreeActivity" => ->(_input) { {} },
         "CloneRepoActivity" => ->(_input) { {} },
+        "CompleteLayeredVerificationAuditActivity" => lambda { |input|
+          { agent_run_id: input_value(input, :agent_run_id), success: true, coverage: {} }
+        },
         "CompleteReviewGoalActivity" => ->(input) { { agent_run_id: input_value(input, :agent_run_id), success: true } },
         "ResolveReviewPipelineActivity" => ->(_input) { { pipeline: "container" } },
         "RunVerifiedReviewActivity" => ->(input) { { agent_run_id: input_value(input, :agent_run_id), outcome: "posted_findings" } },

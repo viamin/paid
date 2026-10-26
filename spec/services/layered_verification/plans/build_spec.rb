@@ -9,7 +9,7 @@ RSpec.describe LayeredVerification::Plans::Build do
 
     plan = described_class.call(obligations: [ obligation ], selections: {
       obligation.id => { selected_checks: [ "spec_to_code" ], fit: "mapped specification", exclusions: [ "no formal model" ] }
-    }).fetch(obligation)
+    }).fetch(obligation.id.to_s)
 
     expect(plan).to include("selected_checks" => [ "spec_to_code" ], "exclusions" => [ "no formal model" ])
   end

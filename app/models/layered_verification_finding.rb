@@ -14,7 +14,7 @@ class LayeredVerificationFinding < ApplicationRecord
 
   def add_observation!(agent_run:, check_result_ids:)
     with_lock do
-      update!(observations: observations + [ {
+      update!(status: status == "resolved" ? "open" : status, observations: observations + [ {
         "agent_run_id" => agent_run.id,
         "check_result_ids" => check_result_ids,
         "recorded_at" => Time.current.iso8601

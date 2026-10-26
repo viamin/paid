@@ -14,7 +14,7 @@ module LayeredVerification
       end
 
       def call
-        obligations.index_with { |obligation| plan_for(obligation) }
+        obligations.to_h { |obligation| [ obligation.id.to_s, plan_for(obligation) ] }
       end
 
       private
