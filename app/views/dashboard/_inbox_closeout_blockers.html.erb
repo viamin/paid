@@ -5,9 +5,17 @@
       <li>
         <p><%= blocker.message %></p>
         <% if blocker.evidence.present? %>
-          <p class="text-xs text-violet-700">Evidence: <%= blocker.evidence.except("attempt_url").to_json %></p>
+          <p class="text-xs text-violet-700">Evidence: <%= blocker.evidence.except("attempt_url", "children").to_json %></p>
           <% if blocker.evidence["attempt_url"].present? %>
             <%= link_to "View scanner alert", blocker.evidence["attempt_url"], target: "_blank", rel: "noopener noreferrer", class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+          <% end %>
+          <% Array(blocker.evidence["children"]).each do |child| %>
+            <%= link_to "Open child ##{child["number"]}", child["url"], target: "_blank", rel: "noopener noreferrer", class: "mr-2 text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+          <% end %>
+          <% Array(blocker.evidence["notifications"]).each do |notification| %>
+            <% if notification["action_url"].present? %>
+              <%= link_to "Open prerequisite notification ##{notification["id"]}", notification["action_url"], class: "mr-2 text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+            <% end %>
           <% end %>
         <% end %>
         <% if blocker.recovery.present? %><p class="text-xs text-violet-700">Next step: <%= blocker.recovery %></p><% end %>

@@ -117,21 +117,81 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
 
   it "surfaces a non-walked eligibility guard via the scoped preflight instead of the duplicate-work fallback" do
     merged_partial_pr(number: 12)
-    create(
-      :issue,
-      project: project,
-      github_state: "open",
-      paid_state: "in_progress",
-      parent_issue_id: issue.id,
-      github_number: 55
-    )
+    allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:eligible_for_dequeue?).and_return(false)
 
-    status = described_class.call(issue)
+    status = described_class.call(issue, eligible_issue_ids: [], continuation_eligible_issue_ids: nil)
 
     expect(status.stalled?).to be(true)
     expect(status.blocker_codes).to contain_exactly(:unavailable)
     expect(status.reason).to include("unavailable")
     expect(status.blockers.first.recovery).to include("Investigate")
+  end
+
+  it "explains an open native child without requiring a duplicate dependency edge" do # @spec PARTIAL-CLOSEOUT-030
+    merged_partial_pr(number: 12)
+    child = create(:issue, project: project, parent_issue: issue, github_number: 55,
+      github_state: "open", paid_state: "in_progress")
+
+    status = described_class.call(issue)
+
+    blocker = status.blockers.find { |candidate| candidate.code == :open_native_children }
+    expect(status.blocker_codes).to include(:open_native_children)
+    expect(status.blocker_codes).not_to include(:unavailable)
+    expect(blocker.message).to include("#55")
+    expect(blocker.evidence.fetch("children")).to include(
+      hash_including("id" => child.id, "number" => 55, "url" => child.github_url)
+    )
+    expect(blocker.recovery).to include("#55")
+  end
+
+  it "explains active human prerequisite notifications with their exact evidence" do # @spec PARTIAL-CLOSEOUT-030
+    merged_partial_pr(number: 12)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Choose the adjudication policy", description: "A maintainer must select and record the review policy.")
+
+    status = described_class.call(issue)
+
+    blocker = status.blockers.find { |candidate| candidate.code == :human_prerequisite_notification }
+    expect(status.blocker_codes).to include(:human_prerequisite_notification)
+    expect(status.blocker_codes).not_to include(:unavailable)
+    expect(blocker.message).to include("Choose the adjudication policy")
+    expect(blocker.evidence).to include(
+      "notification_id" => notification.id,
+      "title" => "Choose the adjudication policy",
+      "description" => "A maintainer must select and record the review policy."
+    )
+    expect(blocker.recovery).to include("evidence")
+  end
+
+  it "does not expose a partial-closeout notification from another tenant" do # @spec PARTIAL-CLOSEOUT-030
+    merged_partial_pr(number: 12)
+    other_account = create(:account)
+    create(:notification, :error, account: other_account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Other tenant decision", description: "This must not leak.")
+
+    status = described_class.call(issue)
+
+    expect(status.blocker_codes).not_to include(:human_prerequisite_notification)
+  end
+
+  it "preserves every known blocker in the batched diagnostic path" do # @spec PARTIAL-CLOSEOUT-030
+    merged_partial_pr(number: 12)
+    create(:issue, project: project, parent_issue: issue, github_number: 55,
+      github_state: "open", paid_state: "in_progress")
+    create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Human adjudication", description: "Record the required decision.")
+
+    status = described_class.call(
+      issue,
+      eligible_issue_ids: [],
+      continuation_eligible_issue_ids: [],
+      inputs: described_class.inputs_for([ issue ])
+    )
+
+    expect(status.blocker_codes).to include(:open_native_children, :human_prerequisite_notification)
   end
 
   it "reports every material blocker, including scanner verification evidence, without treating a merge as a fix" do

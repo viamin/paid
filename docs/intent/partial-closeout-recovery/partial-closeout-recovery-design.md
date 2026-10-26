@@ -98,8 +98,13 @@ paid_state edit and never a blanket guard lift:
   merged-PR and no-code guards for the authorized issue. Active-run
   uniqueness, tenant isolation, trust, feature release/design revision holds,
   analysis backoff, tier feasibility, budgets, skip labels, needs-input,
-  manual review, paused flags, and unmet dependencies all still apply — with
-  the unmet prerequisites explained to the user. A targeted blocker walk
+  manual review, paused flags, unmet dependencies, open native non-PR children,
+  and active partial-closeout human-prerequisite notifications all still apply
+  — with their exact identities, evidence, links, and supported recovery route
+  explained to the user. A native child is reported even without a duplicate
+  `IssueDependency` edge; a human notification remains a human decision or
+  evidence request, not missing implementation to infer, dismiss, or replace.
+  A targeted blocker walk
   (`CloseoutStatus.admission_blockers`) returns structured, additive reasons
   from persisted admission-guard evidence, including scanner attempt, analysis,
   and alert links for synthetic findings; a residual preflight then settles admission with the
