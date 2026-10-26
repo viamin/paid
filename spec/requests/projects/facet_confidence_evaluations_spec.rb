@@ -139,6 +139,26 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response.body).not_to include("Execute reviewer")
   end
 
+  it "records a post-unblinding correction without changing the frozen report measures" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    post freeze_project_facet_confidence_evaluation_path(project, evaluation)
+    original_measures = evaluation.reload.report.fetch("measures")
+
+    post revise_project_facet_confidence_evaluation_path(project, evaluation), params: {
+      case_id: "FC-CORPUS-01", verdict: "completed", intent_band: "at_or_above_threshold",
+      technical_band: "at_or_above_threshold", readiness: "ready",
+      cited_evidence_reference: "sync-sketch-statement", reason: "A corrected policy assessment.",
+      revision_reason: "The frozen comparison exposed evidence I missed."
+    }
+
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation))
+    label = evaluation.labels.find_by!(case_id: "FC-CORPUS-01")
+    expect(label).to have_attributes(verdict: "completed", intent_band: "below_threshold", readiness: "not_ready")
+    expect(label.revised_judgment).to include("intent_band" => "at_or_above_threshold", "readiness" => "ready")
+    expect(evaluation.reload.report.fetch("measures")).to eq(original_measures)
+  end
+
   it "rejects labeling by anyone other than the operator who started the evaluation" do
     evaluation = start_evaluation!
     sign_in member

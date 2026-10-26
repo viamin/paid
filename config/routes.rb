@@ -376,6 +376,7 @@ Rails.application.routes.draw do
         post :label
         post :skip
         post :freeze
+        post :revise
       end
     end
     post :detect_services, on: :member

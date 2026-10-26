@@ -164,7 +164,10 @@ readiness must follow from its judged bands (no averaging across axes).
 Freezing requires every case labeled (skips block), re-checks the corpus
 digest, and compiles the reproducible report comparing the frozen judgments
 with the frozen expected bands, including citation compliance for cases that
-name required or forbidden evidence. The report is retained on the evaluation
-and reachable from the originating Inbox item. Judgments and the report are
-evidence only: they never close the source issue, enable delivery, or change
-the 80/80 defaults.
+name required or forbidden evidence. After unblinding, only that same judge
+may append one structurally valid correction with a separate reason. The
+original blinded values remain immutable and are the only values used for
+divergence and citation measures; the correction is displayed separately for
+audit. The report is retained on the evaluation and reachable from the
+originating Inbox item. Judgments and the report are evidence only: they never
+close the source issue, enable delivery, or change the 80/80 defaults.

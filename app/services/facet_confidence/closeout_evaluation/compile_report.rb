@@ -77,6 +77,8 @@ module FacetConfidence
           "case_id" => corpus_case.fetch("id"),
           "shape" => corpus_case["shape"],
           "judgment" => judgment,
+          "revision" => revision_of(label),
+          "evidence_references" => corpus_case.fetch("evidence").map { |item| item.fetch("reference") },
           "expected" => expected.slice("status", "intent_band", "technical_band", "readiness"),
           "divergences" => divergences(judgment, expected),
           "citation_compliance" => citation_compliance(judgment, expected)
@@ -88,6 +90,17 @@ module FacetConfidence
           "verdict" => label.verdict, "intent_band" => label.intent_band, "technical_band" => label.technical_band,
           "readiness" => label.readiness, "cited_evidence_reference" => label.cited_evidence_reference,
           "reason" => label.reason
+        }
+      end
+
+      def revision_of(label)
+        return unless label&.revised?
+
+        {
+          "judgment" => label.revised_judgment,
+          "reason" => label.revised_reason,
+          "by" => label.revised_by.email,
+          "at" => label.revised_at.iso8601
         }
       end
 
@@ -143,7 +156,8 @@ module FacetConfidence
           judge: report.dig("provenance", "judge"),
           frozen_at: report.dig("provenance", "labels_frozen_at"),
           measures: measures_table(report.fetch("measures")),
-          cases: cases_table(report.fetch("cases")))
+          cases: cases_table(report.fetch("cases")),
+          revisions: revisions_table(report.fetch("cases")))
       end
 
       def measures_table(measures)
@@ -167,6 +181,18 @@ module FacetConfidence
         parts.empty? ? "aligned" : parts.join(", ")
       end
 
+      def revisions_table(entries)
+        entries.filter_map do |entry|
+          revision = entry["revision"]
+          next unless revision
+
+          judgment = revision.fetch("judgment")
+          format("| %s | %s | %s | %s | %s | %s |", entry.fetch("case_id"), judgment.fetch("verdict"),
+            judgment.fetch("intent_band"), judgment.fetch("technical_band"), judgment.fetch("readiness"),
+            revision.fetch("reason"))
+        end.join("\n").presence || "| none | | | | |"
+      end
+
       WORKSHEET_TEMPLATE = <<~WORKSHEET
         # RDR-070 Facet-Confidence Closeout Evaluation Report
 
@@ -186,6 +212,13 @@ module FacetConfidence
         | --- | --- | --- | --- | --- | --- | --- |
         %{cases}
 
+        ## Post-unblinding corrections (not rescored)
+
+        | Case | Verdict | Intent band | Technical band | Readiness | Reason for correction |
+        | --- | --- | --- | --- | --- | --- |
+        %{revisions}
+
+        The original blinded judgments and their frozen measures remain unchanged by corrections.
         Reference judgments are policy assessments, not calibrated probabilities.
         This report neither closes the source issue, enables delivery, nor changes the 80/80 defaults.
       WORKSHEET

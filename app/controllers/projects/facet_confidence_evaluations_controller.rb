@@ -75,6 +75,19 @@ module Projects
       redirect_for(result, success_notice: "Reference set frozen. The compiled report is ready to return to the Inbox item.")
     end
 
+    def revise
+      authorize @evaluation
+
+      result = FacetConfidence::CloseoutEvaluation::ReviseLabel.call(
+        evaluation: @evaluation,
+        actor: current_user,
+        case_id: params[:case_id].to_s,
+        judgment: judgment_params,
+        reason: params[:revision_reason]
+      )
+      redirect_for(result, success_notice: "Post-unblinding correction recorded; the original blinded judgment remains unchanged.")
+    end
+
     private
 
     def set_project

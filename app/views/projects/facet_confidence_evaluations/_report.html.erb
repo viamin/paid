@@ -91,9 +91,52 @@
   </table>
   <p class="text-xs text-gray-500">
     Highlighted rows are divergences between your blinded judgment and the frozen expectation for judge review.
-    The original judgments are preserved as recorded.
+    The original judgments are preserved as recorded; post-unblinding corrections are never rescored.
   </p>
 </div>
+
+<% if policy(evaluation).revise? %>
+  <div class="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
+    <h2 class="text-sm font-semibold text-gray-900">Post-unblinding corrections</h2>
+    <p class="text-xs text-gray-500">
+      Correct a judgment only after reviewing the frozen comparison. This records one reasoned correction and keeps the
+      original blinded judgment and its measures unchanged.
+    </p>
+    <% entries.each do |entry| %>
+      <% if entry["revision"] %>
+        <p class="text-xs text-gray-600"><code><%= entry["case_id"] %></code> corrected by <%= entry.dig("revision", "by") %>: <%= entry.dig("revision", "reason") %></p>
+      <% else %>
+        <details class="rounded-lg border border-gray-200 p-4">
+          <summary class="cursor-pointer text-sm font-medium text-gray-800">Correct <%= entry["case_id"] %></summary>
+          <%= form_with url: revise_project_facet_confidence_evaluation_path(project, evaluation, **inbox_context), method: :post, class: "mt-4 space-y-3" do |form| %>
+            <%= form.hidden_field :case_id, value: entry["case_id"] %>
+            <% { verdict: FacetConfidenceEvaluationLabel::VERDICTS, intent_band: FacetConfidenceEvaluationLabel::BANDS, technical_band: FacetConfidenceEvaluationLabel::BANDS, readiness: FacetConfidenceEvaluationLabel::READINESS }.each do |field, choices| %>
+              <div>
+                <%= form.label field, field.to_s.humanize, class: "block text-sm font-medium text-gray-700" %>
+                <%= form.select field, options_for_select(choices), { prompt: "Select corrected #{field.to_s.humanize.downcase}" }, required: true,
+                      class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+              </div>
+            <% end %>
+            <div>
+              <%= form.label :cited_evidence_reference, "Cited evidence", class: "block text-sm font-medium text-gray-700" %>
+              <%= form.select :cited_evidence_reference, options_for_select(entry["evidence_references"]), { prompt: "One pivotal reference" }, required: true,
+                    class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+            </div>
+            <div>
+              <%= form.label :reason, "Corrected judgment rationale", class: "block text-sm font-medium text-gray-700" %>
+              <%= form.text_area :reason, required: true, rows: 2, class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm" %>
+            </div>
+            <div>
+              <%= form.label :revision_reason, "Reason for correction", class: "block text-sm font-medium text-gray-700" %>
+              <%= form.text_area :revision_reason, required: true, rows: 2, class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm" %>
+            </div>
+            <%= form.submit "Record correction", class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+          <% end %>
+        </details>
+      <% end %>
+    <% end %>
+  </div>
+<% end %>
 
 <% if evaluation.report_markdown.present? %>
   <details class="rounded-xl border border-gray-200 bg-white p-6">
