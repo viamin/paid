@@ -992,12 +992,13 @@ RSpec.describe "Inbox" do
   end
 
   # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
-  it "renders manual_review detail with the reason and the inbox-scoped resume action" do
+  it "renders manual_review detail with the reason and the provenance-routed retry action" do
     parked = create_manual_review_issue(
       title: "Parked issue",
       github_number: 509,
       reason: "Structured output failed validation."
     )
+    create(:agent_run, issue: parked, project: project, goal: "enhance_issue", status: "failed")
 
     get inbox_entry_path(
       entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
@@ -1005,7 +1006,7 @@ RSpec.describe "Inbox" do
     )
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Structured output failed validation.", "Start enhancement run")
+    expect(response.body).to include("Structured output failed validation.", "Retry enhancement analysis")
     document = Nokogiri::HTML(response.body)
     form = document.at_css(
       %(form[action="#{resume_manual_review_project_agent_runs_path(project, issue_id: parked.id)}"])
@@ -1033,7 +1034,7 @@ RSpec.describe "Inbox" do
     )
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Which events should be recorded?", "Submit Answers", "Start enhancement run")
+    expect(response.body).to include("Which events should be recorded?", "Submit Answers", "Retry enhancement analysis")
     document = Nokogiri::HTML(response.body)
     form = document.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, parked)}"]))
 

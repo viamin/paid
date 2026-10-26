@@ -726,3 +726,22 @@
   `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
   `spec/requests/inbox_spec.rb`,
   `spec/requests/api/v1/design_artifact_findings_spec.rb`.
+
+- [x] **OPERATOR-INBOX-021** — When an issue is in `manual_review`, the Inbox
+  SHALL classify its recovery from durable provenance rather than interpreting
+  the displayed reason: the dedicated reopen-review state, unresolved
+  prerequisite links, scanner remediation attempts, and enhancement runs are
+  distinct causes; a cause without recognized provenance SHALL remain visible
+  as unknown. Simultaneous causes SHALL remain visible and an unresolved
+  dependency or queued/running run SHALL prevent a new run from being queued.
+  Reopen review SHALL collect a revision-bound intent-validation decision and
+  reason before continuing; dependency holds SHALL link the prerequisite and
+  remain held; scanner recurrence SHALL resume remediation; and enhancement
+  provenance SHALL retain the existing question form and retry analysis. Each
+  decision and run request SHALL use the existing authorized controller and
+  refresh the Inbox on redirect.
+  *Code:* `app/services/inbox/manual_review_recovery.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+  *Test:* `spec/services/inbox/manual_review_recovery_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.

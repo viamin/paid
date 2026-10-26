@@ -2523,13 +2523,15 @@ RSpec.describe "AgentRuns" do
   end
 
   describe "POST /projects/:project_id/agent_runs/resume_manual_review" do
-    let(:parked_issue) do
-      create(:issue,
+    let!(:parked_issue) do
+      issue = create(:issue,
         project: project,
         github_number: 89,
         title: "Fix flaky specs",
         paid_state: "manual_review",
         manual_review_reason: "Paid reached the configured limit of enhancement re-evaluation rounds.")
+      create(:agent_run, issue: issue, project: project, goal: "enhance_issue", status: "failed")
+      issue
     end
 
     context "when not authenticated" do
@@ -2558,6 +2560,37 @@ RSpec.describe "AgentRuns" do
     context "when authenticated" do
       before { sign_in user }
 
+      # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-021
+      it "records a revision-bound reopen validation before continuing work" do
+        reopened = create(:issue, project: project, paid_state: "manual_review",
+          manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON, github_updated_at: Time.current)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: reopened.id, reopen_decision: "continue", reason: "The reopened regression still needs validation.",
+            revision: reopened.github_updated_at.iso8601
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(reopened.reload.paid_state).to eq("in_progress")
+        expect(AccountActivityEvent.where(action: "issue.manual_review_decided", subject: reopened)).to exist
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-021
+      it "refuses a reopen continuation after its reviewed revision changed" do
+        reopened = create(:issue, project: project, paid_state: "manual_review",
+          manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: reopened.id, reopen_decision: "continue", reason: "Still relevant.", revision: 1.day.ago.iso8601
+          }
+        }.not_to change(AgentRun, :count)
+
+        expect(reopened.reload).to be_reopen_review_pending
+        expect(flash[:alert]).to include("changed")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
         expect {
@@ -2577,10 +2610,11 @@ RSpec.describe "AgentRuns" do
           owner: "acme", repo: "lane", auto_pick_enabled: true, active: true)
         parked = create(:issue, project: gated_project, github_number: 90, paid_state: "manual_review",
           manual_review_reason: "Round limit reached.")
+        create(:agent_run, issue: parked, project: gated_project, goal: "enhance_issue", status: "failed")
 
         entries = Inbox::Queue.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)
         expect(entries.map(&:issue)).to include(parked)
-        expect(Inbox::Count.call(user: user)).to eq(1)
+        expect(Inbox::Count.call(user: user)).to eq(2)
 
         post resume_manual_review_project_agent_runs_path(gated_project), params: { issue_id: parked.id }
 
@@ -2588,8 +2622,8 @@ RSpec.describe "AgentRuns" do
         expect(parked.paid_state).to eq("in_progress")
         expect(parked.manual_review_started_at).to be_nil
         expect(parked.manual_review_reason).to be_nil
-        expect(Inbox::Queue.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)).to be_empty
-        expect(Inbox::Count.call(user: user)).to eq(0)
+        expect(Inbox::Queue.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND).map(&:issue)).not_to include(parked)
+        expect(Inbox::Count.call(user: user)).to eq(1)
       end
 
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D

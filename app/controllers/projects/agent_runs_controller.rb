@@ -407,7 +407,7 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-021 @spec ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -417,14 +417,31 @@ module Projects
         return
       end
 
-      create_enhance_issue_runs_and_redirect(
-        issue_ids: [ issue.id ],
-        on_error_path: safe_return_target || dashboard_path,
-        success_path: safe_return_target || dashboard_path,
-        custom_prompt: nil,
-        goal: "enhance_issue",
-        priority_tier: nil
-      )
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue)
+      if recovery.blocked_by_active_run?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Run ##{recovery.active_run.id} is already queued or running; reconcile it before resuming this hold."
+        return
+      end
+
+      case recovery.action
+      when :wait_for_dependency
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This issue is still waiting for #{recovery.dependency_labels.join(', ')}. Resolving the dependency re-evaluates it; this action cannot waive the hold."
+      when :investigate
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This manual-review hold has unknown provenance. Review the recorded reason before choosing new work."
+      when :record_intent_validation
+        resume_reopen_review(issue, recovery)
+      when :resume_remediation
+        create_manual_review_recovery_run_and_redirect(issue: issue, goal: "create_pr", notice: "Remediation run queued.")
+      when :retry_enhancement
+        create_enhance_issue_runs_and_redirect(
+          issue_ids: [ issue.id ], on_error_path: safe_return_target || dashboard_path,
+          success_path: safe_return_target || dashboard_path, custom_prompt: nil,
+          goal: "enhance_issue", priority_tier: nil
+        )
+      end
     end
 
     # Operator-driven counterpart to
@@ -1034,6 +1051,26 @@ module Projects
       end
     end
 
+    def resume_reopen_review(issue, recovery)
+      if params[:reopen_decision] != "continue" || params[:reason].to_s.strip.blank?
+        redirect_to safe_return_target || dashboard_path, alert: "Record an intent-validation decision and reason before continuing reopened work."
+        return
+      end
+      unless params[:revision].to_s == issue.github_updated_at.iso8601
+        redirect_to safe_return_target || dashboard_path, alert: "The issue changed after this review was opened. Refresh and validate the current revision."
+        return
+      end
+
+      Audit::RecordEvent.call(action: "issue.manual_review_decided", actor: current_user, subject: issue,
+        metadata: { cause: recovery.primary_cause, decision: "continue", reason: params[:reason].to_s.strip,
+          github_updated_at: issue.github_updated_at.iso8601 })
+      create_enhance_issue_runs_and_redirect(
+        issue_ids: [ issue.id ], on_error_path: safe_return_target || dashboard_path,
+        success_path: safe_return_target || dashboard_path, custom_prompt: nil,
+        goal: "enhance_issue", priority_tier: nil
+      )
+    end
+
     def cancel_in_flight_execution_for_resume!
       return if @agent_run.temporal_workflow_id.blank?
 
@@ -1616,6 +1653,25 @@ module Projects
       redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordNotUnique
       redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."
+    end
+
+    def create_manual_review_recovery_run_and_redirect(issue:, goal:, notice:)
+      budget_result = CostBudgets::Check.call(@project)
+      unless budget_result[:allowed]
+        redirect_to safe_return_target || dashboard_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+        return
+      end
+
+      ActiveRecord::Base.transaction do
+        create_agent_run(issue: issue, goal: goal)
+        resume_issue_from_manual_review(issue)
+      end
+      ProcessRunQueueJob.perform_later
+      redirect_to safe_return_target || dashboard_path, notice: notice
+    rescue NoRunnableRunnerError, InvalidDockerHostSelectionError => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
+    rescue ActiveRecord::RecordNotUnique
+      redirect_to safe_return_target || dashboard_path, alert: "An agent run is already queued or in progress for this issue."
     end
 
     def create_feature_run_and_redirect(feature_description:, on_error_path:, priority_tier: nil)
