@@ -374,6 +374,25 @@ continues to bind its criterion evidence to the current closeout digest and
 issue-intent revision; a later explicit acceptance audit is required when
 those revisions change.
 
+### Technical prerequisite execution (#4643)
+
+Technical prerequisites may require a bounded native analyzer or a hardened,
+allowlisted marketplace tool sidecar to collect evidence. The Inbox recovery
+surface asks the configured execution scheduler for compatible isolated hosts;
+the control-plane process's Docker socket is not evidence that an agent run
+can or cannot execute. A missing compatible host is an unavailable outcome
+with the scheduler's exact failure evidence. A required sidecar while
+`marketplace_tool_sidecars` is disabled is an authorization-required outcome
+that names the scoped pilot rollout action; it never enables the flag.
+
+The eventual validation action reuses the fresh pinned AgentRun, marketplace
+attachment, provision, `execute_in_execution_environment`, and cleanup
+lifecycle. It records bounded stdout/stderr, exit status, pinned checkout and
+image/tool identity, endpoint response, and cleanup result against the source
+prerequisite. Repository commands remain in the isolated execution environment
+with normal image allowlists, network policy, hardening, budgets, cancellation,
+and retry controls; the host shell and Docker socket are never exposed.
+
 ## Alternatives considered
 
 - *Lift the merged-PR guard via paid_state*: explicitly rejected — the guard is

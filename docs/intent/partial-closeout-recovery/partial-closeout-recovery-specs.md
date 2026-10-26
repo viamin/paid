@@ -518,3 +518,15 @@
   `spec/services/inbox/chat_context_spec.rb`,
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [ ] **PARTIAL-CLOSEOUT-031** — When a partial-closeout prerequisite requires
+  technical execution evidence, the system shall inspect candidate execution
+  hosts through `Containers::BackendScheduler`, not the control-plane host's
+  Docker availability. If no compatible backend exists, it shall expose the
+  scheduler's compatibility or health evidence and an exact backend setup
+  action. If a selected marketplace tool sidecar requires a disabled
+  `marketplace_tool_sidecars` rollout, it shall expose the required scoped
+  pilot authorization and shall not enable the flag. A ready result shall name
+  the compatible isolated host for a bounded validation action.
+  *Code:* `app/services/partial_closeouts/technical_prerequisite_readiness.rb`.
+  *Test:* `spec/services/partial_closeouts/technical_prerequisite_readiness_spec.rb`.
