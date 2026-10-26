@@ -306,7 +306,10 @@ implementation gaps, scanner verification, and human-only evaluation). Human
 prerequisites identify the requested evidence, who must supply it, how to
 submit or link it, and what resumes automatically versus what requires a
 deliberate continuation; agents are never retried for unavailable human
-evidence.
+evidence. Dismissing a prerequisite notification is a personal Inbox-removal
+choice only: it neither validates evidence nor releases the scheduling guard.
+Only the evidence-validation path may resolve that notification and trigger the
+normal eligibility reassessment.
 
 Prerequisite linking is available from the pane (`link_prerequisite` on
 `projects/agent_runs`): it appends `Depends on #N` wording to the stalled

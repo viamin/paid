@@ -458,6 +458,17 @@
   *Test:* `spec/requests/inbox_spec.rb`,
   `spec/services/issues/closeout_status_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-030** — When an operator dismisses a
+  `partial_closeout.prerequisite` notification, the system SHALL preserve the
+  operator's personal removal semantics but SHALL NOT treat dismissal as
+  evidence satisfaction or release the prerequisite scheduling guard. Only a
+  verified evidence disposition that resolves the notification may trigger the
+  normal affected-issue eligibility reassessment; the Inbox guidance SHALL
+  disclose this distinction.
+  *Code:* `app/models/notification.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/models/notification_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-016** — When an authorized operator links a
   prerequisite from the partial-closeout pane, the system SHALL append the
   dependency wording to the stalled issue on GitHub (reusing the project

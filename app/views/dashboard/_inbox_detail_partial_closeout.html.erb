@@ -1,5 +1,5 @@
 <%# @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-007 @spec PARTIAL-CLOSEOUT-010 %>
-<%# @spec PARTIAL-CLOSEOUT-022 @spec PARTIAL-CLOSEOUT-014 @spec PARTIAL-CLOSEOUT-015 @spec PARTIAL-CLOSEOUT-016 %>
+<%# @spec PARTIAL-CLOSEOUT-022 @spec PARTIAL-CLOSEOUT-014 @spec PARTIAL-CLOSEOUT-015 @spec PARTIAL-CLOSEOUT-016 @spec PARTIAL-CLOSEOUT-030 %>
 <% issue = entry.issue %>
 <% status = entry.closeout_status || Issues::CloseoutStatus.call(issue) %>
 <% assessment = PartialCloseouts::Assessment.call(issue, evidence: status.evidence) %>
@@ -281,7 +281,8 @@
             where the step says (usually a comment or linked artifact on the prerequisite), then link that work
             here. When an agent-owned prerequisite closes, scheduling resumes automatically; supplied human
             evidence never retries an agent by itself — afterwards, request a deliberate continuation and say
-            what the run should do with the evidence.
+            what the run should do with the evidence. Dismissing this notification only removes it from your Inbox;
+            it does not validate evidence or release the scheduling hold.
           </p>
         </div>
     <% end %>

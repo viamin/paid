@@ -484,17 +484,17 @@ module Automation
           # produce durable IssueDependency edges that the shared
           # +ready_for_work+ gate filters, human prerequisites publish a
           # blocking Inbox notification whose subject is the parent issue.
-          # The notification is the durable scheduling block until the
-          # operator dismisses it (Inbox dismiss action) or the system
-          # resolves it (Notifications::Resolve), so the partial-closeout
-          # re-audit exception does not re-pick the parent ahead of the
-          # prerequisite the notification names.
+          # The notification is the durable scheduling block until verified
+          # evidence resolves it. Personal Inbox dismissal deliberately does
+          # not change that authority, so the partial-closeout re-audit
+          # exception does not re-pick the parent ahead of an unverified
+          # prerequisite (#4641).
           def partial_closeout_prerequisite_block_issue_ids(project) # @spec NO-OUTPUT-ISSUE-007
             Notification.where(
               account_id: project.account_id,
               source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
               subject_type: "Issue"
-            ).where(resolved_at: nil, dismissed_at: nil)
+            ).where(resolved_at: nil)
               .where("subject_id IN (?)", project.issues.select(:id))
               .pluck(:subject_id)
           end
