@@ -364,6 +364,24 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Issue resolved as complete.")
     end
 
+    # @spec PARTIAL-CLOSEOUT-030
+    def submit_prerequisite_evidence
+      authorize @project, :run_agent?
+
+      notification = @project.account.notifications.find_by(id: params[:notification_id], source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+      unless notification&.subject.is_a?(Issue) && notification.subject.project == @project
+        redirect_to safe_return_target || dashboard_path, alert: "Please select a current prerequisite."
+        return
+      end
+
+      result = PartialCloseouts::SubmitEvidence.call(notification:, actor: current_user,
+        prerequisite_id: params[:prerequisite_id], evidence_type: params[:evidence_type], reference: params[:reference],
+        explanation: params[:explanation], source_revision: params[:source_revision])
+      redirect_to safe_return_target || dashboard_path, notice: "Evidence #{result.outcome}: #{result.reasoning} #{result.next_action}"
+    rescue ArgumentError => error
+      redirect_to safe_return_target || dashboard_path, alert: error.message
+    end
+
     # Links a prerequisite to a stalled partial-closeout issue from the Inbox
     # pane: appends the dependency wording on GitHub and refreshes the local
     # dependency records without waiting for the next sync (#4189).

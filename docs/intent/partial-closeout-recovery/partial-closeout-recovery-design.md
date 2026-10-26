@@ -177,6 +177,19 @@ recording completion, so a continuation cannot dispatch after the attestation.
   work reuses the existing `create_issue` tool (dependency wording is parsed
   by the existing sync parser).
 
+### Submitted prerequisite evidence
+
+The prerequisite notification remains the canonical scheduling record. Each
+human-gap occurrence is published with its criterion identity, explanation,
+assessment revisions, and source-run provenance. Inbox submission records a
+typed reference, required explanation, actor, and revision against that one
+occurrence. Structural validation precedes a bounded `agent_harness` semantic
+assessment, which records sufficient, insufficient, stale, or unavailable with
+reasoning and a next action. Only every current occurrence being sufficient
+resolves the notification; a link, report, run, artifact, or dismissal alone
+never constitutes acceptance. Dismissal retains its existing scheduling effect
+but is explicitly not an evidence disposition.
+
 ### Legacy reconciliation: `PartialCloseouts::ReconcileLegacy`
 
 The `partial-closeout-reconciliation-v1` Temporal patch only intercepts new
