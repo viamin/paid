@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20261024055249_create_layered_verification_contracts")
+require Rails.root.join("db/migrate/20261026183044_create_layered_verification_audit_findings")
 
 RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
   # @spec LAYERED-VERIFY-004 @spec LAYERED-VERIFY-006
@@ -9,10 +10,11 @@ RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
   self.use_transactional_tests = false
 
   let(:migration) { described_class.new }
+  let(:audit_findings_migration) { CreateLayeredVerificationAuditFindings.new }
   let(:connection) { ActiveRecord::Base.connection }
 
   around do |example|
-    tables_existed = layered_verification_tables.to_h { |table| [ table, connection.table_exists?(table) ] }
+    tables_existed = all_layered_verification_tables.to_h { |table| [ table, connection.table_exists?(table) ] }
 
     teardown_layered_verification_tables!
     clear_schema_metadata!
@@ -23,6 +25,7 @@ RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
 
     if tables_existed.any? { |_table, existed| existed }
       migration.up
+      audit_findings_migration.up if tables_existed.fetch("layered_verification_findings")
     end
     clear_schema_metadata!
   end
@@ -53,6 +56,10 @@ RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
     ]
   end
 
+  def all_layered_verification_tables
+    [ *layered_verification_tables, "layered_verification_findings" ]
+  end
+
   def clear_schema_metadata!
     connection.schema_cache.clear!
     layered_verification_tables.each { |table| connection.schema_cache.clear_data_source_cache!(table) }
@@ -63,7 +70,7 @@ RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
 
   # The list is parent-first; children must drop before their parent.
   def teardown_layered_verification_tables!
-    layered_verification_tables.reverse_each { |table| connection.drop_table(table, if_exists: true) }
+    all_layered_verification_tables.reverse_each { |table| connection.drop_table(table, if_exists: true) }
   end
 
   def expect_schema

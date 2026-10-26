@@ -44,7 +44,7 @@ module Inbox
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
         retry_limited_count + change_intent_draft_count + partial_closeout_count +
-        test_review_pending_count + project_setup_pending_count + traceability_gap_count
+        test_review_pending_count + project_setup_pending_count + traceability_gap_count + layered_verification_finding_count
     end
 
     def governed_count
@@ -174,6 +174,11 @@ module Inbox
     # @spec DESIGN-RECONCILIATION-001 @spec OPERATOR-INBOX-020
     def traceability_gap_count
       DesignArtifactFinding.actionable_findings.where(project_id: visible_project_ids).count
+    end
+
+    # @spec LAYERED-VERIFY-015
+    def layered_verification_finding_count
+      LayeredVerificationFinding.where(project_id: visible_project_ids).where.not(status: "resolved").count
     end
 
     # Shares the exact lane computation with Inbox::Queue
