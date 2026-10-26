@@ -174,6 +174,15 @@ module Workflows
           return { success: true, agent_run_id: agent_run_id, acceptance_audit: true }
         end
 
+        # @spec PARTIAL-CLOSEOUT-030
+        if goal == "analyze_issue" && continuation_mode == "technical_prerequisite_validation"
+          run_activity(Activities::RunTechnicalPrerequisiteValidationActivity,
+            { agent_run_id: agent_run_id }, start_to_close_timeout: issue_goal_timeout_seconds,
+            retry_policy: NO_RETRY)
+          agent_step_succeeded = true
+          return { success: true, agent_run_id: agent_run_id, technical_prerequisite_validation: true }
+        end
+
         if goal == "analyze_issue"
           result = run_activity(Activities::AnalyzeIssueActivity,
             { agent_run_id: agent_run_id },

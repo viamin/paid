@@ -236,6 +236,29 @@
     <% end %>
   </div>
 
+  <%# @spec PARTIAL-CLOSEOUT-030 %>
+  <% technical_validation = issue.agent_runs.order(id: :desc).filter_map { |run| run.reconciliation["technical_prerequisite_validation"] }.first %>
+  <div class="space-y-2 rounded-xl border border-cyan-200 bg-cyan-50 p-4" data-technical-prerequisite-validation>
+    <h3 class="text-sm font-semibold text-cyan-900">Technical prerequisite validation</h3>
+    <% if technical_validation.present? %>
+      <p class="text-sm text-cyan-900">Status: <span class="font-medium"><%= technical_validation["status"] %></span>.</p>
+      <% if technical_validation["setup_action"].present? %>
+        <p class="text-sm text-cyan-900"><%= technical_validation["setup_action"] %></p>
+      <% end %>
+      <% if technical_validation.dig("cleanup", "succeeded") == false %>
+        <p class="text-sm text-amber-900">Cleanup needs operator follow-up: <%= technical_validation.dig("cleanup", "error") %></p>
+      <% end %>
+    <% else %>
+      <p class="text-sm text-cyan-900">Run a bounded isolated validation for the pinned checkout, native analyzer, and authorized tool sidecar. It never uses the control-plane host shell or Docker socket.</p>
+    <% end %>
+    <% if policy(entry.project).run_agent? %>
+      <%= button_to "Prepare / start validation", request_technical_prerequisite_validation_project_agent_runs_path(entry.project),
+            params: { issue_id: issue.id, return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
+            class: "inline-flex items-center rounded-md bg-cyan-700 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-cyan-600",
+            data: { turbo_confirm: "Queue isolated technical prerequisite validation for ##{issue.github_number}?" } %>
+    <% end %>
+  </div>
+
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Prerequisites</h3>
     <% if status.unresolved_prerequisites.any? %>

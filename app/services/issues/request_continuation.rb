@@ -24,7 +24,8 @@ module Issues
 
     MODE_LABELS = {
       "implementation" => "implementation continuation",
-      "acceptance_audit" => "acceptance audit"
+      "acceptance_audit" => "acceptance audit",
+      "technical_prerequisite_validation" => "technical prerequisite validation"
     }.freeze
 
     def self.call(...) = new(...).call

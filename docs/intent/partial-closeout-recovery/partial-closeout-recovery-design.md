@@ -177,6 +177,25 @@ recording completion, so a continuation cannot dispatch after the attestation.
   work reuses the existing `create_issue` tool (dependency wording is parsed
   by the existing sync parser).
 
+### Technical prerequisite validation
+
+A partial-closeout prerequisite may need live execution evidence rather than a
+request to retry the operator's local workspace. The Inbox offers one bounded
+`technical_prerequisite_validation` continuation. Before it provisions, the
+action reads `Containers::HostReadiness` and the project's marketplace-tool
+rollout guard. A missing compatible isolated backend, tool attachment, or
+rollout authorization persists an `unavailable` result with the exact setup
+action; it never enables a flag or treats the control-plane Docker socket as
+backend evidence. An eligible run reuses the AgentRun provision,
+`execute_in_execution_environment`, hardened allowlisted tool-sidecar endpoint,
+and cleanup contracts. Its reconciliation artifact retains selected host,
+pinned checkout/image/tool identity, bounded stdout/stderr/exit status,
+endpoint response, and cleanup result as `successful`, `failed`, or `partial`.
+The action has no host shell or Docker-socket path; repository and tool work
+remain in the normal isolated environment and retain its network, hardening,
+budget, and authorization controls. The resulting artifact stays on the source
+run for the ordinary current-evidence assessment and reconciliation path.
+
 ### Legacy reconciliation: `PartialCloseouts::ReconcileLegacy`
 
 The `partial-closeout-reconciliation-v1` Temporal patch only intercepts new
