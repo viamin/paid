@@ -140,3 +140,18 @@
   `app/views/projects/shadow_evaluations/_labeling.html.erb`.
   *Test:* `spec/services/intent_conformance/shadow_evaluation/evidence_spec.rb`,
   `spec/requests/projects/shadow_evaluations_spec.rb`.
+
+- [x] **INTENT-CONFORMANCE-ROLLOUT-011** — When an authorized operator starts,
+  resumes, or cancels a frozen Inbox-linked reviewer evaluation, the system
+  SHALL persist an idempotent queued execution request and return promptly.
+  It SHALL expose queued, running, partial, failed, cancelled, and completed
+  state with per-case verdict/cost progress; cancellation SHALL preserve prior
+  evidence and resume SHALL not repeat an evaluated case. A stale queued or
+  running record SHALL be recovered without inventing unevaluated verdicts.
+  *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
+  *Code:* `app/services/intent_conformance/shadow_evaluation/enqueue_execution.rb`,
+  `app/services/intent_conformance/shadow_evaluation/request_cancellation.rb`,
+  `app/jobs/shadow_evaluation_execution_job.rb`,
+  `app/jobs/shadow_evaluation_execution_recovery_job.rb`.
+  *Test:* `spec/requests/projects/shadow_evaluations_spec.rb`,
+  `spec/jobs/shadow_evaluation_execution_job_spec.rb`.

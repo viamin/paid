@@ -390,6 +390,11 @@ Rails.application.configure do
       class: "AppleVerificationRecoveryJob",
       description: "Reconcile in-flight Apple verification attempts against the VM ledger (APPLE-ATTEMPT-014)"
     },
+    shadow_evaluation_execution_recovery: {
+      cron: "13-59/5 * * * *",
+      class: "ShadowEvaluationExecutionRecoveryJob",
+      description: "Recover stale queued/running shadow-review evaluations"
+    },
     apple_verification_host_safety: {
       # Offset 10 runs after recovery (9) and before the next dispatch tick (12)
       # so a host-safety termination frees the worker slot within the same window,

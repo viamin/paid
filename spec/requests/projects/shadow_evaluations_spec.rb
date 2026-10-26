@@ -9,6 +9,7 @@ require "rails_helper"
 # @spec INTENT-CONFORMANCE-ROLLOUT-005
 # @spec INTENT-CONFORMANCE-ROLLOUT-006
 # @spec INTENT-CONFORMANCE-ROLLOUT-009
+# @spec INTENT-CONFORMANCE-ROLLOUT-011
 RSpec.describe "Projects::ShadowEvaluations" do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account: account) }
@@ -157,10 +158,15 @@ RSpec.describe "Projects::ShadowEvaluations" do
     # Corpus cases reference a repository outside this project, so every
     # reviewer attempt fails closed and is recorded as not evaluated —
     # prerequisite validation is never presented as execution.
-    post execute_project_shadow_evaluation_path(project, evaluation)
-    follow_redirect!
+    expect {
+      post execute_project_shadow_evaluation_path(project, evaluation)
+    }.to have_enqueued_job(ShadowEvaluationExecutionJob).with(evaluation.id)
 
-    expect(response.body).to include("not evaluated")
+    expect(evaluation.reload).to be_queued
+    perform_enqueued_jobs(only: ShadowEvaluationExecutionJob)
+    get project_shadow_evaluation_path(project, evaluation)
+
+    expect(response.body).to include("not_evaluated")
     expect(evaluation.reload).to be_failed
     evaluation.runs.each do |run|
       expect(run).to be_not_evaluated
@@ -171,6 +177,25 @@ RSpec.describe "Projects::ShadowEvaluations" do
 
     expect(response.body).to include("Reproducible report")
     expect(response.body).to include("solo")
+  end
+
+  it "returns promptly for duplicate submissions and supports cancelling a queued execution" do
+    evaluation = start_evaluation_from_committed_corpus!
+    label_all!(evaluation)
+    freeze!(evaluation)
+
+    expect {
+      post execute_project_shadow_evaluation_path(project, evaluation)
+    }.to have_enqueued_job(ShadowEvaluationExecutionJob).with(evaluation.id)
+    expect(evaluation.reload).to be_queued
+
+    expect {
+      post execute_project_shadow_evaluation_path(project, evaluation)
+    }.not_to have_enqueued_job(ShadowEvaluationExecutionJob)
+
+    post cancel_project_shadow_evaluation_path(project, evaluation)
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs).to be_empty
   end
 
   it "appends post-result revisions without overwriting the original blinded label" do
