@@ -384,6 +384,27 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **prerequisite_flash(result)
     end
 
+    # Records evidence against one exact human prerequisite occurrence.  This
+    # is deliberately not a notification dismissal: only a validated
+    # disposition may release the scheduling guard.
+    # @spec PARTIAL-CLOSEOUT-030
+    def submit_prerequisite_evidence
+      authorize @project, :run_agent?
+
+      issue = resolve_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      result = PartialCloseouts::SubmitEvidence.call(
+        issue:, actor: current_user, prerequisite_id: params[:prerequisite_id],
+        kind: params[:evidence_kind], reference: params[:reference], revision: params[:revision],
+        explanation: params[:explanation]
+      )
+      redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Evidence submitted for validation.")
+    end
+
     # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
     # @spec OPERATOR-INBOX-002C
     def unblock_escalation

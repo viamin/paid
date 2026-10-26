@@ -9,6 +9,9 @@
       resolved_at: nil,
       dismissed_at: nil
     ).order(created_at: :desc).first %>
+<% human_gaps = issue.agent_runs.where("reconciliation ? 'gaps'").order(id: :desc).flat_map do |run|
+     run.reconciliation.fetch("gaps", {}).filter_map { |index, gap| [run, index, gap] if gap["kind"] == "human" }
+   end %>
 <div class="space-y-6">
   <div class="rounded-xl border border-violet-200 bg-violet-50 p-4">
     <h3 class="text-sm font-semibold text-violet-900">
@@ -58,7 +61,7 @@
           promotion decision. Start the solo-maintainer evaluation for this project's frozen corpus.
         </p>
         <%= link_to "Start evaluation",
-              new_project_shadow_evaluation_path(entry.project, purpose: "rdr-067-measured-rollout", **inbox_context),
+              new_project_shadow_evaluation_path(entry.project, purpose: "rdr-067-measured-rollout", originating_issue_id: issue.id, **inbox_context),
               data: { turbo_frame: "_top" },
               class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
       <% end %>
@@ -272,17 +275,28 @@
         <% end %>
     <% end %>
 
-    <% if human_prerequisite.present? %>
+    <% if human_prerequisite.present? || human_gaps.any? %>
         <div class="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
           <h4 class="text-sm font-semibold text-amber-900">Human evidence requested</h4>
-          <p class="whitespace-pre-line text-sm text-amber-900"><%= human_prerequisite.description %></p>
+          <p class="whitespace-pre-line text-sm text-amber-900"><%= human_prerequisite&.description || "The notification was personally dismissed; this prerequisite remains unsatisfied." %></p>
           <p class="text-xs text-amber-800">
-            Each line names the requested evidence, who must supply it, and the exact step. Submit the evidence
-            where the step says (usually a comment or linked artifact on the prerequisite), then link that work
-            here. When an agent-owned prerequisite closes, scheduling resumes automatically; supplied human
-            evidence never retries an agent by itself — afterwards, request a deliberate continuation and say
-            what the run should do with the evidence.
+            Dismissing this notification only removes it from your Inbox; it is not evidence satisfaction and does
+            not release scheduling. Submit evidence below against its exact prerequisite occurrence. A bounded
+            acceptance audit, not a URL/comment/green run alone, determines sufficiency.
           </p>
+          <% if policy(entry.project).run_agent? && human_gaps.any? %>
+            <%= form_with url: submit_prerequisite_evidence_project_agent_runs_path(entry.project), data: { turbo_frame: "_top" }, class: "space-y-2 rounded-md border border-amber-300 bg-white p-3" do |form| %>
+              <%= form.hidden_field :issue_id, value: issue.id %>
+              <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+              <%= form.label :prerequisite_id, "Prerequisite", class: "block text-xs font-medium text-amber-900" %>
+              <%= form.select :prerequisite_id, human_gaps.map { |run, index, gap| ["#{gap['criterion']} (#{run.id}:#{index})", "#{run.id}:#{index}"] }, {}, class: "w-full rounded-md border-gray-300 text-sm" %>
+              <%= form.select :evidence_kind, [["Durable artifact", "artifact"], ["HTTP(S) link", "link"], ["Existing evaluation", "evaluation"], ["Existing run", "run"], ["Report", "report"]], {}, class: "w-full rounded-md border-gray-300 text-sm" %>
+              <%= form.text_field :reference, required: true, placeholder: "URL or local evidence identity", class: "w-full rounded-md border-gray-300 text-sm" %>
+              <%= form.text_field :revision, required: true, placeholder: "Exact revision / run / report identity", class: "w-full rounded-md border-gray-300 text-sm" %>
+              <%= form.text_area :explanation, required: true, maxlength: 2000, rows: 2, placeholder: "What this proves, its provenance, and why it addresses this prerequisite", class: "w-full rounded-md border-gray-300 text-sm" %>
+              <%= form.submit "Submit evidence for validation", class: "inline-flex rounded-md bg-amber-700 px-3 py-2 text-sm font-semibold text-white" %>
+            <% end %>
+          <% end %>
         </div>
     <% end %>
   </div>

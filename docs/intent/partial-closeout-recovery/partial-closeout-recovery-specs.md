@@ -1,5 +1,9 @@
 # EARS Specs: Partial-Closeout Recovery
 
+- [ ] **PARTIAL-CLOSEOUT-030** — When an authorized operator submits evidence for a human partial-closeout prerequisite, the system SHALL bind it to the exact run/gap occurrence, current revision, actor provenance, and explanation; it SHALL persist an explicit submitted, sufficient, insufficient, stale, or unavailable disposition with reasoning and next action. A link, comment, uploaded file, green run, report, or dismissed notification SHALL NOT by itself satisfy acceptance or release scheduling; semantic validation SHALL use the existing bounded acceptance-audit path.
+  *Code:* `app/services/partial_closeouts/submit_evidence.rb`, `app/controllers/projects/agent_runs_controller.rb`, `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/services/partial_closeouts/submit_evidence_spec.rb`.
+
 > Testable claims for making stalled partial closeouts visible and
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).

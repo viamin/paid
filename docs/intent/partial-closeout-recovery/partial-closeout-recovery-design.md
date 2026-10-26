@@ -278,6 +278,23 @@ their focused owners and wait for those owners; human prerequisites remain Inbox
 items with their exact requested evidence. No path here closes an issue, reopens a
 closed owner, dismisses a scanner finding, or treats a merge as verification.
 
+### Submitted prerequisite evidence (#4641)
+
+Human prerequisites are occurrence-scoped (`agent_run_id:gap_index`). The
+Inbox submits a supported artifact, link, existing evaluation/run, or report
+with its exact revision, actor provenance, and explanation. The durable gap
+record exposes `submitted`, `sufficient`, `insufficient`, `stale`, or
+`unavailable` with a reason and next action. Structural validation never turns
+a URL, comment, upload, green run, or personal notification dismissal into
+acceptance; semantic sufficiency is determined by the existing bounded
+acceptance-audit path through `agent_harness`.
+
+Dismissal remains a personal Inbox action but does not release the
+partial-closeout scheduling guard. Only a validated satisfied occurrence can
+resolve its notification and cause existing eligibility reassessment. Solo
+RDR-067 reports attach as evidence but remain insufficient where their report
+records weaker solo assurance or missing production measures.
+
 ### Human closeout guidance (#4189)
 
 The lane's recovery actions assume the operator already knows which action

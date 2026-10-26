@@ -15,6 +15,7 @@ class IntentConformanceShadowEvaluation < ApplicationRecord
   OUTCOMES = IntentConformance::ShadowEvaluationPolicy::LABELS
 
   belongs_to :project
+  belongs_to :originating_issue, class_name: "Issue", optional: true
   belongs_to :solo_maintainer, class_name: "User", optional: true
   belongs_to :created_by, class_name: "User"
   has_many :labels, class_name: "IntentConformanceShadowEvaluationLabel",

@@ -490,13 +490,17 @@ module Automation
           # re-audit exception does not re-pick the parent ahead of the
           # prerequisite the notification names.
           def partial_closeout_prerequisite_block_issue_ids(project) # @spec NO-OUTPUT-ISSUE-007
-            Notification.where(
+            notification_block_ids = Notification.where(
               account_id: project.account_id,
               source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
               subject_type: "Issue"
             ).where(resolved_at: nil, dismissed_at: nil)
               .where("subject_id IN (?)", project.issues.select(:id))
               .pluck(:subject_id)
+            evidence_block_ids = AgentRun.where(project: project)
+              .where("reconciliation ->> 'status' = ?", "awaiting_operator")
+              .where.not(issue_id: nil).pluck(:issue_id)
+            (notification_block_ids + evidence_block_ids).uniq
           end
 
           # A merged PR remains terminal for ordinary implementation work unless

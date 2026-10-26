@@ -30,12 +30,34 @@ module IntentConformance
         report = build_report
         markdown = render_markdown(report)
         @evaluation.update!(report: report, report_markdown: markdown)
+        attach_to_originating_closeout
         Result.new(success: true, error: nil, report: report, markdown: markdown)
       end
 
       private
 
       attr_reader :evaluation
+
+      # A completed solo report is durable evidence for the originating
+      # closeout, but its own report records weaker assurance and missing
+      # production measures. SubmitEvidence therefore records it as
+      # insufficient rather than manufacturing acceptance or releasing work.
+      # @spec PARTIAL-CLOSEOUT-030
+      def attach_to_originating_closeout
+        issue = evaluation.originating_issue
+        return unless issue
+
+        issue.agent_runs.where("reconciliation ? 'gaps'").order(id: :desc).each do |run|
+          run.reconciliation.fetch("gaps", {}).each do |index, gap|
+            next unless gap["kind"] == "human"
+
+            PartialCloseouts::SubmitEvidence.call(issue:, actor: evaluation.created_by,
+              prerequisite_id: "#{run.id}:#{index}", kind: "evaluation", reference: evaluation.id.to_s,
+              revision: evaluation.manifest_digest,
+              explanation: "RDR-067 solo-maintainer evaluation report #{evaluation.id}")
+          end
+        end
+      end
 
       def build_report
         # Reload: the calling request or spec may hold a memoized evaluation

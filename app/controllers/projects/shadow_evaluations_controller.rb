@@ -28,7 +28,8 @@ module Projects
         purpose: params[:purpose].presence || default_purpose,
         policy: params[:policy].to_s,
         manifest_path: params[:manifest_path].to_s.strip,
-        manifest_commit: params[:manifest_commit].presence
+        manifest_commit: params[:manifest_commit].presence,
+        originating_issue: originating_issue
       )
       if result.success?
         redirect_to evaluation_path(result.evaluation), notice: result.resumed ? "Resumed the existing evaluation for this evidence generation." : "Solo-maintainer evaluation started. Labels stay blinded until you freeze the reference set."
@@ -141,6 +142,11 @@ module Projects
 
     def latest_evaluation
       @project.intent_conformance_shadow_evaluations.where(purpose: params[:purpose].presence || default_purpose).latest_first.first
+    end
+
+    def originating_issue
+      id = Integer(params[:originating_issue_id], exception: false)
+      @project.issues.issues_only.find_by(id: id, github_state: "open") if id
     end
 
     def redirect_for(result, success_notice:)
