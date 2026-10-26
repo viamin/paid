@@ -401,16 +401,7 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
-    # manual_review only clears when an explicit operator-triggered run
-    # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
-    # queues a fresh manual enhance_issue run rather than just clearing state,
-    # since a queued run is what actually resumes the enhancement work. The
-    # queue-time state flip (resume_issue_from_manual_review) removes the
-    # inbox entry as soon as the run is queued, so the item leaves the lane
-    # immediately instead of surviving the whole queue wait; re-entry
-    # producers (parse failure, round limit, needs_input) bring it back if
-    # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -420,12 +411,30 @@ module Projects
         return
       end
 
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue)
+      if recovery.action == :wait_for_dependency
+        redirect_to safe_return_target || dashboard_path, alert: "This issue is waiting for ##{recovery.dependency.github_number}; it will be reevaluated when that dependency resolves."
+        return
+      end
+      if recovery.action == :reconcile
+        redirect_to safe_return_target || dashboard_path, alert: "Run ##{recovery.active_run.id} is already #{recovery.active_run.status}; reconcile that work before starting another run."
+        return
+      end
+      if recovery.action == :investigate
+        redirect_to safe_return_target || dashboard_path, alert: "The cause of this manual review is unknown. Review the recorded reason before resuming work."
+        return
+      end
+      if recovery.action == :validate_intent
+        resume_reopen_review(issue)
+        return
+      end
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
         success_path: safe_return_target || dashboard_path,
         custom_prompt: nil,
-        goal: "enhance_issue",
+        goal: recovery.action == :resume_remediation ? "create_pr" : "enhance_issue",
         priority_tier: nil
       )
     end
@@ -1038,6 +1047,26 @@ module Projects
       issue.update!(paid_state: "in_progress")
     end
 
+    def resume_reopen_review(issue)
+      reason = params[:reopen_review_reason].to_s.strip
+      unless params[:reopen_review_confirmed] == "1" && reason.present?
+        redirect_to safe_return_target || dashboard_path, alert: "Confirm the current intent and provide a validation reason before resuming reopened work."
+        return
+      end
+
+      Audit::RecordEvent.call(
+        action: "issue.reopen_review_validated",
+        actor: current_user,
+        subject: issue,
+        metadata: { reason: reason, issue_revision: issue.github_updated_at&.iso8601 }
+      )
+      create_enhance_issue_runs_and_redirect(
+        issue_ids: [ issue.id ], on_error_path: safe_return_target || dashboard_path,
+        success_path: safe_return_target || dashboard_path, custom_prompt: nil,
+        goal: "enhance_issue", priority_tier: nil
+      )
+    end
+
     # A stale page can still render the "Start enhancement run" button after
     # the issue left manual_review (queue-time state flip); that repeat click
     # is the expected path now, so it gets a specific message instead of the
@@ -1607,13 +1636,13 @@ module Projects
         return
       end
 
-      # Filter out issues that already have active (unfinished) enhance_issue runs
+      # A recovery must never queue a second run for the same continuation.
       active_issue_ids = @project.agent_runs
-        .where(issue_id: issues.map(&:id), goal: "enhance_issue", status: AgentRun::UNFINISHED_STATUSES)
+        .where(issue_id: issues.map(&:id), goal:, status: AgentRun::UNFINISHED_STATUSES)
         .pluck(:issue_id)
       issues = issues.where.not(id: active_issue_ids) if active_issue_ids.any?
       if issues.empty?
-        redirect_to on_error_path, alert: "All selected issues already have active enhancement runs."
+        redirect_to on_error_path, alert: "All selected issues already have active #{goal.humanize.downcase} runs."
         return
       end
 
@@ -1639,9 +1668,9 @@ module Projects
       ProcessRunQueueJob.perform_later
 
       notice = if issues.size == 1
-        "Agent run queued for issue enhancement."
+        "Agent run queued for #{goal.humanize.downcase}."
       else
-        "#{issues.size} agent runs queued for issue enhancement."
+        "#{issues.size} agent runs queued for #{goal.humanize.downcase}."
       end
       redirect_to success_path, notice: notice
     rescue NoRunnableRunnerError => e

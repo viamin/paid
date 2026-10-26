@@ -22,7 +22,12 @@ automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
 An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
+the original intent remains valid and whether new work is required. The Inbox
+shows the reopen-specific gate, including the prior closure context and current
+remaining issue scope, and requires an authorized operator's explicit
+validation reason. The action records the actor and GitHub issue revision used
+for that decision before it offers the existing enhancement continuation. An
+already queued or running run is reconciled rather than duplicated. This moves
 the issue back into active work through the existing manual-review workflow.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.

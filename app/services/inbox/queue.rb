@@ -692,7 +692,8 @@ module Inbox
           tasks: [],
           summary_text: issue.manual_review_reason.presence || "Manual review required.",
           title_text: nil,
-          action_url: nil
+          action_url: nil,
+          guidance: ManualReviewRecovery.call(issue: issue)
         )
       end
     end

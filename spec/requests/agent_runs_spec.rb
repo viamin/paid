@@ -2582,6 +2582,31 @@ RSpec.describe "AgentRuns" do
     context "when authenticated" do
       before { sign_in user }
 
+      # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002D
+      it "requires a reopen-intent validation before queuing recovery work" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("Confirm the current intent")
+        expect(parked_issue.reload).to be_reopen_review_pending
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002D
+      it "records the reopen validation with the current issue revision before continuing" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        post resume_manual_review_project_agent_runs_path(project), params: {
+          issue_id: parked_issue.id, reopen_review_confirmed: "1", reopen_review_reason: "Remaining acceptance evidence is still required."
+        }
+
+        event = account.account_activity_events.order(:id).last
+        expect(event).to have_attributes(action: "issue.reopen_review_validated", actor: user, subject: parked_issue)
+        expect(event.metadata).to include("reason" => "Remaining acceptance evidence is still required.")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
         expect {

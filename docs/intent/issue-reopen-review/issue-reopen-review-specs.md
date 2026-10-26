@@ -30,3 +30,11 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resumes a
+  pending reopen review, the system SHALL require an explicit current-intent
+  validation and non-blank reason, record the actor and observed issue revision,
+  and only then use the supported enhancement continuation. An active run SHALL
+  be reconciled instead of creating another run.
+  *Tests:* `spec/requests/agent_runs_spec.rb`, `spec/services/inbox/manual_review_recovery_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`, `Projects::AgentRunsController`.

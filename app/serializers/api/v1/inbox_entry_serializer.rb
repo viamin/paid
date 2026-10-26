@@ -103,7 +103,17 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        recovery = entry.guidance
+        {
+          questions: entry.questions,
+          comment_url: entry.manual_review_comment_url,
+          recovery: {
+            cause: recovery.cause,
+            action: recovery.action,
+            active_run_id: recovery.active_run&.id,
+            dependency_issue_number: recovery.dependency&.github_number
+          }
+        }
       end
 
       def manual_review_list_payload
