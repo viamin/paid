@@ -21,7 +21,10 @@ module FacetConfidence
 
         label = evaluation.labels.find_by(case_id:, state: "labeled")
         return failure("case #{case_id.inspect} has no frozen reference judgment to correct") unless label
-        return failure("the cited evidence must be part of the frozen case") unless evaluation.corpus.find_case(case_id).fetch("evidence").any? { |item| item.fetch("reference") == citation }
+
+        corpus_case = evaluation.corpus.find_case(case_id)
+        return failure("the frozen case is no longer available; start a new evaluation") unless corpus_case
+        return failure("the cited evidence must be part of the frozen case") unless corpus_case.fetch("evidence").any? { |item| item.fetch("reference") == citation }
 
         revision = label.revisions.create(attributes)
         return failure(revision.errors.full_messages.to_sentence) unless revision.persisted?

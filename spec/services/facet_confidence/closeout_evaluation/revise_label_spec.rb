@@ -50,4 +50,20 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::ReviseLabel do
     expect(result).not_to be_success
     expect(label.revisions).to be_empty
   end
+
+  it "fails cleanly when the current manifest no longer has the frozen case" do
+    Tempfile.create([ "facet-confidence-corpus", ".yml" ]) do |file|
+      manifest = YAML.load_file(FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH)
+      manifest.fetch("cases").find { |corpus_case| corpus_case.fetch("id") == label.case_id }.store("id", "FC-CORPUS-09")
+      file.write(YAML.dump(manifest))
+      file.flush
+      evaluation.update!(corpus_path: file.path, corpus_digest: FacetConfidence::Corpus.new(path: file.path).content_digest)
+
+      result = described_class.call(evaluation:, actor: owner, case_id: label.case_id, judgment:)
+
+      expect(result).not_to be_success
+      expect(result.error).to eq("the frozen case is no longer available; start a new evaluation")
+      expect(label.revisions).to be_empty
+    end
+  end
 end
