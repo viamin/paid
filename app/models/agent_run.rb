@@ -4092,7 +4092,7 @@ class AgentRun < ApplicationRecord
   def has_prompt_source
     # lid_planning derives its prompt from Prompts::BuildForLidPlanning, so it
     # needs no issue, custom prompt, or source PR.
-    return if lid_planning_goal?
+    return if lid_planning_goal? || goal == "layered_verification_audit"
     # create_feature derives its prompt from Prompts::BuildForCreateFeature
     # and external_metadata["feature_brief"], so it needs no issue or source PR.
     return if create_feature_goal?
