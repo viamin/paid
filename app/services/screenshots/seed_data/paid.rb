@@ -10,6 +10,8 @@ module Screenshots
       # it from disk, so the path must stay checked out with the app.
       SHADOW_EVALUATION_MANIFEST_PATH =
         "docs/intent/intent-conformance-rollout/shadow-evaluation-manifest-2026-10-13.yml"
+      FACET_CONFIDENCE_MANIFEST_PATH =
+        "docs/intent/facet-confidence/assessment-corpus-manifest-v1.yml"
 
       class << self
         def call
@@ -125,6 +127,21 @@ module Screenshots
             created_by: user
           )
           shadow_evaluation.save!
+
+          # Seed the new and labeling screens from one stable evidence
+          # generation so screenshot capture exercises both GET routes.
+          # @spec FACET-CONFIDENCE-020
+          facet_confidence_evaluation = project.facet_confidence_evaluations
+            .find_or_initialize_by(issue: clarifying_issue, corpus_digest: Digest::SHA256.file(Rails.root.join(FACET_CONFIDENCE_MANIFEST_PATH)).hexdigest)
+          facet_confidence_evaluation.assign_attributes(
+            status: "labeling",
+            corpus_path: FACET_CONFIDENCE_MANIFEST_PATH,
+            corpus_version: "facet-confidence-corpus-v1",
+            rubric_version: "facet-confidence-v1",
+            model_version: "claude-sonnet-4-6",
+            created_by: user
+          )
+          facet_confidence_evaluation.save!
 
           provider = user.runners.subscription.first!
           provider.update!(enabled_for_agent_runs: true, enabled_for_fallback: true)
@@ -451,6 +468,8 @@ module Screenshots
             "remediation_decision" => { "id" => remediation_decision.id },
             "change_intent" => { "id" => change_intent.id },
             "shadow_evaluation" => { "id" => shadow_evaluation.id },
+            "facet_confidence_issue" => { "id" => clarifying_issue.id },
+            "facet_confidence_evaluation" => { "id" => facet_confidence_evaluation.id },
             "installation_project" => { "id" => installation_project.id, "name" => installation_project.name }
           }
         end

@@ -242,6 +242,17 @@ module Screenshots
         path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/shadow_evaluations/#{seed_data.fetch(:shadow_evaluation).id}" },
         requires_auth: true
       ),
+      # @spec FACET-CONFIDENCE-020
+      project_facet_confidence_evaluation_new: Target.new(
+        slug: "project_facet_confidence_evaluation_new",
+        path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/facet_confidence_evaluations/new?issue_id=#{seed_data.fetch(:facet_confidence_issue).id}" },
+        requires_auth: true
+      ),
+      project_facet_confidence_evaluation_show: Target.new(
+        slug: "project_facet_confidence_evaluation_show",
+        path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/facet_confidence_evaluations/#{seed_data.fetch(:facet_confidence_evaluation).id}" },
+        requires_auth: true
+      ),
       project_automation_phases: Target.new(
         slug: "project_automation_phases",
         path_builder: ->(seed_data) { "/projects/#{seed_data.fetch(:project).id}/automation_phases" },
@@ -369,6 +380,8 @@ module Screenshots
       "projects/cost_budgets_controller.rb" => [ :project_cost_dashboard ],
       "projects/change_intents_controller.rb" => [ :project_change_intent_show ],
       "projects/shadow_evaluations_controller.rb" => %i[project_shadow_evaluation_new project_shadow_evaluation_show],
+      # @spec FACET-CONFIDENCE-020
+      "projects/facet_confidence_evaluations_controller.rb" => %i[project_facet_confidence_evaluation_new project_facet_confidence_evaluation_show],
       "projects/automation_phases_controller.rb" => [ :project_automation_phases ],
       "projects/clarifying_questions_controller.rb" => [ :project_issue_clarifying_questions ],
       "projects/health_check_controller.rb" => [ :project_health_check ],
@@ -758,6 +771,7 @@ module Screenshots
       when "change_intents/show.html.erb" then [ :project_change_intent_show ]
       when "automation_phases/show.html.erb" then [ :project_automation_phases ]
       when /\Ashadow_evaluations\// then shadow_evaluation_targets(leaf.delete_prefix("shadow_evaluations/"))
+      when /\Afacet_confidence_evaluations\// then facet_confidence_evaluation_targets(leaf.delete_prefix("facet_confidence_evaluations/"))
       when /\A_/
         base = File.basename(leaf, ".html.erb")
         if PROJECT_SHOW_PARTIALS.include?(base)
@@ -779,6 +793,17 @@ module Screenshots
       when "new.html.erb" then [ :project_shadow_evaluation_new ]
       else
         [ :project_shadow_evaluation_show ]
+      end
+    end
+
+    # Only the new/show GET screens exist; the labeling/report partials render
+    # inside show, and label/skip/freeze are POST-only actions.
+    # @spec FACET-CONFIDENCE-020
+    def facet_confidence_evaluation_targets(leaf)
+      case leaf
+      when "new.html.erb" then [ :project_facet_confidence_evaluation_new ]
+      else
+        [ :project_facet_confidence_evaluation_show ]
       end
     end
 

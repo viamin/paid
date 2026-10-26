@@ -115,4 +115,15 @@ RSpec.describe Screenshots::SeedData::Paid do
     expect(evaluation.corpus.matches_recorded_digest?).to be(true)
     expect(evaluation.corpus.case_ids).to be_present
   end
+
+  it "seeds a facet-confidence evaluation whose corpus manifest is present" do # @spec FACET-CONFIDENCE-020
+    result = described_class.call
+
+    evaluation = FacetConfidenceEvaluation.find(result.dig("facet_confidence_evaluation", "id"))
+    issue = Issue.find(result.dig("facet_confidence_issue", "id"))
+
+    expect(evaluation).to have_attributes(issue: issue, status: "labeling")
+    expect(evaluation.corpus.matches_recorded_digest?).to be(true)
+    expect(evaluation.corpus.case_ids).to be_present
+  end
 end
