@@ -36,8 +36,16 @@ module Dashboard
       tier_feasibility = Runners::TierFeasibility.new
       projects = auto_pick_projects
       handoff_counts = handoff_counts_by_project(projects)
+      inputs = projects.to_h { |project| [ project.id, breakdown_inputs(project, tier_feasibility) ] }
+      excluded = inputs.values.map { |input| input.fetch(:excluded) }.reduce(&:or)
+      held_issues = HeldWorkDetails.call(excluded:, projects:)
       projects.map do |project|
-        breakdown_for(project, tier_feasibility: tier_feasibility, handoff_counts: handoff_counts)
+        breakdown_for(
+          project,
+          input: inputs.fetch(project.id),
+          handoff_counts: handoff_counts,
+          held_issues: held_issues.fetch(project.id, [])
+        )
       end
     end
 
@@ -62,14 +70,10 @@ module Dashboard
     end
 
     # @spec OPERATOR-INBOX-002D QUEUE-HANDOFF-001 QUEUE-HANDOFF-002 QUEUE-HANDOFF-003
-    def breakdown_for(project, tier_feasibility:, handoff_counts:)
+    def breakdown_inputs(project, tier_feasibility)
       open = Issue.where(project: project, github_state: "open", is_pull_request: false)
-
       eligible_scope = Automation::Strategies::AutoPick::DefaultCandidateSource
         .eligible_scope(project, tier_feasibility: tier_feasibility)
-      eligible_count = eligible_scope.count
-
-      # Count all non-eligible issues in a single conditional-aggregation query.
       excluded = open.where.not(id: eligible_scope.select(:id))
       row = excluded.pick(
         Arel.sql("COUNT(*)"),
@@ -77,7 +81,14 @@ module Dashboard
         Arel.sql("COUNT(*) FILTER (WHERE paid_state = 'completed')"),
         Arel.sql("COUNT(*) FILTER (WHERE paid_state IN ('new','planning','failed','analyzed'))")
       ) || [ 0, 0, 0, 0 ]
-      excluded_total, in_progress, completed, analyzable = row
+      { eligible_count: eligible_scope.count, excluded:, row: }
+    end
+
+    # @spec OPERATOR-INBOX-002D QUEUE-HANDOFF-001 QUEUE-HANDOFF-002 QUEUE-HANDOFF-003
+    def breakdown_for(project, input:, handoff_counts:, held_issues:)
+      eligible_count = input.fetch(:eligible_count)
+      excluded = input.fetch(:excluded)
+      excluded_total, in_progress, completed, analyzable = input.fetch(:row)
 
       needs_input = excluded.where(paid_state: "needs_input").count
       manual_review = excluded.where(paid_state: "manual_review").count
@@ -85,8 +96,6 @@ module Dashboard
       other = excluded_total - needs_input - in_progress - completed - manual_review - skip_label
       queued, active, paused = handoff_counts.fetch(project.id, [ 0, 0, 0 ])
       unseeded = eligible_count
-      held_issues = HeldWorkDetails.call(excluded:, project:)
-
       ProjectBreakdown.new(
         project: project,
         total_open: eligible_count + excluded_total,

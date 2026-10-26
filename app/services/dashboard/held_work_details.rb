@@ -7,31 +7,33 @@ module Dashboard
 
     Blocker = Struct.new(:label, :url, keyword_init: true)
     Action = Struct.new(:label, :inbox_kind, :entry_id, keyword_init: true)
-    HeldIssue = Struct.new(:issue, :blockers, :action, keyword_init: true)
+    HeldIssue = Struct.new(:issue, :blockers, :actions, keyword_init: true)
 
     def self.call(...) = new(...).call
 
-    def initialize(excluded:, project:)
+    def initialize(excluded:, projects:)
       @excluded = excluded
-      @project = project
+      @projects = projects
     end
 
     def call
       blockers = dependency_blockers
       actions = decision_actions
       held_issues(blockers, actions)
+        .group_by { |held_issue| held_issue.issue.project_id }
+        .transform_values { |issues| issues.first(MAX_HELD_ISSUES) }
     end
 
     private
 
-    attr_reader :excluded, :project
+    attr_reader :excluded, :projects
 
     def held_issues(blockers, actions)
       ids = blockers.keys | actions.keys
       return [] if ids.empty?
 
-      excluded.where(id: ids).order(:github_number).limit(MAX_HELD_ISSUES).map do |issue|
-        HeldIssue.new(issue:, blockers: blockers.fetch(issue.id, []), action: actions[issue.id])
+      excluded.where(id: ids).order(:project_id, :github_number).map do |issue|
+        HeldIssue.new(issue:, blockers: blockers.fetch(issue.id, []), actions: actions.fetch(issue.id, []))
       end
     end
 
@@ -61,7 +63,7 @@ module Dashboard
     end
 
     def external_dependency_blockers
-      IssueDependency.still_blocking_external_for_account(project.account_id)
+      IssueDependency.still_blocking_external_for_account(projects.first.account_id)
         .where(issue_id: excluded.select(:id))
         .each_with_object(blocker_map) { |dependency, blockers| append_external_blocker(dependency, blockers) }
     end
@@ -84,14 +86,19 @@ module Dashboard
     end
 
     def decision_actions
-      design_amendment_actions.merge(feature_decision_actions)
+      [ design_amendment_actions, feature_decision_actions ]
+        .each_with_object(action_map) do |actions, result|
+          actions.each { |issue_id, issue_actions| result[issue_id].concat(issue_actions) }
+        end
     end
 
     def design_amendment_actions
       DesignAmendmentPause.held.where(issue_id: excluded.select(:id)).joins(:design_amendment)
-        .where(design_amendments: { project_id: project.id })
+        .where(design_amendments: { project_id: projects.map(&:id) })
         .pluck(:issue_id)
-        .to_h { |issue_id| [ issue_id, Action.new(label: "Review the design amendment hold in the issue") ] }
+        .each_with_object(action_map) do |issue_id, actions|
+          actions[issue_id] << Action.new(label: "Review the design amendment hold in the issue")
+        end
     end
 
     def feature_decision_actions
@@ -99,8 +106,12 @@ module Dashboard
         .where(issue_id: excluded.select(:id))
         .where(feature_hold_condition)
         .pluck(:issue_id, "feature_intents.id", "feature_intents.title")
-        .to_h { |issue_id, id, title| [ issue_id, feature_action(id, title) ] }
+        .each_with_object(action_map) do |(issue_id, id, title), actions|
+          actions[issue_id] << feature_action(id, title)
+        end
     end
+
+    def action_map = Hash.new { |hash, key| hash[key] = [] }
 
     def feature_hold_condition
       "(feature_intents.delivery_policy = 'approval_gated' AND " \

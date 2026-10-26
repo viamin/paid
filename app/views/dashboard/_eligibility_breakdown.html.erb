@@ -111,16 +111,17 @@
                               class: "text-indigo-600 hover:text-indigo-500" %>
                       <% end %>.
                     <% end %>
-                    <% if held.action %>
-                      <% if held.action.inbox_kind %>
-                        <%= link_to held.action.label,
-                              inbox_path(project_id: bd.project.id, kind: held.action.inbox_kind, entry_id: held.action.entry_id),
+                    <% held.actions.each do |action| %>
+                      <% if action.inbox_kind %>
+                        <%= link_to action.label,
+                              inbox_path(project_id: bd.project.id, kind: action.inbox_kind, entry_id: action.entry_id),
                               class: "ml-2 font-medium text-indigo-600 hover:text-indigo-500",
                               data: { turbo_frame: "_top" } %>
                       <% else %>
-                        <span class="ml-2"><%= held.action.label %>.</span>
+                        <span class="ml-2"><%= action.label %>.</span>
                       <% end %>
-                    <% elsif held.blockers.any? %>
+                    <% end %>
+                    <% if held.actions.empty? && held.blockers.any? %>
                       <span class="ml-2">Resolve the listed blockers to resume automatic work.</span>
                     <% end %>
                   </li>

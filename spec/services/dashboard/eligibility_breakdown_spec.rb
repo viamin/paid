@@ -138,7 +138,7 @@ RSpec.describe Dashboard::EligibilityBreakdown do
             have_attributes(label: "##{blocker.github_number} #{blocker.title}", url: blocker.github_url),
             have_attributes(label: "##{second_blocker.github_number} #{second_blocker.title}", url: second_blocker.github_url)
           ),
-          action: nil
+          actions: []
         )
       )
     end
@@ -155,12 +155,38 @@ RSpec.describe Dashboard::EligibilityBreakdown do
         have_attributes(
           issue: issue,
           blockers: [],
-          action: have_attributes(
+          actions: contain_exactly(
+            have_attributes(
+              label: "Review feature decision: #{feature_intent.title}",
+              inbox_kind: Inbox::Queue::FEATURE_DECISION_KIND,
+              entry_id: "#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"
+            )
+          )
+        )
+      )
+    end
+
+    # @spec QUEUE-HANDOFF-004
+    it "carries every owning decision for an issue held by features and an amendment" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      feature_intents = Array.new(2) do
+        create(:feature_intent, project: project, status: "design_open", approved_design_revision: nil)
+      end
+      feature_intents.each { |feature_intent| create(:feature_intent_issue, feature_intent:, issue:) }
+      amendment = create(:design_amendment, project: project)
+      create(:design_amendment_pause, design_amendment: amendment, issue: issue)
+
+      held_issue = described_class.call(user: user).sole.held_issues.sole
+
+      expect(held_issue.actions).to contain_exactly(
+        have_attributes(label: "Review the design amendment hold in the issue", inbox_kind: nil, entry_id: nil),
+        *feature_intents.map do |feature_intent|
+          have_attributes(
             label: "Review feature decision: #{feature_intent.title}",
             inbox_kind: Inbox::Queue::FEATURE_DECISION_KIND,
             entry_id: "#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"
           )
-        )
+        end
       )
     end
 
@@ -332,6 +358,27 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       queries.count { |sql| sql.match?(/GROUP BY "agent_runs"\."project_id", "agent_runs"\."status"/) }
     end
 
+    def held_work_queries(queries)
+      queries.count do |sql|
+        sql.start_with?('SELECT "issue_dependencies"') ||
+          sql.match?(/\ASELECT "design_amendment_pauses"\."issue_id".*WHERE "design_amendment_pauses"\."issue_id" IN/) ||
+          sql.start_with?('SELECT "feature_intent_issues"."issue_id", "feature_intents"."id"') ||
+          sql.match?(/\ASELECT "issues"\.\* FROM "issues" WHERE .*"issues"\."id" IN/)
+      end
+    end
+
+    def create_held_projects(count, prefix)
+      Array.new(count) do |i|
+        create(:project, account: account, created_by: user,
+          auto_pick_enabled: true, active: true, owner: "org", repo: "#{prefix}-#{i}")
+      end.each do |held_project|
+        create(:issue, project: held_project, github_state: "open", paid_state: "new") do |issue|
+          blocker = create(:issue, project: held_project, github_state: "open", paid_state: "new")
+          create(:issue_dependency, issue:, depends_on_issue: blocker)
+        end
+      end
+    end
+
     it "does not resolve tier feasibility per project (no N+1)" do
       create(:issue, project: project, github_state: "open", paid_state: "new")
       single_repo_resolutions = feasibility_resolutions(capture_queries { described_class.call(user: user) })
@@ -362,6 +409,22 @@ RSpec.describe Dashboard::EligibilityBreakdown do
 
       expect(single_query_count).to eq(1)
       expect(multi_query_count).to eq(single_query_count)
+    end
+
+    it "resolves held-work provenance with a project-independent query count" do
+      create(:issue, project: project, github_state: "open", paid_state: "new") do |issue|
+        blocker = create(:issue, project: project, github_state: "open", paid_state: "new")
+        create(:issue_dependency, issue:, depends_on_issue: blocker)
+      end
+      create_held_projects(3, "held-repo")
+      initial_queries = held_work_queries(capture_queries { described_class.call(user: user) })
+
+      Rails.cache.clear
+      create_held_projects(3, "more-held-repo")
+      expanded_queries = held_work_queries(capture_queries { described_class.call(user: user) })
+
+      expect(initial_queries).to be_positive
+      expect(expanded_queries).to eq(initial_queries)
     end
 
     it "includes orphaned projects for the account fallback owner" do

@@ -1033,6 +1033,30 @@ RSpec.describe "Dashboard" do
       expect(held_issue.at_css(%(a[href="#{second_blocker.github_url}"])).text).to include("##{second_blocker.github_number}")
     end
 
+    # @spec QUEUE-HANDOFF-004
+    it "renders every owning recovery action for decision-held work" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      feature_intents = Array.new(2) do
+        create(:feature_intent, project: project, status: "design_open", approved_design_revision: nil)
+      end
+      feature_intents.each { |feature_intent| create(:feature_intent_issue, feature_intent:, issue:) }
+      amendment = create(:design_amendment, project: project)
+      create(:design_amendment_pause, design_amendment: amendment, issue: issue)
+
+      get dashboard_eligibility_breakdown_path
+
+      held_issue = Nokogiri::HTML(response.body).at_css("[data-testid='held-issue-#{issue.id}']")
+      feature_intents.each do |feature_intent|
+        href = inbox_path(
+          project_id: project.id,
+          kind: Inbox::Queue::FEATURE_DECISION_KIND,
+          entry_id: "#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"
+        )
+        expect(held_issue.at_css(%(a[href="#{href}"])).text).to eq("Review feature decision: #{feature_intent.title}")
+      end
+      expect(held_issue.text).to include("Review the design amendment hold in the issue")
+    end
+
     # @spec QUEUE-HANDOFF-001
     it "explains eligible work that has not reached the scheduler queue" do
       create(:issue, project: project, github_state: "open", paid_state: "new")
