@@ -38,6 +38,14 @@ class ProjectPolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin) || user.has_role?(:project_admin, record)
   end
 
+  # A continuation grant delegates the action that the user just started.
+  # Non-merge endpoints therefore require the same tenant-scoped permission
+  # as a manual run; merge remains restricted by #delegate_merge?.
+  # @spec AUTOMATION-PHASES-009
+  def delegate_phase?
+    run_agent?
+  end
+
   def manage_apple_verifications?
     return false unless user_in_account?
 
