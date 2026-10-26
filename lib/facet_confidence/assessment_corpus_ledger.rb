@@ -253,7 +253,8 @@ module FacetConfidence
     def validate_events!(cases, entries)
       evaluation = cases.to_h { |corpus_case| [ corpus_case.fetch("id"), { case: corpus_case, runs: [], corrections: [], rework: [] } ] }
       trackers = cases.to_h do |corpus_case|
-        [ corpus_case.fetch("id"), { baseline_revision: corpus_case.fetch("evidence_revision"), run_seen: false, last_run_revision: nil, pending_corrections: {} } ]
+        [ corpus_case.fetch("id"), { baseline_revision: corpus_case.fetch("evidence_revision"), run_seen: false, last_run_revision: nil,
+          last_run_status: nil, pending_corrections: {} } ]
       end
       entries.each { |entry| dispatch_event!(entry, evaluation, trackers) }
       evaluation
@@ -341,6 +342,8 @@ module FacetConfidence
       raise InvalidLedger, "#{id} assessment run must record a positive integer input revision" unless revision.is_a?(Integer) && revision.positive?
 
       if tracker[:run_seen]
+        return record_retry_after_failure!(entry, tracker) if tracker[:last_run_status] == "failed" && revision == tracker[:last_run_revision]
+
         if revision == tracker[:last_run_revision]
           raise InvalidLedger, "#{id} identical input cannot be replayed to inflate certainty at input revision #{revision}"
         end
@@ -351,6 +354,16 @@ module FacetConfidence
       end
       tracker[:run_seen] = true
       tracker[:last_run_revision] = revision
+      tracker[:last_run_status] = entry.fetch("status")
+    end
+
+    # A provider failure produces no assessment verdict and therefore cannot
+    # inflate certainty. It remains auditable operational evidence while the
+    # frozen input can be retried when the pinned model becomes available.
+    def record_retry_after_failure!(entry, tracker)
+      tracker[:run_seen] = true
+      tracker[:last_run_revision] = entry.fetch("input_revision")
+      tracker[:last_run_status] = entry.fetch("status")
     end
 
     def validate_correction!(entry, evaluation, trackers)

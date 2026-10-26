@@ -14,10 +14,23 @@ ledger events keep validating against the content they were measured with.
 
 ## 2. Assess each case
 
-For each corpus case, replay the frozen evidence (in `occurred_at` order,
-honoring `supersedes`) through the production assessment path — or an
-operator-controlled harness that uses the same rubric `facet-confidence-v1`,
-model `claude-sonnet-4-6`, and prompt contract as
+In the application environment that serves `claude-sonnet-4-6`, run the
+shipped assessment path for the target project:
+
+```bash
+bin/rails "facet_confidence:corpus:run[<project-id>]"
+```
+
+The task retries only cases whose latest event is `failed`; a provider/runtime
+failure has no verdict and therefore is not a replay of certainty. It appends
+one provenance-complete event per attempted case to the repository ledger. It
+does not change readiness, thresholds, rubric, or release policy.
+
+The lower-level append command remains available for operator-recorded
+follow-ups and recovery. For each corpus case, replay the frozen evidence
+(in `occurred_at` order, honoring `supersedes`) through the production
+assessment path — or an operator-controlled harness that uses the same rubric
+`facet-confidence-v1`, model `claude-sonnet-4-6`, and prompt contract as
 `FeatureIntents::AssessFacet` — and record the outcome:
 
 ```bash
@@ -34,9 +47,10 @@ Rules enforced by `validate`:
 
 - The first run of a case must assess the frozen baseline revision (the
   case's evidence count, shown as `evidence_revision` by `load_corpus`).
-- A re-run must advance `input_revision` and have an intervening `correction`
-  event at that revision — identical input cannot be replayed to inflate
-  certainty.
+- A re-run after a verdict must advance `input_revision` and have an
+  intervening `correction` event at that revision — identical input cannot be
+  replayed to inflate certainty. A failed provider/runtime attempt records no
+  verdict and can be retried on its same frozen input.
 - `completed` runs require both bounded scores and evidence references drawn
   from the case; `explicit_correction` cases must cite the correction
   evidence and must not cite the superseded statement.

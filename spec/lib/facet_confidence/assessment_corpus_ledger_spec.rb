@@ -171,6 +171,16 @@ RSpec.describe FacetConfidence::AssessmentCorpusLedger, :no_db do
         .to raise_error(described_class::InvalidLedger, /identical input cannot be replayed/)
     end
 
+    # @spec FACET-CONFIDENCE-017
+    it "allows a pinned-model retry after a provider failure on identical input" do
+      failed = complete_events.first.merge("event_id" => "provider-failure-1", "status" => "failed",
+        "intent_score" => nil, "technical_score" => nil, "evidence_references" => [])
+      retry_run = complete_events.first.merge("event_id" => "retry-1", "recorded_at" => later_timestamp)
+      write_ledger!([ failed, retry_run ])
+
+      expect(described_class.validate!(corpus_path: corpus, ledger_path: ledger)).to be(true)
+    end
+
     it "rejects a run whose input revision rewinds behind an earlier run" do
       events = complete_events
       events << events[0].merge("event_id" => "rewind-1", "input_revision" => 1, "recorded_at" => later_timestamp)
