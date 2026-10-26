@@ -32,10 +32,11 @@
       UI, the authenticated API, and the MCP surface, applying the same
       project-scoped start authorization on every surface.
 - [ ] **MAINT-011**: The system shall accept an optional recipe objective, an
-      optional scope (paths or symbols), and optional free-text guidance when
-      starting a maintenance run, and shall require at least one recipe
-      objective or nonblank free-text guidance; scope alone shall not admit a
-      run.
+      optional scope (paths, symbols, or free-form natural-language text
+      such as files, a feature, or a page in the app), and optional
+      free-text guidance when starting a maintenance run, and shall require
+      at least one recipe objective or nonblank free-text guidance; scope
+      alone shall not admit a run.
 - [ ] **MAINT-012**: When a user supplies named scope targets, the system
       shall resolve them before any check claims coverage of that scope.
 - [ ] **MAINT-013**: If a named scope target is ambiguous or missing, then the
@@ -158,4 +159,9 @@
       back to its source maintenance report and finding.
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
-      an explicit user selection.
+      an explicit user selection, recorded either as a per-finding selection
+      after the report or as a pre-authorized run-start election under a
+      separately approved selection policy (drafted for the optimization
+      family in
+      [`maintenance-optimization`](../maintenance-optimization/maintenance-optimization-specs.md));
+      absent either form of selection, a scan is report-only.
