@@ -1002,6 +1002,8 @@ module Projects
         "This issue is waiting on an unresolved dependency; resolving or acknowledging it does not waive that hold."
       when :scanner_recurrence
         "This scanner-confirmed recurrence needs an explicit remediation decision, not an enhancement retry."
+      when :active_work
+        "Existing queued or running work must be reconciled before another recovery action can start."
       else
         "Manual-review provenance is unknown. Inspect the retained evidence before resuming work."
       end
