@@ -83,6 +83,18 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
   end
 
   describe ".eligible_scope" do
+    it "includes a reconciled planning task when it has no independent blockers" do # @spec CONFIDENCE-DELIVERY-017
+      issue = create(:issue, project: project, github_state: "open", labels: [])
+      feature = create(:feature_intent, :confidence_driven, project: project)
+      link = create(:feature_intent_issue, feature_intent: feature, issue: issue,
+        readiness_mapping: { "planning_hold" => { "owner" => "paid", "task_kind" => "planning" } })
+
+      expect(FeatureIntents::ReleaseIssue.call(issue: issue)).to be_released
+
+      expect(link.reload.release_state).to eq("released")
+      expect(described_class.eligible_scope(project)).to include(issue)
+    end
+
     it "includes a confidence-driven issue only after its planning hold is reconciled" do # @spec CONFIDENCE-DELIVERY-005
       issue = create(:issue, project: project, github_state: "open")
       feature = create(:feature_intent, :confidence_driven, project: project)

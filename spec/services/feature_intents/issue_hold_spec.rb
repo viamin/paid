@@ -23,6 +23,15 @@ RSpec.describe FeatureIntents::IssueHold do
     expect(described_class.call(issue: issue).message).to eq("Held: feature awaiting release")
   end
 
+  it "does not project an implementation approval hold onto a planning task" do # @spec CONFIDENCE-DELIVERY-017
+    issue = create(:issue)
+    feature = create(:feature_intent, project: issue.project, status: "approved_waiting_for_merge")
+    create(:feature_intent_issue, feature_intent: feature, issue: issue,
+      readiness_mapping: { "planning_hold" => { "owner" => "paid", "task_kind" => "planning", "operator_override" => false } })
+
+    expect(described_class.call(issue: issue)).to be_nil
+  end
+
   it "reports a released feature missing its approved revision" do
     issue = create(:issue)
     feature = create(:feature_intent, project: issue.project, approved_design_revision: nil)

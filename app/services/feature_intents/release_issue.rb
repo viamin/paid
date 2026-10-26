@@ -7,7 +7,7 @@ module FeatureIntents
   # after each link's scoped readiness passes. The database transition is
   # committed before the GitHub request so no lock spans a network call; the
   # final write verifies the scope revision that was assessed.
-  # @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-004 @spec CONFIDENCE-DELIVERY-006 @spec CONFIDENCE-DELIVERY-009
+  # @spec CONFIDENCE-DELIVERY-003 @spec CONFIDENCE-DELIVERY-004 @spec CONFIDENCE-DELIVERY-006 @spec CONFIDENCE-DELIVERY-009 @spec CONFIDENCE-DELIVERY-017
   class ReleaseIssue
     PLANNING_LABEL = "planning"
 
@@ -24,10 +24,13 @@ module FeatureIntents
     def call
       return Result.new(released: true, reason: nil) if confidence_links.empty?
       return hold_for_dependencies unless issue.ready_to_work?
+      return reconcile_planning_task if links.empty? && planning_task_link?
+      return hold_for_unknown_planning_label if links.empty? && unknown_planning_label?
       return reconcile_released_projection if links.empty?
 
       readiness_by_link = links.to_h { |link| [ link, assess(link) ] }
       return hold(readiness_by_link) if readiness_by_link.any? { |_link, readiness| !readiness.ready? }
+      return hold_for_unknown_planning_label if unknown_planning_label?
 
       snapshots = readiness_by_link.to_h { |link, readiness| [ link, snapshot_for(link, readiness) ] }
       links.each { |link| mark_pending(link, snapshots[link]) }
@@ -46,7 +49,7 @@ module FeatureIntents
     # not unique); each confidence-driven link owns a distinct readiness
     # mapping.
     def confidence_links
-      @confidence_links ||= FeatureIntentIssue.includes(:feature_intent, :prerequisite_mapping)
+      @confidence_links ||= FeatureIntentIssue.includes({ feature_intent: :issue_publications }, :prerequisite_mapping)
         .where(issue_id: issue.id)
         .order(:id)
         .select { |link| link.feature_intent.confidence_driven? }
@@ -55,7 +58,44 @@ module FeatureIntents
     # Released snapshots are immutable evidence, so only unreleased links
     # reconcile.
     def links
-      @links ||= confidence_links.reject { |link| link.release_state == "released" }
+      @links ||= confidence_links.reject { |link| link.release_state == "released" || link.planning_task? }
+    end
+
+    def unknown_planning_label?
+      issue.labels.include?(PLANNING_LABEL) &&
+        !confidence_links.all?(&:workflow_owned_planning_hold?)
+    end
+
+    # A shared GitHub label cannot distinguish Paid's implementation hold from
+    # an operator hold on the planning task. Preserve it whenever either task
+    # is linked to this issue so planning-task eligibility remains independent.
+    def planning_task_link?
+      confidence_links.any? { |link| planning_task_contract?(link) }
+    end
+
+    def planning_task_contract?(link)
+      link.current_readiness_mapping.dig("planning_hold", "owner") == FeatureIntentIssue::PAID_HOLD_OWNER &&
+        link.current_readiness_mapping.dig("planning_hold", "task_kind") == FeatureIntentIssue::PLANNING_TASK_KIND
+    end
+
+    # Planning tasks are exempt from implementation readiness, but their link
+    # still must clear the durable candidate-state gate before auto-pick can
+    # reach RunAdmission. Labels and dependencies are evaluated independently.
+    def reconcile_planning_task
+      confidence_links.select(&:planning_task?).each do |link|
+        link.with_lock do
+          next if link.release_state == "released"
+
+          link.update!(release_state: "released", released_at: Time.current, release_error: nil)
+        end
+      end
+      Result.new(released: true, reason: nil)
+    end
+
+    def hold_for_unknown_planning_label
+      reason = "Planning label ownership is unknown and requires operator reconciliation."
+      links.each { |link| mark_held(link, reason) }
+      Result.new(released: false, reason:)
     end
 
     # Every design the issue serves already recorded immutable release

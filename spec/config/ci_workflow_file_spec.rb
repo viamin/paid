@@ -154,15 +154,18 @@ RSpec.describe CiWorkflowFile, :no_db do
     fuzz_command = step_run(schemathesis_job, "Fuzz mobile API contract")
 
     expect(fuzz_command).to include(
-      "schemathesis==4.6.0", "--include-path /inbox/entries/{entry_id}",
+      "for attempt in 1 2 3", "Schemathesis contract fuzzing failed",
+      "schemathesis==4.6.0", "--constraint .github/schemathesis-constraints.txt",
+      "--include-path /inbox/entries/{entry_id}",
       "--include-path /inbox/entries/{entry_id}/chat",
       "--phases examples,fuzzing", "--mode positive",
-      "Authorization: Bearer $MOBILE_API_READ_TOKEN",
-      "Authorization: Bearer $MOBILE_API_MUTATION_TOKEN",
+      'run_schemathesis "$MOBILE_API_READ_TOKEN"',
+      'run_schemathesis "$MOBILE_API_MUTATION_TOKEN"',
       "--exclude-operation-id sendChatMessage",
       "--exclude-operation-id resolveChatToolCall"
     )
     expect(fuzz_command).not_to include("--include-method GET")
+    expect(Rails.root.join(".github/schemathesis-constraints.txt").read).to eq("hypothesis==6.169.4\n")
   end
 
   # @spec MOBILE-API-006 MOBILE-API-018
@@ -171,8 +174,9 @@ RSpec.describe CiWorkflowFile, :no_db do
     pact_fixture_step = step_run(pact_job, "Create mobile API bearer token")
 
     expect(fixture_step).to include(
-      "GithubToken.create!", "Project.create!", "Issue.create!",
+      "GithubToken.create!", "Project.create!", "Issue.create!", "ChatSession.create!",
       "id: 4_241", 'paid_state: "needs_input"', "needs_input_questions:",
+      "clarifying_question_issue: issue",
       "allowed_github_usernames: [ \"mobile-schema-fuzzer\" ]",
       "MOBILE_API_READ_TOKEN", "MOBILE_API_MUTATION_TOKEN"
     )
