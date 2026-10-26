@@ -28,6 +28,22 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(result).to eq([])
     end
 
+    # @spec AUTO-PICK-QUEUE-014
+    it "reports unavailable coverage when the diagnostic query cannot connect" do
+      breakdown_service = described_class.new(user: user)
+      allow(breakdown_service)
+        .to receive(:auto_pick_projects)
+        .and_raise(ActiveRecord::ConnectionNotEstablished, "database unavailable")
+
+      breakdown = breakdown_service.call.sole
+
+      expect(breakdown).to have_attributes(
+        project: nil,
+        diagnostic_state: :unavailable,
+        next_action: "Refresh when the queue diagnostic data source recovers."
+      )
+    end
+
     it "returns a breakdown with correct counts" do
       create(:issue, project: project, github_state: "open", paid_state: "new")
       create(:issue, project: project, github_state: "open", paid_state: "new", labels: [ "tracking" ])
@@ -99,6 +115,41 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(bd.other_excluded).to eq(1)
     end
 
+    # @spec AUTO-PICK-QUEUE-014
+    it "distinguishes runnable work that has not reached the backend queue" do
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown).to have_attributes(
+        eligible: 1,
+        queued: 0,
+        active: 0,
+        diagnostic_state: :runnable_unseeded,
+        next_action: "Wait for the bounded eligibility sweep or refresh the queue."
+      )
+    end
+
+    # @spec AUTO-PICK-QUEUE-014
+    it "keeps queued backend work distinct from eligible candidates" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :queued, :automatic, project: project, issue: issue)
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown).to have_attributes(eligible: 0, queued: 1, diagnostic_state: :queued)
+    end
+
+    # @spec AUTO-PICK-QUEUE-014
+    it "explains that an empty waiting backlog can be healthy while work is active" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :running, :automatic, project: project, issue: issue)
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown).to have_attributes(eligible: 0, queued: 0, active: 1, diagnostic_state: :healthy_active)
+    end
+
     it "does not double-count recoverable-completed issues in both eligible and completed" do
       issue = create(:issue, project: project, github_state: "open", paid_state: "completed")
       create(:agent_run, :completed, :automatic, project: project, issue: issue,
@@ -112,28 +163,31 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(bd.total_open).to eq(1)
     end
 
-    it "excludes scheduler-paused projects" do
+    # @spec AUTO-PICK-QUEUE-014
+    it "shows scheduler-paused projects as an intentional policy pause" do
       project.update!(scheduler_paused_at: Time.current)
 
       result = described_class.call(user: user)
 
-      expect(result).to eq([])
+      expect(result.sole).to have_attributes(diagnostic_state: :policy_paused, eligible: 0)
     end
 
-    it "excludes account-level scheduler-paused projects" do
+    # @spec AUTO-PICK-QUEUE-014
+    it "shows account-level scheduler pauses instead of treating them as no work" do
       account.update!(scheduler_paused_at: Time.current)
 
       result = described_class.call(user: user)
 
-      expect(result).to eq([])
+      expect(result.sole).to have_attributes(diagnostic_state: :policy_paused, eligible: 0)
     end
 
-    it "excludes quality-paused projects" do
+    # @spec AUTO-PICK-QUEUE-014
+    it "shows quality-paused projects as an intentional policy pause" do
       project.update!(quality_paused_at: Time.current)
 
       result = described_class.call(user: user)
 
-      expect(result).to eq([])
+      expect(result.sole).to have_attributes(diagnostic_state: :policy_paused, eligible: 0)
     end
 
     it "excludes inactive projects" do
@@ -144,12 +198,13 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(result).to eq([])
     end
 
-    it "excludes projects with no effective owner (auto-pick would always skip them)" do
+    # @spec AUTO-PICK-QUEUE-014
+    it "shows projects without an effective automation owner as a policy pause" do
       allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(false)
 
       result = described_class.call(user: user)
 
-      expect(result).to eq([])
+      expect(result.sole).to have_attributes(diagnostic_state: :policy_paused, eligible: 0)
     end
 
     it "handles multiple projects in a single call" do

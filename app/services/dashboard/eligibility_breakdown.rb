@@ -7,6 +7,7 @@ module Dashboard
     ProjectBreakdown = Struct.new(
       :project, :total_open, :eligible, :needs_input,
       :skip_label, :completed, :in_progress, :manual_review, :other_excluded,
+      :queued, :active, :diagnostic_state, :next_action,
       keyword_init: true
     )
 
@@ -22,6 +23,9 @@ module Dashboard
       return [] if auto_pick_projects.empty?
 
       Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { build }
+    rescue ActiveRecord::ConnectionNotEstablished => error
+      Rails.logger.warn(message: "dashboard.eligibility_breakdown.unavailable", error: error.message)
+      [ unavailable_breakdown ]
     end
 
     private
@@ -34,7 +38,17 @@ module Dashboard
       # owner share one resolution; resolving it per project would re-read the
       # same configuration once per repo (#4556).
       tier_feasibility = Runners::TierFeasibility.new
-      auto_pick_projects.map { |project| breakdown_for(project, tier_feasibility: tier_feasibility) }
+      projects = auto_pick_projects
+      queued_counts = queued_counts_for(projects)
+      active_counts = active_counts_for(projects)
+      projects.map do |project|
+        breakdown_for(
+          project,
+          tier_feasibility: tier_feasibility,
+          queued: queued_counts.fetch(project.id, 0),
+          active: active_counts.fetch(project.id, 0)
+        )
+      end
     end
 
     # Preload everything the per-project gate and breakdown touch so a dashboard
@@ -48,18 +62,14 @@ module Dashboard
     def auto_pick_projects
       @auto_pick_projects ||= Project
         .includes(account: :tenant_setting, created_by: :user_setting)
-        .where(
-          account_id: user.account_id,
-          created_by_id: visible_owner_ids,
-          auto_pick_enabled: true,
-          active: true
-        )
-        .select { |p| Issues::AutoPickProjectGate.call(p) }
+        .where(account_id: user.account_id, created_by_id: visible_owner_ids, auto_pick_enabled: true, active: true)
+        .to_a
     end
 
-    # @spec OPERATOR-INBOX-002D
-    def breakdown_for(project, tier_feasibility:)
+    # @spec OPERATOR-INBOX-002D @spec AUTO-PICK-QUEUE-014
+    def breakdown_for(project, tier_feasibility:, queued:, active:)
       open = Issue.where(project: project, github_state: "open", is_pull_request: false)
+      return paused_breakdown(project, open, queued:, active:) unless Issues::AutoPickProjectGate.call(project)
 
       eligible_scope = Automation::Strategies::AutoPick::DefaultCandidateSource
         .eligible_scope(project, tier_feasibility: tier_feasibility)
@@ -79,7 +89,6 @@ module Dashboard
       manual_review = excluded.where(paid_state: "manual_review").count
       skip_label = count_skip_labeled(excluded, analyzable, project)
       other = excluded_total - needs_input - in_progress - completed - manual_review - skip_label
-
       ProjectBreakdown.new(
         project: project,
         total_open: eligible_count + excluded_total,
@@ -87,8 +96,79 @@ module Dashboard
         needs_input: needs_input, skip_label: skip_label,
         completed: completed, in_progress: in_progress,
         manual_review: manual_review,
-        other_excluded: other
+        other_excluded: other,
+        queued: queued,
+        active: active,
+        **diagnosis_for(eligible: eligible_count, queued: queued, active: active, open: eligible_count + excluded_total)
       )
+    end
+
+    def paused_breakdown(project, open, queued:, active:)
+      ProjectBreakdown.new(
+        project: project,
+        total_open: open.count,
+        eligible: 0,
+        needs_input: 0,
+        skip_label: 0,
+        completed: 0,
+        in_progress: 0,
+        manual_review: 0,
+        other_excluded: open.count,
+        queued: queued,
+        active: active,
+        diagnostic_state: :policy_paused,
+        next_action: "Check the automation owner and pause settings before changing admission policy."
+      )
+    end
+
+    def diagnosis_for(eligible:, queued:, active:, open:)
+      return { diagnostic_state: :queued, next_action: "Queued work is waiting for normal scheduler admission." } if queued.positive?
+      return { diagnostic_state: :healthy_active, next_action: "Active work is progressing; no eligible work is waiting." } if active.positive? && eligible.zero?
+      return { diagnostic_state: :runnable_unseeded, next_action: "Wait for the bounded eligibility sweep or refresh the queue." } if eligible.positive?
+      return { diagnostic_state: :held, next_action: "Inspect the Inbox or issue dependencies for the recorded blocker." } if open.positive?
+
+      { diagnostic_state: :idle, next_action: "No open issue is waiting for automatic work." }
+    end
+
+    def unavailable_breakdown
+      ProjectBreakdown.new(
+        project: nil,
+        total_open: 0,
+        eligible: 0,
+        needs_input: 0,
+        skip_label: 0,
+        completed: 0,
+        in_progress: 0,
+        manual_review: 0,
+        other_excluded: 0,
+        queued: 0,
+        active: 0,
+        diagnostic_state: :unavailable,
+        next_action: "Refresh when the queue diagnostic data source recovers."
+      )
+    end
+
+    def queued_counts_for(projects)
+      return {} if projects.empty?
+
+      # `schedulable_queued_with_priority` selects display-only priority
+      # aliases, which PostgreSQL cannot wrap in COUNT. Keep this count on the
+      # scheduler's admission predicates rather than using its presentation
+      # projection.
+      AgentRun.queued
+        .joins(project: :account)
+        .where(project_id: projects.map(&:id), accounts: { scheduler_paused_at: nil })
+        .where(projects: { scheduler_paused_at: nil })
+        .where("agent_runs.trigger_type = 'manual' OR projects.quality_paused_at IS NULL")
+        .where("agent_runs.trigger_type = 'manual' OR projects.paused = FALSE")
+        .group(:project_id)
+        .count
+    end
+
+    def active_counts_for(projects)
+      return {} if projects.empty?
+
+      AgentRun.active.where(project_id: projects.map(&:id)).group(:project_id).count
     end
 
     def count_skip_labeled(excluded_scope, analyzable_count, project)

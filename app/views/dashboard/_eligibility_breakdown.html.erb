@@ -12,12 +12,28 @@
         <% breakdowns.each do |bd| %>
           <div class="py-3">
             <div class="flex items-center justify-between gap-4">
-              <%= link_to bd.project.full_name, project_member_path(bd.project),
-                class: "text-sm font-medium text-gray-900 hover:text-indigo-600",
-                data: { turbo_frame: "_top" } %>
-              <span class="text-xs text-gray-400"><%= pluralize(bd.total_open, "open issue") %></span>
+              <% if bd.project %>
+                <%= link_to bd.project.full_name, project_member_path(bd.project),
+                  class: "text-sm font-medium text-gray-900 hover:text-indigo-600",
+                  data: { turbo_frame: "_top" } %>
+                <span class="text-xs text-gray-400"><%= pluralize(bd.total_open, "open issue") %></span>
+              <% else %>
+                <span class="text-sm font-medium text-amber-800">Queue diagnosis unavailable</span>
+              <% end %>
             </div>
             <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+              <% if bd.queued.positive? %>
+                <span class="inline-flex items-center gap-1 text-indigo-700" title="Scheduler-visible queued runs; this is distinct from eligible issue candidates.">
+                  <span class="h-1.5 w-1.5 rounded-full bg-indigo-500"></span>
+                  <%= bd.queued %> queued
+                </span>
+              <% end %>
+              <% if bd.active.positive? %>
+                <span class="inline-flex items-center gap-1 text-blue-700" title="Runs currently executing; an empty waiting queue can be healthy while these run.">
+                  <span class="h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                  <%= bd.active %> active
+                </span>
+              <% end %>
               <% if bd.eligible.positive? %>
                 <span class="inline-flex items-center gap-1 text-green-700">
                   <span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>
@@ -67,7 +83,10 @@
                 </span>
               <% end %>
               <% if bd.eligible.zero? && bd.total_open.positive? %>
-                <span class="text-gray-400">No eligible issues</span>
+                <span class="text-gray-400"><%= bd.diagnostic_state.to_s.humanize %>: <%= bd.next_action %></span>
+              <% end %>
+              <% if bd.diagnostic_state == :runnable_unseeded %>
+                <span class="text-amber-700">Runnable work has not yet been seeded. <%= bd.next_action %></span>
               <% end %>
             </div>
           </div>
