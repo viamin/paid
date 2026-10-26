@@ -20,6 +20,13 @@ class ProjectPolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin, :member) || has_project_role?
   end
 
+  # @spec AUTOMATION-PHASES-009
+  # Delegating an ordinary continuation requires the same tenant-scoped
+  # authority as starting that work. Merge remains a stricter permission.
+  def delegate_phase?
+    run_agent?
+  end
+
   def manage_issues?
     return false unless user_in_account?
 
