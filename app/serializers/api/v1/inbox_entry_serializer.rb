@@ -71,6 +71,7 @@ module Api
         when Inbox::Queue::TEST_REVIEW_PENDING_KIND then {}
         when Inbox::Queue::PROJECT_SETUP_PENDING_KIND then { tasks: entry.tasks }
         when Inbox::Queue::TRACEABILITY_GAP_KIND then traceability_gap_payload
+        when Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND then layered_verification_finding_payload
         else
           raise ArgumentError, "Unknown inbox entry kind: #{entry.kind}"
         end
@@ -184,6 +185,21 @@ module Api
           evidence: finding.evidence,
           covered_at: finding.covered_at.iso8601,
           recommended_action: finding.unverifiable? ? "Restore coverage access and recheck." : "Record an explicit owner or disposition."
+        }
+      end
+
+      def layered_verification_finding_payload
+        finding = entry.record
+        {
+          source_passages: finding.source_passages,
+          observed_behavior: finding.observed_behavior,
+          check_limitations: finding.check_limitations,
+          question: finding.decision_question,
+          options: finding.options,
+          owner_actions: finding.owner_actions,
+          state: finding.state,
+          audit_run_id: finding.agent_run_id,
+          obligation: { external_identity: finding.obligation.external_identity, scope: finding.obligation.scope_description }
         }
       end
     end
