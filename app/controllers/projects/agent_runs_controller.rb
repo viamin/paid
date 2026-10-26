@@ -290,6 +290,24 @@ module Projects
       redirect_to inbox_path, alert: error.message
     end
 
+    # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-014
+    def request_layered_verification_audit
+      authorize @project, :manage_issues?
+      run = LayeredVerification::Audits::Request.call(
+        user: current_user,
+        project: @project,
+        obligation_ids: params[:obligation_ids],
+        sources: params[:sources],
+        target_revision: params[:target_revision],
+        budget: params[:budget] || {}
+      )
+      redirect_to project_agent_run_path(@project, run), notice: "Layered-verification audit queued."
+    rescue LayeredVerification::AuditAccess::FeatureDisabledError,
+           LayeredVerification::AuditAccess::UnauthorizedError,
+           LayeredVerification::Audits::Request::ScopeRequiredError => error
+      redirect_to project_path(@project), alert: error.message
+    end
+
     def bump_priority
       authorize @project, :run_agent?
 

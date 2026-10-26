@@ -305,6 +305,7 @@ Rails.application.routes.draw do
     resources :interoperability_imports, only: [ :create ], controller: "projects/interoperability_imports"
     resources :connector_events, only: [ :index ], controller: "projects/connector_events"
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
+      post :request_layered_verification_audit, on: :collection
       post :request_continuation, on: :collection
       post :request_acceptance_audit, on: :collection
       post :resolve_closeout, on: :collection

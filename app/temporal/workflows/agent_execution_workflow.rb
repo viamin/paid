@@ -405,7 +405,7 @@ module Workflows
           # by the agent via the GitHub API proxy during execution.
           run_activity(Activities::CompleteReviewGoalActivity,
             { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
-        elsif agent_result[:has_changes] || branch_changed_before_agent
+        elsif (agent_result[:has_changes] || branch_changed_before_agent) && goal != "layered_verification_audit"
           # Step 5: Push branch (inside container)
           # Re-check proxy health before push — the agent may have run for
           # a long time and the proxy could have gone down in the meantime.
