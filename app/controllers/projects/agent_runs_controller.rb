@@ -351,6 +351,22 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Acceptance audit queued.")
     end
 
+    # The project action uses the same registry tool as chat and MCP, keeping
+    # rollout, authorization, and the persisted audit snapshot on one path.
+    # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-014
+    def request_layered_verification_audit
+      result = Tools::Registry.dispatch(
+        name: "request_layered_verification_audit",
+        arguments: { project_id: @project.id, confirmed: true },
+        user: current_user,
+        session: nil
+      )
+      audit_event("agent_run.created", metadata: { agent_run_id: result.fetch("id"), goal: result.fetch("goal") })
+      redirect_to project_agent_run_path(@project, result.fetch("id")), notice: "Layered-verification audit queued."
+    rescue LayeredVerification::AuditAccess::FeatureDisabledError, LayeredVerification::AuditAccess::UnauthorizedError, Pundit::NotAuthorizedError => e
+      redirect_to project_path(@project), alert: e.message
+    end
+
     # Records the operator's attestation that the recorded closeout evidence
     # completes the issue (evidence-gated; see Issues::ResolveCloseout).
     # @spec PARTIAL-CLOSEOUT-007

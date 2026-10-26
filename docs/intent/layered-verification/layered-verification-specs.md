@@ -5,10 +5,10 @@
 > `[ ]` active gap · `[D]` deferred. Each ID is a grep target
 > (`grep -r LAYERED-VERIFY-001`).
 >
-> These IDs are **reserved ahead of their implementation issues**
-> (#4432–#4438, optional #4439–#4440); nothing under this prefix has shipped.
-> `*Tests:*`/`*Code:*` lines below name the surfaces those issues are expected
-> to add, not code that exists today. RDR-076's `V1`–`V20` references are
+> These IDs are allocated to their implementation issues (#4432–#4438,
+> optional #4439–#4440). Claims remain unchecked until their complete behavior
+> has shipped; partial audit-path foundations do not imply repair-path delivery.
+> RDR-076's `V1`–`V20` references are
 > local review IDs inside that document, not EARS IDs — see
 > `layered-verification-design.md`'s
 > [Traceability](layered-verification-design.md#traceability-rdr-v1v20--ears--replacement-tasks)

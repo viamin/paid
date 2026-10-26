@@ -16,6 +16,7 @@ module Inbox
     TEST_REVIEW_PENDING_KIND = "test_review_pending"
     PROJECT_SETUP_PENDING_KIND = "project_setup_pending"
     TRACEABILITY_GAP_KIND = "traceability_gap"
+    LAYERED_VERIFICATION_FINDING_KIND = "layered_verification_finding"
     DEFAULT_SORT = "oldest"
     # RDR-077 §5 scopes: the default actionable list, the requests held back by
     # a disabled phase, and the requests this user personally removed.
@@ -41,7 +42,8 @@ module Inbox
       PARTIAL_CLOSEOUT_KIND,
       TEST_REVIEW_PENDING_KIND,
       PROJECT_SETUP_PENDING_KIND,
-      TRACEABILITY_GAP_KIND
+      TRACEABILITY_GAP_KIND,
+      LAYERED_VERIFICATION_FINDING_KIND
     ].freeze
     KIND_LABELS = KINDS.to_h { |kind| [ kind, kind.titleize ] }.merge(
       ESCALATED_PR_KIND => "Blocked PRs",
@@ -49,7 +51,8 @@ module Inbox
       CHANGE_INTENT_DRAFT_KIND => "CIR Drafts",
       PARTIAL_CLOSEOUT_KIND => "Partial closeouts",
       PROJECT_SETUP_PENDING_KIND => "Project setup",
-      TRACEABILITY_GAP_KIND => "Traceability gaps"
+      TRACEABILITY_GAP_KIND => "Traceability gaps",
+      LAYERED_VERIFICATION_FINDING_KIND => "Verification findings"
     ).freeze
 
     # The TDD red-phase gate label (RDR-056): test-writing runs apply it to
@@ -150,6 +153,11 @@ module Inbox
       # @spec DESIGN-RECONCILIATION-001
       def traceability_gap?
         kind == TRACEABILITY_GAP_KIND
+      end
+
+      # @spec LAYERED-VERIFY-015
+      def layered_verification_finding?
+        kind == LAYERED_VERIFICATION_FINDING_KIND
       end
 
       # Lane chips default to the kind name, but an unverifiable finding is an
@@ -407,6 +415,7 @@ module Inbox
         entries.concat(test_review_pending_entries) if include_kind?(TEST_REVIEW_PENDING_KIND)
         entries.concat(project_setup_pending_entries) if include_kind?(PROJECT_SETUP_PENDING_KIND)
         entries.concat(traceability_gap_entries) if include_kind?(TRACEABILITY_GAP_KIND)
+        entries.concat(layered_verification_finding_entries) if include_kind?(LAYERED_VERIFICATION_FINDING_KIND)
         entries_by_id = entries.index_by(&:id)
         Inbox::PhaseOwnership.for_entries(entries).each do |entry_id, ownership|
           entries_by_id.fetch(entry_id).instance_variable_set(:@phase_ownership, ownership)
@@ -965,6 +974,29 @@ module Inbox
           summary_text: traceability_summary(finding),
           title_text: traceability_title(finding),
           action_url: nil
+        )
+      end
+    end
+
+    # Findings are durable, project-scoped audit output. A deferred finding
+    # remains visible because deferral is not a resolution.
+    # @spec LAYERED-VERIFY-015 @spec LAYERED-VERIFY-016
+    def layered_verification_finding_entries
+      scope = project ? project.layered_verification_findings : LayeredVerificationFinding.where(project: scoped_projects)
+
+      only_record(scope.actionable.includes(:project, :obligation).order(:created_at, :id)).map do |finding|
+        Entry.new(
+          id: "#{LAYERED_VERIFICATION_FINDING_KIND}:#{finding.id}",
+          kind: LAYERED_VERIFICATION_FINDING_KIND,
+          project: finding.project,
+          issue: nil,
+          record: finding,
+          waiting_since: finding.created_at,
+          questions: [ finding.question ],
+          tasks: finding.owner_actions,
+          summary_text: finding.observed_behavior,
+          title_text: "Verification finding: #{finding.obligation_external_identity}",
+          action_url: finding.links["audit_url"]
         )
       end
     end

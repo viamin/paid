@@ -399,6 +399,19 @@
 
     <%= render "projects/quality_summary", project: @project, quality_summary: @quality_summary %>
 
+    <% if FeatureFlags.enabled?(:layered_verification_add_on, project: @project) && policy(@project).manage_issues? %>
+      <% audit_obligations = @project.layered_verification_obligations.order(:id) %>
+      <% audit_sources = audit_obligations.pluck(:external_identity).to_sentence.presence || "no persisted obligations" %>
+      <% audit_revision = audit_obligations.pick(:external_revision).presence || "the current repository revision" %>
+      <div class="mt-8">
+        <%= button_to "Request verification audit",
+                      request_layered_verification_audit_project_agent_runs_path(@project),
+                      method: :post,
+                      class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500",
+                      form: { data: { turbo_confirm: "Audit #{audit_sources} at #{audit_revision} with a #{number_with_delimiter(@project.account.default_max_tokens_per_run)} token budget? This investigation never authorizes repair." } } %>
+      </div>
+    <% end %>
+
     <%= render "projects/agent_runs",
                project: @project,
                recent_agent_runs: @recent_agent_runs,
