@@ -1645,9 +1645,12 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
 
     describe "#provision_mcp_servers" do
-      it "delegates to Containers::McpProvisioner#provision" do
+      it "delegates to a provisioner for the run's execution host" do
         provisioner = instance_double(Containers::McpProvisioner)
-        allow(Containers::McpProvisioner).to receive(:new).and_return(provisioner)
+        backend = instance_double(Containers::Backends::Base)
+        allow(agent_run).to receive(:container_host).and_return("remote")
+        allow(Containers).to receive(:backend_for).with("remote").and_return(backend)
+        allow(Containers::McpProvisioner).to receive(:new).with(backend:).and_return(provisioner)
         allow(provisioner).to receive(:provision)
           .with(agent_run, network: "paid_agent")
           .and_return(stdio_servers: [], url_servers: [])
@@ -1659,9 +1662,12 @@ RSpec.describe ExecutionRunners::LocalDockerRunner do
     end
 
     describe "#cleanup_mcp_servers" do
-      it "delegates to Containers::McpProvisioner#cleanup" do
+      it "delegates cleanup to a provisioner for the run's execution host" do
         provisioner = instance_double(Containers::McpProvisioner)
-        allow(Containers::McpProvisioner).to receive(:new).and_return(provisioner)
+        backend = instance_double(Containers::Backends::Base)
+        allow(agent_run).to receive(:container_host).and_return("remote")
+        allow(Containers).to receive(:backend_for).with("remote").and_return(backend)
+        allow(Containers::McpProvisioner).to receive(:new).with(backend:).and_return(provisioner)
         expect(provisioner).to receive(:cleanup).with(agent_run)
 
         runner.cleanup_mcp_servers(agent_run: agent_run)

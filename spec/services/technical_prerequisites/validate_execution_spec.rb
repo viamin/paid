@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe TechnicalPrerequisites::ValidateExecution do
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, :queued, project:, base_commit_sha: "a" * 40) }
-  let(:provisioner) { instance_double(Containers::McpProvisioner, provision: {}, cleanup: nil) }
+  let(:execution_runner) { instance_double(ExecutionRunners::Base, provision_mcp_servers: {}, cleanup_mcp_servers: nil) }
   let(:execution_environment) { instance_double(Containers::Provision) }
   let(:git_operations) { instance_double(Containers::GitOperations, clone_and_restore_branch: nil, head_sha: "b" * 40) }
 
@@ -23,7 +23,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler.call)
     allow(agent_run).to receive(:provision_execution_environment)
 
-    result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], provisioner:)
+    result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
 
     expect(result.status).to eq("unavailable")
     expect(result.setup_action).to include("marketplace_tool_sidecars")
@@ -44,7 +44,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
       .and_return(stdout: "analyzer 1.0", stderr: "", exit_code: 0)
     allow(agent_run).to receive(:cleanup_execution_environment)
 
-    result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], provisioner:)
+    result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
 
     expect(result).to be_success
     expect(agent_run).to have_received(:provision_execution_environment).with(container_host: "remote")
@@ -61,20 +61,25 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
   end
 
   # @spec PARTIAL-CLOSEOUT-030
-  it "provisions sidecars before executing with their persisted endpoints" do
+  it "provisions and cleans up sidecars through the selected execution runner" do
     allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler_result([ "remote" ]))
     allow(FeatureFlags).to receive(:enabled?).with(:marketplace_tool_sidecars, project:).and_return(true)
     allow(agent_run).to receive(:provision_execution_environment)
     allow(agent_run).to receive(:cleanup_execution_environment)
 
-    expect(provisioner).to receive(:provision).with(agent_run).ordered
+    expect(execution_runner).to receive(:provision_mcp_servers).with(
+      agent_run:,
+      network: Containers::Provision.network_for(agent_run:)
+    ).ordered
     expect(agent_run).to receive(:execute_in_execution_environment).with(
       [ "analyzer", "--version" ],
       stream: false,
       env: { "PAID_TOOL_SIDECAR_ENDPOINTS" => '[{"name":"analyzer","url":"http://analyzer:8080"}]' }
     ).ordered.and_return(stdout: "analyzer 1.0", stderr: "", exit_code: 0)
 
-    described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], provisioner:)
+    expect(execution_runner).to receive(:cleanup_mcp_servers).with(agent_run:).ordered
+
+    described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
   end
 
   # @spec PARTIAL-CLOSEOUT-030
@@ -82,7 +87,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler_result([]))
     allow(agent_run).to receive(:provision_execution_environment)
 
-    result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], provisioner:)
+    result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
 
     expect(result.status).to eq("unavailable")
     expect(result.setup_action).to eq("Configure or restore a compatible execution backend for this project.")
@@ -95,7 +100,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler_result([], requirements_error: error))
     allow(agent_run).to receive(:provision_execution_environment)
 
-    result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], provisioner:)
+    result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
 
     expect(result.status).to eq("unavailable")
     expect(result.setup_action).to eq("Resolve execution requirements: #{error}")

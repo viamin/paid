@@ -62,6 +62,10 @@ module Containers
       server
     end
 
+    def initialize(backend: Containers.backend)
+      @backend = backend
+    end
+
     # Provisions MCP servers and hardened tool sidecars from the agent run's
     # snapshot.
     #
@@ -191,6 +195,8 @@ module Containers
 
     private
 
+    attr_reader :backend
+
     # Materializes an npx MCP definition into a stdio server spec.
     # The agent execution layer will launch this command inside the container.
     def materialize_npx_server(definition)
@@ -208,7 +214,7 @@ module Containers
         raise Error, "docker_image MCP server #{definition["name"].inspect} requires transport \"sse\", got #{transport.inspect}"
       end
 
-      Containers::Provision.ensure_network!(network: @network, backend: Containers.backend)
+      Containers::Provision.ensure_network!(network: @network, backend: backend)
 
       image = definition["image"]
       name = definition["name"]
@@ -226,7 +232,7 @@ module Containers
       )
 
       begin
-        Containers.backend.start_container(container) unless container_running?(container)
+        backend.start_container(container) unless container_running?(container)
         wait_for_health!(container, hostname, port)
       rescue => e
         remove_container(container)
@@ -282,7 +288,7 @@ module Containers
       validate_tool_image_allowlisted!(agent_run, image)
       validate_tool_hardening_override!(image, env)
 
-      Containers::Provision.ensure_network!(network: @network, backend: Containers.backend)
+      Containers::Provision.ensure_network!(network: @network, backend: backend)
 
       hostname = tool_sidecar_hostname(agent_run, name)
 
@@ -296,7 +302,7 @@ module Containers
       )
 
       begin
-        Containers.backend.start_container(container) unless container_running?(container)
+        backend.start_container(container) unless container_running?(container)
         wait_for_tool_health!(container, hostname, port)
       rescue Error
         remove_container(container)
@@ -370,7 +376,7 @@ module Containers
     # creates a new one. Mirrors the docker_image adoption path so retries
     # are idempotent.
     def adopt_or_create_tool_sidecar(image:, hostname:, port:, env:, agent_run:)
-      Containers.backend.get_container(hostname)
+      backend.get_container(hostname)
     rescue Docker::Error::NotFoundError
       create_hardened_tool_sidecar_container(
         image: image,
@@ -431,7 +437,7 @@ module Containers
       }
       options["User"] = hardening[:user] if hardening[:user].present?
 
-      Containers.backend.create_container(options)
+      backend.create_container(options)
     rescue Docker::Error::DockerError => e
       raise Error, "Failed to create tool sidecar container: #{e.message}"
     end
@@ -439,7 +445,7 @@ module Containers
     # Adopts an existing sidecar container (from a prior attempt) or creates
     # a new one. This makes provisioning idempotent across activity retries.
     def adopt_or_create_sidecar(image:, hostname:, port:, env:, agent_run:)
-      Containers.backend.get_container(hostname)
+      backend.get_container(hostname)
     rescue Docker::Error::NotFoundError
       create_sidecar_container(image: image, hostname: hostname, port: port, env: env, agent_run: agent_run)
     end
@@ -452,7 +458,7 @@ module Containers
     end
 
     def create_sidecar_container(image:, hostname:, port:, env:, agent_run:)
-      Containers.backend.create_container(
+      backend.create_container(
         "Image" => image,
         "name" => hostname,
         "Env" => env.map { |k, v| "#{k}=#{v}" },
@@ -482,7 +488,7 @@ module Containers
     end
 
     def pull_image(image)
-      Containers.backend.pull_image("fromImage" => image)
+      backend.pull_image("fromImage" => image)
     rescue Docker::Error::NotFoundError
       raise Error, "MCP server image not found: #{image}"
     rescue Docker::Error::DockerError => e
@@ -491,7 +497,7 @@ module Containers
 
     # @spec TOOL-SIDECAR-005
     def pull_tool_image(image)
-      Containers.backend.pull_image("fromImage" => image)
+      backend.pull_image("fromImage" => image)
     rescue Docker::Error::NotFoundError
       raise Error, "Tool sidecar image not found: #{image}"
     rescue Docker::Error::DockerError => e
@@ -502,7 +508,7 @@ module Containers
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + HEALTH_CHECK_TIMEOUT
 
       loop do
-        return if Containers::TcpHealthProbe.open?(backend: Containers.backend, container: container, host: hostname, port: port)
+        return if Containers::TcpHealthProbe.open?(backend:, container: container, host: hostname, port: port)
 
         if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
           raise Error, "Health check timeout for MCP sidecar #{hostname}:#{port}"
@@ -517,7 +523,7 @@ module Containers
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + HEALTH_CHECK_TIMEOUT
 
       loop do
-        return if Containers::TcpHealthProbe.open?(backend: Containers.backend, container: container, host: hostname, port: port)
+        return if Containers::TcpHealthProbe.open?(backend:, container: container, host: hostname, port: port)
 
         if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
           raise Error, "Health check timeout for tool sidecar #{hostname}:#{port}"
@@ -588,7 +594,7 @@ module Containers
     end
 
     def preserve_sidecar_during_reprovision?(agent_run, container_id)
-      container = Containers.backend.get_container(container_id)
+      container = backend.get_container(container_id)
       labels = container.json.fetch("Config", {}).fetch("Labels", {})
 
       labels[AgentRuns::Verification::BROWSER_LABEL] == "true" &&
@@ -604,12 +610,12 @@ module Containers
     end
 
     def remove_container(container)
-      Containers.backend.stop_container(container, timeout: 10)
+      backend.stop_container(container, timeout: 10)
     rescue Docker::Error::NotFoundError, Docker::Error::ClientError, Docker::Error::ServerError
       # Already stopped or daemon error — proceed to force-delete
     ensure
       begin
-        Containers.backend.delete_container(container, force: true, v: true)
+        backend.delete_container(container, force: true, v: true)
       rescue Docker::Error::NotFoundError
         # Already gone
       rescue Docker::Error::DockerError => e
@@ -619,9 +625,9 @@ module Containers
     end
 
     def remove_container_by_id(container_id)
-      container = Containers.backend.get_container(container_id)
+      container = backend.get_container(container_id)
       begin
-        Containers.backend.stop_container(container, timeout: 10)
+        backend.stop_container(container, timeout: 10)
       rescue Docker::Error::NotFoundError, Docker::Error::ClientError
         # Already stopped
       end
@@ -633,7 +639,7 @@ module Containers
     ensure
       if container
         begin
-          Containers.backend.delete_container(container, force: true, v: true)
+          backend.delete_container(container, force: true, v: true)
         rescue Docker::Error::NotFoundError
           # Already gone
         rescue Docker::Error::DockerError => e

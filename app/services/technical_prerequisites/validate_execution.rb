@@ -18,11 +18,11 @@ module TechnicalPrerequisites
 
     def self.call(...) = new(...).call
 
-    def initialize(agent_run:, native_command:, sidecar_command: nil, provisioner: Containers::McpProvisioner.new)
+    def initialize(agent_run:, native_command:, sidecar_command: nil, execution_runner: nil)
       @agent_run = agent_run
       @native_command = validate_command!(native_command)
       @sidecar_command = sidecar_command && validate_command!(sidecar_command)
-      @provisioner = provisioner
+      @execution_runner = execution_runner
     end
 
     def call
@@ -39,13 +39,13 @@ module TechnicalPrerequisites
 
     private
 
-    attr_reader :agent_run, :native_command, :provisioner, :sidecar_command
+    attr_reader :agent_run, :native_command, :sidecar_command
 
     def execute_validation(inspection)
       agent_run.provision_execution_environment(container_host: inspection.host)
       @environment_provisioned = true
       checkout = prepare_checkout
-      provisioner.provision(agent_run)
+      provision_sidecars
       tool_endpoints = agent_run.reload.tool_sidecar_endpoints
       command_environment = tool_sidecar_environment(tool_endpoints)
       native = capture(native_command, env: command_environment)
@@ -68,6 +68,17 @@ module TechnicalPrerequisites
       return {} if endpoints.blank?
 
       { "PAID_TOOL_SIDECAR_ENDPOINTS" => endpoints.to_json }
+    end
+
+    def provision_sidecars
+      execution_runner.provision_mcp_servers(
+        agent_run:,
+        network: Containers::Provision.network_for(agent_run:)
+      )
+    end
+
+    def execution_runner
+      @execution_runner ||= ExecutionRunners.resolve_for(agent_run)
     end
 
     def capture(command, env:)
@@ -116,7 +127,7 @@ module TechnicalPrerequisites
 
     def cleanup_errors
       [
-        -> { provisioner.cleanup(agent_run) },
+        -> { execution_runner.cleanup_mcp_servers(agent_run:) },
         -> { agent_run.cleanup_execution_environment(force: true) }
       ].filter_map do |cleanup_step|
         cleanup_step.call
