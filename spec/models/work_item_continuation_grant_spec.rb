@@ -34,6 +34,25 @@ RSpec.describe WorkItemContinuationGrant do
     expect(grant).not_to be_valid
   end
 
+  # @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-009
+  it "rejects a grant whose work item belongs to another project" do
+    other_project = create(:project, account:)
+    other_issue = create(:issue, project: other_project)
+    grant = build(:work_item_continuation_grant, project:, issue: other_issue, created_by: user)
+
+    expect(grant).not_to be_valid
+    expect(grant.errors[:issue]).to include("must belong to the project")
+  end
+
+  # @spec AUTOMATION-PHASES-009
+  it "rejects a grant whose author belongs to another account" do
+    other_user = create(:user)
+    grant = build(:work_item_continuation_grant, project:, issue:, created_by: other_user)
+
+    expect(grant).not_to be_valid
+    expect(grant.errors[:created_by]).to include("must belong to the project's account")
+  end
+
   describe "completion" do
     it "completes when the endpoint's work lands" do
       grant = create(:work_item_continuation_grant, project:, issue:)
@@ -85,6 +104,14 @@ RSpec.describe WorkItemContinuationGrant do
       grant.complete!
 
       expect(grant.revoke!(user:)).to be(false)
+    end
+
+    # @spec AUTOMATION-PHASES-009
+    it "rejects recording a revoker from another account" do
+      grant = create(:work_item_continuation_grant, project:, issue:)
+
+      expect { grant.revoke!(user: create(:user)) }
+        .to raise_error(ActiveRecord::RecordInvalid, /Revoked by must belong to the project's account/)
     end
   end
 
