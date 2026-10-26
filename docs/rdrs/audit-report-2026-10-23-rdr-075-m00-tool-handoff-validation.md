@@ -333,6 +333,27 @@ RDR-073 extension can be decided from an unprovisioned environment; retain
 the existing direction that an extension is filed only if a completed live
 validation identifies a checkout-dependent sidecar need.
 
+## #4604 supported-lifecycle availability check — 2026-10-26
+
+**Result: no live validation was run, and this is not evidence that Paid lacks
+execution capability.** This workspace has no `docker`, `podman`, or
+`nerdctl` client; neither `/var/run/docker.sock` nor `/run/docker.sock` is
+present; and no `DOCKER_*` endpoint is configured. The available PostgreSQL
+credential is deliberately rejected by the application's runtime-role guard
+because it has `SUPERUSER` and `BYPASSRLS`; the check therefore did not inspect
+or operate `DockerHost` records by bypassing that control. No configured remote
+host or pilot authorization is available to this run through Paid's supported
+lifecycle.
+
+The recovery path is to run both scenarios from an authorized,
+Docker-capable Paid deployment with a project, pinned checkout, approved agent
+image, and the `marketplace_tool_sidecars` pilot authorization already in
+place. That operator must provision the fresh run and allowlisted sidecar
+through the normal run/tool lifecycle, capture the two required artifacts, and
+verify cleanup. This follow-up must remain open until then; enabling the flag,
+creating an unapproved host, or weakening the database-role guard would not be
+valid substitutes for the evidence.
+
 ## Disposition
 
 This report resolves critical assumption 1 only. Critical assumption 2 remains
@@ -357,10 +378,14 @@ arrow entry track #4604 as the evidence owner. This report does not:
 
 The #4604 revalidation on 2026-10-24 confirms that those two evidence
 artifacts remain blocked specifically by the absence of a Docker-capable
-execution environment. RDR-075 remains Draft, its `maintenance-runs` arrow
+execution environment. The 2026-10-26 supported-lifecycle availability check
+does not alter that conclusion or infer anything about remote Paid capacity:
+it records only that the isolated workspace could not reach an authorized
+execution lifecycle. RDR-075 remains Draft, its `maintenance-runs` arrow
 remains a draft-only mapping, and implementation phases #4328–#4333 remain
-unreleased. Move the validation to a Docker-capable environment rather than
-inferring live lifecycle behavior from static tests or host-only commands.
+unreleased. Move the validation to an authorized Docker-capable environment
+rather than inferring live lifecycle behavior from static tests, host-only
+commands, or this workspace's unavailable capability.
 
 Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
 an HLD pointer) are reviewable drafts for the same pending human-review gate,

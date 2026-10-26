@@ -18,7 +18,10 @@
   [#4604](https://github.com/viamin/paid/issues/4604). Its 2026-10-24
   revalidation found no Docker client, socket, or alternate local engine, so
   the required native-analyzer and sidecar artifacts remain uncollected and
-  must run in a Docker-capable execution environment.
+  must run through an authorized Docker-capable Paid execution lifecycle. The
+  2026-10-26 availability check does not infer that Paid lacks remote
+  execution capability: it records only that the isolated workspace could not
+  reach an approved host or pilot authorization without bypassing controls.
 
 ## Dependencies
 
