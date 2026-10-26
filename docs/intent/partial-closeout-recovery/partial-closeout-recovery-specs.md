@@ -518,3 +518,16 @@
   `spec/services/inbox/chat_context_spec.rb`,
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-030** — When an operator dismisses a human-prerequisite
+  notification, the system SHALL preserve the documented personal-removal
+  semantics but SHALL NOT treat dismissal as evidence acceptance or release
+  the partial-closeout scheduling guard. Only the existing verified resolution
+  path may release that guard and trigger its eligible-work reassessment. The
+  originating Inbox pane SHALL disclose that distinction and direct operators
+  to submit evidence and request the supported continuation instead of
+  inferring acceptance from a dismissed notification.
+  *Code:* `app/models/notification.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/models/notification_spec.rb`.

@@ -376,6 +376,16 @@ those revisions change.
 
 ## Alternatives considered
 
+### Prerequisite notification authority
+
+The prerequisite notification remains the scheduling guard until the existing
+verified resolution path resolves it. Dismissal remains a personal Inbox
+removal action, but cannot attest that an artifact, comment, URL, green run, or
+report met acceptance. The originating closeout pane explains this difference:
+operators submit evidence through the prerequisite's supported path and then
+request the existing scoped continuation; normal admission and reassessment
+still decide whether work may proceed.
+
 - *Lift the merged-PR guard via paid_state*: explicitly rejected — the guard is
   deliberately state-independent (#3432/#3588 review follow-up).
 - *Blanket "clear blocker" action*: rejected by the issue; recovery actions are
