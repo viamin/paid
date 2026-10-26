@@ -103,11 +103,22 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        {
+          questions: entry.questions,
+          comment_url: entry.manual_review_comment_url,
+          recovery: manual_review_recovery_payload
+        }
       end
 
       def manual_review_list_payload
-        { questions: entry.questions }
+        { questions: entry.questions, recovery: manual_review_recovery_payload }
+      end
+
+      def manual_review_recovery_payload
+        recovery = entry.manual_review_recovery
+        return { cause: :unknown, action: :investigate, references: [] } unless recovery
+
+        { cause: recovery.cause, action: recovery.action, references: recovery.references }
       end
 
       # entry.record is Inbox::IntentConformance::Snapshot, already carrying

@@ -1,12 +1,21 @@
 <%# @spec OPERATOR-INBOX-002D %>
+<% recovery = Inbox::ManualReviewRecovery.call(issue: entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.retry_enhancement? && entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
-      <% else %>
+      <% elsif recovery.retry_enhancement? %>
         Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+      <% elsif recovery.cause == :reopen_review %>
+        This issue was reopened after closure. Review the original closure and remaining scope, then record an authorized intent-validation decision before continuing work.
+      <% elsif recovery.cause == :dependency_wait %>
+        This issue remains blocked by <%= recovery.references.join(", ") %>. The dependency must resolve before work is re-evaluated; acknowledging this hold does not waive it.
+      <% elsif recovery.cause == :scanner_recurrence %>
+        Scanner evidence found the remediation did not resolve the alert. Review that evidence and explicitly authorize scanner remediation if more implementation is appropriate.
+      <% else %>
+        Paid retained this hold because its producer could not be proven. Investigate the recorded reason before choosing a recovery action.
       <% end %>
     </p>
   </div>
@@ -34,7 +43,7 @@
       The terminal round's preserved clarifying questions ARE the manual
       review this state asks for: render the same answer form the
       clarifying_questions lane uses, submitting to the same endpoint. %>
-  <% if entry.questions.any? %>
+  <% if recovery.retry_enhancement? && entry.questions.any? %>
     <%= render "dashboard/inbox_clarifying_answer_form",
           entry: entry,
           scoped_project: scoped_project,
@@ -42,7 +51,7 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if recovery.retry_enhancement? && policy(entry.project).run_agent? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

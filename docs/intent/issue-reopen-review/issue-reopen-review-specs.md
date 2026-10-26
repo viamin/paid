@@ -30,3 +30,14 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - While a reopened issue has the dedicated
+  reopen-review hold, the Inbox SHALL identify that hold from the durable
+  marker and SHALL not route it through enhancement retry. The operator SHALL
+  be told that an authorized intent-validation decision is required before
+  further work can be continued.
+  *Tests:* `spec/services/inbox/manual_review_recovery_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`,
+  `Projects::AgentRunsController`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.

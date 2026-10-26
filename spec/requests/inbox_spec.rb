@@ -1018,6 +1018,40 @@ RSpec.describe "Inbox" do
     )
   end
 
+  # @spec OPERATOR-INBOX-002K ISSUE-REOPEN-REVIEW-005
+  it "renders a reopen-review decision hold without an enhancement retry" do
+    reopened = create_manual_review_issue(
+      title: "Reopened issue",
+      github_number: 4604,
+      reason: Issue::REOPEN_REVIEW_REQUIRED_REASON
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, reopened),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response.body).to include("authorized intent-validation decision")
+    expect(response.body).not_to include("Start enhancement run")
+  end
+
+  # @spec OPERATOR-INBOX-002K
+  it "keeps an unknown manual-review cause visible without guessing an enhancement retry" do
+    parked = create_manual_review_issue(
+      title: "Unknown manual review",
+      github_number: 4605,
+      reason: "Awaiting operator investigation from an unavailable producer."
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response.body).to include("producer could not be proven")
+    expect(response.body).not_to include("Start enhancement run")
+  end
+
   # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
   it "renders the clarifying-questions answer form for a manual_review issue with preserved terminal-round questions" do
     parked = create_manual_review_issue(

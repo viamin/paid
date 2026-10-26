@@ -323,6 +323,16 @@ bumps the badge cache version; no inbox-side cache work is needed. A stale
 or double click degrades to "This issue is no longer waiting for manual
 review." instead of an active-run error.
 
+The action is selected from persisted producer evidence, not from the prose in
+`manual_review_reason`. The dedicated reopen-review marker remains a decision
+hold; live prerequisite records remain a dependency wait; and a
+scanner-confirmed recurrence remains a scanner-remediation decision. Only an
+enhancement-produced hold exposes the enhancement retry and answer form. An
+unclassified hold remains visibly investigable rather than being guessed to be
+an enhancement failure. Before retrying enhancement, Paid checks every queued
+or running run for the issue so a manual click cannot create incompatible
+parallel work.
+
 When the parked state still has clarifying questions stored — preserved by
 `EnhanceIssueActivity` when the terminal round's comment has a parseable
 `## Clarifying questions` section, and kept by

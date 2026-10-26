@@ -407,13 +407,24 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002K
     def resume_manual_review
       authorize @project, :run_agent?
 
       issue = resolve_manual_review_issue
       unless issue
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue)
+      unless recovery.retry_enhancement?
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_recovery_alert(recovery)
+        return
+      end
+
+      if issue.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
+        redirect_to safe_return_target || dashboard_path, alert: "This issue already has queued or running work; reconcile that run before resuming manual review."
         return
       end
 
@@ -1031,6 +1042,19 @@ module Projects
         "Please select an issue."
       else
         "This issue is no longer waiting for manual review."
+      end
+    end
+
+    def manual_review_recovery_alert(recovery)
+      case recovery.action
+      when :record_reopen_validation
+        "This reopened issue needs an authorized intent-validation decision before work can resume."
+      when :wait_for_dependency
+        "This issue is waiting on unresolved dependency #{recovery.references.join(', ')}; resolving it will re-evaluate work."
+      when :authorize_scanner_remediation
+        "This scanner recurrence needs an explicit remediation authorization, not an enhancement retry."
+      else
+        "This manual-review hold has no proven recovery action; investigate its recorded reason before resuming work."
       end
     end
 
