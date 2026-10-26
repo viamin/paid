@@ -22,6 +22,13 @@ RSpec.describe Tools::TriggerAgentRun do
       expect(schema[:type]).to eq("object")
       expect(schema).not_to include(:oneOf, :anyOf, :allOf, :enum, :const, :not)
     end
+
+    # @spec LAYERED-VERIFY-012
+    it "does not advertise layered-verification goals through the generic tool" do
+      goals = described_class.input_schema.dig(:properties, :goal, :enum)
+
+      expect(goals).not_to include(*AgentRun::LAYERED_VERIFICATION_GOALS)
+    end
   end
 
   describe "#call" do
@@ -49,6 +56,15 @@ RSpec.describe Tools::TriggerAgentRun do
       expect {
         tool.call(project_id: project.id, issue_id: issue.id, confirmed: false)
       }.to raise_error(ArgumentError, /Confirmation required/)
+    end
+
+    # @spec LAYERED-VERIFY-012
+    it "rejects layered-verification goals even when callers bypass the schema" do
+      AgentRun::LAYERED_VERIFICATION_GOALS.each do |goal|
+        expect {
+          tool.call(project_id: project.id, goal: goal, custom_prompt: "Audit payment authorization.", confirmed: true)
+        }.to raise_error(ArgumentError, /dedicated entry point/)
+      end
     end
 
     # @spec CHAT-TOOL-CONFIRMATION-003
