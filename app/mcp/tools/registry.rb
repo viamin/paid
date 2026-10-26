@@ -85,7 +85,8 @@ module Tools
       "Tools::VerifyAppleProject",
       "Tools::GetAppleVerification",
       "Tools::CaptureAppleScreenshot",
-      "Tools::StopAppleVerification"
+      "Tools::StopAppleVerification",
+      "Tools::RequestLayeredVerificationAudit"
     ].freeze
 
     class << self

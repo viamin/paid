@@ -4095,7 +4095,10 @@ class AgentRun < ApplicationRecord
     return if lid_planning_goal?
     # create_feature derives its prompt from Prompts::BuildForCreateFeature
     # and external_metadata["feature_brief"], so it needs no issue or source PR.
-    return if create_feature_goal?
+    # @spec LAYERED-VERIFY-013
+    # Manual audits are bounded by their persisted obligation scope and do not
+    # originate from a GitHub issue or a free-form implementation prompt.
+    return if create_feature_goal? || goal == "layered_verification_audit"
     return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
 
     errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")
