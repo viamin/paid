@@ -14,6 +14,7 @@ module Tools
       "Tools::UpdateProjectSettings",
       "Tools::UpdateIssueControlState",
       "Tools::TriggerAgentRun",
+      "Tools::RequestLayeredVerificationAudit",
       "Tools::TriggerReadinessBootstrap",
       "Tools::RequestIssueContinuation",
       "Tools::RequestAcceptanceAudit",

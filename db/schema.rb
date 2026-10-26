@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_26_171411) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2816,6 +2816,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
     t.index ["obligation_id"], name: "idx_on_obligation_id_495e991968"
   end
 
+  create_table "layered_verification_findings", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.string "cause_signature", null: false
+    t.string "correspondence_claim_type", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "detail", default: {}, null: false
+    t.bigint "obligation_id", null: false
+    t.bigint "project_id", null: false
+    t.string "status", default: "open", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "index_layered_verification_findings_on_agent_run_id"
+    t.index ["obligation_id"], name: "index_layered_verification_findings_on_obligation_id"
+    t.index ["project_id", "obligation_id", "correspondence_claim_type", "cause_signature"], name: "index_layered_verification_findings_identity", unique: true
+    t.index ["project_id"], name: "index_layered_verification_findings_on_project_id"
+  end
+
   create_table "layered_verification_obligations", force: :cascade do |t|
     t.string "approval_state", default: "unresolved", null: false
     t.string "approved_revision_reference"
@@ -4839,6 +4855,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
   add_foreign_key "layered_verification_check_results", "layered_verification_correspondence_claims", column: "correspondence_claim_id", on_delete: :cascade
   add_foreign_key "layered_verification_check_results", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
   add_foreign_key "layered_verification_correspondence_claims", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
+  add_foreign_key "layered_verification_findings", "agent_runs"
+  add_foreign_key "layered_verification_findings", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
+  add_foreign_key "layered_verification_findings", "projects", on_delete: :cascade
   add_foreign_key "layered_verification_obligations", "change_intents", on_delete: :nullify
   add_foreign_key "layered_verification_obligations", "layered_verification_obligations", column: "superseded_by_id", on_delete: :nullify
   add_foreign_key "layered_verification_obligations", "projects", on_delete: :cascade
