@@ -351,6 +351,20 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Acceptance audit queued.")
     end
 
+    # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-014
+    def request_layered_verification_audit
+      authorize @project, :manage_issues?
+      run = LayeredVerification::Audits::Request.call(
+        project: @project, user: current_user, obligation_ids: params[:obligation_ids],
+        target_revision: params[:target_revision], budget: params[:budget] || {}, selections: params[:selections] || {}
+      )
+      redirect_to project_agent_run_path(@project, run), notice: "Verification audit queued."
+    rescue LayeredVerification::AuditAccess::FeatureDisabledError,
+           LayeredVerification::AuditAccess::UnauthorizedError,
+           LayeredVerification::Audits::Request::EmptyScopeError => error
+      redirect_to project_path(@project), alert: error.message
+    end
+
     # Records the operator's attestation that the recorded closeout evidence
     # completes the issue (evidence-gated; see Issues::ResolveCloseout).
     # @spec PARTIAL-CLOSEOUT-007

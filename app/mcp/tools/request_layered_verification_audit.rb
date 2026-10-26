@@ -1,0 +1,70 @@
+# frozen_string_literal: true
+
+module Tools
+  class RequestLayeredVerificationAudit < BaseTool
+    authorize :manage_issues?, ->(args) { project_for(args.fetch(:project_id)) }, policy_class: ProjectPolicy
+
+    def self.tool_name = "request_layered_verification_audit"
+    def self.write_operation? = true
+    def self.mcp_available? = true
+    def self.confirmation_mode = :post_dispatch
+
+    def self.description
+      "Prepare and dispatch a bounded, issue-less verification audit for a project. It records evidence and findings only; it never starts repair."
+    end
+
+    def self.available_to?(user:)
+      return false if user.blank?
+
+      Pundit.policy_scope!(user, Project).any? { |project| available_for_project?(user:, project:) }
+    end
+
+    def self.available_for_chat?(user:, session:)
+      project = session&.project
+      project.present? && available_for_project?(user:, project:)
+    end
+
+    def self.input_schema
+      {
+        type: "object",
+        properties: {
+          project_id: { type: "integer" }, obligation_ids: { type: "array", items: { type: "integer" } },
+          target_revision: { type: "string" }, budget: { type: "object" }, selections: { type: "object" }
+        }, required: %w[project_id obligation_ids target_revision budget]
+      }
+    end
+
+    # The returned preview is the confirmation payload; dispatch occurs only
+    # after the chat/MCP confirmation resolver approves it.
+    def perform(project_id:, obligation_ids:, target_revision:, budget:, selections: {})
+      project = project_for(project_id)
+      obligations = project.layered_verification_obligations.where(id: obligation_ids).order(:id)
+      raise ArgumentError, "select at least one obligation" if obligations.empty?
+
+      { "project_id" => project.id, "obligation_ids" => obligations.ids, "target_revision" => target_revision,
+        "budget" => budget, "plan" => LayeredVerification::Plans::Build.call(obligations:, selections:) }
+    end
+
+    def resolve_confirmation(decision:, pending_result:)
+      raise ArgumentError, "decision must be approve or deny" unless decision.in?([ :approve, :deny ])
+      return { status: "cancelled" } if decision == :deny
+
+      payload = pending_result.deep_stringify_keys
+      run = LayeredVerification::Audits::Request.call(
+        project: project_for(payload.fetch("project_id")), user: current_user,
+        obligation_ids: payload.fetch("obligation_ids"), target_revision: payload.fetch("target_revision"),
+        budget: payload.fetch("budget"), selections: payload.fetch("plan").transform_values { |plan| { "selected_checks" => plan["selected_checks"], "fit" => plan["fit"], "exclusions" => plan["exclusions"], "required_inputs" => plan["required_inputs"], "assumptions" => plan["assumptions"], "resource_expectations" => plan["resource_expectations"], "residual_gaps" => plan["residual_gaps"] } }
+      )
+      { id: run.id, status: run.status, goal: run.goal }
+    end
+
+    private
+
+    def self.available_for_project?(user:, project:)
+      FeatureFlags.enabled?(:layered_verification_add_on, project:) &&
+        policy_allows?(user:, record: project, query: :manage_issues?, policy_class: ProjectPolicy)
+    end
+
+    def project_for(id) = policy_scope(Project).find(id)
+  end
+end

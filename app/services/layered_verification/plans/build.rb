@@ -1,0 +1,38 @@
+# frozen_string_literal: true
+
+module LayeredVerification
+  module Plans
+    # Produces an explicit, auditable plan; semantic selection is supplied by
+    # agent_harness at execution time, while this class preserves its contract.
+    # @spec LAYERED-VERIFY-021
+    class Build
+      def self.call(...) = new(...).call
+
+      def initialize(obligations:, selections: {})
+        @obligations = obligations
+        @selections = selections
+      end
+
+      def call
+        obligations.index_with { |obligation| plan_for(obligation) }
+      end
+
+      private
+
+      attr_reader :obligations, :selections
+
+      def plan_for(obligation)
+        selection = selections.fetch(obligation.id, selections.fetch(obligation.id.to_s, {})).deep_stringify_keys
+        {
+          "selected_checks" => Array(selection["selected_checks"]),
+          "fit" => selection["fit"].to_s,
+          "exclusions" => Array(selection["exclusions"]),
+          "required_inputs" => Array(selection["required_inputs"]),
+          "assumptions" => Array(selection["assumptions"]),
+          "resource_expectations" => selection["resource_expectations"] || {},
+          "residual_gaps" => Array(selection["residual_gaps"])
+        }
+      end
+    end
+  end
+end
