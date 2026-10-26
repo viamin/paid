@@ -26,6 +26,14 @@ class ProjectPolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin, :member) || has_project_role?
   end
 
+  # @spec AUTOMATION-PHASES-009
+  # A continuation grant delegates automatic work beyond the selected manual
+  # action. Its author must therefore retain the ordinary authority to start
+  # project work, even when the endpoint does not reach merge.
+  def delegate_automation?
+    run_agent?
+  end
+
   # @spec APPLE-VERIFY-002
   # @spec APPLE-VERIFY-003
   # RDR-077 §3: only users who may delegate the covered actions may create a
