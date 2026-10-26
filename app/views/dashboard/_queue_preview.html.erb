@@ -36,6 +36,27 @@
       </div>
     </div>
   <% else %>
+    <% diagnosis = local_assigns[:queue_diagnosis] %>
+    <% if diagnosis&.state == :unknown %>
+      <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
+        <p class="text-sm text-amber-800">Queue diagnosis is unavailable. <%= diagnosis.next_action %></p>
+      </div>
+    <% elsif diagnosis&.state == :runnable_unseeded %>
+      <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
+        <p class="text-sm text-amber-800"><%= pluralize(diagnosis.eligible_count, "eligible issue") %> have not been seeded into the backend queue. <%= diagnosis.next_action %></p>
+      </div>
+    <% elsif diagnosis&.state == :held %>
+      <div class="mt-4 rounded-md bg-blue-50 p-3 ring-1 ring-inset ring-blue-200">
+        <p class="text-sm text-blue-800">Open work is waiting on dependencies or decisions. <%= diagnosis.next_action %></p>
+        <% diagnosis.blockers.each do |blocker| %>
+          <p class="mt-1 text-sm text-blue-800">#<%= blocker.issue.github_number %>: <%= blocker.message %></p>
+        <% end %>
+      </div>
+    <% elsif diagnosis&.state == :healthy_active %>
+      <p class="mt-4 text-sm text-gray-500"><%= pluralize(diagnosis.active_count, "run") %> are active; there is no waiting backlog.</p>
+    <% elsif diagnosis&.state == :waiting_queue %>
+      <p class="mt-4 text-sm text-gray-500"><%= pluralize(diagnosis.queued_count, "backend run") %> are queued but are not present in this preview. Refresh the dashboard if this remains visible.</p>
+    <% else %>
     <% paused_autopick = Array(local_assigns[:paused_projects]).count(&:auto_pick_enabled?) %>
     <% if paused_autopick.positive? %>
       <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
@@ -49,6 +70,7 @@
       </div>
     <% else %>
       <p class="mt-4 text-sm text-gray-500">No queued runs for your projects.</p>
+    <% end %>
     <% end %>
   <% end %>
 </div>
