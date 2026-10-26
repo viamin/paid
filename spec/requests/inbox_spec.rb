@@ -1018,6 +1018,17 @@ RSpec.describe "Inbox" do
     )
   end
 
+  # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002D
+  it "renders the revision-bound reopen-review decision instead of an enhancement retry" do
+    reopened = create_manual_review_issue(title: "Reopened validation", github_number: 4604,
+      reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, reopened), kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response.body).to include("Record decision and collect evidence", "Record decision and resume implementation")
+    expect(response.body).not_to include("Start enhancement run")
+  end
+
   # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
   it "renders the clarifying-questions answer form for a manual_review issue with preserved terminal-round questions" do
     parked = create_manual_review_issue(

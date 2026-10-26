@@ -30,3 +30,11 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resolves a
+  pending reopen review, the system SHALL bind the recorded reason and chosen
+  continuation to the currently rendered issue revision, refuse a stale or
+  incomplete submission, inspect existing queued or running work before
+  creating anything, and either reuse that work or start only the selected
+  evidence-collection (`analyze_issue`) or implementation (`create_pr`) run.
+  *Code:* `Inbox::ManualReviewRecovery`, `Projects::AgentRunsController`.

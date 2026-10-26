@@ -420,6 +420,12 @@ module Projects
         return
       end
 
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue, questions: Inbox::Queue.questions_for(issue))
+      unless recovery.enhancement?
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_recovery_alert(recovery)
+        return
+      end
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
@@ -428,6 +434,31 @@ module Projects
         goal: "enhance_issue",
         priority_tier: nil
       )
+    end
+
+    # Records a revision-bound reopen decision before starting its selected
+    # supported continuation. A stale detail pane cannot clear a new hold.
+    # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002D
+    def resolve_reopen_review
+      authorize @project, :run_agent?
+
+      issue = resolve_manual_review_issue
+      unless issue&.reopen_review_pending?
+        redirect_to safe_return_target || dashboard_path, alert: "This issue is no longer awaiting reopen review."
+        return
+      end
+      unless params[:reason].to_s.strip.present? && params[:review_revision] == issue.updated_at.utc.iso8601
+        redirect_to safe_return_target || dashboard_path, alert: "Provide a reason and refresh the issue before recording this reopen decision."
+        return
+      end
+
+      Audit::RecordEvent.call(action: "issue.reopen_review_decided", actor: current_user, subject: issue,
+        metadata: { reason: params[:reason].to_s.strip, revision: params[:review_revision], continuation: params[:continuation] })
+      if params[:continuation] == "collect_evidence"
+        create_manual_review_run(issue, "analyze_issue", "Reopen review decision: collect current validation evidence. #{params[:reason].to_s.strip}")
+      else
+        create_manual_review_run(issue, "create_pr", "Reopen review decision: resume implementation. #{params[:reason].to_s.strip}")
+      end
     end
 
     # Operator-driven counterpart to
@@ -1049,6 +1080,40 @@ module Projects
       else
         "This issue is no longer waiting for manual review."
       end
+    end
+
+    def manual_review_recovery_alert(recovery)
+      case recovery.cause
+      when :reopen_review then "Record the reopen-review decision before continuing work."
+      when :dependency then recovery.message
+      when :scanner_recurrence then "Review scanner evidence and start a remediation run from the project runs page if authorized."
+      else "This manual-review hold has no recognized recovery action."
+      end
+    end
+
+    def create_manual_review_run(issue, goal, prompt)
+      active = issue.agent_runs.where(status: AgentRun::DEDUP_BLOCKING_STATUSES).order(created_at: :desc).first
+      if active
+        redirect_to safe_return_target || dashboard_path, notice: "Reusing active run ##{active.id}; no second run was created."
+        return
+      end
+
+      budget = CostBudgets::Check.call(@project)
+      unless budget[:allowed]
+        redirect_to safe_return_target || dashboard_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+        return
+      end
+
+      ActiveRecord::Base.transaction do
+        create_agent_run(issue:, custom_prompt: prompt, goal:)
+        resume_issue_from_manual_review(issue)
+      end
+      ProcessRunQueueJob.perform_later
+      redirect_to safe_return_target || dashboard_path, notice: "Recorded the reopen-review decision and queued #{goal.humanize} work."
+    rescue NoRunnableRunnerError, InvalidDockerHostSelectionError, ActiveRecord::RecordInvalid => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
+    rescue ActiveRecord::RecordNotUnique
+      redirect_to safe_return_target || dashboard_path, alert: "An agent run is already queued or in progress."
     end
 
     def cancel_in_flight_execution_for_resume!

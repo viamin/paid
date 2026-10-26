@@ -21,9 +21,17 @@ review reason. The Inbox exposes this state to an operator, and ordinary
 automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
-An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+An operator resolves the issue from manual review only after validating whether
+the original closure remains sufficient and what scope remains. The Inbox shows
+that closure context as a dedicated reopen-review cause and requires a nonblank
+reason bound to the displayed issue revision. The decision is audit-recorded
+with its actor, revision, and selected continuation. The operator can collect
+current validation evidence through `analyze_issue` or resume implementation
+through `create_pr`; neither path is an enhancement retry. Before either is
+queued, Paid reuses an existing queued/running/rate-limited issue run rather
+than clearing the hold or creating competing work. Automated completion
+activities re-check this gate immediately before changing an issue to
+`completed`, so an in-flight run cannot overwrite it after sync.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

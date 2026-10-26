@@ -1,15 +1,45 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec OPERATOR-INBOX-002D ISSUE-REOPEN-REVIEW-005 %>
+<% recovery = entry.guidance || Inbox::ManualReviewRecovery.call(issue: entry.issue, questions: entry.questions) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.reopen_review? %>
+        Paid needs a recorded reopen-review decision before it can continue this issue.
+      <% elsif recovery.dependency? %>
+        Paid is waiting for a real dependency; acknowledging this hold does not waive it.
+      <% elsif recovery.scanner_recurrence? %>
+        Paid needs an explicit remediation decision for the scanner recurrence.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
+      <% elsif recovery.enhancement? %>
+        Automatic picking skips issues in manual review. Start an enhancement run to retry the recorded enhancement stop.
       <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+        This hold has an unknown cause. Paid will not guess which workflow to restart.
       <% end %>
     </p>
   </div>
+
+  <% if recovery.reopen_review? && policy(entry.project).run_agent? %>
+    <%= form_with url: resolve_reopen_review_project_agent_runs_path(entry.project), method: :post, class: "space-y-3" do |form| %>
+      <%= hidden_field_tag :issue_id, entry.issue.id %>
+      <%= hidden_field_tag :review_revision, entry.issue.updated_at.utc.iso8601 %>
+      <%= hidden_field_tag :return_to, inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+      <%= form.label :reason, "Reopen-review decision and remaining scope", class: "block text-sm font-semibold text-gray-900" %>
+      <%= form.text_area :reason, required: true, rows: 3, class: "block w-full rounded-md border-gray-300" %>
+      <div class="flex flex-wrap gap-3">
+        <%= form.button "Record decision and collect evidence", name: :continuation, value: "collect_evidence", class: "rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white" %>
+        <%= form.button "Record decision and resume implementation", name: :continuation, value: "resume_implementation", class: "rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white" %>
+      </div>
+    <% end %>
+  <% elsif recovery.dependency? %>
+    <p class="text-sm text-gray-700"><%= recovery.message %></p>
+    <% recovery.blockers.each do |blocker| %>
+      <%= link_to "View ##{blocker.github_number}", blocker.github_url, target: "_blank", rel: "noopener noreferrer", class: "text-sm font-semibold text-purple-700" %>
+    <% end %>
+  <% elsif recovery.scanner_recurrence? %>
+    <%= link_to "Open remediation run", new_project_agent_run_path(entry.project, goal: "create_pr", issue_id: entry.issue.id), class: "text-sm font-semibold text-purple-700" %>
+  <% end %>
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
@@ -42,7 +72,7 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && recovery.enhancement? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

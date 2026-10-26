@@ -122,7 +122,8 @@
   automation stopped (`manual_review_reason`) and how long it has been stopped
   (`manual_review_started_at`, falling back to `updated_at` for legacy rows —
   `ISSUE-ENHANCEMENT-012`). The entry SHALL offer an operator-triggered manual
-  `enhance_issue` run as its clearing action, since automatic picking excludes
+  `enhance_issue` run only when durable enhancement provenance is the cause,
+  since automatic picking excludes
   `manual_review` and only an explicit operator-triggered run resumes work
   (`ISSUE-ENHANCEMENT-011`). Queuing that run SHALL transition the issue out
   of `manual_review` in the same request — inside the same transaction that
@@ -162,6 +163,20 @@
   auto-pick skips until the run completes. An entry with no preserved
   questions renders the state + "Start
   enhancement run" button only, as before.
+  The shared recovery classifier SHALL retain and visibly name unknown causes;
+  it SHALL classify reopen-review state from `Issue#reopen_review_pending?`,
+  unresolved dependencies from the issue dependency relations, scanner
+  recurrence from scanner-verification evidence, and enhancement stops from
+  preserved questions or the latest enhancement run. Reopen review SHALL show
+  a revision-bound decision form whose authorized choices record a reason and
+  either collect evidence (`analyze_issue`) or resume implementation
+  (`create_pr`). A real dependency SHALL link to its blocker and remain held
+  until normal dependency resolution; a decision or acknowledgement SHALL not
+  waive it. Scanner recurrence SHALL retain its evidence and require an
+  explicit remediation choice. Before any continuation clears a hold, the
+  action SHALL inspect queued, running, paused, and rate-limited work and
+  reuse it rather than create a competing run. Web and API payloads SHALL use
+  the same classified cause and action.
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
   `app/services/inbox/manual_review_comment_link.rb`,
   `app/services/dashboard/eligibility_breakdown.rb`, `app/models/issue.rb`,

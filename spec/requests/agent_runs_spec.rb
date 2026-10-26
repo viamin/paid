@@ -2719,6 +2719,42 @@ RSpec.describe "AgentRuns" do
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/resolve_reopen_review" do
+    let(:reopened_issue) do
+      create(:issue, project: project, github_number: 4604, paid_state: "manual_review",
+        manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+    end
+
+    before { sign_in user }
+
+    # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002D
+    it "records a revision-bound evidence decision and queues analysis instead of enhancement" do
+      expect {
+        post resolve_reopen_review_project_agent_runs_path(project), params: {
+          issue_id: reopened_issue.id, reason: "Live validation artifacts are still required.",
+          review_revision: reopened_issue.updated_at.utc.iso8601, continuation: "collect_evidence"
+        }
+      }.to change(AgentRun, :count).by(1)
+
+      expect(AgentRun.last).to have_attributes(issue: reopened_issue, goal: "analyze_issue")
+      expect(reopened_issue.reload).to have_attributes(paid_state: "in_progress", manual_review_reason: nil)
+      expect(AccountActivityEvent.where(action: "issue.reopen_review_decided", subject: reopened_issue)).to exist
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005
+    it "refuses a stale reopen decision without clearing the hold or creating work" do
+      expect {
+        post resolve_reopen_review_project_agent_runs_path(project), params: {
+          issue_id: reopened_issue.id, reason: "Resume implementation.", review_revision: 1.hour.ago.utc.iso8601,
+          continuation: "resume_implementation"
+        }
+      }.not_to change(AgentRun, :count)
+
+      expect(reopened_issue.reload).to be_reopen_review_pending
+      expect(flash[:alert]).to include("refresh")
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/clear_retry_abandonment" do
     let(:capped_issue) do
       create(:issue,
