@@ -6,6 +6,14 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, :queued, project:, base_commit_sha: "a" * 40) }
   let(:provisioner) { instance_double(Containers::McpProvisioner, provision: {}, cleanup: nil) }
+  let(:execution_environment) { instance_double(Containers::Provision) }
+  let(:git_operations) { instance_double(Containers::GitOperations, clone_and_restore_branch: nil, head_sha: "b" * 40) }
+
+  before do
+    allow(Containers::Provision).to receive(:reconnect).and_return(execution_environment)
+    allow(Containers::GitOperations).to receive(:new).and_return(git_operations)
+    allow(agent_run).to receive(:tool_sidecar_endpoints).and_return([ { "name" => "analyzer", "url" => "http://analyzer:8080" } ])
+  end
 
   # @spec PARTIAL-CLOSEOUT-030
   it "records an exact rollout approval action instead of retrying when the tool flag is off" do
@@ -36,8 +44,15 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
 
     expect(result).to be_success
     expect(agent_run).to have_received(:provision_execution_environment).with(container_host: "remote")
+    expect(git_operations).to have_received(:clone_and_restore_branch).with(
+      branch_name: agent_run.branch_name,
+      base_commit_sha: "a" * 40
+    )
     expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true)
     expect(agent_run.reload.verification_result.dig("technical_prerequisite_validation", "native")).to include("stdout" => "analyzer 1.0", "exit_code" => 0)
+    expect(agent_run.verification_result.dig("technical_prerequisite_validation", "checkout")).to eq("b" * 40)
+    expect(agent_run.verification_result.dig("technical_prerequisite_validation", "tool_endpoints"))
+      .to contain_exactly(include("name" => "analyzer"))
     expect(agent_run.reload.verification_result.dig("technical_prerequisite_validation", "cleanup")).to include("completed" => true)
   end
 

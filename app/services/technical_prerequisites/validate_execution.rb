@@ -30,7 +30,8 @@ module TechnicalPrerequisites
       return persist_unavailable(inspection) unless inspection.runnable?
 
       execute_validation(inspection)
-    rescue Containers::Provision::Error, ExecutionRunners::Error, Containers::McpProvisioner::Error => error
+    rescue Containers::Provision::Error, Containers::GitOperations::Error,
+      ExecutionRunners::Error, Containers::McpProvisioner::Error => error
       persist_terminal("failed", error: error.message)
     ensure
       cleanup
@@ -43,11 +44,22 @@ module TechnicalPrerequisites
     def execute_validation(inspection)
       agent_run.provision_execution_environment(container_host: inspection.host)
       @environment_provisioned = true
+      checkout = prepare_checkout
       provisioner.provision(agent_run)
       native = capture(native_command)
       sidecar = sidecar_command && capture(sidecar_command)
       status = [ native, sidecar ].compact.all? { |result| result["exit_code"] == 0 } ? "completed" : "failed"
-      persist_terminal(status, native: native, sidecar: sidecar, inspection: inspection.to_h)
+      persist_terminal(status, checkout:, native:, sidecar:,
+        tool_endpoints: agent_run.reload.tool_sidecar_endpoints, inspection: inspection.to_h)
+    end
+
+    def prepare_checkout
+      execution_environment = Containers::Provision.reconnect(
+        agent_run:, container_id: agent_run.container_id, worktree_path: agent_run.worktree_path
+      )
+      git_operations = Containers::GitOperations.new(container_service: execution_environment, agent_run:)
+      git_operations.clone_and_restore_branch(branch_name: agent_run.branch_name, base_commit_sha: agent_run.base_commit_sha)
+      git_operations.head_sha
     end
 
     def capture(command)
@@ -70,8 +82,9 @@ module TechnicalPrerequisites
       evidence = {
         "status" => status,
         "recorded_at" => Time.current.iso8601,
-        "image" => agent_run.external_metadata["runtime_image"],
-        "checkout" => agent_run.base_commit_sha,
+        "image" => agent_run.external_metadata["runtime_image"] || Containers::Provision::DEFAULTS[:image],
+        "requested_checkout" => agent_run.base_commit_sha,
+        "checkout" => nil,
         "tool_identity" => agent_run.tool_sidecar_snapshot.map { |tool| tool.slice("name", "image", "version") },
         "cleanup" => { "attempted" => true }
       }.merge(attributes.compact.stringify_keys)
@@ -83,15 +96,26 @@ module TechnicalPrerequisites
     def cleanup
       return unless @environment_provisioned
 
-      provisioner.cleanup(agent_run)
-      agent_run.cleanup_execution_environment(force: true)
-      update_cleanup(completed: true)
-    rescue Containers::Provision::Error, ExecutionRunners::Error, Containers::McpProvisioner::Error => error
+      errors = cleanup_errors
+      return update_cleanup(completed: true) if errors.empty?
+
       agent_run.update!(verification_result: agent_run.verification_result.merge(
         "technical_prerequisite_validation" => agent_run.verification_result.fetch("technical_prerequisite_validation", {}).merge(
-          "cleanup" => { "attempted" => true, "completed" => false, "error" => error.message }
+          "cleanup" => { "attempted" => true, "completed" => false, "errors" => errors }
         )
       ))
+    end
+
+    def cleanup_errors
+      [
+        -> { provisioner.cleanup(agent_run) },
+        -> { agent_run.cleanup_execution_environment(force: true) }
+      ].filter_map do |cleanup_step|
+        cleanup_step.call
+        nil
+      rescue Containers::Provision::Error, ExecutionRunners::Error, Containers::McpProvisioner::Error => error
+        { "class" => error.class.name, "message" => error.message }
+      end
     end
 
     def update_cleanup(completed:)

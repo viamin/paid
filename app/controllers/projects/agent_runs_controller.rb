@@ -351,6 +351,28 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Acceptance audit queued.")
     end
 
+    # Starts a reviewed recipe against a fresh pinned run; the resulting run
+    # detail provides progress and cancellation, and this action provides retry.
+    # @spec PARTIAL-CLOSEOUT-030
+    def validate_technical_prerequisite
+      authorize @project, :run_agent?
+
+      source_run = @project.agent_runs.find_by(id: params[:source_run_id])
+      requirement = PreCommitRequirement.resolve(project: @project, user: current_user)
+        .find { |candidate| candidate.id == params[:requirement_id].to_i }
+      unless source_run&.issue_id == params[:issue_id].to_i && requirement
+        redirect_to safe_return_target || dashboard_path, alert: "Select a pinned run and enabled validation recipe."
+        return
+      end
+
+      result = TechnicalPrerequisites::StartValidation.call(source_run:, requirement:, actor: current_user)
+      if result.success?
+        redirect_to project_agent_run_path(@project, result.agent_run), notice: result.message
+      else
+        redirect_to safe_return_target || dashboard_path, alert: result.message
+      end
+    end
+
     # Records the operator's attestation that the recorded closeout evidence
     # completes the issue (evidence-gated; see Issues::ResolveCloseout).
     # @spec PARTIAL-CLOSEOUT-007

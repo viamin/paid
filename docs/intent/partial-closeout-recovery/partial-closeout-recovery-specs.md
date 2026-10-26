@@ -16,8 +16,13 @@
       identity and cleanup evidence, and report `unavailable`, `failed`, or
       `completed` without exposing host shell or Docker-socket access.
       *Code:* `app/services/technical_prerequisites/capability_inspection.rb`,
-      `app/services/technical_prerequisites/validate_execution.rb`.
-      *Test:* `spec/services/technical_prerequisites/validate_execution_spec.rb`.
+      `app/services/technical_prerequisites/start_validation.rb`,
+      `app/services/technical_prerequisites/validate_execution.rb`,
+      `app/jobs/technical_prerequisite_validation_job.rb`,
+      `app/controllers/projects/agent_runs_controller.rb`.
+      *Test:* `spec/services/technical_prerequisites/validate_execution_spec.rb`,
+      `spec/services/technical_prerequisites/start_validation_spec.rb`,
+      `spec/requests/projects/technical_prerequisite_validations_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
