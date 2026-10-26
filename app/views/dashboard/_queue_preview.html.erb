@@ -36,6 +36,7 @@
       </div>
     </div>
   <% else %>
+    <% diagnosis = local_assigns[:queue_diagnosis] %>
     <% paused_autopick = Array(local_assigns[:paused_projects]).count(&:auto_pick_enabled?) %>
     <% if paused_autopick.positive? %>
       <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
@@ -48,7 +49,17 @@
         </p>
       </div>
     <% else %>
-      <p class="mt-4 text-sm text-gray-500">No queued runs for your projects.</p>
+      <% if diagnosis&.state == :runnable_unseeded %>
+        <p class="mt-4 text-sm text-amber-800">No queued runs, but <%= pluralize(diagnosis.eligible_count, "eligible issue") %> await seeding. The periodic eligibility sweep will retry normal admission controls.</p>
+      <% elsif diagnosis&.state == :active_work %>
+        <p class="mt-4 text-sm text-gray-500">No waiting runs; <%= pluralize(diagnosis.active_count, "run") %> <%= diagnosis.active_count == 1 ? "is" : "are" %> already active.</p>
+      <% elsif diagnosis&.state == :dependency_or_decision_hold %>
+        <p class="mt-4 text-sm text-gray-500">No waiting runs. Open work is held by dependencies or an operator decision; review Auto-Pick Eligibility and Action Required.</p>
+      <% elsif diagnosis&.state == :unknown %>
+        <p class="mt-4 text-sm text-amber-800">Queue coverage is currently unavailable. Refresh to retry; this does not mean there is no work.</p>
+      <% else %>
+        <p class="mt-4 text-sm text-gray-500">No queued runs for your projects.</p>
+      <% end %>
     <% end %>
   <% end %>
 </div>
