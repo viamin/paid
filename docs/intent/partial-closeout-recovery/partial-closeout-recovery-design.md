@@ -290,6 +290,17 @@ completes a run, what resolves an Inbox item internally, and what closes a
 GitHub issue or epic through a final PR — including that internal resolution
 leaves GitHub open and that new terminal evidence can resurface the item, and
 that audit completion, gap transfer, and epic acceptance are distinct
+
+### Prerequisite notification authority
+
+A partial-closeout prerequisite notification is a shared scheduling guard, not
+an acceptance assessment. An operator may dismiss it from their personal Inbox,
+but dismissal only removes that presentation; it does not resolve the
+prerequisite, release scheduling, or attest that supplied evidence is
+sufficient. Only the evidence-validation disposition may resolve the
+notification and trigger the existing eager eligibility reassessment. This
+keeps personal notification removal distinct from a current, revision-bound
+acceptance judgment.
 outcomes (a follow-up owner is not completed acceptance evidence; an explicit
 scope revision preserves ownership of the outstanding requirement).
 

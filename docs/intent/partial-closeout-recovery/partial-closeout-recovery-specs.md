@@ -429,6 +429,15 @@
   *Test:* `spec/requests/inbox_partial_closeout_guide_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-030** — When an operator dismisses a
+  partial-closeout prerequisite notification, Paid SHALL preserve the personal
+  Inbox removal but SHALL NOT treat dismissal as evidence satisfaction, resolve
+  the shared prerequisite, release its scheduling guard, or enqueue a
+  continuation. Only an explicit evidence-backed resolution may release that
+  guard and invoke the existing eligibility reassessment.
+  *Code:* `app/models/notification.rb`.
+  *Test:* `spec/models/notification_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-014** — When an operator resolves a stalled issue as
   complete, the system SHALL present an editable completion-rationale input
   (never a hidden pre-filled reason) whose guidance asks for a specific
