@@ -30,3 +30,12 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator acts on a
+  pending reopen-review Inbox item, the system SHALL require a non-blank
+  reason, confirmation that the prior closure and remaining scope were
+  reviewed, and the current GitHub revision. It SHALL record that decision and
+  queue one `analyze_issue` validation-evidence run; it SHALL refuse a stale
+  revision or existing queued/running issue work without clearing the hold.
+  *Tests:* `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Issues::ManualReviewRecovery`, `Projects::AgentRunsController`.

@@ -1,9 +1,18 @@
 <%# @spec OPERATOR-INBOX-002D %>
+<% recovery = Issues::ManualReviewRecovery.call(issue: entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.cause == :reopen_review %>
+        This issue was reopened after closure. Review the original closure and remaining scope, record a revision-bound decision, then collect validation evidence.
+      <% elsif recovery.cause == :dependency %>
+        This issue is waiting on a dependency. Resolving that owner work automatically reevaluates this hold.
+      <% elsif recovery.cause == :scanner_recurrence %>
+        Scanner verification found a recurrence. Review the evidence and explicitly resume remediation if appropriate.
+      <% elsif recovery.cause == :unknown %>
+        Paid retained this hold, but its provenance is unknown. The reason remains visible; use project runs to choose a supported recovery.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
         Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
@@ -42,8 +51,28 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
-      <%= button_to "Start enhancement run",
+    <% if recovery.cause == :dependency && recovery.dependency %>
+      <%= link_to "View blocking issue ##{recovery.dependency.github_number}", recovery.dependency.github_url,
+            target: "_blank", rel: "noopener noreferrer",
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    <% elsif policy(entry.project).run_agent? && recovery.cause == :reopen_review %>
+      <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project), method: :post,
+            class: "flex flex-wrap items-end gap-2", data: { turbo_frame: "_top" } do |form| %>
+        <%= form.hidden_field :issue_id, value: entry.issue.id %>
+        <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+        <%= form.hidden_field :reviewed_revision, value: recovery.revision %>
+        <label class="text-sm text-gray-700"><%= form.check_box :reopen_review_confirmed %> I reviewed the prior closure and remaining scope</label>
+        <%= form.text_field :reopen_review_reason, required: true, placeholder: "Why validation is needed", class: "rounded-md border-gray-300 text-sm" %>
+        <%= form.submit "Record review and collect validation evidence", class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+      <% end %>
+    <% elsif policy(entry.project).run_agent? && recovery.cause != :unknown %>
+      <% label = case recovery.cause
+                 when :reopen_review then "Record review and collect validation evidence"
+                 when :scanner_recurrence then "Resume remediation"
+                 when :technical_recovery then "Retry technical recovery"
+                 else "Start enhancement run"
+                 end %>
+      <%= button_to label,
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,
             params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },

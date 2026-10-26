@@ -2692,6 +2692,41 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND))
       end
+
+      # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002D
+      it "records a revision-bound reopen decision and queues validation evidence" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_confirmed: "1",
+            reopen_review_reason: "Live validation artifacts remain uncollected.",
+            reviewed_revision: parked_issue.github_updated_at.iso8601
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(AgentRun.last).to have_attributes(goal: "analyze_issue", trigger_type: "manual")
+        expect(AccountActivityEvent.where(action: "issue.reopen_review_validated", subject: parked_issue)).to exist
+        expect(parked_issue.reload.paid_state).to eq("in_progress")
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002D
+      it "does not clear a reopen hold when the submitted review revision is stale" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_confirmed: "1",
+            reopen_review_reason: "Live validation artifacts remain uncollected.",
+            reviewed_revision: 1.hour.ago.iso8601
+          }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+        expect(flash[:alert]).to include("changed after")
+      end
     end
   end
 

@@ -323,6 +323,16 @@ bumps the badge cache version; no inbox-side cache work is needed. A stale
 or double click degrades to "This issue is no longer waiting for manual
 review." instead of an active-run error.
 
+The action is cause-specific. The dedicated reopen-review marker requires a
+revision-bound, reasoned operator decision and then queues `analyze_issue` to
+collect validation evidence. A real unresolved dependency links to its owner
+and remains held for normal dependency resolution. Scanner recurrence queues
+the existing remediation goal, while enhancement provenance keeps the existing
+enhancement retry. Failed non-enhancement work retries its recorded technical
+goal. An unknown cause stays visible without a guessed action. In every case,
+an existing queued or running issue run is retained and surfaced for
+reconciliation instead of creating a second run or clearing the hold.
+
 When the parked state still has clarifying questions stored — preserved by
 `EnhanceIssueActivity` when the terminal round's comment has a parseable
 `## Clarifying questions` section, and kept by

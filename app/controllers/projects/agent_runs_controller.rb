@@ -407,7 +407,7 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -417,14 +417,13 @@ module Projects
         return
       end
 
-      create_enhance_issue_runs_and_redirect(
-        issue_ids: [ issue.id ],
-        on_error_path: safe_return_target || dashboard_path,
-        success_path: safe_return_target || dashboard_path,
-        custom_prompt: nil,
-        goal: "enhance_issue",
-        priority_tier: nil
-      )
+      recovery = Issues::ManualReviewRecovery.call(issue: issue)
+      return redirect_manual_review_recovery_error(recovery) if recovery.active_run
+      return redirect_manual_review_recovery_error(recovery) if recovery.cause == :dependency
+      return redirect_manual_review_recovery_error(recovery) unless recovery.actionable?
+      return unless record_reopen_review_decision(issue, recovery)
+
+      queue_manual_review_recovery(issue, recovery)
     end
 
     # Operator-driven counterpart to
@@ -981,6 +980,76 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
+    end
+
+    def record_reopen_review_decision(issue, recovery)
+      return true unless recovery.cause == :reopen_review
+
+      if params[:reopen_review_confirmed] != "1" || params[:reopen_review_reason].to_s.strip.blank?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Confirm the closure review and provide a reason before collecting reopen validation evidence."
+        return false
+      end
+      if params[:reviewed_revision] != recovery.revision
+        redirect_to safe_return_target || dashboard_path,
+          alert: "The issue changed after this review page was opened. Refresh it before recording a decision."
+        return false
+      end
+
+      audit_event(
+        "issue.reopen_review_validated",
+        subject: issue,
+        metadata: { issue_id: issue.id, github_number: issue.github_number, revision: recovery.revision,
+                    reason: params[:reopen_review_reason].to_s.strip, decision: "collect_validation_evidence" }
+      )
+      true
+    end
+
+    def queue_manual_review_recovery(issue, recovery)
+      budget = CostBudgets::Check.call(@project)
+      unless budget[:allowed]
+        redirect_to safe_return_target || dashboard_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+        return
+      end
+
+      existing_run = issue.with_lock do
+        issue.reload
+        active_run = issue.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).order(created_at: :asc).first
+        next active_run if active_run
+
+        create_agent_run(issue: issue, goal: recovery.goal)
+        resume_issue_from_manual_review(issue)
+        nil
+      end
+      return redirect_manual_review_recovery_error(Issues::ManualReviewRecovery.call(issue: issue)) if existing_run
+
+      ProcessRunQueueJob.perform_later
+      redirect_to safe_return_target || dashboard_path, notice: manual_review_recovery_notice(recovery)
+    rescue NoRunnableRunnerError, InvalidDockerHostSelectionError => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
+    rescue ActiveRecord::RecordNotUnique
+      redirect_to safe_return_target || dashboard_path, alert: "Work is already queued for this issue; refresh the Inbox to reconcile it."
+    end
+
+    def redirect_manual_review_recovery_error(recovery)
+      message = case recovery.cause
+      when :dependency
+        "This issue is waiting on ##{recovery.dependency.github_number}. Resolve that dependency; Paid will reevaluate it automatically."
+      when :unknown
+        "Manual review provenance is unknown. Review the issue and choose a supported run from the project runs page."
+      else
+        "Run ##{recovery.active_run.id} is already #{recovery.active_run.status} for this issue. Refresh the Inbox to reconcile the existing work."
+      end
+      redirect_to safe_return_target || dashboard_path, alert: message
+    end
+
+    def manual_review_recovery_notice(recovery)
+      case recovery.cause
+      when :reopen_review then "Reopen review decision recorded; validation evidence run queued."
+      when :scanner_recurrence then "Scanner recurrence remediation run queued."
+      when :technical_recovery then "Technical recovery run queued."
+      else "Agent run queued for issue enhancement."
+      end
     end
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap
