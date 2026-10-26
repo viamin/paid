@@ -148,6 +148,30 @@ RSpec.describe Dashboard::QueuePreview do
       expect(rendered).to include("approximate dispatch order from the next batch of queued work")
     end
 
+    # @spec AUTO-PICK-QUEUE-014
+    it "shows backend queue freshness guidance instead of treating an empty render as no work" do
+      diagnosis = Dashboard::QueueDiagnosis::Result.new(
+        status: :backend_queued,
+        project_ids: [],
+        open_count: 4,
+        eligible_count: 2,
+        queued_count: 1,
+        active_count: 1,
+        held_count: 2,
+        error: nil
+      )
+
+      rendered = ApplicationController.render(
+        partial: "dashboard/queue_preview",
+        locals: { queue_preview: [], paused_projects: [], queue_fairness_mode: "fair_share", queue_diagnosis: diagnosis }
+      )
+
+      expect(rendered).to include("1 queued run exists in the scheduler")
+      expect(rendered).to include("Refresh queue")
+      expect(rendered).to include("4 open")
+      expect(rendered).to include("2 eligible")
+    end
+
     it "updates the preview copy for strict-priority accounts" do
       rendered = ApplicationController.render(
         partial: "dashboard/queue_preview",

@@ -36,7 +36,16 @@
       </div>
     </div>
   <% else %>
+    <% diagnosis = local_assigns[:queue_diagnosis] %>
     <% paused_autopick = Array(local_assigns[:paused_projects]).count(&:auto_pick_enabled?) %>
+    <% if diagnosis && diagnosis.status != :unknown %>
+      <p class="mt-4 text-sm text-gray-500">
+        <%= pluralize(diagnosis.open_count, "open issue") %> ·
+        <%= pluralize(diagnosis.eligible_count, "eligible issue") %> ·
+        <%= pluralize(diagnosis.queued_count, "queued run") %> ·
+        <%= pluralize(diagnosis.active_count, "active run") %>
+      </p>
+    <% end %>
     <% if paused_autopick.positive? %>
       <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
         <p class="text-sm text-amber-800">
@@ -45,6 +54,35 @@
           <%= link_to "quality-paused", "#quality-paused-projects",
             class: "font-medium text-amber-900 underline hover:text-amber-700" %>,
           so no work is being queued. Resume a project to start picking up its issues.
+        </p>
+      </div>
+    <% elsif diagnosis&.status == :paused %>
+      <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
+        <p class="text-sm text-amber-800">Scheduling is deliberately paused. Resume the account or project scheduler to allow normal admission again.</p>
+      </div>
+    <% elsif diagnosis&.status == :backend_queued %>
+      <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
+        <p class="text-sm text-amber-800">
+          <%= pluralize(diagnosis.queued_count, "queued run") %> exists in the scheduler but is not currently rendered here.
+          <%= link_to "Refresh queue", dashboard_queue_preview_path,
+            class: "font-medium text-amber-900 underline hover:text-amber-700",
+            data: { turbo_frame: "dashboard-queue-preview" } %>.
+        </p>
+      </div>
+    <% elsif diagnosis&.status == :runnable_unseeded %>
+      <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
+        <p class="text-sm text-amber-800"><%= pluralize(diagnosis.eligible_count, "eligible issue") %> have not been seeded yet. The scheduler will retry normal admission; no policy or planning hold was removed.</p>
+      </div>
+    <% elsif diagnosis&.status == :active_work %>
+      <p class="mt-4 text-sm text-gray-500"><%= pluralize(diagnosis.active_count, "run") %> are actively working; there is no waiting backlog.</p>
+    <% elsif diagnosis&.status == :held %>
+      <p class="mt-4 text-sm text-gray-500"><%= pluralize(diagnosis.held_count, "open issue") %> are held by normal dependency, decision, or admission controls. <%= link_to "Review eligibility", "#dashboard-eligibility-breakdown", class: "font-medium text-indigo-600 hover:text-indigo-500" %> and Inbox details for the owning action.</p>
+    <% elsif diagnosis&.status == :unknown %>
+      <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
+        <p class="text-sm text-amber-800">
+          Queue diagnosis is unavailable. <%= link_to "Refresh queue", dashboard_queue_preview_path,
+            class: "font-medium text-amber-900 underline hover:text-amber-700",
+            data: { turbo_frame: "dashboard-queue-preview" } %> to retry; this does not mean there is no work.
         </p>
       </div>
     <% else %>
