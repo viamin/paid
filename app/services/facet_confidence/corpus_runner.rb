@@ -52,7 +52,7 @@ module FacetConfidence
       assessment = build_assessment(corpus_case)
       assessor = FeatureIntents::AssessFacet.new(assessment: assessment)
       result = assessor.call
-      event = event_for(corpus_case, result, cost_cents: cost_cents_for!(assessor),
+      event = event_for(corpus_case, result, cost_cents: cost_cents_for!(assessor, result),
         retry_of_event_id: failed_run_event_ids[corpus_case.fetch("id")])
       AssessmentCorpusLedger.append!(ledger_path:, corpus_path:, event:)
       event
@@ -133,9 +133,10 @@ module FacetConfidence
       }.compact
     end
 
-    def cost_cents_for!(assessor)
+    def cost_cents_for!(assessor, result)
       cost = assessor.cost_cents
       return cost if cost.is_a?(Integer) && cost >= 0
+      return 0 if result.status == "failed"
 
       raise CostUnavailable, "assessment cost provenance is unavailable"
     end
