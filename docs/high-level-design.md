@@ -341,6 +341,20 @@ any repair: a scan never mutates source code or opens a PR on its own.
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
 that acceptance.
 
+The proposed optimization recipe family is a bounded extension of that
+maintenance contract, not a rollout of it. A code-defined catalog may present
+optimization types while retaining custom maintenance objectives and the
+existing scope/evidence distinction. Semantic assessment of findings,
+including whether a finding meets an owner-configured auto-queue selection
+policy, belongs to `agent_harness`; the control plane only applies
+deterministic authorization, guard, category, budget, revalidation, scope,
+and idempotency gates. The only proposed automatic action is an explicitly
+elected, per-run optimization repair through the existing repair pathway;
+it is off by default, preserves report delivery, and cannot include security
+findings. This policy is reviewable draft intent for #4493–#4496 and does not
+authorize runtime behavior until the RDR-075 and this revision receive their
+separate human acceptance.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the

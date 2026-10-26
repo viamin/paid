@@ -159,3 +159,93 @@
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
       an explicit user selection.
+
+## Optimization Catalog and Recipe Selection — #4493
+
+- [ ] **MAINT-080**: The system shall define Optimization as code-defined
+      catalog entries, not an enum in the maintenance-run contract or a
+      project-admin authoring surface, each with display name, description,
+      default metric hints, and an underlying-recipe pointer where available.
+- [ ] **MAINT-081**: The system shall include Performance, Design /
+      Architecture, Code Duplication, Security Hardening, Cost / Resource
+      Efficiency, Maintainability / Readability, and Test Coverage & Quality
+      in the initial Optimization catalog.
+- [ ] **MAINT-082**: The system shall present the same Optimization type menu
+      and authorization behavior in UI, authenticated API, and MCP start
+      surfaces, while allowing a run to start without an Optimization type.
+- [ ] **MAINT-083**: The system shall snapshot a selected Optimization type
+      with objective, scope, and guidance and retain it across retries.
+- [ ] **MAINT-084**: When a supplied Optimization type has no catalog entry,
+      the system shall admit it as a custom-objective maintenance run rather
+      than rejecting the request.
+- [ ] **MAINT-085**: The system shall permit natural-language Optimization
+      scopes naming files, a feature, or an application page; it may collect
+      supporting evidence outside the scope, but shall disclose it and shall
+      not recommend or repair broader work without human authorization.
+
+## Initial Optimization Recipes and Semantic Assessment — #4494
+
+- [ ] **MAINT-090**: The system shall provide Code Duplication,
+      Maintainability / Readability, and Performance recipes, each with an
+      objective, instructions, evidence collectors, validation guidance, and
+      default metric hints.
+- [ ] **MAINT-091**: The system shall record analyzer name, version, and
+      configuration when a recipe uses a tool, and shall record prompt-only
+      evidence and absent collectors as coverage provenance, not a clean tool
+      result.
+- [ ] **MAINT-092**: The system shall allow Performance to complete
+      prompt-first while no credible profiling collector is admitted and shall
+      disclose that coverage mode in the report.
+- [ ] **MAINT-093**: The system shall obtain semantic assessment through
+      `agent_harness` for proposed action, counterevidence, verification
+      disposition, and selection-policy eligibility; it shall not derive those
+      meaning-based decisions from scores, keywords, or local calculations.
+- [ ] **MAINT-094**: The system shall not recommend consolidation or deletion
+      from similarity or absent static references alone, and shall consider
+      intentional independence, framework callbacks, reflection, external
+      APIs, and compatibility obligations.
+
+## Opt-In Bounded Optimization Repair — #4495
+
+- [ ] **MAINT-100**: The system shall default Optimization runs to report-only
+      behavior and shall auto-queue only when an authorized actor explicitly
+      elects it at run start through UI, authenticated API, or MCP with
+      equivalent authorization.
+- [ ] **MAINT-101**: The system shall snapshot an auto-queue election's
+      selection-policy version and threshold with explicit per-repair cost and
+      time caps, and shall not allow a tenant setting or catalog entry to make
+      auto-queue the default.
+- [ ] **MAINT-102**: The system shall treat a confidence threshold as an
+      owner-configured `agent_harness` selection-policy input, not a calibrated
+      numeric assertion across recipes, analyzers, or projects.
+- [ ] **MAINT-103**: The system shall auto-queue only when the guard is on,
+      actor authorization and immutable election snapshot are present, the
+      semantic assessment meets that policy, the category is eligible, repair
+      scope is bounded to the finding, and the M04 pathway admits the repair.
+- [ ] **MAINT-104**: The system shall revalidate an auto-queued finding
+      against its repair checkout when its target revision moved, and shall
+      surface stale or failed revalidation without applying it or erasing
+      source evidence.
+- [ ] **MAINT-105**: The system shall enforce the elected caps independently
+      per auto-queued repair and preserve collected repair evidence on budget
+      exhaustion.
+- [ ] **MAINT-106**: The system shall not queue duplicate automatic repair
+      work for the same canonical finding identity and policy/revision context.
+- [ ] **MAINT-107**: When `maintenance_runs` is disabled after a run starts,
+      the system shall prevent new auto-queues without cancelling an admitted
+      repair or deleting the source report.
+
+## Staged Optimization Recipes — #4496
+
+- [ ] **MAINT-110**: The system shall register Security Hardening, Cost /
+      Resource Efficiency, Design / Architecture, and Test Coverage & Quality
+      through the Optimization catalog and the same evidence contract.
+- [ ] **MAINT-111**: The system shall exclude Security Hardening findings from
+      automatic repair queueing until a dedicated accuracy-and-safety policy is
+      accepted, while retaining report-only and manual selection behavior.
+- [ ] **MAINT-112**: The system shall record prompt-first coverage honestly
+      for Cost / Resource Efficiency and Design / Architecture where no
+      credible collector has been admitted.
+- [ ] **MAINT-113**: The system shall reconcile Test Coverage & Quality with
+      RDR-075's planned test-quality recipe rather than defining a competing
+      recipe contract.

@@ -200,6 +200,103 @@ shipped code in
   while a tool check that *was* planned and then failed to run keeps
   forcing `partial` (MAINT-022).
 
+## Optimization Recipe Family and Bounded Repair Policy
+
+This is proposed intent for the optimization family tracked by
+[#4492](https://github.com/viamin/paid/issues/4492). #4492 is a coordination
+umbrella, not an executable prerequisite or a source of repair authority. The
+executable prerequisite work maps to #4493–#4496. It remains draft until a
+human accepts this LLD/EARS revision and RDR-075; nothing here changes the
+report-only behavior of maintenance scans before acceptance and implementation.
+
+### Catalog, selection, and scope — #4493
+
+Optimization is a code-defined catalog within the maintenance recipe mechanism,
+not an enum in the run contract or a project-admin authoring surface. Initial
+entries are Performance, Design / Architecture, Code Duplication, Security
+Hardening, Cost / Resource Efficiency, Maintainability / Readability, and Test
+Coverage & Quality. An entry has a display name, description, default metric
+hints, and a pointer to its recipe when available. UI, authenticated API, and
+MCP present the same curated menu and snapshot a selected type with objective,
+scope, and guidance. A run remains valid without a type; an unmapped type is a
+custom-objective maintenance run, not an admission error.
+
+Natural-language scope may name files, a feature, or an application page and
+does not limit supporting evidence collection. Callers, tests, framework entry
+points, and design artifacts outside the requested scope may be inspected to
+assess a claim, and the report must disclose that supporting inspection and
+coverage limitations. Scope does bound recommendations and repairs: broader
+work requires explicit human authorization.
+
+### Initial recipes and evidence — #4494
+
+The initial executable recipes are Code Duplication, Maintainability /
+Readability, and Performance. Each supplies an objective, investigation
+instructions, applicable evidence collectors, validation guidance, and default
+metric hints. Duplication and maintainability may use approved
+RDR-073-attached analyzers; Performance is prompt-first until a credible
+profiling collector is admitted. Tool versions/configuration and the absence
+of a tool are report provenance, not a clean result. Prompt-only performance
+coverage must be disclosed honestly.
+
+An analyzer may propose candidates but cannot decide whether similar code
+should be consolidated, dynamic/framework use makes code live, or an
+optimization is safe. Those meaning-based judgments — proposed action,
+counterevidence, verification disposition, and selection-policy result — are
+structured semantic assessment through `agent_harness`. The control plane
+validates response shape and persists evidence; it does not recreate semantic
+judgment with keywords, tool scores, or a local confidence calculation. A
+confidence threshold is an owner-configured selection-policy input to that
+assessment, not a claim that a numeric score is calibrated across recipes,
+analyzers, or projects.
+
+### Opt-in auto-queue authorization — #4495
+
+The base repair rule remains manual selection. A run may instead carry one
+explicit, per-run pre-authorization election to auto-queue bounded repair runs
+after its report is produced. The election is off by default; neither a tenant
+setting nor a recipe catalog entry can make it the default. Omission has the
+base report-only behavior, and the full report remains available regardless of
+which findings qualify.
+
+For each candidate, code must deterministically deny queueing unless all gates
+pass: `maintenance_runs` is enabled; the initiating actor was authorized to
+elect repair creation; the immutable snapshot has the election, policy
+version/threshold, and explicit per-repair cost and time caps; the structured
+`agent_harness` assessment meets that snapshot's selection policy; the category
+is eligible; repair scope is no broader than the finding; the M04 repair path
+admits it; and no repair exists for the same canonical finding identity and
+policy/revision context. These are authorization and state checks, not a
+second semantic confidence algorithm.
+
+An auto-queued repair uses the ordinary bounded-repair pathway, retains its
+source report and finding links, and revalidates against its repair checkout.
+A moved revision, failed revalidation, denied pathway, exhausted budget, or
+duplicate identity is a visible non-application outcome: it cannot apply a
+recommendation or erase evidence. Each repair receives its own explicit caps;
+exhaustion preserves its evidence. Disabling the guard prevents new admissions
+and auto-queues, but does not cancel admitted repairs or delete reports.
+
+### Staged follow-ons — #4496
+
+Security Hardening, Cost / Resource Efficiency, Design / Architecture, and
+Test Coverage & Quality are later catalog recipes using the same provenance,
+honest-coverage, and evaluation contracts. Security findings are excluded from
+auto-queue until a separate accuracy-and-safety policy is accepted; they remain
+report-only and manually selectable. Cost and architecture are prompt-first
+where no credible collector exists. Test-quality design must reconcile with
+RDR-075's test-quality recipe rather than creating a competing contract.
+
+### Acceptance status
+
+The owner decisions recorded in #4495 are reconciled here as draft intent:
+per-run opt-in, default-off behavior, selection-policy threshold, per-repair
+caps, stale-finding revalidation, bounded scope, idempotency, and manual-only
+security repair. A human must accept this exact revision and the RDR-075 base
+maintenance contract before #4493–#4496 implementation begins. This
+preparation artifact `Tracks #4636`; it does not close #4636, #4492, or any
+implementation issue and does not enable the `maintenance_runs` rollout.
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
@@ -208,6 +305,9 @@ shipped code in
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
 | Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Optimization catalog | Code-defined catalog presented as a curated type menu, with custom-objective fallback | Hard enum; project-admin recipe authoring UI | Catalog entries can grow without run-contract migrations, while v1 avoids an unreviewed authoring and governance surface (#4493). |
+| Optimization auto-queue | Per-run, default-off election using semantic assessment plus deterministic gates | Tenant-wide or recipe-default automation; scan-side repair | This preserves the owner decision recorded in #4495 while retaining base RDR-075 report-only default behavior and explicit repair authority. |
+| Confidence policy | `agent_harness` evaluates the configured selection policy; code enforces structural and policy gates | Locally calibrated numeric confidence; keyword-based eligibility | Eligibility is semantic and belongs to the agent layer; a threshold is not evidence that a cross-recipe numeric score is calibrated. |
 
 ## Open Questions & Future Decisions
 
@@ -236,6 +336,10 @@ shipped code in
    live execution-environment artifact before an implementation uses this
    candidate path. The handoff audit's host-only commands are not evidence for
    this decision.
+6. Human acceptance of the precise optimization catalog and bounded-repair
+   policy in this revision — #4636 is preparation only. Until that acceptance
+   and RDR-075 acceptance are recorded, #4493–#4496 remain blocked from
+   implementation and no rollout is authorized.
 
 ## What This Is Not
 
@@ -243,7 +347,9 @@ shipped code in
   RDR-073's territory, consumed here, not duplicated.
 - Not an automatic-repair mechanism — a scan never deletes source code or
   opens a PR as a side effect; repair is a separate, explicitly authorized
-  run.
+  run. The proposed #4495 exception is only an accepted, explicitly elected
+  per-run auto-queue through that separate pathway; it is not scan-side repair
+  or a general maintenance default.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.
@@ -262,3 +368,9 @@ shipped code in
   native CLI analyzer invocation inside the execution environment
 - `app/models/agent_run.rb` — `execute_in_execution_environment`,
   `cleanup_execution_environment`
+- [#4492](https://github.com/viamin/paid/issues/4492) — tracking umbrella
+  only; [#4493](https://github.com/viamin/paid/issues/4493),
+  [#4494](https://github.com/viamin/paid/issues/4494),
+  [#4495](https://github.com/viamin/paid/issues/4495), and
+  [#4496](https://github.com/viamin/paid/issues/4496) — executable follow-on
+  deliverables after acceptance
