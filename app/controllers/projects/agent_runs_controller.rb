@@ -381,6 +381,26 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **prerequisite_flash(result)
     end
 
+    # Records an evidence submission for one partial-closeout prerequisite.
+    # It intentionally does not dismiss or resolve the scheduling guard.
+    # @spec PARTIAL-CLOSEOUT-030
+    def submit_closeout_evidence
+      authorize @project, :run_agent?
+
+      issue = resolve_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      result = PartialCloseouts::SubmitEvidence.call(
+        issue:, actor: current_user, criterion: params[:criterion], evidence_kind: params[:evidence_kind],
+        explanation: params[:explanation], source_url: params[:source_url], source_record_id: params[:source_record_id]
+      )
+      message = result.success? ? "Evidence submitted: #{result.submission.outcome.humanize}. #{result.submission.reason}" : result.error
+      redirect_to safe_return_target || dashboard_path, result.success? ? { notice: message } : { alert: message }
+    end
+
     # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
     # @spec OPERATOR-INBOX-002C
     def unblock_escalation

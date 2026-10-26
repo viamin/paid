@@ -258,6 +258,20 @@ machinery the workflow uses:
 
 ### Automatic advancement after investigation (#4223)
 
+### Submitted prerequisite evidence
+
+The partial-closeout prerequisite notification remains the scheduling guard;
+personal dismissal retains its documented release behavior and is not evidence
+verification. An Inbox evidence submission creates an immutable occurrence
+record scoped to that notification, criterion, source-evidence revision, and
+intent revision. It records the actor, provenance, explanation, source type,
+and explicit validation disposition. Structural references are pending until a
+bounded semantic assessment validates them. In particular, a solo-maintainer
+shadow-evaluation report remains insufficient because its report explicitly
+retains missing production measures and weaker reference assurance. No
+submission closes the parent issue, enables enforcement, or releases another
+prerequisite occurrence.
+
 After the shared reconciler persists a current assessment, `PartialCloseouts::Advance`
 uses the existing scoped continuation authorization to schedule one fresh acceptance
 audit when the assessment has no remaining gaps. This handles stale historical gap

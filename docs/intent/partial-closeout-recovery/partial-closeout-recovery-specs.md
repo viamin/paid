@@ -19,6 +19,22 @@
   *Test:* `spec/services/partial_closeouts/source_closure_disposition_spec.rb`,
   `spec/services/pull_requests/source_closure_body_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-030** — When an authorized operator submits evidence
+  from a partial-closeout Inbox item, the system SHALL bind it to the exact
+  active prerequisite occurrence and the current source-evidence and intent
+  revisions, retain actor, provenance, explanation, and a durable artifact,
+  link, run, or evaluation-report reference, and record a visible disposition
+  of pending validation, sufficient, insufficient, stale, or unavailable.
+  Structural shape alone — including a URL, report, green run, or dismissed
+  notification — SHALL NOT satisfy acceptance or release the scheduling guard.
+  A stale occurrence SHALL reject the submission. Solo-maintainer evaluation
+  reports SHALL retain their missing production measures and weaker assurance
+  as insufficient rather than being promoted to issue completion.
+  *Code:* `app/services/partial_closeouts/submit_evidence.rb`,
+  `app/models/partial_closeout_evidence_submission.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`.
+  *Test:* `spec/services/partial_closeouts/submit_evidence_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-025** — When the daily legacy partial-closeout
   reconciliation sweep runs, the system SHALL invoke `ReconcileLegacy` once
   for each active account using the persisted account/run cursor in its chained

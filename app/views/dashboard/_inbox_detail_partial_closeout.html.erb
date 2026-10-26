@@ -217,6 +217,25 @@
             evidence never retries an agent by itself — afterwards, request a deliberate continuation and say
             what the run should do with the evidence.
           </p>
+          <% if policy(entry.project).run_agent? %>
+            <%= form_with url: submit_closeout_evidence_project_agent_runs_path(entry.project),
+                  data: { turbo_frame: "_top" }, class: "space-y-2 border-t border-amber-200 pt-3" do |form| %>
+              <%= form.hidden_field :issue_id, value: issue.id %>
+              <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+              <%= form.label :criterion, "Prerequisite", class: "block text-sm font-medium text-amber-900" %>
+              <%= form.select :criterion, human_prerequisite.description.to_s.lines.filter_map { |line| line.split(":", 2).first.presence },
+                    { prompt: "Select the exact prerequisite" }, required: true,
+                    class: "w-full rounded-md border-amber-300 text-sm" %>
+              <%= form.label :evidence_kind, "Evidence type", class: "block text-sm font-medium text-amber-900" %>
+              <%= form.select :evidence_kind, [["Durable artifact", "durable_artifact"], ["Link", "link"], ["Existing agent run", "agent_run"], ["Evaluation report", "shadow_evaluation_report"]], {}, required: true, class: "w-full rounded-md border-amber-300 text-sm" %>
+              <%= form.label :source_url, "Artifact or link URL", class: "block text-sm font-medium text-amber-900" %>
+              <%= form.url_field :source_url, placeholder: "https://…", class: "w-full rounded-md border-amber-300 text-sm" %>
+              <%= form.label :explanation, "Why this evidence satisfies the prerequisite", class: "block text-sm font-medium text-amber-900" %>
+              <%= form.text_area :explanation, required: true, maxlength: 2000, rows: 3, class: "w-full rounded-md border-amber-300 text-sm" %>
+              <p class="text-xs text-amber-800">Submission records revisions and provenance. It does not dismiss the notification or establish acceptance until validation completes.</p>
+              <%= form.submit "Submit evidence", class: "inline-flex items-center rounded-md bg-amber-700 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-600" %>
+            <% end %>
+          <% end %>
         </div>
     <% end %>
   </div>
