@@ -36,6 +36,7 @@
       </div>
     </div>
   <% else %>
+    <% diagnosis = local_assigns[:queue_diagnosis] %>
     <% paused_autopick = Array(local_assigns[:paused_projects]).count(&:auto_pick_enabled?) %>
     <% if paused_autopick.positive? %>
       <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
@@ -46,6 +47,23 @@
             class: "font-medium text-amber-900 underline hover:text-amber-700" %>,
           so no work is being queued. Resume a project to start picking up its issues.
         </p>
+      </div>
+    <% elsif diagnosis %>
+      <div class="mt-4 rounded-md bg-slate-50 p-3 ring-1 ring-inset ring-slate-200" data-queue-diagnosis-state="<%= diagnosis.state %>">
+        <p class="text-sm text-slate-700">No queued runs for your projects.</p>
+        <p class="text-sm font-medium text-slate-900"><%= diagnosis.state.to_s.humanize %></p>
+        <% if diagnosis.state == :unknown %>
+          <p class="mt-1 text-sm text-slate-700">Queue diagnosis is unavailable, so this empty preview is not proof that no work exists.</p>
+        <% else %>
+          <p class="mt-1 text-sm text-slate-700">
+            <%= pluralize(diagnosis.eligible_count, "eligible candidate") %>,
+            <%= pluralize(diagnosis.queued_count, "queued run") %>, and
+            <%= pluralize(diagnosis.active_count, "active run") %> across
+            <%= pluralize(diagnosis.project_count, "visible project") %>.
+          </p>
+        <% end %>
+        <p class="mt-1 text-sm text-slate-700"><%= diagnosis.next_action %></p>
+        <p class="mt-1 text-xs text-slate-500">Assessed <%= time_ago_in_words(diagnosis.refreshed_at) %> ago.</p>
       </div>
     <% else %>
       <p class="mt-4 text-sm text-gray-500">No queued runs for your projects.</p>
