@@ -3,14 +3,15 @@
 # Solo-maintainer RDR-067 shadow evaluation session (#4594). One row per
 # evidence generation (project, purpose, frozen corpus manifest digest):
 # repeated Start/Resume clicks reuse the same evaluation. The labeling
-# lifecycle is labeling → frozen → executing → completed | failed; reference
+# lifecycle is labeling → frozen → queued → running → completed | partial |
+# failed | cancelled; reference
 # labels and reviewer runs live on the association records and answers stay
 # hidden from the labeling surface until `labels_frozen_at` is set.
 #
 # @spec INTENT-CONFORMANCE-ROLLOUT-005
 # @spec INTENT-CONFORMANCE-ROLLOUT-006
 class IntentConformanceShadowEvaluation < ApplicationRecord
-  STATUSES = %w[labeling frozen executing completed failed].freeze
+  STATUSES = %w[labeling frozen queued running partial failed cancelled completed].freeze
   POLICIES = IntentConformance::ShadowEvaluationPolicy::POLICIES
   OUTCOMES = IntentConformance::ShadowEvaluationPolicy::LABELS
 
@@ -31,10 +32,23 @@ class IntentConformanceShadowEvaluation < ApplicationRecord
   scope :latest_first, -> { order(created_at: :desc, id: :desc) }
 
   def labeling? = status == "labeling"
-  def frozen? = %w[frozen executing completed failed].include?(status)
-  def executing? = status == "executing"
+  def frozen? = !labeling?
+  def queued? = status == "queued"
+  def running? = status == "running"
+  def executing? = queued? || running?
+  def partial? = status == "partial"
   def completed? = status == "completed"
   def failed? = status == "failed"
+  def cancelled? = status == "cancelled"
+  def cancellation_requested? = cancellation_requested_at.present? || cancelled?
+
+  def execution_progress
+    total = corpus_case_ids.length
+    runs = self.runs
+    { total:, evaluated: runs.where.not(verdict: "not_evaluated").count,
+      unavailable: runs.where(verdict: "not_evaluated").count,
+      cost_cents: runs.sum(:cost_cents) }
+  end
 
   def answers_visible? = labels_frozen_at.present?
 

@@ -6,6 +6,7 @@ namespace :intent_conformance do
       "(usage: bin/rails 'intent_conformance:shadow_evaluation:execute[<id>]'). " \
       "Records actual verdicts, failures, and cost; retries cases without an evaluated verdict."
     # @spec INTENT-CONFORMANCE-ROLLOUT-007
+    # @spec INTENT-CONFORMANCE-ROLLOUT-011
     task :execute, [ :shadow_evaluation_id ] => :environment do |_task, args|
       evaluation, account = TenantContext.with_system_access do
         evaluation = IntentConformanceShadowEvaluation.find(args.fetch(:shadow_evaluation_id))
@@ -13,11 +14,10 @@ namespace :intent_conformance do
       end
       TenantContext.apply!(account)
 
-      result = IntentConformance::ShadowEvaluation::ExecuteReviewer.call(evaluation: evaluation)
-      IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: evaluation) if result.success?
+      result = IntentConformance::ShadowEvaluation::EnqueueReviewer.call(evaluation: evaluation)
 
       if result.success?
-        puts "executed=#{result.executed} failed=#{result.failed} status=#{evaluation.reload.status}"
+        puts "enqueued=#{result.enqueued} status=#{evaluation.reload.status}"
       else
         puts result.error
         exit 1

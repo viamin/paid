@@ -149,28 +149,32 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("intentionally_drifted")
   end
 
-  it "executes the real reviewer through agent_harness, records failures as not evaluated, and shows the report" do
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  it "queues reviewer execution promptly and preserves the Inbox-safe evaluation route" do
+    evaluation = start_evaluation_from_committed_corpus!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    allow(IntentConformance::ShadowEvaluation::ExecuteJob).to receive(:perform_later)
+
+    post execute_project_shadow_evaluation_path(project, evaluation, inbox_kind: "partial_closeout")
+
+    expect(response).to redirect_to(project_shadow_evaluation_path(project, evaluation, inbox_kind: "partial_closeout"))
+    expect(evaluation.reload).to be_queued
+    expect(IntentConformance::ShadowEvaluation::ExecuteJob).to have_received(:perform_later).with(evaluation.id)
+  end
+
+  it "queues the reviewer without waiting for provider calls" do
     evaluation = start_evaluation_from_committed_corpus!
     label_all!(evaluation)
     freeze!(evaluation)
 
-    # Corpus cases reference a repository outside this project, so every
-    # reviewer attempt fails closed and is recorded as not evaluated —
-    # prerequisite validation is never presented as execution.
+    allow(IntentConformance::ShadowEvaluation::ExecuteJob).to receive(:perform_later)
     post execute_project_shadow_evaluation_path(project, evaluation)
     follow_redirect!
 
-    expect(response.body).to include("not evaluated")
-    expect(evaluation.reload).to be_failed
-    evaluation.runs.each do |run|
-      expect(run).to be_not_evaluated
-      expect(run.failure_reason).to eq("case_repository_outside_project")
-    end
-
-    get project_shadow_evaluation_path(project, evaluation)
-
-    expect(response.body).to include("Reproducible report")
-    expect(response.body).to include("solo")
+    expect(response.body).to include("Reviewer execution queued")
+    expect(evaluation.reload).to be_queued
+    expect(evaluation.runs).to be_empty
   end
 
   it "appends post-result revisions without overwriting the original blinded label" do

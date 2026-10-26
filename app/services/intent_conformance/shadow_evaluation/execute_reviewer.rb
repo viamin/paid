@@ -12,6 +12,7 @@ module IntentConformance
     # execution.
     # @spec INTENT-CONFORMANCE-ROLLOUT-006
     # @spec INTENT-CONFORMANCE-ROLLOUT-007
+    # @spec INTENT-CONFORMANCE-ROLLOUT-011
     class ExecuteReviewer
       Result = Data.define(:success, :error, :evaluation, :executed, :failed) do
         def success? = success
@@ -85,16 +86,18 @@ module IntentConformance
       end
 
       def execute_cases
-        @evaluation.update!(status: "executing", execute_started_at: Time.current)
         executed = 0
         failed = 0
 
         @evaluation.corpus.cases.each do |corpus_case|
+          break if cancelled?
+
           next if evaluated_run_for(corpus_case.fetch("id"))
 
           verdict, failure_reason, model, cost = review_case(corpus_case)
           upsert_run(corpus_case, verdict, failure_reason, model, cost)
           verdict == NOT_EVALUATED ? failed += 1 : executed += 1
+          heartbeat!
         end
 
         complete_or_fail(executed, failed)
@@ -232,13 +235,27 @@ module IntentConformance
       end
 
       def complete_or_fail(executed, failed)
-        if failed.zero?
+        if cancelled?
+          @evaluation.update!(status: "cancelled", cancelled_at: @evaluation.cancelled_at || Time.current)
+        elsif @evaluation.runs.where(verdict: NOT_EVALUATED).none? && @evaluation.runs.count == @evaluation.corpus.case_ids.length
           @evaluation.update!(status: "completed", completed_at: Time.current, last_failure_reason: nil)
+        elsif @evaluation.runs.where.not(verdict: NOT_EVALUATED).exists?
+          @evaluation.update!(status: "partial", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
         else
           @evaluation.update!(status: "failed", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
         end
         log_executed(executed, failed)
         Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
+      end
+
+      def cancelled?
+        return true if @evaluation.cancellation_requested?
+
+        @evaluation.class.where(id: @evaluation.id).where.not(cancellation_requested_at: nil).exists?
+      end
+
+      def heartbeat!
+        @evaluation.update_column(:execution_heartbeat_at, Time.current)
       end
 
       def prompt_digest
