@@ -18,6 +18,26 @@
     <%= render "dashboard/inbox_closeout_blockers", blockers: status.blockers %>
   </div>
 
+  <% if policy(entry.project).run_agent? %>
+    <% tools = entry.project.account.marketplace_entries.active.with_entry_type("tool").ordered %>
+    <div class="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4" data-technical-validation-inbox>
+      <h3 class="text-sm font-semibold text-amber-900">Technical prerequisite validation</h3>
+      <p class="text-sm text-amber-800">Runs a bounded, pinned validation in a compatible Paid execution backend. Your current workspace Docker availability is not used as the capability decision.</p>
+      <% if !FeatureFlags.enabled?(:marketplace_tool_sidecars, project: entry.project) && tools.any? %>
+        <p class="text-sm font-medium text-amber-900">Tool sidecars are disabled. An authorized rollout owner must enable the scoped pilot; this action will not enable it.</p>
+      <% end %>
+      <%= form_with url: request_technical_validation_project_agent_runs_path(entry.project), method: :post, class: "flex flex-wrap items-end gap-3" do |form| %>
+        <%= hidden_field_tag :issue_id, issue.id %>
+        <%= hidden_field_tag :return_to, request.fullpath %>
+        <% if tools.any? %>
+          <div><%= form.label :tool_entry_id, "Authorized tool (optional)", class: "block text-xs font-medium text-amber-900" %><%= form.select :tool_entry_id, tools.map { |tool| [ tool.name, tool.id ] }, { include_blank: "Native analyzer only" }, class: "mt-1 rounded-md border-gray-300 text-sm" %></div>
+        <% end %>
+        <%= form.submit "Prepare and start validation", class: "rounded-md bg-amber-700 px-3 py-2 text-sm font-semibold text-white" %>
+      <% end %>
+      <p class="text-xs text-amber-800">The run retains stdout, stderr, exit status, pinned identities, endpoint result, and cleanup evidence. Cancellation, failure, unavailable capacity, or a changed evidence generation remain visible and require revalidation.</p>
+    </div>
+  <% end %>
+
   <%# Shared internal return context for the evaluation entry points below:
       a fixed internal route, never a caller-provided return URL. %>
   <% inbox_context = {

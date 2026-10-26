@@ -4,6 +4,28 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When an authorized operator opens a relevant
+  partial-closeout Inbox item, the system SHALL offer a bounded technical
+  prerequisite validation action that inspects Paid's configured restricted
+  execution backends and the selected marketplace tool/rollout policy, rather
+  than treating the operator or an earlier agent workspace's Docker socket as
+  execution availability. The action SHALL queue one pinned isolated
+  continuation only when a compatible backend and selected authorized tool are
+  available; it SHALL reuse AgentRun attachment, provisioning, execution and
+  cleanup paths without exposing host shell access or Docker sockets. A disabled
+  sidecar rollout, missing tool authorization, or absent backend SHALL remain a
+  visible Inbox result with its precise authorized setup action and SHALL not
+  silently enable, retry, or close the prerequisite. The queued run SHALL carry
+  the capability/tool decision and an explicit artifact contract for stdout,
+  stderr, exit status, pinned identities, endpoint response and cleanup, and
+  its normal terminal state remains canonical evidence for later assessment.
+  *Tests:* `spec/services/issues/request_technical_validation_spec.rb`.
+  *Code:* `app/services/issues/technical_validation_readiness.rb`,
+  `app/services/issues/request_technical_validation.rb`,
+  `app/services/issues/request_continuation.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its

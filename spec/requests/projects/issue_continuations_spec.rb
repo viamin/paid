@@ -107,6 +107,29 @@ RSpec.describe "Issue continuations" do # @spec PARTIAL-CLOSEOUT-007 @spec PARTI
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/request_technical_validation" do
+    before { sign_in user }
+
+    it "starts the bounded Inbox recovery journey when a compatible backend exists" do
+      create(:docker_host, account: account)
+
+      expect {
+        post request_technical_validation_project_agent_runs_path(project), params: { issue_id: issue.id }
+      }.to change(AgentRun, :count).by(1)
+
+      expect(response).to redirect_to(dashboard_path)
+      expect(AgentRun.last.custom_prompt).to include("isolated checkout")
+      expect(AgentRun.last.reconciliation.fetch("technical_validation")).to include("status" => "queued")
+    end
+
+    it "keeps the prerequisite open with an exact setup action when no backend is ready" do
+      post request_technical_validation_project_agent_runs_path(project), params: { issue_id: issue.id }
+
+      expect(flash[:alert]).to include("Configure or approve a restricted execution host")
+      expect(issue.agent_runs).to be_empty
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/resolve_closeout" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

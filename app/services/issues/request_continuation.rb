@@ -24,18 +24,23 @@ module Issues
 
     MODE_LABELS = {
       "implementation" => "implementation continuation",
-      "acceptance_audit" => "acceptance audit"
+      "acceptance_audit" => "acceptance audit",
+      "technical_validation" => "technical prerequisite validation"
     }.freeze
 
     def self.call(...) = new(...).call
 
-    def initialize(issue:, actor:, reason:, origin: :operator, goal: "create_pr", continuation_mode: "implementation")
+    def initialize(issue:, actor:, reason:, origin: :operator, goal: "create_pr", continuation_mode: "implementation", custom_prompt: nil,
+      marketplace_entry_ids: nil, validation_metadata: nil)
       @issue = issue
       @actor = actor
       @reason = reason.to_s.strip
       @origin = origin.to_sym
       @goal = goal
       @continuation_mode = continuation_mode
+      @custom_prompt = custom_prompt
+      @marketplace_entry_ids = marketplace_entry_ids
+      @validation_metadata = validation_metadata
     end
 
     def call
@@ -152,8 +157,11 @@ module Issues
           auto_pick: automatic?,
           review_depth_snapshot: issue.project.effective_review_depth,
           continuation_request: request,
+          custom_prompt: custom_prompt,
           status: "queued"
         )
+        attach_marketplace_entries!(run)
+        record_validation_metadata!(run)
       end
 
       Audit::RecordEvent.call(
@@ -180,6 +188,20 @@ module Issues
       )
 
       success(request, run)
+    end
+
+    attr_reader :custom_prompt, :marketplace_entry_ids, :validation_metadata
+
+    def attach_marketplace_entries!(run)
+      return if Array(marketplace_entry_ids).empty?
+
+      MarketplaceEntries::AttachToRun.call(agent_run: run, manual_entry_ids: marketplace_entry_ids)
+    end
+
+    def record_validation_metadata!(run)
+      return unless validation_metadata
+
+      run.update!(reconciliation: run.reconciliation.merge("technical_validation" => validation_metadata))
     end
 
     def evidence_snapshot(evidence)

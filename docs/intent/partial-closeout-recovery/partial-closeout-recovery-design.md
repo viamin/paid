@@ -376,6 +376,23 @@ those revisions change.
 
 ## Alternatives considered
 
+### Capability-aware technical validation (#4643)
+
+The partial-closeout Inbox remains the originating surface for a concrete
+technical prerequisite. Its validation action reads the account's registered
+restricted execution hosts and the marketplace tool-sidecar rollout/entry
+policy; it deliberately does not infer execution availability from the
+operator's browser, the control-plane shell, or a previous agent workspace.
+When ready, it composes the existing scoped continuation, AgentRun marketplace
+attachment, backend scheduler, isolated provisioning, and cleanup lifecycle.
+The continuation prompt is an artifact contract: stdout, stderr, exit status,
+pinned checkout/image/tool identity, endpoint response, and cleanup must be
+reported, with unavailable, cancelled, failed, and partial outcomes preserved.
+Tool flags and image allowlists remain authorization gates. Missing rollout,
+tool authorization, or compatible backend is rendered as a precise setup action
+and never causes a flag enablement, socket mount, host-shell fallback, or
+unchanged retry. This adds no execution runtime or approval framework.
+
 - *Lift the merged-PR guard via paid_state*: explicitly rejected — the guard is
   deliberately state-independent (#3432/#3588 review follow-up).
 - *Blanket "clear blocker" action*: rejected by the issue; recovery actions are

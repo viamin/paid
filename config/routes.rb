@@ -307,6 +307,7 @@ Rails.application.routes.draw do
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
       post :request_continuation, on: :collection
       post :request_acceptance_audit, on: :collection
+      post :request_technical_validation, on: :collection
       post :resolve_closeout, on: :collection
       post :link_prerequisite, on: :collection
       post :cancel, on: :member

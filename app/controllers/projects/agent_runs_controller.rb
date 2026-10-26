@@ -351,6 +351,16 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Acceptance audit queued.")
     end
 
+    # @spec PARTIAL-CLOSEOUT-030
+    def request_technical_validation
+      authorize @project, :run_agent?
+      issue = resolve_issue
+      return redirect_to(safe_return_target || dashboard_path, alert: "Please select an issue.") unless issue
+
+      result = Issues::RequestTechnicalValidation.call(issue:, actor: current_user, tool_entry_id: params[:tool_entry_id])
+      redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Technical validation queued in a compatible isolated environment.")
+    end
+
     # Records the operator's attestation that the recorded closeout evidence
     # completes the issue (evidence-gated; see Issues::ResolveCloseout).
     # @spec PARTIAL-CLOSEOUT-007
