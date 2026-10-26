@@ -51,6 +51,22 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(bd.other_excluded).to eq(0)
     end
 
+    # @spec EAGER-QUEUE-017
+    it "separates eligible work that has not been seeded from backend queue work" do
+      eligible = create(:issue, project: project, github_state: "open", paid_state: "new")
+      queued = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :queued, project: project, issue: queued, auto_pick: true)
+
+      result = described_class.call(user: user)
+
+      bd = result.first
+      expect(bd.eligible).to eq(1)
+      expect(bd.queued).to eq(1)
+      expect(bd.unseeded).to eq(1)
+      expect(bd.unseeded_issue_ids).to contain_exactly(eligible.id)
+      expect(bd.diagnostic_state).to eq("runnable_unseeded")
+    end
+
     # @spec OPERATOR-INBOX-002D
     it "does not count manual_review as excluded solely because of internal state" do
       create(:issue, project: project, github_state: "open", paid_state: "manual_review", manual_review_reason: "Round limit reached.")

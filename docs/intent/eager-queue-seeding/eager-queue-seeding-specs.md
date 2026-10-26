@@ -6,6 +6,20 @@
 > Each ID is a grep target across specs, tests, and code
 > (`grep -r EAGER-QUEUE-001`).
 
+## Queue diagnosis
+
+- [x] **EAGER-QUEUE-017** — When the dashboard explains an empty or short
+  upcoming queue, it SHALL compute eligible candidates from the canonical
+  `DefaultCandidateSource.eligible_scope` and report separately eligible
+  candidates, backend queued issue runs, and eligible issue IDs with no queued
+  run.
+  It SHALL classify an empty handoff as healthy, held, queued, or
+  runnable-unseeded without inferring that excluded, active, paused, or
+  unavailable work is an unseeded handoff. Rendering SHALL not perform
+  recovery, semantic assessment, repository execution, or remote mutation.
+  *Code:* `app/services/dashboard/eligibility_breakdown.rb`.
+  *Test:* `spec/services/dashboard/eligibility_breakdown_spec.rb`.
+
 ## Single-issue seeding
 
 - [x] **EAGER-QUEUE-001** — When an eligible issue is enqueued for an

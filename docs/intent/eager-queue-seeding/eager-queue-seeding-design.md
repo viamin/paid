@@ -53,6 +53,23 @@ PR-attention seeding limit (`max_auto_pick_open_prs` /
 the single concurrency control, and `AgentRun::QUEUE_ORDER` (with its
 project/user fair-stride keys) decides dispatch order.
 
+## Queue diagnosis
+
+The dashboard distinguishes three separate facts for every visible auto-pick
+project: issues admitted by `DefaultCandidateSource.eligible_scope`, issue
+backed runs currently in the backend queued state, and every other open issue
+excluded by the normal admission rules. A candidate with no queued run is an
+unseeded handoff, not an empty backlog or proof that policy excludes it.
+
+`Dashboard::EligibilityBreakdown` owns this comparison because it already
+evaluates the canonical candidate scope used by the scheduler. It exposes the
+issue IDs behind an unseeded count so the dashboard can link an operator to
+the concrete work without introducing a second eligibility query. Rendering is
+read-only: it never calls an LLM, runs repository code, or mutates remote
+state. The normal event-driven `EnqueueEligible` hooks and bounded
+`AutoPickEligibilitySweepJob` remain the recovery path; they retain all
+project visibility, tenant, pause, budget, trust, and admission controls.
+
 ## Dequeue-time eligibility recheck
 
 An issue can lose eligibility between seeding and the scheduler claiming the

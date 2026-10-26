@@ -7,6 +7,7 @@ module Dashboard
     ProjectBreakdown = Struct.new(
       :project, :total_open, :eligible, :needs_input,
       :skip_label, :completed, :in_progress, :manual_review, :other_excluded,
+      :queued, :unseeded, :unseeded_issue_ids, :diagnostic_state,
       keyword_init: true
     )
 
@@ -64,6 +65,8 @@ module Dashboard
       eligible_scope = Automation::Strategies::AutoPick::DefaultCandidateSource
         .eligible_scope(project, tier_feasibility: tier_feasibility)
       eligible_count = eligible_scope.count
+      queued_issue_ids = queued_issue_ids(project, open)
+      unseeded_issue_ids = eligible_scope.pluck(:id)
 
       # Count all non-eligible issues in a single conditional-aggregation query.
       excluded = open.where.not(id: eligible_scope.select(:id))
@@ -87,8 +90,40 @@ module Dashboard
         needs_input: needs_input, skip_label: skip_label,
         completed: completed, in_progress: in_progress,
         manual_review: manual_review,
-        other_excluded: other
+        other_excluded: other,
+        queued: queued_issue_ids.size,
+        unseeded: unseeded_issue_ids.size,
+        unseeded_issue_ids: unseeded_issue_ids,
+        diagnostic_state: diagnostic_state(
+          eligible_count: eligible_count,
+          queued_count: queued_issue_ids.size,
+          unseeded_count: unseeded_issue_ids.size,
+          total_open: eligible_count + excluded_total
+        )
       )
+    end
+
+    # A queued run is scheduler state, not proof that its issue is still
+    # eligible. Keeping it separate from the canonical candidate scope makes
+    # a missing handoff visible without conflating it with policy exclusions.
+    # @spec EAGER-QUEUE-017
+    def queued_issue_ids(project, open_issues)
+      AgentRun.queued
+        .where(project: project, issue_id: open_issues.select(:id))
+        .distinct
+        .pluck(:issue_id)
+    end
+
+    # The state describes the handoff, rather than treating every empty queue
+    # as a fault: policy holds are normal, while a runnable candidate with no
+    # corresponding queued run needs the normal seeding path to catch up.
+    # @spec EAGER-QUEUE-017
+    def diagnostic_state(eligible_count:, queued_count:, unseeded_count:, total_open:)
+      return "runnable_unseeded" if eligible_count.positive? && unseeded_count.positive?
+      return "queued" if queued_count.positive?
+      return "held" if total_open.positive?
+
+      "healthy"
     end
 
     def count_skip_labeled(excluded_scope, analyzable_count, project)
