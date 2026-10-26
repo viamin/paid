@@ -9,6 +9,7 @@ module FacetConfidence
   # @spec FACET-CONFIDENCE-016 @spec FACET-CONFIDENCE-017 @spec FACET-CONFIDENCE-018
   class CorpusRunner
     PinnedModelMismatch = Class.new(StandardError)
+    CostUnavailable = Class.new(StandardError)
 
     CORPUS_PATH = Rails.root.join("docs/intent/facet-confidence/assessment-corpus-manifest-v1.yml").freeze
     LEDGER_PATH = Rails.root.join("docs/intent/facet-confidence/assessment-evaluation-2026-10-23/ledger.jsonl").freeze
@@ -49,8 +50,10 @@ module FacetConfidence
 
     def run_case(corpus_case)
       assessment = build_assessment(corpus_case)
-      result = FeatureIntents::AssessFacet.call(assessment: assessment)
-      event = event_for(corpus_case, result, retry_of_event_id: failed_run_event_ids[corpus_case.fetch("id")])
+      assessor = FeatureIntents::AssessFacet.new(assessment: assessment)
+      result = assessor.call
+      event = event_for(corpus_case, result, cost_cents: cost_cents_for!(assessor),
+        retry_of_event_id: failed_run_event_ids[corpus_case.fetch("id")])
       AssessmentCorpusLedger.append!(ledger_path:, corpus_path:, event:)
       event
     ensure
@@ -92,6 +95,7 @@ module FacetConfidence
           source_type: item.fetch("source_type"),
           source_reference: item.fetch("reference"),
           statement: item.fetch("statement"),
+          textual_context: "Corpus actor role: #{item.fetch('actor_role')}.",
           occurred_at: item.fetch("occurred_at"),
           evidence_revision: facet.evidence_revision + 1
         )
@@ -111,7 +115,7 @@ module FacetConfidence
       end
     end
 
-    def event_for(corpus_case, result, retry_of_event_id:)
+    def event_for(corpus_case, result, cost_cents:, retry_of_event_id:)
       {
         "event_id" => "assessment-run-#{corpus_case.fetch('id')}-#{SecureRandom.uuid}",
         "recorded_at" => Time.current.iso8601,
@@ -125,8 +129,15 @@ module FacetConfidence
         "intent_score" => result.intent_score,
         "technical_score" => result.technical_score,
         "evidence_references" => result.evidence_references || [],
-        "cost_cents" => 0
+        "cost_cents" => cost_cents
       }.compact
+    end
+
+    def cost_cents_for!(assessor)
+      cost = assessor.cost_cents
+      return cost if cost.is_a?(Integer) && cost >= 0
+
+      raise CostUnavailable, "assessment cost provenance is unavailable"
     end
 
     def ledger_status(result)

@@ -20,6 +20,8 @@ module FeatureIntents
       @agent_harness = agent_harness
     end
 
+    attr_reader :cost_cents
+
     def call
       apply(response_payload)
     rescue AgentHarness::Error => e
@@ -33,6 +35,7 @@ module FeatureIntents
     def response_payload
       response = agent_harness.send_message(prompt, provider: :claude, model: MODEL_VERSION,
         timeout: TIMEOUT, tools: :none, **Llm::TextMode.options)
+      @cost_cents = cost_cents_from(response)
       return unless response.respond_to?(:success?) && response.success?
 
       JSON.parse(strip_markdown_fence(response.output.to_s)).deep_stringify_keys
@@ -107,6 +110,13 @@ module FeatureIntents
     def facet = direction.feature_intent_facet
     def active_references = @active_references ||= facet.evidence.where(superseded_by: nil).pluck(:source_reference)
 
+    def cost_cents_from(response)
+      return unless response.respond_to?(:metadata)
+
+      cost = response.metadata.to_h.with_indifferent_access[:cost_cents]
+      cost.to_i if cost.is_a?(Numeric)
+    end
+
     def prompt
       <<~PROMPT
         Assess the active candidate direction for this facet using rubric #{RUBRIC_VERSION}.
@@ -124,7 +134,8 @@ module FeatureIntents
     def active_evidence
       facet.evidence.where(superseded_by: nil).order(:evidence_revision).map do |evidence|
         { reference: evidence.source_reference, source_type: evidence.source_type, statement: evidence.statement,
-          occurred_at: evidence.occurred_at.iso8601, actor_id: evidence.actor_id }
+          occurred_at: evidence.occurred_at.iso8601, actor_id: evidence.actor_id,
+          actor_context: evidence.textual_context.presence }.compact
       end
     end
   end

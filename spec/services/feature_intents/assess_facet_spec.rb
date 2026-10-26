@@ -37,6 +37,18 @@ RSpec.describe FeatureIntents::AssessFacet do
     expect(AgentHarness).to have_received(:send_message).with(a_string_including("human_statement"), hash_including(tools: :none))
   end
 
+  it "exposes attributable evidence context and captures provider cost provenance" do
+    evidence.update!(textual_context: "Corpus actor role: collaborator.")
+    response_with_cost = double(success?: true, output: response.output, metadata: { cost_cents: 17 })
+    allow(AgentHarness).to receive(:send_message).and_return(response_with_cost)
+
+    assessor = described_class.new(assessment:)
+    assessor.call
+
+    expect(AgentHarness).to have_received(:send_message).with(a_string_including("actor_context", "collaborator"), anything)
+    expect(assessor.cost_cents).to eq(17)
+  end
+
   it "fails closed for malformed agent output" do
     allow(AgentHarness).to receive(:send_message).and_return(double(success?: true, output: "not json"))
 

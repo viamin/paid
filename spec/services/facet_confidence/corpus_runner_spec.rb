@@ -12,10 +12,10 @@ RSpec.describe FacetConfidence::CorpusRunner do
   after { directory.rmtree }
 
   it "runs every unrecorded frozen case through the shipped assessor and records pinned provenance" do
-    allow(FeatureIntents::AssessFacet).to receive(:call) do |assessment:|
-      instance_double(FeatureIntentFacetAssessment,
+    allow(FeatureIntents::AssessFacet).to receive(:new) do |assessment:|
+      instance_double(FeatureIntents::AssessFacet, cost_cents: 17, call: instance_double(FeatureIntentFacetAssessment,
         status: "completed", intent_score: 80, technical_score: 80,
-        evidence_references: assessment.feature_intent_facet_direction.evidence.where(superseded_by: nil).pluck(:source_reference).first(1))
+        evidence_references: assessment.feature_intent_facet_direction.evidence.where(superseded_by: nil).pluck(:source_reference).first(1)))
     end
 
     events = described_class.call(project:, ledger_path: ledger)
@@ -26,30 +26,45 @@ RSpec.describe FacetConfidence::CorpusRunner do
       "model_version" => FeatureIntents::AssessFacet::MODEL_VERSION
     ))
     expect(events.count).to eq(8)
+    expect(events).to all(include("cost_cents" => 17))
     expect(FacetConfidence::AssessmentCorpusLedger.validate!(
       corpus_path: described_class::CORPUS_PATH,
       ledger_path: ledger
     )).to be(true)
-    expect(FeatureIntents::AssessFacet).to have_received(:call).exactly(8).times
+    expect(FeatureIntents::AssessFacet).to have_received(:new).exactly(8).times
+  end
+
+  it "passes each frozen actor role into the assessor's active evidence" do
+    assessed_contexts = []
+    allow(FeatureIntents::AssessFacet).to receive(:new) do |assessment:|
+      assessed_contexts.concat(assessment.feature_intent_facet_direction.evidence.pluck(:textual_context))
+      instance_double(FeatureIntents::AssessFacet, cost_cents: 17, call: instance_double(FeatureIntentFacetAssessment,
+        status: "completed", intent_score: 80, technical_score: 80,
+        evidence_references: assessment.feature_intent_facet_direction.evidence.where(superseded_by: nil).pluck(:source_reference).first(1)))
+    end
+
+    described_class.call(project:, ledger_path: ledger)
+
+    expect(assessed_contexts).to include("Corpus actor role: owner.", "Corpus actor role: collaborator.")
   end
 
   it "rejects a corpus pinned to a different assessor model before dispatching" do
     stub_const("FeatureIntents::AssessFacet::MODEL_VERSION", "claude-sonnet-newer")
-    allow(FeatureIntents::AssessFacet).to receive(:call)
+    allow(FeatureIntents::AssessFacet).to receive(:new)
 
     expect { described_class.call(project:, ledger_path: ledger) }
       .to raise_error(described_class::PinnedModelMismatch, /claude-sonnet-4-6.*claude-sonnet-newer/)
 
-    expect(FeatureIntents::AssessFacet).not_to have_received(:call)
+    expect(FeatureIntents::AssessFacet).not_to have_received(:new)
   end
 
   it "retries a failed provider attempt and records the failed run it replaces" do
     failed_event = failed_run_event
     FacetConfidence::AssessmentCorpusLedger.append!(ledger_path: ledger, corpus_path: described_class::CORPUS_PATH, event: failed_event)
-    allow(FeatureIntents::AssessFacet).to receive(:call) do |assessment:|
-      instance_double(FeatureIntentFacetAssessment,
+    allow(FeatureIntents::AssessFacet).to receive(:new) do |assessment:|
+      instance_double(FeatureIntents::AssessFacet, cost_cents: 17, call: instance_double(FeatureIntentFacetAssessment,
         status: "completed", intent_score: 80, technical_score: 80,
-        evidence_references: assessment.feature_intent_facet_direction.evidence.where(superseded_by: nil).pluck(:source_reference).first(1))
+        evidence_references: assessment.feature_intent_facet_direction.evidence.where(superseded_by: nil).pluck(:source_reference).first(1)))
     end
 
     events = described_class.call(project:, ledger_path: ledger)
@@ -60,6 +75,18 @@ RSpec.describe FacetConfidence::CorpusRunner do
       corpus_path: described_class::CORPUS_PATH,
       ledger_path: ledger
     )).to be(true)
+  end
+
+  it "does not record a zero-cost run when provider cost provenance is unavailable" do
+    allow(FeatureIntents::AssessFacet).to receive(:new) do |assessment:|
+      instance_double(FeatureIntents::AssessFacet, cost_cents: nil, call: instance_double(FeatureIntentFacetAssessment,
+        status: "completed", intent_score: 80, technical_score: 80,
+        evidence_references: assessment.feature_intent_facet_direction.evidence.where(superseded_by: nil).pluck(:source_reference).first(1)))
+    end
+
+    expect { described_class.call(project:, ledger_path: ledger) }
+      .to raise_error(described_class::CostUnavailable, "assessment cost provenance is unavailable")
+    expect(FacetConfidence::AssessmentCorpusLedger.events(ledger)).to be_empty
   end
 
   def failed_run_event

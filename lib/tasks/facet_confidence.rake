@@ -8,7 +8,7 @@ namespace :facet_confidence do
       project = TenantContext.with_system_access { Project.includes(:account).find(project_id) }
       events = TenantContext.with(project.account) { FacetConfidence::CorpusRunner.call(project: project) }
       puts "Recorded #{events.count} facet-confidence corpus assessment runs."
-    rescue ArgumentError, KeyError
+    rescue ArgumentError, KeyError, TypeError
       abort %(Usage: bin/rails 'facet_confidence:corpus:run[<project-id>]')
     end
   end
