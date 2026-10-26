@@ -9,7 +9,8 @@ module Issues
   class ManualReviewRecovery
     ENHANCEMENT_STOP_REASONS = [
       "Structured output failed validation.",
-      "Paid reached the configured limit of enhancement re-evaluation rounds."
+      "Paid reached the configured limit of enhancement re-evaluation rounds.",
+      "Round limit reached."
     ].freeze
     Recovery = Data.define(:cause, :action, :description, :blockers) do
       def enhancement? = cause == :enhancement
