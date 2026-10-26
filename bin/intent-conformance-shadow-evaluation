@@ -11,7 +11,7 @@ require_relative "../lib/intent_conformance/shadow_evaluation_worksheet"
 module IntentConformance
   # @spec INTENT-CONFORMANCE-ROLLOUT-002
   # @spec INTENT-CONFORMANCE-ROLLOUT-005
-  # @spec INTENT-CONFORMANCE-ROLLOUT-007
+  # @spec INTENT-CONFORMANCE-ROLLOUT-007 INTENT-CONFORMANCE-ROLLOUT-011
   module ShadowEvaluationCli
     COMMANDS = %w[init append validate shadow-run compile].freeze
     EXECUTE_COMMAND = %(bin/rails "intent_conformance:shadow_evaluation:execute[<evaluation-id>]")

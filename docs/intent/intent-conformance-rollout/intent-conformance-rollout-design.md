@@ -126,12 +126,21 @@ Paid's project authorization and presentation patterns:
 3. **Freeze.** The explicit finish action refuses to freeze while any case
    is unlabeled or skipped, then stamps the reference set frozen. Answers
    (strata and reviewer outputs) become visible only from freeze onward.
-4. **Execute.** After freeze, the real conformance reviewer runs for every
-   case through `agent_harness` (the documented operator command or the
-   equivalent UI action), recording actual verdicts, reviewer model, prompt
-   digest, cost, and failures. Missing or failed reviewer output is recorded
-   as not evaluated; prerequisite validation alone is never presented as
-   execution.
+4. **Execute.** After freeze, an authorized operator queues the real
+   conformance reviewer through the supported background-job lifecycle; the
+   request returns without waiting for provider work. The durable lifecycle is
+   `queued`, `running`, `partial`, `failed`, `cancelled`, or `completed`.
+   The evaluation surface and originating Inbox item expose per-case progress
+   and recorded cost. The worker executes the reviewer through `agent_harness`
+   with the corpus-pinned model, prompt, and design identities, recording
+   actual verdicts, reviewer model, prompt digest, cost, and failures. Missing
+   or failed reviewer output is recorded as not evaluated; prerequisite
+   validation alone is never presented as execution. An authorized operator
+   may cancel queued or running execution; cancellation is cooperative between
+   cases, preserves already collected evidence, and never creates outcomes for
+   unevaluated cases. A retry or resume only invokes cases lacking an evaluated
+   verdict. Worker failures leave a recoverable partial or failed lifecycle
+   state rather than stranding the evaluation as running.
 5. **Review and revise.** Disagreements surface for maintainer review after
    the run. A post-result revision is appended with its own reason and
    timestamp; it never overwrites the original blinded label, and blinded

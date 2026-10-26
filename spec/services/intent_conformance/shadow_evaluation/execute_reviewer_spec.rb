@@ -4,6 +4,7 @@ require "rails_helper"
 
 # @spec INTENT-CONFORMANCE-ROLLOUT-006
 # @spec INTENT-CONFORMANCE-ROLLOUT-007
+# @spec INTENT-CONFORMANCE-ROLLOUT-011
 RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account: account) }
@@ -195,6 +196,23 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     expect(result.failed).to eq(0)
     expect(evaluation.reload).to be_completed
     expect(evaluation.runs.count).to eq(2)
+  end
+
+  it "stops cooperatively between cases without fabricating an unevaluated run" do
+    prepare_frozen!
+    cancelled = false
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message) do
+      cancelled = true
+      llm_response("within_scope")
+    end
+
+    result = described_class.call(evaluation:, cancelled: -> { cancelled })
+
+    expect(result).to be_success
+    expect(result.cancelled).to be(true)
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs.pluck(:case_id)).to eq([ "A-01" ])
   end
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-007 — any project operator may execute,

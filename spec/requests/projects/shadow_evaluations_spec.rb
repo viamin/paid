@@ -149,28 +149,27 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("intentionally_drifted")
   end
 
-  it "executes the real reviewer through agent_harness, records failures as not evaluated, and shows the report" do
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  it "queues reviewer execution from the Inbox-linked evaluation screen and returns promptly" do
     evaluation = start_evaluation_from_committed_corpus!
     label_all!(evaluation)
     freeze!(evaluation)
 
-    # Corpus cases reference a repository outside this project, so every
-    # reviewer attempt fails closed and is recorded as not evaluated —
-    # prerequisite validation is never presented as execution.
-    post execute_project_shadow_evaluation_path(project, evaluation)
+    expect {
+      post execute_project_shadow_evaluation_path(project, evaluation)
+    }.to have_enqueued_job(IntentConformance::ShadowEvaluationExecutionJob).with(evaluation.id)
     follow_redirect!
 
-    expect(response.body).to include("not evaluated")
-    expect(evaluation.reload).to be_failed
-    evaluation.runs.each do |run|
-      expect(run).to be_not_evaluated
-      expect(run.failure_reason).to eq("case_repository_outside_project")
-    end
+    expect(evaluation.reload).to be_queued
+    expect(response.body).to include("Reviewer execution queued")
+    expect(response.body).to include("0/30 evaluated")
+
+    post cancel_project_shadow_evaluation_path(project, evaluation)
+    expect(evaluation.reload).to be_cancelled
 
     get project_shadow_evaluation_path(project, evaluation)
 
-    expect(response.body).to include("Reproducible report")
-    expect(response.body).to include("solo")
+    expect(response.body).to include("cancelled")
   end
 
   it "appends post-result revisions without overwriting the original blinded label" do

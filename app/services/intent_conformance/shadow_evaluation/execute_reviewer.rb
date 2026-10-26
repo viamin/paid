@@ -13,7 +13,7 @@ module IntentConformance
     # @spec INTENT-CONFORMANCE-ROLLOUT-006
     # @spec INTENT-CONFORMANCE-ROLLOUT-007
     class ExecuteReviewer
-      Result = Data.define(:success, :error, :evaluation, :executed, :failed) do
+      Result = Data.define(:success, :error, :evaluation, :executed, :failed, :cancelled) do
         def success? = success
       end
 
@@ -33,8 +33,9 @@ module IntentConformance
 
       def self.call(...) = new(...).call
 
-      def initialize(evaluation:)
+      def initialize(evaluation:, cancelled: -> { false })
         @evaluation = evaluation
+        @cancelled = cancelled
       end
 
       def call
@@ -85,11 +86,12 @@ module IntentConformance
       end
 
       def execute_cases
-        @evaluation.update!(status: "executing", execute_started_at: Time.current)
+        @evaluation.update!(status: "running", execute_started_at: @evaluation.execute_started_at || Time.current)
         executed = 0
         failed = 0
 
         @evaluation.corpus.cases.each do |corpus_case|
+          return cancel(executed, failed) if cancelled?
           next if evaluated_run_for(corpus_case.fetch("id"))
 
           verdict, failure_reason, model, cost = review_case(corpus_case)
@@ -97,7 +99,7 @@ module IntentConformance
           verdict == NOT_EVALUATED ? failed += 1 : executed += 1
         end
 
-        complete_or_fail(executed, failed)
+        cancelled? ? cancel(executed, failed) : complete_or_fail(executed, failed)
       rescue ShadowEvaluationCorpus::MissingManifest => error
         @evaluation.update!(status: "failed", last_failure_reason: error.message)
         failure(error.message)
@@ -234,12 +236,21 @@ module IntentConformance
       def complete_or_fail(executed, failed)
         if failed.zero?
           @evaluation.update!(status: "completed", completed_at: Time.current, last_failure_reason: nil)
+        elsif executed.positive?
+          @evaluation.update!(status: "partial", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
         else
           @evaluation.update!(status: "failed", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
         end
         log_executed(executed, failed)
-        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed, cancelled: false)
       end
+
+      def cancel(executed, failed)
+        @evaluation.update!(status: "cancelled", last_failure_reason: "execution cancelled after #{executed} evaluated case(s)")
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed:, failed:, cancelled: true)
+      end
+
+      def cancelled? = @cancelled.call
 
       def prompt_digest
         require "digest"
@@ -298,7 +309,7 @@ module IntentConformance
       end
 
       def failure(message)
-        Result.new(success: false, error: message, evaluation: nil, executed: 0, failed: 0)
+        Result.new(success: false, error: message, evaluation: nil, executed: 0, failed: 0, cancelled: false)
       end
     end
   end
