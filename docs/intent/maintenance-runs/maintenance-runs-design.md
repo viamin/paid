@@ -120,7 +120,8 @@ selection also applies the existing authorization of the selected issue or
 PR-creation pathway:
 
 - **Start**: an authorized user supplies a project, optional objective (recipe
-  key), optional scope (paths/symbols), and optional free-text guidance. A
+  key), optional scope (paths, symbols, or a free-text target accepted by a
+  recipe), and optional free-text guidance. A
   start request must include either a recipe objective or nonblank guidance;
   scope alone is not an investigation objective. Response identifies the
   created run and its resolved (or pending-clarification) scope.
@@ -131,7 +132,9 @@ PR-creation pathway:
 - **Select repair**: an authorized user chooses one or more findings to
   become a bounded issue or PR-creation run through existing authorized
   pathways — this create path is a new run/issue through existing creation
-  goals, not a new side-effecting action hung off the maintenance report.
+  goals, not a new side-effecting action hung off the maintenance report. A
+  separately accepted recipe policy may record an explicit per-run selection
+  at start; absent that policy, selection remains manual after the report.
 
 All three surfaces are gated by the `maintenance_runs` guard (below); none
 of the three may admit a maintenance run while the guard is off for the
