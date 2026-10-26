@@ -30,3 +30,12 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resumes a
+  reopened issue from Inbox, the system SHALL require a non-blank
+  intent-validation reason and confirmation bound to the issue's current GitHub
+  revision, record that decision in the audit trail, and only then offer the
+  supported enhancement continuation. A stale revision SHALL retain the hold.
+  *Tests:* `spec/services/issues/manual_review_recovery_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Issues::ManualReviewRecovery`, `Projects::AgentRunsController`.

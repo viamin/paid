@@ -681,6 +681,7 @@ module Inbox
     # @spec OPERATOR-INBOX-002D
     def manual_review_entries
       ordered_manual_review_issues.map do |issue|
+        recovery = Issues::ManualReviewRecovery.call(issue: issue)
         Entry.new(
           id: "#{MANUAL_REVIEW_KIND}:#{issue.id}",
           kind: MANUAL_REVIEW_KIND,
@@ -689,7 +690,7 @@ module Inbox
           record: issue,
           waiting_since: issue.manual_review_started_at || issue.updated_at,
           questions: self.class.questions_for(issue),
-          tasks: [],
+          tasks: [ recovery ],
           summary_text: issue.manual_review_reason.presence || "Manual review required.",
           title_text: nil,
           action_url: nil

@@ -420,6 +420,25 @@ module Projects
         return
       end
 
+      recovery = Issues::ManualReviewRecovery.call(issue: issue)
+      if (active_run = active_manual_review_run(issue))
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Run ##{active_run.id} is already #{active_run.status} for this issue; reconcile it before resuming manual review."
+        return
+      end
+      if recovery.dependency?
+        redirect_to safe_return_target || dashboard_path, alert: "This issue is still waiting on its dependency; resolving it will trigger reevaluation."
+        return
+      end
+      if recovery.unknown?
+        redirect_to safe_return_target || dashboard_path, alert: "This manual-review hold has no known recovery action. Review its provenance before continuing."
+        return
+      end
+      if recovery.reopen_review? && !record_reopen_review_decision(issue)
+        redirect_to safe_return_target || dashboard_path, alert: "Confirm the current reopen review and provide a reason before resuming work."
+        return
+      end
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
@@ -1036,6 +1055,24 @@ module Projects
       return unless issue.paid_state == "manual_review"
 
       issue.update!(paid_state: "in_progress")
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005
+    def record_reopen_review_decision(issue)
+      return false unless params[:reopen_review_confirmed] == "true" && params[:reopen_review_reason].to_s.strip.present?
+      return false unless Time.zone.parse(params[:issue_revision].to_s)&.to_i == issue.github_updated_at.to_i
+
+      Audit::RecordEvent.call(
+        action: "issue.reopen_review_validated",
+        actor: current_user,
+        subject: issue,
+        metadata: { issue_revision: params[:issue_revision], reason: params[:reopen_review_reason].to_s.strip, continuation: "enhancement" }
+      )
+      true
+    end
+
+    def active_manual_review_run(issue)
+      @project.agent_runs.where(issue: issue, status: AgentRun::UNFINISHED_STATUSES).order(created_at: :desc).first
     end
 
     # A stale page can still render the "Start enhancement run" button after

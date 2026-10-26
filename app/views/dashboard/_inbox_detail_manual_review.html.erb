@@ -1,9 +1,14 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec OPERATOR-INBOX-002D ISSUE-REOPEN-REVIEW-005 %>
+<% recovery = entry.tasks.first || Issues::ManualReviewRecovery.call(issue: entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.reopen_review? %>
+        This issue was reopened after closure. Validate the original closure and remaining scope before resuming work.
+      <% elsif recovery.dependency? %>
+        This issue is waiting on a live dependency. Paid will reevaluate it when that dependency resolves.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
         Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
@@ -41,8 +46,29 @@
           selected_kind: selected_kind %>
   <% end %>
 
+  <% if recovery.dependency? %>
+    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <p class="font-semibold">Waiting on dependency</p>
+      <ul class="mt-2 list-disc pl-5">
+        <% recovery.blockers.uniq.each do |blocker| %>
+          <li><%= link_to "#{blocker.project.full_name}##{blocker.github_number}", blocker.github_url, target: "_blank", rel: "noopener noreferrer", class: "underline" %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% elsif recovery.reopen_review? && policy(entry.project).run_agent? %>
+    <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project), method: :post, class: "space-y-3" do |form| %>
+      <%= form.hidden_field :issue_id, value: entry.issue.id %>
+      <%= form.hidden_field :issue_revision, value: entry.issue.github_updated_at.iso8601(6) %>
+      <label class="flex items-center gap-2 text-sm text-gray-700"><%= check_box_tag :reopen_review_confirmed, "true", false, required: true %> I validated the prior closure and the remaining scope.</label>
+      <%= form.text_area :reopen_review_reason, required: true, placeholder: "Why work must resume", class: "block w-full rounded-md border-gray-300 text-sm" %>
+      <%= form.submit "Record validation and resume enhancement", class: "inline-flex rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white" %>
+    <% end %>
+  <% elsif recovery.unknown? %>
+    <p class="text-sm text-amber-800">Paid retained this hold because its producer is unknown. Review the linked issue before choosing a continuation.</p>
+  <% end %>
+
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && !recovery.dependency? && !recovery.reopen_review? && !recovery.unknown? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

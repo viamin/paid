@@ -2595,6 +2595,36 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec ISSUE-REOPEN-REVIEW-005
+      it "requires and records a revision-bound reopen validation before resuming work" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_confirmed: "true",
+            reopen_review_reason: "The regression remains in the reopened scope.",
+            issue_revision: parked_issue.reload.github_updated_at.iso8601(6)
+          }
+        }.to change(AgentRun, :count).by(1)
+        expect(response).to redirect_to(dashboard_path)
+
+        event = AccountActivityEvent.where(action: "issue.reopen_review_validated", subject: parked_issue).last
+        expect(event.metadata).to include("continuation" => "enhancement", "issue_revision" => parked_issue.github_updated_at.iso8601(6))
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      it "does not create another run while queued work exists for the hold" do
+        create(:agent_run, project: project, issue: parked_issue, goal: "create_pr", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("already queued")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,

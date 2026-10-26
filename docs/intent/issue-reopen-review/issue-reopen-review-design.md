@@ -27,6 +27,17 @@ the issue back into active work through the existing manual-review workflow.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 
+The Inbox derives a recovery cause from producer-owned provenance rather than
+the human-readable stop message. A reopened issue requires a confirmed,
+non-blank validation decision bound to its current GitHub update revision; the
+decision is written to the account audit trail before its supported enhancement
+continuation is queued. Live dependencies remain holds with links to their
+owners and are reevaluated by the existing dependency-resolution path. Scanner
+recurrence retains its scanner evidence, enhancement holds retain their
+question/retry actions, and an unrecognized producer stays visibly unknown.
+Before any continuation, the recovery endpoint checks every unfinished run for
+the issue and requires that queued or running work be reconciled first.
+
 ## Chat-tool policy
 
 The chat `edit_issue` tool directs callers to `create_issue` for new work
