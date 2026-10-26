@@ -18,6 +18,9 @@ class LayeredVerificationObligation < ApplicationRecord
     foreign_key: :obligation_id, dependent: :destroy, inverse_of: :obligation
   has_many :check_results, class_name: "LayeredVerificationCheckResult",
     foreign_key: :obligation_id, dependent: :restrict_with_exception, inverse_of: :obligation
+  # @spec LAYERED-VERIFY-017
+  has_many :findings, class_name: "LayeredVerificationFinding",
+    foreign_key: :obligation_id, dependent: :destroy, inverse_of: :obligation
 
   validates :framework, inclusion: { in: FRAMEWORKS }
   validates :external_identity, :scope_description, presence: true

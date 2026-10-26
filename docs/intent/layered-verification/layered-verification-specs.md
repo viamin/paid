@@ -5,10 +5,9 @@
 > `[ ]` active gap · `[D]` deferred. Each ID is a grep target
 > (`grep -r LAYERED-VERIFY-001`).
 >
-> These IDs are **reserved ahead of their implementation issues**
-> (#4432–#4438, optional #4439–#4440); nothing under this prefix has shipped.
-> `*Tests:*`/`*Code:*` lines below name the surfaces those issues are expected
-> to add, not code that exists today. RDR-076's `V1`–`V20` references are
+> These IDs were allocated through the canonical implementation issues
+> (#4432–#4438, optional #4439–#4440). Status and the linked test/code
+> surfaces below are the source of truth for shipped slices. RDR-076's `V1`–`V20` references are
 > local review IDs inside that document, not EARS IDs — see
 > `layered-verification-design.md`'s
 > [Traceability](layered-verification-design.md#traceability-rdr-v1v20--ears--replacement-tasks)
@@ -98,7 +97,7 @@
   *Tests:* `spec/models/layered_verification_correspondence_claim_spec.rb`
   *Code:* `app/models/layered_verification_correspondence_claim.rb` (#4432)
 
-- [ ] **LAYERED-VERIFY-008** — A `LayeredVerificationCheckResult` SHALL record
+- [x] **LAYERED-VERIFY-008** — A `LayeredVerificationCheckResult` SHALL record
   `producer`, `execution_state` (`completed` \| `failed_assertion` \|
   `execution_error` \| `incomplete` \| `not_run` \| `non_applicable` \|
   `stale`), `obligation_coverage` (`supported` \| `contradicted` \|
@@ -120,7 +119,7 @@
 
 ## Model-check command integration
 
-- [ ] **LAYERED-VERIFY-021** — A verification plan SHALL state its selected
+- [x] **LAYERED-VERIFY-021** — A verification plan SHALL state its selected
   checks, fit, exclusions/non-applicability, required inputs, assumptions,
   resource expectations, and residual gaps; it SHALL permit a justified
   single-layer plan, SHALL NOT impose a minimum layer count, and SHALL NOT be
@@ -129,7 +128,7 @@
   *Tests:* `spec/services/layered_verification/plans/build_spec.rb`
   *Code:* `LayeredVerification::Plans::Build` (#4433)
 
-- [ ] **LAYERED-VERIFY-022** — When a project declares a TLA+ model, an audit
+- [x] **LAYERED-VERIFY-022** — When a project declares a TLA+ model, an audit
   SHALL be able to run `tlc -config <Module>.cfg <Module>.tla` inside the
   existing isolated execution environment as a `formal_verification`
   producer, parsing `Model checking completed.` into `execution_state:
@@ -147,7 +146,7 @@
 
 ## Audit execution and coverage synthesis
 
-- [ ] **LAYERED-VERIFY-024** — A `layered_verification_audit` run SHALL
+- [x] **LAYERED-VERIFY-024** — A `layered_verification_audit` run SHALL
   execute the checks its verification plan selected
   (`LAYERED-VERIFY-021`) — including the correspondence checks against
   `LayeredVerificationCorrespondenceClaim`s (`business_to_model`,
@@ -174,7 +173,7 @@
 
 ## Audit-only permissions and separately authorized repair
 
-- [ ] **LAYERED-VERIFY-010** — Requesting a `layered_verification_audit` run
+- [x] **LAYERED-VERIFY-010** — Requesting a `layered_verification_audit` run
   SHALL be authorized by `ProjectPolicy#manage_issues?`. A
   `layered_verification_audit` run SHALL NOT write to the target project's
   canonical intent, models, specs, tests, or production code; its only writes
@@ -221,7 +220,7 @@
   *Tests:* `spec/services/layered_verification/repairs/complete_spec.rb`
   *Code:* `LayeredVerification::Repairs::Complete` (#4436)
 
-- [ ] **LAYERED-VERIFY-012** — Every UI, project-scoped chat, and MCP entry
+- [x] **LAYERED-VERIFY-012** — Every UI, project-scoped chat, and MCP entry
   point into layered verification SHALL read
   `FeatureFlags.enabled?(:layered_verification_add_on, project:)` and SHALL
   refuse the request when disabled; rollback SHALL preserve recorded evidence
@@ -232,7 +231,7 @@
 
 ## Agent-run goals and tool parity
 
-- [ ] **LAYERED-VERIFY-013** — `AgentRun::GOALS` SHALL include
+- [x] **LAYERED-VERIFY-013** — `AgentRun::GOALS` SHALL include
   `layered_verification_audit` and `layered_verification_repair` as distinct
   values; a `layered_verification_repair` run SHALL carry a non-nil
   `originating_audit_run_id`, set only by the explicit repair-request path
@@ -242,7 +241,7 @@
   *Tests:* `spec/models/agent_run_spec.rb`
   *Code:* `app/models/agent_run.rb` (#4432, #4433)
 
-- [ ] **LAYERED-VERIFY-014** — The project action, project-scoped chat tool,
+- [x] **LAYERED-VERIFY-014** — The project action, project-scoped chat tool,
   and MCP tool for requesting an audit or a repair SHALL dispatch through
   `Tools::Registry` into one shared tool class per action
   (`Tools::RequestLayeredVerificationAudit`,
@@ -257,7 +256,7 @@
 
 ## Inbox, stale-action validation, and deduplication
 
-- [ ] **LAYERED-VERIFY-015** — `Inbox::Queue::KINDS` SHALL include
+- [x] **LAYERED-VERIFY-015** — `Inbox::Queue::KINDS` SHALL include
   `LAYERED_VERIFICATION_FINDING_KIND`, backed by `Inbox::LayeredVerificationFinding`,
   scoped by project-policy visibility and independent of
   `auto_pick_enabled`. Its detail pane SHALL show the obligation's scope and
@@ -269,7 +268,7 @@
   *Tests:* `spec/services/inbox/layered_verification_finding_spec.rb`
   *Code:* `app/services/inbox/layered_verification_finding.rb` (#4433)
 
-- [ ] **LAYERED-VERIFY-016** — Chat discussion, acknowledgment, and deferral
+- [x] **LAYERED-VERIFY-016** — Chat discussion, acknowledgment, and deferral
   of a `LayeredVerificationFinding` SHALL NOT resolve it or approve any
   clarification; a proposed clarification SHALL show its pending-persistence
   state in the Inbox until its owning framework record is approved per
@@ -278,7 +277,7 @@
   *Tests:* `spec/services/inbox/layered_verification_finding_spec.rb`
   *Code:* `app/services/inbox/layered_verification_finding.rb` (#4433)
 
-- [ ] **LAYERED-VERIFY-017** — `LayeredVerificationFinding` identity SHALL be
+- [x] **LAYERED-VERIFY-017** — `LayeredVerificationFinding` identity SHALL be
   `(project_id, obligation_external_identity, correspondence_claim_type,
   cause_signature)`; a repeated audit reproducing the same identity SHALL
   attach a new observation to the existing unresolved finding rather than
@@ -287,7 +286,7 @@
   *Tests:* `spec/models/layered_verification_finding_spec.rb`
   *Code:* `app/models/layered_verification_finding.rb` (#4433, #4434)
 
-- [ ] **LAYERED-VERIFY-018** — Before honoring an Inbox action on a finding
+- [x] **LAYERED-VERIFY-018** — Before honoring an Inbox action on a finding
   (approve a clarification, request a repair, request a rerun), the handling
   controller action SHALL revalidate, immediately before acting: the
   obligation's `external_revision` still matches the project's current
@@ -326,7 +325,7 @@
 
 ## Business-review package
 
-- [ ] **LAYERED-VERIFY-023** — A `LayeredVerificationReviewPackage` SHALL bind,
+- [x] **LAYERED-VERIFY-023** — A `LayeredVerificationReviewPackage` SHALL bind,
   at creation, the obligation set's `external_revision`s, declared scope,
   verification-plan revision, contributing `LayeredVerificationCheckResult`
   references, recorded approvals, and Inbox decisions made while open, to one

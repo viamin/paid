@@ -6,12 +6,13 @@ module Tools
   class BaseTool
     include Pundit::Authorization
 
-    attr_reader :agent_run, :user, :session
+    attr_reader :agent_run, :mcp, :user, :session
 
-    def initialize(user:, session:, agent_run: nil)
+    def initialize(user:, session:, agent_run: nil, mcp: false)
       @agent_run = agent_run
       @user = user
       @session = session
+      @mcp = mcp
     end
 
     def call(**args)

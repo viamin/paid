@@ -17,6 +17,7 @@ module Tools
       "Tools::TriggerReadinessBootstrap",
       "Tools::RequestIssueContinuation",
       "Tools::RequestAcceptanceAudit",
+      "Tools::RequestLayeredVerificationAudit",
       "Tools::ResolveIssueCloseout",
       "Tools::GetAgentRun",
       "Tools::ListAgentRuns",
@@ -308,13 +309,13 @@ module Tools
         raise ArgumentError, "Unknown tool: #{name}" unless tool_class
         raise ArgumentError, "Tool arguments must be a JSON object" unless arguments.is_a?(Hash)
 
-        instantiate_tool(tool_class, user:, session:, agent_run:).dispatch(**arguments.symbolize_keys)
+        instantiate_tool(tool_class, user:, session:, agent_run:, mcp: true).dispatch(**arguments.symbolize_keys)
       end
 
-      def instantiate_tool(tool_class, user:, session:, agent_run:)
-        return tool_class.new(user:, session:) unless agent_run
+      def instantiate_tool(tool_class, user:, session:, agent_run:, mcp: false)
+        return tool_class.new(user:, session:, mcp:) unless agent_run
 
-        tool_class.new(user:, session:, agent_run:)
+        tool_class.new(user:, session:, agent_run:, mcp:)
       end
 
       def container_tool_unready?(name:, session:)
