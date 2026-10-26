@@ -363,6 +363,7 @@ Rails.application.routes.draw do
         post :label
         post :skip
         post :freeze
+        post :revise
         post :execute
         post :revise
       end

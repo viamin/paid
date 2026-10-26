@@ -161,6 +161,9 @@ case — verdict status, intent band, technical band, readiness, one cited
 evidence reference, and a reason — while the case shape, selection rationale,
 and frozen expectations stay hidden from the labeling surface; a judgment's
 readiness must follow from its judged bands (no averaging across axes).
+After unblinding, the sole judge may append a reasoned correction for a frozen
+case. The original blinded judgment and compiled report remain unchanged; each
+correction has its own actor, timestamp, full judgment, citation, and reason.
 Freezing requires every case labeled (skips block), re-checks the corpus
 digest, and compiles the reproducible report comparing the frozen judgments
 with the frozen expected bands, including citation compliance for cases that
