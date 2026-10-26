@@ -33,6 +33,16 @@ RSpec.describe FacetConfidence::CorpusRunner do
     expect(FeatureIntents::AssessFacet).to have_received(:call).exactly(8).times
   end
 
+  it "rejects a corpus pinned to a different assessor model before dispatching" do
+    stub_const("FeatureIntents::AssessFacet::MODEL_VERSION", "claude-sonnet-newer")
+    allow(FeatureIntents::AssessFacet).to receive(:call)
+
+    expect { described_class.call(project:, ledger_path: ledger) }
+      .to raise_error(described_class::PinnedModelMismatch, /claude-sonnet-4-6.*claude-sonnet-newer/)
+
+    expect(FeatureIntents::AssessFacet).not_to have_received(:call)
+  end
+
   it "retries a failed provider attempt and records the failed run it replaces" do
     failed_event = failed_run_event
     FacetConfidence::AssessmentCorpusLedger.append!(ledger_path: ledger, corpus_path: described_class::CORPUS_PATH, event: failed_event)

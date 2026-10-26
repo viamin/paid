@@ -8,6 +8,8 @@ module FacetConfidence
   # the resulting provider outcome in the append-only evaluation ledger.
   # @spec FACET-CONFIDENCE-016 @spec FACET-CONFIDENCE-017 @spec FACET-CONFIDENCE-018
   class CorpusRunner
+    PinnedModelMismatch = Class.new(StandardError)
+
     CORPUS_PATH = Rails.root.join("docs/intent/facet-confidence/assessment-corpus-manifest-v1.yml").freeze
     LEDGER_PATH = Rails.root.join("docs/intent/facet-confidence/assessment-evaluation-2026-10-23/ledger.jsonl").freeze
 
@@ -20,7 +22,10 @@ module FacetConfidence
     end
 
     def call
-      AssessmentCorpusLedger.load_corpus(corpus_path).reject { |corpus_case| covered_case_ids.include?(corpus_case.fetch("id")) }.map do |corpus_case|
+      corpus_cases = AssessmentCorpusLedger.load_corpus(corpus_path)
+      ensure_assessor_model!(corpus_cases)
+
+      corpus_cases.reject { |corpus_case| covered_case_ids.include?(corpus_case.fetch("id")) }.map do |corpus_case|
         run_case(corpus_case)
       end
     end
@@ -33,6 +38,13 @@ module FacetConfidence
       @covered_case_ids ||= assessment_runs.filter_map do |event|
         event["case_id"] unless event["status"] == "failed"
       end.to_set
+    end
+
+    def ensure_assessor_model!(corpus_cases)
+      corpus_models = corpus_cases.map { |corpus_case| corpus_case.fetch("model_version") }.uniq
+      return if corpus_models == [ FeatureIntents::AssessFacet::MODEL_VERSION ]
+
+      raise PinnedModelMismatch, "frozen corpus model #{corpus_models.join(', ')} does not match assessor model #{FeatureIntents::AssessFacet::MODEL_VERSION}"
     end
 
     def run_case(corpus_case)
