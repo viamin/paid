@@ -341,6 +341,17 @@ any repair: a scan never mutates source code or opens a PR on its own.
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
 that acceptance.
 
+The planned optimization recipe family is a bounded consumer of that
+maintenance capability, not a second maintenance workflow. A curated catalog
+may select report-only optimization recipes while preserving a free-text
+question path, honest evidence and broad-recommendation scope. A separately
+proposed policy may pre-authorize a *per-run*, opt-in queue of bounded,
+non-security repairs after semantic assessment; it remains default-off,
+subject to the maintenance rollout guard and repair-handoff contracts, and
+does not authorize a scan to modify source or create a PR. **Draft, pending
+owner acceptance**: `docs/intent/optimization-recipes/` records the policy
+for #4493–#4496; it enables neither maintenance rollout nor implementation.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the
