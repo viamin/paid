@@ -34,6 +34,26 @@ RSpec.describe FacetConfidence::CorpusRunner do
     expect(FeatureIntents::AssessFacet).to have_received(:new).exactly(8).times
   end
 
+  it "dispatches uncovered cases while holding the ledger lock" do
+    lock_held = false
+    allow(FacetConfidence::AssessmentCorpusLedger).to receive(:with_ledger_lock).and_wrap_original do |method, *arguments, &block|
+      method.call(*arguments) do
+        lock_held = true
+        block.call
+      ensure
+        lock_held = false
+      end
+    end
+    allow(FeatureIntents::AssessFacet).to receive(:new) do |assessment:|
+      expect(lock_held).to be(true)
+      instance_double(FeatureIntents::AssessFacet, cost_cents: 17, response_status: "completed", call: instance_double(FeatureIntentFacetAssessment,
+        status: "completed", intent_score: 80, technical_score: 80,
+        evidence_references: assessment.feature_intent_facet_direction.evidence.where(superseded_by: nil).pluck(:source_reference).first(1)))
+    end
+
+    described_class.call(project:, ledger_path: ledger)
+  end
+
   it "passes each frozen actor role into the assessor's active evidence" do
     assessed_contexts = []
     allow(FeatureIntents::AssessFacet).to receive(:new) do |assessment:|

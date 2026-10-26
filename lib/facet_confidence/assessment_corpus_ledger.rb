@@ -65,17 +65,21 @@ module FacetConfidence
     end
 
     def append!(ledger_path:, event:, corpus_path:)
+      with_ledger_lock(ledger_path) { append_locked!(ledger_path:, event:, corpus_path:) }
+    end
+
+    # Callers that hold with_ledger_lock can keep a covered-case check, provider
+    # dispatch, validation, and append in one critical section.
+    def append_locked!(ledger_path:, event:, corpus_path:)
       raise InvalidLedger, "event must be a JSON object" unless event.is_a?(Hash)
       raise InvalidLedger, "event_id is required" if event["event_id"].to_s.strip.empty?
       raise InvalidLedger, "recorded_at is required" if event["recorded_at"].to_s.strip.empty?
 
-      with_ledger_lock(ledger_path) do
-        event = event.merge("corpus_version" => corpus_version_of(corpus_path), "corpus_digest" => corpus_digest(corpus_path))
-        validate_entries!(corpus_path:, entries: events(ledger_path) + [ event ])
-        File.open(ledger_path, File::WRONLY | File::APPEND | File::CREAT, 0o644, encoding: "UTF-8") do |file|
-          file.puts(JSON.generate(event))
-          file.flush
-        end
+      event = event.merge("corpus_version" => corpus_version_of(corpus_path), "corpus_digest" => corpus_digest(corpus_path))
+      validate_entries!(corpus_path:, entries: events(ledger_path) + [ event ])
+      File.open(ledger_path, File::WRONLY | File::APPEND | File::CREAT, 0o644, encoding: "UTF-8") do |file|
+        file.puts(JSON.generate(event))
+        file.flush
       end
     end
 

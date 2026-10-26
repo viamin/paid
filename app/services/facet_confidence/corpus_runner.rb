@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "securerandom"
-require "set"
 
 module FacetConfidence
   # Executes the frozen corpus through FeatureIntents::AssessFacet and records
@@ -26,8 +25,10 @@ module FacetConfidence
       corpus_cases = AssessmentCorpusLedger.load_corpus(corpus_path)
       ensure_assessor_model!(corpus_cases)
 
-      corpus_cases.reject { |corpus_case| covered_case_ids.include?(corpus_case.fetch("id")) }.map do |corpus_case|
-        run_case(corpus_case)
+      AssessmentCorpusLedger.with_ledger_lock(ledger_path) do
+        corpus_cases.filter_map do |corpus_case|
+          run_case(corpus_case) unless covered_case_ids.include?(corpus_case.fetch("id"))
+        end
       end
     end
 
@@ -36,9 +37,9 @@ module FacetConfidence
     attr_reader :corpus_path, :ledger_path, :project
 
     def covered_case_ids
-      @covered_case_ids ||= assessment_runs.filter_map do |event|
+      assessment_runs.filter_map do |event|
         event["case_id"] unless event["status"] == "failed"
-      end.to_set
+      end
     end
 
     def ensure_assessor_model!(corpus_cases)
@@ -54,7 +55,7 @@ module FacetConfidence
       result = assessor.call
       event = event_for(corpus_case, result, response_status: assessor.response_status, cost_cents: cost_cents_for!(assessor, result),
         retry_of_event_id: failed_run_event_ids[corpus_case.fetch("id")])
-      AssessmentCorpusLedger.append!(ledger_path:, corpus_path:, event:)
+      AssessmentCorpusLedger.append_locked!(ledger_path:, corpus_path:, event:)
       event
     ensure
       facet = assessment&.feature_intent_facet_direction&.feature_intent_facet
@@ -106,11 +107,11 @@ module FacetConfidence
     end
 
     def assessment_runs
-      @assessment_runs ||= AssessmentCorpusLedger.events(ledger_path).select { |event| event["type"] == "assessment_run" }
+      AssessmentCorpusLedger.events(ledger_path).select { |event| event["type"] == "assessment_run" }
     end
 
     def failed_run_event_ids
-      @failed_run_event_ids ||= assessment_runs.each_with_object({}) do |event, event_ids|
+      assessment_runs.each_with_object({}) do |event, event_ids|
         event_ids[event.fetch("case_id")] = event.fetch("event_id") if event["status"] == "failed"
       end
     end
