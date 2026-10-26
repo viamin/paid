@@ -4,6 +4,22 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When an operator dismisses a partial-closeout
+  prerequisite notification, the system SHALL preserve personal removal
+  semantics without treating dismissal as evidence satisfaction or releasing
+  its scheduling guard. When a facet-confidence closeout evaluation compiles
+  its report, it SHALL retain the originating closeout source revision, actor,
+  and evaluation provenance with an explicit `insufficient` disposition; a
+  solo reference-judgment report SHALL not resolve a human or external
+  prerequisite, attest whole-issue completion, enable delivery, or manufacture
+  a human judgment.
+  *Code:* `app/models/notification.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
+  `app/services/facet_confidence/closeout_evaluation/compile_report.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/models/notification_spec.rb`,
+  `spec/services/facet_confidence/closeout_evaluation/compile_report_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its

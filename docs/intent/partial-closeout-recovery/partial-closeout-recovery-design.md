@@ -160,6 +160,18 @@ recording completion, so a continuation cannot dispatch after the attestation.
 
 ### Surfaces
 
+### Evidence authority and personal dismissal
+
+A partial-closeout prerequisite notification is a scheduling guard, not a
+substitute for an acceptance assessment. An operator may dismiss it from their
+personal Inbox, but dismissal neither verifies the named prerequisite nor
+releases automatic scheduling. Only verified resolution releases that guard.
+Evidence attached by a built-in evaluation report retains its originating
+closeout revision and actor provenance. A solo reference-judgment report is
+explicitly insufficient for a human or external prerequisite unless a current
+criterion assessment validates it; missing production measures and weaker
+solo-policy assurance remain visible.
+
 - Inbox: `Inbox::Queue`/`Inbox::Count` lane + `partial_closeout` detail pane
   with authorized actions (request continuation, resolve complete, guidance
   for prerequisite work), a contextual chat action which retrieves current

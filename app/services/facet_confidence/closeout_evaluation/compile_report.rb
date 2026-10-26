@@ -45,6 +45,7 @@ module FacetConfidence
             "project" => @evaluation.project.full_name,
             "source_revision" => @evaluation.source_revision
           },
+          "closeout_evidence" => closeout_evidence,
           "provenance" => {
             "corpus_path" => @evaluation.corpus_path,
             "corpus_digest" => @evaluation.corpus_digest,
@@ -68,6 +69,19 @@ module FacetConfidence
         # whose association targets predate the judgments.
         labels = @evaluation.labels.reload.index_by(&:case_id)
         @evaluation.corpus.cases.map { |corpus_case| case_entry(corpus_case, labels[corpus_case.fetch("id")]) }
+      end
+
+      # A frozen solo-maintainer reference set is attributable evidence for the
+      # originating closeout, but cannot attest an unrelated human/external
+      # prerequisite. Keep that weaker disposition with the durable report.
+      # @spec PARTIAL-CLOSEOUT-030
+      def closeout_evidence
+        {
+          "source_revision" => @evaluation.source_revision,
+          "disposition" => "insufficient",
+          "reason" => "The facet-confidence report is attached closeout evidence, but does not satisfy a human or external prerequisite by itself.",
+          "provenance" => { "actor_id" => @evaluation.created_by_id, "evaluation_id" => @evaluation.id }
+        }
       end
 
       def case_entry(corpus_case, label)
