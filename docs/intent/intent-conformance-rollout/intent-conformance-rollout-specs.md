@@ -140,3 +140,20 @@
   `app/views/projects/shadow_evaluations/_labeling.html.erb`.
   *Test:* `spec/services/intent_conformance/shadow_evaluation/evidence_spec.rb`,
   `spec/requests/projects/shadow_evaluations_spec.rb`.
+
+- [ ] **INTENT-CONFORMANCE-ROLLOUT-011** — After labels freeze, an authorized
+  operator action (including equivalent API/tool actions) SHALL durably queue
+  an idempotent reviewer execution and return without performing reviewer I/O.
+  The worker SHALL expose queued, running, partial, failed, cancelled, and
+  completed state; persist per-case progress and cost; support authorized
+  cooperative cancellation and resume without resending evaluated cases; and
+  recover stale queued/running work without fabricating unevaluated verdicts.
+  Available reports SHALL compile through the existing report service, and
+  execution evidence SHALL NOT accept a feature or enable rollout.
+  *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
+  *Code:* `app/services/intent_conformance/shadow_evaluation/queue_execution.rb`,
+  `app/jobs/intent_conformance/shadow_evaluation_job.rb`,
+  `app/services/intent_conformance/shadow_evaluation/cancel_execution.rb`.
+  *Test:* `spec/services/intent_conformance/shadow_evaluation/queue_execution_spec.rb`,
+  `spec/jobs/intent_conformance/shadow_evaluation_job_spec.rb`,
+  `spec/requests/projects/shadow_evaluations_spec.rb`.

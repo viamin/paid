@@ -1,6 +1,6 @@
 <%# Post-freeze surface: answers (strata, reviewer outputs) are visible here.
     Disagreements surface for maintainer review; revisions append without
-    overwriting originals. @spec INTENT-CONFORMANCE-ROLLOUT-007 @spec INTENT-CONFORMANCE-ROLLOUT-008 %>
+    overwriting originals. @spec INTENT-CONFORMANCE-ROLLOUT-007 @spec INTENT-CONFORMANCE-ROLLOUT-008 @spec INTENT-CONFORMANCE-ROLLOUT-011 %>
 <% cases = evaluation.corpus.cases %>
 <% labels = evaluation.labels.index_by(&:case_id) %>
 <% runs = evaluation.runs.index_by(&:case_id) %>
@@ -12,10 +12,16 @@
       <p class="text-xs text-gray-500">
         Frozen <%= evaluation.labels_frozen_at&.strftime("%Y-%m-%d %H:%M UTC") %> · answers visible from here on.
         Execution state: <span data-evaluation-execution><%= evaluation.status %></span><% if evaluation.last_failure_reason.present? %> — <%= evaluation.last_failure_reason %><% end %>.
+        <% progress = evaluation.execution_progress %>
+        Progress: <span data-evaluation-progress><%= progress[:evaluated] %>/<%= progress[:total] %> evaluated, <%= progress[:unavailable] %> unavailable, <%= number_to_currency(progress[:cost_cents] / 100.0) %> cost.</span>
       </p>
     </div>
-    <% if evaluation.frozen? || evaluation.failed? %>
-      <%= button_to "Execute reviewer now", execute_project_shadow_evaluation_path(project, evaluation, **inbox_context),
+    <% if evaluation.executing? %>
+      <%= button_to "Cancel execution", cancel_project_shadow_evaluation_path(project, evaluation, **inbox_context),
+            form: { data: { turbo_frame: "_top", turbo_confirm: "Stop after the current case? Collected evidence will remain available." } },
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-red-700 ring-1 ring-inset ring-red-300 hover:bg-red-50" %>
+    <% elsif evaluation.frozen? || evaluation.failed? || evaluation.partial? || evaluation.cancelled? %>
+      <%= button_to evaluation.runs.exists? ? "Resume reviewer" : "Execute reviewer now", execute_project_shadow_evaluation_path(project, evaluation, **inbox_context),
             form: { data: { turbo_frame: "_top", turbo_confirm: "Run the real conformance reviewer for every case through agent_harness? Costs apply." } },
             class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
     <% end %>
