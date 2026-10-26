@@ -169,6 +169,25 @@ recording completion, so a continuation cannot dispatch after the attestation.
   label and a multi-line input that fills the available pane width. Its submit
   button sits on a separate row, so a narrow detail pane never clips either
   control.
+
+### Authoritative admission diagnostics
+
+`Issues::CloseoutStatus` explains persisted exclusions from the canonical
+candidate scope; it does not decide eligibility. In addition to dependency
+edges, it reports every open native non-PR child that
+`without_open_non_pr_subissues` excludes and every active
+`partial_closeout.prerequisite` notification that contributes to
+`prerequisite_block_ids`. Each report carries the child or notification
+identity, title/description, evidence links, and the supported recovery route.
+An open child remains its own work and a human prerequisite remains unresolved
+evidence: diagnostics never close a child, dismiss a notification, infer
+completion, or silently replace a recorded team policy with a solo policy.
+When a prerequisite asks for policy selection, its action link is the explicit
+selection route; stale assessment or policy provenance remains visible until a
+fresh bounded audit records current evidence. The same additive blockers feed
+Inbox detail and count, API/chat/tool output, and continuation or report-only
+audit refusals. `unavailable` is retained only after the scoped canonical
+preflight rejects an issue for no diagnosed guard.
 - Controller: `request_continuation` and `resolve_closeout` collection routes
   on `projects/agent_runs` (authorize `:run_agent?`, audit events,
   stale-click resolvers) — same shape as `OPERATOR-INBOX-002C/002D/002E`.

@@ -105,6 +105,24 @@
   *Code:* `app/services/partial_closeouts/reconcile_legacy.rb`.
   *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-030** — When the canonical scoped continuation
+  admission excludes a partial-closeout issue for an open native non-PR child
+  or an active `partial_closeout.prerequisite` notification, the system SHALL
+  report each exclusion additively from the same persisted child and
+  notification records used by the candidate scope. Each blocker SHALL expose
+  the exact child or notification identity, evidence and safe link, plus its
+  supported recovery route. It SHALL preserve unresolved child work and human
+  decision/evidence, including an explicit policy-selection link where the
+  notification supplies one; it SHALL not close, dismiss, infer completion, or
+  silently change policy to make admission pass. Inbox detail/count, chat/API
+  context, continuation and report-only audit refusals SHALL use these same
+  reasons. `unavailable` SHALL remain only for a genuinely undiagnosed scoped
+  preflight refusal.
+  *Code:* `app/services/issues/closeout_status.rb`,
+  `app/views/dashboard/_inbox_closeout_blockers.html.erb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-001** — When `Issues::CloseoutEvidence` evaluates an
   issue, the system SHALL assemble the closeout evidence set from (a) merged
   PR rows linked to the issue via `parent_issue_id`, (b) merged PR rows matched

@@ -398,7 +398,8 @@ RSpec.describe "Inbox" do
       create(:notification, :error, account: account, subject: guided_issue,
         source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
         title: "Pilot results need operator action",
-        description: "Pilot latency results: attach the measured p95 to the follow-up comment and link it here")
+        description: "Pilot latency results: attach the measured p95 to the follow-up comment and link it here",
+        action_url: "/projects/#{project.id}/shadow_evaluations/new")
     end
 
     def render_guided_pane
@@ -421,6 +422,15 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("Supply human evidence")
       expect(response.body).to include("attest completion")
       expect(response.body).to include(partial_closeout_guide_path)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-030
+    it "links the active human prerequisite's explicit recovery route" do
+      render_guided_pane
+
+      expect(response.body).to include("Active human prerequisite notification")
+      expect(response.body).to include("Open prerequisite action")
+      expect(response.body).to include("/projects/#{project.id}/shadow_evaluations/new")
     end
 
     it "collects an editable rationale and separates the three completions" do
