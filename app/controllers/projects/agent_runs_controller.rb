@@ -351,6 +351,34 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Acceptance audit queued.")
     end
 
+    # Starts an isolated evidence probe for a blocked technical prerequisite.
+    # It is intentionally separate from continuation: the probe cannot create
+    # implementation work or grant a disabled tool rollout.
+    # @spec PARTIAL-CLOSEOUT-028
+    def validate_technical_prerequisite
+      authorize @project, :run_agent?
+
+      issue = resolve_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      result = PrerequisiteExecutionValidations::Start.call(
+        issue: issue, actor: current_user, tool_name: params[:tool_name]
+      )
+      message = if result.unavailable_reason
+        "Validation is unavailable: #{result.unavailable_reason}"
+      elsif result.reused
+        "The existing prerequisite validation is still in progress."
+      else
+        "Technical prerequisite validation queued."
+      end
+      redirect_to safe_return_target || dashboard_path, notice: message
+    rescue ActiveRecord::RecordInvalid, ArgumentError => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
+    end
+
     # Records the operator's attestation that the recorded closeout evidence
     # completes the issue (evidence-gated; see Issues::ResolveCloseout).
     # @spec PARTIAL-CLOSEOUT-007

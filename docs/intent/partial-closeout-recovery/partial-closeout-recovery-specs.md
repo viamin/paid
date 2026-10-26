@@ -518,3 +518,27 @@
   `spec/services/inbox/chat_context_spec.rb`,
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [ ] **PARTIAL-CLOSEOUT-028**: When an authorized operator starts technical
+  prerequisite validation from a relevant Inbox item, the system shall inspect
+  compatible execution backends through the existing scheduler and either
+  queue one idempotent isolated validation run or persist the exact unavailable
+  capability/health reason; it shall not infer backend availability from the
+  control-plane host.
+  *Code:* `app/services/prerequisite_execution_validations/start.rb`.
+  *Test:* `spec/services/prerequisite_execution_validations/start_spec.rb`.
+
+- [ ] **PARTIAL-CLOSEOUT-029**: The validation shall run its selected fixed
+  read-only analyzer only through `AgentRun#execute_in_execution_environment`,
+  apply the existing image/network/hardening and sidecar allowlist contracts,
+  and always request normal execution-environment cleanup.
+  *Code:* `app/jobs/prerequisite_execution_validation_job.rb`.
+  *Test:* `spec/jobs/prerequisite_execution_validation_job_spec.rb`.
+
+- [ ] **PARTIAL-CLOSEOUT-030**: The validation shall durably record the
+  execution outcome, stdout, stderr, exit status, analyzer/tool identity,
+  endpoint metadata, available image/checkout identity, and cleanup evidence;
+  missing pilot authorization, attachment, or compatible backend shall remain
+  unavailable rather than being silently enabled or retried.
+  *Code:* `app/jobs/prerequisite_execution_validation_job.rb`.
+  *Test:* `spec/jobs/prerequisite_execution_validation_job_spec.rb`.

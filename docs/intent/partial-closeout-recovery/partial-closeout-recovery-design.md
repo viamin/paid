@@ -374,6 +374,26 @@ continues to bind its criterion evidence to the current closeout digest and
 issue-intent revision; a later explicit acceptance audit is required when
 those revisions change.
 
+### Capability-aware technical prerequisite validation (#4643)
+
+An Inbox prerequisite may require live isolated-execution evidence rather than
+another continuation in the workspace that reported the gap. The Inbox action
+creates a synthetic `AgentRun` and first asks `Containers::BackendScheduler`
+for compatible backends. The operator is shown an unavailable result with the
+recorded compatibility or health reason when no backend can satisfy the run;
+the control-plane host's Docker socket is never used as that decision.
+
+The validation worker provisions through `AgentRun`, invokes only a fixed
+read-only native probe through `execute_in_execution_environment`, and always
+uses the normal cleanup lifecycle. It records the run, pinned checkout/image
+identity available to the run, analyzer/tool identity, endpoint metadata,
+stdout, stderr, exit status, outcome, and cleanup result in the run's durable
+verification evidence. A requested marketplace tool requires both an attached
+snapshot and the existing `marketplace_tool_sidecars` pilot flag; a missing
+flag or attachment is an explicit unavailable outcome, never an implicit
+rollout or unchanged retry. No command, host shell access, Docker socket, or
+mount path is accepted from the Inbox request.
+
 ## Alternatives considered
 
 - *Lift the merged-PR guard via paid_state*: explicitly rejected — the guard is

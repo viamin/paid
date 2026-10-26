@@ -248,6 +248,27 @@
     <% end %>
 
     <% if policy(entry.project).run_agent? %>
+      <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-950">
+        <p class="font-medium">Technical execution evidence</p>
+        <p class="mt-1">Run a bounded native analyzer probe in a compatible isolated execution environment. This records the pinned checkout/image identity, stdout, stderr, exit status, endpoint metadata, and cleanup result. A disabled sidecar rollout or unavailable compatible host is recorded as unavailable; this action does not enable either.</p>
+        <%= button_to "Validate technical prerequisite",
+              validate_technical_prerequisite_project_agent_runs_path(entry.project),
+              params: { issue_id: issue.id, return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
+              class: "mt-3 inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500",
+              data: { turbo_confirm: "Queue one isolated technical-prerequisite validation for ##{issue.github_number}? It will not expose host shell access or create implementation work." } %>
+        <% validation_run = issue.agent_runs.order(created_at: :desc).detect { |run| run.external_metadata.dig("prerequisite_execution_validation", "kind") == "technical_prerequisite" } %>
+        <% if validation_run %>
+          <% validation = validation_run.verification_result["prerequisite_execution_validation"] || {} %>
+          <p class="mt-3 text-xs">
+            Latest validation: <%= validation["outcome"].presence || validation_run.status %>
+            · cleanup <%= validation["cleanup"].presence || "pending" %>
+            · <%= link_to "view durable evidence", project_agent_run_path(entry.project, validation_run), class: "font-medium underline" %>
+          </p>
+        <% end %>
+      </div>
+    <% end %>
+
+    <% if policy(entry.project).run_agent? %>
         <%= form_with url: link_prerequisite_project_agent_runs_path(entry.project),
               data: { turbo_frame: "_top" },
               class: "flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3 sm:flex-row sm:items-end" do |form| %>
