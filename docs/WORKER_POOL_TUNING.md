@@ -20,6 +20,13 @@ GoodJob processes background jobs using a thread pool backed by PostgreSQL.
 
 ### Queue Priority Design
 
+Design-artifact reconciliation emits `feature_intents.reconciliation_started`
+and `feature_intents.reconciliation_finished` structured logs. Compare
+`rss_before_kb`, `rss_after_kb`, `allocated_objects`, `duration_ms`, and
+`artifacts_reconciled` across complete sweeps. `process_peak_rss_kb` is the
+Linux process lifetime high-water mark, not a job-specific peak. RSS fields
+are null when `/proc` is unavailable. Deltas include other jobs in the process.
+
 Jobs are assigned to five priority queues:
 
 | Queue | Priority | Jobs | Rationale |

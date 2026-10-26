@@ -20,6 +20,116 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     allow(AgentHarness).to receive(:send_message).and_return(response)
   end
 
+  # @spec DESIGN-RECONCILIATION-002
+  describe "coalescing", :good_job do
+    around do |example|
+      original_adapter = described_class.queue_adapter
+      described_class.queue_adapter = GoodJob::Adapter.new(execution_mode: :external)
+      example.run
+    ensure
+      described_class.queue_adapter = original_adapter
+    end
+
+    it "persists one delayed job per project without pushing its deadline back" do
+      freeze_time do
+        first = described_class.enqueue_for(project.id)
+        deadline = GoodJob::Job.find(first.provider_job_id).scheduled_at
+        travel 10.seconds
+        described_class.enqueue_for(project.id)
+        described_class.enqueue_for(create(:project).id)
+
+        jobs = GoodJob::Job.where(job_class: described_class.name, finished_at: nil)
+        expect(jobs.count).to eq(2)
+        expect(GoodJob::Job.find(first.provider_job_id).scheduled_at).to eq(deadline)
+        expect(deadline).to eq(20.seconds.from_now)
+      end
+    end
+
+    it "retains one follow-up when syncs arrive while a project reconciliation is running" do
+      client = instance_double(GithubClient)
+      allow(GithubClient).to receive(:new).and_return(client)
+      allow(client).to receive(:ref).and_raise(GithubClient::Error, "unavailable")
+      parent = described_class.perform_later(project.id)
+      subscriber = lambda do |event|
+        next unless event.payload[:job].job_id == parent.job_id
+
+        2.times { described_class.enqueue_for(project.id) }
+      end
+
+      ActiveSupport::Notifications.subscribed(subscriber, "perform_start.active_job") do
+        GoodJob::Job.find(parent.provider_job_id).perform(lock_id: SecureRandom.uuid)
+      end
+
+      pending = GoodJob::Job.where(job_class: described_class.name, finished_at: nil).sole
+      expect(pending.serialized_params.fetch("arguments")).to eq([ project.id ])
+      expect(described_class.good_job_concurrency_config).to include(enqueue_limit: 1, perform_limit: 1)
+      expect(described_class.good_job_concurrency_config).not_to have_key(:total_limit)
+    end
+
+    it "waits for synchronized evidence to commit before coalescing or enqueueing" do
+      project_id = project.id
+      ActiveRecord::Base.transaction do
+        described_class.enqueue_for(project_id)
+        expect(GoodJob::Job.where(job_class: described_class.name)).to be_empty
+      end
+
+      expect(GoodJob::Job.where(job_class: described_class.name).sole.serialized_params.fetch("arguments"))
+        .to eq([ project_id ])
+    end
+
+    it "does not enqueue a reconciliation for a rolled-back synchronization" do
+      project_id = project.id
+      ActiveRecord::Base.transaction do
+        described_class.enqueue_for(project_id)
+        raise ActiveRecord::Rollback
+      end
+
+      expect(GoodJob::Job.where(job_class: described_class.name)).to be_empty
+    end
+  end
+
+  # @spec DESIGN-RECONCILIATION-002
+  describe "memory measurements" do
+    before { allow(Rails.logger).to receive(:info) }
+
+    it "records process memory, allocations and elapsed time for a complete execution" do
+      described_class.perform_now(project.id, 999)
+
+      expect(Rails.logger).to have_received(:info).with(hash_including(
+        message: "feature_intents.reconciliation_started", project_id: project.id,
+        rss_kb: be_a(Integer).or(be_nil)
+      ))
+      expect(Rails.logger).to have_received(:info).with(hash_including(
+        message: "feature_intents.reconciliation_finished", project_id: project.id,
+        status: "completed", allocated_objects: be >= 0, duration_ms: be >= 0,
+        rss_before_kb: be_a(Integer).or(be_nil), rss_after_kb: be_a(Integer).or(be_nil),
+        process_peak_rss_kb: be_a(Integer).or(be_nil)
+      ))
+    end
+
+    it "records failure measurements without swallowing the failure" do
+      client = instance_double(GithubClient)
+      allow(GithubClient).to receive(:new).and_return(client)
+      allow(client).to receive(:ref).and_raise(TypeError, "unexpected response")
+
+      expect { described_class.perform_now(project.id) }.to raise_error(TypeError, "unexpected response")
+
+      expect(Rails.logger).to have_received(:info).with(hash_including(
+        message: "feature_intents.reconciliation_finished", status: "failed", project_id: project.id
+      ))
+    end
+
+    it "still reconciles when the diagnostic procfs read exhausts file descriptors" do
+      allow(File).to receive(:read).and_call_original
+      allow(File).to receive(:read).with("/proc/self/status").and_raise(Errno::EMFILE)
+
+      expect { described_class.perform_now(project.id, 999) }.not_to raise_error
+      expect(Rails.logger).to have_received(:info).with(hash_including(
+        message: "feature_intents.reconciliation_finished", status: "completed", rss_after_kb: nil
+      ))
+    end
+  end
+
   it "persists an actionable finding from a synced design pull request" do
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
 

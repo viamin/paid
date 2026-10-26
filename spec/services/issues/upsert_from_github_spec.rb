@@ -40,6 +40,15 @@ RSpec.describe Issues::UpsertFromGithub do
       )
     end
 
+    # @spec DESIGN-RECONCILIATION-002
+    it "delays repository reconciliation so a burst of PR syncs can share a sweep" do
+      freeze_time do
+        expect { described_class.call(project:, github_issue:) }
+          .to have_enqueued_job(FeatureIntents::ReconcileDesignArtifactsJob)
+          .with(project.id).at(30.seconds.from_now)
+      end
+    end
+
     it "restores the ignored-mode TDD gate when a test-writing PR is reconciled" do # @spec LABEL-CONTROL-005
       project.update!(label_integration_mode: "ignored")
       create(:agent_run, project: project, goal: "create_pr", tdd_phase: "test_writing",
