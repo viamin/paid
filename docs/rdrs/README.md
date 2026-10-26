@@ -231,6 +231,13 @@ completion-forward-work behavior. It keeps #4309 open for bounded
 investigations, held-issue publication, activation/isolation reporting, the
 assessment corpus, and browser-backed diagram evidence.
 
+The [2026-10-26 RDR-070 recovery audit](audit-report-2026-10-26-rdr-070.md)
+keeps RDR-070 **Partially Implemented**. The frozen corpus and #4596 blinded
+evaluation workflow are shipped, but the authentic human-reference judgments
+and measured acceptance report remain owned by #4596; a queued run or fixture
+ledger is not acceptance evidence. #4323 therefore continues to track #4309
+without closing the umbrella.
+
 The [2026-10-22 RDR-069 closeout refresh](audit-report-2026-10-22-rdr-069.md)
 re-audits RDR-069 against shipped code and a live run (3043 examples, 0
 failures; 23 `spec/system` examples skipped for a missing Chromium): RDR-069

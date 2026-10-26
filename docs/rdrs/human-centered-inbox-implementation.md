@@ -335,7 +335,9 @@ feature completion and release/flag reporting.
 
 ## C70 — Evaluate and close out facet confidence and clarification ([#4323](https://github.com/viamin/paid/issues/4323))
 
-**Dependencies:** Depends on #4316. Depends on #4318.
+**Dependencies:** Depends on #4316. Depends on #4318. Depends on #4573.
+Depends on #4596 for the blinded human-reference evaluation and measured
+acceptance report.
 
 - [ ] Run the versioned assessment corpus and report false readiness, unnecessary clarification, human corrections, cost and rework.
 - [ ] Prove numerical bounds, unknown handling, explicit preference provenance, correction precedence and 79/80 readiness behavior.
