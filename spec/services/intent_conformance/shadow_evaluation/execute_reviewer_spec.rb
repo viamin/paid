@@ -143,7 +143,7 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
 
     expect(result).to be_success
     expect(result.failed).to eq(2)
-    expect(evaluation.reload).to be_failed
+    expect(evaluation.reload).to be_partial
     expect(evaluation.last_failure_reason).to include("without an evaluated reviewer verdict")
     evaluation.runs.each do |run|
       expect(run).to be_not_evaluated
@@ -195,6 +195,22 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     expect(result.failed).to eq(0)
     expect(evaluation.reload).to be_completed
     expect(evaluation.runs.count).to eq(2)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  it "honors cancellation between cases without inventing evidence for the remainder" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message) do
+      evaluation.update!(cancel_requested_at: Time.current)
+      llm_response("within_scope")
+    end
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).to be_success
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs.pluck(:case_id)).to eq([ "A-01" ])
   end
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-007 — any project operator may execute,

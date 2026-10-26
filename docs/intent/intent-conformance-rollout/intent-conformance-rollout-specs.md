@@ -140,3 +140,17 @@
   `app/views/projects/shadow_evaluations/_labeling.html.erb`.
   *Test:* `spec/services/intent_conformance/shadow_evaluation/evidence_spec.rb`,
   `spec/requests/projects/shadow_evaluations_spec.rb`.
+
+- [x] **INTENT-CONFORMANCE-ROLLOUT-011** — When an authorized operator starts,
+  retries, resumes, or cancels an Inbox-linked frozen shadow evaluation, the
+  system SHALL use one idempotent background lifecycle with queued, running,
+  partial, failed, cancelled, and completed states. It SHALL expose durable
+  per-case evaluated progress and cost, preserve collected evidence on
+  cancellation, resume only cases without evaluated verdicts, compile available
+  reports in the worker, and recover an interrupted worker without stranding a
+  running evaluation. The UI and documented task SHALL use the same lifecycle.
+  *Code:* `app/services/intent_conformance/shadow_evaluation/queue_reviewer_execution.rb`,
+  `app/services/intent_conformance/shadow_evaluation/cancel_reviewer_execution.rb`,
+  `app/jobs/intent_conformance/shadow_evaluation/execute_job.rb`.
+  *Test:* `spec/jobs/intent_conformance/shadow_evaluation/execute_job_spec.rb`,
+  `spec/requests/projects/shadow_evaluations_spec.rb`.

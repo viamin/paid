@@ -85,11 +85,13 @@ module IntentConformance
       end
 
       def execute_cases
-        @evaluation.update!(status: "executing", execute_started_at: Time.current)
+        @evaluation.update!(status: "running", execute_started_at: Time.current) unless @evaluation.running?
         executed = 0
         failed = 0
 
         @evaluation.corpus.cases.each do |corpus_case|
+          return cancelled(executed, failed) if cancellation_requested?
+
           next if evaluated_run_for(corpus_case.fetch("id"))
 
           verdict, failure_reason, model, cost = review_case(corpus_case)
@@ -235,10 +237,19 @@ module IntentConformance
         if failed.zero?
           @evaluation.update!(status: "completed", completed_at: Time.current, last_failure_reason: nil)
         else
-          @evaluation.update!(status: "failed", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
+          @evaluation.update!(status: "partial", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
         end
         log_executed(executed, failed)
         Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
+      end
+
+      def cancelled(executed, failed)
+        @evaluation.update!(status: "cancelled", cancelled_at: Time.current)
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed:, failed:)
+      end
+
+      def cancellation_requested?
+        IntentConformanceShadowEvaluation.where(id: @evaluation.id).pick(:cancel_requested_at).present?
       end
 
       def prompt_digest
