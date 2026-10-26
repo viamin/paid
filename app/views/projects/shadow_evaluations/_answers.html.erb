@@ -14,15 +14,23 @@
         Execution state: <span data-evaluation-execution><%= evaluation.status %></span><% if evaluation.last_failure_reason.present? %> — <%= evaluation.last_failure_reason %><% end %>.
       </p>
     </div>
-    <% if evaluation.frozen? || evaluation.failed? %>
-      <%= button_to "Execute reviewer now", execute_project_shadow_evaluation_path(project, evaluation, **inbox_context),
+    <% if evaluation.frozen? || evaluation.failed? || evaluation.partial? || evaluation.cancelled? %>
+      <%= button_to evaluation.runs.exists? ? "Resume reviewer execution" : "Execute reviewer now", execute_project_shadow_evaluation_path(project, evaluation, **inbox_context),
             form: { data: { turbo_frame: "_top", turbo_confirm: "Run the real conformance reviewer for every case through agent_harness? Costs apply." } },
             class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
+    <% elsif evaluation.queued? || evaluation.running? %>
+      <%= button_to "Cancel execution", cancel_project_shadow_evaluation_path(project, evaluation, **inbox_context),
+            form: { data: { turbo_frame: "_top", turbo_confirm: "Stop after the current case? Collected evidence will be retained." } },
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     <% end %>
   </div>
   <p class="mt-2 text-xs text-gray-500">
     Equivalent documented command: <code>bin/rails "intent_conformance:shadow_evaluation:execute[<%= evaluation.id %>]"</code>.
     Prerequisite validation alone is never execution.
+  </p>
+  <p class="mt-1 text-xs text-gray-500">
+    Progress: <%= runs.values.count(&:evaluated?) %> evaluated, <%= runs.values.count(&:not_evaluated?) %> unavailable, <%= cases.length - runs.length %> remaining ·
+    cost: <%= runs.values.sum(&:cost_cents) %>¢.
   </p>
 </div>
 

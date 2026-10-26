@@ -149,28 +149,53 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("intentionally_drifted")
   end
 
-  it "executes the real reviewer through agent_harness, records failures as not evaluated, and shows the report" do
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  it "queues reviewer execution promptly instead of invoking the provider in the request" do
     evaluation = start_evaluation_from_committed_corpus!
     label_all!(evaluation)
     freeze!(evaluation)
 
-    # Corpus cases reference a repository outside this project, so every
-    # reviewer attempt fails closed and is recorded as not evaluated —
-    # prerequisite validation is never presented as execution.
-    post execute_project_shadow_evaluation_path(project, evaluation)
-    follow_redirect!
+    expect {
+      post execute_project_shadow_evaluation_path(project, evaluation)
+    }.to have_enqueued_job(IntentConformanceShadowEvaluationJob).with(evaluation.id)
 
-    expect(response.body).to include("not evaluated")
-    expect(evaluation.reload).to be_failed
-    evaluation.runs.each do |run|
-      expect(run).to be_not_evaluated
-      expect(run.failure_reason).to eq("case_repository_outside_project")
+    expect(response).to redirect_to(project_shadow_evaluation_path(project, evaluation))
+    expect(evaluation.reload).to be_queued
+    expect(evaluation.runs).to be_empty
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-012
+  it "cancels queued reviewer execution without discarding collected evidence" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    evaluation.update!(status: "running")
+    evaluation.runs.create!(case_id: "A-01", verdict: "within_scope", reviewer_run_id: "r1", reviewer_model: "m",
+      prompt_digest: "d", cost_cents: 12, recorded_at: Time.current)
+
+    post cancel_project_shadow_evaluation_path(project, evaluation)
+
+    expect(response).to redirect_to(project_shadow_evaluation_path(project, evaluation))
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs.find_by!(case_id: "A-01").cost_cents).to eq(12)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011 @spec INTENT-CONFORMANCE-ROLLOUT-013
+  it "records provider failures in the background job and compiles the available report" do
+    evaluation = start_evaluation_from_committed_corpus!
+    label_all!(evaluation)
+    freeze!(evaluation)
+
+    perform_enqueued_jobs do
+      post execute_project_shadow_evaluation_path(project, evaluation)
     end
 
-    get project_shadow_evaluation_path(project, evaluation)
+    expect(evaluation.reload).to be_failed
+    expect(evaluation.runs).to all(be_not_evaluated)
+    expect(evaluation.report).to be_present
 
-    expect(response.body).to include("Reproducible report")
-    expect(response.body).to include("solo")
+    get project_shadow_evaluation_path(project, evaluation)
+    expect(response.body).to include("Reproducible report").and include("solo")
   end
 
   it "appends post-result revisions without overwriting the original blinded label" do

@@ -140,3 +140,26 @@
   `app/views/projects/shadow_evaluations/_labeling.html.erb`.
   *Test:* `spec/services/intent_conformance/shadow_evaluation/evidence_spec.rb`,
   `spec/requests/projects/shadow_evaluations_spec.rb`.
+
+- [x] **INTENT-CONFORMANCE-ROLLOUT-011** — When an authorized operator starts
+  or resumes a frozen evaluation, the system SHALL persist a queued operation
+  and return promptly without invoking the reviewer in the HTTP request;
+  duplicate submissions SHALL enqueue at most one active operation.
+  *Code:* `app/services/intent_conformance/shadow_evaluation/enqueue_execution.rb`,
+  `app/jobs/intent_conformance_shadow_evaluation_job.rb`.
+  *Test:* `spec/requests/projects/shadow_evaluations_spec.rb`.
+
+- [x] **INTENT-CONFORMANCE-ROLLOUT-012** — While an evaluation is queued or
+  running, an authorized operator SHALL be able to cancel it. Cancellation
+  SHALL retain completed case evidence and stop before the next case without
+  fabricating verdicts for unevaluated cases.
+  *Code:* `app/controllers/projects/shadow_evaluations_controller.rb`,
+  `app/services/intent_conformance/shadow_evaluation/execute_reviewer.rb`.
+  *Test:* `spec/requests/projects/shadow_evaluations_spec.rb`.
+
+- [x] **INTENT-CONFORMANCE-ROLLOUT-013** — The background operation SHALL
+  expose queued, running, partial, failed, cancelled, and completed states;
+  it SHALL compile any available report and mark an interrupted running
+  operation failed rather than leaving it indefinitely active.
+  *Code:* `app/jobs/intent_conformance_shadow_evaluation_job.rb`.
+  *Test:* `spec/requests/projects/shadow_evaluations_spec.rb`.
