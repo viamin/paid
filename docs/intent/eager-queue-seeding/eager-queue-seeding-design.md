@@ -294,6 +294,25 @@ changing which runs the scheduler starts. A project with many queued issues
 still only gets its fair share of concurrent slots; the dashboard preview
 simply shows the full backlog.
 
+## Empty queue diagnosis
+
+`Dashboard::QueueDiagnosis` is the read-only explanation paired with the
+Upcoming Queue preview. It consumes the same canonical candidate scope as
+`Dashboard::EligibilityBreakdown` and the visible queued/active `AgentRun`
+relations; it does not infer readiness from dashboard state or trigger a
+recovery while rendering. Its states deliberately distinguish no waiting
+backlog with active work, eligible candidates that lack a queued or active
+run, known dependency or decision holds, deliberate policy pauses, and an
+unknown result when a source query cannot be completed.
+
+Issue-level entries retain each candidate's inspectable blocker provenance and
+the supported next action. The diagnosis reports queued and active work
+separately from eligible candidates so the operator can tell a scheduler
+backlog from a failed handoff. Existing event seeding and
+`AutoPickEligibilitySweepJob` remain the only recovery authorities; their
+idempotent `EnqueueEligible` path and planning-hold reconciliation provide the
+bounded recovery without rendering-side mutations.
+
 ## What this is not
 
 - **Not a capacity control.** Eager seeding creates runs; it does not start

@@ -33,6 +33,27 @@
   `Issues::BulkEnqueueEligible#each_eligible_issue`.
   *Test:* `spec/services/issues/bulk_enqueue_eligible_spec.rb`.
 
+## Empty queue diagnosis
+
+- [x] **EAGER-QUEUE-017** — When an Upcoming Queue preview is empty, the
+  dashboard SHALL read canonical eligibility and scheduler relations to report
+  exactly one of: active work with no waiting backlog, eligible work not yet
+  seeded, known holds, deliberate policy pause, an empty healthy backlog, or
+  unknown coverage. It SHALL report eligible candidates separately from queued
+  and active runs and SHALL never treat a failed diagnosis query as proof that
+  no work exists.
+  *Code:* `Dashboard::QueueDiagnosis#call`.
+  *Test:* `spec/services/dashboard/queue_diagnosis_spec.rb`.
+
+- [x] **EAGER-QUEUE-018** — The empty queue explanation SHALL be read-only:
+  rendering SHALL not invoke semantic assessment, repository execution,
+  remote mutation, or queue recovery. Eligible-but-unseeded work SHALL expose
+  the existing supported recovery action, while dependency/decision holds and
+  deliberate pauses retain their provenance rather than being cleared.
+  *Code:* `Dashboard::QueueDiagnosis#call`, dashboard queue-preview partial.
+  *Test:* `spec/services/dashboard/queue_diagnosis_spec.rb`,
+  `spec/views/dashboard/queue_preview_frame_partial_spec.rb`.
+
 ## Reactive seeding triggers
 
 - [x] **EAGER-QUEUE-004** — The system SHALL seed eligible issues on issue
