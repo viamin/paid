@@ -341,6 +341,18 @@ any repair: a scan never mutates source code or opens a PR on its own.
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
 that acceptance.
 
+The proposed maintenance capability also has a reviewable optimization recipe
+family: a code-defined catalog may present curated audit types while retaining
+free-text objectives and broad recommendation scope. Its findings remain
+report-only unless a user elects a separately approved, per-run bounded-repair
+policy. That election is off by default; it does not make a recipe, tenant, or
+maintenance scan repair-capable. Semantic assessment is performed through
+`agent_harness`; deterministic control-plane gates enforce authorization,
+snapshotted limits, stale-evidence revalidation, category exclusions, and
+idempotency. Security repairs remain manual-only pending a dedicated policy.
+This is draft design intent, not a rollout authorization; see
+`docs/intent/maintenance-optimization/`.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the
