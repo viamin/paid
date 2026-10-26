@@ -365,7 +365,6 @@ Rails.application.routes.draw do
         post :freeze
         post :revise
         post :execute
-        post :revise
       end
     end
     # Facet-confidence closeout evaluation (#4596): blinded reference
@@ -377,6 +376,7 @@ Rails.application.routes.draw do
         post :label
         post :skip
         post :freeze
+        post :revise
       end
     end
     post :detect_services, on: :member

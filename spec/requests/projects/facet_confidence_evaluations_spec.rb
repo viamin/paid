@@ -139,6 +139,19 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response.body).not_to include("Execute reviewer")
   end
 
+  it "accepts a post-freeze correction through the facet evaluation route" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    post freeze_project_facet_confidence_evaluation_path(project, evaluation)
+
+    corpus_case = evaluation.corpus.find_case("FC-CORPUS-01")
+    post revise_project_facet_confidence_evaluation_path(project, evaluation),
+      params: { case_id: corpus_case.fetch("id"), **judgment_params(corpus_case, reason: "Corrected after review.") }
+
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation))
+    expect(evaluation.labels.find_by!(case_id: corpus_case.fetch("id")).revisions).to have_attributes(count: 1)
+  end
+
   it "rejects labeling by anyone other than the operator who started the evaluation" do
     evaluation = start_evaluation!
     sign_in member
