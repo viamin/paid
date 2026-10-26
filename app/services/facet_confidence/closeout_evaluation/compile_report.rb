@@ -57,6 +57,7 @@ module FacetConfidence
             "labels_frozen_at" => @evaluation.labels_frozen_at&.iso8601
           },
           "cases" => entries,
+          "revisions" => @evaluation.report.fetch("revisions", {}),
           "measures" => measures(entries),
           "policy" => "reference judgments are policy assessments, not calibrated probabilities; " \
             "this report neither closes the source issue, enables delivery, nor changes the 80/80 defaults"
@@ -67,16 +68,18 @@ module FacetConfidence
         # Reload: the calling request or spec may hold a memoized evaluation
         # whose association targets predate the judgments.
         labels = @evaluation.labels.reload.index_by(&:case_id)
-        @evaluation.corpus.cases.map { |corpus_case| case_entry(corpus_case, labels[corpus_case.fetch("id")]) }
+        revisions = @evaluation.report.fetch("revisions", {})
+        @evaluation.corpus.cases.map { |corpus_case| case_entry(corpus_case, labels[corpus_case.fetch("id")], revisions[corpus_case.fetch("id")]) }
       end
 
-      def case_entry(corpus_case, label)
+      def case_entry(corpus_case, label, revision)
         expected = corpus_case.fetch("expected")
         judgment = label&.labeled? ? judgment_of(label) : nil
         {
           "case_id" => corpus_case.fetch("id"),
           "shape" => corpus_case["shape"],
           "judgment" => judgment,
+          "revision" => revision,
           "expected" => expected.slice("status", "intent_band", "technical_band", "readiness"),
           "divergences" => divergences(judgment, expected),
           "citation_compliance" => citation_compliance(judgment, expected)
@@ -143,7 +146,8 @@ module FacetConfidence
           judge: report.dig("provenance", "judge"),
           frozen_at: report.dig("provenance", "labels_frozen_at"),
           measures: measures_table(report.fetch("measures")),
-          cases: cases_table(report.fetch("cases")))
+          cases: cases_table(report.fetch("cases")),
+          revisions: revisions_table(report.fetch("cases")))
       end
 
       def measures_table(measures)
@@ -167,6 +171,16 @@ module FacetConfidence
         parts.empty? ? "aligned" : parts.join(", ")
       end
 
+      def revisions_table(entries)
+        revised = entries.select { |entry| entry["revision"].present? }
+        return "No post-unblinding corrections recorded." if revised.empty?
+
+        revised.map do |entry|
+          revision = entry.fetch("revision")
+          format("| %s | %s | %s | %s |", entry.fetch("case_id"), revision.fetch("verdict"), revision.fetch("recorded_by"), revision.fetch("reason"))
+        end.join("\n")
+      end
+
       WORKSHEET_TEMPLATE = <<~WORKSHEET
         # RDR-070 Facet-Confidence Closeout Evaluation Report
 
@@ -185,6 +199,12 @@ module FacetConfidence
         | Case | Shape | Verdict | Intent band | Technical band | Readiness | Divergences |
         | --- | --- | --- | --- | --- | --- | --- |
         %{cases}
+
+        ## Post-unblinding corrections (not rescored)
+
+        | Case | Corrected verdict | Judge | Reason |
+        | --- | --- | --- | --- |
+        %{revisions}
 
         Reference judgments are policy assessments, not calibrated probabilities.
         This report neither closes the source issue, enables delivery, nor changes the 80/80 defaults.

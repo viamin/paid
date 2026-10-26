@@ -139,6 +139,27 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response.body).not_to include("Execute reviewer")
   end
 
+  it "lets only the sole judge append a reasoned correction without replacing the frozen judgment" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    post freeze_project_facet_confidence_evaluation_path(project, evaluation)
+    corpus_case = evaluation.corpus.find_case("FC-CORPUS-01")
+    original_verdict = evaluation.labels.find_by!(case_id: corpus_case.fetch("id")).verdict
+
+    post revise_project_facet_confidence_evaluation_path(project, evaluation),
+      params: { case_id: corpus_case.fetch("id"), **judgment_params(corpus_case, reason: "Corrected after unblinding.") }
+
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation))
+    expect(evaluation.reload.labels.find_by!(case_id: corpus_case.fetch("id")).verdict).to eq(original_verdict)
+    expect(evaluation.report.fetch("revisions").fetch(corpus_case.fetch("id"))).to include("reason" => "Corrected after unblinding.")
+
+    sign_in member
+    post revise_project_facet_confidence_evaluation_path(project, evaluation),
+      params: { case_id: corpus_case.fetch("id"), **judgment_params(corpus_case, reason: "Not authorized.") }
+
+    expect(response).to redirect_to(root_path)
+  end
+
   it "rejects labeling by anyone other than the operator who started the evaluation" do
     evaluation = start_evaluation!
     sign_in member
