@@ -249,6 +249,13 @@ links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
 outside the initial scope and requires a separately approved policy.
 
+The proposed optimization-recipe policy in
+[`docs/intent/optimization-recipes/`](../intent/optimization-recipes/) is a
+reviewable candidate for that separate approval (#4636). Until an owner accepts
+it and the canonical artifacts merge, this paragraph remains controlling:
+maintenance is report-only, and neither the proposal nor an optimization
+catalog selection authorizes automatic repair or rollout.
+
 ### PR integration
 
 The evidence and verification components should be reusable for PR audits.
