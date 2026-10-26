@@ -13,6 +13,7 @@ load Rails.root.join("bin/facet-confidence-assessment-evaluation")
 RSpec.describe FacetConfidence::AssessmentEvaluationCli, :no_db do
   let(:script_path) { File.expand_path("../../../bin/facet-confidence-assessment-evaluation", __dir__) }
   let(:committed_corpus) { File.expand_path("../../../docs/intent/facet-confidence/assessment-corpus-manifest-v1.yml", __dir__) }
+  let(:committed_ledger) { File.expand_path("../../../docs/intent/facet-confidence/assessment-evaluation-2026-10-23/ledger.jsonl", __dir__) }
   let(:corpus_dir) { Pathname.new(Dir.mktmpdir) }
   let(:corpus) { corpus_dir.join("corpus.yml").to_s }
   let(:ledger) { corpus_dir.join("ledger.jsonl").to_s }
@@ -21,6 +22,12 @@ RSpec.describe FacetConfidence::AssessmentEvaluationCli, :no_db do
 
   it "validates the committed corpus manifest and an empty ledger" do
     _stdout, stderr, status = run_cli("validate", "--corpus", committed_corpus, "--ledger", ledger)
+
+    expect(status.exitstatus).to eq(0), -> { "stderr: #{stderr}" }
+  end
+
+  it "validates the recorded operational failures against the frozen corpus" do
+    _stdout, stderr, status = run_cli("validate", "--corpus", committed_corpus, "--ledger", committed_ledger)
 
     expect(status.exitstatus).to eq(0), -> { "stderr: #{stderr}" }
   end

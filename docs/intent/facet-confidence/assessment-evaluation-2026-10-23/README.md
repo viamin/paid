@@ -13,8 +13,12 @@ evidence revision it assessed; `bin/facet-confidence-assessment-evaluation`
 stamps and validates that provenance and rejects replays of identical case
 input. The outcome worksheet at
 [`outcome-worksheet-2026-10-23.md`](outcome-worksheet-2026-10-23.md) is the
-repository-visible measure record; every operator-derived measure stays
-`not established` until the operator runs the corpus and appends the runs.
+repository-visible measure record. The first attempted pass on 2026-10-26
+recorded one `failed` operational event for each corpus case because no
+provider in that environment served `claude-sonnet-4-6`. Failed runs preserve
+their provenance but are not assessment verdicts, so policy measures remain
+`not established` until a provider that serves the pinned model produces
+non-failed verdict runs.
 
 No corpus run can release work: readiness-driven release remains gated on the
 complete RDR-071 delivery path, and the 80/80 thresholds stay the provisional
