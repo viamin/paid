@@ -3,13 +3,13 @@
 ## Metadata
 
 - **Date**: 2026-09-22
-- **Status**: Partially Implemented (see [2026-10-22 Final Acceptance Audit](#2026-10-22-final-acceptance-audit))
+- **Status**: Partially Implemented (see [2026-10-26 Closeout Re-audit](#2026-10-26-closeout-re-audit))
 - **Type**: Intent modeling and agent judgment
 - **Priority**: P1
 - **Related RDRs**: [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)
 - **Intent**: [Facet confidence](../intent/facet-confidence/facet-confidence-design.md)
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
-- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (shared umbrella), [#4323](https://github.com/viamin/paid/issues/4323) (RDR-070 closeout), and [#4573](https://github.com/viamin/paid/issues/4573) (assessment-corpus final-acceptance dependency)
+- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (shared umbrella), [#4323](https://github.com/viamin/paid/issues/4323) (RDR-070 closeout), [#4573](https://github.com/viamin/paid/issues/4573) (assessment-corpus final-acceptance dependency), and [#4596](https://github.com/viamin/paid/issues/4596) (shipped human-reference evaluation workflow)
 
 ## Implementation Status
 
@@ -26,6 +26,15 @@ the operator-executed measured runs remain pending and are recorded as not
 established in the outcome worksheet. The umbrella remains open for the
 remaining RDR-071 delivery/activation integration. See the 2026-10-22 final
 acceptance audit for the criterion-level reconciliation.
+
+The 2026-10-26 re-audit confirms that #4596 shipped the authorized,
+persisted blinded-reference workflow, including Start/Resume, sole-judge
+labeling, freeze, and retained report surfaces. It does not manufacture the
+human judgments that workflow requires: no operator has frozen a reference set
+or produced a measured evaluator report, so false readiness, unnecessary
+clarification, human corrections, cost, and rework remain **not established**.
+The status remains **Partially Implemented**. See
+[`audit-report-2026-10-26-rdr-070.md`](audit-report-2026-10-26-rdr-070.md).
 
 ### 2026-10-12 Implementation progress audit
 
@@ -213,3 +222,21 @@ broaden enrollment or change an active run. This closeout tracks
 [#4309](https://github.com/viamin/paid/issues/4309); it does not close the
 umbrella. The shared audit evidence is also recorded in
 [`audit-report-2026-10-22-human-centered-inbox-epic.md`](audit-report-2026-10-22-human-centered-inbox-epic.md).
+
+## 2026-10-26 Closeout Re-audit
+
+Closeout [#4323](https://github.com/viamin/paid/issues/4323) remains
+**Partially Implemented**. The current audit re-ran the facet-confidence,
+readiness, corpus, outcome-report, and #4596 closeout-evaluation specs. It
+confirms numerical bounds, explicit unknown handling, correction precedence,
+explicit-preference provenance, and 79/80 readiness behavior. It also confirms
+that the #4596 workflow is shipped without treating deterministic fixtures,
+corpus structure, or its passing tests as human-reference measurement.
+
+The remaining requirement is an authorized operator's authentic blinded
+reference judgments and frozen evaluator report over the pinned corpus. Until
+that report exists, the quality measures remain not established and the 80/80
+defaults remain provisional policy judgments rather than calibrated
+probabilities. This audit neither tunes thresholds for throughput nor changes
+delivery, enrollment, or active-run policy. It records `Tracks #4309` context;
+it does not close the umbrella.
