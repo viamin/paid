@@ -172,6 +172,15 @@
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Prerequisites</h3>
+    <% if policy(entry.project).run_agent? %>
+      <div class="rounded-lg border border-violet-200 bg-violet-50 p-3">
+        <h4 class="text-sm font-semibold text-violet-900">Technical prerequisite evidence</h4>
+        <p class="mt-1 text-sm text-violet-800">Prepare a pinned, isolated validation run. Paid checks compatible execution backends and current tool rollout policy first; it never uses this browser host's Docker socket or shell.</p>
+        <%= button_to "Prepare technical validation", start_prerequisite_validation_project_agent_runs_path(entry.project),
+              params: { issue_id: issue.id, return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
+              class: "mt-2 inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
+      </div>
+    <% end %>
     <% if status.unresolved_prerequisites.any? %>
       <p class="text-sm text-gray-600">
         <%= status.unresolved_prerequisites.join(", ") %> — create or link the prerequisite work before

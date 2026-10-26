@@ -4,6 +4,25 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PREREQUISITE-VALIDATION-001** — When an authorized operator starts a
+  technical prerequisite validation from a partial-closeout Inbox item, Paid
+  SHALL inspect backend compatibility through `Containers::BackendScheduler`
+  and current tool rollout policy before queueing a bounded pinned AgentRun.
+  A missing local Docker socket SHALL not be treated as proof that no usable
+  execution backend exists. If no backend or the scoped tool rollout is
+  unavailable, Inbox SHALL state the exact setup or approval action without
+  changing policy or retrying unchanged capability failures.
+  *Code:* `PrerequisiteValidations::Start`, partial-closeout Inbox pane.
+  *Test:* `spec/services/prerequisite_validations/start_spec.rb`.
+
+- [x] **PREREQUISITE-VALIDATION-002** — A prepared prerequisite validation
+  SHALL provision, execute, and clean up through the AgentRun execution
+  environment only. It SHALL retain stdout, stderr, exit status, analyzer,
+  checkout, endpoint, and cleanup evidence on the run, and distinguish
+  unavailable, failed, and successful executions without resolving the issue.
+  *Code:* `PrerequisiteValidationJob`.
+  *Test:* `spec/jobs/prerequisite_validation_job_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its

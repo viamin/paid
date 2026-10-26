@@ -381,6 +381,20 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **prerequisite_flash(result)
     end
 
+    # @spec PREREQUISITE-VALIDATION-001
+    def start_prerequisite_validation
+      authorize @project, :run_agent?
+      issue = resolve_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      result = PrerequisiteValidations::Start.call(issue:, actor: current_user)
+      flash = result.success? ? { notice: "Prerequisite validation prepared in an isolated execution environment." } : { alert: result.message }
+      redirect_to safe_return_target || dashboard_path, **flash
+    end
+
     # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
     # @spec OPERATOR-INBOX-002C
     def unblock_escalation

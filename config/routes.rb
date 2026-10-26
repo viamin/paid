@@ -309,6 +309,7 @@ Rails.application.routes.draw do
       post :request_acceptance_audit, on: :collection
       post :resolve_closeout, on: :collection
       post :link_prerequisite, on: :collection
+      post :start_prerequisite_validation, on: :collection
       post :cancel, on: :member
       post :retry, on: :member
       post :refresh_auth, on: :member
