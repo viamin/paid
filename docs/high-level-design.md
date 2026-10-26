@@ -335,11 +335,15 @@ repository investigations — focused, issue-less questions and durable,
 evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
 building a second provisioning path, and keeps investigation separate from
-any repair: a scan never mutates source code or opens a PR on its own.
+any repair: a scan never mutates source code or opens a PR on its own. A
+separately accepted, per-run policy may later queue a bounded repair only
+after a report, but it must remain opt-in, default-off, evidence-revalidated,
+budgeted, idempotent, and unavailable for security findings until a dedicated
+policy authorizes that category.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
-`docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
-that acceptance.
+`docs/intent/maintenance-runs/` and `docs/intent/optimization-recipes/` for
+the reviewable LLD/EARS contracts pending that acceptance.
 
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
