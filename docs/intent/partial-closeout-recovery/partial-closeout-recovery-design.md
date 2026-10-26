@@ -99,7 +99,13 @@ paid_state edit and never a blanket guard lift:
   uniqueness, tenant isolation, trust, feature release/design revision holds,
   analysis backoff, tier feasibility, budgets, skip labels, needs-input,
   manual review, paused flags, and unmet dependencies all still apply — with
-  the unmet prerequisites explained to the user. A targeted blocker walk
+  the unmet prerequisites explained to the user. The targeted blocker walk also
+  reads the same open native-child rows consumed by
+  `without_open_non_pr_subissues` and the same active
+  `partial_closeout.prerequisite` notifications consumed by
+  `prerequisite_block_ids`. It identifies every child or notification with its
+  evidence and supported recovery route; it neither turns a native child into a
+  dependency nor dismisses human evidence. A targeted blocker walk
   (`CloseoutStatus.admission_blockers`) returns structured, additive reasons
   from persisted admission-guard evidence, including scanner attempt, analysis,
   and alert links for synthetic findings; a residual preflight then settles admission with the

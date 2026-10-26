@@ -10,7 +10,7 @@ module Issues
   # `DefaultCandidateSource.partial_closeout_eligibility` — one shared input
   # build per project — and {CloseoutStatus} supplies the per-issue explanation. Returns
   # [issue, status] pairs so list and count surfaces share one computation.
-  # @spec PARTIAL-CLOSEOUT-002
+  # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-030
   class StalledCloseouts
     Pair = Struct.new(:issue, :status, keyword_init: true)
 
@@ -32,7 +32,8 @@ module Issues
       eligibility = Automation::Strategies::AutoPick::DefaultCandidateSource
         .partial_closeout_eligibility(project, issue_ids: candidates.map(&:id))
       candidates.each { |issue| issue.project = project }
-      inputs = CloseoutStatus.inputs_for(candidates)
+      inputs = CloseoutStatus.inputs_for(candidates,
+        partial_closeout_notifications: eligibility.eligibility_inputs.partial_closeout_prerequisite_notifications)
       # The scoped admission decision each candidate's continuation would
       # face at dequeue (`CloseoutStatus#residual_eligibility_blocker`),
       # evaluated from shared project inputs. The guards are per-issue, so
