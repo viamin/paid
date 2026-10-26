@@ -77,6 +77,7 @@ module FacetConfidence
           "case_id" => corpus_case.fetch("id"),
           "shape" => corpus_case["shape"],
           "judgment" => judgment,
+          "revision" => label&.revision,
           "expected" => expected.slice("status", "intent_band", "technical_band", "readiness"),
           "divergences" => divergences(judgment, expected),
           "citation_compliance" => citation_compliance(judgment, expected)
@@ -153,12 +154,20 @@ module FacetConfidence
       def cases_table(entries)
         entries.map do |entry|
           judgment = entry.fetch("judgment") || {}
-          format("| %s | %s | %s | %s | %s | %s | %s |",
+          format("| %s | %s | %s | %s | %s | %s | %s | %s |",
             entry.fetch("case_id"), entry.fetch("shape"),
             judgment["verdict"], judgment["intent_band"],
             judgment["technical_band"], judgment["readiness"],
-            divergences_cell(entry))
+            divergences_cell(entry), correction_cell(entry))
         end.join("\n")
+      end
+
+      def correction_cell(entry)
+        revision = entry["revision"]
+        return "none" unless revision
+
+        "#{revision.fetch("verdict")}; #{revision.fetch("intent_band")}; #{revision.fetch("technical_band")}; " \
+          "#{revision.fetch("readiness")}; #{revision.fetch("reason")}".tr("|", "\\|")
       end
 
       def divergences_cell(entry)
@@ -182,8 +191,8 @@ module FacetConfidence
 
         ## Per-case judgments vs frozen expectations
 
-        | Case | Shape | Verdict | Intent band | Technical band | Readiness | Divergences |
-        | --- | --- | --- | --- | --- | --- | --- |
+        | Case | Shape | Verdict | Intent band | Technical band | Readiness | Divergences | Post-unblinding correction |
+        | --- | --- | --- | --- | --- | --- | --- | --- |
         %{cases}
 
         Reference judgments are policy assessments, not calibrated probabilities.

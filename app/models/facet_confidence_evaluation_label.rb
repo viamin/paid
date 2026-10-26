@@ -16,6 +16,7 @@ class FacetConfidenceEvaluationLabel < ApplicationRecord
 
   belongs_to :facet_confidence_evaluation, class_name: "FacetConfidenceEvaluation", inverse_of: :labels
   belongs_to :recorded_by, class_name: "User"
+  belongs_to :revised_by, class_name: "User", optional: true
 
   validates :case_id, presence: true
   validates :state, inclusion: { in: STATES }
@@ -25,9 +26,27 @@ class FacetConfidenceEvaluationLabel < ApplicationRecord
   validates :verdict, :intent_band, :technical_band, :readiness,
     :cited_evidence_reference, :reason, presence: true, if: -> { state == "labeled" }
   validate :readiness_follows_bands, if: -> { state == "labeled" }
+  validate :complete_revision
+  validate :revised_readiness_follows_bands, if: :revised?
 
   def labeled? = state == "labeled"
   def skipped? = state == "skipped"
+  def revised? = revised_at.present?
+
+  def revision
+    return unless revised?
+
+    {
+      "verdict" => revised_verdict,
+      "intent_band" => revised_intent_band,
+      "technical_band" => revised_technical_band,
+      "readiness" => revised_readiness,
+      "cited_evidence_reference" => revised_cited_evidence_reference,
+      "reason" => revised_reason,
+      "recorded_by" => revised_by.email,
+      "recorded_at" => revised_at.iso8601
+    }
+  end
 
   # The same structural rule the frozen corpus applies to its own
   # expectations: readiness is "ready" only when a decisive verdict puts both
@@ -42,6 +61,27 @@ class FacetConfidenceEvaluationLabel < ApplicationRecord
 
   def readiness_from_bands
     return "ready" if verdict == "completed" && intent_band == "at_or_above_threshold" && technical_band == "at_or_above_threshold"
+
+    "not_ready"
+  end
+
+  def complete_revision
+    return unless [ revised_verdict, revised_intent_band, revised_technical_band, revised_readiness,
+      revised_cited_evidence_reference, revised_reason, revised_by_id, revised_at ].any?(&:present?)
+    return if [ revised_verdict, revised_intent_band, revised_technical_band, revised_readiness,
+      revised_cited_evidence_reference, revised_reason, revised_by_id, revised_at ].all?(&:present?)
+
+    errors.add(:base, "a revision must include every corrected judgment field, judge, and timestamp")
+  end
+
+  def revised_readiness_follows_bands
+    return if revised_readiness == revised_readiness_from_bands
+
+    errors.add(:revised_readiness, "must follow the corrected bands (#{revised_readiness_from_bands})")
+  end
+
+  def revised_readiness_from_bands
+    return "ready" if revised_verdict == "completed" && revised_intent_band == "at_or_above_threshold" && revised_technical_band == "at_or_above_threshold"
 
     "not_ready"
   end
