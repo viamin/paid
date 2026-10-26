@@ -190,6 +190,22 @@
   `spec/services/issues/stalled_closeouts_spec.rb` (including a query-count
   regression for the shared input build).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When canonical partial-closeout admission
+  excludes an evidence-carrying issue because it has an open native non-PR
+  child or an active `partial_closeout.prerequisite` notification, the Inbox,
+  API/chat context, continuation and audit refusal SHALL report the exact
+  child or notification identities, recorded evidence, links, and supported
+  recovery actions. Diagnostics SHALL be additive with every other guard and
+  tenant scoped; a native child SHALL NOT require a duplicate dependency edge,
+  and a human prerequisite SHALL NOT be dismissed, treated as missing
+  implementation, or silently replaced with a different policy merely to
+  admit work. The unavailable fallback remains only for an otherwise
+  undiagnosed canonical denial.
+  *Code:* `app/services/issues/closeout_status.rb`,
+  `app/views/dashboard/_inbox_closeout_blockers.html.erb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-005** — When a queued continuation run is considered
   for dispatch, the system SHALL recheck its scoped authorization at dequeue
   and run start (`AgentRuns::RecheckIssueEligibility` continuation branch,

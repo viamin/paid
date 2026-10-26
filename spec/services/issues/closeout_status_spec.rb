@@ -117,21 +117,68 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
 
   it "surfaces a non-walked eligibility guard via the scoped preflight instead of the duplicate-work fallback" do
     merged_partial_pr(number: 12)
-    create(
-      :issue,
-      project: project,
-      github_state: "open",
-      paid_state: "in_progress",
-      parent_issue_id: issue.id,
-      github_number: 55
-    )
 
-    status = described_class.call(issue)
+    status = described_class.call(issue, eligible_issue_ids: [], continuation_eligible_issue_ids: [])
 
     expect(status.stalled?).to be(true)
     expect(status.blocker_codes).to contain_exactly(:unavailable)
     expect(status.reason).to include("unavailable")
     expect(status.blockers.first.recovery).to include("Investigate")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "identifies every open native child without requiring duplicate dependency edges" do
+    merged_partial_pr(number: 12)
+    child = create(:issue, project: project, github_number: 55, github_state: "open",
+      paid_state: "in_progress", parent_issue: issue)
+
+    status = described_class.call(issue)
+
+    blocker = status.blockers.find { |entry| entry.code == :open_native_children }
+    expect(status.blocker_codes).to include(:open_native_children)
+    expect(status.blocker_codes).not_to include(:unavailable)
+    expect(blocker.evidence.fetch("children")).to include(
+      "issue_id" => child.id, "number" => 55, "url" => child.github_url, "paid_state" => "in_progress"
+    )
+    expect(blocker.recovery).to include("#55")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "identifies active human prerequisite notifications and preserves the requested evidence" do
+    merged_partial_pr(number: 12)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Human adjudication needed", description: "Choose the review policy and record the adjudication.")
+
+    status = described_class.call(issue)
+
+    blocker = status.blockers.find { |entry| entry.code == :human_prerequisites }
+    expect(status.blocker_codes).to include(:human_prerequisites)
+    expect(status.blocker_codes).not_to include(:unavailable)
+    expect(blocker.evidence.fetch("notifications")).to include(a_hash_including(
+      "notification_id" => notification.id,
+      "title" => "Human adjudication needed",
+      "description" => "Choose the review policy and record the adjudication."
+    ))
+    expect(blocker.recovery).to include("Do not dismiss")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "keeps child and human-prerequisite blockers additive and tenant scoped in batched Inbox inputs" do
+    merged_partial_pr(number: 12)
+    create(:issue, project: project, github_number: 55, github_state: "open", parent_issue: issue)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+    other_account = create(:account)
+    create(:notification, :error, account: other_account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Wrong tenant")
+
+    inputs = described_class.inputs_for([ issue ])
+    status = described_class.call(issue, eligible_issue_ids: [], continuation_eligible_issue_ids: [], inputs: inputs)
+
+    expect(status.blocker_codes).to include(:open_native_children, :human_prerequisites)
+    expect(inputs.prerequisite_notifications_by_issue_id.fetch(issue.id).map(&:id)).to contain_exactly(notification.id)
   end
 
   it "reports every material blocker, including scanner verification evidence, without treating a merge as a fix" do

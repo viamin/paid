@@ -111,6 +111,17 @@ paid_state edit and never a blanket guard lift:
   cancel and supersede — the walk explains the authority, it never
   substitutes for it.
 
+The diagnostic walk also mirrors the two authoritative exclusions that are
+neither dependency edges nor operator pauses: open native non-PR children and
+active `partial_closeout.prerequisite` notifications. It identifies every
+child and notification with its recorded evidence and link, while retaining
+the canonical candidate-source predicates as admission authority. A native
+child is unresolved work, not a reason to infer completion; a prerequisite
+notification is a request for a human decision or evidence, not missing agent
+implementation. Operators must complete and record that evidence (including
+an explicit policy selection where the request requires one), rather than
+dismissing the notification or closing work merely to clear admission.
+
 For Inbox lane construction, `StalledCloseouts` batch-loads the evidence and
 persisted diagnostic inputs for each project's candidates before evaluating
 individual `CloseoutStatus` values. The per-issue status still produces the
@@ -176,6 +187,10 @@ recording completion, so a continuation cannot dispatch after the attestation.
   the same services with the same policy and audit behavior. Prerequisite
   work reuses the existing `create_issue` tool (dependency wording is parsed
   by the existing sync parser).
+- API/chat/audit: every surface serializes the same structured blockers from
+  `CloseoutStatus`; a report-only acceptance audit remains subject to these
+  implementation admission gates and tells the operator to supply the
+  recorded evidence instead of presenting an unexplained runnable action.
 
 ### Legacy reconciliation: `PartialCloseouts::ReconcileLegacy`
 

@@ -201,12 +201,23 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       )
     end
 
-    it "serializes partial_closeout with the unresolved prerequisites" do
-      entry = build_entry(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, tasks: [ "owner/repo#41" ])
+    # @spec PARTIAL-CLOSEOUT-030
+    it "serializes partial_closeout blockers alongside unresolved prerequisites" do
+      blocker = Issues::CloseoutStatus::Blocker.new(
+        code: :open_native_children, message: "Child #55 is open.",
+        evidence: { "children" => [ { "number" => 55 } ] }, recovery: "Resolve #55."
+      )
+      status = Struct.new(:blockers).new([ blocker ])
+      entry = build_entry(Inbox::Queue::PARTIAL_CLOSEOUT_KIND,
+        tasks: [ "owner/repo#41" ], closeout_status: status)
 
       payload = described_class.render(entry)
 
-      expect(payload).to include(unresolved_prerequisites: [ "owner/repo#41" ])
+      expect(payload).to include(
+        unresolved_prerequisites: [ "owner/repo#41" ],
+        scheduling_blockers: [ { code: :open_native_children, message: "Child #55 is open.",
+          evidence: { "children" => [ { "number" => 55 } ] }, recovery: "Resolve #55." } ]
+      )
     end
 
     it "serializes test_review_pending with just the common fields" do

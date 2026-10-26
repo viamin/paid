@@ -9,6 +9,19 @@
           <% if blocker.evidence["attempt_url"].present? %>
             <%= link_to "View scanner alert", blocker.evidence["attempt_url"], target: "_blank", rel: "noopener noreferrer", class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
           <% end %>
+          <% Array(blocker.evidence["children"]).each do |child| %>
+            <% if child["url"].present? %>
+              <%= link_to "View child ##{child["number"]}", child["url"], target: "_blank", rel: "noopener noreferrer", class: "mr-2 text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+            <% end %>
+          <% end %>
+          <% Array(blocker.evidence["notifications"]).each do |notification| %>
+            <% notification_url = notification["action_url"].presence || inbox_entry_path("#{Inbox::Queue::ACTION_REQUIRED_KIND}:#{notification["notification_id"]}", kind: Inbox::Queue::ACTION_REQUIRED_KIND) %>
+            <%= link_to "Open human prerequisite ##{notification["notification_id"]}", notification_url,
+                  target: notification_url.start_with?("http") ? "_blank" : nil,
+                  rel: notification_url.start_with?("http") ? "noopener noreferrer" : nil,
+                  data: notification_url.start_with?("http") ? {} : { turbo_frame: "_top" },
+                  class: "mr-2 text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+          <% end %>
         <% end %>
         <% if blocker.recovery.present? %><p class="text-xs text-violet-700">Next step: <%= blocker.recovery %></p><% end %>
       </li>
