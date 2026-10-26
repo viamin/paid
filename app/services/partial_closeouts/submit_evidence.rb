@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 module PartialCloseouts
   # Records an operator's evidence against one exact human prerequisite. A
   # submission is intentionally not a scheduling release: evidence has to be
@@ -57,7 +59,8 @@ module PartialCloseouts
           "outcome" => "pending_validation",
           "evidence" => {
             "kind" => kind, "reference" => reference, "revision" => revision,
-            "explanation" => explanation, "actor_id" => actor.id, "submitted_at" => Time.current.iso8601
+            "explanation" => explanation, "actor_id" => actor.id, "submitted_at" => Time.current.iso8601,
+            "prerequisite_revision" => prerequisite_revision
           },
           "next_action" => "Run a bounded acceptance audit to validate this evidence. Dismissal releases scheduling but is not acceptance."
         )
@@ -65,5 +68,9 @@ module PartialCloseouts
     end
 
     def failure(error) = Result.new(success: false, error: error, notification: notification)
+
+    def prerequisite_revision
+      Digest::SHA256.hexdigest(prerequisite.slice("criterion", "kind", "next_step", "prerequisite").to_json)
+    end
   end
 end

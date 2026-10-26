@@ -73,6 +73,28 @@ RSpec.describe IntentConformance::ShadowEvaluation::CompileReport do
     expect(evaluation.reload.report_markdown).to include("Solo-Maintainer Shadow Evaluation Report")
   end
 
+  # @spec PARTIAL-CLOSEOUT-031
+  it "reassesses only the submitted originating prerequisite when its report compiles" do
+    issue = create(:issue, project: project)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      metadata: { "prerequisites" => [ { "criterion" => "measured rollout", "next_step" => "Run the evaluation.", "status" => "awaiting_evidence" } ] })
+    PartialCloseouts::SubmitEvidence.call(notification:, actor: owner, criterion: "measured rollout", kind: "evaluation_report",
+      reference: "shadow-evaluation:#{evaluation.id}", revision: evaluation.manifest_digest,
+      explanation: "This report is the requested measured-rollout evidence.")
+    freeze_with_labels!
+    record_run(case_id: "A-01", verdict: "within_scope")
+    record_run(case_id: "A-02", verdict: "within_scope")
+    allow(AgentHarness).to receive(:send_message).and_return(double(success?: true,
+      output: '{"outcome":"insufficient","reasoning":"Production measures remain unestablished."}'))
+
+    described_class.call(evaluation: evaluation)
+
+    prerequisite = notification.reload.metadata.fetch("prerequisites").first
+    expect(prerequisite).to include("outcome" => "insufficient", "status" => "awaiting_evidence")
+    expect(notification).to be_active
+  end
+
   it "keeps review cost unestablished when an evaluated run lacks cost provenance" do
     freeze_with_labels!
     record_run(case_id: "A-01", verdict: "within_scope", cost_cents: 25)

@@ -23,6 +23,7 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     expect(notification).to be_active
     expect(notification.metadata.dig("prerequisites", 0, "outcome")).to eq("pending_validation")
     expect(evidence).to include("reference" => "https://example.test/report", "revision" => "sha-123", "actor_id" => actor.id)
+    expect(evidence.fetch("prerequisite_revision")).to be_present
   end
 
   it "refuses a bare link without provenance and explanation" do

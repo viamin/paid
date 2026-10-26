@@ -443,6 +443,24 @@
   *Test:* `spec/services/partial_closeouts/submit_evidence_spec.rb`,
   `spec/models/notification_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-031** — When submitted prerequisite evidence is
+  validated, the system SHALL bind the result to the exact prerequisite
+  revision and record `sufficient`, `insufficient`, `stale`, or `unavailable`
+  with reasoning and a next action. Semantic applicability SHALL use bounded
+  `agent_harness`; unavailable or malformed assessments SHALL retain the
+  scheduling guard. A compiled shadow-evaluation report SHALL reassess only a
+  previously submitted `shadow-evaluation:<id>` reference whose report and
+  manifest revision are current, preserving the report's solo-policy and
+  missing-production-measure limits. Only when every prerequisite occurrence
+  is sufficient SHALL the existing notification-resolution path release its
+  guard and trigger its normal eligibility reassessment; no outcome SHALL
+  attest whole-issue completion or enable enforcement.
+  *Design:* `partial-closeout-recovery-design.md` §Submitted prerequisite evidence.
+  *Code:* `app/services/partial_closeouts/resolve_evidence.rb`,
+  `app/services/intent_conformance/shadow_evaluation/compile_report.rb`.
+  *Test:* `spec/services/partial_closeouts/resolve_evidence_spec.rb`,
+  `spec/services/intent_conformance/shadow_evaluation/compile_report_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-014** — When an operator resolves a stalled issue as
   complete, the system SHALL present an editable completion-rationale input
   (never a hidden pre-filled reason) whose guidance asks for a specific

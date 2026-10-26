@@ -11,6 +11,7 @@ module IntentConformance
     # promotion decision is emitted and nothing here attests issue
     # completion or enables enforcement.
     # @spec INTENT-CONFORMANCE-ROLLOUT-008
+    # @spec PARTIAL-CLOSEOUT-031
     class CompileReport
       Result = Data.define(:success, :error, :report, :markdown) do
         def success? = success
@@ -30,6 +31,7 @@ module IntentConformance
         report = build_report
         markdown = render_markdown(report)
         @evaluation.update!(report: report, report_markdown: markdown)
+        PartialCloseouts::ResolveEvidence.for_evaluation(@evaluation)
         Result.new(success: true, error: nil, report: report, markdown: markdown)
       end
 

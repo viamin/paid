@@ -370,7 +370,14 @@ pane discloses that actual effect. A rejected, stale, revoked, duplicate, or fai
 remote read remains visible as its corresponding disposition and leaves the
 guard in place. Built-in evaluation reports are attached as evidence with their
 current revision and their solo-policy and missing-production-measure limits;
-they never attest whole-issue completion or enable enforcement.
+they never attest whole-issue completion or enable enforcement. On report
+compilation, only a previously submitted `shadow-evaluation:<id>` reference is
+reassessed through the same bounded `agent_harness` service; the report cannot
+release an unrelated notification or bypass the current prerequisite revision.
+The resolver writes `sufficient`, `insufficient`, `stale`, or `unavailable`,
+with reasoning and a next action. It resolves the aggregated notification only
+after every occurrence is sufficient, which invokes the existing eligibility
+reassessment and leaves whole-issue completion outside this flow.
 
 ### Held-delivery reconciliation (#4614)
 
