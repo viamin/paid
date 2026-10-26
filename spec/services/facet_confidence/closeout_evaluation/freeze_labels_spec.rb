@@ -6,7 +6,7 @@ require "rails_helper"
 # evaluation and compiling the reproducible report that returns to the
 # originating Inbox item: full-coverage requirement, corpus-digest recheck,
 # judgment-vs-frozen-expectation measures, and citation compliance.
-# @spec FACET-CONFIDENCE-021
+# @spec FACET-CONFIDENCE-021 @spec FACET-CONFIDENCE-022
 RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account: account) }
@@ -143,5 +143,24 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
     expect(result).not_to be_success
     expect(result.error).to include("corpus manifest changed")
     expect(evaluation.reload).to be_labeling
+  end
+
+  it "preserves the frozen judgment when its sole judge records a reasoned correction" do
+    label_all!
+    expect(described_class.call(evaluation: evaluation, actor: owner)).to be_success
+    original_verdict = evaluation.labels.find_by!(case_id: "FC-CORPUS-01").verdict
+
+    result = FacetConfidence::CloseoutEvaluation::ReviseLabel.call(evaluation: evaluation, actor: owner,
+      case_id: "FC-CORPUS-01", judgment: judgment_for(evaluation.corpus.find_case("FC-CORPUS-01")).merge(
+        verdict: "unknown", intent_band: "unknown", technical_band: "unknown", readiness: "not_ready",
+        reason: "I reconsidered the evidence after unblinding."
+      ))
+
+    expect(result).to be_success
+    label = evaluation.labels.find_by!(case_id: "FC-CORPUS-01")
+    expect(label.verdict).to eq(original_verdict)
+    expect(label.revised_verdict).to eq("unknown")
+    expect(label.revised_reason).to eq("I reconsidered the evidence after unblinding.")
+    expect(evaluation.reload.report["measures"]["verdict_divergences"]["count"]).to eq(0)
   end
 end

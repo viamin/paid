@@ -7,7 +7,7 @@ implements `009` through `012`. The RDR-070 corpus deliverable (#4573)
 implements `016`–`018`: the frozen assessment corpus, per-run provenance, and
 outcome metrics machinery; operator-executed measured runs remain pending and
 the worksheet records them as not established. The closeout evaluation entry
-point (#4596) implements `020`–`021`: the Inbox packet and the persisted
+point (#4596) implements `020`–`022`: the Inbox packet and the persisted
 blinded reference-judgment flow over the frozen corpus.
 
 - [x] **FACET-CONFIDENCE-001** — When assessing a feature or issue facet, Paid SHALL represent intent certainty and technical confidence separately on a 0–100 scale and SHALL represent unknown values explicitly rather than inventing human intent.
@@ -68,3 +68,6 @@ blinded reference-judgment flow over the frozen corpus.
 - [x] **FACET-CONFIDENCE-021** — While a facet-confidence closeout evaluation is open, the operator who started it SHALL be its sole reference judge and SHALL record one blinded reference judgment per corpus case (verdict status, intent band, technical band, readiness, one cited evidence reference, and reason); the corpus shape, selection rationale, and frozen expectations SHALL stay hidden until every case is labeled and the judge freezes the reference set, and the compiled report comparing the frozen judgments with the frozen expected bands SHALL be retained on the evaluation and reachable from the originating Inbox item.
   *Tests:* `spec/services/facet_confidence/closeout_evaluation/record_label_spec.rb`, `spec/services/facet_confidence/closeout_evaluation/freeze_labels_spec.rb`, `spec/requests/projects/facet_confidence_evaluations_spec.rb`.
   *Code:* `app/services/facet_confidence/closeout_evaluation/`, `app/controllers/projects/facet_confidence_evaluations_controller.rb`, `app/views/projects/facet_confidence_evaluations/`.
+- [x] **FACET-CONFIDENCE-022** — After a reference set is frozen and unblinded, Paid SHALL permit only its sole reference judge to append one separately attributed, reasoned correction to a labeled judgment; it SHALL preserve the original frozen label and SHALL NOT recalculate its frozen comparison or measures from the correction.
+  *Tests:* `spec/services/facet_confidence/closeout_evaluation/freeze_labels_spec.rb`.
+  *Code:* `app/services/facet_confidence/closeout_evaluation/revise_label.rb`, `app/models/facet_confidence_evaluation_label.rb`.

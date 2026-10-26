@@ -5,7 +5,7 @@
 # operator who started the evaluation (its sole reference judge) may record or
 # freeze reference judgments, while any project operator may start one.
 # @spec FACET-CONFIDENCE-020
-# @spec FACET-CONFIDENCE-021
+# @spec FACET-CONFIDENCE-021 @spec FACET-CONFIDENCE-022
 class FacetConfidenceEvaluationPolicy < ApplicationPolicy
   def show?
     user_in_account?
@@ -25,6 +25,10 @@ class FacetConfidenceEvaluationPolicy < ApplicationPolicy
   end
 
   def freeze?
+    judge? && operator?
+  end
+
+  def revise?
     judge? && operator?
   end
 

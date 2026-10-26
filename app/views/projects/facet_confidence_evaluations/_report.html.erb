@@ -95,6 +95,36 @@
   </p>
 </div>
 
+<% if evaluation.created_by_id == current_user.id %>
+  <details class="rounded-xl border border-gray-200 bg-white p-6">
+    <summary class="cursor-pointer text-sm font-semibold text-gray-900">Record a post-unblinding correction</summary>
+    <p class="mt-2 text-xs text-gray-500">This appends a separately attributed correction. It never changes the frozen judgment or its report measures.</p>
+    <% evaluation.labels.where(state: "labeled").where(revised_at: nil).order(:case_id).each do |label| %>
+      <%= form_with url: revise_project_facet_confidence_evaluation_path(project, evaluation, **inbox_context), method: :post, class: "mt-4 grid gap-2 rounded border border-gray-100 p-3" do |form| %>
+        <%= hidden_field_tag :case_id, label.case_id %>
+        <span class="text-xs font-semibold text-gray-700"><%= label.case_id %></span>
+        <%= select_tag :verdict, options_for_select(FacetConfidenceEvaluationLabel::VERDICTS, label.verdict), class: "rounded border-gray-300 text-sm" %>
+        <%= select_tag :intent_band, options_for_select(FacetConfidenceEvaluationLabel::BANDS, label.intent_band), class: "rounded border-gray-300 text-sm" %>
+        <%= select_tag :technical_band, options_for_select(FacetConfidenceEvaluationLabel::BANDS, label.technical_band), class: "rounded border-gray-300 text-sm" %>
+        <%= select_tag :readiness, options_for_select(FacetConfidenceEvaluationLabel::READINESS, label.readiness), class: "rounded border-gray-300 text-sm" %>
+        <%= select_tag :cited_evidence_reference, options_for_select(evaluation.corpus.find_case(label.case_id).fetch("evidence").map { |item| item.fetch("reference") }, label.cited_evidence_reference), class: "rounded border-gray-300 text-sm" %>
+        <%= text_area_tag :reason, nil, required: true, placeholder: "Why this correction is needed", class: "rounded border-gray-300 text-sm" %>
+        <%= form.submit "Record correction", class: "w-fit rounded bg-gray-900 px-3 py-2 text-sm font-medium text-white" %>
+      <% end %>
+    <% end %>
+  </details>
+<% end %>
+
+<% revisions = evaluation.labels.where.not(revised_at: nil).order(:case_id) %>
+<% if revisions.any? %>
+  <div class="space-y-2 rounded-xl border border-gray-200 bg-white p-6">
+    <h2 class="text-sm font-semibold text-gray-900">Post-unblinding corrections</h2>
+    <% revisions.each do |label| %>
+      <p class="text-xs text-gray-700"><strong><%= label.case_id %></strong>: <code><%= label.revised_verdict %></code> · intent <code><%= label.revised_intent_band %></code> · technical <code><%= label.revised_technical_band %></code> · <code><%= label.revised_readiness %></code>. <%= label.revised_reason %></p>
+    <% end %>
+  </div>
+<% end %>
+
 <% if evaluation.report_markdown.present? %>
   <details class="rounded-xl border border-gray-200 bg-white p-6">
     <summary class="cursor-pointer text-sm font-semibold text-gray-900">Reproducible report (markdown)</summary>

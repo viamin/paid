@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_26_172702) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1817,6 +1817,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
     t.text "reason", comment: "Judge's reason for the judgment."
     t.datetime "recorded_at", null: false, comment: "When the judgment (or last save) was recorded."
     t.bigint "recorded_by_id", null: false, comment: "Authenticated operator who recorded the judgment."
+    t.datetime "revised_at"
+    t.bigint "revised_by_id"
+    t.text "revised_cited_evidence_reference"
+    t.string "revised_intent_band"
+    t.string "revised_readiness"
+    t.text "revised_reason"
+    t.string "revised_technical_band"
+    t.string "revised_verdict"
     t.string "state", default: "pending", null: false, comment: "pending | labeled | skipped. Skipped cases are never counted as completed and block freeze."
     t.string "technical_band", comment: "unknown | below_threshold | at_or_above_threshold; set when labeled."
     t.datetime "updated_at", null: false
@@ -4742,6 +4750,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
   add_foreign_key "external_connector_events", "projects"
   add_foreign_key "facet_confidence_evaluation_labels", "facet_confidence_evaluations"
   add_foreign_key "facet_confidence_evaluation_labels", "users", column: "recorded_by_id"
+  add_foreign_key "facet_confidence_evaluation_labels", "users", column: "revised_by_id", validate: false
   add_foreign_key "facet_confidence_evaluations", "issues"
   add_foreign_key "facet_confidence_evaluations", "projects"
   add_foreign_key "facet_confidence_evaluations", "users", column: "created_by_id"
