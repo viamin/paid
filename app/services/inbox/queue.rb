@@ -16,6 +16,7 @@ module Inbox
     TEST_REVIEW_PENDING_KIND = "test_review_pending"
     PROJECT_SETUP_PENDING_KIND = "project_setup_pending"
     TRACEABILITY_GAP_KIND = "traceability_gap"
+    LAYERED_VERIFICATION_FINDING_KIND = "layered_verification_finding"
     DEFAULT_SORT = "oldest"
     # RDR-077 §5 scopes: the default actionable list, the requests held back by
     # a disabled phase, and the requests this user personally removed.
@@ -41,7 +42,8 @@ module Inbox
       PARTIAL_CLOSEOUT_KIND,
       TEST_REVIEW_PENDING_KIND,
       PROJECT_SETUP_PENDING_KIND,
-      TRACEABILITY_GAP_KIND
+      TRACEABILITY_GAP_KIND,
+      LAYERED_VERIFICATION_FINDING_KIND
     ].freeze
     KIND_LABELS = KINDS.to_h { |kind| [ kind, kind.titleize ] }.merge(
       ESCALATED_PR_KIND => "Blocked PRs",
