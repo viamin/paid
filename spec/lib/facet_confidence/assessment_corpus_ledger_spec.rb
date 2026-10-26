@@ -171,6 +171,15 @@ RSpec.describe FacetConfidence::AssessmentCorpusLedger, :no_db do
         .to raise_error(described_class::InvalidLedger, /identical input cannot be replayed/)
     end
 
+    it "accepts a verdict run after an operational failure at the same input revision" do
+      events = complete_events
+      failure = events.first.merge("event_id" => "failed-1", "status" => "failed", "intent_score" => nil,
+        "technical_score" => nil, "evidence_references" => [], "recorded_at" => "2026-10-23T08:00:00Z")
+      write_ledger!([ failure ] + events)
+
+      expect(described_class.validate!(corpus_path: corpus, ledger_path: ledger)).to be(true)
+    end
+
     it "rejects a run whose input revision rewinds behind an earlier run" do
       events = complete_events
       events << events[0].merge("event_id" => "rewind-1", "input_revision" => 1, "recorded_at" => later_timestamp)

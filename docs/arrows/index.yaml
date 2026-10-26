@@ -156,10 +156,10 @@ arrows:
     specs: docs/intent/facet-confidence/facet-confidence-specs.md
     parent: PAID
     taxonomy: intelligence
-    status: MAPPED
+    status: PARTIAL
     sampled: 2026-09-22
-    audited: 2026-10-13
-    next: "RDR-070 remains Accepted: implement facets/evidence (#4314), assessments/corpus (#4315), explicit preferences (#4316), and scoped 80/80 readiness (#4318) before a terminal closeout."
+    audited: 2026-10-26
+    next: "RDR-070 closeout (#4323) shipped the corpus execution path and executed the frozen corpus: all eight cases ended as operational failures because no provider served the pinned rubric model claude-sonnet-4-6, so the measured verdict outcomes (#4661) and the recorded blinded reference judgments (#4662) are still outstanding. Keep the 80/80 defaults as provisional policy judgments and do not tune scores to raise throughput."
   confidence-driven-delivery:
     title: Confidence-Driven Issue Delivery
     path: docs/intent/confidence-driven-delivery/confidence-driven-delivery-design.md

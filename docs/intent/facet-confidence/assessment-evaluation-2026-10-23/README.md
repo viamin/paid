@@ -11,10 +11,12 @@ The frozen corpus lives at
 version and content digest, the rubric and model versions, and the input
 evidence revision it assessed; `bin/facet-confidence-assessment-evaluation`
 stamps and validates that provenance and rejects replays of identical case
-input. The outcome worksheet at
+input. The runs themselves are executed through the shipped assessment path by
+`bin/rails "facet_confidence:corpus:run[<project-id>]"` and are recorded in
+[`ledger.jsonl`](ledger.jsonl). The outcome worksheet at
 [`outcome-worksheet-2026-10-23.md`](outcome-worksheet-2026-10-23.md) is the
 repository-visible measure record; every operator-derived measure stays
-`not established` until the operator runs the corpus and appends the runs.
+`not established` until the operator produces verdict runs for every case.
 
 No corpus run can release work: readiness-driven release remains gated on the
 complete RDR-071 delivery path, and the 80/80 thresholds stay the provisional
@@ -24,11 +26,10 @@ throughput increase alone never justifies tuning.
 
 ## Operator runbook
 
-Follow [`operator-runbook.md`](operator-runbook.md): for each corpus case,
-replay the frozen evidence through the facet-confidence assessment path,
-append one `assessment_run` event with full provenance, then append
-`correction`/`rework` events as humans challenge or rework outcomes. Only
-when every case has a run does
+Follow [`operator-runbook.md`](operator-runbook.md): run the corpus through the
+shipped assessment path, which appends one `assessment_run` event with full
+provenance per case, then append `correction`/`rework` events as humans
+challenge or rework outcomes. Only when every case has a verdict run does
 `bin/facet-confidence-assessment-evaluation compile` emit the outcome
 worksheet with false readiness, unnecessary clarification, human corrections,
 assessment cost, and downstream rework.

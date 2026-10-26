@@ -119,8 +119,12 @@ and model `claude-sonnet-4-6`, including the 79/80 threshold-boundary shape.
 `lib/facet_confidence/assessment_corpus_ledger.rb` validates the corpus,
 binds every recorded assessment run to the corpus version/digest, rubric
 version, model version, and input evidence revision, and rejects replays of
-identical case input. It locks validation and append as one operation, and a
-re-run after a correction must cite that correction event as its evidence.
+identical case input. An operational failure is not a verdict: it records no
+scores, so it neither inflates certainty nor consumes the input revision a
+later verdict run has to advance from — a provider outage cannot leave the
+frozen corpus permanently unmeasurable. It locks validation and append as one
+operation, and a re-run after a correction must cite that correction event as
+its evidence.
 `lib/facet_confidence/assessment_outcome_report.rb`
 computes false readiness, unnecessary clarification, human corrections,
 assessment cost, and downstream rework against the frozen expected bands, and
@@ -134,6 +138,35 @@ and follow-ups through
 recorded in
 [`assessment-evaluation-2026-10-23/`](assessment-evaluation-2026-10-23/README.md)
 and remain not established until the operator-executed runs exist.
+
+## Corpus measurement execution
+
+The outcome measures are only meaningful when they come from the shipped
+assessment path, so the corpus is executable rather than a document an operator
+transcribes by hand. The runner materializes one frozen case as production
+facet records — the facet, its candidate direction, and the case's ordered
+attributable evidence with the corpus supersession applied — and runs
+`FeatureIntents::AssessFacet` over them. The rubric, the prompt contract, the
+model request, and the response validation are the shipped assessor; the
+runner only supplies the case and reads the result back.
+
+Those records exist only inside a rolled-back transaction. A corpus
+measurement must never reach the readiness path, never leave synthetic tenant
+data behind, and never enroll an old feature in a new assessment.
+
+The run is recorded in the repository-visible corpus ledger through the shipped
+append operation, which binds the corpus version and digest, the rubric and
+model version, and the input evidence revision to every event and rejects a
+replay of identical case input. The runner refuses to record a run the
+provider served from another model than the corpus pins: the frozen corpus
+measures one rubric under one model, and a substitute model's output is not
+that measurement. A refused run is reported with its reason and never
+silently attributed.
+
+Cost provenance is the harness's own metadata; a run that measured no cost
+records zero rather than an invented estimate. A failed run is an operational
+failure, not an assessment verdict, and stays out of the false-readiness,
+unnecessary-clarification, and band-divergence measures.
 
 ## Closeout evaluation entry point
 

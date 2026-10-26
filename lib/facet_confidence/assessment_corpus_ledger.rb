@@ -28,6 +28,8 @@ module FacetConfidence
 
     EXPECTED_STATUSES = %w[completed clarification_needed unknown].freeze
     RUN_STATUSES = %w[completed clarification_needed unknown failed].freeze
+    # An operational (provider/runtime) failure, not an assessment verdict.
+    FAILED_RUN_STATUS = "failed"
     BANDS = %w[unknown below_threshold at_or_above_threshold].freeze
     READINESS = %w[ready not_ready].freeze
 
@@ -253,7 +255,8 @@ module FacetConfidence
     def validate_events!(cases, entries)
       evaluation = cases.to_h { |corpus_case| [ corpus_case.fetch("id"), { case: corpus_case, runs: [], corrections: [], rework: [] } ] }
       trackers = cases.to_h do |corpus_case|
-        [ corpus_case.fetch("id"), { baseline_revision: corpus_case.fetch("evidence_revision"), run_seen: false, last_run_revision: nil, pending_corrections: {} } ]
+        [ corpus_case.fetch("id"), { baseline_revision: corpus_case.fetch("evidence_revision"), run_seen: false,
+          last_run_revision: nil, last_verdict_revision: nil, pending_corrections: {} } ]
       end
       entries.each { |entry| dispatch_event!(entry, evaluation, trackers) }
       evaluation
@@ -340,17 +343,30 @@ module FacetConfidence
       revision = entry["input_revision"]
       raise InvalidLedger, "#{id} assessment run must record a positive integer input revision" unless revision.is_a?(Integer) && revision.positive?
 
-      if tracker[:run_seen]
-        if revision == tracker[:last_run_revision]
-          raise InvalidLedger, "#{id} identical input cannot be replayed to inflate certainty at input revision #{revision}"
-        end
-        raise InvalidLedger, "#{id} input revisions must advance" unless revision > tracker[:last_run_revision]
-        raise InvalidLedger, "#{id} re-run requires a recorded correction at the new input revision" unless tracker[:pending_corrections].key?(revision)
-      else
-        raise InvalidLedger, "#{id} first assessment run must assess the frozen case input revision" unless revision == tracker[:baseline_revision]
+      if tracker[:last_verdict_revision]
+        ensure_verdict_advance!(id, revision, tracker)
+      elsif revision != tracker[:baseline_revision] && !tracker[:pending_corrections].key?(revision)
+        raise InvalidLedger, "#{id} first assessment run must assess the frozen case input revision"
       end
+
       tracker[:run_seen] = true
       tracker[:last_run_revision] = revision
+      # An operational failure produced no verdict and no scores: it can
+      # neither inflate certainty nor consume the input revision a later
+      # verdict run has to advance from.
+      tracker[:last_verdict_revision] = revision unless entry["status"] == FAILED_RUN_STATUS
+    end
+
+    # A recorded verdict cannot be replayed from identical input, and a later
+    # revision is only legitimate when a recorded correction advanced it.
+    def ensure_verdict_advance!(id, revision, tracker)
+      if revision == tracker[:last_verdict_revision]
+        raise InvalidLedger, "#{id} identical input cannot be replayed to inflate certainty at input revision #{revision}"
+      end
+      raise InvalidLedger, "#{id} input revisions must advance" unless revision > tracker[:last_verdict_revision]
+      return if tracker[:pending_corrections].key?(revision)
+
+      raise InvalidLedger, "#{id} re-run requires a recorded correction at the new input revision"
     end
 
     def validate_correction!(entry, evaluation, trackers)

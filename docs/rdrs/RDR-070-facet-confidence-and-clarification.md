@@ -3,29 +3,42 @@
 ## Metadata
 
 - **Date**: 2026-09-22
-- **Status**: Partially Implemented (see [2026-10-22 Final Acceptance Audit](#2026-10-22-final-acceptance-audit))
+- **Status**: Partially Implemented (see [2026-10-26 Closeout](#2026-10-26-closeout))
 - **Type**: Intent modeling and agent judgment
 - **Priority**: P1
 - **Related RDRs**: [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)
 - **Intent**: [Facet confidence](../intent/facet-confidence/facet-confidence-design.md)
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
-- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (shared umbrella), [#4323](https://github.com/viamin/paid/issues/4323) (RDR-070 closeout), and [#4573](https://github.com/viamin/paid/issues/4573) (assessment-corpus final-acceptance dependency)
+- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (shared umbrella), [#4323](https://github.com/viamin/paid/issues/4323) (RDR-070 closeout), [#4573](https://github.com/viamin/paid/issues/4573) (assessment corpus and outcome metrics), [#4596](https://github.com/viamin/paid/issues/4596) (closeout evaluation flow), and the remaining gaps [#4661](https://github.com/viamin/paid/issues/4661) (measured corpus outcomes) and [#4662](https://github.com/viamin/paid/issues/4662) (recorded reference judgments)
 
 ## Implementation Status
 
 The facet/evidence, assessment, adaptive-clarification, explicit-preference,
-and scoped-readiness contracts are now implemented with linked tests. The
-RDR's versioned representative assessment corpus and its outcome measurement
-are delivered (#4573) as
+and scoped-readiness contracts are implemented with linked tests. The RDR's
+versioned representative assessment corpus and its outcome measurement are
+delivered (#4573) as
 [`docs/intent/facet-confidence/assessment-corpus-manifest-v1.yml`](../intent/facet-confidence/assessment-corpus-manifest-v1.yml)
 with per-run provenance (corpus/rubric/model/input revisions, replay guard)
 and outcome metrics (false readiness, unnecessary clarification, human
 corrections, cost, downstream rework) in
-[`docs/intent/facet-confidence/assessment-evaluation-2026-10-23/`](../intent/facet-confidence/assessment-evaluation-2026-10-23/README.md);
-the operator-executed measured runs remain pending and are recorded as not
-established in the outcome worksheet. The umbrella remains open for the
-remaining RDR-071 delivery/activation integration. See the 2026-10-22 final
-acceptance audit for the criterion-level reconciliation.
+[`docs/intent/facet-confidence/assessment-evaluation-2026-10-23/`](../intent/facet-confidence/assessment-evaluation-2026-10-23/README.md).
+The closeout evaluation entry point (#4596) starts, resumes, labels, freezes,
+and reports the blinded reference judgments over the same frozen corpus.
+
+The corpus is now executable through the shipped assessment path
+(`bin/rails "facet_confidence:corpus:run[<project-id>]"`, shipped with the
+2026-10-26 closeout audit), so measured verdict runs no longer depend on
+hand-transcribed scores. The 2026-10-26 audit executed all eight cases and
+recorded eight **operational failures**: no provider in that environment
+served the corpus's pinned rubric model `claude-sonnet-4-6`, so no verdict run
+exists and the measured false-readiness, unnecessary-clarification, correction,
+cost, and rework values remain not established. The recorded runs and their
+reason are in
+[`assessment-evaluation-2026-10-23/outcome-worksheet-2026-10-23.md`](../intent/facet-confidence/assessment-evaluation-2026-10-23/outcome-worksheet-2026-10-23.md);
+[#4661](https://github.com/viamin/paid/issues/4661) owns the measured run and
+[#4662](https://github.com/viamin/paid/issues/4662) owns the recorded reference
+judgments. See the 2026-10-26 closeout audit for the criterion-level
+reconciliation.
 
 ### 2026-10-12 Implementation progress audit
 
@@ -213,3 +226,47 @@ broaden enrollment or change an active run. This closeout tracks
 [#4309](https://github.com/viamin/paid/issues/4309); it does not close the
 umbrella. The shared audit evidence is also recorded in
 [`audit-report-2026-10-22-human-centered-inbox-epic.md`](audit-report-2026-10-22-human-centered-inbox-epic.md).
+
+## 2026-10-26 Closeout
+
+Closeout [#4323](https://github.com/viamin/paid/issues/4323) re-verified every
+RDR-070 acceptance criterion against shipped code and freshly run focused
+specs, and executed the frozen corpus through the shipped assessment path.
+The evidence supports **Partially Implemented**, and the criterion-level
+record is in
+[`audit-report-2026-10-26-rdr-070.md`](audit-report-2026-10-26-rdr-070.md).
+
+What shipped and is now verified by running tests: the independent bounded
+intent/technical assessments with unknown distinct from a score, the
+attributable revisioned evidence and asynchronous assessment, correction
+precedence and clarification over majority voting, adaptive comparative
+clarification, explicit preferences with provenance and authorized lifecycle
+operations, the per-issue prerequisite map with no vacuous readiness, the
+separate configurable 80/80 thresholds with the 79/80 boundary and research
+scope, builder context without display-time LLM calls, the versioned corpus
+with per-run provenance and the outcome measures, and the closeout evaluation
+entry point with blinded labeling, freeze, and compiled report.
+
+Two acceptance items are still unmet and now have focused owners:
+
+- The measured corpus verdict outcomes do not exist. The corpus was executed
+  on 2026-10-26 and all eight cases ended as operational failures because no
+  provider served the pinned rubric model `claude-sonnet-4-6`. The runner,
+  the ledger, and the measures are in place, so only the execution remains:
+  [#4661](https://github.com/viamin/paid/issues/4661).
+- No blinded reference-judgment set exists for the frozen corpus. The
+  judgments are human evidence and must be recorded through the authenticated
+  maintainer's session: [#4662](https://github.com/viamin/paid/issues/4662).
+
+The 80/80 defaults remain provisional policy judgments rather than calibrated
+probabilities. No threshold or rubric tuning is proposed or evaluated: the
+corpus tuning gate stays blocked until the measured verdict metrics exist, and
+the audit deliberately does not tune scores to raise throughput.
+
+The rollout guard is unchanged: no old feature is enrolled, no historical
+answer is reinterpreted as numerically certain, no active run is paused
+because evidence or thresholds changed, readiness-driven release stays gated on
+the complete RDR-071 delivery path, and neither the corpus runner nor the
+audit changes the 80/80 defaults or releases work. This closeout tracks
+[#4309](https://github.com/viamin/paid/issues/4309); it does not close the
+umbrella.

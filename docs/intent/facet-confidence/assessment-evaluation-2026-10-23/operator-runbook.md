@@ -14,11 +14,22 @@ ledger events keep validating against the content they were measured with.
 
 ## 2. Assess each case
 
-For each corpus case, replay the frozen evidence (in `occurred_at` order,
-honoring `supersedes`) through the production assessment path — or an
-operator-controlled harness that uses the same rubric `facet-confidence-v1`,
-model `claude-sonnet-4-6`, and prompt contract as
-`FeatureIntents::AssessFacet` — and record the outcome:
+The shipped assessment path is executable for the whole corpus:
+
+```bash
+bin/rails "facet_confidence:corpus:run[<project-id>]"
+```
+
+The command materializes every frozen case as production facet records inside a
+rolled-back transaction, runs `FeatureIntents::AssessFacet` over them through
+`agent_harness`, appends the provenance-complete runs to the ledger, and prints
+the compiled outcome worksheet. It refuses to record a run the provider served
+from another model than the corpus pins (`claude-sonnet-4-6`), because a
+substitute model's output is not this corpus's measurement; the refusal is
+printed with its reason.
+
+For a single case, or when appending a run by hand, the ledger accepts one
+event at a time:
 
 ```bash
 bin/facet-confidence-assessment-evaluation append \

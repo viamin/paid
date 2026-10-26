@@ -247,6 +247,21 @@ assistant's exploration context, and restoring a saved answer's recorded
 evidence on reopen. #4322 stays open and keeps `Tracks #4309` language; only
 the umbrella's own final acceptance audit may close #4309.
 
+The [2026-10-26 RDR-070 closeout](audit-report-2026-10-26-rdr-070.md)
+re-audits RDR-070 against shipped code, freshly run focused specs, and an
+executed corpus run: RDR-070 stays **Partially Implemented**. The durable
+facet-confidence, clarification, preference, and readiness contracts, the
+versioned corpus with per-run provenance, the outcome measures, and the
+closeout evaluation flow are shipped. The audit also ships the missing
+execution path — `bin/rails "facet_confidence:corpus:run[<project-id>]"` runs
+the frozen corpus through the shipped assessment path — and executed it: all
+eight cases ended as operational failures because no provider served the
+corpus's pinned rubric model `claude-sonnet-4-6`, so the measured verdict
+outcomes and the recorded blinded reference judgments do not exist yet. They
+are owned by `#4661` and `#4662`, which `#4323` depends on explicitly. The
+80/80 defaults remain provisional policy judgments, not calibrated
+probabilities, and no tuning is proposed.
+
 RDR-075, **General Maintenance Runs** (indexed above under Quality &
 Automation), is drafted in [PR #4308](https://github.com/viamin/paid/pull/4308).
 Its [2026-10-15 C75 closeout audit](audit-report-2026-10-15-rdr-075.md) found

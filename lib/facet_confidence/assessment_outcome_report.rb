@@ -14,7 +14,7 @@ module FacetConfidence
     # asked no clarifying question and produced no scores, so it never enters
     # the verdict measures and is reported separately as an operational failure.
     UNDECISIVE_RUN_STATUSES = %w[clarification_needed unknown].freeze
-    FAILED_RUN_STATUS = "failed"
+    FAILED_RUN_STATUS = AssessmentCorpusLedger::FAILED_RUN_STATUS
 
     module_function
 

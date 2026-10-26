@@ -335,12 +335,12 @@ feature completion and release/flag reporting.
 
 ## C70 — Evaluate and close out facet confidence and clarification ([#4323](https://github.com/viamin/paid/issues/4323))
 
-**Dependencies:** Depends on #4316. Depends on #4318.
+**Dependencies:** Depends on #4316. Depends on #4318. Depends on #4573 for final acceptance. Depends on #4596 for the human-reference evaluation and measured acceptance report. Depends on #4661 for the measured corpus outcomes. Depends on #4662 for the recorded reference judgments.
 
-- [ ] Run the versioned assessment corpus and report false readiness, unnecessary clarification, human corrections, cost and rework.
-- [ ] Prove numerical bounds, unknown handling, explicit preference provenance, correction precedence and 79/80 readiness behavior.
-- [ ] Record that 80/80 defaults are provisional judgments rather than calibrated probabilities; do not tune scores solely to increase throughput.
-- [ ] Follow the [RDR closeout checklist](closeout-checklist.md); store `audit-report-<date>-rdr-070.md` and file specific gaps before claiming implementation.
+- [ ] Run the versioned assessment corpus and report false readiness, unnecessary clarification, human corrections, cost and rework. The corpus was executed on 2026-10-26 through the shipped assessment path (`bin/rails "facet_confidence:corpus:run[<project-id>]"`); all eight cases ended as operational failures because no provider served the corpus's pinned rubric model `claude-sonnet-4-6`, so the measured values are not yet established (#4661).
+- [x] Prove numerical bounds, unknown handling, explicit preference provenance, correction precedence and 79/80 readiness behavior.
+- [x] Record that 80/80 defaults are provisional judgments rather than calibrated probabilities; do not tune scores solely to increase throughput.
+- [x] Follow the [RDR closeout checklist](closeout-checklist.md); store `audit-report-<date>-rdr-070.md` and file specific gaps before claiming implementation. The 2026-10-26 audit is stored at [`audit-report-2026-10-26-rdr-070.md`](audit-report-2026-10-26-rdr-070.md); RDR-070 stays **Partially Implemented** and the recorded reference judgments remain outstanding (#4662).
 
 ## C71 — Validate confidence-driven delivery and overall feature completion ([#4324](https://github.com/viamin/paid/issues/4324))
 

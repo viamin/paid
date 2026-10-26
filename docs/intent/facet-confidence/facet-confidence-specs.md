@@ -8,7 +8,10 @@ implements `016`–`018`: the frozen assessment corpus, per-run provenance, and
 outcome metrics machinery; operator-executed measured runs remain pending and
 the worksheet records them as not established. The closeout evaluation entry
 point (#4596) implements `020`–`021`: the Inbox packet and the persisted
-blinded reference-judgment flow over the frozen corpus.
+blinded reference-judgment flow over the frozen corpus. The C70 closeout audit
+(#4323) implements `022`: the executable corpus measurement path that runs the
+shipped assessment path for every case and records the measured runs in the
+repository-visible corpus ledger.
 
 - [x] **FACET-CONFIDENCE-001** — When assessing a feature or issue facet, Paid SHALL represent intent certainty and technical confidence separately on a 0–100 scale and SHALL represent unknown values explicitly rather than inventing human intent.
   *Tests:* `spec/models/feature_intent_facet_assessment_spec.rb`.
@@ -53,7 +56,7 @@ blinded reference-judgment flow over the frozen corpus.
   *Corpus:* `docs/intent/facet-confidence/assessment-corpus-manifest-v1.yml`.
   *Code:* `lib/facet_confidence/assessment_corpus_ledger.rb`.
   *Tests:* `spec/lib/facet_confidence/assessment_corpus_ledger_spec.rb`.
-- [x] **FACET-CONFIDENCE-017** — When a corpus assessment run is recorded, Paid SHALL retain the corpus version and content digest, rubric version, model version, and input evidence revision alongside the run outcome, SHALL serialize validation and appending so concurrent events cannot corrupt the ledger, SHALL reject a second run of identical case input as a replay of certainty, and SHALL require a re-run at a correction revision to cite the matching correction event.
+- [x] **FACET-CONFIDENCE-017** — When a corpus assessment run is recorded, Paid SHALL retain the corpus version and content digest, rubric version, model version, and input evidence revision alongside the run outcome, SHALL serialize validation and appending so concurrent events cannot corrupt the ledger, SHALL reject a second verdict run of identical case input as a replay of certainty while an operational failure is not a verdict and does not consume the input revision, and SHALL require a re-run at a correction revision to cite the matching correction event.
   *Code:* `lib/facet_confidence/assessment_corpus_ledger.rb`, `bin/facet-confidence-assessment-evaluation`.
   *Tests:* `spec/lib/facet_confidence/assessment_corpus_ledger_spec.rb`, `spec/bin/facet_confidence/assessment_evaluation_cli_spec.rb`.
 - [x] **FACET-CONFIDENCE-018** — When corpus runs and their follow-ups are recorded, Paid SHALL report false readiness, unnecessary clarification, human corrections, assessment cost, and downstream rework per case and in aggregate, and SHALL treat threshold or rubric tuning proposals as unevaluated until these outcome metrics are complete, never justified by throughput alone.
@@ -68,3 +71,6 @@ blinded reference-judgment flow over the frozen corpus.
 - [x] **FACET-CONFIDENCE-021** — While a facet-confidence closeout evaluation is open, the operator who started it SHALL be its sole reference judge and SHALL record one blinded reference judgment per corpus case (verdict status, intent band, technical band, readiness, one cited evidence reference, and reason); the corpus shape, selection rationale, and frozen expectations SHALL stay hidden until every case is labeled and the judge freezes the reference set, and the compiled report comparing the frozen judgments with the frozen expected bands SHALL be retained on the evaluation and reachable from the originating Inbox item.
   *Tests:* `spec/services/facet_confidence/closeout_evaluation/record_label_spec.rb`, `spec/services/facet_confidence/closeout_evaluation/freeze_labels_spec.rb`, `spec/requests/projects/facet_confidence_evaluations_spec.rb`.
   *Code:* `app/services/facet_confidence/closeout_evaluation/`, `app/controllers/projects/facet_confidence_evaluations_controller.rb`, `app/views/projects/facet_confidence_evaluations/`.
+- [x] **FACET-CONFIDENCE-022** — When an operator runs the frozen assessment corpus, Paid SHALL execute the shipped facet assessment path through agent_harness for every corpus case, SHALL record provenance-complete assessment runs (corpus version and digest, rubric and model version, input evidence revision, bounded scores, cited evidence, and cost) in the repository-visible corpus ledger, SHALL refuse to attribute a run the provider served from another model than the frozen corpus pins, and SHALL compile the measured false-readiness, unnecessary-clarification, correction, cost, and rework measures from the recorded runs.
+  *Tests:* `spec/services/facet_confidence/assessment_corpus_runner_spec.rb`.
+  *Code:* `app/services/facet_confidence/assessment_corpus_runner.rb`, `app/services/facet_confidence/assessment_corpus_case.rb`, `lib/tasks/facet_confidence.rake`.
