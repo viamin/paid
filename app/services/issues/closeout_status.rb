@@ -18,7 +18,8 @@ module Issues
     Blocker = Struct.new(:code, :message, :evidence, :recovery, keyword_init: true)
     Inputs = Struct.new(:evidence_by_issue_id, :prerequisites_by_issue_id,
       :open_requests_by_issue_id, :active_run_issue_ids, :feature_links_by_issue_id,
-      :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id, keyword_init: true)
+      :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id,
+      :open_native_children_by_issue_id, :prerequisite_notifications_by_issue_id, keyword_init: true)
 
     # Blockers that are deliberate operator states or active work rather than
     # a partial-closeout stall; the lane must not surface them.
@@ -109,9 +110,29 @@ module Issues
         active_run_issue_ids: AgentRun.where(issue_id: issue_ids, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).distinct.pluck(:issue_id).to_set,
         feature_links_by_issue_id: feature_links,
         analysis_backoff_reset_by_project_id: reset_at,
-        scanner_attempts_by_issue_id: scanner_attempts
+        scanner_attempts_by_issue_id: scanner_attempts,
+        open_native_children_by_issue_id: open_native_children_for(issues),
+        prerequisite_notifications_by_issue_id: prerequisite_notifications_for(issues)
       )
     end
+
+    def self.open_native_children_for(issues)
+      Issue.joins("INNER JOIN issues parent_issues ON parent_issues.id = issues.parent_issue_id")
+        .where(parent_issue_id: issues.map(&:id), is_pull_request: false, github_state: "open")
+        .where("issues.project_id = parent_issues.project_id")
+        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+        .order(:github_number).to_a.group_by(&:parent_issue_id)
+    end
+    private_class_method :open_native_children_for
+
+    def self.prerequisite_notifications_for(issues)
+      Notification.where(
+        account_id: issues.map { |issue| issue.project.account_id }.uniq,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+        subject_type: "Issue", subject_id: issues.map(&:id), resolved_at: nil, dismissed_at: nil
+      ).order(:id).to_a.group_by(&:subject_id)
+    end
+    private_class_method :prerequisite_notifications_for
 
     def self.prerequisite_labels_for(issues)
       labels = Hash.new { |hash, key| hash[key] = [] }
@@ -155,7 +176,8 @@ module Issues
     def self.admission_blockers(issue, prerequisites: prerequisite_labels(issue), inputs: nil)
       prerequisite_blockers(issue, labels: prerequisites) + operator_pause_blockers(issue) +
         run_in_flight_blockers(issue, inputs:) + trust_blockers(issue) + feature_hold_blockers(issue, inputs:) +
-        analysis_backoff_blockers(issue, inputs:) + scanner_verification_blockers(issue, inputs:)
+        analysis_backoff_blockers(issue, inputs:) + scanner_verification_blockers(issue, inputs:) +
+        open_native_child_blockers(issue, inputs:) + human_prerequisite_notification_blockers(issue, inputs:)
     end
 
     # The scoped preflight is the admission authority. If it rejects after all
@@ -321,6 +343,55 @@ module Issues
         "status" => attempt.status, "blocked_reason" => attempt.blocked_reason
       }.compact
     end
+
+    # Mirrors DefaultCandidateSource#without_open_non_pr_subissues. A child
+    # relationship is an authoritative admission edge even when no duplicate
+    # IssueDependency was created for it.
+    # @spec PARTIAL-CLOSEOUT-030
+    def self.open_native_child_blockers(issue, inputs: nil)
+      children = inputs ? inputs.open_native_children_by_issue_id.fetch(issue.id, []) : open_native_children_for([ issue ]).fetch(issue.id, [])
+      return [] if children.empty?
+
+      labels = children.map { |child| "##{child.github_number}" }
+      [ Blocker.new(
+        code: :open_native_children,
+        message: "Open native child work (#{labels.join(', ')}) blocks automatic continuation; it is authoritative even without a dependency edge.",
+        evidence: { "children" => children.map { |child| native_child_evidence(child) } },
+        recovery: "Resolve each child's own work with its evidence; do not close it only to admit the parent."
+      ) ]
+    end
+
+    def self.native_child_evidence(child)
+      {
+        "issue_id" => child.id, "number" => child.github_number, "url" => child.github_url,
+        "paid_state" => child.paid_state
+      }
+    end
+    private_class_method :native_child_evidence
+
+    # Mirrors DefaultCandidateSource#partial_closeout_prerequisite_block_issue_ids.
+    # The notification is authoritative human evidence, not a dependency edge,
+    # so preserve its wording and route rather than guessing it is implementation.
+    # @spec PARTIAL-CLOSEOUT-030
+    def self.human_prerequisite_notification_blockers(issue, inputs: nil)
+      notifications = inputs ? inputs.prerequisite_notifications_by_issue_id.fetch(issue.id, []) : prerequisite_notifications_for([ issue ]).fetch(issue.id, [])
+      notifications.map { |notification| human_prerequisite_notification_blocker(notification) }
+    end
+
+    def self.human_prerequisite_notification_blocker(notification)
+      Blocker.new(
+        code: :human_prerequisite_notification,
+        message: "Active human prerequisite notification ##{notification.id} (#{notification.title}) blocks automatic continuation: #{notification.description}",
+        evidence: {
+          "notification_id" => notification.id, "source" => notification.source,
+          "title" => notification.title, "description" => notification.description,
+          "action_url" => notification.action_url, "metadata" => notification.metadata
+        }.compact,
+        recovery: "Supply the requested human decision or evidence through the notification's stated route. " \
+          "Select the current policy explicitly when guidance requires it; resolve or dismiss the notification in Inbox only after that evidence is recorded."
+      )
+    end
+    private_class_method :human_prerequisite_notification_blocker
 
     def self.scanner_alert_number(issue)
       issue.github_issue_id - Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET

@@ -190,6 +190,22 @@
   `spec/services/issues/stalled_closeouts_spec.rb` (including a query-count
   regression for the shared input build).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When canonical auto-pick admission excludes a
+  partial-closeout parent because it has an open non-PR native child or an
+  active `partial_closeout.prerequisite` notification, `CloseoutStatus` SHALL
+  report each applicable exclusion additively with the child or notification
+  identity, source evidence, safe recovery guidance, and available link. A
+  native child SHALL be reported even without an `IssueDependency` edge; an
+  active human-prerequisite notification SHALL preserve the requested human
+  decision/evidence and require explicit current-policy selection where the
+  guidance calls for it. These diagnostics SHALL be tenant-scoped and SHALL
+  not close, dismiss, or infer completion for either blocker. The same
+  diagnostics SHALL be used by Inbox, continuation and report-only audit
+  refusals; the residual `unavailable` diagnostic remains only for a guard
+  that no known diagnostic can identify.
+  *Code:* `app/services/issues/closeout_status.rb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-005** — When a queued continuation run is considered
   for dispatch, the system SHALL recheck its scoped authorization at dequeue
   and run start (`AgentRuns::RecheckIssueEligibility` continuation branch,
