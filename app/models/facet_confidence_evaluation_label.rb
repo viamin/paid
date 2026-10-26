@@ -7,6 +7,8 @@
 # blocks freeze. A labeled judgment records the verdict status, both bands,
 # and the readiness the judge re-derived from the cited evidence; readiness
 # must follow from the judged bands (no averaging across axes).
+# Post-unblinding corrections are appended in the `revised_*` fields, leaving
+# the frozen judgment and its compiled report intact.
 # @spec FACET-CONFIDENCE-021
 class FacetConfidenceEvaluationLabel < ApplicationRecord
   STATES = %w[pending labeled skipped].freeze
@@ -16,18 +18,27 @@ class FacetConfidenceEvaluationLabel < ApplicationRecord
 
   belongs_to :facet_confidence_evaluation, class_name: "FacetConfidenceEvaluation", inverse_of: :labels
   belongs_to :recorded_by, class_name: "User"
+  belongs_to :revised_by, class_name: "User", optional: true
 
   validates :case_id, presence: true
   validates :state, inclusion: { in: STATES }
   validates :verdict, inclusion: { in: VERDICTS }, allow_nil: true
   validates :intent_band, :technical_band, inclusion: { in: BANDS }, allow_nil: true
   validates :readiness, inclusion: { in: READINESS }, allow_nil: true
+  validates :revised_verdict, inclusion: { in: VERDICTS }, allow_nil: true
+  validates :revised_intent_band, :revised_technical_band, inclusion: { in: BANDS }, allow_nil: true
+  validates :revised_readiness, inclusion: { in: READINESS }, allow_nil: true
   validates :verdict, :intent_band, :technical_band, :readiness,
     :cited_evidence_reference, :reason, presence: true, if: -> { state == "labeled" }
+  validates :revised_verdict, :revised_intent_band, :revised_technical_band,
+    :revised_readiness, :revised_cited_evidence_reference, :revised_reason,
+    :revised_by, :revised_at, presence: true, if: :revised?
   validate :readiness_follows_bands, if: -> { state == "labeled" }
+  validate :revised_readiness_follows_bands, if: :revised?
 
   def labeled? = state == "labeled"
   def skipped? = state == "skipped"
+  def revised? = revised_verdict.present?
 
   # The same structural rule the frozen corpus applies to its own
   # expectations: readiness is "ready" only when a decisive verdict puts both
@@ -38,10 +49,16 @@ class FacetConfidenceEvaluationLabel < ApplicationRecord
     errors.add(:readiness, "must follow the judged bands (#{readiness_from_bands})")
   end
 
+  def revised_readiness_follows_bands
+    return if revised_readiness == readiness_from_bands(revised_verdict, revised_intent_band, revised_technical_band)
+
+    errors.add(:revised_readiness, "must follow the revised judged bands (#{readiness_from_bands(revised_verdict, revised_intent_band, revised_technical_band)})")
+  end
+
   private
 
-  def readiness_from_bands
-    return "ready" if verdict == "completed" && intent_band == "at_or_above_threshold" && technical_band == "at_or_above_threshold"
+  def readiness_from_bands(current_verdict = verdict, current_intent_band = intent_band, current_technical_band = technical_band)
+    return "ready" if current_verdict == "completed" && current_intent_band == "at_or_above_threshold" && current_technical_band == "at_or_above_threshold"
 
     "not_ready"
   end

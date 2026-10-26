@@ -4,6 +4,7 @@
     @spec FACET-CONFIDENCE-021 %>
 <% entries = evaluation.report["cases"] || [] %>
 <% measures = evaluation.report["measures"] || {} %>
+<% labels = evaluation.labels.index_by(&:case_id) %>
 
 <div class="rounded-xl border border-gray-200 bg-white p-4">
   <h2 class="text-sm font-semibold text-gray-900">Reference set frozen</h2>
@@ -50,6 +51,7 @@
         <th class="py-2 pr-3">Judgment</th>
         <th class="py-2 pr-3">Frozen expectations</th>
         <th class="py-2 pr-3">Divergences</th>
+        <th class="py-2 pr-3">Post-unblinding correction</th>
       </tr>
     </thead>
     <tbody>
@@ -85,13 +87,32 @@
               aligned
             <% end %>
           </td>
+          <td class="py-2 pr-3 text-xs text-gray-700">
+            <% label = labels[entry["case_id"]] %>
+            <% if label&.revised? %>
+              <code><%= label.revised_verdict %></code> · intent <code><%= label.revised_intent_band %></code> ·
+              technical <code><%= label.revised_technical_band %></code> · <code><%= label.revised_readiness %></code><br>
+              <span class="text-xs text-gray-500"><%= label.revised_reason %></span>
+            <% elsif evaluation.created_by_id == current_user.id %>
+              <%= form_with url: correct_project_facet_confidence_evaluation_path(project, evaluation, **inbox_context), method: :post, class: "space-y-2" do |form| %>
+                <%= form.hidden_field :case_id, value: entry["case_id"] %>
+                <%= form.select :verdict, options_for_select(FacetConfidenceEvaluationLabel::VERDICTS, judgment["verdict"]), {}, class: "w-full rounded-md border-gray-300 text-xs shadow-sm" %>
+                <%= form.select :intent_band, options_for_select(FacetConfidenceEvaluationLabel::BANDS, judgment["intent_band"]), {}, class: "w-full rounded-md border-gray-300 text-xs shadow-sm" %>
+                <%= form.select :technical_band, options_for_select(FacetConfidenceEvaluationLabel::BANDS, judgment["technical_band"]), {}, class: "w-full rounded-md border-gray-300 text-xs shadow-sm" %>
+                <%= form.select :readiness, options_for_select(FacetConfidenceEvaluationLabel::READINESS, judgment["readiness"]), {}, class: "w-full rounded-md border-gray-300 text-xs shadow-sm" %>
+                <%= form.select :cited_evidence_reference, options_for_select(evaluation.corpus.find_case(entry["case_id"]).fetch("evidence").map { |item| item.fetch("reference") }, judgment["cited_evidence_reference"]), {}, class: "w-full rounded-md border-gray-300 text-xs shadow-sm" %>
+                <%= form.text_field :reason, placeholder: "Required correction reason", required: true, class: "w-full rounded-md border-gray-300 text-xs shadow-sm" %>
+                <%= form.submit "Append correction", class: "rounded-md bg-white px-2 py-1 text-xs font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+              <% end %>
+            <% end %>
+          </td>
         <% end %>
       <% end %>
     </tbody>
   </table>
   <p class="text-xs text-gray-500">
     Highlighted rows are divergences between your blinded judgment and the frozen expectation for judge review.
-    The original judgments are preserved as recorded.
+    A post-unblinding correction is separately recorded with its reason; the original judgments and compiled report remain preserved.
   </p>
 </div>
 

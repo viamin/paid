@@ -28,6 +28,10 @@ class FacetConfidenceEvaluationPolicy < ApplicationPolicy
     judge? && operator?
   end
 
+  def correct?
+    judge? && operator?
+  end
+
   private
 
   def project
