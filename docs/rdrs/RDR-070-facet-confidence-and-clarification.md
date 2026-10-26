@@ -22,8 +22,8 @@ with per-run provenance (corpus/rubric/model/input revisions, replay guard)
 and outcome metrics (false readiness, unnecessary clarification, human
 corrections, cost, downstream rework) in
 [`docs/intent/facet-confidence/assessment-evaluation-2026-10-23/`](../intent/facet-confidence/assessment-evaluation-2026-10-23/README.md);
-the operator-executed measured runs remain pending and are recorded as not
-established in the outcome worksheet. The umbrella remains open for the
+the 2026-10-26 pinned-model attempts are recorded as operational failures and
+the verdict measures remain not established in the outcome worksheet. The umbrella remains open for the
 remaining RDR-071 delivery/activation integration. See the 2026-10-22 final
 acceptance audit for the criterion-level reconciliation.
 
