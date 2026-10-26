@@ -116,6 +116,23 @@ persisted diagnostic inputs for each project's candidates before evaluating
 individual `CloseoutStatus` values. The per-issue status still produces the
 same additive blockers; batching changes only how its inputs are read.
 
+### Technical-prerequisite execution readiness
+
+An execution-evidence prerequisite distinguishes the control-plane or
+investigation workspace from Paid's eligible isolated execution backends.
+Before an operator starts or resumes a bounded validation run, Paid reads the
+existing `Containers::BackendScheduler` result for the pinned `AgentRun` and
+returns compatible hosts, compatibility failures, and health failures. A
+missing local Docker socket is not evidence that no execution backend exists.
+
+When the run requests a marketplace tool sidecar, readiness also evaluates
+`marketplace_tool_sidecars` for the run's project. A compatible host and a
+disabled rollout flag are separate facts: the response remains blocked and
+exposes the rollout authorization as a required setup action; it never enables
+the flag. The inspection is read-only and does not expose a host shell or
+Docker socket. Actual validation execution remains in the normal runner
+provisioning, attachment, execution, and cleanup lifecycle.
+
 ### Prompt delivery
 
 The authorization is useless to the executing agent if it never reaches the

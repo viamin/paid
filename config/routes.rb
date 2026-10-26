@@ -317,6 +317,7 @@ Rails.application.routes.draw do
       post :terminate, on: :member
       post :promote_session_summary, on: :member
       get :provenance, on: :member
+      get :validation_preflight, on: :member
       post :quick_create, on: :collection
       post :bootstrap_readiness, on: :collection
       post :bump_priority, on: :collection

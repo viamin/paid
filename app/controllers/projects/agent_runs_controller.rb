@@ -12,7 +12,8 @@ module Projects
 
     before_action :set_project
     before_action :set_agent_run, only: [
-      :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance, :promote_session_summary
+      :show, :cancel, :retry, :refresh_auth, :diagnose_error, :resume, :terminate, :provenance, :promote_session_summary,
+      :validation_preflight
     ]
 
     def index
@@ -61,6 +62,17 @@ module Projects
         format.html
         format.json { render json: @provenance }
       end
+    end
+
+    # @spec PARTIAL-CLOSEOUT-030
+    def validation_preflight
+      authorize @agent_run, :show?
+
+      result = TechnicalPrerequisites::ValidationPreflight.call(agent_run: @agent_run)
+      render json: {
+        ready: result.ready?, compatible_hosts: result.compatible_hosts,
+        setup_actions: result.setup_actions, diagnostics: result.diagnostics
+      }
     end
 
     # Returns docker host select options filtered by the supplied runner
