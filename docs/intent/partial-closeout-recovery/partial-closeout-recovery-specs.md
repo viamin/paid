@@ -4,6 +4,31 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When a partial-closeout prerequisite needs
+  technical validation, Paid SHALL resolve compatible isolated execution hosts
+  through `Containers::BackendScheduler` and preserve its capability and health
+  diagnostics as the planning evidence. A missing Docker socket in the
+  investigation/control-plane workspace SHALL not establish that no execution
+  backend is available. Before a selected marketplace tool sidecar is prepared,
+  the action SHALL require the existing `marketplace_tool_sidecars` rollout
+  authorization and name the account-owner action required when it is absent;
+  it SHALL never enable the flag itself. When no compatible host exists, the
+  result SHALL remain unavailable and name restoration of a compatible host as
+  the recovery action.
+  *Tests:* `spec/services/partial_closeouts/technical_prerequisite_plan_spec.rb`.
+  *Code:* `PartialCloseouts::TechnicalPrerequisitePlan`.
+
+- [x] **PARTIAL-CLOSEOUT-031** — When a compatible, authorized technical
+  prerequisite validation starts, Paid SHALL provision and execute the selected
+  analyzer through the fresh AgentRun's isolated execution environment and
+  normal tool-sidecar lifecycle. It SHALL durably retain the pinned checkout,
+  analyzer/tool identity, scheduler evidence, stdout, stderr, exit status,
+  relevant sidecar endpoint manifest, terminal outcome, and cleanup evidence.
+  Unavailable and failed outcomes SHALL remain distinct from success; cleanup
+  SHALL be attempted after every prepared validation.
+  *Tests:* `spec/services/partial_closeouts/technical_prerequisite_validation_spec.rb`.
+  *Code:* `PartialCloseouts::TechnicalPrerequisiteValidation`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its

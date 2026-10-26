@@ -79,6 +79,33 @@ PR/run links, the recorded completion outcome, unresolved prerequisites
 (blocking dependencies), and the exact reason automatic continuation cannot
 proceed.
 
+### Technical prerequisite execution planning
+
+A technical prerequisite may require a bounded validation in an isolated
+execution environment. `PartialCloseouts::TechnicalPrerequisitePlan` asks the
+existing `Containers::BackendScheduler` for compatible execution hosts and
+retains its capability/health diagnostics as planning evidence. The
+control-plane or investigation workspace's Docker socket is not an execution
+host capability signal. A compatible remote backend remains usable when that
+workspace has no Docker client or socket.
+
+A marketplace tool sidecar remains a separately authorized rollout. Before a
+tool-attached validation is offered as ready, the planner checks the existing
+`marketplace_tool_sidecars` flag for the project. A missing authorization is
+reported as the exact account-owner enablement action; the planner never
+changes flags, allowlists, credentials, or host configuration. No compatible
+host is an unavailable outcome with its scheduler diagnostics and a restore or
+configure-host recovery action, not a retry against the same workspace.
+
+`PartialCloseouts::TechnicalPrerequisiteValidation` consumes a ready plan only
+through the AgentRun's provision, runner tool attachment, isolated
+`execute_in_execution_environment`, and cleanup interfaces. It stores the
+checkout, analyzer/tool selection, scheduler result, command stdout/stderr and
+exit status, endpoint manifest, terminal state, and cleanup completion under
+the run's durable execution metadata. It does not mount host sockets or offer
+an interactive host shell; cancellation and failure still enter the same
+cleanup path and are evidence states rather than successful validation.
+
 ### Recovery: `IssueContinuationRequest` (scoped authorization)
 
 A deliberate continuation is a persisted, auditable authorization — never a
