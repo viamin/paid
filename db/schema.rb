@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_26_081717) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2783,6 +2783,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
     t.index ["project_id"], name: "index_knowledge_usage_stats_on_project_id"
   end
 
+  create_table "layered_verification_audit_reports", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.jsonb "business_intent_view", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.jsonb "progress", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.jsonb "verification_coverage_view", default: {}, null: false
+    t.text "waiting_reason"
+    t.index ["agent_run_id"], name: "index_layered_verification_audit_reports_on_agent_run_id", unique: true
+  end
+
   create_table "layered_verification_check_results", force: :cascade do |t|
     t.jsonb "agent_reported", default: {}, null: false
     t.bigint "agent_run_id"
@@ -2816,6 +2827,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
     t.index ["obligation_id"], name: "idx_on_obligation_id_495e991968"
   end
 
+  create_table "layered_verification_finding_observations", force: :cascade do |t|
+    t.bigint "audit_run_id", null: false
+    t.bigint "check_result_id", null: false
+    t.datetime "created_at", null: false
+    t.bigint "finding_id", null: false
+    t.jsonb "provenance", default: {}, null: false
+    t.datetime "updated_at", null: false
+    t.index ["audit_run_id"], name: "idx_on_audit_run_id_e2a9d0ccb3"
+    t.index ["check_result_id"], name: "idx_on_check_result_id_7fdcc55943"
+    t.index ["finding_id", "check_result_id"], name: "index_layered_verification_finding_observations_identity", unique: true
+    t.index ["finding_id"], name: "index_layered_verification_finding_observations_on_finding_id"
+  end
+
+  create_table "layered_verification_findings", force: :cascade do |t|
+    t.string "cause_signature", null: false
+    t.bigint "correspondence_claim_id"
+    t.datetime "created_at", null: false
+    t.jsonb "details", default: {}, null: false
+    t.bigint "obligation_id", null: false
+    t.bigint "originating_audit_run_id", null: false
+    t.datetime "resolved_at"
+    t.string "status", default: "unresolved", null: false
+    t.datetime "updated_at", null: false
+    t.index ["correspondence_claim_id"], name: "index_layered_verification_findings_on_correspondence_claim_id"
+    t.index ["obligation_id", "correspondence_claim_id", "cause_signature"], name: "index_layered_verification_open_finding_identity", unique: true, where: "((status)::text = 'unresolved'::text)"
+    t.index ["obligation_id"], name: "index_layered_verification_findings_on_obligation_id"
+    t.index ["originating_audit_run_id"], name: "idx_on_originating_audit_run_id_9b2cfd2c5c"
+  end
+
   create_table "layered_verification_obligations", force: :cascade do |t|
     t.string "approval_state", default: "unresolved", null: false
     t.string "approved_revision_reference"
@@ -2833,6 +2873,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
     t.index ["project_id", "framework", "external_identity"], name: "index_layered_verification_obligations_identity", unique: true
     t.index ["project_id"], name: "index_layered_verification_obligations_on_project_id"
     t.index ["superseded_by_id"], name: "index_layered_verification_obligations_on_superseded_by_id"
+  end
+
+  create_table "layered_verification_review_packages", force: :cascade do |t|
+    t.datetime "approved_at"
+    t.bigint "approved_by_id"
+    t.bigint "audit_run_id"
+    t.jsonb "bound_inputs", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.string "digest", null: false
+    t.bigint "project_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["approved_by_id"], name: "index_layered_verification_review_packages_on_approved_by_id"
+    t.index ["audit_run_id"], name: "index_layered_verification_review_packages_on_audit_run_id"
+    t.index ["project_id", "digest"], name: "idx_on_project_id_digest_78de01c3cd", unique: true
+    t.index ["project_id"], name: "index_layered_verification_review_packages_on_project_id"
   end
 
   create_table "linear_tokens", force: :cascade do |t|
@@ -4835,13 +4890,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
   add_foreign_key "knowledge_runs", "projects", on_delete: :cascade
   add_foreign_key "knowledge_usage_stats", "agent_runs", on_delete: :cascade
   add_foreign_key "knowledge_usage_stats", "projects", on_delete: :cascade
+  add_foreign_key "layered_verification_audit_reports", "agent_runs"
   add_foreign_key "layered_verification_check_results", "agent_runs"
   add_foreign_key "layered_verification_check_results", "layered_verification_correspondence_claims", column: "correspondence_claim_id", on_delete: :cascade
   add_foreign_key "layered_verification_check_results", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
   add_foreign_key "layered_verification_correspondence_claims", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
+  add_foreign_key "layered_verification_finding_observations", "agent_runs", column: "audit_run_id", on_delete: :restrict
+  add_foreign_key "layered_verification_finding_observations", "layered_verification_check_results", column: "check_result_id", on_delete: :restrict
+  add_foreign_key "layered_verification_finding_observations", "layered_verification_findings", column: "finding_id", on_delete: :cascade
+  add_foreign_key "layered_verification_findings", "agent_runs", column: "originating_audit_run_id", on_delete: :restrict
+  add_foreign_key "layered_verification_findings", "layered_verification_correspondence_claims", column: "correspondence_claim_id", on_delete: :nullify
+  add_foreign_key "layered_verification_findings", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
   add_foreign_key "layered_verification_obligations", "change_intents", on_delete: :nullify
   add_foreign_key "layered_verification_obligations", "layered_verification_obligations", column: "superseded_by_id", on_delete: :nullify
   add_foreign_key "layered_verification_obligations", "projects", on_delete: :cascade
+  add_foreign_key "layered_verification_review_packages", "agent_runs", column: "audit_run_id", on_delete: :nullify
+  add_foreign_key "layered_verification_review_packages", "projects", on_delete: :cascade
+  add_foreign_key "layered_verification_review_packages", "users", column: "approved_by_id", on_delete: :nullify
   add_foreign_key "linear_tokens", "accounts"
   add_foreign_key "linear_tokens", "users", column: "created_by_id"
   add_foreign_key "llm_models", "llm_models", column: "free_variant_of_id"
