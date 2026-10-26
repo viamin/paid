@@ -32,7 +32,7 @@ module Issues
       eligibility = Automation::Strategies::AutoPick::DefaultCandidateSource
         .partial_closeout_eligibility(project, issue_ids: candidates.map(&:id))
       candidates.each { |issue| issue.project = project }
-      inputs = CloseoutStatus.inputs_for(candidates)
+      inputs = CloseoutStatus.inputs_for(candidates, eligibility_inputs: eligibility.eligibility_inputs)
       # The scoped admission decision each candidate's continuation would
       # face at dequeue (`CloseoutStatus#residual_eligibility_blocker`),
       # evaluated from shared project inputs. The guards are per-issue, so

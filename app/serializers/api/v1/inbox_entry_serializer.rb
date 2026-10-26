@@ -67,13 +67,27 @@ module Api
         when Inbox::Queue::FEATURE_DECISION_KIND then feature_decision_payload
         when Inbox::Queue::RETRY_LIMITED_KIND then retry_limited_payload
         when Inbox::Queue::CHANGE_INTENT_DRAFT_KIND then change_intent_draft_payload
-        when Inbox::Queue::PARTIAL_CLOSEOUT_KIND then { unresolved_prerequisites: entry.tasks }
+        when Inbox::Queue::PARTIAL_CLOSEOUT_KIND then partial_closeout_payload
         when Inbox::Queue::TEST_REVIEW_PENDING_KIND then {}
         when Inbox::Queue::PROJECT_SETUP_PENDING_KIND then { tasks: entry.tasks }
         when Inbox::Queue::TRACEABILITY_GAP_KIND then traceability_gap_payload
         else
           raise ArgumentError, "Unknown inbox entry kind: #{entry.kind}"
         end
+      end
+
+      # @spec PARTIAL-CLOSEOUT-030
+      def partial_closeout_payload
+        return { unresolved_prerequisites: entry.tasks } unless entry.issue
+
+        status = entry.closeout_status || Issues::CloseoutStatus.call(entry.issue)
+        {
+          unresolved_prerequisites: entry.tasks,
+          scheduling_blocker: status.reason,
+          scheduling_blockers: status.blockers.map { |blocker|
+            { code: blocker.code, message: blocker.message, evidence: blocker.evidence, recovery: blocker.recovery }
+          }
+        }
       end
 
       def list_kind_payload

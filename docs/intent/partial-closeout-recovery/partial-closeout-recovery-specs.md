@@ -190,6 +190,27 @@
   `spec/services/issues/stalled_closeouts_spec.rb` (including a query-count
   regression for the shared input build).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When the canonical scoped admission check
+  excludes a partial closeout because it has an open native non-pull-request
+  child or an active `partial_closeout.prerequisite` notification, the system
+  SHALL add each applicable guard to the existing `CloseoutStatus` diagnostics
+  without changing eligibility. Native-child diagnostics SHALL identify every
+  child and its issue URL; human-prerequisite diagnostics SHALL identify each
+  active notification, its requested evidence, and its action URL. Inbox
+  detail, count eligibility, authorized chat context, continuation refusal,
+  and API payloads SHALL use those same additive reasons. The recovery text
+  SHALL direct an operator to complete or deliberately revise the child, or to
+  supply the named human evidence through the notification route; it SHALL NOT
+  close work, dismiss a notification, infer completion, or replace a selected
+  team policy. Diagnostics are project/account scoped, and `unavailable`
+  remains only for a rejection no known guard explains.
+  *Code:* `app/services/issues/closeout_status.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/inbox/chat_context_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-005** — When a queued continuation run is considered
   for dispatch, the system SHALL recheck its scoped authorization at dequeue
   and run start (`AgentRuns::RecheckIssueEligibility` continuation branch,

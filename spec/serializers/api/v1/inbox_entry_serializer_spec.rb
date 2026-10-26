@@ -209,6 +209,25 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload).to include(unresolved_prerequisites: [ "owner/repo#41" ])
     end
 
+    # @spec PARTIAL-CLOSEOUT-030
+    it "serializes authoritative native-child and human-prerequisite diagnostics" do
+      issue = create(:issue, project:, github_state: "open")
+      create(:issue, :pull_request, project:, github_state: "closed", pr_review_phase: "merged", parent_issue: issue)
+      child = create(:issue, project:, github_state: "open", parent_issue: issue, github_number: 4596)
+      notification = create(:notification, :error, account:, subject: issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+        action_url: "/inbox/action_required:2777")
+      status = Issues::CloseoutStatus.call(issue)
+      entry = build_entry(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue:, record: issue, closeout_status: status)
+
+      payload = described_class.render(entry)
+
+      expect(payload.fetch(:scheduling_blockers)).to include(
+        hash_including(code: :open_native_child, evidence: hash_including("children" => [ hash_including("id" => child.id) ])),
+        hash_including(code: :human_prerequisite, evidence: hash_including("notifications" => [ hash_including("id" => notification.id) ]))
+      )
+    end
+
     it "serializes test_review_pending with just the common fields" do
       entry = build_entry(Inbox::Queue::TEST_REVIEW_PENDING_KIND)
 

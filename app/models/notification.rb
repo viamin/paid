@@ -18,7 +18,7 @@ class Notification < ApplicationRecord
   after_commit :bump_inbox_cache_version, if: :saved_change_to_action_required_membership?
   # When an operator dismisses — or the system resolves — a partial-closeout
   # human prerequisite notification, the auto-pick eligibility block in
-  # {Automation::Strategies::AutoPick::DefaultCandidateSource#partial_closeout_prerequisite_block_issue_ids}
+  # {Automation::Strategies::AutoPick::DefaultCandidateSource#partial_closeout_prerequisite_notifications}
   # lifts for the parent issue (#4119). Mirror the dependency-resolved eager
   # re-enqueue ({Issue#enqueue_newly_unblocked_dependents}) so the parent
   # picks up through the same path every other freshly-unblocked issue uses,

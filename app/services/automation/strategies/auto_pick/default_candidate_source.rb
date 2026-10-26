@@ -61,6 +61,7 @@ module Automation
           :reauditable_issue_ids,
           :reauditable_closeout_ids,
           :prerequisite_block_ids,
+          :prerequisite_notifications,
           :unsynced_pr_produced_issue_ids,
           :merged_block_issue_ids,
           :code_scanning_verification_block_issue_ids,
@@ -69,6 +70,7 @@ module Automation
         PartialCloseoutEligibility = Struct.new(
           :eligible_ids,
           :continuation_eligible_ids,
+          :eligibility_inputs,
           keyword_init: true
         )
 
@@ -147,7 +149,8 @@ module Automation
 
             PartialCloseoutEligibility.new(
               eligible_ids: eligible_ids,
-              continuation_eligible_ids: continuation_eligible_ids
+              continuation_eligible_ids: continuation_eligible_ids,
+              eligibility_inputs: inputs
             )
           end
 
@@ -297,12 +300,14 @@ module Automation
             blocking_runs = blocking_runs.where.not(id: excluding_run_id) if excluding_run_id
             epic_ids = epic_issue_ids(project)
 
+            prerequisite_notifications = partial_closeout_prerequisite_notifications(project)
             EligibilityInputs.new(
               blocking_issue_ids: blocking_runs.select(:issue_id),
               epic_ids: epic_ids,
               reauditable_issue_ids: reauditable_issue_ids(project, epic_ids),
               reauditable_closeout_ids: partial_closeout_reaudit_issue_ids(project),
-              prerequisite_block_ids: partial_closeout_prerequisite_block_issue_ids(project),
+              prerequisite_block_ids: prerequisite_notifications.map(&:subject_id),
+              prerequisite_notifications: prerequisite_notifications,
               unsynced_pr_produced_issue_ids: unsynced_pr_produced_issue_ids(project),
               merged_block_issue_ids: merged_block_issue_ids(project),
               code_scanning_verification_block_issue_ids: code_scanning_verification_block_issue_ids(project)
@@ -489,14 +494,13 @@ module Automation
           # resolves it (Notifications::Resolve), so the partial-closeout
           # re-audit exception does not re-pick the parent ahead of the
           # prerequisite the notification names.
-          def partial_closeout_prerequisite_block_issue_ids(project) # @spec NO-OUTPUT-ISSUE-007
+          def partial_closeout_prerequisite_notifications(project) # @spec NO-OUTPUT-ISSUE-007
             Notification.where(
               account_id: project.account_id,
               source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
               subject_type: "Issue"
             ).where(resolved_at: nil, dismissed_at: nil)
-              .where("subject_id IN (?)", project.issues.select(:id))
-              .pluck(:subject_id)
+              .where("subject_id IN (?)", project.issues.select(:id)).order(:id).to_a
           end
 
           # A merged PR remains terminal for ordinary implementation work unless
