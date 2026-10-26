@@ -79,6 +79,20 @@ PR/run links, the recorded completion outcome, unresolved prerequisites
 (blocking dependencies), and the exact reason automatic continuation cannot
 proceed.
 
+### Capability-aware execution prerequisites
+
+An execution-evidence prerequisite is assessed against the originating
+`AgentRun` and Paid's configured execution backends. The control-plane process
+may lack a Docker socket while a compatible isolated backend is available, or
+may have one while no backend is admissible for the run; neither local fact is
+used as a proxy for the other. `ExecutionPrerequisiteReadiness` reuses
+`Containers::BackendScheduler` so image, architecture, workspace, network,
+resource, health, and execution-control constraints remain the placement
+authority. When a requested marketplace tool sidecar is not authorized, it
+surfaces the tenant's explicit `marketplace_tool_sidecars` pilot action rather
+than changing the flag. The readiness projection never offers host-shell or
+Docker-socket access to an agent.
+
 ### Recovery: `IssueContinuationRequest` (scoped authorization)
 
 A deliberate continuation is a persisted, auditable authorization — never a

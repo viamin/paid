@@ -285,6 +285,32 @@
           </p>
         </div>
     <% end %>
+
+    <%# @spec PARTIAL-CLOSEOUT-030 %>
+    <% prerequisite_run = AgentRun.find_by(id: status.evidence.merged_prs.filter_map(&:run_id).first) %>
+    <% if prerequisite_run %>
+      <% execution_readiness = PartialCloseouts::ExecutionPrerequisiteReadiness.call(agent_run: prerequisite_run) %>
+      <div class="space-y-2 rounded-lg border border-sky-200 bg-sky-50 p-3">
+        <h4 class="text-sm font-semibold text-sky-900">Execution prerequisite</h4>
+        <% if execution_readiness.ready? %>
+          <p class="text-sm text-sky-900">A compatible isolated execution backend is available: <%= execution_readiness.hosts.join(", ") %>.</p>
+          <% if policy(entry.project).run_agent? %>
+            <%= form_with url: request_continuation_project_agent_runs_path(entry.project), data: { turbo_frame: "_top" } do |form| %>
+              <%= form.hidden_field :issue_id, value: issue.id %>
+              <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+              <%= form.hidden_field :reason, value: "Prepare and run one isolated execution prerequisite validation against the pinned checkout. Use the selected authorized native analyzer and attached tool sidecar only; record image, checkout, tool identity, stdout, stderr, exit status, endpoint response, and cleanup evidence. Do not use host shell access or a Docker socket." %>
+              <%= form.submit "Start isolated validation", class: "inline-flex items-center rounded-md bg-sky-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-500", data: { turbo_confirm: "Queue one isolated prerequisite-validation continuation for ##{issue.github_number}?" } %>
+            <% end %>
+          <% end %>
+        <% else %>
+          <p class="text-sm text-sky-900">Execution validation is <%= execution_readiness.status.humanize.downcase %>.</p>
+          <ul class="list-disc space-y-1 pl-5 text-sm text-sky-900">
+            <% execution_readiness.actions.each do |action| %><li><%= action %></li><% end %>
+          </ul>
+        <% end %>
+        <p class="text-xs text-sky-800">This checks Paid execution backends, not the control-plane host. Validation remains isolated; no host shell or Docker socket is exposed.</p>
+      </div>
+    <% end %>
   </div>
 
   <div class="flex flex-wrap items-center gap-3">

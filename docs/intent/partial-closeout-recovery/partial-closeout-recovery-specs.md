@@ -19,6 +19,16 @@
   *Test:* `spec/services/partial_closeouts/source_closure_disposition_spec.rb`,
   `spec/services/pull_requests/source_closure_body_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-030** — When an Inbox prerequisite requires
+  execution evidence, the system SHALL inspect the originating run through
+  the configured backend scheduler and the current marketplace authorization
+  policy. It SHALL report compatible Paid execution hosts independently of
+  the control-plane Docker socket, and SHALL surface an exact backend setup
+  or `marketplace_tool_sidecars` pilot-authorization action when blocked. It
+  SHALL not enable a flag, expose a host shell, or mount a host Docker socket.
+  *Code:* `app/services/partial_closeouts/execution_prerequisite_readiness.rb`.
+  *Test:* `spec/services/partial_closeouts/execution_prerequisite_readiness_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-025** — When the daily legacy partial-closeout
   reconciliation sweep runs, the system SHALL invoke `ReconcileLegacy` once
   for each active account using the persisted account/run cursor in its chained
