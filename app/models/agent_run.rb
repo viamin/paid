@@ -1838,6 +1838,11 @@ class AgentRun < ApplicationRecord
     goal.in?(LAYERED_VERIFICATION_GOALS)
   end
 
+  # @spec LAYERED-VERIFY-013
+  def layered_verification_audit_goal?
+    goal == "layered_verification_audit"
+  end
+
   def assign_default_tdd_phase
     return if tdd_phase.present?
     return unless create_pr_goal?
@@ -4096,6 +4101,10 @@ class AgentRun < ApplicationRecord
     # create_feature derives its prompt from Prompts::BuildForCreateFeature
     # and external_metadata["feature_brief"], so it needs no issue or source PR.
     return if create_feature_goal?
+    # Audit scope and sources are deliberately carried in immutable run
+    # metadata rather than a user prompt: this is the issue-less, read-only
+    # operation defined by RDR-076.
+    return if layered_verification_audit_goal?
     return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
 
     errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")

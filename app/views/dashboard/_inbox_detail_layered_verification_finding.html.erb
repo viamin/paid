@@ -1,0 +1,13 @@
+<% finding = entry.record %>
+<section class="space-y-3">
+  <p><strong>Scope:</strong> <%= finding.obligation.scope_description %></p>
+  <p><strong>Cause:</strong> <%= finding.cause_signature %></p>
+  <% finding.observations.order(created_at: :desc).each do |observation| %>
+    <article>
+      <p><strong>Observed behavior:</strong> <%= observation.observed_behavior %></p>
+      <p><strong>Check limitations:</strong> <%= observation.limitations %></p>
+      <% if observation.source_passages.present? %><pre><%= JSON.pretty_generate(observation.source_passages) %></pre><% end %>
+    </article>
+  <% end %>
+  <p>Discussing, acknowledging, or deferring this finding does not resolve it or authorize repair.</p>
+</section>
