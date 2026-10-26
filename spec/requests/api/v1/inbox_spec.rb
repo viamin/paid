@@ -99,6 +99,13 @@ RSpec.describe "Mobile inbox API" do
     expect(response.parsed_body.fetch("chat_session_id")).to be_present
   end
 
+  it "returns not found instead of opening a chat for an unavailable entry" do # @spec MOBILE-API-009
+    post "/api/v1/inbox/entries/clarifying_questions:999999/chat", headers: headers
+
+    expect(response).to have_http_status(:not_found)
+    expect(response.parsed_body.dig("error", "code")).to eq("not_found")
+  end
+
   # @spec QUESTION-EXPLORATION-012 QUESTION-EXPLORATION-018
   it "opens the same linked conversation the Inbox detail pane opens, attributed to the bearer" do
     issue
