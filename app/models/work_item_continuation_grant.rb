@@ -18,6 +18,7 @@ class WorkItemContinuationGrant < ApplicationRecord
   validates :endpoint, presence: true, inclusion: { in: Automation::Phases::CONTINUATION_ENDPOINTS }
   validates :source, presence: true, inclusion: { in: SOURCES }
   validate :endpoint_follows_start_phase
+  validate :issue_belongs_to_project
 
   scope :active, -> { where(revoked_at: nil, completed_at: nil) }
   scope :revoked, -> { where.not(revoked_at: nil) }
@@ -68,5 +69,14 @@ class WorkItemContinuationGrant < ApplicationRecord
     return if start_phase.blank? || endpoint.blank?
 
     errors.add(:endpoint, "must be the start phase or a later delivery phase") if covered_phases.empty?
+  end
+
+  # A grant is project-scoped authority. Its work item must therefore stay in
+  # the same project rather than creating a cross-tenant authorization record.
+  # @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-009
+  def issue_belongs_to_project
+    return if project.blank? || issue.blank? || issue.project_id == project.id
+
+    errors.add(:issue, "must belong to the grant project")
   end
 end
