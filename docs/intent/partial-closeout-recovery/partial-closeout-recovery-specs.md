@@ -190,6 +190,22 @@
   `spec/services/issues/stalled_closeouts_spec.rb` (including a query-count
   regression for the shared input build).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When canonical continuation admission rejects
+  a partial closeout because it has open native non-PR children or active
+  `partial_closeout.prerequisite` notifications, Paid SHALL expose each
+  authoritative exclusion as an additive structured blocker with the exact
+  child or notification identities, current evidence, safe links, and its
+  supported recovery route across Inbox, chat context, and continuation/API
+  refusals. It SHALL preserve unresolved human policy decisions and evidence;
+  it SHALL NOT close children, dismiss notifications, infer completion, or
+  silently replace a team policy with solo review to obtain admission. Only a
+  genuinely unclassified scoped rejection SHALL use the unavailable fallback.
+  *Code:* `app/services/issues/closeout_status.rb`,
+  `app/views/dashboard/_inbox_closeout_blockers.html.erb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/issues/request_continuation_spec.rb`,
+  `spec/services/issues/stalled_closeouts_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-005** — When a queued continuation run is considered
   for dispatch, the system SHALL recheck its scoped authorization at dequeue
   and run start (`AgentRuns::RecheckIssueEligibility` continuation branch,

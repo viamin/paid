@@ -102,7 +102,10 @@ paid_state edit and never a blanket guard lift:
   the unmet prerequisites explained to the user. A targeted blocker walk
   (`CloseoutStatus.admission_blockers`) returns structured, additive reasons
   from persisted admission-guard evidence, including scanner attempt, analysis,
-  and alert links for synthetic findings; a residual preflight then settles admission with the
+  and alert links for synthetic findings. It also identifies open native children
+  and active human-prerequisite notifications without requiring duplicate
+  dependency edges, preserving the notification's policy and evidence until an
+  operator explicitly satisfies or revises it; a residual preflight then settles admission with the
   exact scoped `eligible_for_dequeue?` decision the dequeue recheck enforces
   (evaluated from one shared set of project inputs per `StalledCloseouts`
   project batch), so a request the walk
