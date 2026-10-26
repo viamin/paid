@@ -12,14 +12,14 @@ direction, explicit corrections, repeated agent suggestions, collaborator
 disagreement, unknown intent with strong technical evidence, strong intent
 with weak feasibility, research scope, and the 79/80 boundary.
 
-No operator-executed assessment runs have been recorded yet: executing the
-rubric against live model output is an operator action
-([`operator-runbook.md`](operator-runbook.md)), and no corpus run may release
-work while readiness-driven release stays gated on the RDR-071 delivery path
-(RDR-070 rollout guard). Until the runs exist, every operator-derived measure
-below stays not established — mirroring what
-`bin/facet-confidence-assessment-evaluation compile` emits
-(`pending operator input`, exit 2).
+On 2026-10-26 the shipped corpus path was attempted for every case. The
+assessment provider did not serve the pinned `claude-sonnet-4-6` model, so the
+ledger records eight `failed` operational runs and no assessment verdicts.
+These are not model measurements and must not be treated as zero defects or
+calibrated probabilities. A repeat in an environment that serves the pinned
+model remains required. No corpus run may release work while readiness-driven
+release stays gated on the complete RDR-071 delivery path (RDR-070 rollout
+guard).
 
 ## Corpus identity
 
@@ -46,14 +46,14 @@ metric computation (including parity with `ScopedReadiness` at the 79/80 and
 
 | Measure | Result | Ledger evidence |
 |---|---|---|
-| Corpus coverage | 0 / 8 cases | `assessment_run` events required |
+| Corpus coverage | 0 / 8 verdicts (8 / 8 attempted) | all recorded runs failed operationally |
 | False readiness | not established | expected readiness band vs `assessment_run` |
 | Unnecessary clarification | not established | expected decisive outcome vs `assessment_run` status |
-| Human corrections | not established | `correction` events required |
-| Assessment cost | not established | `assessment_run.cost_cents` required |
-| Downstream rework | not established | `rework` events required |
+| Human corrections | not established | no verdict exists to evaluate or correct |
+| Assessment cost | 0 cents | failed `assessment_run.cost_cents` total |
+| Downstream rework | not established | no verdict exists to attribute rework |
 | Band divergences | not established | expected bands vs `assessment_run` scores |
-| Operational failures | not established | `assessment_run` status `failed` |
+| Operational failures | 8 (100.0%, 8 / 8 attempts) | `assessment_run` status `failed` |
 
 A `failed` run is an operational (provider/runtime) failure, never an
 assessment verdict: it is reported as an operational failure above and stays
@@ -64,12 +64,11 @@ measures, so provider outages cannot inflate or deflate assessment quality.
 
 | Tuning rule | Outcome |
 |---|---|
-| Every corpus case has at least one recorded run | Not met — operator runs absent |
+| Every corpus case has at least one non-failed recorded verdict | Not met — all 8 attempts failed before a verdict |
 | Tuning proposal cites false-readiness and unnecessary-clarification metrics | Not evaluable — metrics not established |
 | Throughput-only justification | Never sufficient (enforced by the report's tuning gate) |
 
 **Tuning-gate outcome: `blocked_incomplete_coverage`.** Threshold or rubric
-tuning proposals stay unevaluated until the operator records the corpus runs
-and the compiled outcome metrics exist; the corrective action is to execute
-the runbook above, append the ledger events, and mirror the compiled
-worksheet here.
+tuning proposals stay unevaluated until an operator repeats the corpus in an
+environment serving `claude-sonnet-4-6`, records non-failed verdicts, and
+mirrors the compiled worksheet here. The 80/80 defaults remain unchanged.

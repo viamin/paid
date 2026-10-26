@@ -16,6 +16,12 @@ input. The outcome worksheet at
 repository-visible measure record; every operator-derived measure stays
 `not established` until the operator runs the corpus and appends the runs.
 
+The 2026-10-26 attempt is retained in [`ledger.jsonl`](ledger.jsonl): every
+case failed operationally because no provider in that environment served the
+pinned model. Those events preserve provenance and the failure count, but
+establish no assessment verdict or policy-quality measure. A new run in an
+environment that serves the pinned model remains required.
+
 No corpus run can release work: readiness-driven release remains gated on the
 complete RDR-071 delivery path, and the 80/80 thresholds stay the provisional
 policy defaults (RDR-070 rollout guard). Threshold or rubric tuning proposals
