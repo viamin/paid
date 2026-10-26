@@ -15,6 +15,7 @@ module Activities
         return { agent_run_id: agent_run.id, status: "skipped_no_issue", gaps_remain: false } unless agent_run.issue
 
         assessment = persisted_assessment(agent_run)
+        PartialCloseouts::SourceClosureDisposition.record!(agent_run, assessment: assessment)
         PartialCloseouts::Reconcile.call(agent_run: agent_run, assessment: assessment)
         { agent_run_id: agent_run.id, status: agent_run.reload.reconciliation.fetch("status"),
           gaps_remain: gaps_remain?(agent_run) }

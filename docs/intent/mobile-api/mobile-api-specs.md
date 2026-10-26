@@ -110,7 +110,9 @@
   per-user per-entry chat resolution as the web action), and return the
   resulting session's `chat_session_id`, without returning a web URL. A
   token scoped to `inbox` only SHALL receive `403` without creating or
-  resuming a chat session.
+  resuming a chat session. When the entry is no longer in the caller's
+  current inbox, the system SHALL return `404` with error code `not_found`
+  without opening a chat session.
   *Tests:* `spec/requests/api/v1/inbox_spec.rb`.
   *Code:* `Api::V1::InboxController#chat`.
 

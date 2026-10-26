@@ -5,6 +5,23 @@ require "rails_helper"
 # @spec FEATURE-APPROVAL-009 @spec FEATURE-APPROVAL-010 @spec FEATURE-APPROVAL-020 @spec CONFIDENCE-DELIVERY-001 @spec CONFIDENCE-DELIVERY-015
 RSpec.describe FeatureIntent do
   describe "delivery policy" do
+    it "keeps new features approval-gated until confidence-delivery integration is enabled" do # @spec CONFIDENCE-DELIVERY-014
+      project = create(:project, new_feature_delivery_policy: "confidence_driven")
+
+      expect { project.update!(confidence_delivery_enrollment_enabled: true) }
+        .to raise_error(ActiveRecord::RecordInvalid, /confidence-driven delivery integration rollout/)
+    end
+
+    it "rejects enrollment with the rollout flag enabled but conformance review enforcement absent" do # @spec CONFIDENCE-DELIVERY-014
+      project = create(:project, new_feature_delivery_policy: "confidence_driven")
+      FeatureFlags.enable!(:confidence_driven_delivery, project: project)
+
+      expect { project.update!(confidence_delivery_enrollment_enabled: true) }
+        .to raise_error(ActiveRecord::RecordInvalid, /conformance review enforcement/)
+
+      expect(project.reload.confidence_delivery_enrollment_enabled).to be(false)
+    end
+
     it "defaults existing and newly created records to the approval-gated policy" do
       expect(described_class.new.delivery_policy).to eq("approval_gated")
     end
@@ -18,7 +35,8 @@ RSpec.describe FeatureIntent do
     end
 
     it "does not mutate held work or active runs when enrollment is disabled" do
-      project = create(:project, confidence_delivery_enrollment_enabled: true)
+      project = create(:project)
+      project.update_column(:confidence_delivery_enrollment_enabled, true)
       held_issue = create(:issue, :needs_input, project: project)
       active_run = create(:agent_run, project: project, status: "running")
       feature_intent = create(:feature_intent, :confidence_driven, project: project)

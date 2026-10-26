@@ -1,6 +1,5 @@
-<%# Blinded labeling surface: pinned evidence + outcome/reason/citation only.
-    Strata and reviewer outputs are structurally absent (CaseView whitelist),
-    so this partial cannot render them before freeze. @spec INTENT-CONFORMANCE-ROLLOUT-006 %>
+<%# Blinded labeling surface: navigation is validated by the evidence action;
+    no repository content is fetched while rendering. @spec INTENT-CONFORMANCE-ROLLOUT-006 INTENT-CONFORMANCE-ROLLOUT-010 %>
 <% remaining = progress[:total] - progress[:labeled] - progress[:skipped] %>
 
 <div class="rounded-xl border border-gray-200 bg-white p-4" data-labeling-progress>
@@ -24,16 +23,23 @@
       <h2 class="text-lg font-semibold text-gray-900">Case <%= current["id"] %></h2>
       <dl class="space-y-1 text-sm text-gray-700">
         <div>Repository: <code><%= current["repository"] %></code></div>
-        <div>Pinned diff: <code class="break-all"><%= current["base_sha"] %>…<%= current["head_sha"] %></code></div>
+        <div>
+          Pinned diff: <code class="break-all"><%= current["base_sha"] %>…<%= current["head_sha"] %></code>
+          <%= link_to "Open pinned diff", evidence_project_shadow_evaluation_path(project, evaluation, case_id: current["id"], kind: "diff", **inbox_context),
+                data: { turbo_frame: "_top" }, class: "ml-2 text-violet-700 underline" %>
+        </div>
         <div>Approved design revision: <code class="break-all"><%= current["approved_design_revision"] %></code></div>
-        <% %w[context notes rationale].each do |field| %>
-          <% if current[field].present? %>
-            <div class="whitespace-pre-line"><%= field.humanize %>: <%= current[field] %></div>
-          <% end %>
-        <% end %>
       </dl>
       <% if Array(current["design_document_paths"]).any? %>
-        <p class="text-xs text-gray-500">Design documents: <%= Array(current["design_document_paths"]).join(", ") %></p>
+        <div class="text-xs text-gray-500">
+          Approved design documents:
+          <% Array(current["design_document_paths"]).each do |path| %>
+            <%= link_to path, evidence_project_shadow_evaluation_path(project, evaluation, case_id: current["id"], kind: "design_document", path:, **inbox_context),
+                  data: { turbo_frame: "_top" }, class: "mr-2 text-violet-700 underline" %>
+          <% end %>
+        </div>
+      <% else %>
+        <p class="text-xs text-amber-800">Approved design documents are unavailable: this frozen case does not declare revision-bound artifacts.</p>
       <% end %>
     </div>
 

@@ -359,6 +359,7 @@ Rails.application.routes.draw do
     resources :shadow_evaluations, only: [ :new, :show, :create ],
       controller: "projects/shadow_evaluations" do
       member do
+        get :evidence
         post :label
         post :skip
         post :freeze

@@ -24,6 +24,11 @@ module Tools
           feature_intent_id: { type: "integer", description: "The confidence-driven feature intent ID" },
           title: { type: "string", description: "Coherent task title" },
           body: { type: "string", description: "Coherent task purpose and scope", default: "" },
+          task_kind: {
+            type: "string",
+            enum: %w[implementation planning],
+            description: "Use planning only for work that prepares design evidence; implementation remains release-gated."
+          },
           parent_issue_number: { type: "integer", description: "GitHub number of the feature's umbrella issue to link as parent" },
           depends_on_issue_numbers: {
             type: "array",
@@ -60,7 +65,7 @@ module Tools
 
     # @spec CONFIDENCE-DELIVERY-002
     def perform(feature_intent_id:, title:, confirmed: false, body: "", parent_issue_number: nil,
-      depends_on_issue_numbers: [], facet_prerequisites: [], speculative_alternatives: [])
+      depends_on_issue_numbers: [], facet_prerequisites: [], speculative_alternatives: [], task_kind: "implementation")
       raise ArgumentError, "Confirmation required: set confirmed=true to publish a held issue" unless confirmed
 
       feature_intent = feature_intent_for(feature_intent_id)
@@ -75,7 +80,8 @@ module Tools
         parent_issue: parent_issue_for(feature_intent, parent_issue_number),
         dependencies: dependency_issues_for(feature_intent, depends_on_issue_numbers),
         facet_prerequisites: facet_entries_for(feature_intent, facet_prerequisites),
-        speculative_alternatives: speculative_alternatives
+        speculative_alternatives: speculative_alternatives,
+        task_kind: task_kind
       )
 
       audit_publication(feature_intent, result)

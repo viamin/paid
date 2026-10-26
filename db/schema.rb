@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_205417) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2082,6 +2082,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_205417) do
     t.bigint "remote_issue_id", comment: "GitHub issue node id recorded immediately after creation."
     t.integer "remote_issue_number", comment: "GitHub issue number used to reconcile a failed local sync."
     t.string "task_digest", limit: 16, null: false, comment: "Stable planning-held task identity."
+    t.string "task_kind", limit: 16, null: false, comment: "Immutable admission semantics for the marker-identified task."
     t.datetime "updated_at", null: false
     t.index ["feature_intent_id", "task_digest"], name: "index_feature_intent_issue_publications_on_task", unique: true
     t.index ["feature_intent_id"], name: "index_feature_intent_issue_publications_on_feature_intent_id"

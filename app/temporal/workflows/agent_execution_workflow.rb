@@ -444,6 +444,12 @@ module Workflows
               )
             end
           else
+            # @spec PARTIAL-CLOSEOUT-029
+            if Temporalio::Workflow.patched("source-closure-disposition-v1")
+              run_activity(Activities::AssessSourceClosureActivity,
+                { agent_run_id: agent_run_id }, timeout: 120)
+            end
+
             # Step 6: Create PR
             pr_result = run_activity(Activities::CreatePullRequestActivity,
               { agent_run_id: agent_run_id }, timeout: 120)

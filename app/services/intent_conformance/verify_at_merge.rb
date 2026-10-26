@@ -64,8 +64,7 @@ module IntentConformance
     end
 
     def enforcement_enabled?
-      FeatureFlags.enabled?(:approved_intent_amendments, project: project) &&
-        FeatureFlags.enabled?(:intent_conformance_enforcement, project: project)
+      IntentConformance::Rollout.enforcement_enabled?(project)
     end
 
     def feature_intent
