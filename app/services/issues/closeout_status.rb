@@ -14,11 +14,13 @@ module Issues
   # deliberate holds with their own lanes — they surface as blockers, not as
   # stalls.
   # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-004 @spec PARTIAL-CLOSEOUT-012
+  # @spec PARTIAL-CLOSEOUT-030
   class CloseoutStatus
     Blocker = Struct.new(:code, :message, :evidence, :recovery, keyword_init: true)
     Inputs = Struct.new(:evidence_by_issue_id, :prerequisites_by_issue_id,
       :open_requests_by_issue_id, :active_run_issue_ids, :feature_links_by_issue_id,
-      :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id, keyword_init: true)
+      :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id,
+      :native_children_by_issue_id, :human_prerequisite_notifications_by_issue_id, keyword_init: true)
 
     # Blockers that are deliberate operator states or active work rather than
     # a partial-closeout stall; the lane must not surface them.
@@ -109,9 +111,33 @@ module Issues
         active_run_issue_ids: AgentRun.where(issue_id: issue_ids, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).distinct.pluck(:issue_id).to_set,
         feature_links_by_issue_id: feature_links,
         analysis_backoff_reset_by_project_id: reset_at,
-        scanner_attempts_by_issue_id: scanner_attempts
+        scanner_attempts_by_issue_id: scanner_attempts,
+        native_children_by_issue_id: native_children_for(issues),
+        human_prerequisite_notifications_by_issue_id: human_prerequisite_notifications_for(issues)
       )
     end
+
+    def self.native_children_for(issues)
+      children = Hash.new { |hash, key| hash[key] = [] }
+      issue_ids = issues.map(&:id)
+      Issue.where(parent_issue_id: issue_ids, project_id: issues.map(&:project_id), is_pull_request: false, github_state: "open")
+        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+        .order(:github_number, :id).each { |child| children[child.parent_issue_id] << child }
+      children
+    end
+    private_class_method :native_children_for
+
+    def self.human_prerequisite_notifications_for(issues)
+      notifications = Hash.new { |hash, key| hash[key] = [] }
+      Notification.where(
+        account_id: issues.map { |issue| issue.project.account_id }.uniq,
+        subject_type: "Issue", subject_id: issues.map(&:id),
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+        resolved_at: nil, dismissed_at: nil
+      ).order(:created_at, :id).each { |notification| notifications[notification.subject_id] << notification }
+      notifications
+    end
+    private_class_method :human_prerequisite_notifications_for
 
     def self.prerequisite_labels_for(issues)
       labels = Hash.new { |hash, key| hash[key] = [] }
@@ -155,7 +181,8 @@ module Issues
     def self.admission_blockers(issue, prerequisites: prerequisite_labels(issue), inputs: nil)
       prerequisite_blockers(issue, labels: prerequisites) + operator_pause_blockers(issue) +
         run_in_flight_blockers(issue, inputs:) + trust_blockers(issue) + feature_hold_blockers(issue, inputs:) +
-        analysis_backoff_blockers(issue, inputs:) + scanner_verification_blockers(issue, inputs:)
+        analysis_backoff_blockers(issue, inputs:) + scanner_verification_blockers(issue, inputs:) +
+        native_child_blockers(issue, inputs:) + human_prerequisite_blockers(issue, inputs:)
     end
 
     # The scoped preflight is the admission authority. If it rejects after all
@@ -193,6 +220,54 @@ module Issues
         recovery: "Resolve the listed prerequisite work or update its dependency link, then request continuation again."
       ) ]
     end
+
+    # Mirrors DefaultCandidateSource#without_open_non_pr_subissues. Native
+    # child ownership is authoritative even when no dependency edge duplicates
+    # it, so report the child instead of falling through to an unknown denial.
+    # @spec PARTIAL-CLOSEOUT-030
+    def self.native_child_blockers(issue, inputs: nil)
+      children = inputs ? inputs.native_children_by_issue_id.fetch(issue.id, []) : native_children_for([ issue ]).fetch(issue.id, [])
+      return [] if children.empty?
+
+      labels = children.map { |child| "##{child.github_number}" }
+      [ Blocker.new(
+        code: :open_native_children,
+        message: "Open native child issues (#{labels.join(', ')}) keep this parent out of continuation admission.",
+        evidence: { "children" => children.map { |child| { "number" => child.github_number, "url" => child.github_url } } },
+        recovery: "Complete or otherwise resolve the listed child work through its own evidence-backed workflow; do not close it merely to continue this parent."
+      ) ]
+    end
+
+    # Mirrors DefaultCandidateSource#partial_closeout_prerequisite_block_issue_ids.
+    # Notifications record human evidence or policy decisions, so they remain
+    # visible until that work is actually supplied and resolved.
+    # @spec PARTIAL-CLOSEOUT-030
+    def self.human_prerequisite_blockers(issue, inputs: nil)
+      notifications = if inputs
+        inputs.human_prerequisite_notifications_by_issue_id.fetch(issue.id, [])
+      else
+        human_prerequisite_notifications_for([ issue ]).fetch(issue.id, [])
+      end
+      return [] if notifications.empty?
+
+      notifications.map { |notification| human_prerequisite_blocker(issue, notification) }
+    end
+
+    def self.human_prerequisite_blocker(issue, notification)
+      Blocker.new(
+        code: :human_prerequisite,
+        message: "Active human prerequisite notification ##{notification.id} (#{notification.title}) blocks continuation.",
+        evidence: {
+          "notification_id" => notification.id,
+          "source" => notification.source,
+          "title" => notification.title,
+          "description" => notification.description,
+          "issue_url" => issue.github_url
+        }.compact,
+        recovery: "Supply the requested human decision or evidence, explicitly select the required team policy where requested, then resolve the notification through its supported workflow. Do not dismiss it, substitute solo review, or infer completion."
+      )
+    end
+    private_class_method :human_prerequisite_blocker
 
     def self.operator_pause_blockers(issue)
       blockers = []

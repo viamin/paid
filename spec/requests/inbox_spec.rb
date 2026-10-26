@@ -455,6 +455,20 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("deliberate continuation")
     end
 
+    # @spec PARTIAL-CLOSEOUT-030
+    it "links the authoritative native child and identifies the active human prerequisite notification" do
+      child = create(:issue, project:, github_state: "open", paid_state: "in_progress",
+        parent_issue: guided_issue, github_number: 513, github_html_url: "https://example.test/issues/513")
+      notification = account.notifications.where(subject: guided_issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE).last
+
+      render_guided_pane
+
+      expect(response.body).to include("Open native child issues (#513)", "View child #513", child.github_url)
+      expect(response.body).to include("notification ##{notification.id}", "Pilot results need operator action")
+      expect(response.body).to include("Do not dismiss it", "select the required team policy")
+    end
+
     # @spec PARTIAL-CLOSEOUT-023
     it "shows stale criterion evidence and prevents a duplicate run on an open owner on narrow layouts" do
       owner = create(:issue, project:, github_state: "open", github_number: 512)

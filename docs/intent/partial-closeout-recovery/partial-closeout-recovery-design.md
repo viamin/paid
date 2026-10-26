@@ -116,6 +116,26 @@ persisted diagnostic inputs for each project's candidates before evaluating
 individual `CloseoutStatus` values. The per-issue status still produces the
 same additive blockers; batching changes only how its inputs are read.
 
+### Admission diagnostics for authoritative exclusions
+
+`CloseoutStatus` explains every authoritative exclusion that has persisted
+identity evidence; it does not recreate eligibility in the Inbox. In
+particular, an open native non-PR child is reported by its issue number and
+GitHub URL even when no `IssueDependency` duplicates that relationship, and an
+active `partial_closeout.prerequisite` notification is reported by its
+notification identity, title, and requested human evidence. These reasons are
+additive with dependency, hold, and verification blockers and use the same
+project/account-scoped relations as `DefaultCandidateSource`.
+
+Recovery copy distinguishes human judgment or evidence from implementation
+work: it directs an operator to supply the named evidence and explicitly
+select the applicable policy when the notification requires one. It never
+dismisses a notification, closes a child, or treats stale guidance as proof of
+completion merely to make admission pass. A stale assessment remains an
+explicit bounded-audit route; audit-only requests retain the normal admission
+gates and their refusal explains the gate rather than presenting a misleading
+action.
+
 ### Prompt delivery
 
 The authorization is useless to the executing agent if it never reaches the
