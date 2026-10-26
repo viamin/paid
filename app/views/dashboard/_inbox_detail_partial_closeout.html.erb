@@ -219,6 +219,22 @@
           </p>
         </div>
     <% end %>
+
+    <% Array(human_prerequisite&.metadata&.fetch("prerequisites", [])).each do |prerequisite| %>
+      <% next unless prerequisite.is_a?(Hash) %>
+      <%= form_with url: submit_prerequisite_evidence_project_agent_runs_path(entry.project), data: { turbo_frame: "_top" }, class: "space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3" do |form| %>
+        <%= form.hidden_field :notification_id, value: human_prerequisite.id %>
+        <%= form.hidden_field :criterion, value: prerequisite["criterion"] %>
+        <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+        <p class="text-sm font-medium text-amber-900"><%= prerequisite["criterion"] %> — <%= prerequisite["outcome"].to_s.humanize %></p>
+        <%= form.select :kind, PartialCloseouts::SubmitEvidence::KINDS.map { |kind| [kind.humanize, kind] }, {}, class: "w-full rounded-md border-gray-300 text-sm" %>
+        <%= form.text_field :reference, required: true, placeholder: "Evidence URL or record ID", class: "w-full rounded-md border-gray-300 text-sm" %>
+        <%= form.text_field :revision, required: true, placeholder: "Revision / commit / report digest", class: "w-full rounded-md border-gray-300 text-sm" %>
+        <%= form.text_area :explanation, required: true, rows: 2, placeholder: "Why this evidence applies to this exact prerequisite", class: "w-full rounded-md border-gray-300 text-sm" %>
+        <p class="text-xs text-amber-800"><%= prerequisite["next_action"].presence || "Submission is not acceptance. Dismissing the notification releases scheduling, but never verifies this prerequisite." %></p>
+        <%= form.submit "Submit evidence", class: "rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300" %>
+      <% end %>
+    <% end %>
   </div>
 
   <div class="flex flex-wrap items-center gap-3">

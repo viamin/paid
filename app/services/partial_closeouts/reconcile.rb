@@ -177,7 +177,8 @@ module PartialCloseouts
         account: agent_run.project.account, subject: agent_run.issue,
         source: PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
         title: operator_prerequisite_title(human_gaps),
-        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n")
+        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n"),
+        metadata: { "prerequisites" => human_gaps.map { |gap| prerequisite_metadata(gap) } }
       )
     end
 
@@ -195,6 +196,13 @@ module PartialCloseouts
     # "review the prerequisite" placeholder (#4119).
     def operator_prerequisite_step(gap)
       "#{gap["criterion"]}: #{gap["next_step"].to_s.strip}"
+    end
+
+    def prerequisite_metadata(gap)
+      gap.slice("criterion", "kind", "next_step").merge(
+        "status" => "awaiting_evidence",
+        "outcome" => "pending_validation"
+      )
     end
 
     def publish_parent_dependencies!

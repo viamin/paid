@@ -44,6 +44,8 @@ RSpec.describe PartialCloseouts::Reconcile do
 
     expect(Notification.where(subject: parent, blocking: true)).to exist
     expect(run.reload.reconciliation.fetch("status")).to eq("awaiting_operator")
+    prerequisite = Notification.find_by!(subject: parent).metadata.fetch("prerequisites").first
+    expect(prerequisite).to include("criterion" => "macOS acceptance", "outcome" => "pending_validation")
   end
 
   # @spec NO-OUTPUT-ISSUE-007

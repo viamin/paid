@@ -354,6 +354,24 @@ the open authorization named, so an implementation continuation is never
 reported as an acceptance audit and vice versa. All ordinary
 continuation guards remain authoritative.
 
+### Submitted prerequisite evidence (#4641)
+
+Human-prerequisite notifications retain their exact criterion identity and
+accept only a typed evidence submission: an existing evaluation/report or run,
+or a durable artifact/link, together with its revision, authenticated actor,
+and an explanation of applicability. A submission is an explicit
+`pending_validation` disposition, not acceptance. The action-required pane
+shows the submitted provenance, outcome, remaining owner, and next action.
+
+Only a validated sufficient disposition may resolve the affected prerequisite
+occurrence as satisfied. Personal Inbox removal/dismissal keeps its documented
+scheduling-release semantics, but it is never evidence satisfaction and the
+pane discloses that actual effect. A rejected, stale, revoked, duplicate, or failed
+remote read remains visible as its corresponding disposition and leaves the
+guard in place. Built-in evaluation reports are attached as evidence with their
+current revision and their solo-policy and missing-production-measure limits;
+they never attest whole-issue completion or enable enforcement.
+
 ### Held-delivery reconciliation (#4614)
 
 A merged delivery record may coexist with `manual_review`, including a

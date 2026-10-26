@@ -107,8 +107,8 @@ class Notification < ApplicationRecord
     return false unless source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE
     return false unless subject.is_a?(Issue)
 
-    dismissed_now = saved_change_to_dismissed_at? && attribute_before_last_save("dismissed_at").nil?
     resolved_now = saved_change_to_resolved_at? && attribute_before_last_save("resolved_at").nil?
+    dismissed_now = saved_change_to_dismissed_at? && attribute_before_last_save("dismissed_at").nil?
     dismissed_now || resolved_now
   end
 

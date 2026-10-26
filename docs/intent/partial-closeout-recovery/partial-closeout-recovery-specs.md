@@ -429,6 +429,20 @@
   *Test:* `spec/requests/inbox_partial_closeout_guide_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-030** — When an authorized operator submits evidence
+  for an exact partial-closeout human prerequisite, the system SHALL require a
+  supported evidence kind, immutable reference/revision, authenticated actor
+  provenance, and an applicability explanation; it SHALL record the occurrence
+  as `pending_validation` and SHALL NOT resolve the notification or release
+  scheduling merely because a link, comment, uploaded artifact, green run, or
+  dismissal exists. Personal notification dismissal SHALL remain distinct from
+  satisfaction; when it releases the existing scheduling guard, the pane SHALL
+  disclose that it does not verify the prerequisite.
+  *Design:* `partial-closeout-recovery-design.md` §Submitted prerequisite evidence.
+  *Code:* `app/services/partial_closeouts/submit_evidence.rb`, `app/models/notification.rb`.
+  *Test:* `spec/services/partial_closeouts/submit_evidence_spec.rb`,
+  `spec/models/notification_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-014** — When an operator resolves a stalled issue as
   complete, the system SHALL present an editable completion-rationale input
   (never a hidden pre-filled reason) whose guidance asks for a specific

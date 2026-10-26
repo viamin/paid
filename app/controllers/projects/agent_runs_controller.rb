@@ -381,6 +381,22 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **prerequisite_flash(result)
     end
 
+    # @spec PARTIAL-CLOSEOUT-030
+    def submit_prerequisite_evidence
+      authorize @project, :run_agent?
+
+      notification = policy_scope(Notification).find_by(id: params[:notification_id], source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+      unless notification&.subject.is_a?(Issue) && notification.subject.project_id == @project.id
+        redirect_to safe_return_target || dashboard_path, alert: "Please select a current prerequisite."
+        return
+      end
+
+      result = PartialCloseouts::SubmitEvidence.call(notification:, actor: current_user,
+        criterion: params[:criterion], kind: params[:kind], reference: params[:reference],
+        revision: params[:revision], explanation: params[:explanation])
+      redirect_to safe_return_target || dashboard_path, **(result.success? ? { notice: "Evidence submitted for validation. Scheduling remains blocked until it is assessed." } : { alert: result.error })
+    end
+
     # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
     # @spec OPERATOR-INBOX-002C
     def unblock_escalation

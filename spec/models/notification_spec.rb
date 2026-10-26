@@ -217,10 +217,8 @@ RSpec.describe Notification do
         source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
 
       expect(continuation_run).to be_present
-      # The dismissal callback mirrors the dependency-resolved eager re-enqueue
-      # (EAGER-QUEUE-004) — the continuation run is still +queued+; the gate
-      # that blocked its auto-pick release is the prerequisite notification,
-      # and dismissing it lifts that block.
+      # Dismissal releases scheduling but never records evidence satisfaction;
+      # a subsequently admitted run must still assess the criterion.
       expect(Automation::Strategies::AutoPick::DefaultCandidateSource
         .eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(false)
 
