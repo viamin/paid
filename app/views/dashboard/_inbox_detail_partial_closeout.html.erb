@@ -234,6 +234,20 @@
             class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500",
             data: { turbo_confirm: "Queue one report-only acceptance audit for ##{issue.github_number}? It will not create implementation work." } %>
     <% end %>
+    <% if policy(entry.project).run_agent? %>
+      <div class="mt-3 rounded-md bg-indigo-50 p-3 text-sm text-indigo-900">
+        <p class="font-medium">Execution prerequisite evidence</p>
+        <% if FeatureFlags.enabled?(:marketplace_tool_sidecars, project: entry.project) %>
+          <p class="mt-1">Run one isolated native-plus-sidecar validation. It records output, endpoint, identity, status, and cleanup evidence; it does not run repository code on the control plane.</p>
+          <%= button_to "Prepare execution validation",
+                request_prerequisite_execution_validation_project_agent_runs_path(entry.project),
+                params: { issue_id: issue.id, return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
+                class: "mt-2 inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white" %>
+        <% else %>
+          <p class="mt-1">Sidecar validation is unavailable because <code>marketplace_tool_sidecars</code> is off. An authorized pilot tenant administrator must enable that rollout flag; retrying an unchanged environment will not collect the missing evidence.</p>
+        <% end %>
+      </div>
+    <% end %>
   </div>
 
   <div class="space-y-3">

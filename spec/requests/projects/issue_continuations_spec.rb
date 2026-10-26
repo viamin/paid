@@ -107,6 +107,21 @@ RSpec.describe "Issue continuations" do # @spec PARTIAL-CLOSEOUT-007 @spec PARTI
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/request_prerequisite_execution_validation" do # @spec PREREQUISITE-EXECUTION-001
+    before { sign_in user }
+
+    it "queues one pinned report-only validation with its distinct evidence mode" do
+      expect {
+        post request_prerequisite_execution_validation_project_agent_runs_path(project), params: { issue_id: issue.id }
+      }.to change(AgentRun, :count).by(1)
+
+      request = IssueContinuationRequest.open_for_issue(issue)
+      expect(request.evidence["continuation_mode"]).to eq("prerequisite_execution_validation")
+      expect(request.agent_runs.first.goal).to eq("analyze_issue")
+      expect(response).to redirect_to(dashboard_path)
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/resolve_closeout" do
     context "when not authenticated" do
       it "redirects to the sign in page" do

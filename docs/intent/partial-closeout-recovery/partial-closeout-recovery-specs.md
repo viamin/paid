@@ -4,6 +4,27 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PREREQUISITE-EXECUTION-001** — When an authorized operator opens a
+  partial-closeout prerequisite requiring live execution evidence, the Inbox
+  SHALL show the current tool-sidecar rollout state and either offer one
+  bounded prepare/start/resume validation or name the exact pilot-authorization
+  action that is missing. The action SHALL reuse scoped continuation admission
+  with a distinct persisted mode, pinned `analyze_issue` run, cancellation,
+  idempotency, budget, and stale-evidence guards; it SHALL not enable a flag.
+  *Code:* `app/services/issues/request_prerequisite_execution_validation.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/requests/projects/issue_continuations_spec.rb`.
+
+- [x] **PREREQUISITE-EXECUTION-002** — When prerequisite execution validation
+  runs, it SHALL provision and execute only through the selected isolated
+  execution environment, retain stdout, stderr, exit status, checkout, tool
+  endpoint and cleanup evidence, and distinguish unavailable, failed, and
+  successful outcomes. It SHALL retain normal image allowlists, hardened
+  sidecars, and network policy, never expose the control-plane shell or Docker
+  socket to repository code, and clean up on every terminal path.
+  *Code:* `app/temporal/activities/run_prerequisite_execution_validation_activity.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its

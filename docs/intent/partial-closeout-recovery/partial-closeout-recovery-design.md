@@ -374,6 +374,30 @@ continues to bind its criterion evidence to the current closeout digest and
 issue-intent revision; a later explicit acceptance audit is required when
 those revisions change.
 
+### Capability-aware prerequisite execution evidence (#4643)
+
+Some prerequisites require evidence from Paid's execution infrastructure, not
+from the Inbox browser host or an earlier agent workspace. The originating
+partial-closeout item exposes a bounded execution-validation action. It uses
+the existing continuation request and pinned `analyze_issue` run, so admission,
+budgets, cancellation, retry, evidence-generation revalidation, and cleanup
+remain one lifecycle. Its persisted mode cannot be mistaken for assessment or
+implementation.
+
+The Inbox resolves the current sidecar rollout policy. When the
+`marketplace_tool_sidecars` pilot flag is off, it names the required authorized
+tenant-pilot enablement rather than enabling the flag or retrying an unchanged
+workspace. The activity provisions the selected runner's isolated environment,
+uses normal network, image-allowlist, and hardening paths, records native probe
+output and sidecar endpoint identity, and performs sidecar and environment
+cleanup in `ensure`. It never mounts a control-plane Docker socket or offers
+host-shell execution to repository code.
+
+The run reconciliation records `succeeded`, `unavailable`, or `failed` with
+stdout, stderr, exit code, checkout, endpoint, and cleanup evidence. Those
+facts return to normal criterion assessment; they neither close the source
+issue nor grant rollout authority.
+
 ## Alternatives considered
 
 - *Lift the merged-PR guard via paid_state*: explicitly rejected — the guard is

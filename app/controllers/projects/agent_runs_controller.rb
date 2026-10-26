@@ -351,6 +351,19 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Acceptance audit queued.")
     end
 
+    # @spec PREREQUISITE-EXECUTION-001
+    def request_prerequisite_execution_validation
+      authorize @project, :run_agent?
+      issue = resolve_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      result = Issues::RequestPrerequisiteExecutionValidation.call(issue:, actor: current_user)
+      redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Prerequisite execution validation queued.")
+    end
+
     # Records the operator's attestation that the recorded closeout evidence
     # completes the issue (evidence-gated; see Issues::ResolveCloseout).
     # @spec PARTIAL-CLOSEOUT-007
