@@ -45,9 +45,11 @@ class DashboardController < ApplicationController
 
   def queue_preview
     load_queue_preview
+    @queue_diagnosis = Dashboard::QueueDiagnosis.call(user: current_user, rendered_runs: @queue_preview)
     render partial: "dashboard/queue_preview_frame",
       locals: {
         queue_preview: @queue_preview,
+        queue_diagnosis: @queue_diagnosis,
         paused_projects: @quality_paused_projects,
         queue_fairness_mode: @queue_fairness_mode
       }
