@@ -158,6 +158,29 @@ RSpec.describe Dashboard::QueuePreview do
       expect(rendered).to include("Strict priority lets queue priority outrank cross-project fairness")
     end
 
+    # @spec QUEUE-HANDOFF-001 QUEUE-HANDOFF-002
+    it "explains an empty rendered queue when backend work or diagnosis coverage exists" do
+      queued = Dashboard::QueueDiagnosis::Result.new(state: :queued_work, queued_count: 2)
+      unavailable = Dashboard::QueueDiagnosis::Result.new(
+        state: :unavailable,
+        error: "Queue diagnosis is temporarily unavailable."
+      )
+
+      queued_render = ApplicationController.render(
+        partial: "dashboard/queue_preview",
+        locals: { queue_preview: [], paused_projects: [], queue_fairness_mode: "fair_share", queue_diagnosis: queued }
+      )
+      unavailable_render = ApplicationController.render(
+        partial: "dashboard/queue_preview",
+        locals: { queue_preview: [], paused_projects: [], queue_fairness_mode: "fair_share", queue_diagnosis: unavailable }
+      )
+
+      expect(queued_render).to include("scheduler backend has 2 queued runs")
+      expect(queued_render).to include("refresh=1")
+      expect(unavailable_render).to include("temporarily unavailable")
+      expect(unavailable_render).to include("refresh=1")
+    end
+
     it "includes orphaned projects for the account fallback owner" do
       account = create(:account)
       fallback_owner = create(:user, account: account)

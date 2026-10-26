@@ -44,12 +44,14 @@ class DashboardController < ApplicationController
   end
 
   def queue_preview
+    Dashboard::CacheVersion.bump(current_account, scope: Dashboard::CacheVersion::LISTS_SCOPE) if params[:refresh] == "1"
     load_queue_preview
     render partial: "dashboard/queue_preview_frame",
       locals: {
         queue_preview: @queue_preview,
         paused_projects: @quality_paused_projects,
-        queue_fairness_mode: @queue_fairness_mode
+        queue_fairness_mode: @queue_fairness_mode,
+        queue_diagnosis: @queue_diagnosis
       }
   end
 
@@ -164,6 +166,7 @@ class DashboardController < ApplicationController
   def load_queue_preview
     @queue_fairness_mode = current_account.tenant_setting!.resolved_queue_fairness_mode
     @queue_preview = Dashboard::QueuePreview.call(user: current_user, queue_fairness_mode: @queue_fairness_mode)
+    @queue_diagnosis = Dashboard::QueueDiagnosis.call(user: current_user)
     @quality_paused_projects = current_account.projects
       .where.not(quality_paused_at: nil)
       .order(quality_paused_at: :desc)

@@ -1378,6 +1378,30 @@ RSpec.describe "Dashboard" do
       expect(frame["src"]).to be_nil
       expect(frame.to_html).to include("Upcoming Queue")
     end
+
+    # @spec QUEUE-HANDOFF-001
+    it "explains backend queued work omitted from the rendered scheduler preview" do
+      project.update!(quality_paused_at: Time.current)
+      create(:agent_run, :queued, :automatic, project: project)
+
+      get dashboard_queue_preview_path
+
+      expect(response.body).to include("scheduler backend has 1 queued run")
+      expect(response.body).to include(dashboard_queue_preview_path(refresh: 1))
+    end
+
+    # @spec QUEUE-HANDOFF-002
+    it "invalidates the preview cache for an explicit queue refresh" do
+      allow(Dashboard::CacheVersion).to receive(:bump).and_call_original
+
+      get dashboard_queue_preview_path(refresh: 1)
+
+      expect(response).to have_http_status(:ok)
+      expect(Dashboard::CacheVersion).to have_received(:bump).with(
+        account,
+        scope: Dashboard::CacheVersion::LISTS_SCOPE
+      )
+    end
   end
 
   describe "GET /dashboard/live" do

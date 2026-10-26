@@ -36,8 +36,25 @@
       </div>
     </div>
   <% else %>
+    <% diagnosis = local_assigns[:queue_diagnosis] %>
     <% paused_autopick = Array(local_assigns[:paused_projects]).count(&:auto_pick_enabled?) %>
-    <% if paused_autopick.positive? %>
+    <% if diagnosis&.state == :unavailable %>
+      <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200" data-testid="queue-diagnosis-unavailable">
+        <p class="text-sm text-amber-800"><%= diagnosis.error %> <%= link_to "Refresh", dashboard_queue_preview_path(refresh: 1), class: "font-medium text-amber-900 underline hover:text-amber-700" %>.</p>
+      </div>
+    <% elsif diagnosis&.state == :queued_work %>
+      <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200" data-testid="queue-diagnosis-backend-queued">
+        <p class="text-sm text-amber-800">The scheduler backend has <%= pluralize(diagnosis.queued_count, "queued run") %>, but this preview is empty. <%= link_to "Refresh", dashboard_queue_preview_path(refresh: 1), class: "font-medium text-amber-900 underline hover:text-amber-700" %> to load a current snapshot.</p>
+      </div>
+    <% elsif diagnosis&.state == :active_work %>
+      <p class="mt-4 text-sm text-gray-500"><%= pluralize(diagnosis.running_count, "run") %> <%= diagnosis.running_count == 1 ? "is" : "are" %> active; there is no waiting backlog.</p>
+    <% elsif diagnosis&.state == :runnable_unseeded %>
+      <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200" data-testid="queue-diagnosis-unseeded">
+        <p class="text-sm text-amber-800"><%= pluralize(diagnosis.eligible_count, "eligible issue") %> <%= diagnosis.eligible_count == 1 ? "is" : "are" %> waiting to be seeded. The automatic eligibility sweep will retry this handoff.</p>
+      </div>
+    <% elsif diagnosis&.state == :held %>
+      <p class="mt-4 text-sm text-gray-500"><%= pluralize(diagnosis.held_count, "open issue") %> <%= diagnosis.held_count == 1 ? "is" : "are" %> held by existing eligibility rules. Review Auto-Pick Eligibility and Inbox for the next action.</p>
+    <% elsif paused_autopick.positive? || diagnosis&.state == :paused %>
       <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">
         <p class="text-sm text-amber-800">
           <%= pluralize(paused_autopick, "project") %> with auto-pick enabled
