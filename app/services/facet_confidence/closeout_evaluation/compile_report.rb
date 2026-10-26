@@ -77,6 +77,7 @@ module FacetConfidence
           "case_id" => corpus_case.fetch("id"),
           "shape" => corpus_case["shape"],
           "judgment" => judgment,
+          "revision" => revision_of(label),
           "expected" => expected.slice("status", "intent_band", "technical_band", "readiness"),
           "divergences" => divergences(judgment, expected),
           "citation_compliance" => citation_compliance(judgment, expected)
@@ -88,6 +89,18 @@ module FacetConfidence
           "verdict" => label.verdict, "intent_band" => label.intent_band, "technical_band" => label.technical_band,
           "readiness" => label.readiness, "cited_evidence_reference" => label.cited_evidence_reference,
           "reason" => label.reason
+        }
+      end
+
+      def revision_of(label)
+        return unless label&.revised?
+
+        {
+          "verdict" => label.revised_verdict, "intent_band" => label.revised_intent_band,
+          "technical_band" => label.revised_technical_band, "readiness" => label.revised_readiness,
+          "cited_evidence_reference" => label.revised_cited_evidence_reference,
+          "reason" => label.revised_reason, "recorded_by" => label.revised_by.email,
+          "recorded_at" => label.revised_at.iso8601
         }
       end
 
@@ -143,7 +156,8 @@ module FacetConfidence
           judge: report.dig("provenance", "judge"),
           frozen_at: report.dig("provenance", "labels_frozen_at"),
           measures: measures_table(report.fetch("measures")),
-          cases: cases_table(report.fetch("cases")))
+          cases: cases_table(report.fetch("cases")),
+          corrections: corrections_table(report.fetch("cases")))
       end
 
       def measures_table(measures)
@@ -160,6 +174,18 @@ module FacetConfidence
             divergences_cell(entry))
         end.join("\n")
       end
+
+      def corrections_table(entries)
+        corrections = entries.filter_map do |entry|
+          revision = entry["revision"]
+          next unless revision
+
+          format("| %s | %s | %s |", entry.fetch("case_id"), markdown_cell(revision.fetch("reason")), revision.fetch("recorded_at"))
+        end
+        corrections.presence || "No post-unblinding corrections recorded."
+      end
+
+      def markdown_cell(value) = value.to_s.squish.gsub("|", "\\\\|")
 
       def divergences_cell(entry)
         parts = entry.fetch("divergences").dup
@@ -185,6 +211,12 @@ module FacetConfidence
         | Case | Shape | Verdict | Intent band | Technical band | Readiness | Divergences |
         | --- | --- | --- | --- | --- | --- | --- |
         %{cases}
+
+        ## Post-unblinding corrections
+
+        | Case | Reason | Recorded at |
+        | --- | --- | --- |
+        %{corrections}
 
         Reference judgments are policy assessments, not calibrated probabilities.
         This report neither closes the source issue, enables delivery, nor changes the 80/80 defaults.

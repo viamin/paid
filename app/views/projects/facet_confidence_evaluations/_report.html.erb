@@ -86,6 +86,38 @@
             <% end %>
           </td>
         <% end %>
+        <% if entry["revision"].present? %>
+          <tr class="border-b border-gray-100 bg-slate-50" data-case-revision="<%= entry["case_id"] %>">
+            <td colspan="5" class="px-3 py-2 text-xs text-gray-700">
+              <strong>Post-unblinding correction:</strong>
+              <code><%= entry.dig("revision", "verdict") %></code> ·
+              intent <code><%= entry.dig("revision", "intent_band") %></code> ·
+              technical <code><%= entry.dig("revision", "technical_band") %></code> ·
+              <code><%= entry.dig("revision", "readiness") %></code> ·
+              cites <code><%= entry.dig("revision", "cited_evidence_reference") %></code> ·
+              <%= entry.dig("revision", "reason") %>
+            </td>
+          </tr>
+        <% elsif policy(evaluation).revise? %>
+          <tr class="border-b border-gray-100 bg-slate-50" data-case-correction="<%= entry["case_id"] %>">
+            <td colspan="5" class="px-3 py-3">
+              <details>
+                <summary class="cursor-pointer text-xs font-medium text-gray-700">Record post-unblinding correction</summary>
+                <p class="mt-1 text-xs text-gray-500">This appends a reasoned correction. It never changes the blinded judgment or its measures.</p>
+                <%= form_with url: revise_project_facet_confidence_evaluation_path(evaluation.project, evaluation), method: :post, class: "mt-2 grid gap-2 text-xs sm:grid-cols-2" do |form| %>
+                  <%= form.hidden_field :case_id, value: entry["case_id"] %>
+                  <%= form.select :verdict, FacetConfidenceEvaluationLabel::VERDICTS, {}, class: "rounded border-gray-300" %>
+                  <%= form.select :intent_band, FacetConfidenceEvaluationLabel::BANDS, {}, class: "rounded border-gray-300" %>
+                  <%= form.select :technical_band, FacetConfidenceEvaluationLabel::BANDS, {}, class: "rounded border-gray-300" %>
+                  <%= form.select :readiness, FacetConfidenceEvaluationLabel::READINESS, {}, class: "rounded border-gray-300" %>
+                  <%= form.select :cited_evidence_reference, evaluation.corpus.find_case(entry["case_id"]).fetch("evidence").map { |evidence| evidence.fetch("reference") }, {}, class: "rounded border-gray-300" %>
+                  <%= form.text_field :reason, required: true, placeholder: "Independent reason for correction", class: "rounded border-gray-300" %>
+                  <%= form.submit "Append correction", class: "rounded bg-white px-2 py-1 font-medium text-indigo-700 ring-1 ring-inset ring-indigo-300" %>
+                <% end %>
+              </details>
+            </td>
+          </tr>
+        <% end %>
       <% end %>
     </tbody>
   </table>
