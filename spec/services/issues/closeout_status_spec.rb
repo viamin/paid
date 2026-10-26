@@ -152,6 +152,20 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     expect(status.blockers.first.recovery).to include("Do not close")
   end
 
+  it "uses the unavailable fallback for a genuinely unclassified admission denial" do # @spec PARTIAL-CLOSEOUT-030
+    merged_partial_pr(number: 12)
+    feature = create(:feature_intent, project: project)
+    amendment = create(:design_amendment, feature_intent: feature, project: project, status: "merged")
+    create(:design_amendment_pause, design_amendment: amendment, issue: issue, reason_code: "affected")
+
+    status = described_class.call(issue)
+
+    expect(status.stalled?).to be(true)
+    expect(status.blocker_codes).to contain_exactly(:unavailable)
+    expect(status.reason).to include("exact guard is unavailable")
+    expect(status.blockers.first.recovery).to include("Investigate")
+  end
+
   it "explains active partial-closeout human prerequisite notifications and every simultaneous guard" do # @spec PARTIAL-CLOSEOUT-030
     merged_partial_pr(number: 12)
     child = create(:issue, project: project, github_state: "open", paid_state: "in_progress", parent_issue_id: issue.id, github_number: 55)
@@ -169,6 +183,22 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     )
     expect(notification_blocker.recovery).to include("human decision or evidence")
     expect(status.blockers.first.evidence.fetch("children")).to include(hash_including("id" => child.id))
+  end
+
+  it "does not cross-pair batched child and notification blockers across tenants" do # @spec PARTIAL-CLOSEOUT-030
+    other_account = create(:account)
+    other_project = create(:project, account: other_account)
+    other_issue = create(:issue, project: other_project, github_state: "open", paid_state: "in_progress")
+    foreign_child = create(:issue, project: other_project, parent_issue_id: other_issue.id,
+      github_state: "open", paid_state: "in_progress")
+    foreign_child.update_column(:project_id, project.id)
+    foreign_notification = create(:notification, :error, account: account, subject: other_issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+    inputs = described_class.inputs_for([ issue, other_issue ])
+
+    expect(inputs.open_native_children_by_issue_id.fetch(other_issue.id, [])).not_to include(foreign_child)
+    expect(inputs.prerequisite_notifications_by_issue_id.fetch(other_issue.id, [])).not_to include(foreign_notification)
   end
 
   it "reports every material blocker, including scanner verification evidence, without treating a merge as a fix" do

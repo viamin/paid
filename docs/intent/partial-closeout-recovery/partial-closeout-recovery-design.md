@@ -114,6 +114,13 @@ paid_state edit and never a blanket guard lift:
   cancel and supersede — the walk explains the authority, it never
   substitutes for it.
 
+The diagnostic preserves and links the notification exactly as recorded. It
+does not yet determine that referenced policy or evidence has become stale,
+reconcile the notification against a newer policy revision, or offer a
+structured policy-selection action. Those behaviors require durable policy and
+evidence identities from the prerequisite publisher; free-text notification
+content is not a safe basis for silently changing a team's review policy.
+
 For Inbox lane construction, `StalledCloseouts` batch-loads the evidence and
 persisted diagnostic inputs for each project's candidates before evaluating
 individual `CloseoutStatus` values. The per-issue status still produces the

@@ -117,15 +117,26 @@ module Issues
     end
 
     def self.open_native_children_for(issues)
-      Issue.where(parent_issue_id: issues.map(&:id), project_id: issues.map(&:project_id), is_pull_request: false, github_state: "open")
+      Issue.joins(<<~SQL.squish)
+        INNER JOIN issues closeout_parents
+          ON closeout_parents.id = issues.parent_issue_id
+         AND closeout_parents.project_id = issues.project_id
+      SQL
+        .where(parent_issue_id: issues.map(&:id), is_pull_request: false, github_state: "open")
         .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
         .order(:parent_issue_id, :github_number, :id).to_a.group_by(&:parent_issue_id)
     end
     private_class_method :open_native_children_for
 
     def self.prerequisite_notifications_for(issues)
-      Notification.where(
-        account_id: issues.map { |issue| issue.project.account_id }.uniq,
+      Notification.joins(<<~SQL.squish).where(
+        INNER JOIN issues notification_subjects
+          ON notifications.subject_type = 'Issue'
+         AND notifications.subject_id = notification_subjects.id
+        INNER JOIN projects notification_projects
+          ON notification_projects.id = notification_subjects.project_id
+         AND notification_projects.account_id = notifications.account_id
+      SQL
         source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
         subject_type: "Issue", subject_id: issues.map(&:id), resolved_at: nil, dismissed_at: nil
       ).order(:id).to_a.group_by(&:subject_id)

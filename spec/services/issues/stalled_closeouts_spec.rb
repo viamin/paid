@@ -79,11 +79,13 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
 
     it "builds partial-closeout eligibility inputs once per project" do # @spec PARTIAL-CLOSEOUT-002 PARTIAL-CLOSEOUT-004
       merged_pr_row(number: 13, parent_issue_id: issue.id)
+      other_issue = create(:issue, project: project, github_state: "open", paid_state: "in_progress")
+      merged_pr_row(number: 14, parent_issue_id: other_issue.id)
       queries = []
       subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
 
       ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
-        expect(described_class.pairs_for(project).map { |pair| pair.issue.id }).to contain_exactly(issue.id)
+        expect(described_class.pairs_for(project).map { |pair| pair.issue.id }).to contain_exactly(issue.id, other_issue.id)
       end
 
       expect(queries.grep(/FROM "notifications"/)).to have_attributes(size: 2)
