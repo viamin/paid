@@ -96,6 +96,37 @@
                 <span class="text-gray-400">No eligible issues</span>
               <% end %>
             </div>
+            <% if bd.held_issues.any? %>
+              <ul class="mt-3 space-y-2 text-xs text-gray-600">
+                <% bd.held_issues.each do |held| %>
+                  <li class="rounded-md bg-gray-50 px-3 py-2" data-testid="held-issue-<%= held.issue.id %>">
+                    <%= link_to "##{held.issue.github_number} #{held.issue.title}", held.issue.github_url,
+                          target: "_blank", rel: "noopener noreferrer",
+                          class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+                    <% if held.blockers.any? %>
+                      <span class="text-gray-500">is blocked by</span>
+                      <% held.blockers.each_with_index do |blocker, index| %>
+                        <%= "," if index.positive? %>
+                        <%= link_to blocker.label, blocker.url, target: "_blank", rel: "noopener noreferrer",
+                              class: "text-indigo-600 hover:text-indigo-500" %>
+                      <% end %>.
+                    <% end %>
+                    <% if held.action %>
+                      <% if held.action.inbox_kind %>
+                        <%= link_to held.action.label,
+                              inbox_path(project_id: bd.project.id, kind: held.action.inbox_kind, entry_id: held.action.entry_id),
+                              class: "ml-2 font-medium text-indigo-600 hover:text-indigo-500",
+                              data: { turbo_frame: "_top" } %>
+                      <% else %>
+                        <span class="ml-2"><%= held.action.label %>.</span>
+                      <% end %>
+                    <% elsif held.blockers.any? %>
+                      <span class="ml-2">Resolve the listed blockers to resume automatic work.</span>
+                    <% end %>
+                  </li>
+                <% end %>
+              </ul>
+            <% end %>
           </div>
         <% end %>
       </div>

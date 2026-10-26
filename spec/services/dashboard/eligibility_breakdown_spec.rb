@@ -117,17 +117,51 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(bd.other_excluded).to eq(0)
     end
 
-    it "counts dependency-blocked issues in other_excluded" do
+    # @spec QUEUE-HANDOFF-004
+    it "carries every dependency blocker for held issues" do
       blocker = create(:issue, project: project, github_state: "open", paid_state: "new")
-      create(:issue, project: project, github_state: "open", paid_state: "new") do |dependent|
+      second_blocker = create(:issue, project: project, github_state: "open", paid_state: "new")
+      dependent = create(:issue, project: project, github_state: "open", paid_state: "new") do |dependent|
         create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+        create(:issue_dependency, issue: dependent, depends_on_issue: second_blocker)
       end
 
       result = described_class.call(user: user)
 
       bd = result.first
-      expect(bd.eligible).to eq(1)
+      expect(bd.eligible).to eq(2)
       expect(bd.other_excluded).to eq(1)
+      expect(bd.held_issues).to contain_exactly(
+        have_attributes(
+          issue: have_attributes(github_number: dependent.github_number),
+          blockers: contain_exactly(
+            have_attributes(label: "##{blocker.github_number} #{blocker.title}", url: blocker.github_url),
+            have_attributes(label: "##{second_blocker.github_number} #{second_blocker.title}", url: second_blocker.github_url)
+          ),
+          action: nil
+        )
+      )
+    end
+
+    # @spec QUEUE-HANDOFF-004
+    it "carries the existing Inbox action for feature-decision holds" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      feature_intent = create(:feature_intent, project: project, status: "design_open", approved_design_revision: nil)
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.held_issues).to contain_exactly(
+        have_attributes(
+          issue: issue,
+          blockers: [],
+          action: have_attributes(
+            label: "Review feature decision: #{feature_intent.title}",
+            inbox_kind: Inbox::Queue::FEATURE_DECISION_KIND,
+            entry_id: "#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"
+          )
+        )
+      )
     end
 
     it "does not double-count recoverable-completed issues in both eligible and completed" do

@@ -26,7 +26,7 @@ manual and pull-request work. The derived state is mechanical:
 | `active_work` | no waiting eligible candidate and one or more active runs | healthy work is progressing |
 | `runnable_not_seeded` | one or more eligible candidates lack queued or active work | the existing event/sweep seeder should recover the handoff; this takes precedence over unrelated queue entries |
 | `waiting` | no eligible candidate awaits a handoff and one or more queued runs exist | scheduler backlog is represented |
-| `held` | open work exists but no candidate is eligible | existing Inbox and eligibility categories identify the hold |
+| `held` | open work exists but no candidate is eligible | the dashboard identifies the held issue, its blocking work or decision, and the supported recovery route |
 | `paused` | the project, account, or a run is deliberately paused | resume remains an explicit operator action |
 | `unknown` | the diagnostic query cannot establish coverage | rendering reports unavailable coverage, never "no work" |
 
@@ -45,6 +45,15 @@ run constraint, project gate, budgets, pauses, and dequeue recheck remain
 authoritative. Held delivery records continue through the bounded #4614
 partial-closeout reconciler and existing Inbox actions. Human decisions are
 not converted into retries.
+
+For a dependency-held issue, the diagnostic preserves every currently blocking
+local or external dependency so the operator can inspect the blocked issue and
+each owning prerequisite. For a decision-held issue, it preserves the owning
+feature decision or amendment hold. Feature decisions route to their existing
+Inbox action; amendment holds direct the operator to the affected issue's
+existing review context.
+Other admission controls remain summarized rather than being inferred as a
+human decision or made actionable by the diagnostic.
 
 ## Freshness and failure
 

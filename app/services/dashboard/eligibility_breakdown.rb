@@ -3,11 +3,10 @@
 module Dashboard
   class EligibilityBreakdown
     CACHE_TTL = 15.seconds
-
     ProjectBreakdown = Struct.new(
       :project, :total_open, :eligible, :needs_input,
       :skip_label, :completed, :in_progress, :manual_review, :other_excluded,
-      :queued, :active, :paused, :unseeded, :diagnostic_state,
+      :queued, :active, :paused, :unseeded, :held_issues, :diagnostic_state,
       keyword_init: true
     )
 
@@ -86,6 +85,7 @@ module Dashboard
       other = excluded_total - needs_input - in_progress - completed - manual_review - skip_label
       queued, active, paused = handoff_counts.fetch(project.id, [ 0, 0, 0 ])
       unseeded = eligible_count
+      held_issues = HeldWorkDetails.call(excluded:, project:)
 
       ProjectBreakdown.new(
         project: project,
@@ -99,6 +99,7 @@ module Dashboard
         active: active,
         paused: paused,
         unseeded: unseeded,
+        held_issues: held_issues,
         diagnostic_state: diagnostic_state(
           project:, unseeded:, queued:, active:, paused:, total_open: eligible_count + excluded_total
         )

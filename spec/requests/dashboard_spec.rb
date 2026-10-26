@@ -1014,6 +1014,25 @@ RSpec.describe "Dashboard" do
       expect(link["data-turbo-frame"]).to eq("_top")
     end
 
+    # @spec QUEUE-HANDOFF-004
+    it "makes every dependency blocker for held work inspectable" do
+      blocker = create(:issue, project: project, github_state: "open", paid_state: "new")
+      second_blocker = create(:issue, project: project, github_state: "open", paid_state: "new")
+      dependent = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+      create(:issue_dependency, issue: dependent, depends_on_issue: second_blocker)
+
+      get dashboard_eligibility_breakdown_path
+
+      document = Nokogiri::HTML(response.body)
+      held_issue = document.at_css("[data-testid='held-issue-#{dependent.id}']")
+
+      expect(held_issue).to be_present
+      expect(held_issue.at_css(%(a[href="#{dependent.github_url}"])).text).to include("##{dependent.github_number}")
+      expect(held_issue.at_css(%(a[href="#{blocker.github_url}"])).text).to include("##{blocker.github_number}")
+      expect(held_issue.at_css(%(a[href="#{second_blocker.github_url}"])).text).to include("##{second_blocker.github_number}")
+    end
+
     # @spec QUEUE-HANDOFF-001
     it "explains eligible work that has not reached the scheduler queue" do
       create(:issue, project: project, github_state: "open", paid_state: "new")
