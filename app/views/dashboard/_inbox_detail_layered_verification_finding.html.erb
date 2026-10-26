@@ -1,0 +1,9 @@
+<%# @spec LAYERED-VERIFY-015 @spec LAYERED-VERIFY-016 %>
+<div class="space-y-4 text-sm text-gray-700">
+  <p><%= entry.summary %></p>
+  <dl class="grid gap-3 sm:grid-cols-2">
+    <div><dt class="font-medium">Scope</dt><dd><%= entry.record.obligation.scope_description %></dd></div>
+    <div><dt class="font-medium">Source</dt><dd><%= entry.record.obligation.approved_revision_reference || "Pending canonical approval" %></dd></div>
+  </dl>
+  <p class="text-gray-500">Discussion, acknowledgement, and deferral preserve this discrepancy. Approval and repair require separate explicit actions.</p>
+</div>

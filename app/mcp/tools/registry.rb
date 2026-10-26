@@ -25,6 +25,7 @@ module Tools
       "Tools::PublishHeldIssue",
       "Tools::CloneProject",
       "Tools::RecordChangeIntent",
+      "Tools::RequestLayeredVerificationAudit",
       "Tools::GetInboxChatContext",
       "Tools::GetIssueDetails",
       "Tools::GetPullRequestDetails",
