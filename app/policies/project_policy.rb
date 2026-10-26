@@ -26,6 +26,14 @@ class ProjectPolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin, :member) || has_project_role?
   end
 
+  # RDR-077 §3: a continuation grant delegates subsequent work, so its actor
+  # must be allowed to trigger work for this project even when its endpoint is
+  # earlier than merge.
+  # @spec AUTOMATION-PHASES-009
+  def delegate_continuation?
+    run_agent?
+  end
+
   # @spec APPLE-VERIFY-002
   # @spec APPLE-VERIFY-003
   # RDR-077 §3: only users who may delegate the covered actions may create a
