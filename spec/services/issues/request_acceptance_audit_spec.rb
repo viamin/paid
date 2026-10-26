@@ -48,4 +48,19 @@ RSpec.describe Issues::RequestAcceptanceAudit do
     expect(issue.agent_runs.count).to eq(1)
     expect(implementation.request.reload.status).to eq("queued")
   end
+
+  # @spec PARTIAL-CLOSEOUT-004 PARTIAL-CLOSEOUT-027
+  it "refuses a report-only audit with the same explained human prerequisite gate" do
+    create(:issue, :pull_request, project:, github_number: 12, github_state: "closed",
+      pr_review_phase: "merged", parent_issue: issue, created_at: 2.days.ago)
+    notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Policy selection required", description: "Choose and record the policy.")
+
+    result = described_class.call(issue:, actor: user)
+
+    expect(result).not_to be_success
+    expect(result.code).to eq(:human_prerequisite)
+    expect(result.message).to include("##{notification.id}", "Policy selection required")
+  end
 end

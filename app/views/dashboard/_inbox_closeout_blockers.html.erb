@@ -5,7 +5,23 @@
       <li>
         <p><%= blocker.message %></p>
         <% if blocker.evidence.present? %>
-          <p class="text-xs text-violet-700">Evidence: <%= blocker.evidence.except("attempt_url").to_json %></p>
+          <% if blocker.evidence["children"].present? %>
+            <p class="text-xs text-violet-700">
+              Open children:
+              <% blocker.evidence["children"].each do |child| %>
+                <%= link_to "##{child["number"]}", child["url"], target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-900" %>
+              <% end %>
+            </p>
+          <% elsif blocker.evidence["notifications"].present? %>
+            <% blocker.evidence["notifications"].each do |notification| %>
+              <p class="text-xs text-violet-700">
+                Human evidence: <%= link_to "notification ##{notification["id"]}", notification["action_url"], class: "font-medium text-indigo-600 hover:text-indigo-900" %>
+                — <%= notification["title"] %>: <%= notification["description"] %>
+              </p>
+            <% end %>
+          <% else %>
+            <p class="text-xs text-violet-700">Evidence: <%= blocker.evidence.except("attempt_url").to_json %></p>
+          <% end %>
           <% if blocker.evidence["attempt_url"].present? %>
             <%= link_to "View scanner alert", blocker.evidence["attempt_url"], target: "_blank", rel: "noopener noreferrer", class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
           <% end %>

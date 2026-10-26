@@ -177,6 +177,19 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       expect(result.message).to include("#44")
     end
 
+    # @spec PARTIAL-CLOSEOUT-004
+    it "refuses with the active human prerequisite notification's identity" do
+      merged_partial_pr(number: 12)
+      notification = create(:notification, :error, account: account, subject: issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+        title: "Human adjudication required", description: "Record the adjudication.")
+
+      result = request_continuation
+
+      expect(result.code).to eq(:human_prerequisite)
+      expect(result.message).to include("##{notification.id}", notification.title)
+    end
+
     it "refuses an untrusted creator's issue" do
       merged_partial_pr(number: 12)
       issue.update!(github_creator_login: "random-stranger")
@@ -221,11 +234,10 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       expect(IssueContinuationRequest.count).to eq(0)
     end
 
-    it "refuses instead of queueing a run another eligibility guard would cancel at dequeue" do
-      # A guard the targeted blocker walk does not enumerate (here: an open
-      # non-PR sub-issue keeps the parent out of every eligible scope) must
-      # refuse up front with its reason, never queue a run the dequeue-time
-      # recheck would cancel and supersede (#4130 review).
+    # @spec PARTIAL-CLOSEOUT-004
+    it "refuses instead of queueing a run while a native child remains open" do
+      # The canonical native-child guard must refuse up front with its exact
+      # reason, never queue a run the dequeue-time recheck would cancel.
       merged_partial_pr(number: 12)
       create(
         :issue,
@@ -239,8 +251,8 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       result = request_continuation
 
       expect(result.success?).to be(false)
-      expect(result.code).to eq(:unavailable)
-      expect(result.message).to include("exact guard is unavailable")
+      expect(result.code).to eq(:open_native_children)
+      expect(result.message).to include("#55")
       expect(issue.agent_runs).to be_empty
       expect(IssueContinuationRequest.count).to eq(0)
     end

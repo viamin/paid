@@ -423,6 +423,20 @@ RSpec.describe "Inbox" do
       expect(response.body).to include(partial_closeout_guide_path)
     end
 
+    # @spec PARTIAL-CLOSEOUT-004
+    it "renders links and recorded evidence for native-child and human prerequisite admission blockers" do
+      child = create(:issue, project: project, github_number: 512, github_state: "open",
+        paid_state: "in_progress", parent_issue: guided_issue)
+      notification = Notification.where(subject: guided_issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE).last
+
+      render_guided_pane
+
+      expect(response.body).to include("Open native child work", "##{child.github_number}", child.github_url)
+      expect(response.body).to include("notification ##{notification.id}", "/inbox/action_required:#{notification.id}")
+      expect(response.body).to include("Do not close a child merely to admit this issue")
+    end
+
     it "collects an editable rationale and separates the three completions" do
       render_guided_pane
 

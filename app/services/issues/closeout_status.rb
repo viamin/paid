@@ -18,7 +18,8 @@ module Issues
     Blocker = Struct.new(:code, :message, :evidence, :recovery, keyword_init: true)
     Inputs = Struct.new(:evidence_by_issue_id, :prerequisites_by_issue_id,
       :open_requests_by_issue_id, :active_run_issue_ids, :feature_links_by_issue_id,
-      :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id, keyword_init: true)
+      :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id,
+      :native_children_by_issue_id, :prerequisite_notifications_by_issue_id, keyword_init: true)
 
     # Blockers that are deliberate operator states or active work rather than
     # a partial-closeout stall; the lane must not surface them.
@@ -109,7 +110,9 @@ module Issues
         active_run_issue_ids: AgentRun.where(issue_id: issue_ids, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).distinct.pluck(:issue_id).to_set,
         feature_links_by_issue_id: feature_links,
         analysis_backoff_reset_by_project_id: reset_at,
-        scanner_attempts_by_issue_id: scanner_attempts
+        scanner_attempts_by_issue_id: scanner_attempts,
+        native_children_by_issue_id: open_native_children_for(issues),
+        prerequisite_notifications_by_issue_id: active_prerequisite_notifications_for(issues)
       )
     end
 
@@ -144,6 +147,31 @@ module Issues
     end
     private_class_method :prerequisite_labels_for
 
+    def self.open_native_children_for(issues)
+      parents_by_id = issues.index_by(&:id)
+      Issue.where(parent_issue_id: parents_by_id.keys, github_state: "open", is_pull_request: false)
+        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+        .select(:id, :parent_issue_id, :project_id, :github_number, :github_html_url, :source, :github_issue_id, :is_pull_request)
+        .includes(:project)
+        .each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |child, children|
+          parent = parents_by_id[child.parent_issue_id]
+          children[parent.id] << child if parent && child.project_id == parent.project_id
+        end
+    end
+    private_class_method :open_native_children_for
+
+    def self.active_prerequisite_notifications_for(issues)
+      account_ids_by_issue_id = issues.to_h { |issue| [ issue.id, issue.project.account_id ] }
+      Notification.active.where(
+        account_id: account_ids_by_issue_id.values.uniq,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+        subject_type: "Issue", subject_id: account_ids_by_issue_id.keys
+      ).order(:id).each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |notification, notifications|
+        notifications[notification.subject_id] << notification if account_ids_by_issue_id[notification.subject_id] == notification.account_id
+      end
+    end
+    private_class_method :active_prerequisite_notifications_for
+
     def self.admissible_issue_ids(issue)
       Automation::Strategies::AutoPick::DefaultCandidateSource
         .eligible_scope(issue.project).pluck(:id)
@@ -153,7 +181,8 @@ module Issues
     # candidate source. Keep this list additive: simultaneous guards must all
     # be visible rather than having the first one conceal the rest.
     def self.admission_blockers(issue, prerequisites: prerequisite_labels(issue), inputs: nil)
-      prerequisite_blockers(issue, labels: prerequisites) + operator_pause_blockers(issue) +
+      prerequisite_blockers(issue, labels: prerequisites) + native_child_blockers(issue, inputs:) +
+        human_prerequisite_blockers(issue, inputs:) + operator_pause_blockers(issue) +
         run_in_flight_blockers(issue, inputs:) + trust_blockers(issue) + feature_hold_blockers(issue, inputs:) +
         analysis_backoff_blockers(issue, inputs:) + scanner_verification_blockers(issue, inputs:)
     end
@@ -193,6 +222,57 @@ module Issues
         recovery: "Resolve the listed prerequisite work or update its dependency link, then request continuation again."
       ) ]
     end
+
+    # Mirrors DefaultCandidateSource#without_open_non_pr_subissues. Native
+    # parentage is authoritative even when no IssueDependency duplicates it.
+    # @spec PARTIAL-CLOSEOUT-004
+    def self.native_child_blockers(issue, inputs: nil)
+      children = inputs ? inputs.native_children_by_issue_id.fetch(issue.id, []) : open_native_children_for([ issue ])[issue.id]
+      return [] if children.empty?
+
+      identities = children.map { |child| "##{child.github_number}" }
+      [ Blocker.new(
+        code: :open_native_children,
+        message: "Open native child work (#{identities.join(', ')}) keeps this issue out of scheduling.",
+        evidence: { "children" => children.map { |child| native_child_evidence(child) } },
+        recovery: "Complete or explicitly re-scope the listed child work with its own evidence. Do not close a child merely to admit this issue."
+      ) ]
+    end
+
+    def self.native_child_evidence(child)
+      { "id" => child.id, "number" => child.github_number, "url" => child.github_url }
+    end
+    private_class_method :native_child_evidence
+
+    # Mirrors DefaultCandidateSource#partial_closeout_prerequisite_block_issue_ids.
+    # These are human-evidence gates, not missing implementation work.
+    # @spec PARTIAL-CLOSEOUT-004
+    def self.human_prerequisite_blockers(issue, inputs: nil)
+      notifications = if inputs
+        inputs.prerequisite_notifications_by_issue_id.fetch(issue.id, [])
+      else
+        active_prerequisite_notifications_for([ issue ])[issue.id]
+      end
+      return [] if notifications.empty?
+
+      identities = notifications.map { |notification| "##{notification.id} (#{notification.title})" }
+      [ Blocker.new(
+        code: :human_prerequisite,
+        message: "Active human prerequisite notification #{identities.join(', ')} requires recorded human evidence before scheduling.",
+        evidence: { "notifications" => notifications.map { |notification| prerequisite_notification_evidence(notification) } },
+        recovery: "Use the notification action to record or reconcile the requested human evidence and policy choice. Do not dismiss valid unresolved evidence; request a deliberate continuation after it is resolved."
+      ) ]
+    end
+
+    def self.prerequisite_notification_evidence(notification)
+      {
+        "id" => notification.id,
+        "title" => notification.title,
+        "description" => notification.description,
+        "action_url" => notification.action_url.presence || "/inbox/action_required:#{notification.id}"
+      }
+    end
+    private_class_method :prerequisite_notification_evidence
 
     def self.operator_pause_blockers(issue)
       blockers = []

@@ -173,6 +173,13 @@
   design revision holds, analysis backoff, tier feasibility, budgets, issue
   and project pauses, skip labels, needs-input, and manual review — and the
   request SHALL be refused with the specific reason when any of them blocks.
+  Open native child issues and active `partial_closeout.prerequisite`
+  notifications SHALL be represented as additive, authoritative blocker
+  diagnostics with their identities, evidence, action links, and safe recovery
+  routes; a human-evidence notification SHALL remain distinct from missing
+  implementation and SHALL not be dismissed, completed, or policy-rewritten by
+  diagnostic rendering. The same diagnostics SHALL govern Inbox detail/count,
+  API/tool, continuation, and report-only audit refusal behavior.
   The admission decision SHALL be preflighted with the same scoped
   `eligible_for_dequeue?` evaluation the dequeue recheck applies
   (`CloseoutStatus` residual guard, evaluated from one shared set of project
