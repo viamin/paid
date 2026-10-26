@@ -35,7 +35,7 @@ RSpec.describe Issues::ManualReviewRecovery do
     recovery = described_class.call(issue:)
 
     expect(recovery).to be_dependency
-    expect(recovery.blockers).to eq([ { label: "##{blocker.github_number}", url: blocker.github_url } ])
+    expect(recovery.blockers).to eq([ blocker ])
   end
 
   # @spec OPERATOR-INBOX-002D EAGER-QUEUE-013
@@ -57,8 +57,6 @@ RSpec.describe Issues::ManualReviewRecovery do
     recovery = described_class.call(issue:)
 
     expect(recovery).to be_active_work
-    expect(recovery.blockers).to eq([
-      { label: "create pr run ##{active_run.id} (queued)", url: "/projects/#{project.id}/agent_runs/#{active_run.id}" }
-    ])
+    expect(recovery.blockers).to eq([ active_run ])
   end
 end

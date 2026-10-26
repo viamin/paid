@@ -31,7 +31,6 @@ module Issues
       return reopen_recovery if issue.reopen_review_pending?
       return dependency_recovery if dependency_blockers.any?
       return scanner_recovery if scanner_blockers.any?
-      return active_work_recovery if active_runs.any?
       return enhancement_recovery if enhancement_provenance?
 
       unknown_recovery
@@ -46,11 +45,6 @@ module Issues
         "Record a revision-bound validation of the original closure and remaining scope before resuming implementation.", [])
     end
 
-    def active_work_recovery
-      Recovery.new(:active_work, :reconcile_active_work,
-        "Existing queued or running work must be reconciled before this hold can be resumed.", active_runs)
-    end
-
     def dependency_recovery
       Recovery.new(:dependency, :wait_for_dependency,
         "Work remains held until the listed dependency is resolved; acknowledging this item does not waive the dependency.", dependency_blockers)
@@ -62,8 +56,8 @@ module Issues
     end
 
     def active_work_recovery
-      Recovery.new(:active_work, :reconcile_existing_work,
-        "Existing queued or running work must be reused or reconciled before another recovery action can start.", active_runs)
+      Recovery.new(:active_work, :reconcile_active_work,
+        "Existing queued or running work must be reconciled before this hold can be resumed.", active_runs)
     end
 
     def enhancement_recovery
@@ -86,12 +80,6 @@ module Issues
 
     def active_runs
       @active_runs ||= issue.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).order(created_at: :desc).to_a
-    end
-
-    def active_runs
-      @active_runs ||= issue.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).order(:created_at).map do |run|
-        { label: "#{run.goal.tr('_', ' ')} run ##{run.id} (#{run.status})", url: "/projects/#{issue.project_id}/agent_runs/#{run.id}" }
-      end
     end
 
     def enhancement_provenance?
