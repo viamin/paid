@@ -14,11 +14,21 @@ ledger events keep validating against the content they were measured with.
 
 ## 2. Assess each case
 
-For each corpus case, replay the frozen evidence (in `occurred_at` order,
-honoring `supersedes`) through the production assessment path — or an
-operator-controlled harness that uses the same rubric `facet-confidence-v1`,
-model `claude-sonnet-4-6`, and prompt contract as
-`FeatureIntents::AssessFacet` — and record the outcome:
+Run the shipped assessment path against a project whose provider serves the
+pinned model:
+
+```bash
+bin/rails "facet_confidence:corpus:run[<project-id>]"
+```
+
+The task replays the frozen evidence in `occurred_at` order, honors
+`supersedes`, and records one appended outcome per case. It invokes the same
+rubric `facet-confidence-v1`, model `claude-sonnet-4-6`, and prompt contract as
+`FeatureIntents::AssessFacet`. If the provider does not serve the pinned model,
+the task records `failed` operational events; it does not invent verdicts or
+scores.
+
+For a separately controlled replay harness, append its outcome with:
 
 ```bash
 bin/facet-confidence-assessment-evaluation append \

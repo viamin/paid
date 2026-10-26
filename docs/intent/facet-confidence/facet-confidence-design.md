@@ -121,6 +121,11 @@ binds every recorded assessment run to the corpus version/digest, rubric
 version, model version, and input evidence revision, and rejects replays of
 identical case input. It locks validation and append as one operation, and a
 re-run after a correction must cite that correction event as its evidence.
+`bin/rails "facet_confidence:corpus:run[<project-id>]"` materializes each
+frozen case as evaluation-only facet evidence for the selected project and
+calls `FeatureIntents::AssessFacet` directly. It appends the assessment status
+only after that shipped path returns; unavailable providers remain `failed`
+operational events, never scores or readiness verdicts.
 `lib/facet_confidence/assessment_outcome_report.rb`
 computes false readiness, unnecessary clarification, human corrections,
 assessment cost, and downstream rework against the frozen expected bands, and
