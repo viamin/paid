@@ -223,6 +223,8 @@ class AgentRun < ApplicationRecord
   # @spec LAYERED-VERIFY-013
   has_many :repair_runs, class_name: "AgentRun", foreign_key: :originating_audit_run_id,
     dependent: :destroy, inverse_of: :originating_audit_run
+  has_many :originated_layered_verification_findings, class_name: "LayeredVerificationFinding",
+    foreign_key: :originating_audit_run_id, dependent: :restrict_with_exception, inverse_of: :originating_audit_run
 
   has_many :agent_run_logs, dependent: :destroy
   has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy

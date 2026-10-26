@@ -174,6 +174,17 @@ module Workflows
           return { success: true, agent_run_id: agent_run_id, acceptance_audit: true }
         end
 
+        # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-024
+        # An audit is report-only: it receives its own activity and returns
+        # before any repository clone, agent prompt, branch, or PR path.
+        if goal == "layered_verification_audit"
+          result = run_activity(Activities::RunLayeredVerificationAuditActivity,
+            { agent_run_id: agent_run_id }, start_to_close_timeout: issue_goal_timeout_seconds,
+            retry_policy: NO_RETRY)
+          agent_step_succeeded = true
+          return { success: true, agent_run_id: agent_run_id, layered_verification_audit: result }
+        end
+
         if goal == "analyze_issue"
           result = run_activity(Activities::AnalyzeIssueActivity,
             { agent_run_id: agent_run_id },
