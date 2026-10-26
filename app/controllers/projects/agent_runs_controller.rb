@@ -8,6 +8,7 @@ module Projects
 
     NoRunnableRunnerError = Class.new(StandardError)
     InvalidDockerHostSelectionError = Containers::ResolveHostForRun::InvalidDockerHostSelectionError
+    InvalidManualGoalError = Class.new(StandardError)
 
     before_action :set_project
     before_action :set_agent_run, only: [
@@ -158,7 +159,7 @@ module Projects
     def create
       authorize @project, :run_agent?
 
-      goal = params[:goal].presence || "create_pr"
+      goal = manual_create_goal
       custom_prompt = params[:custom_prompt]&.strip.presence
       issue = resolve_issue
       priority_tier = resolve_priority_tier
@@ -245,6 +246,8 @@ module Projects
       end
     rescue Automation::ManualStart::Plan::Error => error
       redirect_to new_project_agent_run_path(@project, goal: goal), alert: error.message
+    rescue InvalidManualGoalError => error
+      redirect_to new_project_agent_run_path(@project, goal: params[:goal]), alert: error.message
     end
 
     def quick_create
@@ -620,12 +623,19 @@ module Projects
         notice: "Agent run terminated."
     end
 
+    # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
     def retry
       authorize @agent_run
 
       if @agent_run.bootstrap_readiness_goal?
         redirect_to inbox_path,
           alert: "Bootstrap attempts must be started again from the project setup Inbox entry."
+        return
+      end
+
+      if @agent_run.layered_verification_goal?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Layered-verification runs must be started again from their dedicated entry point."
         return
       end
 
@@ -703,8 +713,15 @@ module Projects
       redirect_to project_agent_run_path(@project, @agent_run), alert: e.message
     end
 
+    # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
     def refresh_auth
       authorize @agent_run
+
+      if @agent_run.layered_verification_goal?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Layered-verification runs must be started again from their dedicated entry point."
+        return
+      end
 
       unless @agent_run.auth_expired?
         redirect_to project_agent_run_path(@project, @agent_run),
@@ -1113,6 +1130,23 @@ module Projects
     # The run form's goal radios. Each goal's continuation plan is embedded so
     # the goal toggle can refresh the section client-side.
     RUN_FORM_GOALS = %w[create_pr create_issue review enhance_issue create_feature].freeze
+    MANUAL_CREATE_GOALS = (RUN_FORM_GOALS + [ "lid_planning" ]).freeze
+
+    # Dedicated layered-verification entry points own their feature-flag and
+    # authorization checks. Do not let the generic manual-run endpoint bypass
+    # those rollout guards.
+    # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-012
+    def manual_create_goal
+      goal = params[:goal].presence
+      return "create_pr" unless goal
+      return goal if MANUAL_CREATE_GOALS.include?(goal)
+
+      if goal.in?(AgentRun::LAYERED_VERIFICATION_GOALS)
+        raise InvalidManualGoalError, "Layered-verification runs must be started from their dedicated entry point."
+      end
+
+      raise InvalidManualGoalError, "Unsupported agent run goal: #{goal}"
+    end
 
     # @spec AUTOMATION-PHASES-010
     def manual_start_plan(goal:)

@@ -470,6 +470,14 @@ RSpec.describe ApplicationHelper, :no_db do
       expect(helper.agent_run_goal_text(run)).to eq("Feature Creation")
     end
 
+    # @spec LAYERED-VERIFY-013
+    it "returns labels for layered-verification goals" do
+      expect(helper.agent_run_goal_text(goal_text_run(goal: "layered_verification_audit")))
+        .to eq("Layered Verification Audit")
+      expect(helper.agent_run_goal_text(goal_text_run(goal: "layered_verification_repair")))
+        .to eq("Layered Verification Repair")
+    end
+
     it "titleizes unknown goal values" do
       run = goal_text_run(goal: "some_new_goal")
       expect(helper.agent_run_goal_text(run)).to eq("Some New Goal")

@@ -1442,7 +1442,23 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.issue).to eq(issue)
         expect(agent_run.initiating_user).to eq(user)
         expect(agent_run.agent_type).to eq("claude_code")
+        expect(agent_run.goal).to eq("create_pr")
         expect(agent_run.status).to eq("queued")
+      end
+
+      # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-012
+      it "rejects layered-verification goals through the generic manual endpoint" do
+        %w[layered_verification_audit layered_verification_repair].each do |goal|
+          expect {
+            post project_agent_runs_path(project), params: {
+              goal: goal,
+              custom_prompt: "Audit payment authorization."
+            }
+          }.not_to change(AgentRun, :count)
+
+          expect(response).to redirect_to(new_project_agent_run_path(project, goal: goal))
+          expect(flash[:alert]).to include("dedicated entry point")
+        end
       end
 
       it "attaches selected marketplace entries to the queued run" do
@@ -1974,21 +1990,13 @@ RSpec.describe "AgentRuns" do
         expect(parked.manual_review_reason).to be_nil
       end
 
-      it "normalizes an invalid goal to create_pr and uses the create_pr default runner" do
-        owner = project.created_by
-        codex = owner.runners.create!(
-          runner_key: "codex",
-          auth_type: "subscription",
-          enabled_for_agent_runs: true,
-          enabled_for_fallback: true
-        )
-        owner.settings.update!(default_agent_runners_by_goal: { "create_pr" => codex.routing_key })
+      it "rejects an unsupported goal" do
+        expect {
+          post project_agent_runs_path(project), params: { goal: "invalid", issue_id: issue.id }
+        }.not_to change(AgentRun, :count)
 
-        post project_agent_runs_path(project), params: { goal: "invalid", issue_id: issue.id }
-
-        agent_run = AgentRun.last
-        expect(agent_run.goal).to eq("create_pr")
-        expect(agent_run.runner).to eq(codex)
+        expect(response).to redirect_to(new_project_agent_run_path(project, goal: "invalid"))
+        expect(flash[:alert]).to include("Unsupported agent run goal")
       end
 
       context "with goal=review" do
@@ -2297,6 +2305,22 @@ RSpec.describe "AgentRuns" do
         }.not_to change(AgentRun, :count)
 
         expect(response).to redirect_to(inbox_path)
+      end
+
+      # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
+      it "does not use the generic manual retry path for layered-verification runs" do
+        audit = create(:agent_run, :failed, project: project, goal: "layered_verification_audit")
+        repair = create(:agent_run, :failed, project: project, goal: "layered_verification_repair", originating_audit_run: audit)
+
+        [ audit, repair ].each do |run|
+          expect {
+            post retry_project_agent_run_path(project, run)
+          }.not_to change(AgentRun, :count)
+
+          expect(response).to redirect_to(project_agent_run_path(project, run))
+          follow_redirect!
+          expect(response.body).to include("Layered-verification runs must be started again")
+        end
       end
 
       it "does not queue a bootstrap attempt while a rate-limited attempt recovers" do
@@ -3501,6 +3525,22 @@ RSpec.describe "AgentRuns" do
 
     context "when authenticated" do
       before { sign_in user }
+
+      # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
+      it "does not use the auth-refresh retry path for layered-verification runs" do
+        audit = create(:agent_run, :auth_expired, project: project, goal: "layered_verification_audit")
+        repair = create(:agent_run, :auth_expired, project: project, goal: "layered_verification_repair", originating_audit_run: audit)
+
+        [ audit, repair ].each do |run|
+          expect {
+            post refresh_auth_project_agent_run_path(project, run), params: { auth_token: "valid-token" }
+          }.not_to change(AgentRun, :count)
+
+          expect(response).to redirect_to(project_agent_run_path(project, run))
+          follow_redirect!
+          expect(response.body).to include("Layered-verification runs must be started again")
+        end
+      end
 
       it "redirects when run is not auth_expired" do
         agent_run = create(:agent_run, :failed, project: project)

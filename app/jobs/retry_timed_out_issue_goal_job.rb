@@ -135,8 +135,11 @@ class RetryTimedOutIssueGoalJob < ApplicationJob
 
   private
 
+  # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
   def eligible_for_retry?(agent_run)
-    agent_run.status == "timeout" && agent_run.create_issue_goal?
+    agent_run.status == "timeout" &&
+      agent_run.create_issue_goal? &&
+      !agent_run.layered_verification_goal?
   end
 
   # Counts how many previous issue goal runs for the same issue (when present)

@@ -300,7 +300,7 @@ class TenantSetting < ApplicationRecord
 
   def default_goal
     goal = effective_agent_settings["default_goal"].presence
-    return goal if AgentRun::GOALS.include?(goal)
+    return goal if AgentRun::TRIGGERABLE_GOALS.include?(goal)
 
     DEFAULT_AGENT_SETTINGS.fetch("default_goal")
   end
@@ -491,7 +491,7 @@ class TenantSetting < ApplicationRecord
     return unless agent_settings.is_a?(Hash)
 
     goal = agent_settings["default_goal"].presence
-    errors.add(:agent_settings, "default_goal is unsupported") if goal.present? && !AgentRun::GOALS.include?(goal)
+    errors.add(:agent_settings, "default_goal is unsupported") if goal.present? && !AgentRun::TRIGGERABLE_GOALS.include?(goal)
 
     cap = agent_settings["max_issue_runner_failures"]
     return if cap.blank?

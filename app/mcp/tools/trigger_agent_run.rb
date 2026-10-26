@@ -28,7 +28,7 @@ module Tools
         properties: {
           project_id: { type: "integer", description: "The project ID" },
           issue_id: { type: "integer", description: "The issue ID. Omit when goal is create_issue and custom_prompt is provided instead." },
-          goal: { type: "string", description: "Run goal", enum: AgentRun::GOALS, default: "create_pr" },
+          goal: { type: "string", description: "Run goal", enum: triggerable_goals, default: "create_pr" },
           custom_prompt: { type: "string", description: "Description of the work for the agent to do. For goal=create_feature, pass the structured feature brief as a JSON object; when it includes problem_framing.selected_framing, set selected_framing_confirmed true only if the user confirmed that framing — it is stored verbatim and rendered as proposed unless confirmed." },
           plan_docs: {
             type: "array",
@@ -41,8 +41,10 @@ module Tools
       }
     end
 
+    # @spec LAYERED-VERIFY-012
     def perform(project_id:, confirmed: false, issue_id: nil, goal: "create_pr", custom_prompt: nil, plan_docs: [])
       raise ArgumentError, "Confirmation required: set confirmed=true to trigger an agent run" unless confirmed
+      raise ArgumentError, "Layered-verification runs must be started from their dedicated entry point" if layered_verification_goal?(goal)
 
       project = project_for(project_id)
       issue = issue_id ? project.issues.find(issue_id) : nil
@@ -107,6 +109,14 @@ module Tools
     end
 
     private
+
+    def self.triggerable_goals
+      AgentRun::TRIGGERABLE_GOALS
+    end
+
+    def layered_verification_goal?(goal)
+      goal.in?(AgentRun::LAYERED_VERIFICATION_GOALS)
+    end
 
     def project_for(project_id)
       @projects_by_id ||= {}
