@@ -4,6 +4,32 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When an Inbox prerequisite requires live
+  execution evidence, the system SHALL inspect the selected execution
+  backend's supported capabilities through the existing runner interface and
+  record an unavailable result with the exact compatible-host action when
+  direct execution is unavailable; it SHALL NOT infer that no usable Paid
+  execution environment exists from the control-plane workspace.
+  *Code:* `app/services/partial_closeouts/validate_execution_prerequisite.rb`.
+  *Test:* `spec/services/partial_closeouts/validate_execution_prerequisite_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-031** — When a bounded prerequisite validation is
+  authorized, the system SHALL provision the selected run's isolated pinned
+  execution environment, invoke only the selected native command and optional
+  documented sidecar request through `execute_in_execution_environment`, and
+  durably retain bounded stdout, stderr, exit status, image/checkout identity,
+  endpoint metadata, and cleanup evidence. It SHALL never execute repository
+  code or expose a Docker socket on the control plane.
+  *Code:* `app/services/partial_closeouts/validate_execution_prerequisite.rb`.
+  *Test:* `spec/services/partial_closeouts/validate_execution_prerequisite_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-032** — When sidecar validation is requested while
+  `marketplace_tool_sidecars` is disabled, the system SHALL record the exact
+  scoped-pilot authorization action and SHALL NOT silently enable the flag or
+  retry the unchanged request.
+  *Code:* `app/services/partial_closeouts/validate_execution_prerequisite.rb`.
+  *Test:* `spec/services/partial_closeouts/validate_execution_prerequisite_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its

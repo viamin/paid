@@ -280,6 +280,29 @@ closed owner, dismisses a scanner finding, or treats a merge as verification.
 
 ### Human closeout guidance (#4189)
 
+### Capability-aware execution prerequisite validation (#4643)
+
+An execution-evidence prerequisite is resolved only by a bounded validation on
+an AgentRun's selected execution backend. Before provisioning, Paid reads the
+runner's declared capabilities and the current tool-sidecar rollout policy.
+Missing direct execution capability is an `unavailable` result with a
+compatible-host action; a disabled `marketplace_tool_sidecars` flag is a
+separate authorization blocker with its scoped-pilot action. Neither result
+permits retrying an unchanged host, enabling a flag, host-shell execution, or
+Docker-socket access by an agent.
+
+The validation reuses the run's isolated provision/execute/cleanup lifecycle.
+It runs only a selected native command and, where already authorized and
+attached, a bounded documented sidecar request via
+`execute_in_execution_environment`. The run's durable `verification_result`
+stores the selected backend capabilities, output tails, exit statuses, image
+and checkout identity, endpoint metadata, terminal disposition, and cleanup
+outcome. `completed` requires both requested checks and cleanup; nonzero exit
+is `partial`, infrastructure failure is `failed`, and an unsupported backend
+is `unavailable`. Current capability/policy evidence is checked again before
+each resume, so a stale result is never represented as current closeout
+evidence.
+
 The lane's recovery actions assume the operator already knows which action
 fits. The pane therefore carries task-oriented decision guidance (five paths:
 review the recorded criteria/evidence; continue agent-actionable work;
