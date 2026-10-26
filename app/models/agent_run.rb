@@ -7,6 +7,8 @@ class AgentRun < ApplicationRecord
   attribute :external_metadata, :json, default: {}
   attribute :verification_result, :json, default: {}
   attr_accessor :preloaded_final_runner_record, :preloaded_final_runner_record_loaded
+  has_many :layered_verification_findings, foreign_key: :originating_audit_run_id,
+    inverse_of: :originating_audit_run, dependent: :restrict_with_exception
 
   MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH = 500
   MAX_PROVIDER_ATTEMPT_ERROR_MESSAGE_LENGTH = MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH
@@ -1836,6 +1838,10 @@ class AgentRun < ApplicationRecord
   # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013
   def layered_verification_goal?
     goal.in?(LAYERED_VERIFICATION_GOALS)
+  end
+
+  def layered_verification_audit?
+    goal == "layered_verification_audit"
   end
 
   def assign_default_tdd_phase
@@ -4096,6 +4102,9 @@ class AgentRun < ApplicationRecord
     # create_feature derives its prompt from Prompts::BuildForCreateFeature
     # and external_metadata["feature_brief"], so it needs no issue or source PR.
     return if create_feature_goal?
+    # @spec LAYERED-VERIFY-013 — an audit receives its bounded scope and
+    # sources from external_metadata, so it intentionally has no issue.
+    return if layered_verification_audit?
     return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
 
     errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")
