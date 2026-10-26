@@ -52,7 +52,7 @@ module FacetConfidence
       assessment = build_assessment(corpus_case)
       assessor = FeatureIntents::AssessFacet.new(assessment: assessment)
       result = assessor.call
-      event = event_for(corpus_case, result, cost_cents: cost_cents_for!(assessor, result),
+      event = event_for(corpus_case, result, response_status: assessor.response_status, cost_cents: cost_cents_for!(assessor, result),
         retry_of_event_id: failed_run_event_ids[corpus_case.fetch("id")])
       AssessmentCorpusLedger.append!(ledger_path:, corpus_path:, event:)
       event
@@ -115,7 +115,7 @@ module FacetConfidence
       end
     end
 
-    def event_for(corpus_case, result, cost_cents:, retry_of_event_id:)
+    def event_for(corpus_case, result, response_status:, cost_cents:, retry_of_event_id:)
       {
         "event_id" => "assessment-run-#{corpus_case.fetch('id')}-#{SecureRandom.uuid}",
         "recorded_at" => Time.current.iso8601,
@@ -124,7 +124,7 @@ module FacetConfidence
         "rubric_version" => FeatureIntents::AssessFacet::RUBRIC_VERSION,
         "model_version" => FeatureIntents::AssessFacet::MODEL_VERSION,
         "input_revision" => corpus_case.fetch("evidence_revision"),
-        "status" => ledger_status(result),
+        "status" => ledger_status(result, response_status),
         "retry_of_event_id" => retry_of_event_id,
         "intent_score" => result.intent_score,
         "technical_score" => result.technical_score,
@@ -141,11 +141,10 @@ module FacetConfidence
       raise CostUnavailable, "assessment cost provenance is unavailable"
     end
 
-    def ledger_status(result)
+    def ledger_status(result, response_status)
       return "failed" if result.status == "failed"
-      return "completed" if result.status == "completed"
 
-      "unknown"
+      response_status || result.status
     end
   end
 end

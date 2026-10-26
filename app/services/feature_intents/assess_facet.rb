@@ -20,7 +20,7 @@ module FeatureIntents
       @agent_harness = agent_harness
     end
 
-    attr_reader :cost_cents
+    attr_reader :cost_cents, :response_status
 
     def call
       apply(response_payload)
@@ -48,6 +48,7 @@ module FeatureIntents
         return supersede! unless current_evidence?
         return fail!("invalid_structured_output") unless valid_payload?(payload)
 
+        @response_status = payload.fetch("status")
         attributes = payload.slice("intent_score", "technical_score", "explanation", "inferred_fit", "evidence_references").merge(
           rubric_version: RUBRIC_VERSION, model_version: MODEL_VERSION
         )

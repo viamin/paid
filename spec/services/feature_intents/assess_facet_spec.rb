@@ -80,6 +80,19 @@ RSpec.describe FeatureIntents::AssessFacet do
     expect(result.explanation).to include("Clarification needed")
   end
 
+  it "retains the validated rubric verdict when persistence maps clarification to unknown" do
+    allow(AgentHarness).to receive(:send_message).and_return(double(success?: true, output: JSON.generate(
+      "status" => "clarification_needed", "intent_score" => nil, "technical_score" => 80,
+      "inferred_fit" => nil, "explanation" => "Collaborators disagree.",
+      "evidence_references" => [ evidence.source_reference ]
+    )))
+
+    assessor = described_class.new(assessment:)
+    assessor.call
+
+    expect(assessor.response_status).to eq("clarification_needed")
+  end
+
   [
     { name: "unknown intent with a successful prototype", intent: nil, technical: 90 },
     { name: "explicit intent with weak technical evidence", intent: 95, technical: 25 }
