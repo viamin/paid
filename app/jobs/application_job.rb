@@ -171,6 +171,7 @@ class ApplicationJob < ActiveJob::Base
       EvaluateProjectReadinessJob,
       ProjectConventions::OpenHookGuardrailPullRequestJob,
       ProjectHealthCheckJob,
+      IntentConformance::ShadowEvaluation::ExecuteJob,
       PoolReplenishmentJob,
       RunCollectorsJob,
       StyleGuideExtractionJob

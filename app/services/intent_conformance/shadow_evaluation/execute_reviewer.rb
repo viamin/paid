@@ -85,16 +85,20 @@ module IntentConformance
       end
 
       def execute_cases
-        @evaluation.update!(status: "executing", execute_started_at: Time.current)
+        @evaluation.update!(status: "running", execute_started_at: @evaluation.execute_started_at || Time.current,
+          execution_heartbeat_at: Time.current)
         executed = 0
         failed = 0
 
         @evaluation.corpus.cases.each do |corpus_case|
+          return cancel(executed, failed) if cancellation_requested?
+
           next if evaluated_run_for(corpus_case.fetch("id"))
 
           verdict, failure_reason, model, cost = review_case(corpus_case)
           upsert_run(corpus_case, verdict, failure_reason, model, cost)
           verdict == NOT_EVALUATED ? failed += 1 : executed += 1
+          heartbeat!
         end
 
         complete_or_fail(executed, failed)
@@ -235,10 +239,24 @@ module IntentConformance
         if failed.zero?
           @evaluation.update!(status: "completed", completed_at: Time.current, last_failure_reason: nil)
         else
-          @evaluation.update!(status: "failed", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
+          status = @evaluation.runs.where.not(verdict: NOT_EVALUATED).exists? ? "partial" : "failed"
+          @evaluation.update!(status:, last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
         end
         log_executed(executed, failed)
         Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
+      end
+
+      def cancellation_requested?
+        @evaluation.reload.execution_cancel_requested?
+      end
+
+      def heartbeat!
+        @evaluation.update_column(:execution_heartbeat_at, Time.current)
+      end
+
+      def cancel(executed, failed)
+        @evaluation.update!(status: "cancelled", last_failure_reason: "execution cancelled; collected reviewer evidence was preserved")
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed:, failed:)
       end
 
       def prompt_digest

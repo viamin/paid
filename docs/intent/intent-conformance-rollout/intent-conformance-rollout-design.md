@@ -126,12 +126,17 @@ Paid's project authorization and presentation patterns:
 3. **Freeze.** The explicit finish action refuses to freeze while any case
    is unlabeled or skipped, then stamps the reference set frozen. Answers
    (strata and reviewer outputs) become visible only from freeze onward.
-4. **Execute.** After freeze, the real conformance reviewer runs for every
-   case through `agent_harness` (the documented operator command or the
-   equivalent UI action), recording actual verdicts, reviewer model, prompt
-   digest, cost, and failures. Missing or failed reviewer output is recorded
-   as not evaluated; prerequisite validation alone is never presented as
-   execution.
+4. **Execute.** After freeze, the request or equivalent CLI command only
+   authorizes and queues an idempotent background execution. The worker runs
+   the real conformance reviewer for every incomplete case through
+   `agent_harness`, recording actual verdicts, reviewer model, prompt digest,
+   per-case cost, and failures. The evaluation exposes queued, running,
+   partial, failed, cancelled, and completed states with durable case progress.
+   Operators may cancel cooperatively between cases; evidence already collected
+   remains attached and no missing verdict is fabricated. Retry/resume only
+   submits cases lacking evaluated output. A heartbeat recovery job requeues
+   abandoned work after worker loss or timeout, preserving the same pinned
+   corpus/model/prompt/design identity and execution deduplication.
 5. **Review and revise.** Disagreements surface for maintainer review after
    the run. A post-result revision is appended with its own reason and
    timestamp; it never overwrites the original blinded label, and blinded
