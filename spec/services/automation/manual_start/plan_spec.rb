@@ -8,6 +8,7 @@ RSpec.describe Automation::ManualStart::Plan do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account:) }
   let(:member) { create(:user, :member, account:) }
+  let(:outside_user) { create(:user) }
   let(:project) { create(:project, account:) }
   let(:issue) { create(:issue, project:) }
 
@@ -97,6 +98,11 @@ RSpec.describe Automation::ManualStart::Plan do
     it "requires permission to delegate merge" do
       expect { plan(user: member, continuation: true, endpoint: "merge").build_grant(issue:) }
         .to raise_error(described_class::PermissionDenied, /permission to delegate merging/)
+    end
+
+    it "rejects a grant request from an actor outside the project's account" do
+      expect { plan(user: outside_user, continuation: true, endpoint: "coding").build_grant(issue:) }
+        .to raise_error(described_class::PermissionDenied, /permission to delegate this action/)
     end
 
     it "permits a non-merge continuation for a user who can start work" do
