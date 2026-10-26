@@ -280,6 +280,25 @@ closed owner, dismisses a scanner finding, or treats a merge as verification.
 
 ### Human closeout guidance (#4189)
 
+### Capability-aware technical prerequisite validation (#4643)
+
+An execution prerequisite is evidence work, not a request to give an Inbox
+operator host access. A bounded validation uses an already-authorized,
+checkout-pinned `AgentRun` and selects its backend from Paid's ready
+Docker-host placement interface. The local control-plane socket is therefore
+not capability evidence. The validation records the selected backend, checkout,
+tool identity and endpoint, command streams, exit status, terminal outcome, and
+cleanup receipt in the run's existing verification evidence.
+
+Native analyzers execute with `execute_in_execution_environment`. A marketplace
+tool interaction first uses the existing hardened `McpProvisioner` lifecycle;
+the default-off `marketplace_tool_sidecars` flag remains an authorization gate.
+If it is off, the Inbox recovery action reports the precise pilot authorization
+needed rather than enabling it or retrying unchanged. No path mounts the host
+Docker socket or executes repository code in the control plane. Unavailable,
+failed, cancelled, and cleanup-partial outcomes remain distinct durable states
+for subsequent assessment.
+
 The lane's recovery actions assume the operator already knows which action
 fits. The pane therefore carries task-oriented decision guidance (five paths:
 review the recorded criteria/evidence; continue agent-actionable work;

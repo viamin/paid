@@ -1,5 +1,20 @@
 # EARS: General Maintenance Runs
 
+- [x] **TECHNICAL-PREREQUISITE-001**: When an authorized operator starts or
+      resumes a technical prerequisite validation from its Inbox work item,
+      Paid shall select a ready isolated execution backend through the existing
+      Docker-host/runner placement interfaces rather than infer availability
+      from the control-plane host. It shall run the trusted bounded native
+      analyzer and selected allowlisted tool-sidecar probe only through the
+      pinned AgentRun execution environment, record checkout, backend, tool
+      identity, endpoint, stdout, stderr, exit status, outcome, and cleanup on
+      that run, and clean up on success, failure, or cancellation. A missing
+      backend, checkout, attachment, rollout flag, or pilot authorization shall
+      remain unavailable and name the exact setup action; it shall not enable a
+      flag, mount a host socket, or retry an unchanged capability failure.
+      *Code:* `app/services/maintenance_runs/technical_prerequisite_validation.rb`.
+      *Test:* `spec/services/maintenance_runs/technical_prerequisite_validation_spec.rb`.
+
 > **Draft — pending design acceptance.** These specs trace to
 > [`maintenance-runs-design.md`](maintenance-runs-design.md), itself a
 > reviewable draft against the RDR-075 design from merged
