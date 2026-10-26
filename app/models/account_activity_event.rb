@@ -24,6 +24,7 @@ class AccountActivityEvent < ApplicationRecord
     "issue.mutation_trust_verified" => "project",
     "issue.labels_changed" => "project",
     "issue.continuation_requested" => "project",
+    "issue.prerequisite_execution_validation_requested" => "project",
     "issue.closeout_resolved" => "project",
     "issue.prerequisite_linked" => "project",
     "runner.created" => "runner",

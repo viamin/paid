@@ -150,6 +150,27 @@
     </p>
   </div>
 
+  <% if human_prerequisite && policy(entry.project).run_agent? %>
+    <div class="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4" data-prerequisite-execution-validation>
+      <h3 class="text-sm font-semibold text-amber-900">Technical prerequisite validation</h3>
+      <p class="text-sm text-amber-900">
+        Queue one report-only validation in a compatible isolated execution environment. It captures native-tool
+        output and, when an authorized tool sidecar is attached, its bounded endpoint response and cleanup evidence.
+      </p>
+      <p class="text-xs text-amber-800">
+        <% if FeatureFlags.enabled?(:marketplace_tool_sidecars, project: entry.project) %>
+          Tool-sidecar rollout is authorized for this project; normal image allowlists and hardening still apply.
+        <% else %>
+          Tool-sidecar rollout is not authorized. Enable <code>marketplace_tool_sidecars</code> for the scoped pilot before requesting sidecar evidence; native validation remains available.
+        <% end %>
+      </p>
+      <%= button_to "Prepare and run isolated validation",
+            request_prerequisite_execution_validation_project_agent_runs_path(entry.project, issue_id: issue.id, return_to: inbox_path(inbox_context)),
+            class: "inline-flex items-center rounded-md bg-amber-700 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-600",
+            data: { turbo_frame: "_top" } %>
+    </div>
+  <% end %>
+
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Recorded evidence</h3>
     <p class="text-sm text-gray-600"><%= status.outcome %></p>

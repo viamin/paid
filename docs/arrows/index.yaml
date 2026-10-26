@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-24
+last_updated: 2026-10-26
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -718,6 +718,15 @@ arrows:
     taxonomy: operations
     status: OK
     audited: 2026-10-05
+  prerequisite-execution-validation:
+    title: Prerequisite Execution Validation
+    path: docs/intent/prerequisite-execution-validation/prerequisite-execution-validation-design.md
+    specs: docs/intent/prerequisite-execution-validation/prerequisite-execution-validation-specs.md
+    parent: operator-inbox
+    taxonomy: operations
+    status: OK
+    audited: 2026-10-26
+    next: "Retain evidence through the existing AgentRun lifecycle; pilot sidecars remain separately authorized."
   onboarding-chat-setup:
     title: Onboarding Chat-Led Setup
     path: docs/intent/onboarding-chat-setup/onboarding-chat-setup-design.md

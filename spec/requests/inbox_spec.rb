@@ -423,6 +423,16 @@ RSpec.describe "Inbox" do
       expect(response.body).to include(partial_closeout_guide_path)
     end
 
+    # @spec PREREQUISITE-EXECUTION-001 @spec PREREQUISITE-EXECUTION-003
+    it "offers isolated prerequisite validation and names the missing sidecar rollout authorization" do
+      render_guided_pane
+
+      expect(response.body).to include("Technical prerequisite validation")
+      expect(response.body).to include("Prepare and run isolated validation")
+      expect(response.body).to include("marketplace_tool_sidecars")
+      expect(response.body).to include(request_prerequisite_execution_validation_project_agent_runs_path(project))
+    end
+
     it "collects an editable rationale and separates the three completions" do
       render_guided_pane
 
