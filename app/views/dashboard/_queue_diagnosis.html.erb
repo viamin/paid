@@ -1,0 +1,33 @@
+<%# @spec QUEUE-DIAGNOSIS-001 QUEUE-DIAGNOSIS-002 QUEUE-DIAGNOSIS-003 %>
+<% unless diagnosis.state == :healthy_no_waiting_work %>
+<div class="mt-4 rounded-md bg-slate-50 p-3 ring-1 ring-inset ring-slate-200" data-queue-diagnosis-state="<%= diagnosis.state %>">
+  <% case diagnosis.state %>
+  <% when :stale_dashboard %>
+    <p class="text-sm text-slate-800">The scheduler has <%= pluralize(diagnosis.queued_count, "queued run") %>, but this dashboard view is empty. Refresh to load the live queue.</p>
+  <% when :runnable_unseeded %>
+    <p class="text-sm text-slate-800"><%= pluralize(diagnosis.eligible_count, "eligible issue") %> has not yet been seeded. The scheduled eligibility sweep will recheck it without bypassing admission policy.</p>
+  <% when :healthy_active_work %>
+    <p class="text-sm text-slate-800"><%= pluralize(diagnosis.active_count, "active run") %> is already progressing; there is no waiting backlog.</p>
+  <% when :resource_policy_paused %>
+    <p class="text-sm text-slate-800">Auto-pick is paused by project, account, or quality policy. Resume it through the existing project controls when appropriate.</p>
+  <% when :genuine_holds %>
+    <p class="text-sm text-slate-800">Open work is held by recorded dependencies or policy controls. Review the affected issues below; human decisions remain in Inbox.</p>
+  <% when :unknown %>
+    <p class="text-sm text-amber-800">Queue diagnosis is currently unavailable. This is unknown coverage, not evidence that no work exists.</p>
+  <% end %>
+
+  <% if diagnosis.refresh_needed? %>
+    <%= link_to "Refresh queue", dashboard_queue_preview_path,
+      class: "mt-2 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-500",
+      data: { turbo_frame: "dashboard-queue-preview" } %>
+  <% end %>
+
+  <% if diagnosis.blockers.any? %>
+    <ul class="mt-2 list-disc pl-5 text-sm text-slate-700">
+      <% diagnosis.blockers.each do |blocker| %>
+        <li><%= link_to "##{blocker.issue.github_number}", project_issue_path(blocker.issue.project, blocker.issue), class: "font-medium text-indigo-600 hover:text-indigo-500", data: { turbo_frame: "_top" } %>: <%= blocker.reasons.map { |reason| reason.to_s.humanize.downcase }.join(", ") %></li>
+      <% end %>
+    </ul>
+  <% end %>
+</div>
+<% end %>

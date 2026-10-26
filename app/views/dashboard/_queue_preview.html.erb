@@ -1,5 +1,6 @@
 <% queue_fairness_mode = local_assigns[:queue_fairness_mode].presence || TenantSetting::DEFAULT_QUEUE_FAIRNESS_MODE %>
 <% fair_share_mode = queue_fairness_mode == "fair_share" %>
+<% queue_diagnosis = local_assigns[:queue_diagnosis] %>
 <div id="queue-preview" class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
   <div class="flex items-center justify-between gap-4">
     <div>
@@ -36,6 +37,7 @@
       </div>
     </div>
   <% else %>
+    <%= render "dashboard/queue_diagnosis", diagnosis: queue_diagnosis if queue_diagnosis %>
     <% paused_autopick = Array(local_assigns[:paused_projects]).count(&:auto_pick_enabled?) %>
     <% if paused_autopick.positive? %>
       <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">

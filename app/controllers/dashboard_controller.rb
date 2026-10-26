@@ -48,6 +48,7 @@ class DashboardController < ApplicationController
     render partial: "dashboard/queue_preview_frame",
       locals: {
         queue_preview: @queue_preview,
+        queue_diagnosis: @queue_diagnosis,
         paused_projects: @quality_paused_projects,
         queue_fairness_mode: @queue_fairness_mode
       }
@@ -164,6 +165,7 @@ class DashboardController < ApplicationController
   def load_queue_preview
     @queue_fairness_mode = current_account.tenant_setting!.resolved_queue_fairness_mode
     @queue_preview = Dashboard::QueuePreview.call(user: current_user, queue_fairness_mode: @queue_fairness_mode)
+    @queue_diagnosis = Dashboard::QueueDiagnosis.call(user: current_user, rendered_queue_count: @queue_preview.size)
     @quality_paused_projects = current_account.projects
       .where.not(quality_paused_at: nil)
       .order(quality_paused_at: :desc)
