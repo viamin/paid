@@ -351,6 +351,28 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Acceptance audit queued.")
     end
 
+    # The project action uses the same admission service as chat/MCP. Its
+    # submitted preview is deliberately re-authorized and re-resolved here;
+    # a page render never grants authority to dispatch an audit later.
+    # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-021
+    def request_layered_verification_audit
+      LayeredVerification::AuditAccess.authorize!(user: current_user, project: @project)
+      run = LayeredVerification::Audits::Request.call(
+        project: @project, user: current_user,
+        obligation_ids: params.fetch(:obligation_ids, []),
+        source_references: params.fetch(:source_references, []),
+        target_revision: params[:target_revision], budget: params.fetch(:budget, {}),
+        checks: params.fetch(:checks, []), omissions: params.fetch(:omissions, []), residual_gaps: params.fetch(:residual_gaps, [])
+      )
+      redirect_to project_agent_run_path(@project, run), notice: "Verification audit queued."
+    rescue LayeredVerification::AuditAccess::FeatureDisabledError,
+           LayeredVerification::AuditAccess::UnauthorizedError,
+           LayeredVerification::Audits::Request::DuplicateAuditError,
+           LayeredVerification::Audits::Request::NoRunnableRunnerError,
+           ArgumentError => error
+      redirect_to safe_return_target || project_path(@project), alert: error.message
+    end
+
     # Records the operator's attestation that the recorded closeout evidence
     # completes the issue (evidence-gated; see Issues::ResolveCloseout).
     # @spec PARTIAL-CLOSEOUT-007
