@@ -81,7 +81,9 @@
   reviewer model, prompt digest, cost, and failures; missing or failed
   reviewer output SHALL be recorded as not evaluated rather than counted as
   agreement, and prerequisite validation alone SHALL NOT be presented as
-  execution.
+  execution. Execution SHALL be authorized and queued durably, preserve the
+  frozen corpus/model/prompt/design identities, expose per-case progress and
+  recorded cost, and resume only cases without evaluated output.
   *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
   *Code:* `app/services/intent_conformance/reviewer_llm.rb`,
   `app/services/intent_conformance/shadow_evaluation/execute_reviewer.rb`,
@@ -113,7 +115,10 @@
   duplicating it, SHALL return to the same Inbox context without accepting
   an arbitrary external return URL, and finishing labels or a passing
   evaluation SHALL attach evidence without automatically attesting issue
-  completion, closing GitHub work, or enabling enforcement.
+  completion, closing GitHub work, or enabling enforcement. The lifecycle
+  SHALL expose queued, running, partial, failed, cancelled, and completed
+  states; authorized cancellation SHALL retain collected evidence and a
+  bounded recovery SHALL not leave a lost worker presenting as executing.
   *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
   *Code:* `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`,
   `app/controllers/projects/shadow_evaluations_controller.rb`.

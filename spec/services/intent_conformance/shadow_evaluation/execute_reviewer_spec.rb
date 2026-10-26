@@ -151,6 +151,23 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     end
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-009
+  it "stops between cases when an authorized cancellation has been persisted" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message) do
+      evaluation.update!(status: "cancelled", execution_cancelled_at: Time.current)
+      llm_response("within_scope")
+    end
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).to be_success
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs.count).to eq(1)
+    expect(evaluation.runs.first).to be_evaluated
+  end
+
   it "fails closed when the manifest changed since labels were frozen" do
     prepare_frozen!
     File.write(manifest_path, { "cases" => cases + [ corpus_case("A-03") ] }.to_yaml)

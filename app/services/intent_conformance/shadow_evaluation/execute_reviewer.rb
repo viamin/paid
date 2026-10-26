@@ -85,15 +85,18 @@ module IntentConformance
       end
 
       def execute_cases
-        @evaluation.update!(status: "executing", execute_started_at: Time.current)
+        @evaluation.update!(status: "running", execute_started_at: Time.current, execution_heartbeat_at: Time.current)
         executed = 0
         failed = 0
 
         @evaluation.corpus.cases.each do |corpus_case|
+          return cancelled(executed, failed) if cancelled?
+
           next if evaluated_run_for(corpus_case.fetch("id"))
 
           verdict, failure_reason, model, cost = review_case(corpus_case)
           upsert_run(corpus_case, verdict, failure_reason, model, cost)
+          @evaluation.update_column(:execution_heartbeat_at, Time.current)
           verdict == NOT_EVALUATED ? failed += 1 : executed += 1
         end
 
@@ -234,11 +237,22 @@ module IntentConformance
       def complete_or_fail(executed, failed)
         if failed.zero?
           @evaluation.update!(status: "completed", completed_at: Time.current, last_failure_reason: nil)
+        elsif executed.positive?
+          @evaluation.update!(status: "partial", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
         else
           @evaluation.update!(status: "failed", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
         end
         log_executed(executed, failed)
         Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
+      end
+
+      def cancelled?
+        IntentConformanceShadowEvaluation.where(id: @evaluation.id).pick(:status) == "cancelled"
+      end
+
+      def cancelled(executed, failed)
+        log_executed(executed, failed)
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed:, failed:)
       end
 
       def prompt_digest

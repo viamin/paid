@@ -149,28 +149,37 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("intentionally_drifted")
   end
 
-  it "executes the real reviewer through agent_harness, records failures as not evaluated, and shows the report" do
+  # @spec INTENT-CONFORMANCE-ROLLOUT-007
+  # @spec INTENT-CONFORMANCE-ROLLOUT-009
+  it "queues reviewer execution promptly from the Inbox journey without spending in the HTTP request" do
     evaluation = start_evaluation_from_committed_corpus!
     label_all!(evaluation)
     freeze!(evaluation)
 
-    # Corpus cases reference a repository outside this project, so every
-    # reviewer attempt fails closed and is recorded as not evaluated —
-    # prerequisite validation is never presented as execution.
+    expect(ShadowEvaluationExecutionJob).to receive(:perform_later).with(project.id, evaluation.id)
+
     post execute_project_shadow_evaluation_path(project, evaluation)
     follow_redirect!
 
-    expect(response.body).to include("not evaluated")
-    expect(evaluation.reload).to be_failed
-    evaluation.runs.each do |run|
-      expect(run).to be_not_evaluated
-      expect(run.failure_reason).to eq("case_repository_outside_project")
-    end
+    expect(response.body).to include("Reviewer execution queued")
+    expect(evaluation.reload).to be_queued
+    expect(evaluation.runs).to be_empty
+  end
 
-    get project_shadow_evaluation_path(project, evaluation)
+  it "cancels queued execution without discarding collected evidence" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    evaluation.update!(status: "queued", execution_requested_at: Time.current)
+    evaluation.runs.create!(case_id: "A-01", verdict: "within_scope", reviewer_run_id: "r1", reviewer_model: "m",
+      prompt_digest: "d", cost_cents: 42, recorded_at: Time.current)
 
-    expect(response.body).to include("Reproducible report")
-    expect(response.body).to include("solo")
+    post cancel_project_shadow_evaluation_path(project, evaluation)
+    follow_redirect!
+
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs.find_by(case_id: "A-01")).to be_evaluated
+    expect(response.body).to include("Cancellation requested")
   end
 
   it "appends post-result revisions without overwriting the original blinded label" do

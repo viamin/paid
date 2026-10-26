@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_26_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2411,6 +2411,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
     t.datetime "created_at", null: false
     t.bigint "created_by_id", null: false, comment: "Authenticated operator who started the evaluation."
     t.datetime "execute_started_at", comment: "When reviewer execution last started."
+    t.datetime "execution_cancelled_at"
+    t.datetime "execution_heartbeat_at"
+    t.datetime "execution_requested_at"
     t.datetime "labels_frozen_at", comment: "Set by the explicit finish action; reviewer outputs stay hidden until then."
     t.text "last_failure_reason", comment: "Why execution ended (or partially ended) without evaluated verdicts for every case."
     t.string "manifest_commit", default: "", null: false, comment: "Git commit SHA of the frozen corpus manifest."
