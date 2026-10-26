@@ -518,3 +518,19 @@
   `spec/services/inbox/chat_context_spec.rb`,
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-030** — When canonical scoped admission excludes a
+  partial closeout because it has an open native non-pull-request child or an
+  active `partial_closeout.prerequisite` notification, the system SHALL expose
+  each exclusion as an additive structured blocker rather than the unavailable
+  fallback. The native-child blocker SHALL identify and link every qualifying
+  child even when no duplicate `IssueDependency` exists. The notification
+  blocker SHALL identify the active notification and retain its requested
+  evidence, policy/action provenance, and recovery route. Inbox detail, chat,
+  API/tool continuation refusals, and the lane/count predicate SHALL share
+  those canonical explanations; neither child closure nor notification
+  dismissal may be presented as a shortcut around valid unresolved work.
+  *Code:* `app/services/issues/closeout_status.rb`,
+  `app/views/dashboard/_inbox_closeout_blockers.html.erb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/inbox/chat_context_spec.rb`.
