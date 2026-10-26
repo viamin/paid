@@ -21,6 +21,7 @@ issue and normal dependency resolution reevaluates readiness. A scanner
 recurrence remains an evidence/recovery investigation. A reopen review remains
 an intent-validation decision before a supported continuation can be offered.
 Only an enhancement-origin hold can use the existing enhancement retry.
-Before that retry the shared recovery classifier inspects unfinished work; an
-active run is reconciled visibly and the hold is retained rather than creating
-a duplicate run or clearing it.
+Before any recovery action, the shared recovery classifier inspects unfinished
+work. An active run takes precedence in the presented action, even when a
+dependency or other hold also remains, so it is reconciled visibly and the hold
+is retained rather than creating a duplicate run or clearing it.

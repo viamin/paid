@@ -26,6 +26,21 @@ RSpec.describe Inbox::ManualReviewRecovery do
     expect(recovery.resumable?).to be(false)
   end
 
+  # @spec MANUAL-REVIEW-RECOVERY-005
+  it "requires reconciliation of queued work before presenting another hold's action" do
+    blocker = create(:issue, project:, github_number: 4321, github_state: "open")
+    issue = create(:issue, project:, paid_state: "manual_review", manual_review_reason: "Waiting for #4321")
+    create(:issue_dependency, issue:, depends_on_issue: blocker)
+    run = create(:agent_run, project:, issue:, goal: "enhance_issue", status: "queued")
+
+    recovery = described_class.call(issue)
+
+    expect(recovery.cause).to eq(:dependency)
+    expect(recovery.active_run).to eq(run)
+    expect(recovery.action).to eq(:reconcile_active_run)
+    expect(recovery.resumable?).to be(false)
+  end
+
   # @spec MANUAL-REVIEW-RECOVERY-003
   it "routes scanner recurrence from durable scanner provenance" do
     issue = create(:issue, project:, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,

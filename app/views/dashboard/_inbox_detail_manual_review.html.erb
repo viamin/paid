@@ -4,14 +4,14 @@
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if recovery.cause == :reopen_review %>
+      <% if recovery.active_run %>
+        Run #<%= recovery.active_run.id %> is already <%= recovery.active_run.status %>. Reconcile that work before starting another run.
+      <% elsif recovery.cause == :reopen_review %>
         This issue was reopened after closure. Validate the original closure and remaining scope before choosing a supported continuation.
       <% elsif recovery.cause == :dependency %>
         This issue is waiting for its recorded dependency. Paid reevaluates it when the dependency resolves; acknowledging this item does not waive the dependency.
       <% elsif recovery.cause == :scanner_recurrence %>
         A scanner recurrence requires evidence recovery. Review the scanner evidence below before resuming implementation.
-      <% elsif recovery.active_run %>
-        Run #<%= recovery.active_run.id %> is already <%= recovery.active_run.status %>. Reconcile that work before starting another run.
       <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% elsif recovery.cause == :enhancement %>

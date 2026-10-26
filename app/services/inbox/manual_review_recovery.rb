@@ -11,10 +11,10 @@ module Inbox
       end
 
       def action
+        return :reconcile_active_run if active_run
         return :wait_for_dependency if cause == :dependency
         return :inspect_scanner_evidence if cause == :scanner_recurrence
         return :validate_reopen_intent if cause == :reopen_review
-        return :reconcile_active_run if active_run
         return :retry_enhancement if cause == :enhancement
 
         :investigate_unknown

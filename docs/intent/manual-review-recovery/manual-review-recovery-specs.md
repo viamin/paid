@@ -23,3 +23,10 @@
   and SHALL not start work implicitly.
   *Tests:* `spec/services/inbox/manual_review_recovery_spec.rb`.
   *Code:* `Inbox::ManualReviewRecovery`.
+
+- [x] **MANUAL-REVIEW-RECOVERY-005** — When a manual-review issue has both
+  unfinished work and another hold, the system SHALL present reconciliation of
+  the unfinished work before any new recovery action and SHALL retain the
+  other hold.
+  *Tests:* `spec/services/inbox/manual_review_recovery_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`.

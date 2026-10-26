@@ -1540,6 +1540,22 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("Retry enhancement analysis")
   end
 
+  # @spec MANUAL-REVIEW-RECOVERY-005
+  it "surfaces existing queued work before another manual-review hold" do
+    blocker = create(:issue, project: project, github_number: 4321, github_state: "open")
+    parked = create_manual_review_issue(title: "Blocked with work", github_number: 4322)
+    create(:issue_dependency, issue: parked, depends_on_issue: blocker)
+    run = create(:agent_run, project: project, issue: parked, goal: "enhance_issue", status: "queued")
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response.body).to include("Run ##{run.id} is already queued", "Waiting for dependency")
+    expect(response.body).not_to include("Retry enhancement analysis")
+  end
+
   # @spec OPERATOR-INBOX-006
   it "renders an unknown waiting age for a legacy entry without a timestamp" do
     issue = create(:issue, :needs_input, project: project, title: "Legacy question", body: questions_body)
