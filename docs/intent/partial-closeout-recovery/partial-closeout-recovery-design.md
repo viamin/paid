@@ -327,6 +327,34 @@ refresh local records immediately, showing the successful linkage and when a
 full sync is still required — the same services the agent `create_issue` /
 `edit_issue` tools use.
 
+### Capability-aware technical prerequisite validation
+
+An Inbox prerequisite that needs execution-environment evidence may offer a
+bounded validation against a fresh, pinned `AgentRun`. Before it starts, the
+action asks `Containers::BackendScheduler` for compatible execution hosts and
+uses the existing runner/provisioner capability contract. It never treats the
+control-plane browser or investigation workspace's Docker socket as evidence
+about those hosts.
+
+The selected native analyzer and optional, already attached marketplace tool
+are recipe inputs, not an operator-provided shell command. The validation
+provisions the normal isolated environment, invokes the analyzer through
+`execute_in_execution_environment`, provisions the attached sidecar through
+`Containers::McpProvisioner`, records bounded stdout/stderr/exit status plus
+pinned checkout, image, tool identity, endpoint response, and cleanup
+outcome, and then tears down both resources. Commands do not receive host
+shell access or a Docker socket; existing image allowlists, network policy,
+hardening profiles, and resource budgets remain authoritative.
+
+Missing prerequisites are terminal evidence, not a retry cue. No compatible
+backend yields a backend setup action. A disabled `marketplace_tool_sidecars`
+flag yields the exact scoped pilot-authorization action; it is never enabled
+by the validation. Denied images and missing credentials similarly retain the
+provisioner's explicit rejection. Results are `unavailable`, `failed`, or
+`completed` and are stored on the run's verification evidence for the
+originating prerequisite assessment; a changed checkout, image, tool snapshot,
+or scope requires a fresh validation.
+
 Pending chat write-tool confirmations visibly distinguish proposed/awaiting
 confirmation, queued, refused, and completed actions, link a completed action
 to the run it created, and a conversational message sent while a confirmation
