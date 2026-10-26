@@ -30,3 +30,11 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resolves a
+  reopen-review Inbox hold, the system SHALL require a non-blank
+  intent-validation decision bound to the current synchronized GitHub revision,
+  record the actor, reason, revision, continuation and run in the audit trail,
+  and queue implementation work only when no incompatible active work exists.
+  *Tests:* `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Issues::ManualReviewRecovery`, `Projects::AgentRunsController`.

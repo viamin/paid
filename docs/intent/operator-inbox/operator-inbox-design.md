@@ -307,21 +307,26 @@ round-limit copy when `EnhanceIssueActivity` sets the state directly without
 going through that service) as its summary, and `manual_review_started_at`
 (falling back to `updated_at` for legacy rows predating the column —
 `ISSUE-ENHANCEMENT-012`) as its waiting-since timestamp. The detail pane
-offers a "Start enhancement run" action that queues a manual `enhance_issue`
-run for the issue: per `ISSUE-ENHANCEMENT-011`, automatic picking excludes
-`manual_review` and only an explicit operator-triggered run resumes work —
-the queueing is the resume, so (unlike `unblock_escalation`, which clears
-state directly) this action still creates a run rather than just flipping
-state. The same request also transitions the issue out of `manual_review`
-(`paid_state: "in_progress"`, the state `CreateAgentRunActivity` sets when
-the run starts), inside the same transaction that creates the run, so the
-entry leaves the queue and the nav badge at queue time (#3853) instead of
-surviving the whole queue wait — the operator-inbox invariant "acting on an
-item removes it now" that every other lane already satisfies. The existing
+classifies the hold from durable provenance before offering an action.
+Enhancement failures retain the manual `enhance_issue` retry. A dedicated
+reopen-review hold shows the original reopen reason and current synchronized
+revision, requires an authorized operator to record a non-blank
+intent-validation decision bound to that revision, and then queues
+implementation (`create_pr`) rather than analysis. Scanner recurrence queues
+remediation implementation. An unresolved local, deployment, or external
+dependency links to its owner and blocks continuation until normal dependency
+resolution re-evaluates the entry. Unknown provenance stays visible with its
+recorded reason but deliberately receives no guessed action.
+
+Every continuation first checks queued or running work for the issue. The
+Inbox shows that work and refuses to clear the hold or create another run; a
+race at creation is also reported as a reconciliation outcome. A successful
+continuation transitions the issue out of `manual_review` (`paid_state:
+"in_progress"`) in the same transaction that creates the run, so the entry
+leaves the queue and nav badge at queue time (#3853). The existing
 `sync_manual_review_started_at` callback clears the lane columns on exit and
-bumps the badge cache version; no inbox-side cache work is needed. A stale
-or double click degrades to "This issue is no longer waiting for manual
-review." instead of an active-run error.
+bumps the badge cache version. A stale click says the issue is no longer
+waiting for manual review.
 
 When the parked state still has clarifying questions stored — preserved by
 `EnhanceIssueActivity` when the terminal round's comment has a parseable

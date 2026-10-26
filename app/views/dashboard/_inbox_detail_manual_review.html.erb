@@ -1,12 +1,19 @@
 <%# @spec OPERATOR-INBOX-002D %>
+<% recovery = Issues::ManualReviewRecovery.call(issue: entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.cause == :reopen %>
+        This issue was reopened after closure. Validate the original closure and remaining scope against the current revision before resuming implementation.
+      <% elsif recovery.blocked_by_dependency? %>
+        Work is waiting on a recorded dependency. Resolving another hold does not waive that dependency.
+      <% elsif recovery.cause == :scanner %>
+        Scanner evidence found that the prior remediation did not resolve the finding. Continue remediation work; this does not retry enhancement analysis.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+        Paid retained an unclassified manual-review hold. The recorded cause remains visible; no automatic continuation is offered.
       <% end %>
     </p>
   </div>
@@ -43,12 +50,28 @@
 
   <div class="flex flex-wrap items-center gap-3">
     <% if policy(entry.project).run_agent? %>
-      <%= button_to "Start enhancement run",
-            resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
-            method: :post,
-            params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
-            class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500",
-            form: { data: { turbo_confirm: "Queue a manual enhancement run for #{entry.project.full_name}##{entry.issue.github_number}?", turbo_frame: "_top" } } %>
+      <% if recovery.cause == :reopen %>
+        <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project), method: :post, class: "flex flex-wrap items-end gap-3", data: { turbo_frame: "_top" } do |form| %>
+          <%= form.hidden_field :issue_id, value: entry.issue.id %>
+          <%= form.hidden_field :reopen_revision, value: entry.issue.github_updated_at&.iso8601 %>
+          <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+          <div><%= form.label :reopen_review_reason, "Intent-validation decision", class: "block text-sm font-medium text-gray-700" %><%= form.text_field :reopen_review_reason, required: true, class: "mt-1 rounded-md border-gray-300 text-sm" %></div>
+          <%= form.submit "Record decision and resume implementation", class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+        <% end %>
+      <% elsif recovery.continuation? %>
+        <%= button_to recovery.cause == :scanner ? "Resume scanner remediation" : "Start enhancement run",
+              resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id), method: :post,
+              params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
+              class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500",
+              form: { data: { turbo_confirm: "Resume work for #{entry.project.full_name}##{entry.issue.github_number}?", turbo_frame: "_top" } } %>
+      <% elsif recovery.blocked_by_active_run? %>
+        <span class="text-sm text-gray-600">Run #<%= recovery.active_run.id %> is already <%= recovery.active_run.status %>.</span>
+      <% elsif recovery.blocked_by_dependency? %>
+        <% recovery.dependencies.each do |dependency| %>
+          <% target = dependency.respond_to?(:github_url) ? dependency : dependency.depends_on_issue %>
+          <%= link_to "View blocking dependency", target&.github_url || "#", target: "_blank", rel: "noopener noreferrer", class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+        <% end %>
+      <% end %>
     <% end %>
     <%= link_to inbox_issue_link_label(entry.issue),
           entry.issue.github_url,

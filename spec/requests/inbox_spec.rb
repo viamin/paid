@@ -1018,6 +1018,24 @@ RSpec.describe "Inbox" do
     )
   end
 
+  # @spec OPERATOR-INBOX-002L @spec ISSUE-REOPEN-REVIEW-005
+  it "renders a reopen review as a revision-bound implementation decision" do
+    parked = create_manual_review_issue(
+      title: "Reopened validation gap",
+      github_number: 519,
+      reason: Issue::REOPEN_REVIEW_REQUIRED_REASON
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Intent-validation decision", "Record decision and resume implementation")
+    expect(response.body).not_to include("Starting a new enhancement run is the only way to resume work.")
+  end
+
   # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
   it "renders the clarifying-questions answer form for a manual_review issue with preserved terminal-round questions" do
     parked = create_manual_review_issue(

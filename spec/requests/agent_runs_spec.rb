@@ -2595,6 +2595,36 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec OPERATOR-INBOX-002L @spec ISSUE-REOPEN-REVIEW-005
+      it "records a revision-bound reopen decision before queueing implementation" do
+        reopened = create(:issue, project: project, github_number: 190, paid_state: "manual_review",
+          manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON, github_updated_at: 1.minute.ago)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: reopened.id, reopen_revision: reopened.github_updated_at.iso8601,
+            reopen_review_reason: "The original fix omitted the live validation artifact."
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(AgentRun.last).to have_attributes(issue: reopened, goal: "create_pr", trigger_type: "manual")
+        expect(reopened.reload.paid_state).to eq("in_progress")
+        expect(AccountActivityEvent.last).to have_attributes(action: "issue.reopen_review_validated", actor: user)
+        expect(AccountActivityEvent.last.metadata).to include("github_updated_at" => reopened.github_updated_at.iso8601)
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "reuses active work without clearing the manual-review hold" do
+        existing = create(:agent_run, :queued, project: project, issue: parked_issue, goal: "create_pr")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("Run ##{existing.id} is already queued")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,

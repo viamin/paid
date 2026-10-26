@@ -401,16 +401,8 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
-    # manual_review only clears when an explicit operator-triggered run
-    # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
-    # queues a fresh manual enhance_issue run rather than just clearing state,
-    # since a queued run is what actually resumes the enhancement work. The
-    # queue-time state flip (resume_issue_from_manual_review) removes the
-    # inbox entry as soon as the run is queued, so the item leaves the lane
-    # immediately instead of surviving the whole queue wait; re-entry
-    # producers (parse failure, round limit, needs_input) bring it back if
-    # the resumed work still needs a human decision.
     # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec OPERATOR-INBOX-002L @spec ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -420,14 +412,24 @@ module Projects
         return
       end
 
-      create_enhance_issue_runs_and_redirect(
-        issue_ids: [ issue.id ],
-        on_error_path: safe_return_target || dashboard_path,
-        success_path: safe_return_target || dashboard_path,
-        custom_prompt: nil,
-        goal: "enhance_issue",
-        priority_tier: nil
-      )
+      recovery = Issues::ManualReviewRecovery.call(issue: issue)
+      return redirect_to_active_manual_review_run(recovery.active_run) if recovery.blocked_by_active_run?
+      return redirect_to_manual_review_dependency(recovery.dependencies) if recovery.blocked_by_dependency?
+
+      if recovery.cause == :reopen
+        resume_reopened_issue(issue, recovery)
+      elsif recovery.continuation_goal == "enhance_issue"
+        create_enhance_issue_runs_and_redirect(
+          issue_ids: [ issue.id ], on_error_path: safe_return_target || dashboard_path,
+          success_path: safe_return_target || dashboard_path, custom_prompt: nil,
+          goal: "enhance_issue", priority_tier: nil
+        )
+      elsif recovery.continuation?
+        queue_manual_review_continuation(issue, recovery)
+      else
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Paid cannot identify the cause of this manual-review hold. Review the recorded reason before starting new work."
+      end
     end
 
     # Operator-driven counterpart to
@@ -1036,6 +1038,61 @@ module Projects
       return unless issue.paid_state == "manual_review"
 
       issue.update!(paid_state: "in_progress")
+    end
+
+    def resume_reopened_issue(issue, recovery)
+      expected_revision = issue.github_updated_at&.iso8601
+      if params[:reopen_revision] != expected_revision || params[:reopen_review_reason].to_s.strip.blank?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Confirm the current reopen revision and explain the intent-validation decision before resuming implementation."
+        return
+      end
+
+      queue_manual_review_continuation(issue, recovery, reopen_review_reason: params[:reopen_review_reason].strip)
+    end
+
+    def queue_manual_review_continuation(issue, recovery, reopen_review_reason: nil)
+      budget_result = CostBudgets::Check.call(@project)
+      unless budget_result[:allowed]
+        redirect_to safe_return_target || dashboard_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+        return
+      end
+
+      run = nil
+      ActiveRecord::Base.transaction do
+        run = create_agent_run(issue: issue, goal: recovery.continuation_goal)
+        resume_issue_from_manual_review(issue)
+        if reopen_review_reason
+          Audit::RecordEvent.call(
+            action: "issue.reopen_review_validated", actor: current_user, subject: issue,
+            metadata: {
+              reason: reopen_review_reason, github_updated_at: issue.github_updated_at&.iso8601,
+              continuation_goal: recovery.continuation_goal, agent_run_id: run.id
+            }
+          )
+        end
+      end
+      ProcessRunQueueJob.perform_later
+      action = recovery.cause == :scanner ? "Scanner recurrence remediation" : "Implementation"
+      redirect_to safe_return_target || dashboard_path, notice: "#{action} queued."
+    rescue NoRunnableRunnerError, InvalidDockerHostSelectionError, ActiveRecord::RecordInvalid => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
+    rescue ActiveRecord::RecordNotUnique
+      redirect_to safe_return_target || dashboard_path,
+        alert: "An agent run is already queued or in progress. Refresh the Inbox to reconcile it."
+    end
+
+    def redirect_to_active_manual_review_run(run)
+      redirect_to safe_return_target || dashboard_path,
+        alert: "Run ##{run.id} is already #{run.status} for this issue. Refresh the Inbox to reconcile it before resuming."
+    end
+
+    def redirect_to_manual_review_dependency(dependencies)
+      dependency = dependencies.first
+      target = dependency.respond_to?(:github_url) ? dependency : dependency.depends_on_issue
+      reference = target&.github_url || dependency.try(:external_ref) || "the recorded dependency"
+      redirect_to safe_return_target || dashboard_path,
+        alert: "This issue is still waiting on #{reference}. Resolve that dependency before resuming work."
     end
 
     # A stale page can still render the "Start enhancement run" button after
