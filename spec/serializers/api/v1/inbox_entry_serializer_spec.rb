@@ -61,6 +61,29 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload).to include(remediation_steps: [ "Grant the missing permission" ])
     end
 
+    # @spec PARTIAL-CLOSEOUT-030
+    it "serializes partial-closeout admission diagnostics with recovery evidence" do
+      blocker = Issues::CloseoutStatus::Blocker.new(
+        code: :open_native_children,
+        message: "Open native child work (#55) prevents continuation.",
+        evidence: { "children" => [ { "number" => 55, "url" => "https://example.test/issues/55" } ] },
+        recovery: "Complete the child work."
+      )
+      status = instance_double(Issues::CloseoutStatus::Result, blockers: [ blocker ])
+      entry = build_entry(Inbox::Queue::PARTIAL_CLOSEOUT_KIND,
+        tasks: [ "#44" ], closeout_status: status)
+
+      payload = described_class.render(entry)
+
+      expect(payload).to include(unresolved_prerequisites: [ "#44" ])
+      expect(payload.fetch(:admission_blockers)).to contain_exactly(
+        code: :open_native_children,
+        message: "Open native child work (#55) prevents continuation.",
+        evidence: { "children" => [ { "number" => 55, "url" => "https://example.test/issues/55" } ] },
+        recovery: "Complete the child work."
+      )
+    end
+
     it "serializes escalated_pr with the reason, counters, last progress, and operator-pause state" do
       pull_request = create(:issue, :pull_request, project: project)
       counters = [ Inbox::EscalatedPullRequests::Counter.new(name: :draft_review_count, value: 3, limit: 3) ]

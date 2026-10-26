@@ -67,7 +67,7 @@ module Api
         when Inbox::Queue::FEATURE_DECISION_KIND then feature_decision_payload
         when Inbox::Queue::RETRY_LIMITED_KIND then retry_limited_payload
         when Inbox::Queue::CHANGE_INTENT_DRAFT_KIND then change_intent_draft_payload
-        when Inbox::Queue::PARTIAL_CLOSEOUT_KIND then { unresolved_prerequisites: entry.tasks }
+        when Inbox::Queue::PARTIAL_CLOSEOUT_KIND then partial_closeout_payload
         when Inbox::Queue::TEST_REVIEW_PENDING_KIND then {}
         when Inbox::Queue::PROJECT_SETUP_PENDING_KIND then { tasks: entry.tasks }
         when Inbox::Queue::TRACEABILITY_GAP_KIND then traceability_gap_payload
@@ -171,6 +171,17 @@ module Api
           constraints: change_intent.constraints,
           decisions_made: change_intent.decisions_made,
           requested_changes_reason: change_intent.requested_changes_reason
+        }
+      end
+
+      # @spec PARTIAL-CLOSEOUT-030
+      def partial_closeout_payload
+        status = entry.closeout_status
+        {
+          unresolved_prerequisites: entry.tasks,
+          admission_blockers: Array(status&.blockers).map { |blocker|
+            { code: blocker.code, message: blocker.message, evidence: blocker.evidence, recovery: blocker.recovery }
+          }
         }
       end
 

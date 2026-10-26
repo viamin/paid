@@ -190,6 +190,25 @@
   `spec/services/issues/stalled_closeouts_spec.rb` (including a query-count
   regression for the shared input build).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When canonical closeout admission excludes an
+  issue because it has an open non-pull-request child or an active
+  `partial_closeout.prerequisite` notification, the diagnostic walk SHALL
+  expose every such exclusion with the child or notification identity, its
+  available evidence/link, and the supported recovery route. A human
+  prerequisite SHALL retain its recorded guidance and SHALL be described as
+  unresolved human decision/evidence, not missing implementation. The Inbox,
+  API/chat payloads, continuation and report-only-audit refusals SHALL reuse
+  those same additive diagnostics; they SHALL not close a child, dismiss a
+  notification, infer completion, or silently substitute a policy. Unknown
+  admission remains a visible fallback only after all known guards are
+  diagnosed.
+  *Code:* `app/services/issues/closeout_status.rb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb`,
+  `app/services/inbox/chat_context.rb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/issues/request_continuation_spec.rb`,
+  `spec/services/inbox/chat_context_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-005** — When a queued continuation run is considered
   for dispatch, the system SHALL recheck its scoped authorization at dequeue
   and run start (`AgentRuns::RecheckIssueEligibility` continuation branch,
