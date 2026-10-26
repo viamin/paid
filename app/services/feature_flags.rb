@@ -6,6 +6,7 @@ class FeatureFlags
   UnknownFlagError = Class.new(ArgumentError)
   InvalidActorError = Class.new(ArgumentError)
   InvalidPercentageError = Class.new(ArgumentError)
+  RollbackBlockedError = Class.new(ArgumentError)
 
   DEFINITIONS = {
     question_exploration: Definition.new(
@@ -137,6 +138,7 @@ class FeatureFlags
     end
 
     def disable!(flag_name, project: nil, actor: nil)
+      ensure_rollback_allowed!(flag_name, project:)
       resolved_actor = resolve_actor(project:, actor:)
 
       unless resolved_actor
@@ -188,6 +190,25 @@ class FeatureFlags
     end
 
     private
+
+    # RDR-077 rollout safety: the legacy policy cannot interpret active
+    # continuation grants. A project rollback therefore waits until its grants
+    # complete or are explicitly revoked; a global rollback must wait for all
+    # projects it would affect.
+    #
+    # @spec AUTOMATION-PHASES-014
+    def ensure_rollback_allowed!(flag_name, project:)
+      return unless flag_name.to_sym == :automation_phases
+
+      grants = WorkItemContinuationGrant.active
+      grants = grants.where(project:) if project
+      return unless grants.exists?
+
+      scope = project ? "this project" : "all projects"
+      raise RollbackBlockedError,
+        "Cannot disable automation_phases for #{scope} while active continuation grants remain. " \
+        "Complete or revoke the grants and reconcile queued work before rollback."
+    end
 
     def feature(flag_name)
       flipper[definition(flag_name).name]
