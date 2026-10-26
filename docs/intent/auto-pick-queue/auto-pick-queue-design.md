@@ -94,6 +94,24 @@ badge. The dashboard's eligibility breakdown continues to report the actual
 guards that exclude open issues, so a workflow-state drift cannot become an
 invisible block.
 
+## Empty queue diagnosis
+
+An empty Upcoming Queue is an observation about the rendered scheduler preview,
+not proof that a project has no work. The dashboard derives a bounded
+diagnostic from the existing eligibility breakdown and scheduler-backed run
+scopes. It reports eligible candidates, queued runs, and active runs as
+separate counts and classifies the result as active work with no waiting
+backlog, runnable work not yet seeded, a deliberate policy pause, ordinary
+holds, or unknown coverage.
+
+The classifier never reimplements candidate selection and never invokes an LLM,
+repository command, remote mutation, or recovery service while rendering. A
+runnable-but-unseeded result directs the operator to the existing periodic
+Auto-Pick sweep; the sweep and event-driven enqueue paths remain the only
+automatic recovery authority. Query failures are shown as unknown coverage,
+not as an empty queue. The returned snapshot carries its observation time so a
+cached or disconnected dashboard cannot imply that it is live.
+
 ## Epic umbrella acceptance audits
 
 The `epic` label identifies an umbrella issue; it is not an Auto-Pick hold by

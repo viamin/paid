@@ -49,6 +49,7 @@ class DashboardController < ApplicationController
       locals: {
         queue_preview: @queue_preview,
         paused_projects: @quality_paused_projects,
+        queue_diagnosis: @queue_diagnosis,
         queue_fairness_mode: @queue_fairness_mode
       }
   end
@@ -168,6 +169,10 @@ class DashboardController < ApplicationController
       .where.not(quality_paused_at: nil)
       .order(quality_paused_at: :desc)
       .limit(10)
+    @queue_diagnosis = Dashboard::QueueDiagnosis.call(
+      user: current_user,
+      paused_projects: @quality_paused_projects
+    )
   end
 
   def queue_preview_request?

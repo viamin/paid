@@ -6,6 +6,18 @@
 
 ## Toggle Lifecycle
 
+- [x] **AUTO-PICK-QUEUE-014** — When the Upcoming Queue is empty for a
+  user's visible Auto-Pick projects, the dashboard SHALL derive a bounded
+  diagnostic from `Dashboard::EligibilityBreakdown` and scheduler-backed
+  queued/active run scopes. It SHALL keep eligible-candidate, queued-run, and
+  active-run counts distinct and classify active work with no waiting backlog,
+  runnable work not seeded, deliberate policy pauses, ordinary holds, or
+  unknown coverage. Rendering SHALL not invoke an LLM, repository execution,
+  remote mutation, or recovery service; failures SHALL be presented as unknown
+  coverage with the supported sweep/refresh action and observation freshness.
+  *Tests:* `spec/services/dashboard/queue_diagnosis_spec.rb`.
+  *Code:* `app/services/dashboard/queue_diagnosis.rb`.
+
 - [x] **AUTO-PICK-QUEUE-001** — When a project has Auto-Pick disabled, the
   system SHALL cancel that project's queued Auto-Pick agent runs, including
   automatic `enhance_issue` recheck runs, so they are removed from scheduler
