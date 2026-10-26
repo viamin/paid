@@ -77,6 +77,7 @@ module FacetConfidence
           "case_id" => corpus_case.fetch("id"),
           "shape" => corpus_case["shape"],
           "judgment" => judgment,
+          "revision" => label&.revision,
           "expected" => expected.slice("status", "intent_band", "technical_band", "readiness"),
           "divergences" => divergences(judgment, expected),
           "citation_compliance" => citation_compliance(judgment, expected)
@@ -143,7 +144,8 @@ module FacetConfidence
           judge: report.dig("provenance", "judge"),
           frozen_at: report.dig("provenance", "labels_frozen_at"),
           measures: measures_table(report.fetch("measures")),
-          cases: cases_table(report.fetch("cases")))
+          cases: cases_table(report.fetch("cases")),
+          revisions: revisions_table(report.fetch("cases")))
       end
 
       def measures_table(measures)
@@ -167,6 +169,17 @@ module FacetConfidence
         parts.empty? ? "aligned" : parts.join(", ")
       end
 
+      def revisions_table(entries)
+        revisions = entries.filter_map do |entry|
+          revision = entry.fetch("revision")
+          next unless revision
+
+          format("| %s | %s | %s | %s |", entry.fetch("case_id"), revision.fetch("verdict"),
+            revision.fetch("readiness"), revision.fetch("reason"))
+        end
+        revisions.presence || "| none | — | — | — |"
+      end
+
       WORKSHEET_TEMPLATE = <<~WORKSHEET
         # RDR-070 Facet-Confidence Closeout Evaluation Report
 
@@ -185,6 +198,12 @@ module FacetConfidence
         | Case | Shape | Verdict | Intent band | Technical band | Readiness | Divergences |
         | --- | --- | --- | --- | --- | --- | --- |
         %{cases}
+
+        ## Post-unblinding corrections (not rescored)
+
+        | Case | Corrected verdict | Corrected readiness | Reason |
+        | --- | --- | --- | --- |
+        %{revisions}
 
         Reference judgments are policy assessments, not calibrated probabilities.
         This report neither closes the source issue, enables delivery, nor changes the 80/80 defaults.
