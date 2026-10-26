@@ -11,10 +11,13 @@ The frozen corpus lives at
 version and content digest, the rubric and model versions, and the input
 evidence revision it assessed; `bin/facet-confidence-assessment-evaluation`
 stamps and validates that provenance and rejects replays of identical case
-input. The outcome worksheet at
+input. The 2026-10-26 attempt recorded one failed operational run for each
+case because the assessment provider did not serve the pinned model. The
+outcome worksheet at
 [`outcome-worksheet-2026-10-23.md`](outcome-worksheet-2026-10-23.md) is the
-repository-visible measure record; every operator-derived measure stays
-`not established` until the operator runs the corpus and appends the runs.
+repository-visible measure record. Failed runs establish operational failure
+and cost evidence, but do not establish quality verdict measures; those remain
+`not established` until a provider can return a pinned-model verdict.
 
 No corpus run can release work: readiness-driven release remains gated on the
 complete RDR-071 delivery path, and the 80/80 thresholds stay the provisional
