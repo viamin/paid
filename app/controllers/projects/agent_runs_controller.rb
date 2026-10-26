@@ -410,7 +410,7 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002K
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -420,12 +420,21 @@ module Projects
         return
       end
 
+      plan = ManualReviews::Recovery.for(issue: issue)
+      unless plan.actionable?
+        redirect_to safe_return_target || dashboard_path, alert: plan.message
+        return
+      end
+
+      goal = recovery_goal(plan, issue)
+      return unless goal
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
         success_path: safe_return_target || dashboard_path,
         custom_prompt: nil,
-        goal: "enhance_issue",
+        goal: goal,
         priority_tier: nil
       )
     end
@@ -998,6 +1007,37 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
+    end
+
+    # Records the reopen decision against the GitHub revision the operator
+    # reviewed. A changed revision must be reviewed again rather than letting a
+    # stale browser submission clear the hold.
+    # @spec ISSUE-REOPEN-REVIEW-005
+    def recovery_goal(plan, issue)
+      return plan.goal unless plan.cause == :reopen_review
+
+      decision = params[:reopen_decision]
+      reason = params[:reopen_reason].to_s.strip
+      revision = params[:reopen_revision].to_s
+      if !decision.in?(%w[resume_implementation collect_evidence]) || reason.blank?
+        redirect_to safe_return_target || dashboard_path, alert: "Choose a reopen-review decision and provide a reason."
+        return
+      end
+      if revision != issue.github_updated_at.utc.iso8601
+        redirect_to safe_return_target || dashboard_path, alert: "This issue changed after the review page loaded. Review the current revision before continuing."
+        return
+      end
+
+      issue.update!(
+        reopen_review_decision: decision,
+        reopen_review_decision_reason: reason,
+        reopen_review_decision_revision: revision,
+        reopen_review_decided_at: Time.current,
+        reopen_review_decided_by: current_user
+      )
+      Audit::RecordEvent.call(action: "issue.reopen_review_decided", actor: current_user, subject: issue,
+        metadata: { decision: decision, revision: revision })
+      decision == "collect_evidence" ? "analyze_issue" : "create_pr"
     end
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap
@@ -1607,13 +1647,15 @@ module Projects
         return
       end
 
-      # Filter out issues that already have active (unfinished) enhance_issue runs
+      # A recovery action must reconcile *any* active work, not just another
+      # enhancement run. Clearing a hold beside a queued implementation run
+      # would create incompatible duplicate work.
       active_issue_ids = @project.agent_runs
-        .where(issue_id: issues.map(&:id), goal: "enhance_issue", status: AgentRun::UNFINISHED_STATUSES)
+        .where(issue_id: issues.map(&:id), status: AgentRun::UNFINISHED_STATUSES)
         .pluck(:issue_id)
       issues = issues.where.not(id: active_issue_ids) if active_issue_ids.any?
       if issues.empty?
-        redirect_to on_error_path, alert: "All selected issues already have active enhancement runs."
+        redirect_to on_error_path, alert: "All selected issues already have active work."
         return
       end
 
@@ -1638,10 +1680,11 @@ module Projects
 
       ProcessRunQueueJob.perform_later
 
+      work_label = goal == "enhance_issue" ? "issue enhancement" : goal.tr("_", " ")
       notice = if issues.size == 1
-        "Agent run queued for issue enhancement."
+        "Agent run queued for #{work_label}."
       else
-        "#{issues.size} agent runs queued for issue enhancement."
+        "#{issues.size} agent runs queued for #{work_label}."
       end
       redirect_to success_path, notice: notice
     rescue NoRunnableRunnerError => e

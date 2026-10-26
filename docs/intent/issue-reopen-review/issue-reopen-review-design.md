@@ -27,6 +27,14 @@ the issue back into active work through the existing manual-review workflow.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 
+The Inbox classifies this hold from the reopen-review provenance before it
+considers generic enhancement recovery. It shows the original closure time and
+current scope, requires an authorized operator to record a non-blank reason
+and the current GitHub revision with either an evidence-collection or
+implementation-continuation decision, then uses the normal admitted run path.
+Queued or running work is reconciled before the hold can be cleared; a stale
+revision must be reviewed again.
+
 ## Chat-tool policy
 
 The chat `edit_issue` tool directs callers to `create_issue` for new work

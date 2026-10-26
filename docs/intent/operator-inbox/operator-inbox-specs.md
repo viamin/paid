@@ -1,5 +1,18 @@
 # EARS Specs: Operator Inbox
 
+- [x] **OPERATOR-INBOX-002K** - When an issue is in the `manual_review` Inbox
+  lane, the system SHALL classify its recovery from explicit reopen, dependency,
+  scanner, and run provenance; SHALL retain an unknown cause visibly; and SHALL
+  render only the supported action with an explanation of whether it records a
+  decision, retries analysis, resumes implementation, or collects evidence.
+  A real unresolved dependency SHALL remain linked and shall not be waived by
+  acknowledgment. Active queued or running work SHALL be reused or explicitly
+  reconciled before a recovery action creates another run.
+  *Tests:* `spec/services/manual_reviews/recovery_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+  *Code:* `ManualReviews::Recovery`, `app/views/dashboard/_inbox_detail_manual_review.html.erb`,
+  `Projects::AgentRunsController`.
+
 > Testable claims for the unified operator inbox.
 > Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 > Each ID is a grep target across specs, tests, and code

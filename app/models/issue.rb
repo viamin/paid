@@ -2,6 +2,7 @@
 
 class Issue < ApplicationRecord
   belongs_to :reopened_by, class_name: "User", optional: true
+  belongs_to :reopen_review_decided_by, class_name: "User", optional: true
 
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
   REOPEN_REVIEW_REQUIRED_REASON =
