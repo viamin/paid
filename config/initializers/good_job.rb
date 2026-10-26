@@ -177,6 +177,12 @@ Rails.application.configure do
       class: "AutoPickEligibilitySweepJob",
       description: "Periodic re-evaluation of all open issues for auto-pick eligibility"
     },
+    queue_stalls_sweep: {
+      cron: "9-59/15 * * * *",
+      class: "QueueStallsSweepJob",
+      queue: "maintenance",
+      description: "Bounded recovery of stalled eligibility, planning, and delivery handoffs"
+    },
     analyze_issue_followup_backfill: {
       cron: "15 * * * *",
       class: "AnalyzeIssueFollowupBackfillJob",

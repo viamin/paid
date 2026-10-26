@@ -138,6 +138,17 @@ module PartialCloseouts
 
     def self.preview(...) = new(...).preview
 
+    # Reconciles one specific run through the same bounded machinery the
+    # account sweep uses, so a caller that has already identified the
+    # stalled delivery does not have to rescan the account's whole merged
+    # `create_pr` history to reach it. The terminal-status skip still
+    # applies, so this path cannot duplicate the owners or prerequisites the
+    # sweep would have recorded (#4619).
+    # @spec QUEUE-DIAG-007
+    def self.reconcile_run(agent_run)
+      new(account_id: agent_run.project.account_id).reconcile_run(agent_run)
+    end
+
     def initialize(account_id:, batch_size: DEFAULT_BATCH_SIZE, after_id: nil)
       unless batch_size.is_a?(Integer) && batch_size.positive?
         raise ArgumentError, "batch_size must be a positive integer, got #{batch_size.inspect}"
@@ -210,6 +221,16 @@ module PartialCloseouts
       TenantContext.with_system_access do
         candidate_runs.order(:id).pluck(:id, :issue_id).map { |id, issue_id| CandidateRun.new(id: id, issue_id: issue_id) }
       end
+    end
+
+    # Reconciles one already-identified run through the same bounded
+    # machinery the account sweep uses. A caller that knows which delivery
+    # stalled does not have to rescan the account's whole merged `create_pr`
+    # history to reach it; the terminal-status skip still applies, so this
+    # path cannot duplicate the owners or prerequisites the sweep recorded.
+    # @spec QUEUE-DIAG-007
+    def reconcile_run(agent_run)
+      TenantContext.with_system_access { process_run(agent_run) }
     end
 
     private

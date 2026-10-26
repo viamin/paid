@@ -141,6 +141,8 @@ class DashboardFramesControllerNodeHarness
     errRun.runTimer();
     errFrame.dispatch("turbo:fetch-request-error");
     assert(errFrame.classList.contains("opacity-60"), "fetch error should keep the stale dim");
+    assert(errFrame.getAttribute("data-dashboard-frames-refresh-failed") === "true",
+      "a failed refresh must mark the tile so stale content cannot look current");
     errRun.runTimer();
     assert(errSecond.getAttribute("src") === QUEUE_SRC, "queue should advance after a fetch error");
 

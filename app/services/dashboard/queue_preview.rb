@@ -14,6 +14,19 @@ module Dashboard
       new(...).call
     end
 
+    # The projects whose queued work this user may see. The queue preview and
+    # the queue diagnosis share this scope, so the rendered queue and its
+    # explanation always describe the same projects.
+    # @spec QUEUE-DIAG-001 @spec QUEUE-DIAG-011
+    def self.visible_project_ids(user)
+      scope = Project.where(account_id: user.account_id, created_by_id: user.id)
+      if AgentRun.orphaned_project_owner?(user)
+        scope = scope.or(Project.where(account_id: user.account_id, created_by_id: nil))
+      end
+
+      scope.ids
+    end
+
     def initialize(user:, limit: 20, queue_fairness_mode: nil)
       @user = user
       @limit = limit
@@ -28,12 +41,20 @@ module Dashboard
       Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { build_entries }
     end
 
+    # The queued runs the scheduler still holds for this user's visible
+    # projects. The preview renders a prefix of this snapshot; the queue
+    # diagnosis counts it, so both surfaces describe the same backend queue.
+    # @spec QUEUE-DIAG-001 @spec QUEUE-DIAG-010
+    def snapshot
+      @snapshot ||= fetch_snapshot
+    end
+
     private
 
     attr_reader :user, :limit, :queue_fairness_mode
 
     def build_entries
-      snapshot = fetch_snapshot
+      snapshot = self.snapshot
       visible_runs = snapshot.select { |run| visible_project_ids.include?(run.project_id) }
       ordered_runs = queue_fairness_mode == "strict_priority" ? visible_runs.first(limit) : interleave_by_dispatch_order(visible_runs)
       preload_associations(ordered_runs)
@@ -87,14 +108,7 @@ module Dashboard
     end
 
     def visible_project_ids
-      @visible_project_ids ||= begin
-        scope = Project.where(account_id: user.account_id, created_by_id: user.id)
-        if AgentRun.orphaned_project_owner?(user)
-          scope = scope.or(Project.where(account_id: user.account_id, created_by_id: nil))
-        end
-
-        scope.ids
-      end
+      @visible_project_ids ||= self.class.visible_project_ids(user)
     end
 
     def fetch_snapshot

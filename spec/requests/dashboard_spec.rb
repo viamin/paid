@@ -1380,6 +1380,86 @@ RSpec.describe "Dashboard" do
     end
   end
 
+  describe "GET /dashboard/queue_diagnosis" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:project) do
+      create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true,
+        last_issue_sync_at: Time.current)
+    end
+
+    before { sign_in user }
+
+    # @spec QUEUE-DIAG-001 @spec QUEUE-DIAG-010
+    it "renders the queue diagnosis inside the dashboard frame" do
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+
+      get dashboard_queue_diagnosis_path
+
+      expect(response).to have_http_status(:ok)
+
+      doc = Nokogiri::HTML.fragment(response.body)
+      frame = doc.at_css("turbo-frame#dashboard-queue-diagnosis")
+
+      expect(frame).to be_present
+      expect(frame.at_css("[data-queue-diagnosis-state]")["data-queue-diagnosis-state"]).to eq("runnable_not_seeded")
+    end
+
+    # @spec QUEUE-DIAG-010
+    it "carries the generation time of the snapshot it rendered" do
+      get dashboard_queue_diagnosis_path
+
+      doc = Nokogiri::HTML.fragment(response.body)
+      generated_at = doc.at_css("[data-queue-diagnosis-generated-at]")["data-queue-diagnosis-generated-at"]
+
+      expect(generated_at).to be_present
+      expect(Time.parse(generated_at)).to be_within(5.minutes).of(Time.current)
+    end
+
+    # @spec QUEUE-DIAG-010
+    it "shows the refresh-failure notice placeholder so stale content cannot look current" do
+      get dashboard_queue_diagnosis_path
+
+      doc = Nokogiri::HTML.fragment(response.body)
+
+      expect(doc.at_css("[data-dashboard-frames-refresh-notice]")).to be_present
+    end
+
+    # @spec QUEUE-DIAG-010
+    it "reports the current backend queue contents even when the rendered tile was empty" do
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :queued, :automatic, project: project, issue: Issue.find_by(project: project),
+        goal: "create_pr", auto_pick: true)
+
+      get dashboard_queue_diagnosis_path
+
+      doc = Nokogiri::HTML.fragment(response.body)
+      expect(doc.text).to include("Queued")
+      expect(doc.at_css("[data-queue-diagnosis-state]")["data-queue-diagnosis-state"]).to eq("healthy")
+    end
+
+    # @spec QUEUE-DIAG-003
+    it "shows the blocker provenance for a held issue" do
+      create(:issue, project: project, github_state: "open", paid_state: "new", labels: [ "tracking" ])
+
+      get dashboard_queue_diagnosis_path
+
+      doc = Nokogiri::HTML.fragment(response.body)
+      expect(doc.at_css("[data-queue-diagnosis-issue]")).to be_present
+      expect(doc.text).to include("skip label")
+    end
+
+    context "when not authenticated" do
+      it "redirects to the sign in page" do
+        sign_out user
+
+        get dashboard_queue_diagnosis_path
+
+        expect(response).to redirect_to(new_user_session_path)
+      end
+    end
+  end
+
   describe "GET /dashboard/live" do
     it "redirects to the dashboard" do
       get dashboard_live_path

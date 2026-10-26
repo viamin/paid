@@ -53,6 +53,12 @@ class DashboardController < ApplicationController
       }
   end
 
+  # @spec QUEUE-DIAG-001 @spec QUEUE-DIAG-003 @spec QUEUE-DIAG-010
+  def queue_diagnosis
+    @queue_diagnosis = Dashboard::QueueDiagnosis.call(user: current_user)
+    render partial: "dashboard/queue_diagnosis", locals: { diagnosis: @queue_diagnosis }
+  end
+
   def needs_input
     redirect_to inbox_path(
       project_id: params[:project_id],

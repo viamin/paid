@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_26_165618) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3802,6 +3802,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
     t.index ["project_id"], name: "index_quality_thresholds_on_project_id"
   end
 
+  create_table "queue_stall_assessments", comment: "Bounded record of one queue stall assessment: the non-progressing handoff that was detected, the state revision it was derived from, and the outcome of the recovery attempt (#4619).", force: :cascade do |t|
+    t.bigint "account_id", null: false, comment: "Owning tenant. Also the isolation boundary for the assessment."
+    t.datetime "assessed_at", null: false, comment: "When the assessment was performed."
+    t.integer "attempt_count", default: 1, null: false, comment: "How many times this exact state was assessed. Bounded by the sweep's attempt cap."
+    t.datetime "created_at", null: false
+    t.text "detail", comment: "Operator-visible explanation of the assessment (blockers, owner, next action)."
+    t.bigint "issue_id", null: false, comment: "Issue whose delivery handoff stopped progressing."
+    t.string "outcome", default: "blocked", null: false, comment: "recovered | blocked | skipped | failed — the outcome of the recovery attempt."
+    t.string "reason_code", null: false, comment: "Mechanical stall reason: unseeded_runnable | stale_planning_hold | unresolved_delivery."
+    t.string "state_digest", limit: 64, null: false, comment: "SHA-256 digest of the relevant state and revisions the assessment was derived from. A changed blocker set is a new digest and is assessed again."
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "assessed_at"], name: "idx_queue_stall_assessments_account_assessed_at", comment: "Supports the account-scoped sweep and the last-successful-assessment lookup."
+    t.index ["account_id"], name: "index_queue_stall_assessments_on_account_id"
+    t.index ["issue_id", "reason_code", "state_digest"], name: "idx_queue_stall_assessments_one_per_state", unique: true, comment: "Repeated assessment of unchanged state is recorded once and never recovered twice."
+    t.index ["issue_id"], name: "index_queue_stall_assessments_on_issue_id"
+  end
+
   create_table "remediation_decisions", comment: "Audits self-heal diagnoses and proposed remediation actions for recurring agent-run failure fingerprints.", force: :cascade do |t|
     t.bigint "account_id", null: false, comment: "Owning account for tenant isolation and auditing."
     t.string "action_target_id", comment: "Opaque target identifier for the proposed action."
@@ -4931,6 +4948,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
   add_foreign_key "quality_recovery_actions", "prompt_versions", on_delete: :nullify
   add_foreign_key "quality_thresholds", "accounts"
   add_foreign_key "quality_thresholds", "projects"
+  add_foreign_key "queue_stall_assessments", "accounts"
+  add_foreign_key "queue_stall_assessments", "issues"
   add_foreign_key "remediation_decisions", "accounts"
   add_foreign_key "remediation_decisions", "users", column: "applied_by_id"
   add_foreign_key "roi_benchmarks", "projects", on_delete: :cascade

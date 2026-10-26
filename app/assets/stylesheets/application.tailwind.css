@@ -937,3 +937,10 @@
   background-color: #4f46e5;
   color: #ffffff;
 }
+
+/* Dashboard tiles that failed to refresh keep their last known content.
+   The tile has to say so, otherwise stale content is indistinguishable from
+   current content (#4619). */
+[data-dashboard-frames-refresh-failed="true"] [data-dashboard-frames-refresh-notice] {
+  display: block;
+}

@@ -4,6 +4,9 @@ import { Controller } from "@hotwired/stimulus"
 // Bump the version when tile markup shape changes so stale entries are ignored.
 const CACHE_PREFIX = "dashboard-frame:v1"
 const STALE_CLASS = "opacity-60"
+// Marks a tile whose refresh failed. The tile keeps its last known content,
+// so the tile itself has to say so — stale content must never look current.
+const REFRESH_FAILED_ATTRIBUTE = "data-dashboard-frames-refresh-failed"
 // Applied while a frame shows cached content, removed when fresh content
 // loads. Kept on fetch errors — the content is still stale.
 const STALE_CLASSES = [STALE_CLASS, "transition-opacity"]
@@ -87,7 +90,17 @@ export default class extends Controller {
 
     if (event.type === "turbo:frame-load") {
       event.target.classList.remove(...STALE_CLASSES)
+      // Turbo provides an Element here. Keeping the guard makes this
+      // lifecycle handler safe for the small event targets used by embedded
+      // clients and regression harnesses as well.
+      if (typeof event.target.removeAttribute === "function") {
+        event.target.removeAttribute(REFRESH_FAILED_ATTRIBUTE)
+      }
       this.cacheFrame(event.target)
+    } else {
+      // The tile kept its last known content, so mark it as a failed
+      // refresh: a stale tile must never appear current.
+      event.target.setAttribute(REFRESH_FAILED_ATTRIBUTE, "true")
     }
     this.currentFrame = null
     this.scheduleNextFrame()
@@ -101,6 +114,7 @@ export default class extends Controller {
     if (event.target !== this.currentFrame) return
 
     if (event.target.classList.contains(STALE_CLASS)) event.preventDefault()
+    event.target.setAttribute(REFRESH_FAILED_ATTRIBUTE, "true")
     this.currentFrame = null
     this.scheduleNextFrame()
   }

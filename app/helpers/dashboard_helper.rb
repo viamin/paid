@@ -236,4 +236,16 @@ module DashboardHelper
   def inbox_issue_link_label(issue)
     "View #{issue_kind_label(issue)}"
   end
+
+  # The existing actionable Inbox lane that owns a human decision for an
+  # issue. The queue diagnosis links to that lane instead of creating a
+  # second item for a decision the Inbox already owns.
+  # @spec QUEUE-DIAG-008
+  def inbox_lane_for(detail)
+    codes = detail.blockers.map(&:code)
+    return Inbox::Queue::CLARIFYING_QUESTIONS_KIND if detail.issue.paid_state == "needs_input"
+    return Inbox::Queue::MANUAL_REVIEW_KIND if codes.include?(:human_decision)
+
+    Inbox::Queue::FEATURE_DECISION_KIND
+  end
 end

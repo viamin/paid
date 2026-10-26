@@ -291,6 +291,7 @@ class AgentRun < ApplicationRecord
   after_commit :record_dispatch_circuit_breaker_outcome, on: :update, if: :real_run_just_finished?
   after_commit :close_finished_continuation_request, on: :update, if: :continuation_run_just_finished?
   after_commit :enqueue_project_readiness_evaluation, on: :update, if: :project_readiness_refresh_needed?
+  after_commit :enqueue_queue_stall_sweep, on: :update, if: :real_run_just_finished?
 
   validates :agent_type, presence: true, inclusion: { in: AGENT_TYPES }
   validates :status, presence: true, inclusion: { in: STATUSES }
@@ -4226,6 +4227,16 @@ class AgentRun < ApplicationRecord
 
   def enqueue_project_readiness_evaluation
     EvaluateProjectReadinessJob.perform_later(project_id)
+  end
+
+  # A finished run frees the issue it covered, so work that was waiting for
+  # that run can become eligible again. The queue-stall sweep detects a
+  # handoff that never reached the scheduler and recovers it through the
+  # existing seeding path (#4619). The sweep is bounded and deduplicated, so
+  # a repeated terminal transition never repeats the recovery.
+  # @spec QUEUE-DIAG-004
+  def enqueue_queue_stall_sweep
+    QueueStallsSweepJob.perform_later(account_id: project.account_id, project_id: project_id)
   end
 
   # Records the dispatch circuit breaker outcome for every terminal run,
