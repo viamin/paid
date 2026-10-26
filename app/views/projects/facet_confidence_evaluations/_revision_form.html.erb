@@ -1,0 +1,33 @@
+<%# Post-unblinding correction input. The service repeats every structural and
+    authority check; this form supplies the full attributable audit record.
+    @spec FACET-CONFIDENCE-021 %>
+<% references = corpus_case.fetch("evidence").map { |item| item.fetch("reference") } %>
+
+<%= form_with url: revise_project_facet_confidence_evaluation_path(project, evaluation, **inbox_context), method: :post, class: "space-y-3 rounded-lg border border-indigo-100 bg-indigo-50 p-4" do |form| %>
+  <%= form.hidden_field :case_id, value: corpus_case.fetch("id") %>
+  <h4 class="text-sm font-medium text-gray-900">Append correction</h4>
+  <div class="grid gap-3 sm:grid-cols-2">
+    <div>
+      <%= form.label :verdict, class: "block text-xs font-medium text-gray-700" %>
+      <%= form.select :verdict, FacetConfidenceEvaluationLabel::VERDICTS, { prompt: "Select verdict" }, required: true,
+            class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm" %>
+    </div>
+    <% [ [ :intent_band, "Intent band" ], [ :technical_band, "Technical band" ], [ :readiness, "Readiness" ] ].each do |field, label| %>
+      <div>
+        <%= form.label field, label, class: "block text-xs font-medium text-gray-700" %>
+        <%= form.select field, field == :readiness ? FacetConfidenceEvaluationLabel::READINESS : FacetConfidenceEvaluationLabel::BANDS,
+              { prompt: "Select #{label.downcase}" }, required: true, class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm" %>
+      </div>
+    <% end %>
+  </div>
+  <div>
+    <%= form.label :cited_evidence_reference, "Cited evidence", class: "block text-xs font-medium text-gray-700" %>
+    <%= form.select :cited_evidence_reference, references, { prompt: "One pivotal reference" }, required: true,
+          class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm" %>
+  </div>
+  <div>
+    <%= form.label :reason, "Reason", class: "block text-xs font-medium text-gray-700" %>
+    <%= form.text_area :reason, required: true, rows: 3, class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm" %>
+  </div>
+  <%= form.submit "Append correction", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+<% end %>

@@ -25,6 +25,6 @@
   <% if @evaluation.labeling? %>
     <%= render "labeling", evaluation: @evaluation, progress: @progress, case_view: @case_view, project: @project, inbox_context: @inbox_context %>
   <% else %>
-    <%= render "report", evaluation: @evaluation, project: @project, inbox_context: @inbox_context %>
+    <%= render "report", evaluation: @evaluation, labels: @labels, corpus_changed: @corpus_changed, project: @project, inbox_context: @inbox_context %>
   <% end %>
 </div>
