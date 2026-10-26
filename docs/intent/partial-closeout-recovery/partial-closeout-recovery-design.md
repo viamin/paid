@@ -315,6 +315,15 @@ refresh local records immediately, showing the successful linkage and when a
 full sync is still required — the same services the agent `create_issue` /
 `edit_issue` tools use.
 
+### Prerequisite notification authority (#4641)
+
+A prerequisite notification is an action surface, not evidence authority.
+Personal dismissal removes it from that operator's Inbox but leaves its
+scheduling guard intact. Only a recorded verification disposition may resolve
+the occurrence and permit the existing eligibility reassessment; a URL,
+comment, green run, uploaded artifact, or notification dismissal alone is not
+acceptance evidence.
+
 Pending chat write-tool confirmations visibly distinguish proposed/awaiting
 confirmation, queued, refused, and completed actions, link a completed action
 to the run it created, and a conversational message sent while a confirmation
