@@ -247,6 +247,15 @@ assistant's exploration context, and restoring a saved answer's recorded
 evidence on reopen. #4322 stays open and keeps `Tracks #4309` language; only
 the umbrella's own final acceptance audit may close #4309.
 
+The [2026-10-26 RDR-070 closeout recovery audit](audit-report-2026-10-26-rdr-070.md)
+keeps RDR-070 **Partially Implemented**. The versioned corpus, outcome
+machinery, and #4596's persisted blinded-evaluation workflow are shipped and
+covered by 199 focused passing examples, but no authentic operator reference
+judgments or compiled evaluator report exists yet. Deterministic fixtures and
+closed implementation issues are not measured acceptance. #4323 therefore
+remains open, Tracks #4309, and awaits the operator-run evaluation without
+changing delivery policy or the provisional 80/80 defaults.
+
 RDR-075, **General Maintenance Runs** (indexed above under Quality &
 Automation), is drafted in [PR #4308](https://github.com/viamin/paid/pull/4308).
 Its [2026-10-15 C75 closeout audit](audit-report-2026-10-15-rdr-075.md) found
