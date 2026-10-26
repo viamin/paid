@@ -117,14 +117,8 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
 
   it "surfaces a non-walked eligibility guard via the scoped preflight instead of the duplicate-work fallback" do
     merged_partial_pr(number: 12)
-    create(
-      :issue,
-      project: project,
-      github_state: "open",
-      paid_state: "in_progress",
-      parent_issue_id: issue.id,
-      github_number: 55
-    )
+    allow(Automation::Strategies::AutoPick::DefaultCandidateSource)
+      .to receive(:eligible_for_dequeue?).and_return(false)
 
     status = described_class.call(issue)
 
@@ -132,6 +126,63 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     expect(status.blocker_codes).to contain_exactly(:unavailable)
     expect(status.reason).to include("unavailable")
     expect(status.blockers.first.recovery).to include("Investigate")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "explains an open native child without requiring a duplicate dependency edge" do
+    merged_partial_pr(number: 12)
+    child = create(:issue, project: project, github_state: "open", paid_state: "in_progress",
+      parent_issue: issue, github_number: 55)
+
+    status = described_class.call(issue)
+
+    blocker = status.blockers.find { |candidate| candidate.code == :open_native_children }
+    expect(status.blocker_codes).to include(:open_native_children)
+    expect(status.blocker_codes).not_to include(:unavailable)
+    expect(blocker.message).to include("#55")
+    expect(blocker.evidence.fetch("children").first).to include("id" => child.id, "number" => 55, "url" => child.github_url)
+    expect(blocker.recovery).to include("#55")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "explains active human prerequisite notifications with their inspectable evidence" do
+    merged_partial_pr(number: 12)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Pilot evidence needs an operator", description: "Select the applicable review policy and attach pilot evidence.",
+      action_url: "/inbox/action_required:123", metadata: { "assessment_id" => "assessment-7", "policy" => "two-reviewer" })
+
+    status = described_class.call(issue)
+
+    blocker = status.blockers.find { |candidate| candidate.code == :human_prerequisite }
+    expect(status.blocker_codes).to include(:human_prerequisite)
+    expect(status.blocker_codes).not_to include(:unavailable)
+    expect(blocker.message).to include(notification.title)
+    expect(blocker.evidence).to include(
+      "notification_id" => notification.id, "action_url" => notification.action_url,
+      "description" => notification.description, "metadata" => notification.metadata
+    )
+    expect(blocker.recovery).to include("policy")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "enumerates native-child and human-prerequisite blockers together without crossing tenant boundaries" do
+    merged_partial_pr(number: 12)
+    create(:issue, project: project, github_state: "open", paid_state: "in_progress", parent_issue: issue, github_number: 55)
+    create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Evidence required", description: "Attach the signed decision.")
+    other_account = create(:account)
+    create(:notification, :error, account: other_account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Other tenant", description: "Must not be visible.")
+
+    inputs = described_class.inputs_for([ issue ])
+    status = described_class.call(issue, eligible_issue_ids: [], continuation_eligible_issue_ids: [], inputs: inputs)
+
+    expect(status.blocker_codes).to include(:open_native_children, :human_prerequisite)
+    expect(status.reason).to include("#55", "Evidence required")
+    expect(status.reason).not_to include("Other tenant")
   end
 
   it "reports every material blocker, including scanner verification evidence, without treating a merge as a fix" do

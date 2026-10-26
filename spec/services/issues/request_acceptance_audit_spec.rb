@@ -32,6 +32,20 @@ RSpec.describe Issues::RequestAcceptanceAudit do
     expect(issue.agent_runs.count).to eq(1)
   end
 
+  # @spec PARTIAL-CLOSEOUT-030
+  it "refuses a report-only audit with the same native-child reason as continuation" do
+    create(:issue, :pull_request, project:, github_number: 12, github_state: "closed",
+      pr_review_phase: "merged", parent_issue: issue, created_at: 2.days.ago)
+    create(:issue, project:, github_number: 55, github_state: "open", paid_state: "in_progress", parent_issue: issue)
+
+    result = described_class.call(issue:, actor: user)
+
+    expect(result.success?).to be(false)
+    expect(result.code).to eq(:open_native_children)
+    expect(result.message).to include("#55")
+    expect(issue.agent_runs).to be_empty
+  end
+
   # @spec PARTIAL-CLOSEOUT-027
   it "refuses rather than reusing an open implementation continuation" do
     create(:issue, :pull_request, project:, github_number: 12, github_state: "closed",

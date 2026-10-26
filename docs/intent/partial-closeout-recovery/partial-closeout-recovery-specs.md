@@ -458,6 +458,26 @@
   *Test:* `spec/requests/inbox_spec.rb`,
   `spec/services/issues/closeout_status_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-030** — When canonical scoped dequeue admission
+  rejects a partial-closeout issue because it has an open native non-PR child
+  or an active `partial_closeout.prerequisite` notification, the system SHALL
+  expose an additive structured blocker with the exact child or notification
+  identity, persisted evidence, relevant GitHub or Inbox link, and only its
+  supported recovery action. A native child SHALL NOT require a duplicate
+  `IssueDependency` edge to be explained. A prerequisite notification SHALL
+  remain visible as unresolved human evidence or policy work, including its
+  description and assessment/policy provenance; the system SHALL NOT dismiss
+  it, close a child, infer implementation completion, or silently substitute a
+  solo policy merely to admit work. Batch and singleton status construction,
+  Inbox detail/count, authorized API/chat, continuation and report-only audit
+  refusal SHALL use the same reasons; an unavailable guard remains a fallback
+  only after every mirrored persisted guard is absent. Child and notification
+  lookup SHALL stay constrained to the issue's project and account.
+  *Code:* `app/services/issues/closeout_status.rb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`,
+  `spec/requests/inbox_spec.rb`,
+  `spec/services/issues/request_continuation_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-016** — When an authorized operator links a
   prerequisite from the partial-closeout pane, the system SHALL append the
   dependency wording to the stalled issue on GitHub (reusing the project

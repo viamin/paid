@@ -116,6 +116,20 @@ persisted diagnostic inputs for each project's candidates before evaluating
 individual `CloseoutStatus` values. The per-issue status still produces the
 same additive blockers; batching changes only how its inputs are read.
 
+The diagnostic walk also mirrors the candidate source's two authoritative
+partial-closeout exclusions that are not dependency edges: an open native
+non-PR child and an active `partial_closeout.prerequisite` notification. Each
+reason names the child or notification, records its GitHub or Inbox link and
+the persisted evidence that caused admission to fail, and offers only the
+supported recovery route. A human-prerequisite notification remains an
+unresolved human decision or evidence request; it is never dismissed,
+rewritten to a different policy, or treated as implementation completion just
+to make admission pass. Its description and provenance remain inspectable so
+an operator can reconcile stale guidance through the policy-selection or
+fresh-assessment route before deliberately continuing. These diagnostics are
+additive with dependency and other holds, tenant-scoped, and are reused by
+Inbox, API/chat, continuation, and report-only acceptance-audit refusals.
+
 ### Prompt delivery
 
 The authorization is useless to the executing agent if it never reaches the
