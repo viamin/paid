@@ -4096,6 +4096,9 @@ class AgentRun < ApplicationRecord
     # create_feature derives its prompt from Prompts::BuildForCreateFeature
     # and external_metadata["feature_brief"], so it needs no issue or source PR.
     return if create_feature_goal?
+    # @spec LAYERED-VERIFY-013
+    # A bounded audit is intentionally project-scoped rather than issue-scoped.
+    return if goal == "layered_verification_audit"
     return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
 
     errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")

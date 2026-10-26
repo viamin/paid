@@ -351,6 +351,27 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Acceptance audit queued.")
     end
 
+    # The project action deliberately delegates to the same tool used by chat
+    # and MCP.  This preserves one feature, authorization, scope-preview, and
+    # dispatch boundary across every entry path.
+    # @spec LAYERED-VERIFY-014
+    def request_layered_verification_audit
+      result = Tools::RequestLayeredVerificationAudit.new(user: current_user, session: nil).call(
+        project_id: @project.id,
+        scope: params[:scope],
+        sources: params[:sources],
+        target_revision: params[:target_revision],
+        budget: params[:budget],
+        checks: params.fetch(:checks, []),
+        omissions: params.fetch(:omissions, []),
+        confirmed: ActiveModel::Type::Boolean.new.cast(params[:confirmed])
+      )
+
+      redirect_to project_agent_run_path(@project, result.fetch(:id)), notice: "Layered verification audit queued."
+    rescue ArgumentError, Tools::UnauthorizedError => error
+      redirect_to project_path(@project), alert: error.message
+    end
+
     # Records the operator's attestation that the recorded closeout evidence
     # completes the issue (evidence-gated; see Issues::ResolveCloseout).
     # @spec PARTIAL-CLOSEOUT-007
