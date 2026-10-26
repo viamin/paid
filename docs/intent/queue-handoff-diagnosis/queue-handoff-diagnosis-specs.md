@@ -7,11 +7,11 @@
 
 - [x] **QUEUE-HANDOFF-002** — When a visible project has active work and no
   eligible issue waiting for a handoff, the dashboard SHALL report
-  `active_work`; when it has queued eligible work it SHALL report `waiting`;
-  and when open work has no eligible candidate it SHALL report `held`.
+  `active_work`; when it has queued work represented by the queue preview it
+  SHALL report `waiting`, including manual, closed-issue, and pull-request
+  runs; and when open work has no eligible candidate it SHALL report `held`.
 
-- [x] **QUEUE-HANDOFF-003** — When a project/account is deliberately paused,
-  the dashboard SHALL report `paused` without treating the pause as a stall.
-  If diagnostic evaluation fails, it SHALL expose `unknown` coverage and a
-  refresh action rather than claim that the queue has no work.
-
+- [x] **QUEUE-HANDOFF-003** — When a project/account or run is deliberately
+  paused, the dashboard SHALL report `paused` without treating the pause as a
+  stall. If diagnostic evaluation fails, it SHALL expose `unknown` coverage
+  and a refresh action rather than claim that the queue has no work.

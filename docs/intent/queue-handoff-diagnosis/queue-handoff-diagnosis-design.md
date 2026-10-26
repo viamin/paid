@@ -16,21 +16,24 @@ admission policy.
 ## Diagnostic states
 
 For each visible Auto-Pick project, the dashboard reports the number of
-eligible candidates, queued runs, active runs, and eligible candidates that
-have neither queued nor active work. The derived state is mechanical:
+eligible candidates, queued runs, active runs, paused runs, and eligible
+candidates that have not made the delivery handoff. Candidate eligibility is
+limited to open issues; run counts retain the queue-preview scope, including
+manual and pull-request work. The derived state is mechanical:
 
 | State | Condition | Operator meaning |
 | --- | --- | --- |
 | `active_work` | no waiting eligible candidate and one or more active runs | healthy work is progressing |
 | `runnable_not_seeded` | one or more eligible candidates lack queued or active work | the existing event/sweep seeder should recover the handoff |
-| `waiting` | eligible candidates have queued work | scheduler backlog is represented |
+| `waiting` | one or more queued runs | scheduler backlog is represented |
 | `held` | open work exists but no candidate is eligible | existing Inbox and eligibility categories identify the hold |
-| `paused` | the project or account scheduler is deliberately paused | resume remains an explicit operator action |
+| `paused` | the project, account, or a run is deliberately paused | resume remains an explicit operator action |
 | `unknown` | the diagnostic query cannot establish coverage | rendering reports unavailable coverage, never "no work" |
 
 The counts are project- and user-visible only. A run is associated with an
-eligible candidate by `issue_id`; manual and unrelated runs do not hide an
-unseeded candidate. The diagnostic is read-only: no LLM call, repository
+eligible candidate by `issue_id`; manual and unrelated runs contribute to
+queue coverage without hiding an unseeded candidate. The diagnostic is
+read-only: no LLM call, repository
 execution, remote mutation, hold clearing, or policy bypass occurs while a
 dashboard frame renders.
 
@@ -51,4 +54,3 @@ content is revalidated. The client marks session-cached frame content stale
 until refresh succeeds. If the server-side diagnostic fails, the frame shows
 unknown coverage and a refresh action rather than claiming that no work is
 waiting.
-

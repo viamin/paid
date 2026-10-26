@@ -7,7 +7,7 @@ module Dashboard
     ProjectBreakdown = Struct.new(
       :project, :total_open, :eligible, :needs_input,
       :skip_label, :completed, :in_progress, :manual_review, :other_excluded,
-      :queued, :active, :unseeded, :diagnostic_state,
+      :queued, :active, :paused, :unseeded, :diagnostic_state,
       keyword_init: true
     )
 
@@ -35,7 +35,11 @@ module Dashboard
       # owner share one resolution; resolving it per project would re-read the
       # same configuration once per repo (#4556).
       tier_feasibility = Runners::TierFeasibility.new
-      auto_pick_projects.map { |project| breakdown_for(project, tier_feasibility: tier_feasibility) }
+      projects = auto_pick_projects
+      handoff_counts = handoff_counts_by_project(projects)
+      projects.map do |project|
+        breakdown_for(project, tier_feasibility: tier_feasibility, handoff_counts: handoff_counts)
+      end
     end
 
     # Preload everything the per-project gate and breakdown touch so a dashboard
@@ -58,8 +62,8 @@ module Dashboard
         .select { |p| Issues::AutoPickProjectGate.call(p) || deliberately_paused?(p) }
     end
 
-    # @spec OPERATOR-INBOX-002D QUEUE-HANDOFF-001 QUEUE-HANDOFF-002
-    def breakdown_for(project, tier_feasibility:)
+    # @spec OPERATOR-INBOX-002D QUEUE-HANDOFF-001 QUEUE-HANDOFF-002 QUEUE-HANDOFF-003
+    def breakdown_for(project, tier_feasibility:, handoff_counts:)
       open = Issue.where(project: project, github_state: "open", is_pull_request: false)
 
       eligible_scope = Automation::Strategies::AutoPick::DefaultCandidateSource
@@ -80,7 +84,7 @@ module Dashboard
       manual_review = excluded.where(paid_state: "manual_review").count
       skip_label = count_skip_labeled(excluded, analyzable, project)
       other = excluded_total - needs_input - in_progress - completed - manual_review - skip_label
-      queued, active = handoff_counts(project)
+      queued, active, paused = handoff_counts.fetch(project.id, [ 0, 0, 0 ])
       unseeded = eligible_count
 
       ProjectBreakdown.new(
@@ -93,33 +97,40 @@ module Dashboard
         other_excluded: other,
         queued: queued,
         active: active,
+        paused: paused,
         unseeded: unseeded,
-        diagnostic_state: diagnostic_state(project:, unseeded:, queued:, active:, total_open: eligible_count + excluded_total)
+        diagnostic_state: diagnostic_state(
+          project:, unseeded:, queued:, active:, paused:, total_open: eligible_count + excluded_total
+        )
       )
     end
 
-    # Candidate eligibility excludes issues that already have an active run.
-    # It is therefore the canonical count of ready work that has not made the
-    # delivery handoff, while these counters retain the independent scheduler
-    # facts for the operator.
-    def handoff_counts(project)
-      runs = AgentRun.where(project: project, issue_id: project.issues.where(github_state: "open", is_pull_request: false))
-      [ runs.where(status: "queued").count, runs.active.count ]
+    # Candidate eligibility is specific to open issues. Scheduler facts are
+    # deliberately broader: the queue preview also shows manual and PR runs.
+    def handoff_counts_by_project(projects)
+      counts = AgentRun.where(project_id: projects, status: %w[queued running paused])
+        .group(:project_id, :status)
+        .count
+
+      projects.to_h do |project|
+        [ project.id, [ "queued", "running", "paused" ].map { |status| counts.fetch([ project.id, status ], 0) } ]
+      end
     end
 
     # @spec QUEUE-HANDOFF-003
-    def diagnostic_state(project:, unseeded:, queued:, active:, total_open:)
+    def diagnostic_state(project:, unseeded:, queued:, active:, paused:, total_open:)
       return :paused if deliberately_paused?(project)
-      return :runnable_not_seeded if unseeded.positive?
       return :waiting if queued.positive?
+      return :runnable_not_seeded if unseeded.positive?
       return :active_work if active.positive?
+      return :paused if paused.positive?
       return :held if total_open.positive?
 
       :idle
     end
 
     def deliberately_paused?(project)
-      project.scheduler_paused? || project.quality_paused? || project.account.scheduler_paused?
+      project.scheduler_paused? || project.quality_paused? || project.paused? || project.account.scheduler_paused?
     end
 
     def count_skip_labeled(excluded_scope, analyzable_count, project)

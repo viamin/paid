@@ -1021,6 +1021,7 @@ RSpec.describe "Dashboard" do
       get dashboard_eligibility_breakdown_path
 
       expect(response.body).to include("eligible but not queued")
+      expect(Nokogiri::HTML(response.body).css("span").count { |span| span.text.strip == "1 eligible but not queued" }).to eq(1)
     end
 
     # @spec QUEUE-HANDOFF-003
@@ -1032,6 +1033,14 @@ RSpec.describe "Dashboard" do
       expect(response).to have_http_status(:ok)
       expect(response.body).to include("Queue diagnosis unavailable")
       expect(response.body).to include("This does not mean there is no work.")
+    end
+
+    it "does not represent unexpected Active Record errors as unavailable coverage" do
+      allow(Dashboard::EligibilityBreakdown).to receive(:call).and_raise(ActiveRecord::RecordNotFound)
+
+      get dashboard_eligibility_breakdown_path
+
+      expect(response).to have_http_status(:not_found)
     end
   end
 

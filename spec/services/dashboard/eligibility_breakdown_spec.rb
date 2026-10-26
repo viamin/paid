@@ -37,7 +37,7 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(breakdown.queued).to eq(1)
       expect(breakdown.active).to eq(1)
       expect(breakdown.unseeded).to eq(1)
-      expect(breakdown.diagnostic_state).to eq(:runnable_not_seeded)
+      expect(breakdown.diagnostic_state).to eq(:waiting)
       expect(unseeded).to be_persisted
     end
 
@@ -171,6 +171,42 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(result.sole.diagnostic_state).to eq(:paused)
     end
 
+    # @spec QUEUE-HANDOFF-003
+    it "reports an operator-paused project even when its automatic run is held" do
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :queued, :automatic, project: project)
+      project.pause!
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.queued).to eq(1)
+      expect(breakdown.diagnostic_state).to eq(:paused)
+    end
+
+    # @spec QUEUE-HANDOFF-002
+    it "counts queued manual, closed-issue, and pull-request runs" do
+      create(:agent_run, :queued, :with_custom_prompt, project: project)
+      create(:agent_run, :queued, project: project,
+        issue: create(:issue, project: project, github_state: "closed"))
+      create(:agent_run, :queued, :existing_pr, project: project)
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.queued).to eq(3)
+      expect(breakdown.diagnostic_state).to eq(:waiting)
+    end
+
+    # @spec QUEUE-HANDOFF-003
+    it "reports paused runs as deliberately paused work" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :paused, project: project, issue: issue)
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.paused).to eq(1)
+      expect(breakdown.diagnostic_state).to eq(:paused)
+    end
+
     it "excludes inactive projects" do
       project.update!(active: false)
 
@@ -232,6 +268,10 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       queries.count { |sql| sql.match?(/FROM "runners" WHERE .*enabled_for_agent_runs/) }
     end
 
+    def handoff_count_queries(queries)
+      queries.count { |sql| sql.match?(/GROUP BY "agent_runs"\."project_id", "agent_runs"\."status"/) }
+    end
+
     it "does not resolve tier feasibility per project (no N+1)" do
       create(:issue, project: project, github_state: "open", paid_state: "new")
       single_repo_resolutions = feasibility_resolutions(capture_queries { described_class.call(user: user) })
@@ -247,6 +287,21 @@ RSpec.describe Dashboard::EligibilityBreakdown do
 
       expect(single_repo_resolutions).to be_positive
       expect(multi_repo_resolutions).to eq(single_repo_resolutions)
+    end
+
+    it "resolves handoff counts for all visible projects in one query" do
+      create(:agent_run, :queued, project: project)
+      single_query_count = handoff_count_queries(capture_queries { described_class.call(user: user) })
+
+      Rails.cache.clear
+      Array.new(3) do |i|
+        create(:project, account: account, created_by: user,
+          auto_pick_enabled: true, active: true, owner: "org", repo: "handoff-repo-#{i}")
+      end.each { |additional_project| create(:agent_run, :queued, project: additional_project) }
+      multi_query_count = handoff_count_queries(capture_queries { described_class.call(user: user) })
+
+      expect(single_query_count).to eq(1)
+      expect(multi_query_count).to eq(single_query_count)
     end
 
     it "includes orphaned projects for the account fallback owner" do
