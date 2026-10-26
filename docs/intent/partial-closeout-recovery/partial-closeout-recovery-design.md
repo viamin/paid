@@ -315,6 +315,11 @@ refresh local records immediately, showing the successful linkage and when a
 full sync is still required — the same services the agent `create_issue` /
 `edit_issue` tools use.
 
+Dismissal is a presentation action, not an evidence decision: a dismissed
+human-prerequisite notification remains a scheduling guard until the relevant
+prerequisite is explicitly resolved after verified evidence. A link, comment,
+artifact, green run, or dismissal alone never attests acceptance.
+
 Pending chat write-tool confirmations visibly distinguish proposed/awaiting
 confirmation, queued, refused, and completed actions, link a completed action
 to the run it created, and a conversational message sent while a confirmation

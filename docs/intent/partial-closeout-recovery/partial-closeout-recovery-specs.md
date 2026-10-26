@@ -4,6 +4,18 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When an operator dismisses a
+  `partial_closeout.prerequisite` notification, the system SHALL preserve the
+  dismissal as presentation state but SHALL retain the prerequisite as a
+  scheduling block. Only an explicit system resolution following verified
+  evidence may release that block and trigger the existing eligibility
+  reassessment. Dismissal, a URL, a comment, an uploaded file, or a green run
+  alone SHALL NOT attest acceptance.
+  *Code:* `app/models/notification.rb`,
+  `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
+  *Test:* `spec/models/notification_spec.rb`,
+  `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its

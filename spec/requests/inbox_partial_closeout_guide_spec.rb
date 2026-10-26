@@ -49,14 +49,14 @@ RSpec.describe "Partial closeout operator guide" do # @spec PARTIAL-CLOSEOUT-022
     expect(response.body).to include("human-only evaluation")
   end
 
-  it "explains human evidence handling and automatic versus deliberate resumption" do
+  it "explains that dismissal does not resolve a human prerequisite" do # @spec PARTIAL-CLOSEOUT-030
     sign_in user
 
     get partial_closeout_guide_path
 
     expect(response.body).to include("who must supply it")
-    expect(response.body).to include("resumes automatically")
-    expect(response.body).to include("deliberate continuation")
-    expect(response.body).to include("never retries an agent for unavailable human evidence")
+    expect(response.body).to include("does not verify evidence or release its")
+    expect(response.body).to include("submitted evidence is verified and explicitly resolved")
+    expect(response.body).to include("never retries")
   end
 end
