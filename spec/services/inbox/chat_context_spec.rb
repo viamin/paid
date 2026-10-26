@@ -145,6 +145,23 @@ RSpec.describe Inbox::ChatContext do
     )
   end
 
+  # @spec PARTIAL-CLOSEOUT-030
+  it "includes active human prerequisite evidence in partial-closeout chat context" do
+    chat_session.update!(
+      inbox_item_key: "partial_closeout:#{issue.id}",
+      inbox_item_metadata: { "kind" => "partial_closeout", "issue_id" => issue.id }
+    )
+    create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Pilot policy needs operator action", description: "Record the selected policy.")
+
+    context = described_class.call(chat_session:, user:, sections: [ :partial_closeout ])
+
+    expect(context.fetch("partial_closeout").fetch(:scheduling_blockers)).to include(
+      include(code: :human_prerequisite, evidence: include("notifications" => [ include("requested_evidence" => "Record the selected policy.") ]))
+    )
+  end
+
   # @spec PARTIAL-CLOSEOUT-023
   it "exposes persisted criterion evidence and freshness through authorized chat context" do
     pull_request = create(:issue, :pull_request, project:, github_state: "closed", pr_review_phase: "merged", parent_issue: issue)

@@ -107,6 +107,22 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
   end
 
   describe "refusals" do
+    # @spec PARTIAL-CLOSEOUT-030
+    it "refuses with the exact active human prerequisite evidence" do
+      merged_partial_pr(number: 12)
+      notification = create(:notification, :error, account: account, subject: issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+        title: "Review policy needs operator action", description: "Select the team review policy.")
+
+      result = request_continuation
+
+      expect(result.code).to eq(:human_prerequisite)
+      expect(result.message).to include("notification ##{notification.id}")
+      expect(result.message).to include("Select the team review policy.")
+      expect(issue.agent_runs).to be_empty
+      expect(notification.reload).to be_active
+    end
+
     it "refuses an issue without closeout evidence" do
       result = request_continuation
 
@@ -221,11 +237,8 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       expect(IssueContinuationRequest.count).to eq(0)
     end
 
-    it "refuses instead of queueing a run another eligibility guard would cancel at dequeue" do
-      # A guard the targeted blocker walk does not enumerate (here: an open
-      # non-PR sub-issue keeps the parent out of every eligible scope) must
-      # refuse up front with its reason, never queue a run the dequeue-time
-      # recheck would cancel and supersede (#4130 review).
+    # @spec PARTIAL-CLOSEOUT-030
+    it "refuses an open native child without queueing a run dequeue would cancel" do
       merged_partial_pr(number: 12)
       create(
         :issue,
@@ -239,8 +252,8 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       result = request_continuation
 
       expect(result.success?).to be(false)
-      expect(result.code).to eq(:unavailable)
-      expect(result.message).to include("exact guard is unavailable")
+      expect(result.code).to eq(:open_native_children)
+      expect(result.message).to include("#55")
       expect(issue.agent_runs).to be_empty
       expect(IssueContinuationRequest.count).to eq(0)
     end
