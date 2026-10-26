@@ -60,8 +60,8 @@ RSpec.describe QdrantClient do
 
   describe "#points" do
     it "delegates method calls through the proxy" do
-      allow(points).to receive(:list).with(collection_name: "test").and_return({ "result" => [] })
-      expect(client.points.list(collection_name: "test")).to eq({ "result" => [] })
+      allow(points).to receive(:list).with(collection_name: "test", ids: [ "point-1" ]).and_return({ "result" => [] })
+      expect(client.points.list(collection_name: "test", ids: [ "point-1" ])).to eq({ "result" => [] })
     end
   end
 
@@ -107,24 +107,24 @@ RSpec.describe QdrantClient do
 
     context "when a points operation fails with ECONNREFUSED" do
       before do
-        allow(points).to receive(:list).with(collection_name: "test")
+        allow(points).to receive(:list).with(collection_name: "test", ids: [ "point-1" ])
           .and_raise(Errno::ECONNREFUSED, "Connection refused")
       end
 
       it "wraps the error in ConnectionError with context" do
-        expect { client.points.list(collection_name: "test") }
+        expect { client.points.list(collection_name: "test", ids: [ "point-1" ]) }
           .to raise_error(QdrantClient::ConnectionError, /Qdrant connection error during #list: Connection refused/)
       end
     end
 
     context "when a points operation fails with Net::ReadTimeout" do
       before do
-        allow(points).to receive(:list).with(collection_name: "test")
+        allow(points).to receive(:list).with(collection_name: "test", ids: [ "point-1" ])
           .and_raise(Net::ReadTimeout.new("timeout"))
       end
 
       it "wraps the error in ConnectionError with context" do
-        expect { client.points.list(collection_name: "test") }
+        expect { client.points.list(collection_name: "test", ids: [ "point-1" ]) }
           .to raise_error(QdrantClient::ConnectionError, /Qdrant connection error during #list: Net::ReadTimeout/)
       end
     end
