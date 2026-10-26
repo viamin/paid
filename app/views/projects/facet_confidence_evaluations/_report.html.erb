@@ -1,0 +1,103 @@
+<%# Post-freeze surface: frozen expectations, shapes, and the compiled report
+    are visible here. Highlighted rows are divergences for judge review;
+    nothing here closes the source issue or changes thresholds.
+    @spec FACET-CONFIDENCE-021 %>
+<% entries = evaluation.report["cases"] || [] %>
+<% measures = evaluation.report["measures"] || {} %>
+
+<div class="rounded-xl border border-gray-200 bg-white p-4">
+  <h2 class="text-sm font-semibold text-gray-900">Reference set frozen</h2>
+  <p class="mt-1 text-xs text-gray-500">
+    Frozen <%= evaluation.labels_frozen_at&.strftime("%Y-%m-%d %H:%M UTC") %> · answers visible from here on ·
+    originating work item #<%= evaluation.issue.github_number %> ·
+    source revision <code class="break-all"><%= evaluation.source_revision || "not recorded" %></code>.
+  </p>
+  <p class="mt-2 text-xs text-gray-500">
+    Scores are policy assessments, not calibrated probabilities. This report neither closes the source issue,
+    enables delivery, nor changes the separate 80/80 defaults.
+  </p>
+</div>
+
+<div class="space-y-3 rounded-xl border border-gray-200 bg-white p-6">
+  <h2 class="text-sm font-semibold text-gray-900">Measures: frozen judgments vs frozen expectations</h2>
+  <table class="w-full text-left text-sm">
+    <thead>
+      <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
+        <th class="py-2 pr-3">Measure</th>
+        <th class="py-2 pr-3">Count</th>
+        <th class="py-2 pr-3">Cases</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% measures.each do |name, measure| %>
+        <tr class="border-b border-gray-100">
+          <td class="py-2 pr-3 font-medium text-gray-900"><%= name.tr("_", " ") %></td>
+          <td class="py-2 pr-3"><%= measure["count"] %></td>
+          <td class="py-2 pr-3 text-xs text-gray-600"><%= Array(measure["cases"]).join(", ") %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>
+
+<div class="space-y-3 rounded-xl border border-gray-200 bg-white p-6">
+  <h2 class="text-sm font-semibold text-gray-900">Cases: reference judgments vs frozen expectations</h2>
+  <table class="w-full text-left text-sm">
+    <thead>
+      <tr class="border-b border-gray-200 text-xs uppercase tracking-wide text-gray-500">
+        <th class="py-2 pr-3">Case</th>
+        <th class="py-2 pr-3">Shape</th>
+        <th class="py-2 pr-3">Judgment</th>
+        <th class="py-2 pr-3">Frozen expectations</th>
+        <th class="py-2 pr-3">Divergences</th>
+      </tr>
+    </thead>
+    <tbody>
+      <% entries.each do |entry| %>
+        <% judgment = entry["judgment"] || {} %>
+        <% expected = entry["expected"] || {} %>
+        <% divergent = Array(entry["divergences"]).any? || Array(entry["citation_compliance"]).any? %>
+        <%= content_tag :tr,
+              class: class_names("border-b border-gray-100", "bg-amber-50": divergent),
+              data: { case: entry["case_id"], divergence: (true if divergent) } do %>
+          <td class="py-2 pr-3 font-medium text-gray-900"><%= entry["case_id"] %></td>
+          <td class="py-2 pr-3 text-gray-600"><code><%= entry["shape"] %></code></td>
+          <td class="py-2 pr-3">
+            <code><%= judgment["verdict"] %></code> ·
+            intent <code><%= judgment["intent_band"] %></code> ·
+            technical <code><%= judgment["technical_band"] %></code> ·
+            <code><%= judgment["readiness"] %></code><br>
+            <span class="text-xs text-gray-500">cites <code><%= judgment["cited_evidence_reference"] %></code></span>
+          </td>
+          <td class="py-2 pr-3">
+            <code><%= expected["status"] %></code> ·
+            intent <code><%= expected["intent_band"] %></code> ·
+            technical <code><%= expected["technical_band"] %></code> ·
+            <code><%= expected["readiness"] %></code>
+          </td>
+          <td class="py-2 pr-3 text-xs text-gray-700">
+            <% if divergent %>
+              <%= Array(entry["divergences"]).join(", ") %>
+              <% unless Array(entry["citation_compliance"]).empty? %>
+                · citation: <%= Array(entry["citation_compliance"]).join(", ") %>
+              <% end %>
+            <% else %>
+              aligned
+            <% end %>
+          </td>
+        <% end %>
+      <% end %>
+    </tbody>
+  </table>
+  <p class="text-xs text-gray-500">
+    Highlighted rows are divergences between your blinded judgment and the frozen expectation for judge review.
+    The original judgments are preserved as recorded.
+  </p>
+</div>
+
+<% if evaluation.report_markdown.present? %>
+  <details class="rounded-xl border border-gray-200 bg-white p-6">
+    <summary class="cursor-pointer text-sm font-semibold text-gray-900">Reproducible report (markdown)</summary>
+    <pre class="mt-3 overflow-x-auto whitespace-pre-wrap text-xs text-gray-700"><%= evaluation.report_markdown %></pre>
+  </details>
+<% end %>

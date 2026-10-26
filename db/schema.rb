@@ -1807,6 +1807,47 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
     t.index ["status", "created_at"], name: "idx_connector_events_status_created"
   end
 
+  create_table "facet_confidence_evaluation_labels", comment: "Durable blinded reference judgment for one corpus case of a facet-confidence closeout evaluation: save/resume state per case (#4596).", force: :cascade do |t|
+    t.string "case_id", null: false, comment: "Case id inside the frozen corpus manifest."
+    t.text "cited_evidence_reference", comment: "One evidence reference from the case cited by the judge."
+    t.datetime "created_at", null: false
+    t.bigint "facet_confidence_evaluation_id", null: false, comment: "Owning evaluation."
+    t.string "intent_band", comment: "unknown | below_threshold | at_or_above_threshold; set when labeled."
+    t.string "readiness", comment: "ready | not_ready; must follow the judged bands; set when labeled."
+    t.text "reason", comment: "Judge's reason for the judgment."
+    t.datetime "recorded_at", null: false, comment: "When the judgment (or last save) was recorded."
+    t.bigint "recorded_by_id", null: false, comment: "Authenticated operator who recorded the judgment."
+    t.string "state", default: "pending", null: false, comment: "pending | labeled | skipped. Skipped cases are never counted as completed and block freeze."
+    t.string "technical_band", comment: "unknown | below_threshold | at_or_above_threshold; set when labeled."
+    t.datetime "updated_at", null: false
+    t.string "verdict", comment: "completed | clarification_needed | unknown; set when labeled."
+    t.index ["facet_confidence_evaluation_id", "case_id"], name: "idx_facet_confidence_evaluation_labels_case", unique: true, comment: "One durable judgment row per case: saves update in place, giving durable save/resume."
+    t.index ["facet_confidence_evaluation_id"], name: "idx_on_facet_confidence_evaluation_id_2126f02a77"
+    t.index ["recorded_by_id"], name: "index_facet_confidence_evaluation_labels_on_recorded_by_id"
+  end
+
+  create_table "facet_confidence_evaluations", comment: "Facet-confidence closeout evaluation (#4596): one blinded reference-judgment session per originating closeout (issue, frozen corpus digest) over the shipped RDR-070 corpus.", force: :cascade do |t|
+    t.string "corpus_digest", null: false, comment: "SHA-256 of the frozen corpus manifest content; changing the corpus starts a new evidence generation."
+    t.string "corpus_path", null: false, comment: "Repository-relative path of the frozen corpus manifest."
+    t.string "corpus_version", null: false, comment: "Frozen corpus version pinned at start."
+    t.datetime "created_at", null: false
+    t.bigint "created_by_id", null: false, comment: "Authenticated operator who started the evaluation and is its sole reference judge."
+    t.bigint "issue_id", null: false, comment: "Originating partial-closeout work item; links the evaluation and its report back to the Inbox item."
+    t.datetime "labels_frozen_at", comment: "Set by the explicit freeze action; frozen expectations stay hidden until then."
+    t.string "model_version", null: false, comment: "Model version pinned at start."
+    t.bigint "project_id", null: false, comment: "Project whose closeout is evaluated; also the authorization boundary."
+    t.jsonb "report", default: {}, null: false, comment: "Compiled reproducible report (identities, judgments, measures, provenance)."
+    t.text "report_markdown", comment: "Rendered markdown of the reproducible report."
+    t.string "rubric_version", null: false, comment: "Rubric version pinned at start."
+    t.string "source_revision", comment: "Closeout source revision recorded at start."
+    t.string "status", default: "labeling", null: false, comment: "labeling | frozen (see FacetConfidenceEvaluation::STATUSES)."
+    t.datetime "updated_at", null: false
+    t.index ["created_by_id"], name: "index_facet_confidence_evaluations_on_created_by_id"
+    t.index ["issue_id", "corpus_digest"], name: "idx_facet_confidence_evaluations_one_per_closeout_generation", unique: true, comment: "Repeated Start/Resume actions reuse the same evaluation for the same evidence generation."
+    t.index ["issue_id"], name: "index_facet_confidence_evaluations_on_issue_id"
+    t.index ["project_id"], name: "index_facet_confidence_evaluations_on_project_id"
+  end
+
   create_table "failure_classifications", comment: "Persisted failure classification and chosen recovery action for coordination learning", force: :cascade do |t|
     t.jsonb "action_params", default: {}, null: false, comment: "Parameters passed to the chosen recovery action"
     t.jsonb "action_result", default: {}, null: false, comment: "Outcome of executing the recovery action"
@@ -4699,6 +4740,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
   add_foreign_key "explicit_preferences", "users", on_delete: :cascade
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
+  add_foreign_key "facet_confidence_evaluation_labels", "facet_confidence_evaluations"
+  add_foreign_key "facet_confidence_evaluation_labels", "users", column: "recorded_by_id"
+  add_foreign_key "facet_confidence_evaluations", "issues"
+  add_foreign_key "facet_confidence_evaluations", "projects"
+  add_foreign_key "facet_confidence_evaluations", "users", column: "created_by_id"
   add_foreign_key "failure_classifications", "agent_runs", on_delete: :cascade
   add_foreign_key "failure_classifications", "projects", on_delete: :cascade
   add_foreign_key "feature_intent_approval_revisions", "feature_intents"

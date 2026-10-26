@@ -272,6 +272,24 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(show_view_targets.map(&:slug)).to eq([ "project_shadow_evaluation_show" ])
     end
 
+    it "maps facet-confidence evaluation screens to their screenshot targets" do # @spec FACET-CONFIDENCE-020
+      controller_targets = described_class.call(changed_files: [ "app/controllers/projects/facet_confidence_evaluations_controller.rb" ])
+      new_view_targets = described_class.call(changed_files: [ "app/views/projects/facet_confidence_evaluations/new.html.erb" ])
+      show_view_targets = described_class.call(
+        changed_files: [
+          "app/views/projects/facet_confidence_evaluations/show.html.erb",
+          "app/views/projects/facet_confidence_evaluations/_labeling.html.erb",
+          "app/views/projects/facet_confidence_evaluations/_report.html.erb"
+        ]
+      )
+
+      expect(controller_targets.map(&:slug)).to eq(
+        [ "project_facet_confidence_evaluation_new", "project_facet_confidence_evaluation_show" ]
+      )
+      expect(new_view_targets.map(&:slug)).to eq([ "project_facet_confidence_evaluation_new" ])
+      expect(show_view_targets.map(&:slug)).to eq([ "project_facet_confidence_evaluation_show" ])
+    end
+
     it "maps the automation phases controller and show view to the automation phases target" do
       controller_targets = described_class.call(changed_files: [ "app/controllers/projects/automation_phases_controller.rb" ])
       view_targets = described_class.call(changed_files: [ "app/views/projects/automation_phases/show.html.erb" ])
