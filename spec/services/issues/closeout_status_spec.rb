@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
+RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002 PARTIAL-CLOSEOUT-030
   let(:account) { create(:account) }
   let(:project) { create(:project, account: account, owner: "acme", repo: "alpha") }
   let(:issue) { create(:issue, project: project, github_state: "open", paid_state: "in_progress") }
@@ -115,23 +115,87 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     expect(status.reason).to include("backoff")
   end
 
-  it "surfaces a non-walked eligibility guard via the scoped preflight instead of the duplicate-work fallback" do
+  # @spec PARTIAL-CLOSEOUT-030
+  it "names an open native child that canonical admission excludes without a dependency edge" do
     merged_partial_pr(number: 12)
-    create(
+    child = create(
       :issue,
       project: project,
       github_state: "open",
       paid_state: "in_progress",
       parent_issue_id: issue.id,
-      github_number: 55
+      github_number: 55,
+      github_html_url: "https://github.example/acme/alpha/issues/55"
     )
 
     status = described_class.call(issue)
 
     expect(status.stalled?).to be(true)
+    expect(status.blocker_codes).to contain_exactly(:open_native_children)
+    expect(status.reason).to include("#55")
+    expect(status.blockers.first.evidence).to include("children" => [
+      { "id" => child.id, "number" => 55, "url" => child.github_url }
+    ])
+    expect(status.blockers.first.recovery).to include("#55")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "names active human prerequisite notification evidence without treating it as resolved" do
+    merged_partial_pr(number: 12)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Adjudicator evidence needed", description: "A maintainer must record the policy decision.",
+      action_url: "https://github.example/acme/alpha/issues/12#issuecomment-10")
+
+    status = described_class.call(issue)
+
+    expect(status.blocker_codes).to contain_exactly(:human_prerequisite)
+    expect(status.reason).to include("Adjudicator evidence needed")
+    expect(status.blockers.first.evidence).to include(
+      "notification_id" => notification.id,
+      "source" => PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+      "action_url" => notification.action_url
+    )
+    expect(status.blockers.first.recovery).to include("human decision")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "enumerates native-child and human prerequisite guards together" do
+    merged_partial_pr(number: 12)
+    create(:issue, project: project, github_state: "open", paid_state: "in_progress",
+      parent_issue_id: issue.id, github_number: 55)
+    create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Adjudicator evidence needed")
+
+    status = described_class.call(issue)
+
+    expect(status.blocker_codes).to contain_exactly(:open_native_children, :human_prerequisite)
+    expect(status.reason).to include("#55", "Adjudicator evidence needed")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "does not expose another tenant's prerequisite notification as this issue's blocker" do
+    merged_partial_pr(number: 12)
+    other_account = create(:account)
+    create(:notification, :error, account: other_account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Other tenant evidence")
+
+    status = described_class.call(issue)
+
+    expect(status.blocker_codes).not_to include(:human_prerequisite)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "keeps unavailable visible for a genuinely undiagnosed canonical guard" do
+    merged_partial_pr(number: 12)
+    create(:issue, :pull_request, project: project, github_state: "open", parent_issue: issue)
+
+    status = described_class.call(issue)
+
     expect(status.blocker_codes).to contain_exactly(:unavailable)
-    expect(status.reason).to include("unavailable")
-    expect(status.blockers.first.recovery).to include("Investigate")
+    expect(status.reason).to include("exact guard is unavailable")
   end
 
   it "reports every material blocker, including scanner verification evidence, without treating a merge as a fix" do

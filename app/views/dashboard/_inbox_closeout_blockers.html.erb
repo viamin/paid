@@ -9,6 +9,14 @@
           <% if blocker.evidence["attempt_url"].present? %>
             <%= link_to "View scanner alert", blocker.evidence["attempt_url"], target: "_blank", rel: "noopener noreferrer", class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
           <% end %>
+          <% Array(blocker.evidence["children"]).each do |child| %>
+            <% if child["url"].present? %>
+              <%= link_to "View child ##{child["number"]}", child["url"], target: "_blank", rel: "noopener noreferrer", class: "mr-2 text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+            <% end %>
+          <% end %>
+          <% if blocker.evidence["action_url"].present? %>
+            <%= link_to "Open prerequisite evidence", blocker.evidence["action_url"], target: "_blank", rel: "noopener noreferrer", class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+          <% end %>
         <% end %>
         <% if blocker.recovery.present? %><p class="text-xs text-violet-700">Next step: <%= blocker.recovery %></p><% end %>
       </li>

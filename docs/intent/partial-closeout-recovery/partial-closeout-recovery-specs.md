@@ -518,3 +518,22 @@
   `spec/services/inbox/chat_context_spec.rb`,
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-030** — When canonical continuation admission excludes
+  an issue for an open native non-PR child or an active
+  `partial_closeout.prerequisite` notification, `CloseoutStatus` SHALL expose
+  each exclusion as an additive structured blocker with the exact child or
+  notification identity, source evidence, safe link, and a recovery route that
+  preserves unresolved human decisions and work. Inbox detail/count, chat/API
+  context, continuation and report-only-audit refusals SHALL use that same
+  explanation. A report-only audit control SHALL not appear actionable when it
+  shares such a gate; it SHALL instead explain the gate and direct the operator
+  to the named evidence route. Notification and child lookup SHALL stay within
+  the issue's project/account. Only a guard not represented by these or the
+  other known diagnostics may use the visible `unavailable` fallback.
+  *Code:* `app/services/issues/closeout_status.rb`,
+  `app/services/inbox/chat_context.rb`,
+  `app/views/dashboard/_inbox_closeout_blockers.html.erb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/inbox/chat_context_spec.rb`, `spec/requests/inbox_spec.rb`.
