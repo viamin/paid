@@ -132,6 +132,9 @@ PR-creation pathway:
   become a bounded issue or PR-creation run through existing authorized
   pathways — this create path is a new run/issue through existing creation
   goals, not a new side-effecting action hung off the maintenance report.
+  A separately approved policy may record an equally explicit, per-run
+  pre-authorization at start; it must still use this repair pathway and may
+  not change the report-only default.
 
 All three surfaces are gated by the `maintenance_runs` guard (below); none
 of the three may admit a maintenance run while the guard is off for the
@@ -208,6 +211,7 @@ shipped code in
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
 | Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Optimization-family automatic repair | Deferred to the draft `optimization-recipes` policy; its per-run election is an explicit pre-authorization only if separately accepted | Recipe/tenant default; mutation during a scan | The base contract remains report-only until a narrow policy has passed its own review; a family policy cannot broaden repair authority by implication. |
 
 ## Open Questions & Future Decisions
 
