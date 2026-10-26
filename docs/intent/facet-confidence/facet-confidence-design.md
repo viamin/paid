@@ -168,3 +168,9 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+After unblinding, the sole judge may append a correction for a frozen case.
+The original blinded label and frozen comparison remain immutable; each
+correction records the replacement judgment, its own reason, actor, and time.
+Corrections are audit evidence, not a second reference set and do not change
+readiness thresholds or delivery state.
