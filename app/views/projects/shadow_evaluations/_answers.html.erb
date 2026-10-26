@@ -14,12 +14,22 @@
         Execution state: <span data-evaluation-execution><%= evaluation.status %></span><% if evaluation.last_failure_reason.present? %> — <%= evaluation.last_failure_reason %><% end %>.
       </p>
     </div>
-    <% if evaluation.frozen? || evaluation.failed? %>
+    <% if evaluation.frozen? || evaluation.failed? || evaluation.partial? || evaluation.cancelled? %>
       <%= button_to "Execute reviewer now", execute_project_shadow_evaluation_path(project, evaluation, **inbox_context),
             form: { data: { turbo_frame: "_top", turbo_confirm: "Run the real conformance reviewer for every case through agent_harness? Costs apply." } },
             class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
     <% end %>
+    <% if evaluation.executing? %>
+      <%= button_to "Stop execution", cancel_project_shadow_evaluation_path(project, evaluation, **inbox_context),
+            form: { data: { turbo_frame: "_top", turbo_confirm: "Stop after the current case? Recorded evidence will be preserved." } },
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    <% end %>
   </div>
+  <% progress = evaluation.execution_progress %>
+  <p class="mt-2 text-xs text-gray-500" data-evaluation-progress>
+    <%= progress[:recorded] %>/<%= progress[:total] %> cases recorded; <%= progress[:evaluated] %> evaluated;
+    <%= progress[:unavailable] %> unavailable; cost <%= progress[:cost_cents] %>¢.
+  </p>
   <p class="mt-2 text-xs text-gray-500">
     Equivalent documented command: <code>bin/rails "intent_conformance:shadow_evaluation:execute[<%= evaluation.id %>]"</code>.
     Prerequisite validation alone is never execution.

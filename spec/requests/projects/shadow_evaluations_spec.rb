@@ -149,6 +149,27 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("intentionally_drifted")
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  it "queues execution promptly, deduplicates repeated submissions, and permits queued cancellation" do
+    evaluation = start_evaluation_from_committed_corpus!
+    label_all!(evaluation)
+    freeze!(evaluation)
+
+    expect {
+      post execute_project_shadow_evaluation_path(project, evaluation)
+    }.to have_enqueued_job(IntentConformance::ShadowEvaluation::ExecuteJob).with(evaluation.id)
+    expect(evaluation.reload).to be_queued
+    expect(response).to redirect_to(project_shadow_evaluation_path(project, evaluation))
+
+    expect {
+      post execute_project_shadow_evaluation_path(project, evaluation)
+    }.not_to have_enqueued_job(IntentConformance::ShadowEvaluation::ExecuteJob)
+
+    post cancel_project_shadow_evaluation_path(project, evaluation)
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs).to be_empty
+  end
+
   it "executes the real reviewer through agent_harness, records failures as not evaluated, and shows the report" do
     evaluation = start_evaluation_from_committed_corpus!
     label_all!(evaluation)
@@ -158,9 +179,10 @@ RSpec.describe "Projects::ShadowEvaluations" do
     # reviewer attempt fails closed and is recorded as not evaluated —
     # prerequisite validation is never presented as execution.
     post execute_project_shadow_evaluation_path(project, evaluation)
+    IntentConformance::ShadowEvaluation::ExecuteJob.perform_now(evaluation.id)
     follow_redirect!
 
-    expect(response.body).to include("not evaluated")
+    expect(response.body).to include("not_evaluated")
     expect(evaluation.reload).to be_failed
     evaluation.runs.each do |run|
       expect(run).to be_not_evaluated

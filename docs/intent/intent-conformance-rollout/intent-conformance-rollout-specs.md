@@ -140,3 +140,7 @@
   `app/views/projects/shadow_evaluations/_labeling.html.erb`.
   *Test:* `spec/services/intent_conformance/shadow_evaluation/evidence_spec.rb`,
   `spec/requests/projects/shadow_evaluations_spec.rb`.
+
+- [ ] **INTENT-CONFORMANCE-ROLLOUT-011** — When an authorized operator requests reviewer execution for a frozen evaluation, the system SHALL durably queue one idempotent background execution and promptly return. It SHALL expose queued, running, partial, failed, cancelled, and completed states with per-case evidence and cost; cancellation SHALL be cooperative between cases and preserve collected evidence. An expired worker lease SHALL be resumable without re-spending completed cases.
+  *Code:* `app/services/intent_conformance/shadow_evaluation/enqueue_execution.rb`, `app/jobs/intent_conformance/shadow_evaluation/execute_job.rb`.
+  *Test:* `spec/services/intent_conformance/shadow_evaluation/enqueue_execution_spec.rb`, `spec/services/intent_conformance/shadow_evaluation/execute_reviewer_spec.rb`, `spec/requests/projects/shadow_evaluations_spec.rb`.

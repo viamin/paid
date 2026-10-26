@@ -197,6 +197,22 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     expect(evaluation.runs.count).to eq(2)
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  it "stops cooperatively between cases without fabricating remaining results" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message).and_return(llm_response("within_scope"))
+    checks = 0
+
+    result = described_class.call(evaluation: evaluation, cancelled: -> { checks += 1; checks > 1 })
+
+    expect(result).to be_success
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs.pluck(:case_id)).to eq([ "A-01" ])
+    expect(evaluation.runs.first).to be_evaluated
+    expect(AgentHarness).to have_received(:send_message).once
+  end
+
   # @spec INTENT-CONFORMANCE-ROLLOUT-007 — any project operator may execute,
   # so two concurrent POSTs would both observe "no run row" for a case, both
   # invoke the paid reviewer, and the loser's write would then race the

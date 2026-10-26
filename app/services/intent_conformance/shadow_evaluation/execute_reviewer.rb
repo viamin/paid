@@ -32,17 +32,16 @@ module IntentConformance
       ADVISORY_UNLOCK_SQL = "SELECT pg_advisory_unlock(?, ?)".freeze
 
       def self.call(...) = new(...).call
+      def self.preflight(evaluation) = new(evaluation:).preflight_error
 
-      def initialize(evaluation:)
+      def initialize(evaluation:, cancelled: -> { false })
         @evaluation = evaluation
+        @cancelled = cancelled
       end
 
       def call
-        return failure("reviewer execution requires a frozen reference label set") unless @evaluation.answers_visible?
-        return failure("corpus manifest changed since reference labels were frozen — start a new evaluation") unless @evaluation.corpus.matches_recorded_digest?
-        return failure("no corpus cases to evaluate") if @evaluation.corpus.case_ids.empty?
-        identity_error = reviewer_identity_error
-        return failure(identity_error) if identity_error
+        error = preflight_error
+        return failure(error) if error
 
         unless try_lock!
           Rails.logger.info(
@@ -63,6 +62,18 @@ module IntentConformance
       private
 
       attr_reader :evaluation
+
+      public
+
+      def preflight_error
+        return "reviewer execution requires a frozen reference label set" unless @evaluation.answers_visible?
+        return "corpus manifest changed since reference labels were frozen — start a new evaluation" unless @evaluation.corpus.matches_recorded_digest?
+        return "no corpus cases to evaluate" if @evaluation.corpus.case_ids.empty?
+
+        reviewer_identity_error
+      end
+
+      private
 
       # Any project operator may trigger execution, so two concurrent calls
       # would both observe "no run row yet" for a case, both invoke the paid
@@ -85,11 +96,12 @@ module IntentConformance
       end
 
       def execute_cases
-        @evaluation.update!(status: "executing", execute_started_at: Time.current)
+        @evaluation.update!(status: "running", execute_started_at: Time.current) unless @evaluation.running?
         executed = 0
         failed = 0
 
         @evaluation.corpus.cases.each do |corpus_case|
+          return cancel(executed, failed) if cancelled?
           next if evaluated_run_for(corpus_case.fetch("id"))
 
           verdict, failure_reason, model, cost = review_case(corpus_case)
@@ -240,6 +252,14 @@ module IntentConformance
         log_executed(executed, failed)
         Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
       end
+
+      def cancel(executed, failed)
+        @evaluation.update!(status: "cancelled", cancelled_at: Time.current,
+          last_failure_reason: "cancelled by operator")
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
+      end
+
+      def cancelled? = @cancelled.call
 
       def prompt_digest
         require "digest"
