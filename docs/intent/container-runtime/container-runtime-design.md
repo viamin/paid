@@ -109,11 +109,16 @@ over which images may run at all.
 
 ### Capacity snapshots and admission
 
-Failed-run diagnostic retention keeps the container and workspace volumes for
-the existing bounded retention period, but stops its processes before recording
-retention. A stop failure propagates to the workflow's retry/cleanup path;
-retention must not certify that a running workload released its memory.
-Already-stopped containers are safe to retain again. Operators can explicitly
+Failed-run diagnostic retention reserves the container and workspace volumes
+for the existing bounded period before issuing a blocking Docker stop, so
+concurrent janitors cannot delete diagnostic evidence during the stop. It
+accepts only failed or retried runs and confirms the stopped state with a
+fresh backend lookup before reporting success. A failed stop restores the
+previous expiry only if this reservation still owns the recorded container and
+expiry, then propagates to the workflow's retry/cleanup path. A retried activity
+can finish an interrupted stop. Retention must not certify that a running
+workload released its memory. Already-stopped containers are safe to retain
+again. Operators can explicitly
 restart an unexpired retained container on its recorded backend for debugging;
 normal cleanup still removes it when retention expires. Retention does not
 automatically restart any workload.

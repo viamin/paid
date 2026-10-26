@@ -27,30 +27,62 @@ module Activities
         return { agent_run_id: agent_run_id, retained: false }
       end
 
-      return { agent_run_id: agent_run_id, retained: false } if agent_run.container_id.blank?
+      reservation = reserve_retention(agent_run)
+      return { agent_run_id: agent_run_id, retained: false } unless reservation
 
-      stop_retained_container(agent_run)
-      retention_hours = compute_retention_hours
-      retained_until = retention_hours.hours.from_now
-      agent_run.update!(container_retained_until: retained_until)
+      begin
+        stop_retained_container(reservation)
+      rescue StandardError
+        restore_retention(agent_run.id, reservation)
+        raise
+      end
 
       logger.info(
         message: "agent_execution.container_retained",
         agent_run_id: agent_run_id,
-        container_id: agent_run.container_id,
-        retained_until: retained_until.iso8601,
-        retention_hours: retention_hours
+        container_id: reservation[:container_id],
+        retained_until: reservation[:retained_until].iso8601,
+        retention_hours: reservation[:retention_hours]
       )
 
-      { agent_run_id: agent_run_id, retained: true, retained_until: retained_until.iso8601 }
+      { agent_run_id: agent_run_id, retained: true, retained_until: reservation[:retained_until].iso8601 }
     end
 
     private
 
-    def stop_retained_container(agent_run)
-      backend = Containers.backend_for(agent_run.container_host)
-      container = backend.get_container(agent_run.container_id)
-      backend.stop_container(container, timeout: 10) if container.info.dig("State", "Running")
+    def reserve_retention(agent_run)
+      agent_run.with_lock do
+        next unless agent_run.status.in?(%w[failed retried]) && agent_run.container_id.present?
+
+        hours = compute_retention_hours
+        reservation = {
+          container_id: agent_run.container_id, container_host: agent_run.container_host,
+          previous_expiry: agent_run.container_retained_until,
+          retained_until: hours.hours.from_now, retention_hours: hours
+        }
+        agent_run.update!(container_retained_until: reservation[:retained_until])
+        reservation
+      end
+    end
+
+    def restore_retention(agent_run_id, reservation)
+      AgentRun.where(id: agent_run_id, container_id: reservation[:container_id],
+        container_host: reservation[:container_host], container_retained_until: reservation[:retained_until])
+        .update_all(container_retained_until: reservation[:previous_expiry])
+    end
+
+    def stop_retained_container(reservation)
+      backend = Containers.backend_for(reservation[:container_host])
+      container_id = reservation[:container_id]
+      container = backend.get_container(container_id)
+      return if container.info.dig("State", "Running") == false
+
+      # docker-api rescues ServerError in #stop and accepts a string timeout key.
+      # Re-inspect through the backend rather than trusting its cached info.
+      backend.stop_container(container, **{ "timeout" => 10 })
+      return if backend.get_container(container_id).info.dig("State", "Running") == false
+
+      raise Docker::Error::ServerError, "Retained container #{container_id} did not stop"
     end
 
     def compute_retention_hours

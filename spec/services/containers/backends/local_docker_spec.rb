@@ -40,6 +40,16 @@ RSpec.describe Containers::Backends::LocalDocker, :no_db do
       allow(File).to receive(:read).with("/proc/meminfo").and_return("MemTotal: 16 kB\n")
       expect(backend.system_info).not_to have_key("PaidHostMemAvailable")
     end
+
+    it "does not hide a Docker socket error as an empty successful system-info response" do
+      allow(Docker).to receive(:info).and_raise(Errno::ENOENT)
+      expect { backend.system_info }.to raise_error(Errno::ENOENT)
+    end
+
+    it "keeps valid Docker evidence when optional host-memory IO fails" do
+      allow(File).to receive(:read).with("/proc/meminfo").and_raise(Errno::EIO)
+      expect(backend.system_info).to eq("MemTotal" => 16_384)
+    end
   end
 
   it "reports the local backend identifier" do

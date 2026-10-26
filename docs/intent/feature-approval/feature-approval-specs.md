@@ -211,6 +211,10 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   window. Each execution SHALL log process-wide resident memory before/after,
   process peak resident memory when available, allocated-object delta, elapsed
   time and completion status without content payloads, including on failure.
+  Unavailable process-memory readings SHALL NOT prevent reconciliation or
+  replace its original failure.
+  Scheduling/coalescing SHALL occur after synchronization commits, and rolled-
+  back synchronization SHALL NOT enqueue reconciliation.
   *Tests:* `spec/jobs/feature_intents/reconcile_design_artifacts_job_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `FeatureIntents::ReconcileDesignArtifactsJob`, `Issues::UpsertFromGithub`.

@@ -65,6 +65,27 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
       expect(described_class.good_job_concurrency_config).to include(enqueue_limit: 1, perform_limit: 1)
       expect(described_class.good_job_concurrency_config).not_to have_key(:total_limit)
     end
+
+    it "waits for synchronized evidence to commit before coalescing or enqueueing" do
+      project_id = project.id
+      ActiveRecord::Base.transaction do
+        described_class.enqueue_for(project_id)
+        expect(GoodJob::Job.where(job_class: described_class.name)).to be_empty
+      end
+
+      expect(GoodJob::Job.where(job_class: described_class.name).sole.serialized_params.fetch("arguments"))
+        .to eq([ project_id ])
+    end
+
+    it "does not enqueue a reconciliation for a rolled-back synchronization" do
+      project_id = project.id
+      ActiveRecord::Base.transaction do
+        described_class.enqueue_for(project_id)
+        raise ActiveRecord::Rollback
+      end
+
+      expect(GoodJob::Job.where(job_class: described_class.name)).to be_empty
+    end
   end
 
   # @spec DESIGN-RECONCILIATION-002
@@ -95,6 +116,16 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
 
       expect(Rails.logger).to have_received(:info).with(hash_including(
         message: "feature_intents.reconciliation_finished", status: "failed", project_id: project.id
+      ))
+    end
+
+    it "still reconciles when the diagnostic procfs read exhausts file descriptors" do
+      allow(File).to receive(:read).and_call_original
+      allow(File).to receive(:read).with("/proc/self/status").and_raise(Errno::EMFILE)
+
+      expect { described_class.perform_now(project.id, 999) }.not_to raise_error
+      expect(Rails.logger).to have_received(:info).with(hash_including(
+        message: "feature_intents.reconciliation_finished", status: "completed", rss_after_kb: nil
       ))
     end
   end

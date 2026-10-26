@@ -20,14 +20,14 @@ module Containers
         info = Docker.info
         return info unless Docker.url.to_s.start_with?("unix://")
 
-        memory = File.read("/proc/meminfo")
+        memory = host_memory
+        return info unless memory
+
         total_kb = memory[/^MemTotal:\s+(\d+)\s+kB$/, 1]&.to_i
         available_kb = memory[/^MemAvailable:\s+(\d+)\s+kB$/, 1]&.to_i
         return info unless total_kb && available_kb && total_kb.positive? && total_kb * 1024 == info["MemTotal"]
 
         info.merge("PaidHostMemAvailable" => available_kb * 1024)
-      rescue Errno::ENOENT, Errno::EACCES
-        info
       end
 
       def container_host_for(_container)
@@ -115,6 +115,12 @@ module Containers
       end
 
       private
+
+      def host_memory
+        File.read("/proc/meminfo")
+      rescue SystemCallError, IOError
+        nil
+      end
 
       def normalize_volume_options(options, keyword_options)
         (options || {}).merge(keyword_options.transform_keys(&:to_s))

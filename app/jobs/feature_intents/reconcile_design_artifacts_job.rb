@@ -32,7 +32,9 @@ module FeatureIntents
 
     # @spec DESIGN-RECONCILIATION-002
     def self.enqueue_for(project_id)
-      set(wait: COALESCING_WINDOW).perform_later(project_id)
+      ActiveRecord.after_all_transactions_commit do
+        set(wait: COALESCING_WINDOW).perform_later(project_id)
+      end
     end
 
     def perform(project_id, pull_request_number = nil)
@@ -73,7 +75,7 @@ module FeatureIntents
     def process_memory
       status = File.read("/proc/self/status")
       { rss_kb: status[/^VmRSS:\s+(\d+)/, 1]&.to_i, peak_rss_kb: status[/^VmHWM:\s+(\d+)/, 1]&.to_i }
-    rescue Errno::ENOENT, Errno::EACCES
+    rescue SystemCallError, IOError
       {}
     end
 

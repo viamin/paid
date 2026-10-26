@@ -5,10 +5,12 @@
 > Status markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 
 - [x] **CONTAINER-RUNTIME-048** — When a failed workflow retains its Docker
-  environment for diagnostics, retention SHALL stop the container on its
-  recorded backend before persisting the retention expiry, preserve its
-  container and workspace volumes, tolerate an already-stopped container, and
-  propagate stop failures without recording a new successful retention.
+  environment for diagnostics, retention SHALL reserve its container and
+  workspace volumes against cleanup before a bounded stop on the recorded
+  backend, confirm the stopped state through a fresh lookup, tolerate an
+  already-stopped container, and reject active runs. Failed stops SHALL restore
+  this reservation's previous expiry without overwriting newer ownership or
+  retention changes, and propagate failure without reporting success.
   *Tests:* `spec/temporal/activities/retain_container_activity_spec.rb`.
   *Code:* `Activities::RetainContainerActivity`.
 
