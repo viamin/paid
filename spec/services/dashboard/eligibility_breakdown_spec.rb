@@ -206,6 +206,33 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(breakdown.diagnostic_state).to eq(:paused)
     end
 
+    # @spec QUEUE-HANDOFF-003
+    it "reports a paused run when the project also has queued work" do
+      paused_issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :paused, project: project, issue: paused_issue)
+      create(:agent_run, :queued, :with_custom_prompt, project: project)
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.queued).to eq(1)
+      expect(breakdown.paused).to eq(1)
+      expect(breakdown.diagnostic_state).to eq(:paused)
+    end
+
+    # @spec QUEUE-HANDOFF-003
+    it "reports a paused run when the project also has active work" do
+      paused_issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      active_issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :paused, project: project, issue: paused_issue)
+      create(:agent_run, :running, project: project, issue: active_issue)
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.active).to eq(1)
+      expect(breakdown.paused).to eq(1)
+      expect(breakdown.diagnostic_state).to eq(:paused)
+    end
+
     it "excludes inactive projects" do
       project.update!(active: false)
 

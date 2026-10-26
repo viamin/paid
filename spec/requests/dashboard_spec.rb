@@ -1025,6 +1025,31 @@ RSpec.describe "Dashboard" do
     end
 
     # @spec QUEUE-HANDOFF-003
+    it "shows a paused run when the project also has queued work" do
+      paused_issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :paused, project: project, issue: paused_issue)
+      create(:agent_run, :queued, :with_custom_prompt, project: project)
+
+      get dashboard_eligibility_breakdown_path
+
+      expect(response.body).to include("1 paused run")
+      expect(response.body).not_to include("1 queued run")
+    end
+
+    # @spec QUEUE-HANDOFF-003
+    it "shows a paused run when the project also has active work" do
+      paused_issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      active_issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :paused, project: project, issue: paused_issue)
+      create(:agent_run, :running, project: project, issue: active_issue)
+
+      get dashboard_eligibility_breakdown_path
+
+      expect(response.body).to include("1 paused run")
+      expect(response.body).not_to include("Active work; no waiting backlog")
+    end
+
+    # @spec QUEUE-HANDOFF-003
     it "reports unknown coverage when the diagnostic query is unavailable" do
       allow(Dashboard::EligibilityBreakdown).to receive(:call).and_raise(ActiveRecord::ConnectionNotEstablished)
 
