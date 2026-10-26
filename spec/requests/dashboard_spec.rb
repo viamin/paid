@@ -1015,6 +1015,26 @@ RSpec.describe "Dashboard" do
     end
   end
 
+  describe "GET /dashboard/queue_diagnosis" do
+    let(:account) { create(:account) }
+    let(:user) { create(:user, account: account) }
+    let(:project) { create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true) }
+
+    before { sign_in user }
+
+    # @spec QUEUE-DIAGNOSIS-001
+    it "renders an explicit eligible-but-unseeded explanation" do
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+
+      get dashboard_queue_diagnosis_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("dashboard-queue-diagnosis")
+      expect(response.body).to include("Runnable unseeded")
+      expect(response.body).to include("1 eligible candidates")
+    end
+  end
+
   describe "GET /dashboard/needs_input" do
     let(:account) { create(:account) }
     let(:user) { create(:user, account: account) }
