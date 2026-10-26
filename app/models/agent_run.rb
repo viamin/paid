@@ -223,6 +223,9 @@ class AgentRun < ApplicationRecord
   # @spec LAYERED-VERIFY-013
   has_many :repair_runs, class_name: "AgentRun", foreign_key: :originating_audit_run_id,
     dependent: :destroy, inverse_of: :originating_audit_run
+  has_one :layered_verification_audit_report, dependent: :destroy
+  has_many :layered_verification_findings, class_name: "LayeredVerificationFinding", foreign_key: :audit_run_id,
+    dependent: :restrict_with_exception, inverse_of: :audit_run
 
   has_many :agent_run_logs, dependent: :destroy
   has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy
@@ -4096,6 +4099,10 @@ class AgentRun < ApplicationRecord
     # create_feature derives its prompt from Prompts::BuildForCreateFeature
     # and external_metadata["feature_brief"], so it needs no issue or source PR.
     return if create_feature_goal?
+    # @spec LAYERED-VERIFY-013
+    # A bounded audit records its own resolved obligation scope and revision in
+    # external_metadata; it deliberately has no issue or repository-write prompt.
+    return if goal == "layered_verification_audit"
     return if issue.present? || custom_prompt.present? || source_pull_request_number.present?
 
     errors.add(:base, "must have either an issue, a custom prompt, or a source pull request")
