@@ -231,6 +231,12 @@ completion-forward-work behavior. It keeps #4309 open for bounded
 investigations, held-issue publication, activation/isolation reporting, the
 assessment corpus, and browser-backed diagram evidence.
 
+The [2026-10-26 RDR-070 closeout refresh](audit-report-2026-10-26-rdr-070.md)
+confirms RDR-070 remains **Partially Implemented**. Its blinded-reference
+workflow is shipped, but the authentic eight-case human evaluation and its
+outcome measures remain unrecorded; #4323 stays open for that evidence
+collection and Tracks #4309.
+
 The [2026-10-22 RDR-069 closeout refresh](audit-report-2026-10-22-rdr-069.md)
 re-audits RDR-069 against shipped code and a live run (3043 examples, 0
 failures; 23 `spec/system` examples skipped for a missing Chromium): RDR-069
