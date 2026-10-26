@@ -1,15 +1,46 @@
 <%# @spec OPERATOR-INBOX-002D %>
+<% recovery = Issues::ManualReviewRecovery.call(issue: entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.reopen? %>
+        This issue was reopened after closure. Validate the original closure and remaining scope before choosing supported implementation work.
+      <% elsif recovery.dependency? %>
+        This issue is waiting for a dependency. The hold will be reevaluated when its owner resolves it.
+      <% elsif recovery.scanner? %>
+        Scanner evidence found a recurrence. Review the evidence and explicitly authorize remediation if it is appropriate.
+      <% elsif recovery.enhancement? && entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
-      <% else %>
+      <% elsif recovery.enhancement? %>
         Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+      <% else %>
+        Paid retained this stop because its producer is unknown. Inspect the retained evidence before resuming work.
       <% end %>
     </p>
   </div>
+
+  <% if recovery.reopen? %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Validate reopened intent</h3>
+      <p class="mt-1 text-sm text-amber-800">Review the original closure and remaining scope. This action records a decision; it does not retry enhancement.</p>
+      <p class="mt-2 text-sm text-amber-800"><strong>Original closure:</strong> <%= entry.issue.reopen_reason.presence || "No Paid-recorded reopen reason is available." %></p>
+    </div>
+  <% elsif recovery.dependency? %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Waiting for dependency</h3>
+      <ul class="mt-2 list-disc pl-5 text-sm text-amber-800">
+        <% recovery.blockers.each do |blocker| %>
+          <li><%= link_to blocker.fetch(:label), blocker.fetch(:url), target: "_blank", rel: "noopener noreferrer", class: "underline" %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% elsif recovery.unknown? %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Unknown manual-review cause</h3>
+      <p class="mt-1 text-sm text-amber-800"><%= recovery.description %></p>
+    </div>
+  <% end %>
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
@@ -34,7 +65,7 @@
       The terminal round's preserved clarifying questions ARE the manual
       review this state asks for: render the same answer form the
       clarifying_questions lane uses, submitting to the same endpoint. %>
-  <% if entry.questions.any? %>
+  <% if recovery.enhancement? && entry.questions.any? %>
     <%= render "dashboard/inbox_clarifying_answer_form",
           entry: entry,
           scoped_project: scoped_project,
@@ -42,7 +73,7 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && recovery.enhancement? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

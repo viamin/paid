@@ -991,8 +991,8 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("Other account issue")
   end
 
-  # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
-  it "renders manual_review detail with the reason and the inbox-scoped resume action" do
+  # @spec OPERATOR-INBOX-002D
+  it "routes an enhancement-origin manual review to the inbox-scoped enhancement retry" do
     parked = create_manual_review_issue(
       title: "Parked issue",
       github_number: 509,
@@ -1016,6 +1016,33 @@ RSpec.describe "Inbox" do
     expect(form.at_css('input[name="return_to"]')["value"]).to eq(
       inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
     )
+  end
+
+  # @spec OPERATOR-INBOX-002D
+  it "routes a reopen review to an intent-validation decision instead of an enhancement retry" do
+    reopened = create_manual_review_issue(
+      title: "Reopened issue",
+      github_number: 511,
+      reason: Issue::REOPEN_REVIEW_REQUIRED_REASON
+    )
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, reopened), kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response.body).to include("Validate reopened intent", "original closure")
+    expect(response.body).not_to include("Start enhancement run")
+  end
+
+  # @spec OPERATOR-INBOX-002D
+  it "shows unresolved dependency ownership without offering an unrelated retry" do
+    blocker = create(:issue, project: project, github_number: 4321, github_state: "open")
+    dependent = create_manual_review_issue(title: "Wait for dependency", github_number: 512,
+      reason: "Waiting for dependency ##{blocker.github_number}.")
+    create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, dependent), kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response.body).to include("Waiting for dependency", "#4321")
+    expect(response.body).not_to include("Start enhancement run")
   end
 
   # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011

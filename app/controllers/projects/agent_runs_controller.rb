@@ -401,15 +401,6 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
-    # manual_review only clears when an explicit operator-triggered run
-    # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
-    # queues a fresh manual enhance_issue run rather than just clearing state,
-    # since a queued run is what actually resumes the enhancement work. The
-    # queue-time state flip (resume_issue_from_manual_review) removes the
-    # inbox entry as soon as the run is queued, so the item leaves the lane
-    # immediately instead of surviving the whole queue wait; re-entry
-    # producers (parse failure, round limit, needs_input) bring it back if
-    # the resumed work still needs a human decision.
     # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
     def resume_manual_review
       authorize @project, :run_agent?
@@ -419,6 +410,9 @@ module Projects
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
         return
       end
+
+      recovery = Issues::ManualReviewRecovery.call(issue: issue)
+      return redirect_to(safe_return_target || dashboard_path, alert: manual_review_recovery_alert(recovery)) unless recovery.enhancement?
 
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
@@ -998,6 +992,19 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
+    end
+
+    def manual_review_recovery_alert(recovery)
+      case recovery.cause
+      when :reopen_review
+        "Validate the reopened issue's original closure and remaining scope before resuming implementation."
+      when :dependency
+        "This issue is waiting on an unresolved dependency; resolving or acknowledging it does not waive that hold."
+      when :scanner_recurrence
+        "This scanner-confirmed recurrence needs an explicit remediation decision, not an enhancement retry."
+      else
+        "Manual-review provenance is unknown. Inspect the retained evidence before resuming work."
+      end
     end
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap
