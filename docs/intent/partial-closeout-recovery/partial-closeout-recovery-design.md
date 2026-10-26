@@ -308,6 +308,13 @@ submit or link it, and what resumes automatically versus what requires a
 deliberate continuation; agents are never retried for unavailable human
 evidence.
 
+Personal removal or notification dismissal only changes an operator's Inbox
+visibility. It is never a substitute for submitted and validated prerequisite
+evidence, does not resolve the prerequisite occurrence, and does not release
+the parent for scheduling. Only the evidence-resolution path may resolve the
+notification and trigger the normal eligibility reassessment; this keeps
+scheduling authority distinct from an operator's decision to hide a reminder.
+
 Prerequisite linking is available from the pane (`link_prerequisite` on
 `projects/agent_runs`): it appends `Depends on #N` wording to the stalled
 issue via the project GitHub client and reuses `Issues::ParseDependencies` to

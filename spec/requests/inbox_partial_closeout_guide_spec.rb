@@ -58,5 +58,7 @@ RSpec.describe "Partial closeout operator guide" do # @spec PARTIAL-CLOSEOUT-022
     expect(response.body).to include("resumes automatically")
     expect(response.body).to include("deliberate continuation")
     expect(response.body).to include("never retries an agent for unavailable human evidence")
+    expect(response.body).to include("only changes Inbox visibility")
+    expect(response.body).to include("does not validate the evidence")
   end
 end
