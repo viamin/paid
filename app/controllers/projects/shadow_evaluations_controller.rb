@@ -28,7 +28,8 @@ module Projects
         purpose: params[:purpose].presence || default_purpose,
         policy: params[:policy].to_s,
         manifest_path: params[:manifest_path].to_s.strip,
-        manifest_commit: params[:manifest_commit].presence
+        manifest_commit: params[:manifest_commit].presence,
+        originating_issue: originating_partial_closeout_issue
       )
       if result.success?
         redirect_to evaluation_path(result.evaluation), notice: result.resumed ? "Resumed the existing evaluation for this evidence generation." : "Solo-maintainer evaluation started. Labels stay blinded until you freeze the reference set."
@@ -169,6 +170,14 @@ module Projects
       entry = Inbox::Queue.find_entry(user: current_user, entry_id: entry_id, project: @project,
         kind: params[:inbox_kind].presence_in(Inbox::Queue::KINDS))
       entry&.id
+    end
+
+    def originating_partial_closeout_issue
+      entry_id = valid_inbox_entry_id
+      return unless entry_id
+
+      entry = Inbox::Queue.find_entry(user: current_user, entry_id:, project: @project, kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
+      entry&.issue if entry&.partial_closeout?
     end
 
     def evaluation_path(evaluation, **extra)

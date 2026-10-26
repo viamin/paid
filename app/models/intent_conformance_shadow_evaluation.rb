@@ -17,6 +17,7 @@ class IntentConformanceShadowEvaluation < ApplicationRecord
   belongs_to :project
   belongs_to :solo_maintainer, class_name: "User", optional: true
   belongs_to :created_by, class_name: "User"
+  belongs_to :originating_issue, class_name: "Issue", optional: true
   has_many :labels, class_name: "IntentConformanceShadowEvaluationLabel",
     foreign_key: :shadow_evaluation_id, inverse_of: :shadow_evaluation, dependent: :destroy
   has_many :runs, class_name: "IntentConformanceShadowEvaluationRun",

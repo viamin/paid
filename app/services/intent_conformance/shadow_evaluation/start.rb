@@ -18,13 +18,14 @@ module IntentConformance
 
       def self.call(...) = new(...).call
 
-      def initialize(project:, actor:, purpose:, policy:, manifest_path:, manifest_commit: nil)
+      def initialize(project:, actor:, purpose:, policy:, manifest_path:, manifest_commit: nil, originating_issue: nil)
         @project = project
         @actor = actor
         @purpose = purpose
         @policy = policy
         @manifest_path = manifest_path
         @manifest_commit = manifest_commit.to_s
+        @originating_issue = originating_issue
         @corpus = ShadowEvaluationCorpus.new(path: manifest_path, commit: manifest_commit)
       end
 
@@ -49,7 +50,8 @@ module IntentConformance
           manifest_commit: resolved_commit,
           manifest_digest: digest,
           solo_maintainer: @actor,
-          created_by: @actor
+          created_by: @actor,
+          originating_issue: @originating_issue
         )
         Result.new(success: true, error: nil, evaluation: evaluation, resumed: false)
       rescue ShadowEvaluationCorpus::MissingManifest => error

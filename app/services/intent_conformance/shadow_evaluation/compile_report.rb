@@ -30,12 +30,27 @@ module IntentConformance
         report = build_report
         markdown = render_markdown(report)
         @evaluation.update!(report: report, report_markdown: markdown)
+        attach_to_originating_prerequisite
         Result.new(success: true, error: nil, report: report, markdown: markdown)
       end
 
       private
 
       attr_reader :evaluation
+
+      def attach_to_originating_prerequisite
+        issue = evaluation.originating_issue
+        return unless issue
+
+        criterion = PartialCloseouts::Assessment.call(issue).criteria.find { |item| item["prerequisite_kind"].in?(%w[human external]) }&.fetch("criterion", nil)
+        return unless criterion
+
+        PartialCloseouts::SubmitPrerequisiteEvidence.call(
+          issue:, actor: evaluation.created_by, criterion:, evidence_type: "shadow_evaluation",
+          evidence_reference: "shadow-evaluation:#{evaluation.id}", explanation: "Completed shadow-evaluation report.",
+          idempotency_key: "shadow-evaluation-report:#{evaluation.id}", shadow_evaluation: evaluation
+        )
+      end
 
       def build_report
         # Reload: the calling request or spec may hold a memoized evaluation

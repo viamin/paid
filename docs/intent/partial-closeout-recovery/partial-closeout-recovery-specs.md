@@ -4,6 +4,21 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When an operator submits evidence for a
+  partial-closeout human or external prerequisite, Paid SHALL retain the exact
+  criterion identity, source and intent revisions, actor, durable reference,
+  explanation, provenance, and idempotency key. It SHALL accept submissions
+  only for a current recorded prerequisite and SHALL present them as submitted
+  until bounded validation records sufficient, insufficient, stale, or
+  unavailable. A report, link, run, dismissal, or notification state alone
+  SHALL NOT satisfy acceptance or release another occurrence. A completed
+  shadow-evaluation report started from an originating Inbox item SHALL attach
+  as submitted evidence while retaining solo-policy and production-measure
+  limitations.
+  *Code:* `app/services/partial_closeouts/submit_prerequisite_evidence.rb`,
+  `app/services/intent_conformance/shadow_evaluation/compile_report.rb`.
+  *Test:* `spec/services/partial_closeouts/submit_prerequisite_evidence_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its

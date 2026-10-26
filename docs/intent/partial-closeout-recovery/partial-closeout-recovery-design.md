@@ -177,6 +177,22 @@ recording completion, so a continuation cannot dispatch after the attestation.
   work reuses the existing `create_issue` tool (dependency wording is parsed
   by the existing sync parser).
 
+### Prerequisite evidence submissions
+
+One aggregated prerequisite notification can name several independent human or
+external criteria. `PartialCloseoutPrerequisiteEvidence` is scoped to the
+parent issue and exact criterion, not to the notification row. A submission
+captures the evidence and intent revisions it was made against, authenticated
+actor, durable reference, explanation, provenance type, and idempotency key.
+Structural checks accept only a criterion currently recorded as human/external;
+semantic sufficiency remains a separately bounded assessment. Its explicit
+outcome is submitted, sufficient, insufficient, stale, or unavailable. Neither
+a URL, report, green run, uploaded artifact, nor dismissing the shared
+notification is acceptance evidence by itself. A shadow evaluation started from
+a partial-closeout Inbox item retains its originating issue and attaches its
+completed report as submitted evidence; its weaker solo assurance and missing
+production measures remain visible and do not attest closeout.
+
 ### Legacy reconciliation: `PartialCloseouts::ReconcileLegacy`
 
 The `partial-closeout-reconciliation-v1` Temporal patch only intercepts new

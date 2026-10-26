@@ -84,6 +84,33 @@
     </p>
   </div>
 
+  <% human_criteria = assessment.criteria.select { |item| item["prerequisite_kind"].in?(%w[human external]) } %>
+  <% if human_criteria.any? && policy(entry.project).run_agent? %>
+    <div class="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-950">Submit prerequisite evidence</h3>
+      <p class="text-xs text-amber-900">A link, report, run, upload, or dismissal is not acceptance by itself. Paid records its provenance and validates the exact current prerequisite before it can release scheduling.</p>
+      <%= form_with url: submit_prerequisite_evidence_project_agent_runs_path(entry.project), data: { turbo_frame: "_top" }, class: "flex flex-col gap-2" do |form| %>
+        <%= form.hidden_field :issue_id, value: issue.id %>
+        <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+        <%= form.hidden_field :idempotency_key, value: SecureRandom.uuid %>
+        <%= form.label :criterion, "Prerequisite" %>
+        <%= form.select :criterion, human_criteria.map { |item| [item["criterion"], item["criterion"]] }, {}, class: "rounded-md border-gray-300 text-sm" %>
+        <%= form.select :evidence_type, PartialCloseoutPrerequisiteEvidence::EVIDENCE_TYPES.map { |type| [type.humanize, type] }, {}, class: "rounded-md border-gray-300 text-sm" %>
+        <%= form.text_field :evidence_reference, required: true, placeholder: "Durable URL, report, or run reference", class: "rounded-md border-gray-300 text-sm" %>
+        <%= form.text_area :explanation, required: true, rows: 2, placeholder: "What does this prove for this exact prerequisite?", class: "rounded-md border-gray-300 text-sm" %>
+        <%= form.submit "Submit for validation", class: "inline-flex self-start rounded-md bg-amber-700 px-3 py-2 text-sm font-semibold text-white" %>
+      <% end %>
+      <% submissions = PartialCloseoutPrerequisiteEvidence.where(issue: issue).order(created_at: :desc).limit(5) %>
+      <% if submissions.any? %>
+        <ul class="space-y-1 text-xs text-amber-950">
+          <% submissions.each do |submission| %>
+            <li><strong><%= submission.criterion %>:</strong> <%= submission.outcome.humanize %> — <%= submission.reasoning.presence || "Awaiting bounded validation; it does not release scheduling yet." %></li>
+          <% end %>
+        </ul>
+      <% end %>
+    </div>
+  <% end %>
+
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Recorded evidence</h3>
     <p class="text-sm text-gray-600"><%= status.outcome %></p>
