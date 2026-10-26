@@ -1,12 +1,17 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec OPERATOR-INBOX-002D @spec ISSUE-REOPEN-REVIEW-005 %>
+<% recovery = ManualReviews::Recovery.for(entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.reopen_review? %>
+        Paid reopened this issue after its prior closure. Record a revision-bound intent decision before continuing work.
+      <% elsif recovery.dependency? %>
+        Paid is waiting on a real unresolved dependency. This hold will be reevaluated when its owner resolves it.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+        <%= recovery.message %>
       <% end %>
     </p>
   </div>
@@ -41,8 +46,34 @@
           selected_kind: selected_kind %>
   <% end %>
 
+  <% if recovery.reopen_review? %>
+    <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project), method: :post, class: "space-y-3", data: { turbo_frame: "_top" } do |form| %>
+      <%= hidden_field_tag :issue_id, entry.issue.id %>
+      <%= hidden_field_tag :reopen_review_decision, "continue" %>
+      <%= hidden_field_tag :reopen_review_revision, entry.issue.github_updated_at.iso8601 %>
+      <%= hidden_field_tag :return_to, inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+      <p class="text-sm text-gray-600">Prior closure: <%= entry.issue.closed_at || "not recorded" %>. Remaining scope: <%= entry.issue.reopen_reason.presence || "Review the current GitHub issue." %></p>
+      <%= text_area_tag :reopen_review_reason, nil, required: true, rows: 3, placeholder: "Why the original closure and remaining scope were reviewed", class: "block w-full rounded-md border-gray-300 shadow-sm" %>
+      <% if policy(entry.project).run_agent? %>
+        <%= form.submit "Record review and start enhancement", class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+      <% end %>
+    <% end %>
+  <% elsif recovery.dependency? %>
+    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <p><%= recovery.message %></p>
+      <ul class="mt-2 list-disc pl-5">
+        <% recovery.blocking_records.each do |dependency| %>
+          <% target = dependency.respond_to?(:depends_on_issue) ? dependency.depends_on_issue : dependency %>
+          <li><%= link_to "#{target.project.full_name}##{target.github_number}", target.github_url, target: "_blank", rel: "noopener noreferrer", class: "underline" if target.respond_to?(:github_url) %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% elsif recovery.action == :inspect_failed_run && recovery.blocking_records.first %>
+    <%= link_to "Inspect failed run", project_agent_run_path(entry.project, recovery.blocking_records.first), class: "text-sm font-semibold text-purple-700 underline" %>
+  <% end %>
+
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && recovery.enhancement? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

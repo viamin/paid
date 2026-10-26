@@ -2553,7 +2553,8 @@ RSpec.describe "AgentRuns" do
         github_number: 89,
         title: "Fix flaky specs",
         paid_state: "manual_review",
-        manual_review_reason: "Paid reached the configured limit of enhancement re-evaluation rounds.")
+        manual_review_reason: "Paid reached the configured limit of enhancement re-evaluation rounds.",
+        needs_input_questions: [ "What remains in scope?" ])
     end
 
     context "when not authenticated" do
@@ -2595,12 +2596,44 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec ISSUE-REOPEN-REVIEW-005
+      it "records a revision-bound reopen review before it queues continuation" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_decision: "continue",
+            reopen_review_reason: "The original fix is still valid; live validation remains.",
+            reopen_review_revision: parked_issue.github_updated_at.iso8601
+          }
+        }.to change(AccountActivityEvent, :count).by(1).and change(AgentRun, :count).by(1)
+
+        expect(AccountActivityEvent.last).to have_attributes(action: "issue.reopen_review_recorded", subject: parked_issue)
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005
+      it "does not clear a reopen hold when the reviewed revision is stale" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_decision: "continue",
+            reopen_review_reason: "I reviewed it.",
+            reopen_review_revision: 1.hour.ago.iso8601
+          }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload).to have_attributes(paid_state: "manual_review", manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,
           owner: "acme", repo: "lane", auto_pick_enabled: true, active: true)
         parked = create(:issue, project: gated_project, github_number: 90, paid_state: "manual_review",
-          manual_review_reason: "Round limit reached.")
+          manual_review_reason: "Round limit reached.", needs_input_questions: [ "What remains in scope?" ])
 
         entries = Inbox::Queue.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)
         expect(entries.map(&:issue)).to include(parked)

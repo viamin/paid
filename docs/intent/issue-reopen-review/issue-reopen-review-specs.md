@@ -30,3 +30,14 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an Inbox manual-review entry is
+  caused by the dedicated reopen-review provenance, the system SHALL show the
+  prior closure and remaining scope, require an authorized operator's
+  non-blank continue decision and reason bound to the current GitHub revision,
+  record that decision, and only then offer the existing supported work
+  continuation. A stale revision SHALL not clear the hold or queue work.
+  *Tests:* `spec/requests/agent_runs_spec.rb`,
+  `spec/views/dashboard/inbox_detail_navigation_intent_spec.rb`.
+  *Code:* `ManualReviews::Recovery`,
+  `Projects::AgentRunsController#resume_manual_review`.

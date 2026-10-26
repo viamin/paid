@@ -122,8 +122,16 @@
   automation stopped (`manual_review_reason`) and how long it has been stopped
   (`manual_review_started_at`, falling back to `updated_at` for legacy rows —
   `ISSUE-ENHANCEMENT-012`). The entry SHALL offer an operator-triggered manual
-  `enhance_issue` run as its clearing action, since automatic picking excludes
-  `manual_review` and only an explicit operator-triggered run resumes work
+  cause-specific recovery action rather than always an `enhance_issue` run:
+  preserved-question and enhancement holds retain the existing enhancement
+  retry; reopen-review provenance requires the revision-bound decision in
+  `ISSUE-REOPEN-REVIEW-005`; unresolved dependency provenance names and links
+  to the owner without clearing the hold; scanner recurrence retains its
+  evidence review; technical failures link to their failed run; and unknown
+  provenance remains visibly unknown. The classifier SHALL use producer
+  provenance (reopen marker, live dependencies, scanner evidence, and run
+  records), not reason-text matching. For actual enhancement holds, it SHALL offer an operator-triggered manual
+  `enhance_issue` run, and only an explicit operator-triggered run resumes work
   (`ISSUE-ENHANCEMENT-011`). Queuing that run SHALL transition the issue out
   of `manual_review` in the same request — inside the same transaction that
   creates the run — so the entry clears from the queue and the badge at queue

@@ -410,13 +410,25 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
       issue = resolve_manual_review_issue
       unless issue
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = ManualReviews::Recovery.for(issue)
+      active_run = issue.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).order(created_at: :asc).first
+      if active_run
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Run ##{active_run.id} is already #{active_run.status}; reconcile it before resuming this manual-review hold."
+        return
+      end
+      unless recovery.enhancement? || reopen_review_accepted?(issue, recovery)
+        redirect_to safe_return_target || dashboard_path, alert: recovery.message
         return
       end
 
@@ -1036,6 +1048,29 @@ module Projects
       return unless issue.paid_state == "manual_review"
 
       issue.update!(paid_state: "in_progress")
+    end
+
+    # The reopen-review decision is bound to the GitHub revision visible to
+    # the operator. A newer synchronization requires a new review rather than
+    # letting an earlier acknowledgement clear the hold.
+    # @spec ISSUE-REOPEN-REVIEW-005
+    def reopen_review_accepted?(issue, recovery)
+      return false unless recovery.reopen_review?
+      return false unless params[:reopen_review_decision] == "continue"
+      return false if params[:reopen_review_reason].to_s.strip.blank?
+      return false unless params[:reopen_review_revision] == issue.github_updated_at&.iso8601
+
+      Audit::RecordEvent.call(
+        action: "issue.reopen_review_recorded",
+        actor: current_user,
+        subject: issue,
+        metadata: {
+          decision: "continue",
+          reason: params[:reopen_review_reason].to_s.strip,
+          github_updated_at: issue.github_updated_at.iso8601
+        }
+      )
+      true
     end
 
     # A stale page can still render the "Start enhancement run" button after
