@@ -140,3 +140,22 @@
   `app/views/projects/shadow_evaluations/_labeling.html.erb`.
   *Test:* `spec/services/intent_conformance/shadow_evaluation/evidence_spec.rb`,
   `spec/requests/projects/shadow_evaluations_spec.rb`.
+
+- [ ] **INTENT-CONFORMANCE-ROLLOUT-011** — After an authorized operator
+  requests reviewer execution for a frozen evaluation, the system SHALL
+  enqueue an idempotent tenant-scoped job and return without performing
+  reviewer work in the request. The evaluation SHALL expose queued, running,
+  partial, failed, cancelled, and completed states with durable per-case
+  progress and recorded cost. Cancellation SHALL stop before the next case,
+  retain collected evidence and attach an available report, and retry or
+  resume SHALL execute only cases without an evaluated verdict. A job retry
+  after interruption or advisory-lock recovery SHALL resume the same pinned
+  corpus/model/prompt/design identity rather than strand the evaluation in
+  executing state or fabricate unevaluated output.
+  *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
+  *Code:* `app/jobs/intent_conformance/shadow_evaluation_job.rb`,
+  `app/services/intent_conformance/shadow_evaluation/execute_reviewer.rb`,
+  `app/controllers/projects/shadow_evaluations_controller.rb`.
+  *Test:* `spec/jobs/intent_conformance/shadow_evaluation_job_spec.rb`,
+  `spec/requests/projects/shadow_evaluations_spec.rb`,
+  `spec/services/intent_conformance/shadow_evaluation/execute_reviewer_spec.rb`.

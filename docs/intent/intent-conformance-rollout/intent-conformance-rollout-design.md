@@ -131,7 +131,13 @@ Paid's project authorization and presentation patterns:
    equivalent UI action), recording actual verdicts, reviewer model, prompt
    digest, cost, and failures. Missing or failed reviewer output is recorded
    as not evaluated; prerequisite validation alone is never presented as
-   execution.
+   execution. Execution is a durable queued operation, not request work. The
+   evaluation exposes queued, running, partial, failed, cancelled, and
+   completed state with per-case counts and recorded cost. An authorized
+   operator may cancel between cases, retaining the evidence already
+   collected, then retry or resume only unevaluated cases. A worker retry or
+   recovered advisory lock resumes the same pinned evaluation; it never
+   replays an evaluated case or silently fabricates a verdict.
 5. **Review and revise.** Disagreements surface for maintainer review after
    the run. A post-result revision is appended with its own reason and
    timestamp; it never overwrites the original blinded label, and blinded

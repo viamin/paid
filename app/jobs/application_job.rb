@@ -169,6 +169,7 @@ class ApplicationJob < ActiveJob::Base
       EmbedChunksJob,
       EnqueueKnowledgeCollectionJob,
       EvaluateProjectReadinessJob,
+      IntentConformance::ShadowEvaluationJob,
       ProjectConventions::OpenHookGuardrailPullRequestJob,
       ProjectHealthCheckJob,
       PoolReplenishmentJob,

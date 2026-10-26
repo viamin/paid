@@ -10,7 +10,10 @@
 # @spec INTENT-CONFORMANCE-ROLLOUT-005
 # @spec INTENT-CONFORMANCE-ROLLOUT-006
 class IntentConformanceShadowEvaluation < ApplicationRecord
-  STATUSES = %w[labeling frozen executing completed failed].freeze
+  # Execution progresses independently of labeling. `partial` means at least
+  # one case is evaluated but retryable evidence is still missing; `cancelled`
+  # is an operator stop that preserves all case rows for a later resume.
+  STATUSES = %w[labeling frozen queued executing partial completed failed cancelled].freeze
   POLICIES = IntentConformance::ShadowEvaluationPolicy::POLICIES
   OUTCOMES = IntentConformance::ShadowEvaluationPolicy::LABELS
 
@@ -31,10 +34,14 @@ class IntentConformanceShadowEvaluation < ApplicationRecord
   scope :latest_first, -> { order(created_at: :desc, id: :desc) }
 
   def labeling? = status == "labeling"
-  def frozen? = %w[frozen executing completed failed].include?(status)
+  def frozen? = !labeling?
+  def queued? = status == "queued"
   def executing? = status == "executing"
+  def partial? = status == "partial"
   def completed? = status == "completed"
   def failed? = status == "failed"
+  def cancelled? = status == "cancelled"
+  def cancel_requested? = cancel_requested_at.present? || cancelled?
 
   def answers_visible? = labels_frozen_at.present?
 
@@ -48,6 +55,17 @@ class IntentConformanceShadowEvaluation < ApplicationRecord
 
   def progress
     { total: corpus_case_ids.length, labeled: labels.where(state: "labeled").count, skipped: labels.where(state: "skipped").count }
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  def execution_progress
+    totals = runs.group(:verdict).count
+    {
+      total: corpus_case_ids.length,
+      evaluated: totals.except("not_evaluated").values.sum,
+      not_evaluated: totals.fetch("not_evaluated", 0),
+      cost_cents: runs.sum(:cost_cents)
+    }
   end
 
   def corpus

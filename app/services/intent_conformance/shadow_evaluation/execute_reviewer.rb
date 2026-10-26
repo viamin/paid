@@ -13,7 +13,7 @@ module IntentConformance
     # @spec INTENT-CONFORMANCE-ROLLOUT-006
     # @spec INTENT-CONFORMANCE-ROLLOUT-007
     class ExecuteReviewer
-      Result = Data.define(:success, :error, :evaluation, :executed, :failed) do
+      Result = Data.define(:success, :error, :evaluation, :executed, :failed, :cancelled) do
         def success? = success
       end
 
@@ -85,17 +85,23 @@ module IntentConformance
       end
 
       def execute_cases
-        @evaluation.update!(status: "executing", execute_started_at: Time.current)
+        @evaluation.update!(status: "executing", execute_started_at: Time.current,
+          execution_heartbeat_at: Time.current)
         executed = 0
         failed = 0
 
         @evaluation.corpus.cases.each do |corpus_case|
+          return cancelled(executed, failed) if cancellation_requested?
+
           next if evaluated_run_for(corpus_case.fetch("id"))
 
           verdict, failure_reason, model, cost = review_case(corpus_case)
           upsert_run(corpus_case, verdict, failure_reason, model, cost)
+          @evaluation.update!(execution_heartbeat_at: Time.current)
           verdict == NOT_EVALUATED ? failed += 1 : executed += 1
         end
+
+        return cancelled(executed, failed) if cancellation_requested?
 
         complete_or_fail(executed, failed)
       rescue ShadowEvaluationCorpus::MissingManifest => error
@@ -234,11 +240,27 @@ module IntentConformance
       def complete_or_fail(executed, failed)
         if failed.zero?
           @evaluation.update!(status: "completed", completed_at: Time.current, last_failure_reason: nil)
+        elsif executed.positive?
+          @evaluation.update!(status: "partial", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
         else
           @evaluation.update!(status: "failed", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
         end
         log_executed(executed, failed)
-        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed, cancelled: false)
+      end
+
+      # The cancellation action persists the terminal state itself so it is
+      # visible immediately to an operator. The worker only observes it at a
+      # case boundary, which prevents a new provider call while retaining any
+      # result already recorded from an in-flight call.
+      def cancelled(executed, failed)
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed, cancelled: true)
+      end
+
+      def cancellation_requested?
+        IntentConformanceShadowEvaluation.where(id: @evaluation.id)
+          .pick(:cancel_requested_at, :status)
+          .then { |cancel_requested_at, status| cancel_requested_at.present? || status == "cancelled" }
       end
 
       def prompt_digest
@@ -298,7 +320,7 @@ module IntentConformance
       end
 
       def failure(message)
-        Result.new(success: false, error: message, evaluation: nil, executed: 0, failed: 0)
+        Result.new(success: false, error: message, evaluation: nil, executed: 0, failed: 0, cancelled: false)
       end
     end
   end

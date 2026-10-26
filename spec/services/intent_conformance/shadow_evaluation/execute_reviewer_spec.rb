@@ -197,6 +197,27 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     expect(evaluation.runs.count).to eq(2)
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  it "stops between cases when cancellation is requested and preserves collected evidence" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    calls = 0
+    allow(AgentHarness).to receive(:send_message) do
+      calls += 1
+      evaluation.update!(status: "cancelled", cancel_requested_at: Time.current, cancelled_at: Time.current) if calls == 1
+      llm_response("within_scope")
+    end
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).to be_success
+    expect(result.cancelled).to be(true)
+    expect(AgentHarness).to have_received(:send_message).once
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs.find_by(case_id: "A-01")).to be_evaluated
+    expect(evaluation.runs.find_by(case_id: "A-02")).to be_nil
+  end
+
   # @spec INTENT-CONFORMANCE-ROLLOUT-007 — any project operator may execute,
   # so two concurrent POSTs would both observe "no run row" for a case, both
   # invoke the paid reviewer, and the loser's write would then race the
