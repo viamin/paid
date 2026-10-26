@@ -46,12 +46,25 @@ model. Each run persists, immutably once started:
   first-class).
 - `objective` (the recipe key, or `nil` for a free-text user question),
   `scope` (optional paths/symbols the user named), and `guidance` (free-text
-  instructions), captured verbatim at run start.
+  instructions), captured verbatim at run start. A recipe family whose design
+  accepts one widens the accepted scope forms rather than replacing them — the
+  optimization family adds a free-text description of the area under
+  investigation ([`maintenance-optimization`](../maintenance-optimization/maintenance-optimization-design.md),
+  `MAINT-OPT-030`).
 - `recipe_version` and the resolved tool versions/configuration actually
   used, for provenance (RDR-073 attachment metadata plus any native-CLI
   analyzer version string captured at invocation time).
 - `cost_limit`/`time_limit` snapshots, consistent with existing run budget
   fields.
+
+A recipe family may add optional, family-scoped fields to this snapshot — for
+example an optimization type selection and its run-start automatic-repair
+election. Those fields are owned by that family's own LLD
+([`maintenance-optimization`](../maintenance-optimization/maintenance-optimization-design.md)),
+are absent unless that family is used, and never change the base snapshot's
+meaning. A family may widen the repair handoff only through the explicit
+run-start election `MAINT-073` recognizes; the base remains report-only by
+default.
 
 A maintenance run produces exactly one `MaintenanceReport`, associated
 1:1 with the run (reports are not retried in place — a retry or a new
@@ -120,10 +133,11 @@ selection also applies the existing authorization of the selected issue or
 PR-creation pathway:
 
 - **Start**: an authorized user supplies a project, optional objective (recipe
-  key), optional scope (paths/symbols), and optional free-text guidance. A
-  start request must include either a recipe objective or nonblank guidance;
-  scope alone is not an investigation objective. Response identifies the
-  created run and its resolved (or pending-clarification) scope.
+  key), optional scope (paths/symbols, plus any form a recipe family accepts),
+  and optional free-text guidance. A start request must include either a
+  recipe objective or nonblank guidance; scope alone is not an investigation
+  objective. Response identifies the created run and its resolved (or
+  pending-clarification) scope.
 - **Inspect**: an authorized user reads run status, report outcome once
   terminal, and findings with their status.
 - **Cancel**: an authorized user takes an explicit action distinct from
@@ -207,7 +221,7 @@ shipped code in
 | New run type vs. custom prompt on an existing goal | New `"maintenance"` `AgentRun` goal | Custom prompts on existing creation goals | A custom prompt cannot represent report-only success, recurring finding identity, or a maintenance-shaped scope without overloading an unrelated goal's semantics (RDR-075 draft, Alternatives Considered). |
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
-| Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings; a recipe family may additionally pre-authorize a bounded automatic queue of such runs through a run-start election (`MAINT-OPT-040`) | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). An elected queue keeps that separation: the repair is still a separate run that starts after the report and passes its own gates. |
 
 ## Open Questions & Future Decisions
 
@@ -243,7 +257,8 @@ shipped code in
   RDR-073's territory, consumed here, not duplicated.
 - Not an automatic-repair mechanism — a scan never deletes source code or
   opens a PR as a side effect; repair is a separate, explicitly authorized
-  run.
+  run. A recipe family may add an explicitly elected, bounded queue of such
+  separate runs (`MAINT-OPT-040`); it never adds an in-scan mutation path.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.

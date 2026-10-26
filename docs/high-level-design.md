@@ -341,6 +341,21 @@ any repair: a scan never mutates source code or opens a PR on its own.
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
 that acceptance.
 
+A planned optimization recipe family extends that capability with a curated,
+code-defined catalog of non-functional audit types — performance, design and
+architecture, code duplication, security hardening, cost and resource
+efficiency, maintainability and readability, and test coverage and quality.
+Those investigations stay report-only; their findings are judged semantically
+through `agent_harness`, and an analyzer's score stays evidence rather than a
+verdict. Follow-up repair work is either selected manually from the report, or
+queued automatically only when a user elects that policy for one run at
+start, under deterministic authorization, budget, idempotency, and
+revalidation gates; security findings stay manual-only until a separate policy
+review. The family adds no rollout switch of its own and no in-scan mutation
+path. **Draft, not yet accepted**: see
+`docs/intent/maintenance-optimization/` for the reviewable LLD/EARS contract
+pending owner acceptance.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the

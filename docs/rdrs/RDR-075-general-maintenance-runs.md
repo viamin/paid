@@ -9,7 +9,7 @@
 - **Type**: Architecture
 - **Priority**: —
 - **Related RDRs**: [RDR-073](RDR-073-marketplace-tool-sidecars.md), [RDR-031](RDR-031-focused-agent-runs.md), [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md), [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-054](RDR-054-prompt-assembly-service.md)
-- **Related Issues**: [#4326](https://github.com/viamin/paid/issues/4326) (umbrella), [#4327](https://github.com/viamin/paid/issues/4327) (planning/tool handoff), [#4604](https://github.com/viamin/paid/issues/4604) (deferred live execution-environment validations), [#4334](https://github.com/viamin/paid/issues/4334) (closeout)
+- **Related Issues**: [#4326](https://github.com/viamin/paid/issues/4326) (umbrella), [#4327](https://github.com/viamin/paid/issues/4327) (planning/tool handoff), [#4604](https://github.com/viamin/paid/issues/4604) (deferred live execution-environment validations), [#4334](https://github.com/viamin/paid/issues/4334) (closeout), [#4492](https://github.com/viamin/paid/issues/4492) (optimization family umbrella), [#4493](https://github.com/viamin/paid/issues/4493)–[#4496](https://github.com/viamin/paid/issues/4496) (optimization family deliverables), [#4636](https://github.com/viamin/paid/issues/4636) (optimization intent preparation)
 - **Blocked on**: Validating the batch-analyzer checkout-access and
   batch-invocation contract against RDR-073's shipped attachment lifecycle
   (Critical assumption 2). Recorded by [#4327](https://github.com/viamin/paid/issues/4327)'s
@@ -248,6 +248,16 @@ bounded repair issues or normal PR-creation runs, preserving source-report
 links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
 outside the initial scope and requires a separately approved policy.
+
+The optimization recipe family ([#4492](https://github.com/viamin/paid/issues/4492)–[#4496](https://github.com/viamin/paid/issues/4496))
+is the draft of that separately approved policy: its recipe catalog, its
+scope semantics, and its bounded, opt-in automatic-repair election are
+recorded in
+[`docs/intent/maintenance-optimization/`](../intent/maintenance-optimization/maintenance-optimization-design.md)
+and remain unaccepted
+([#4636](https://github.com/viamin/paid/issues/4636)). This RDR's own scope is
+unchanged — the family extends the base contracts rather than revising them,
+and no automatic repair behavior exists until that policy is accepted.
 
 ### PR integration
 
