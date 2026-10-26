@@ -36,6 +36,23 @@
       </div>
     </div>
   <% else %>
+    <% if local_assigns[:queue_diagnosis] %>
+      <% diagnosis = local_assigns[:queue_diagnosis] %>
+      <div class="mt-4 rounded-md bg-blue-50 p-3 ring-1 ring-inset ring-blue-200" data-testid="queue-diagnosis">
+        <p class="text-sm font-medium text-blue-900"><%= diagnosis.state.to_s.humanize %></p>
+        <p class="mt-1 text-sm text-blue-800"><%= diagnosis.action %></p>
+        <% if diagnosis.open_count %>
+          <p class="mt-1 text-xs text-blue-700"><%= pluralize(diagnosis.open_count, "open issue") %> · <%= pluralize(diagnosis.candidate_count, "eligible candidate") %> · <%= pluralize(diagnosis.queued_count, "queued run") %> · <%= pluralize(diagnosis.active_count, "active run") %></p>
+        <% end %>
+        <% if diagnosis.candidates.any? %>
+          <ul class="mt-2 list-disc pl-5 text-xs text-blue-800">
+            <% diagnosis.candidates.each do |candidate| %>
+              <li><%= link_to "##{candidate.issue.github_number} #{candidate.issue.title}", project_issue_path(candidate.issue.project, candidate.issue), class: "underline", data: { turbo_frame: "_top" } %> — <%= candidate.provenance %></li>
+            <% end %>
+          </ul>
+        <% end %>
+      </div>
+    <% end %>
     <% paused_autopick = Array(local_assigns[:paused_projects]).count(&:auto_pick_enabled?) %>
     <% if paused_autopick.positive? %>
       <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">

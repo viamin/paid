@@ -718,6 +718,14 @@ arrows:
     taxonomy: operations
     status: OK
     audited: 2026-10-05
+  queue-delivery-diagnosis:
+    title: Queue Delivery Diagnosis
+    path: docs/intent/queue-delivery-diagnosis/queue-delivery-diagnosis-design.md
+    specs: docs/intent/queue-delivery-diagnosis/queue-delivery-diagnosis-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-10-26
   onboarding-chat-setup:
     title: Onboarding Chat-Led Setup
     path: docs/intent/onboarding-chat-setup/onboarding-chat-setup-design.md
