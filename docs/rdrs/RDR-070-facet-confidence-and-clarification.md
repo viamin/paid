@@ -3,7 +3,7 @@
 ## Metadata
 
 - **Date**: 2026-09-22
-- **Status**: Partially Implemented (see [2026-10-22 Final Acceptance Audit](#2026-10-22-final-acceptance-audit))
+- **Status**: Partially Implemented (see [2026-10-26 Recovery Audit](#2026-10-26-recovery-audit))
 - **Type**: Intent modeling and agent judgment
 - **Priority**: P1
 - **Related RDRs**: [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)
@@ -23,9 +23,12 @@ and outcome metrics (false readiness, unnecessary clarification, human
 corrections, cost, downstream rework) in
 [`docs/intent/facet-confidence/assessment-evaluation-2026-10-23/`](../intent/facet-confidence/assessment-evaluation-2026-10-23/README.md);
 the operator-executed measured runs remain pending and are recorded as not
-established in the outcome worksheet. The umbrella remains open for the
-remaining RDR-071 delivery/activation integration. See the 2026-10-22 final
-acceptance audit for the criterion-level reconciliation.
+established in the outcome worksheet. #4596 has shipped the authorized Inbox
+entry point and blinded, sole-judge reference-label workflow needed to produce
+that evidence; its availability is not evidence that a human has completed the
+labels. The umbrella remains open for the remaining RDR-071
+delivery/activation integration. See the 2026-10-26 recovery audit for the
+current criterion-level reconciliation.
 
 ### 2026-10-12 Implementation progress audit
 
@@ -213,3 +216,15 @@ broaden enrollment or change an active run. This closeout tracks
 [#4309](https://github.com/viamin/paid/issues/4309); it does not close the
 umbrella. The shared audit evidence is also recorded in
 [`audit-report-2026-10-22-human-centered-inbox-epic.md`](audit-report-2026-10-22-human-centered-inbox-epic.md).
+
+## 2026-10-26 Recovery Audit
+
+After #4596 delivered the evaluation workflow, closeout [#4323](https://github.com/viamin/paid/issues/4323)
+was re-audited. The deterministic contracts, corpus/reporting machinery, and
+authorized blinded-label workflow are shipped and covered by focused tests.
+No authentic human reference labels or frozen evaluator report exist yet, so
+false readiness, unnecessary clarification, human corrections, cost, and
+downstream rework remain **not established**. This is a measured-acceptance
+gap, not permission to substitute fixtures, agent output, or closed-issue
+state for human judgments. RDR-070 remains **Partially Implemented**. See
+[`audit-report-2026-10-26-rdr-070.md`](audit-report-2026-10-26-rdr-070.md).
