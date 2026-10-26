@@ -22,12 +22,16 @@ module FacetConfidence
       @status = status
     end
 
+    # Input revisions are keyed by case id only: the packet travels to the
+    # pre-freeze Inbox surface, so embedding the case payloads as keys would
+    # leak the frozen expectations, shapes, and selection rationale the
+    # reference judgments must stay blinded to (FACET-CONFIDENCE-021).
     def call
       Result.new(work_item: issue.github_number, project: issue.project.full_name,
         source_revision: source_revision, corpus_version: manifest.fetch("corpus_version"),
         corpus_digest: Digest::SHA256.file(manifest_path).hexdigest,
         rubric_version: manifest.dig("rubric", "version"), model_version: manifest.dig("rubric", "model"),
-        input_revisions: cases.index_with { |corpus_case| corpus_case.fetch("evidence_revision", corpus_case.fetch("evidence").length) },
+        input_revisions: cases.to_h { |corpus_case| [ corpus_case.fetch("id"), corpus_case.fetch("evidence_revision", corpus_case.fetch("evidence").length) ] },
         blockers: blockers)
     end
 

@@ -3,29 +3,34 @@
 ## Metadata
 
 - **Date**: 2026-09-22
-- **Status**: Partially Implemented (see [2026-10-22 Final Acceptance Audit](#2026-10-22-final-acceptance-audit))
+- **Status**: Partially Implemented (see [2026-10-26 Closeout](#2026-10-26-closeout))
 - **Type**: Intent modeling and agent judgment
 - **Priority**: P1
 - **Related RDRs**: [RDR-069](RDR-069-question-centered-chat-exploration.md), [RDR-071](RDR-071-confidence-driven-issue-delivery.md)
 - **Intent**: [Facet confidence](../intent/facet-confidence/facet-confidence-design.md)
 - **Implementation tree**: [Human-centered Inbox delivery plan](human-centered-inbox-implementation.md)
-- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (shared umbrella), [#4323](https://github.com/viamin/paid/issues/4323) (RDR-070 closeout), and [#4573](https://github.com/viamin/paid/issues/4573) (assessment-corpus final-acceptance dependency)
+- **Related Issues**: [#4309](https://github.com/viamin/paid/issues/4309) (shared umbrella), [#4323](https://github.com/viamin/paid/issues/4323) (RDR-070 closeout), [#4573](https://github.com/viamin/paid/issues/4573) (assessment-corpus final-acceptance dependency), and [#4596](https://github.com/viamin/paid/issues/4596) (blinded reference-evaluation workflow; owns the remaining measured evaluation)
 
 ## Implementation Status
 
 The facet/evidence, assessment, adaptive-clarification, explicit-preference,
 and scoped-readiness contracts are now implemented with linked tests. The
 RDR's versioned representative assessment corpus and its outcome measurement
-are delivered (#4573) as
+machinery are delivered (#4573) as
 [`docs/intent/facet-confidence/assessment-corpus-manifest-v1.yml`](../intent/facet-confidence/assessment-corpus-manifest-v1.yml)
 with per-run provenance (corpus/rubric/model/input revisions, replay guard)
 and outcome metrics (false readiness, unnecessary clarification, human
 corrections, cost, downstream rework) in
-[`docs/intent/facet-confidence/assessment-evaluation-2026-10-23/`](../intent/facet-confidence/assessment-evaluation-2026-10-23/README.md);
-the operator-executed measured runs remain pending and are recorded as not
-established in the outcome worksheet. The umbrella remains open for the
-remaining RDR-071 delivery/activation integration. See the 2026-10-22 final
-acceptance audit for the criterion-level reconciliation.
+[`docs/intent/facet-confidence/assessment-evaluation-2026-10-23/`](../intent/facet-confidence/assessment-evaluation-2026-10-23/README.md).
+The blinded reference-judgment closeout-evaluation workflow (#4596) has also
+shipped (`FACET-CONFIDENCE-020`/`021`). The measured acceptance itself remains
+not established: the operator-executed rubric runs are still pending (the
+outcome worksheet records every measure as not established), and the blinded
+reference judgments still need an unexposed judge after the 2026-10-26 audit
+fixed a packet leak that exposed the frozen expectations to its own auditor.
+The umbrella remains open for the remaining RDR-071 delivery/activation
+integration. See the [2026-10-26 Closeout](#2026-10-26-closeout) for the
+criterion-level reconciliation.
 
 ### 2026-10-12 Implementation progress audit
 
@@ -213,3 +218,50 @@ broaden enrollment or change an active run. This closeout tracks
 [#4309](https://github.com/viamin/paid/issues/4309); it does not close the
 umbrella. The shared audit evidence is also recorded in
 [`audit-report-2026-10-22-human-centered-inbox-epic.md`](audit-report-2026-10-22-human-centered-inbox-epic.md).
+
+## 2026-10-26 Closeout
+
+Closeout [#4323](https://github.com/viamin/paid/issues/4323) re-audited every
+RDR-070 acceptance criterion against current source and live, database-backed
+`bundle exec rspec` runs (268 focused examples, 0 failures across the
+judgment, readiness, corpus, explicit-preference, and #4596 workflow suites).
+Result: **Partially Implemented** — every durable contract and both evaluation
+machineries are shipped; only the measured acceptance remains open. Per the
+2026-10-24 recovery-owner note, the audit preserves #4596 as the measured
+evaluation owner, files no duplicate audit or child issue, and attests no
+corpus/test-fixture result as measured human-reference acceptance.
+
+Acting as the operator, the audit also ran the shipped #4596 workflow live
+from the real `Issues::CloseoutStatus` entry path (no unresolved blockers for
+the closeout context) and found a genuine blinding defect:
+`CloseoutEvaluationPacket` keyed `input_revisions` by the entire corpus case
+hash, so any programmatic consumer of the pre-freeze Inbox packet received
+the frozen expected bands, shapes, and selection rationale that
+`FACET-CONFIDENCE-021` keeps hidden until freeze. The shipped HTML never
+printed the keys, but the answer key traveled in the structure — the audit's
+own operator dump received it. Consequences, all landed with this closeout:
+
+- The defect is fixed failing-first
+  (`spec/services/facet_confidence/closeout_evaluation_packet_spec.rb` now
+  proves the serialized packet carries no expectations; revisions key by case
+  id at `app/services/facet_confidence/closeout_evaluation_packet.rb`).
+- The exposed evaluation generation was destroyed rather than frozen: this
+  auditor can no longer serve as a blinded reference judge, and recording
+  post-exposure judgments would have manufactured the appearance of measured
+  acceptance. A fresh, label-free evaluation generation now awaits an
+  unexposed judge on the fixed surface.
+- The operator rubric runs remain pending:
+  `bin/facet-confidence-assessment-evaluation compile` still exits 2
+  (`pending operator input`), the outcome worksheet keeps every measure `not
+  established`, and the tuning gate stays `blocked_incomplete_coverage`.
+
+The 80/80 defaults are reaffirmed as provisional policy judgments, not
+calibrated probabilities; this closeout tuned no score, rubric, or threshold.
+The rollout guard is unchanged: release stays gated on the RDR-071 path, and
+the evaluation workflow itself closes nothing and changes no defaults. This
+closeout Tracks [#4309](https://github.com/viamin/paid/issues/4309) and keeps
+[#4323](https://github.com/viamin/paid/issues/4323) open on the measured
+evaluation owned by [#4596](https://github.com/viamin/paid/issues/4596); see
+[`audit-report-2026-10-26-rdr-070.md`](audit-report-2026-10-26-rdr-070.md)
+for the criterion-by-criterion evidence, the incident record, and the
+verification log.

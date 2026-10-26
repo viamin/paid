@@ -247,6 +247,19 @@ assistant's exploration context, and restoring a saved answer's recorded
 evidence on reopen. #4322 stays open and keeps `Tracks #4309` language; only
 the umbrella's own final acceptance audit may close #4309.
 
+The [2026-10-26 RDR-070 closeout](audit-report-2026-10-26-rdr-070.md)
+re-audited every criterion with live database-backed runs (268 focused
+examples, 0 failures) and exercised the shipped #4596 blinded
+reference-evaluation workflow from the real closeout entry path. RDR-070
+stays **Partially Implemented**: it also found and fixed a blinding defect —
+the Inbox packet's `input_revisions` embedded the whole frozen corpus cases
+as map keys, exposing the expected bands to any programmatic consumer — and,
+because that leak exposed the audit's own operator to the frozen
+expectations, the blinded reference judgments must be recorded by an
+unexposed judge on the fixed surface, while the operator rubric runs stay
+pending (`compile` still exits `pending operator input`). #4323 stays open on
+the measured evaluation owned by #4596 and keeps `Tracks #4309` language.
+
 RDR-075, **General Maintenance Runs** (indexed above under Quality &
 Automation), is drafted in [PR #4308](https://github.com/viamin/paid/pull/4308).
 Its [2026-10-15 C75 closeout audit](audit-report-2026-10-15-rdr-075.md) found

@@ -20,5 +20,25 @@ RSpec.describe FacetConfidence::CloseoutEvaluationPacket do
       expect(packet.model_version).to eq("claude-sonnet-4-6")
       expect(packet.blockers).to contain_exactly(include(code: "unresolved_prerequisites", recovery: "Complete #4316, then refresh this closeout."))
     end
+
+    it "keys input revisions by case id and carries no frozen expectations, shapes, or rationale" do # @spec FACET-CONFIDENCE-020
+      status = instance_double(Issues::CloseoutStatus::Result, blockers: [])
+      issue = instance_double(Issue, github_number: 4323, project: instance_double(Project, full_name: "acme/paid"))
+      assessment = instance_double(PartialCloseouts::Assessment::Result, source_revision: "intent-sha")
+      allow(PartialCloseouts::Assessment).to receive(:call).with(issue).and_return(assessment)
+      corpus = FacetConfidence::Corpus.new(path: described_class::MANIFEST_PATH)
+
+      packet = described_class.call(issue:, status:)
+
+      expect(packet.ready?).to be(true)
+      expect(packet.input_revisions.keys).to eq(corpus.case_ids)
+      expect(packet.input_revisions.values).to all(be_an(Integer))
+      serialized = packet.to_h.inspect
+      corpus.cases.each do |corpus_case|
+        expect(serialized).not_to include(corpus_case.fetch("expected").inspect)
+        expect(serialized).not_to include(corpus_case["selection_rationale"].to_s)
+        expect(serialized).not_to include(corpus_case["shape"].to_s)
+      end
+    end
   end
 end
