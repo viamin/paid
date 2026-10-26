@@ -22,7 +22,8 @@ with per-run provenance (corpus/rubric/model/input revisions, replay guard)
 and outcome metrics (false readiness, unnecessary clarification, human
 corrections, cost, downstream rework) in
 [`docs/intent/facet-confidence/assessment-evaluation-2026-10-23/`](../intent/facet-confidence/assessment-evaluation-2026-10-23/README.md);
-the operator-executed measured runs remain pending and are recorded as not
+the 2026-10-26 execution recorded eight provider-unavailable operational
+failures, so measured verdicts remain pending and are recorded as not
 established in the outcome worksheet. The umbrella remains open for the
 remaining RDR-071 delivery/activation integration. See the 2026-10-22 final
 acceptance audit for the criterion-level reconciliation.

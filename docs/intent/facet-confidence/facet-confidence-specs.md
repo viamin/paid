@@ -5,8 +5,8 @@ for `001` and `008`; P06 implements assessment generation and persisted chat
 context for `002`–`005`, `012`–`014`; P08 implements `006` and `007`; P09
 implements `009` through `012`. The RDR-070 corpus deliverable (#4573)
 implements `016`–`018`: the frozen assessment corpus, per-run provenance, and
-outcome metrics machinery; operator-executed measured runs remain pending and
-the worksheet records them as not established. The closeout evaluation entry
+outcome metrics machinery; the 2026-10-26 execution recorded eight operational
+provider failures, so verdict-derived measures remain not established. The closeout evaluation entry
 point (#4596) implements `020`–`021`: the Inbox packet and the persisted
 blinded reference-judgment flow over the frozen corpus.
 
@@ -58,7 +58,7 @@ blinded reference-judgment flow over the frozen corpus.
   *Tests:* `spec/lib/facet_confidence/assessment_corpus_ledger_spec.rb`, `spec/bin/facet_confidence/assessment_evaluation_cli_spec.rb`.
 - [x] **FACET-CONFIDENCE-018** — When corpus runs and their follow-ups are recorded, Paid SHALL report false readiness, unnecessary clarification, human corrections, assessment cost, and downstream rework per case and in aggregate, and SHALL treat threshold or rubric tuning proposals as unevaluated until these outcome metrics are complete, never justified by throughput alone.
   *Code:* `lib/facet_confidence/assessment_outcome_report.rb`, `bin/facet-confidence-assessment-evaluation`.
-  *Evidence:* `assessment-evaluation-2026-10-23/outcome-worksheet-2026-10-23.md` records the operator-measured values; measured runs stay pending operator assessment execution.
+  *Evidence:* `assessment-evaluation-2026-10-23/outcome-worksheet-2026-10-23.md` records the 2026-10-26 provider-unavailable failures and the pending verdict-derived measures.
   *Tests:* `spec/lib/facet_confidence/assessment_outcome_report_spec.rb`.
 - [x] **FACET-CONFIDENCE-019** — When an authorized operator responds to an open feature-decision Inbox item, Paid SHALL persist the explicit statement, actor, and resolution on that existing decision and trigger the established clarity reassessment; it SHALL reject blank, stale, or over-500-character submissions, SHALL NOT truncate a submitted draft, SHALL NOT infer structured choices from decision prose, and SHALL NOT treat the response as feature approval or execution authorization.
 

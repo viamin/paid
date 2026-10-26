@@ -63,8 +63,8 @@ bin/facet-confidence-assessment-evaluation validate --corpus <manifest> --ledger
 bin/facet-confidence-assessment-evaluation compile   --corpus <manifest> --ledger <ledger>
 ```
 
-`compile` exits `pending operator input` (2) until every corpus case has at
-least one run. Once complete it prints the outcome worksheet — false
+`compile` exits `pending operator input` (2) until every corpus case has a
+non-failed verdict. Once complete it prints the outcome worksheet — false
 readiness, unnecessary clarification, human corrections, assessment cost,
 downstream rework, band divergences, operational failures, and the tuning
 gate — which the operator
