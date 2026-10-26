@@ -6,6 +6,7 @@ class FeatureFlags
   UnknownFlagError = Class.new(ArgumentError)
   InvalidActorError = Class.new(ArgumentError)
   InvalidPercentageError = Class.new(ArgumentError)
+  ActiveContinuationGrantsError = Class.new(ArgumentError)
 
   DEFINITIONS = {
     question_exploration: Definition.new(
@@ -137,6 +138,7 @@ class FeatureFlags
     end
 
     def disable!(flag_name, project: nil, actor: nil)
+      ensure_automation_phases_can_roll_back!(flag_name, project)
       resolved_actor = resolve_actor(project:, actor:)
 
       unless resolved_actor
@@ -220,6 +222,15 @@ class FeatureFlags
       return flipper_feature.public_send("disable_percentage_of_#{gate}") if value.zero?
 
       flipper_feature.public_send("enable_percentage_of_#{gate}", value)
+    end
+
+    # @spec AUTOMATION-PHASES-014
+    def ensure_automation_phases_can_roll_back!(flag_name, project)
+      return unless flag_name.to_sym == :automation_phases && project
+      return unless WorkItemContinuationGrant.active.where(project:).exists?
+
+      raise ActiveContinuationGrantsError,
+        "Cannot disable automation phases while the project has active continuation grants. Revoke or complete them first."
     end
 
     def normalize_percentage(percentage)

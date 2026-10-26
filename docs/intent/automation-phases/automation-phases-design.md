@@ -33,7 +33,10 @@ from a coding or later start.
 every policy decision reads it through `Automation::RolloutGuard.enabled?`
 (`FeatureFlags.enabled?(:automation_phases, project:)`). While off,
 `Automation::EffectivePolicy` returns a permitted `legacy_policy` decision, so
-existing execution and Inbox behavior is untouched.
+existing execution and Inbox behavior is untouched. A project-scoped rollback
+through `FeatureFlags.disable!` fails closed while that project has active
+continuation grants; an operator must complete or revoke them before disabling
+the pilot flag.
 
 ## Project phase defaults
 
