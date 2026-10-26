@@ -359,8 +359,9 @@ module Automation
               # (NO-OUTPUT-ISSUE-007). Without this exclusion the partial-closeout
               # re-audit exception above would re-pick the parent once the partial
               # PR merges, even though the operator has not yet completed the
-              # prerequisite the notification states. The notification dismissal
-              # or system resolve clears the block (see Notification's callback),
+              # prerequisite the notification states. A personal notification
+              # dismissal does not attest acceptance or clear this block; only
+              # verified evidence can resolve it (see Notification's callback),
               # so the parent re-enters selection through the same eager-enqueue
               # path that dependency resolution uses.
               .where.not(id: inputs.prerequisite_block_ids)
@@ -494,7 +495,7 @@ module Automation
               account_id: project.account_id,
               source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
               subject_type: "Issue"
-            ).where(resolved_at: nil, dismissed_at: nil)
+            ).where(resolved_at: nil)
               .where("subject_id IN (?)", project.issues.select(:id))
               .pluck(:subject_id)
           end

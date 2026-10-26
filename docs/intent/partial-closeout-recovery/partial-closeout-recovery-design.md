@@ -315,6 +315,16 @@ refresh local records immediately, showing the successful linkage and when a
 full sync is still required — the same services the agent `create_issue` /
 `edit_issue` tools use.
 
+### Prerequisite notification authority
+
+A partial-closeout prerequisite notification is a scheduling guard, not
+evidence. Personal dismissal retains its normal notification-removal meaning,
+but does not resolve the prerequisite or release the parent for scheduling.
+Only the verification path may resolve the notification and trigger the
+existing eager eligibility recheck. The operator guidance discloses this
+distinction so a hidden notification is never represented as satisfied
+acceptance.
+
 Pending chat write-tool confirmations visibly distinguish proposed/awaiting
 confirmation, queued, refused, and completed actions, link a completed action
 to the run it created, and a conversational message sent while a confirmation
