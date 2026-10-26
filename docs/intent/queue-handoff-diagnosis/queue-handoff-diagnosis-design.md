@@ -24,8 +24,8 @@ manual and pull-request work. The derived state is mechanical:
 | State | Condition | Operator meaning |
 | --- | --- | --- |
 | `active_work` | no waiting eligible candidate and one or more active runs | healthy work is progressing |
-| `runnable_not_seeded` | one or more eligible candidates lack queued or active work | the existing event/sweep seeder should recover the handoff |
-| `waiting` | one or more queued runs | scheduler backlog is represented |
+| `runnable_not_seeded` | one or more eligible candidates lack queued or active work | the existing event/sweep seeder should recover the handoff; this takes precedence over unrelated queue entries |
+| `waiting` | no eligible candidate awaits a handoff and one or more queued runs exist | scheduler backlog is represented |
 | `held` | open work exists but no candidate is eligible | existing Inbox and eligibility categories identify the hold |
 | `paused` | the project, account, or a run is deliberately paused | resume remains an explicit operator action |
 | `unknown` | the diagnostic query cannot establish coverage | rendering reports unavailable coverage, never "no work" |

@@ -21,11 +21,10 @@ RSpec.describe Dashboard::EligibilityBreakdown do
 
   describe ".call" do
     # @spec QUEUE-HANDOFF-001 QUEUE-HANDOFF-002
-    it "distinguishes eligible work missing a handoff from queued and active work" do
+    it "reports an unseeded eligible issue even with unrelated queued and active work" do
       unseeded = create(:issue, project: project, github_state: "open", paid_state: "new")
-      queued = create(:issue, project: project, github_state: "open", paid_state: "new")
       active = create(:issue, project: project, github_state: "open", paid_state: "new")
-      create(:agent_run, :queued, :automatic, project: project, issue: queued)
+      create(:agent_run, :queued, :with_custom_prompt, project: project)
       create(:agent_run, :running, project: project, issue: active)
 
       breakdown = described_class.call(user: user).sole
@@ -37,7 +36,7 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(breakdown.queued).to eq(1)
       expect(breakdown.active).to eq(1)
       expect(breakdown.unseeded).to eq(1)
-      expect(breakdown.diagnostic_state).to eq(:waiting)
+      expect(breakdown.diagnostic_state).to eq(:runnable_not_seeded)
       expect(unseeded).to be_persisted
     end
 

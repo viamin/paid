@@ -3,7 +3,9 @@
 - [x] **QUEUE-HANDOFF-001** — When a visible Auto-Pick project has an eligible
   issue without a queued or active run for that issue, the dashboard SHALL
   report it as `runnable_not_seeded`, preserving the existing eligibility and
-  scheduler data sources and never creating work during rendering.
+  scheduler data sources and never creating work during rendering, even when
+  the queue preview contains unrelated manual, closed-issue, or pull-request
+  runs.
 
 - [x] **QUEUE-HANDOFF-002** — When a visible project has active work and no
   eligible issue waiting for a handoff, the dashboard SHALL report

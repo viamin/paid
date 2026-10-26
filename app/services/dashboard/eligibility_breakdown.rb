@@ -120,8 +120,8 @@ module Dashboard
     # @spec QUEUE-HANDOFF-003
     def diagnostic_state(project:, unseeded:, queued:, active:, paused:, total_open:)
       return :paused if deliberately_paused?(project)
-      return :waiting if queued.positive?
       return :runnable_not_seeded if unseeded.positive?
+      return :waiting if queued.positive?
       return :active_work if active.positive?
       return :paused if paused.positive?
       return :held if total_open.positive?
