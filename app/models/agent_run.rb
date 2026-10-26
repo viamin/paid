@@ -4093,6 +4093,10 @@ class AgentRun < ApplicationRecord
     # lid_planning derives its prompt from Prompts::BuildForLidPlanning, so it
     # needs no issue, custom prompt, or source PR.
     return if lid_planning_goal?
+    # @spec LAYERED-VERIFY-013
+    # An audit resolves its scope from persisted obligations rather than an
+    # issue body or free-form prompt.
+    return if goal == "layered_verification_audit"
     # create_feature derives its prompt from Prompts::BuildForCreateFeature
     # and external_metadata["feature_brief"], so it needs no issue or source PR.
     return if create_feature_goal?
