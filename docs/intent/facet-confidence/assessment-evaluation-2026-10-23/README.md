@@ -14,7 +14,12 @@ stamps and validates that provenance and rejects replays of identical case
 input. The outcome worksheet at
 [`outcome-worksheet-2026-10-23.md`](outcome-worksheet-2026-10-23.md) is the
 repository-visible measure record; every operator-derived measure stays
-`not established` until the operator runs the corpus and appends the runs.
+`not established` until the operator obtains non-failed assessment verdicts.
+
+The 2026-10-26 C70 closeout recorded one failed, pinned-model attempt for each
+case: no provider in that environment served `claude-sonnet-4-6`. The ledger
+therefore records eight operational failures, not substitute-model outcomes or
+assessment verdicts. A repeat remains blocked on the runtime prerequisite.
 
 No corpus run can release work: readiness-driven release remains gated on the
 complete RDR-071 delivery path, and the 80/80 thresholds stay the provisional
