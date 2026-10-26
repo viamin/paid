@@ -122,9 +122,12 @@
   automation stopped (`manual_review_reason`) and how long it has been stopped
   (`manual_review_started_at`, falling back to `updated_at` for legacy rows —
   `ISSUE-ENHANCEMENT-012`). The entry SHALL offer an operator-triggered manual
-  `enhance_issue` run as its clearing action, since automatic picking excludes
-  `manual_review` and only an explicit operator-triggered run resumes work
-  (`ISSUE-ENHANCEMENT-011`). Queuing that run SHALL transition the issue out
+  cause-specific recovery action as defined by `OPERATOR-INBOX-002K`. For an
+  enhancement hold, the action SHALL be an operator-triggered manual
+  `enhance_issue` run, since automatic picking excludes `manual_review` and
+  only an explicit operator-triggered run resumes enhancement work
+  (`ISSUE-ENHANCEMENT-011`). Queuing a supported continuation SHALL transition
+  the issue out
   of `manual_review` in the same request — inside the same transaction that
   creates the run — so the entry clears from the queue and the badge at queue
   time rather than when the workflow eventually starts the run (#3853); a
@@ -188,7 +191,8 @@
   `spec/services/issues/validate_reopen_review_spec.rb`,
   `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
   *Code:* `Issues::ManualReviewRecovery`, `Issues::ValidateReopenReview`,
-  `Projects::AgentRunsController`, `dashboard/_inbox_detail_manual_review`.
+  `Projects::AgentRunsController`, `Api::V1::InboxEntrySerializer`,
+  `dashboard/_inbox_detail_manual_review`.
 
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by

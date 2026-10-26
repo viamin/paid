@@ -77,7 +77,10 @@
   common envelope fields (`id`, `kind`, `waiting_since`, `project`, title,
   summary, `action_url`) plus its list-safe kind-specific payload: a
   `manual_review` list entry SHALL NOT resolve its lazy GitHub comment URL;
-  that URL is available from the single-entry detail endpoint. The OpenAPI
+  that URL is available from the single-entry detail endpoint. Both payloads
+  SHALL include the durable manual-review recovery cause and supported action,
+  derived by `Issues::ManualReviewRecovery` rather than from stop-reason text.
+  The OpenAPI
   schema SHALL express the entry as `oneOf` across one branch per
   `Inbox::Queue::KINDS` kind.
   *Tests:* `spec/requests/api/v1/inbox_spec.rb`,

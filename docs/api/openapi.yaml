@@ -778,6 +778,8 @@ components:
           properties:
             kind: {type: string, enum: [manual_review]}
             questions: {type: array, items: {type: string}}
+            recovery_cause: {type: string, enum: [reopen_review, dependency_wait, scanner_recurrence, enhancement, unknown]}
+            recovery_action: {type: string, enum: [reuse_active_run, record_reopen_validation, resume_implementation, wait_for_dependency, retry_enhancement, investigate]}
     ManualReviewEntry:
       allOf:
         - $ref: '#/components/schemas/ManualReviewListEntry'

@@ -25,6 +25,16 @@ module Issues
       def unknown?
         cause == :unknown
       end
+
+      def action
+        return :reuse_active_run if active_run
+        return :record_reopen_validation if reopen_review? && !issue.reopen_review_validated_for_current_revision?
+        return :resume_implementation if reopen_review? || scanner_recurrence?
+        return :wait_for_dependency if dependency_wait?
+        return :retry_enhancement if enhancement?
+
+        :investigate
+      end
     end
 
     def self.call(...)

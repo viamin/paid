@@ -23,4 +23,17 @@ RSpec.describe Issues::ValidateReopenReview do
     expect(result).not_to be_success
     expect(issue.reload.reopen_review_validated_at).to be_nil
   end
+
+  # @spec ISSUE-REOPEN-REVIEW-005
+  it "checks the revision again while recording the decision" do
+    allow(issue).to receive(:reload) do
+      issue.update_column(:github_updated_at, 1.minute.from_now)
+      issue
+    end
+
+    result = described_class.call(issue:, actor:, reason: "Continue.", revision: issue.reopen_review_revision)
+
+    expect(result).not_to be_success
+    expect(issue.reload.reopen_review_validated_at).to be_nil
+  end
 end

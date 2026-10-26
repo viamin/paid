@@ -94,14 +94,17 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       github_client = instance_double(GithubClient, issue_comments: [ marker_comment ])
       allow(GithubClient).to receive(:new).and_return(github_client)
       allow(project).to receive(:paid_bot_author?).and_return(true)
-      issue = create(:issue, :needs_input, project: project)
+      issue = create(:issue, project: project, paid_state: "manual_review")
+      create(:agent_run, project: project, issue: issue, goal: "enhance_issue", status: "failed")
       entry = build_entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue: issue, record: issue, questions: [ "Still open?" ])
 
       payload = described_class.render(entry)
 
       expect(payload).to include(
         questions: [ "Still open?" ],
-        comment_url: "https://github.com/acme/widgets/issues/5#comment"
+        comment_url: "https://github.com/acme/widgets/issues/5#comment",
+        recovery_cause: :enhancement,
+        recovery_action: :retry_enhancement
       )
     end
 

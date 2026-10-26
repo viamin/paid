@@ -36,4 +36,12 @@ RSpec.describe Issues::ManualReviewRecovery do
 
     expect(described_class.call(issue:).cause).to eq(:scanner_recurrence)
   end
+
+  # @spec OPERATOR-INBOX-002K
+  it "describes a queued run as reuse instead of another recovery action" do
+    issue = create(:issue, project:, paid_state: "manual_review")
+    create(:agent_run, project:, issue:, goal: "create_pr", status: "queued")
+
+    expect(described_class.call(issue:).action).to eq(:reuse_active_run)
+  end
 end

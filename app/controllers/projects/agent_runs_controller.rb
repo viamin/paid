@@ -1062,6 +1062,13 @@ module Projects
     end
 
     def create_manual_review_implementation_run(issue)
+      budget_result = CostBudgets::Check.call(@project)
+      unless budget_result[:allowed]
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+        return
+      end
+
       ActiveRecord::Base.transaction do
         create_agent_run(issue:, goal: "create_pr")
         resume_issue_from_manual_review(issue)
