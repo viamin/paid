@@ -165,6 +165,10 @@ Freezing requires every case labeled (skips block), re-checks the corpus
 digest, and compiles the reproducible report comparing the frozen judgments
 with the frozen expected bands, including citation compliance for cases that
 name required or forbidden evidence. The report is retained on the evaluation
+and returns to the originating Inbox item. After unblinding, the same sole
+judge may append one complete correction with its own evidence citation,
+reason, identity, and timestamp. The correction never replaces the blinded
+judgment or changes the report's original frozen-expectation comparison.
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.

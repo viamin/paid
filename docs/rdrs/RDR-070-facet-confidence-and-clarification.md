@@ -213,3 +213,10 @@ broaden enrollment or change an active run. This closeout tracks
 [#4309](https://github.com/viamin/paid/issues/4309); it does not close the
 umbrella. The shared audit evidence is also recorded in
 [`audit-report-2026-10-22-human-centered-inbox-epic.md`](audit-report-2026-10-22-human-centered-inbox-epic.md).
+
+## 2026-10-26 Reference-Judgment Evidence Audit
+
+The follow-up audit for [#4662](https://github.com/viamin/paid/issues/4662) is
+recorded in [`audit-report-2026-10-26-rdr-070.md`](audit-report-2026-10-26-rdr-070.md).
+It confirms that the blinded workflow is available while retaining the human
+prerequisite: no agent-authored label or compiled report is qualifying evidence.

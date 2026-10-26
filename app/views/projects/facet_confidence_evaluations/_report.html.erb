@@ -4,6 +4,7 @@
     @spec FACET-CONFIDENCE-021 %>
 <% entries = evaluation.report["cases"] || [] %>
 <% measures = evaluation.report["measures"] || {} %>
+<% labels_by_case = evaluation.labels.index_by(&:case_id) %>
 
 <div class="rounded-xl border border-gray-200 bg-white p-4">
   <h2 class="text-sm font-semibold text-gray-900">Reference set frozen</h2>
@@ -55,6 +56,7 @@
     <tbody>
       <% entries.each do |entry| %>
         <% judgment = entry["judgment"] || {} %>
+        <% revision = entry["revision"] %>
         <% expected = entry["expected"] || {} %>
         <% divergent = Array(entry["divergences"]).any? || Array(entry["citation_compliance"]).any? %>
         <%= content_tag :tr,
@@ -84,6 +86,9 @@
             <% else %>
               aligned
             <% end %>
+            <% if revision %>
+              <br><span class="text-indigo-700">Correction recorded by <%= revision["by"] %> at <%= revision["at"] %>.</span>
+            <% end %>
           </td>
         <% end %>
       <% end %>
@@ -94,6 +99,48 @@
     The original judgments are preserved as recorded.
   </p>
 </div>
+
+<% if policy(evaluation).revise? %>
+  <div class="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
+    <h2 class="text-sm font-semibold text-gray-900">Post-unblinding corrections</h2>
+    <p class="text-xs text-gray-500">
+      A correction is appended to the original blinded judgment and does not alter the frozen comparison above.
+    </p>
+    <% entries.each do |entry| %>
+      <% next if entry["revision"] %>
+      <% label = labels_by_case[entry["case_id"]] %>
+      <% corpus_case = evaluation.corpus.find_case(entry["case_id"]) %>
+      <% references = corpus_case.fetch("evidence").map { |item| item.fetch("reference") } %>
+      <details class="rounded-lg border border-gray-200 p-4">
+        <summary class="cursor-pointer text-sm font-medium text-gray-800">Correct <%= entry["case_id"] %></summary>
+        <%= form_with url: revise_project_facet_confidence_evaluation_path(project, evaluation, **inbox_context), method: :post, class: "mt-4 grid gap-3 md:grid-cols-2" do |form| %>
+          <%= form.hidden_field :case_id, value: entry["case_id"] %>
+          <% { verdict: FacetConfidenceEvaluationLabel::VERDICTS, intent_band: FacetConfidenceEvaluationLabel::BANDS,
+               technical_band: FacetConfidenceEvaluationLabel::BANDS, readiness: FacetConfidenceEvaluationLabel::READINESS }.each do |field, values| %>
+            <div>
+              <%= form.label field, field.to_s.humanize, class: "block text-sm font-medium text-gray-700" %>
+              <%= form.select field, options_for_select(values, label.public_send(field)), {}, required: true,
+                    class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+            </div>
+          <% end %>
+          <div>
+            <%= form.label :cited_evidence_reference, "Cited evidence", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.select :cited_evidence_reference, options_for_select(references, label.cited_evidence_reference), {}, required: true,
+                  class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+          </div>
+          <div class="md:col-span-2">
+            <%= form.label :reason, "Correction reason", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_area :reason, required: true, rows: 3,
+                  class: "mt-1 w-full rounded-md border-gray-300 text-sm shadow-sm focus:border-indigo-500 focus:ring-indigo-500" %>
+          </div>
+          <div class="md:col-span-2">
+            <%= form.submit "Append correction", class: "inline-flex rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+          </div>
+        <% end %>
+      </details>
+    <% end %>
+  </div>
+<% end %>
 
 <% if evaluation.report_markdown.present? %>
   <details class="rounded-xl border border-gray-200 bg-white p-6">

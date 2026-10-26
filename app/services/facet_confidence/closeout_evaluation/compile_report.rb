@@ -77,6 +77,7 @@ module FacetConfidence
           "case_id" => corpus_case.fetch("id"),
           "shape" => corpus_case["shape"],
           "judgment" => judgment,
+          "revision" => revision_of(label),
           "expected" => expected.slice("status", "intent_band", "technical_band", "readiness"),
           "divergences" => divergences(judgment, expected),
           "citation_compliance" => citation_compliance(judgment, expected)
@@ -88,6 +89,18 @@ module FacetConfidence
           "verdict" => label.verdict, "intent_band" => label.intent_band, "technical_band" => label.technical_band,
           "readiness" => label.readiness, "cited_evidence_reference" => label.cited_evidence_reference,
           "reason" => label.reason
+        }
+      end
+
+      def revision_of(label)
+        return nil unless label&.revised?
+
+        {
+          "verdict" => label.revised_verdict, "intent_band" => label.revised_intent_band,
+          "technical_band" => label.revised_technical_band, "readiness" => label.revised_readiness,
+          "cited_evidence_reference" => label.revised_cited_evidence_reference,
+          "reason" => label.revised_reason, "by" => label.revised_by.email,
+          "at" => label.revised_at.iso8601
         }
       end
 
@@ -143,7 +156,7 @@ module FacetConfidence
           judge: report.dig("provenance", "judge"),
           frozen_at: report.dig("provenance", "labels_frozen_at"),
           measures: measures_table(report.fetch("measures")),
-          cases: cases_table(report.fetch("cases")))
+          cases: cases_table(report.fetch("cases")), revisions: revisions_table(report.fetch("cases")))
       end
 
       def measures_table(measures)
@@ -158,6 +171,18 @@ module FacetConfidence
             judgment["verdict"], judgment["intent_band"],
             judgment["technical_band"], judgment["readiness"],
             divergences_cell(entry))
+        end.join("\n")
+      end
+
+      def revisions_table(entries)
+        revised = entries.select { |entry| entry.fetch("revision").present? }
+        return "No post-unblinding corrections recorded." if revised.empty?
+
+        revised.map do |entry|
+          revision = entry.fetch("revision")
+          format("| %s | %s | %s | %s | %s | %s |", entry.fetch("case_id"), revision.fetch("verdict"),
+            revision.fetch("intent_band"), revision.fetch("technical_band"), revision.fetch("readiness"),
+            revision.fetch("reason"))
         end.join("\n")
       end
 
@@ -185,6 +210,12 @@ module FacetConfidence
         | Case | Shape | Verdict | Intent band | Technical band | Readiness | Divergences |
         | --- | --- | --- | --- | --- | --- | --- |
         %{cases}
+
+        ## Post-unblinding corrections
+
+        | Case | Verdict | Intent band | Technical band | Readiness | Reason |
+        | --- | --- | --- | --- | --- | --- |
+        %{revisions}
 
         Reference judgments are policy assessments, not calibrated probabilities.
         This report neither closes the source issue, enables delivery, nor changes the 80/80 defaults.

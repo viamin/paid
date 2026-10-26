@@ -2,6 +2,9 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20261024205417_create_facet_confidence_evaluations")
+require Rails.root.join("db/migrate/20261026120000_add_revisions_to_facet_confidence_evaluation_labels")
+require Rails.root.join("db/migrate/20261026120001_add_revised_by_foreign_key_to_facet_confidence_evaluation_labels")
+require Rails.root.join("db/migrate/20261026120002_validate_revised_by_foreign_key_on_facet_confidence_evaluation_labels")
 
 RSpec.describe CreateFacetConfidenceEvaluations, :aggregate_failures do
   # @spec FACET-CONFIDENCE-020 @spec FACET-CONFIDENCE-021
@@ -22,6 +25,7 @@ RSpec.describe CreateFacetConfidenceEvaluations, :aggregate_failures do
 
     if tables_existed.any? { |_table, existed| existed }
       migration.up
+      revision_migrations.each { |revision_migration| revision_migration.migrate(:up) }
     end
     clear_schema_metadata!
   end
@@ -56,6 +60,14 @@ RSpec.describe CreateFacetConfidenceEvaluations, :aggregate_failures do
     facet_confidence_tables.each { |table| connection.schema_cache.clear_data_source_cache!(table) }
     FacetConfidenceEvaluation.reset_column_information
     FacetConfidenceEvaluationLabel.reset_column_information
+  end
+
+  def revision_migrations
+    [
+      AddRevisionsToFacetConfidenceEvaluationLabels.new,
+      AddRevisedByForeignKeyToFacetConfidenceEvaluationLabels.new,
+      ValidateRevisedByForeignKeyOnFacetConfidenceEvaluationLabels.new
+    ]
   end
 
   # The list is parent-first; children must drop before their parent.
