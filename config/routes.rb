@@ -267,6 +267,7 @@ Rails.application.routes.draw do
     post :toggle_pause, on: :member
     post :update_issue_control_state, on: :member
     post :start_lid, on: :member
+    post :request_layered_verification_audit, on: :member
     post :start_setup_chat, on: :member
     post :finish_setup, on: :member
     post :quality_resume, on: :member

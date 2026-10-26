@@ -3,7 +3,7 @@
 class ProjectsController < ApplicationController
   include AuditLogging
 
-  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :update_issue_control_state, :refresh_code_scanning_availability, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_paid_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview, :start_lid, :start_setup_chat, :finish_setup ]
+  before_action :set_project, only: [ :show, :edit, :update, :destroy, :toggle_auto_pick, :toggle_auto_merge, :toggle_pause, :update_issue_control_state, :refresh_code_scanning_availability, :quality_resume, :detect_services, :detect_screenshot_settings, :commit_screenshot_config, :ensure_labels, :cleanup_paid_labels, :cleanup_stale_runs, :start_preview, :stop_preview, :restart_preview, :start_lid, :request_layered_verification_audit, :start_setup_chat, :finish_setup ]
   skip_after_action :verify_authorized, only: :index
 
   NULLS_LAST_SORT_ATTRIBUTES = %w[last_agent_run_at last_github_activity_at].freeze
@@ -381,6 +381,20 @@ class ProjectsController < ApplicationController
     redirect_to @project, alert: e.message
   rescue ActiveRecord::RecordNotUnique
     redirect_to @project, alert: "A LID planning run is already queued or in progress for this project."
+  end
+
+  # @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-014
+  def request_layered_verification_audit
+    authorize @project, :manage_issues?
+    run = LayeredVerification::Audits::Request.call(project: @project, user: current_user,
+      scope: params.require(:scope).split("\n").reject(&:blank?),
+      sources: params.require(:sources).split("\n").reject(&:blank?),
+      target_revision: params.require(:target_revision), budget: params.require(:budget))
+    redirect_to project_agent_run_path(@project, run), notice: "Layered-verification audit queued."
+  rescue ActionController::ParameterMissing, ArgumentError, LayeredVerification::AuditAccess::FeatureDisabledError,
+         LayeredVerification::AuditAccess::UnauthorizedError, LayeredVerification::Audits::Request::BudgetExceededError,
+         LayeredVerification::Audits::Request::NoRunnableRunnerError => error
+    redirect_to @project, alert: error.message
   end
 
   # Starts the recommended chat setup channel for a blank project: creates a

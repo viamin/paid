@@ -147,6 +147,21 @@
               Edit
             <% end %>
           <% end %>
+          <% if FeatureFlags.enabled?(:layered_verification_add_on, project: @project) && policy(@project).manage_issues? %>
+            <details data-testid="layered-verification-audit-disclosure">
+              <summary class="inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500">Request verification audit</summary>
+              <div class="mt-3 rounded-md border border-indigo-200 bg-indigo-50 p-4">
+                <%= form_with url: request_layered_verification_audit_project_path(@project), method: :post, local: true, class: "space-y-3" do |f| %>
+                  <%= f.text_area :scope, required: true, placeholder: "One scoped obligation per line", class: "block w-full rounded-md border-gray-300" %>
+                  <%= f.text_area :sources, required: true, placeholder: "One source reference per line", class: "block w-full rounded-md border-gray-300" %>
+                  <%= f.text_field :target_revision, required: true, placeholder: "Target revision", class: "block w-full rounded-md border-gray-300" %>
+                  <%= f.number_field :budget, required: true, min: 1, value: 1, class: "block w-full rounded-md border-gray-300" %>
+                  <p class="text-xs text-gray-600">The resolved scope, sources, revision, and budget are recorded on an audit-only run. It cannot start repair.</p>
+                  <%= f.submit "Queue audit", class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white" %>
+                <% end %>
+              </div>
+            </details>
+          <% end %>
           <% if policy(@project).run_agent? && @project.lid_mode.nil? %>
             <details data-testid="lid-planning-disclosure">
               <summary class="inline-flex items-center rounded-md bg-amber-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-500">
