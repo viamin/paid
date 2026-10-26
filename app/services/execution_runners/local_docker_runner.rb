@@ -490,7 +490,7 @@ module ExecutionRunners
     private
 
     def mcp_provisioner_for(agent_run)
-      Containers::McpProvisioner.new(backend: Containers.backend_for(agent_run.container_host))
+      Containers::McpProvisioner.for(agent_run)
     end
 
     # Builds the provisioning-intent ledger from this runner's declared

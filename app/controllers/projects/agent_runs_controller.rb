@@ -371,6 +371,11 @@ module Projects
       else
         redirect_to safe_return_target || dashboard_path, alert: result.message
       end
+    rescue ActiveRecord::RecordInvalid => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
+    rescue ActiveRecord::RecordNotUnique
+      redirect_to safe_return_target || dashboard_path,
+        alert: "A prerequisite validation is already in progress for this issue."
     end
 
     # Records the operator's attestation that the recorded closeout evidence

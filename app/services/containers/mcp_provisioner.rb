@@ -27,7 +27,7 @@ module Containers
   # cleanup and auditability work uniformly across retries.
   #
   # @example Provision MCP servers and tools for a run
-  #   provisioner = Containers::McpProvisioner.new
+  #   provisioner = Containers::McpProvisioner.for(agent_run)
   #   result = provisioner.provision(agent_run, network: "paid_agent")
   #   result[:stdio_servers]  # => [{ "name" => "...", "command" => "@modelcontextprotocol/server-github", ... }]
   #   result[:url_servers]    # => [{ "name" => "...", "url" => "http://..." }]
@@ -62,9 +62,27 @@ module Containers
       server
     end
 
+    # Builds a provisioner bound to the backend that owns the run's execution
+    # host. `workspace_volume_host` is the run's admitted host (queue admission
+    # clears `container_host` and records `planned_container_host`, and only a
+    # real provision repopulates `container_host`), so MCP and tool sidecars
+    # are created on the same daemon as the agent container instead of
+    # silently falling back to the local Docker socket.
+    # @param agent_run [AgentRun]
+    # @return [McpProvisioner]
+    # @spec CONTAINER-RUNTIME-033
+    def self.for(agent_run)
+      new(backend: Containers.backend_for(agent_run.workspace_volume_host))
+    end
+
     def initialize(backend: Containers.backend)
       @backend = backend
     end
+
+    # The backend that owns the sidecars this provisioner creates. Readable so
+    # callers and diagnostics can confirm the sidecars land on the same daemon
+    # as the agent container.
+    attr_reader :backend
 
     # Provisions MCP servers and hardened tool sidecars from the agent run's
     # snapshot.
@@ -194,8 +212,6 @@ module Containers
     end
 
     private
-
-    attr_reader :backend
 
     # Materializes an npx MCP definition into a stdio server spec.
     # The agent execution layer will launch this command inside the container.

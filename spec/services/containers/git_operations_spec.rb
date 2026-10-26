@@ -364,6 +364,79 @@ RSpec.describe Containers::GitOperations do
     end
   end
 
+  # @spec PARTIAL-CLOSEOUT-030
+  describe "#clone_and_checkout_pinned_commit" do
+    let(:pinned_sha) { "abc123def456789012345678901234567890abcd" }
+    let(:not_a_repo_result) { Containers::Provision::Result.failure(error: "not a git repo", stdout: "", stderr: "fatal: not a git repository", exit_code: 128) }
+
+    before do
+      allow(container_service).to receive(:execute).and_return(success_result)
+      allow(Github::BotIdentity).to receive(:for_git).and_return(
+        Github::BotIdentity.new(app_slug: "paid-agents", name: "Paid Agent", email: "paid-agents@paid-agents.com")
+      )
+      allow(container_service).to receive(:execute)
+        .with([ "git", "rev-parse", "HEAD" ], timeout: nil, stream: false)
+        .and_return(not_a_repo_result)
+    end
+
+    it "fetches the pinned commit the shallow clone does not carry and checks it out" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "cat-file", "-e", "#{pinned_sha}^{commit}" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "fetch", "--depth", "1", "origin", pinned_sha ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(success_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "checkout", pinned_sha ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "checkout", "-b", "prerequisite-validation-abc" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(git_ops.clone_and_checkout_pinned_commit(
+        branch_name: "prerequisite-validation-abc", base_commit_sha: pinned_sha
+      )).to eq(pinned_sha)
+    end
+
+    it "checks out the pinned commit without fetching when the clone already has it" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "cat-file", "-e", "#{pinned_sha}^{commit}" ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      expect(container_service).not_to receive(:execute)
+        .with([ "git", "fetch", "--depth", "1", "origin", pinned_sha ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+
+      expect(container_service).to receive(:execute)
+        .with([ "git", "checkout", pinned_sha ], timeout: nil, stream: false)
+        .and_return(success_result)
+
+      git_ops.clone_and_checkout_pinned_commit(branch_name: "prerequisite-validation-abc", base_commit_sha: pinned_sha)
+    end
+
+    it "raises when the pinned commit cannot be fetched" do
+      allow(container_service).to receive(:execute)
+        .with([ "git", "cat-file", "-e", "#{pinned_sha}^{commit}" ], timeout: nil, stream: false)
+        .and_return(failure_result)
+
+      allow(container_service).to receive(:execute)
+        .with([ "git", "fetch", "--depth", "1", "origin", pinned_sha ], timeout: nil, stream: false, env: described_class::NETWORK_GIT_ENV)
+        .and_return(failure_result)
+
+      expect {
+        git_ops.clone_and_checkout_pinned_commit(branch_name: "prerequisite-validation-abc", base_commit_sha: pinned_sha)
+      }.to raise_error(described_class::Error, /Failed to fetch pinned commit/)
+    end
+
+    it "refuses a blank pinned commit" do
+      expect {
+        git_ops.clone_and_checkout_pinned_commit(branch_name: "prerequisite-validation-abc", base_commit_sha: "")
+      }.to raise_error(described_class::Error, /pinned commit is required/)
+    end
+  end
+
   describe "#clone_and_checkout_branch" do
     let(:head_sha) { "abc123def456789012345678901234567890abcd" }
     let(:merge_base_sha) { "fff000fff000fff000fff000fff000fff000fff0" }

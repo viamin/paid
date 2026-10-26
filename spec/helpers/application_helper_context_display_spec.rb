@@ -46,6 +46,7 @@ RSpec.describe ApplicationHelper, :no_db do
         "review_goal?": false,
         "enhance_issue_goal?": false,
         "analyze_issue_goal?": false,
+        "technical_prerequisite_validation_goal?": false,
         issue: nil,
         custom_prompt: nil,
         source_pull_request_number: nil,
@@ -414,6 +415,24 @@ RSpec.describe ApplicationHelper, :no_db do
 
       it "shows placeholder when no issue" do
         run = stub_run("analyze_issue_goal?": true)
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("-")
+      end
+    end
+
+    context "when technical_prerequisite_validation goal" do
+      it "shows issue link when issue is present" do
+        issue = stub_issue(github_number: 55, github_url: "https://github.com/o/r/issues/55", title: "Stalled closeout")
+        run = stub_run("technical_prerequisite_validation_goal?": true, issue: issue)
+        result = helper.agent_run_context_display(run)
+
+        expect(result).to include("Issue #55")
+        expect(result).to include("https://github.com/o/r/issues/55")
+      end
+
+      it "shows placeholder when no issue" do
+        run = stub_run("technical_prerequisite_validation_goal?": true)
         result = helper.agent_run_context_display(run)
 
         expect(result).to include("-")

@@ -6,9 +6,12 @@ module TechnicalPrerequisites
   # checked through the scheduler, and every command executes only after the
   # normal runner/container provision path has established its isolation.
   #
-  # The caller supplies commands from a reviewed analyzer/tool recipe, never
-  # from an Inbox free-text field. The run's verification_result is the
-  # durable, revision-bound evidence record consumed by closeout assessment.
+  # The caller supplies commands from a reviewed analyzer recipe, never from an
+  # Inbox free-text field. The marketplace tool is not a second recipe input:
+  # a tool sidecar carries an image, a port, and its own environment, so the
+  # attached tool is exercised by provisioning it and publishing its endpoint
+  # to the analyzer. The run's verification_result is the durable,
+  # revision-bound evidence record consumed by closeout assessment.
   # @spec PARTIAL-CLOSEOUT-030
   class ValidateExecution
     MAX_OUTPUT_BYTES = 20_000
@@ -18,11 +21,11 @@ module TechnicalPrerequisites
 
     def self.call(...) = new(...).call
 
-    def initialize(agent_run:, native_command:, sidecar_command: nil, execution_runner: nil)
+    def initialize(agent_run:, native_command:, execution_runner: nil)
       @agent_run = agent_run
       @native_command = validate_command!(native_command)
-      @sidecar_command = sidecar_command && validate_command!(sidecar_command)
       @execution_runner = execution_runner
+      @evidence = {}
     end
 
     def call
@@ -39,20 +42,26 @@ module TechnicalPrerequisites
 
     private
 
-    attr_reader :agent_run, :native_command, :sidecar_command
+    attr_reader :agent_run, :evidence, :native_command
 
     def execute_validation(inspection)
+      persist_planned_host(inspection.host)
       agent_run.provision_execution_environment(container_host: inspection.host)
       @environment_provisioned = true
-      checkout = prepare_checkout
+      evidence["checkout"] = prepare_checkout
       provision_sidecars
-      tool_endpoints = agent_run.reload.tool_sidecar_endpoints
-      command_environment = tool_sidecar_environment(tool_endpoints)
+      record_tool_evidence
       native = capture(native_command, env: command_environment)
-      sidecar = sidecar_command && capture(sidecar_command, env: command_environment)
-      status = [ native, sidecar ].compact.all? { |result| result["exit_code"] == 0 } ? "completed" : "failed"
-      persist_terminal(status, checkout:, native:, sidecar:,
-        tool_endpoints:, inspection: inspection.to_h)
+      persist_terminal(status_for(native), native:)
+    end
+
+    # The inspected host must also be the host the container is created on.
+    # `workspace_volume_host` resolves the admitted host, so the planned host
+    # is persisted before provisioning instead of being passed as a hint.
+    def persist_planned_host(host)
+      return if host.blank?
+
+      agent_run.update!(external_metadata: agent_run.external_metadata.merge("planned_container_host" => host))
     end
 
     def prepare_checkout
@@ -60,14 +69,10 @@ module TechnicalPrerequisites
         agent_run:, container_id: agent_run.container_id, worktree_path: agent_run.worktree_path
       )
       git_operations = Containers::GitOperations.new(container_service: execution_environment, agent_run:)
-      git_operations.clone_and_restore_branch(branch_name: agent_run.branch_name, base_commit_sha: agent_run.base_commit_sha)
+      git_operations.clone_and_checkout_pinned_commit(
+        branch_name: agent_run.branch_name, base_commit_sha: agent_run.base_commit_sha
+      )
       git_operations.head_sha
-    end
-
-    def tool_sidecar_environment(endpoints)
-      return {} if endpoints.blank?
-
-      { "PAID_TOOL_SIDECAR_ENDPOINTS" => endpoints.to_json }
     end
 
     def provision_sidecars
@@ -75,6 +80,19 @@ module TechnicalPrerequisites
         agent_run:,
         network: Containers::Provision.network_for(agent_run:)
       )
+    end
+
+    def record_tool_evidence
+      agent_run.reload
+      evidence["tool_endpoints"] = agent_run.tool_sidecar_endpoints
+      evidence["tool_sidecars"] = agent_run.tool_sidecar_container_ids
+    end
+
+    def command_environment
+      endpoints = agent_run.tool_sidecar_endpoints
+      return {} if endpoints.blank?
+
+      { "PAID_TOOL_SIDECAR_ENDPOINTS" => endpoints.to_json }
     end
 
     def execution_runner
@@ -89,7 +107,21 @@ module TechnicalPrerequisites
     end
 
     def output(stdout, stderr, exit_code)
-      { "stdout" => stdout.to_s.byteslice(0, MAX_OUTPUT_BYTES), "stderr" => stderr.to_s.byteslice(0, MAX_OUTPUT_BYTES), "exit_code" => exit_code }
+      {
+        "stdout" => bounded(stdout),
+        "stderr" => bounded(stderr),
+        "exit_code" => exit_code
+      }
+    end
+
+    # Bounds captured output by bytes and repairs the cut so a multi-byte
+    # character split by the boundary cannot make the evidence unencodable.
+    def bounded(text)
+      text.to_s.byteslice(0, MAX_OUTPUT_BYTES).to_s.scrub
+    end
+
+    def status_for(native)
+      native["exit_code"] == 0 ? "completed" : "failed"
     end
 
     def persist_unavailable(inspection)
@@ -98,31 +130,29 @@ module TechnicalPrerequisites
     end
 
     def persist_terminal(status, error: nil, **attributes)
-      evidence = {
-        "status" => status,
+      record = base_evidence.merge("status" => status)
+        .merge(evidence.stringify_keys).merge(attributes.compact.stringify_keys)
+      record["error"] = error.to_s if error
+      agent_run.update!(verification_result: agent_run.verification_result.merge(EVIDENCE_KEY => record))
+      Result.new(status:, evidence: record, setup_action: record["setup_action"])
+    end
+
+    def base_evidence
+      {
         "recorded_at" => Time.current.iso8601,
         "image" => agent_run.external_metadata["runtime_image"] || Containers::Provision::DEFAULTS[:image],
         "requested_checkout" => agent_run.base_commit_sha,
         "checkout" => nil,
         "tool_identity" => agent_run.tool_sidecar_snapshot.map { |tool| tool.slice("name", "image", "version") },
         "cleanup" => { "attempted" => true }
-      }.merge(attributes.compact.stringify_keys)
-      evidence["error"] = error.to_s if error
-      agent_run.update!(verification_result: agent_run.verification_result.merge("technical_prerequisite_validation" => evidence))
-      Result.new(status:, evidence:, setup_action: evidence["setup_action"])
+      }
     end
 
     def cleanup
       return unless @environment_provisioned
 
       errors = cleanup_errors
-      return update_cleanup(completed: true) if errors.empty?
-
-      agent_run.update!(verification_result: agent_run.verification_result.merge(
-        "technical_prerequisite_validation" => agent_run.verification_result.fetch("technical_prerequisite_validation", {}).merge(
-          "cleanup" => { "attempted" => true, "completed" => false, "errors" => errors }
-        )
-      ))
+      write_cleanup_evidence(completed: errors.empty?, errors:)
     end
 
     def cleanup_errors
@@ -137,16 +167,19 @@ module TechnicalPrerequisites
       end
     end
 
-    def update_cleanup(completed:)
+    def write_cleanup_evidence(completed:, errors: [])
+      record = agent_run.verification_result.fetch(EVIDENCE_KEY, {})
+      cleanup = { "attempted" => true, "completed" => completed }
+      cleanup["errors"] = errors if errors.any?
       agent_run.update!(verification_result: agent_run.verification_result.merge(
-        "technical_prerequisite_validation" => agent_run.verification_result.fetch("technical_prerequisite_validation", {}).merge(
-          "cleanup" => { "attempted" => true, "completed" => completed }
-        )
+        EVIDENCE_KEY => record.merge("cleanup" => cleanup)
       ))
     end
 
     def validate_command!(command)
-      raise ArgumentError, "validation commands must be non-empty argument arrays" unless command.is_a?(Array) && command.all? { |part| part.is_a?(String) } && command.any?(&:present?)
+      unless command.is_a?(Array) && command.any? && command.all? { |part| part.is_a?(String) && part.present? }
+        raise ArgumentError, "validation commands must be non-empty argument arrays"
+      end
 
       command
     end

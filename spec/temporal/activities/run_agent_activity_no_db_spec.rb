@@ -91,7 +91,7 @@ RSpec.describe Activities::RunAgentActivity, :no_db do
       allow(MarketplaceEntries::RerenderForRun).to receive(:call) do |agent_run:, provider_key:|
         agent_run.mcp_server_snapshot = [ { "name" => "#{provider_key}-server", "marketplace_attachment" => true } ]
       end
-      allow(Containers::McpProvisioner).to receive(:new).and_return(provisioner)
+      allow(Containers::McpProvisioner).to receive(:for).with(agent_run).and_return(provisioner)
       allow(provisioner).to receive(:provision)
       allow(Containers::Provision).to receive(:network_for).with(agent_run: agent_run).and_return("paid-network")
       allow(activity).to receive(:runner_entry_for).and_return(nil)

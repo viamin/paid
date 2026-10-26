@@ -5,6 +5,27 @@ require "rails_helper"
 RSpec.describe Containers::McpProvisioner do
   let(:provisioner) { described_class.new }
 
+  # @spec CONTAINER-RUNTIME-033
+  describe ".for" do
+    it "binds the provisioner to the backend that owns the run's execution host" do
+      backend = instance_double(Containers::Backends::Base)
+      agent_run = create(:agent_run, container_host: nil)
+      allow(agent_run).to receive(:workspace_volume_host).and_return("remote")
+      allow(Containers).to receive(:backend_for).with("remote").and_return(backend)
+
+      expect(described_class.for(agent_run).backend).to eq(backend)
+    end
+
+    it "resolves the admitted host when the run has not been provisioned yet" do
+      backend = instance_double(Containers::Backends::Base)
+      agent_run = create(:agent_run, container_host: nil)
+      allow(agent_run).to receive(:workspace_volume_host).and_return(nil)
+      allow(Containers).to receive(:backend_for).with(nil).and_return(backend)
+
+      expect(described_class.for(agent_run).backend).to eq(backend)
+    end
+  end
+
   describe "#provision" do
     let(:project) { create(:project) }
     let(:issue) { create(:issue, project: project) }

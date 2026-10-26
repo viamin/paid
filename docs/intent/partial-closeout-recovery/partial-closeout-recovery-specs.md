@@ -10,18 +10,25 @@
       rather than infer availability from the operator workspace; SHALL refuse
       unchanged retries by recording an exact setup or scoped-rollout approval
       action when no compatible host or required `marketplace_tool_sidecars`
-      authorization exists; and, when runnable, SHALL execute only reviewed
-      analyzer/tool recipe commands through the isolated AgentRun environment,
-      retain bounded stdout, stderr, exit status, pinned checkout/image/tool
-      identity and cleanup evidence, and report `unavailable`, `failed`, or
-      `completed` without exposing host shell or Docker-socket access.
+      authorization exists; and, when runnable, SHALL execute only the reviewed
+      analyzer recipe command through the isolated AgentRun environment on the
+      inspected host, SHALL restore the pinned commit into the shallow clone
+      before executing it, SHALL retain bounded stdout, stderr, exit status,
+      pinned checkout/image/tool identity, sidecar endpoint, and cleanup
+      evidence, and SHALL report `unavailable`, `failed`, or `completed`
+      without exposing host shell or Docker-socket access. The validation run
+      SHALL be report-only: it SHALL NOT inherit the implementation-admission
+      gate of an implementation goal, and it SHALL NOT be dispatched through
+      the agent execution queue.
       *Code:* `app/services/technical_prerequisites/capability_inspection.rb`,
       `app/services/technical_prerequisites/start_validation.rb`,
       `app/services/technical_prerequisites/validate_execution.rb`,
       `app/jobs/technical_prerequisite_validation_job.rb`,
-      `app/controllers/projects/agent_runs_controller.rb`.
+      `app/controllers/projects/agent_runs_controller.rb`,
+      `app/models/agent_run.rb`.
       *Test:* `spec/services/technical_prerequisites/validate_execution_spec.rb`,
       `spec/services/technical_prerequisites/start_validation_spec.rb`,
+      `spec/jobs/technical_prerequisite_validation_job_spec.rb`,
       `spec/requests/projects/technical_prerequisite_validations_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
