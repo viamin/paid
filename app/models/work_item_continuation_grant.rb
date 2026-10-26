@@ -5,7 +5,7 @@
 # repair), not to the run that happened to carry the manual start. Additional or
 # child issues never inherit it.
 #
-# @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-008
+# @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-008 @spec AUTOMATION-PHASES-009
 class WorkItemContinuationGrant < ApplicationRecord
   SOURCES = %w[manual_start].freeze
 
@@ -17,7 +17,11 @@ class WorkItemContinuationGrant < ApplicationRecord
   validates :start_phase, presence: true, inclusion: { in: Automation::Phases::ALL }
   validates :endpoint, presence: true, inclusion: { in: Automation::Phases::CONTINUATION_ENDPOINTS }
   validates :source, presence: true, inclusion: { in: SOURCES }
+  validates :created_by, presence: true, on: :create
   validate :endpoint_follows_start_phase
+  validate :issue_belongs_to_project
+  validate :created_by_belongs_to_project_account
+  validate :revoked_by_belongs_to_project_account
 
   scope :active, -> { where(revoked_at: nil, completed_at: nil) }
   scope :revoked, -> { where.not(revoked_at: nil) }
@@ -68,5 +72,23 @@ class WorkItemContinuationGrant < ApplicationRecord
     return if start_phase.blank? || endpoint.blank?
 
     errors.add(:endpoint, "must be the start phase or a later delivery phase") if covered_phases.empty?
+  end
+
+  def issue_belongs_to_project
+    return unless issue && project && issue.project_id != project_id
+
+    errors.add(:issue, "must belong to the grant project")
+  end
+
+  def created_by_belongs_to_project_account
+    return unless created_by && project && created_by.account_id != project.account_id
+
+    errors.add(:created_by, "must belong to the grant project account")
+  end
+
+  def revoked_by_belongs_to_project_account
+    return unless revoked_by && project && revoked_by.account_id != project.account_id
+
+    errors.add(:revoked_by, "must belong to the grant project account")
   end
 end

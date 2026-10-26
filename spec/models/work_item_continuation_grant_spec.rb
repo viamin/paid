@@ -34,6 +34,24 @@ RSpec.describe WorkItemContinuationGrant do
     expect(grant).not_to be_valid
   end
 
+  # @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-009
+  it "requires an author and keeps the author and work item in the project's tenant" do
+    other_project = create(:project)
+    other_user = create(:user, account: other_project.account)
+    other_issue = create(:issue, project: other_project)
+    grant = build(:work_item_continuation_grant, project:, issue: other_issue, created_by: other_user)
+
+    expect(grant).not_to be_valid
+    expect(grant.errors[:issue]).to include("must belong to the grant project")
+    expect(grant.errors[:created_by]).to include("must belong to the grant project account")
+
+    grant.issue = issue
+    grant.created_by = nil
+
+    expect(grant).not_to be_valid
+    expect(grant.errors[:created_by]).to include("can't be blank")
+  end
+
   describe "completion" do
     it "completes when the endpoint's work lands" do
       grant = create(:work_item_continuation_grant, project:, issue:)
@@ -85,6 +103,15 @@ RSpec.describe WorkItemContinuationGrant do
       grant.complete!
 
       expect(grant.revoke!(user:)).to be(false)
+    end
+
+    # @spec AUTOMATION-PHASES-009
+    it "rejects a revocation actor from another tenant" do
+      grant = create(:work_item_continuation_grant, project:, issue:)
+      outsider = create(:user, account: create(:account))
+
+      expect { grant.revoke!(user: outsider) }.to raise_error(ActiveRecord::RecordInvalid)
+      expect(grant.reload).to be_active
     end
   end
 
