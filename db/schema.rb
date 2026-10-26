@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_26_150401) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2816,6 +2816,35 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
     t.index ["obligation_id"], name: "idx_on_obligation_id_495e991968"
   end
 
+  create_table "layered_verification_finding_observations", force: :cascade do |t|
+    t.bigint "agent_run_id", null: false
+    t.bigint "check_result_id", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "detail", default: {}, null: false
+    t.bigint "finding_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["agent_run_id"], name: "idx_on_agent_run_id_5573b84b13"
+    t.index ["check_result_id"], name: "idx_on_check_result_id_7fdcc55943"
+    t.index ["finding_id"], name: "index_layered_verification_finding_observations_on_finding_id"
+  end
+
+  create_table "layered_verification_findings", force: :cascade do |t|
+    t.string "cause_signature", null: false
+    t.bigint "correspondence_claim_id"
+    t.datetime "created_at", null: false
+    t.jsonb "detail", default: {}, null: false
+    t.bigint "obligation_id", null: false
+    t.bigint "originating_audit_run_id", null: false
+    t.bigint "project_id", null: false
+    t.string "status", default: "open", null: false
+    t.datetime "updated_at", null: false
+    t.index "project_id, obligation_id, COALESCE(correspondence_claim_id, (0)::bigint), cause_signature", name: "index_layered_verification_findings_identity", unique: true
+    t.index ["correspondence_claim_id"], name: "index_layered_verification_findings_on_correspondence_claim_id"
+    t.index ["obligation_id"], name: "index_layered_verification_findings_on_obligation_id"
+    t.index ["originating_audit_run_id"], name: "idx_on_originating_audit_run_id_9b2cfd2c5c"
+    t.index ["project_id"], name: "index_layered_verification_findings_on_project_id"
+  end
+
   create_table "layered_verification_obligations", force: :cascade do |t|
     t.string "approval_state", default: "unresolved", null: false
     t.string "approved_revision_reference"
@@ -4839,6 +4868,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
   add_foreign_key "layered_verification_check_results", "layered_verification_correspondence_claims", column: "correspondence_claim_id", on_delete: :cascade
   add_foreign_key "layered_verification_check_results", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
   add_foreign_key "layered_verification_correspondence_claims", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
+  add_foreign_key "layered_verification_finding_observations", "agent_runs"
+  add_foreign_key "layered_verification_finding_observations", "layered_verification_check_results", column: "check_result_id", on_delete: :restrict
+  add_foreign_key "layered_verification_finding_observations", "layered_verification_findings", column: "finding_id", on_delete: :cascade
+  add_foreign_key "layered_verification_findings", "agent_runs", column: "originating_audit_run_id", on_delete: :restrict
+  add_foreign_key "layered_verification_findings", "layered_verification_correspondence_claims", column: "correspondence_claim_id", on_delete: :nullify
+  add_foreign_key "layered_verification_findings", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
+  add_foreign_key "layered_verification_findings", "projects", on_delete: :cascade
   add_foreign_key "layered_verification_obligations", "change_intents", on_delete: :nullify
   add_foreign_key "layered_verification_obligations", "layered_verification_obligations", column: "superseded_by_id", on_delete: :nullify
   add_foreign_key "layered_verification_obligations", "projects", on_delete: :cascade
