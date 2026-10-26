@@ -177,7 +177,11 @@ module PartialCloseouts
         account: agent_run.project.account, subject: agent_run.issue,
         source: PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
         title: operator_prerequisite_title(human_gaps),
-        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n")
+        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n"),
+        metadata: { "prerequisites" => human_gaps.each_with_index.map { |gap, index|
+          { "id" => prerequisite_id(index), "criterion" => gap["criterion"], "next_step" => gap["next_step"], "status" => "pending",
+            "source_revision" => source_revision, "intent_revision" => intent_revision }
+        } }
       )
     end
 
@@ -195,6 +199,18 @@ module PartialCloseouts
     # "review the prerequisite" placeholder (#4119).
     def operator_prerequisite_step(gap)
       "#{gap["criterion"]}: #{gap["next_step"].to_s.strip}"
+    end
+
+    def prerequisite_id(index)
+      "#{agent_run.id}:#{index}"
+    end
+
+    def source_revision
+      @source_revision ||= Issues::CloseoutEvidence.call(agent_run.issue).digest
+    end
+
+    def intent_revision
+      @intent_revision ||= PartialCloseouts::Assessment.intent_revision_for(agent_run.issue)
     end
 
     def publish_parent_dependencies!

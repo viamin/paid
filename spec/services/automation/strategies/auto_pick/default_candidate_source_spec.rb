@@ -1290,19 +1290,17 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
           expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(false)
         end
 
-        it "treats a dismissed notification as resolved for the eligibility block" do # @spec NO-OUTPUT-ISSUE-007
+        it "does not treat a dismissed notification as satisfied evidence" do # @spec PARTIAL-CLOSEOUT-030
           create(:notification, :error, :dismissed, account: project.account, subject: parent,
             source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
 
-          # Without a dependency edge or notification gate, the dequeue recheck
-          # accepts the continuation run through the partial-closeout re-audit
-          # exception.
-          expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(true)
+          expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(false)
         end
 
-        it "treats a system-resolved notification as resolved for the eligibility block" do # @spec NO-OUTPUT-ISSUE-007
+        it "releases a notification only after all submitted occurrences are sufficient" do # @spec PARTIAL-CLOSEOUT-030
           create(:notification, :error, :resolved, account: project.account, subject: parent,
-            source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+            source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+            metadata: { "prerequisites" => [ { "id" => "1:0", "status" => "sufficient" } ] })
 
           expect(described_class.eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(true)
         end

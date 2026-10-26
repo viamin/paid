@@ -210,13 +210,24 @@
         <div class="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
           <h4 class="text-sm font-semibold text-amber-900">Human evidence requested</h4>
           <p class="whitespace-pre-line text-sm text-amber-900"><%= human_prerequisite.description %></p>
-          <p class="text-xs text-amber-800">
-            Each line names the requested evidence, who must supply it, and the exact step. Submit the evidence
-            where the step says (usually a comment or linked artifact on the prerequisite), then link that work
-            here. When an agent-owned prerequisite closes, scheduling resumes automatically; supplied human
-            evidence never retries an agent by itself — afterwards, request a deliberate continuation and say
-            what the run should do with the evidence.
-          </p>
+          <p class="text-xs text-amber-800">Dismissal only removes this Inbox notice; it does not verify evidence or release scheduling.</p>
+          <% Array(human_prerequisite.metadata["prerequisites"]).each do |prerequisite| %>
+            <div class="rounded border border-amber-300 bg-white p-3">
+              <p class="text-sm font-medium"><%= prerequisite["criterion"] %></p>
+              <p class="text-xs text-gray-600">Status: <%= prerequisite["status"].to_s.humanize %><%= " — #{prerequisite["reasoning"]}" if prerequisite["reasoning"].present? %></p>
+              <% if policy(entry.project).run_agent? && prerequisite["status"] != "sufficient" %>
+                <%= form_with url: submit_prerequisite_evidence_project_agent_runs_path(entry.project), data: { turbo_frame: "_top" }, class: "mt-2 grid gap-2" do |form| %>
+                  <%= form.hidden_field :issue_id, value: issue.id %>
+                  <%= form.hidden_field :prerequisite_id, value: prerequisite["id"] %>
+                  <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+                  <%= form.select :evidence_type, PartialCloseouts::SubmitEvidence::TYPES.map { |type| [type.humanize, type] }, {}, class: "rounded-md border-gray-300 text-sm" %>
+                  <%= form.text_field :reference, required: true, maxlength: 2000, placeholder: "Report, run, artifact, or durable link", class: "rounded-md border-gray-300 text-sm" %>
+                  <%= form.text_area :explanation, required: true, maxlength: 2000, rows: 2, placeholder: "Why this evidence satisfies this exact prerequisite", class: "rounded-md border-gray-300 text-sm" %>
+                  <%= form.submit "Submit for validation", class: "inline-flex w-fit rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white" %>
+                <% end %>
+              <% end %>
+            </div>
+          <% end %>
         </div>
     <% end %>
   </div>

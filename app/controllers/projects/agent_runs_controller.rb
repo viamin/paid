@@ -381,6 +381,22 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **prerequisite_flash(result)
     end
 
+    # @spec PARTIAL-CLOSEOUT-030
+    def submit_prerequisite_evidence
+      authorize @project, :run_agent?
+
+      issue = resolve_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      result = PartialCloseouts::SubmitEvidence.call(issue:, actor: current_user,
+        prerequisite_id: params[:prerequisite_id], evidence_type: params[:evidence_type],
+        reference: params[:reference], explanation: params[:explanation])
+      redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Evidence validated.")
+    end
+
     # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
     # @spec OPERATOR-INBOX-002C
     def unblock_escalation

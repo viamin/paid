@@ -4,6 +4,9 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When an authorized operator submits evidence for a human partial-closeout prerequisite, the system SHALL record the exact prerequisite occurrence, evidence type/reference, actor, explanation, and validation disposition; it SHALL structurally reject incomplete submissions and use a bounded `agent_harness` assessment before marking that occurrence sufficient. A dismissed notification, bare URL/comment, uploaded artifact, or green run SHALL not itself satisfy the prerequisite. Only all currently recorded occurrences marked sufficient may release the scheduling guard; dismissal remains a personal Inbox-removal action and its actual non-release effect SHALL be disclosed. Changed prerequisite metadata, failed validation, and unavailable validation SHALL remain non-complete outcomes with retry guidance.
+  *Code:* `app/services/partial_closeouts/submit_evidence.rb`, `app/services/partial_closeouts/reconcile.rb`, `app/services/automation/strategies/auto_pick/default_candidate_source.rb`, `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its

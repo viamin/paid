@@ -158,6 +158,23 @@ digest-scoped. Resolution takes the issue lock shared by continuation creation,
 supersedes any open authorization, and cancels its unclaimed queued run before
 recording completion, so a continuation cannot dispatch after the attestation.
 
+### Human prerequisite evidence
+
+Each human prerequisite is an occurrence within the aggregated notification,
+with a stable run/index identity, exact criterion and next step. An authorized
+operator may submit a supported evaluation, run, report, durable artifact, or
+link together with an explanation. The submission records actor provenance and
+is structurally checked before a bounded `agent_harness` assessment returns a
+reasoned sufficient or insufficient disposition; harness failures remain
+unavailable and retryable. A reference alone is never acceptance proof.
+
+Scheduling reads the persisted occurrence dispositions, not Inbox visibility:
+all current occurrences must be sufficient before the parent can re-enter its
+existing eligibility/reassessment path. Dismissal remains a personal removal
+of the notification and is explicitly disclosed as having no scheduling or
+evidence authority. Legacy notifications without occurrence metadata stay
+blocked conservatively until reconciled.
+
 ### Surfaces
 
 - Inbox: `Inbox::Queue`/`Inbox::Count` lane + `partial_closeout` detail pane
