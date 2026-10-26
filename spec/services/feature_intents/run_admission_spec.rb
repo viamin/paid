@@ -49,6 +49,14 @@ RSpec.describe FeatureIntents::RunAdmission do
     expect(result.code).to eq("no_approved_revision")
   end
 
+  it "admits a planning task without treating the design it prepares as implementation approval" do # @spec CONFIDENCE-DELIVERY-017
+    feature = create(:feature_intent, project: project, status: "approved_waiting_for_merge")
+    create(:feature_intent_issue, feature_intent: feature, issue: issue,
+      readiness_mapping: planning_hold_contract)
+
+    expect(described_class.call(issue: issue)).to be_allowed
+  end
+
   it "denies released work while an issue dependency remains open" do # @spec FEATURE-APPROVAL-023 @spec CONFIDENCE-DELIVERY-005
     feature = create(:feature_intent, project: project)
     create(:feature_intent_issue, feature_intent: feature, issue: issue)
@@ -224,6 +232,11 @@ RSpec.describe FeatureIntents::RunAdmission do
     {
       "coverage" => "complete",
       "scope_revision" => "scope-v1",
+      "planning_hold" => {
+        "owner" => "paid", "task_kind" => "implementation", "operator_override" => false,
+        "reason" => "Awaiting scoped readiness.", "release_condition" => "Scoped readiness passes.",
+        "provenance" => { "source" => "publish_held_issue" }
+      },
       "prerequisites" => [
         { "id" => "intent", "assessment" => { "status" => "completed", "evidence_revision" => "evidence-v1", "intent_score" => 80, "technical_score" => 80 } }
       ],
@@ -233,5 +246,19 @@ RSpec.describe FeatureIntents::RunAdmission do
 
   def confidence_snapshot
     FeatureIntents::ScopedReadiness.call(project: project, mapping: confidence_mapping).snapshot
+  end
+
+  def planning_hold_contract
+    {
+      "planning_hold" => {
+        "owner" => "paid",
+        "task_kind" => "planning",
+        "operator_override" => false,
+        "reason" => "Prepare the design evidence for this task.",
+        "release_condition" => "The planning task itself is admitted; implementation remains gated by its own readiness.",
+        "scope_revision" => "scope-v1",
+        "provenance" => { "source" => "publish_held_issue" }
+      }
+    }
   end
 end

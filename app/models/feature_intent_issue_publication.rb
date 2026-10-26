@@ -4,9 +4,12 @@
 # The receipt is committed before the remote create and records the returned
 # GitHub identity before local issue synchronization can run.
 class FeatureIntentIssuePublication < ApplicationRecord
+  TASK_KINDS = %w[implementation planning].freeze
+
   belongs_to :feature_intent
 
   validates :task_digest, presence: true, length: { maximum: 16 }, uniqueness: { scope: :feature_intent_id }
+  validates :task_kind, inclusion: { in: TASK_KINDS }
   validates :remote_issue_id, numericality: { only_integer: true }, allow_nil: true
   validates :remote_issue_number, numericality: { only_integer: true, greater_than: 0 }, allow_nil: true
   validate :remote_issue_identity_is_complete
