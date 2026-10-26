@@ -57,6 +57,7 @@ module FacetConfidence
             "labels_frozen_at" => @evaluation.labels_frozen_at&.iso8601
           },
           "cases" => entries,
+          "post_unblinding_revisions" => stored_revisions,
           "measures" => measures(entries),
           "policy" => "reference judgments are policy assessments, not calibrated probabilities; " \
             "this report neither closes the source issue, enables delivery, nor changes the 80/80 defaults"
@@ -68,6 +69,10 @@ module FacetConfidence
         # whose association targets predate the judgments.
         labels = @evaluation.labels.reload.index_by(&:case_id)
         @evaluation.corpus.cases.map { |corpus_case| case_entry(corpus_case, labels[corpus_case.fetch("id")]) }
+      end
+
+      def stored_revisions
+        @evaluation.report.fetch("post_unblinding_revisions", {})
       end
 
       def case_entry(corpus_case, label)
@@ -143,7 +148,8 @@ module FacetConfidence
           judge: report.dig("provenance", "judge"),
           frozen_at: report.dig("provenance", "labels_frozen_at"),
           measures: measures_table(report.fetch("measures")),
-          cases: cases_table(report.fetch("cases")))
+          cases: cases_table(report.fetch("cases")),
+          revisions: revisions_table(report.fetch("post_unblinding_revisions")))
       end
 
       def measures_table(measures)
@@ -167,6 +173,18 @@ module FacetConfidence
         parts.empty? ? "aligned" : parts.join(", ")
       end
 
+      def revisions_table(revisions)
+        return "No post-unblinding corrections recorded." if revisions.empty?
+
+        revisions.flat_map do |case_id, entries|
+          entries.map do |revision|
+            format("| %s | %s | %s | %s | %s | %s |", case_id, revision.fetch("verdict"),
+              revision.fetch("intent_band"), revision.fetch("technical_band"), revision.fetch("readiness"),
+              revision.fetch("reason"))
+          end
+        end.join("\n")
+      end
+
       WORKSHEET_TEMPLATE = <<~WORKSHEET
         # RDR-070 Facet-Confidence Closeout Evaluation Report
 
@@ -185,6 +203,12 @@ module FacetConfidence
         | Case | Shape | Verdict | Intent band | Technical band | Readiness | Divergences |
         | --- | --- | --- | --- | --- | --- | --- |
         %{cases}
+
+        ## Post-unblinding corrections (original labels remain scored)
+
+        | Case | Verdict | Intent band | Technical band | Readiness | Reason |
+        | --- | --- | --- | --- | --- | --- |
+        %{revisions}
 
         Reference judgments are policy assessments, not calibrated probabilities.
         This report neither closes the source issue, enables delivery, nor changes the 80/80 defaults.
