@@ -306,15 +306,17 @@ retargeted from #4327 (which closes via this PR) to
 [#4604](https://github.com/viamin/paid/issues/4604), the follow-up issue
 that now owns the two live execution-environment validations.
 
-## #4604 execution-environment revalidation — 2026-10-24
+## #4604 execution-environment revalidation — 2026-10-26
 
 **Result: not executed; the required Docker-capable execution environment is
 unavailable.** This follow-up rechecked the environment before attempting
 either acceptance scenario. `docker`, `podman`, and `nerdctl` are absent;
 neither `/var/run/docker.sock` nor `/run/docker.sock` exists; and no
-`DOCKER_*` endpoint is configured. The Docker client cannot be installed as a
-substitute for a Docker daemon, so provisioning an `AgentRun` here would not
-produce the required live evidence.
+`DOCKER_*`, `REMOTE_DOCKER_*`, Swarm, or other container-backend endpoint is
+configured. This workspace is configured for Paid's local backend, which
+cannot provision an `AgentRun` without its local Docker socket. Installing a
+Docker client would not substitute for an authorized Docker daemon or remote
+backend, so it would not produce the required live evidence.
 
 GitHub issue #4604 must not be closed by the resolving PR. Its acceptance
 criteria are the two artifacts below, and this run produced neither, so the
@@ -355,12 +357,13 @@ arrow entry track #4604 as the evidence owner. This report does not:
 - Determine whether an upstream RDR-073 extension is needed — that decision
   follows the required native and sidecar execution evidence.
 
-The #4604 revalidation on 2026-10-24 confirms that those two evidence
+The #4604 revalidation on 2026-10-26 confirms that those two evidence
 artifacts remain blocked specifically by the absence of a Docker-capable
 execution environment. RDR-075 remains Draft, its `maintenance-runs` arrow
 remains a draft-only mapping, and implementation phases #4328–#4333 remain
-unreleased. Move the validation to a Docker-capable environment rather than
-inferring live lifecycle behavior from static tests or host-only commands.
+unreleased. Move the validation to a Docker-capable environment through
+Paid's supported local-socket or authorized remote-backend lifecycle rather
+than inferring live lifecycle behavior from static tests or host-only commands.
 
 Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
 an HLD pointer) are reviewable drafts for the same pending human-review gate,
