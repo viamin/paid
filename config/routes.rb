@@ -364,6 +364,7 @@ Rails.application.routes.draw do
         post :skip
         post :freeze
         post :execute
+        post :cancel
         post :revise
       end
     end

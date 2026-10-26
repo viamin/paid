@@ -119,6 +119,29 @@
   `app/controllers/projects/shadow_evaluations_controller.rb`.
   *Test:* `spec/requests/projects/shadow_evaluations_spec.rb`.
 
+- [x] **INTENT-CONFORMANCE-ROLLOUT-011** — When an authorized project
+  operator requests execution of a frozen shadow evaluation from the Inbox
+  journey, documented command, or equivalent tool, the system SHALL authorize
+  and enqueue one idempotent background operation and return without making a
+  reviewer call in the request. It SHALL expose queued, running, partial,
+  failed, cancelled, and completed status with durable per-case evaluated,
+  pending, failure, and recorded-cost progress. An authorized cancellation
+  SHALL preserve existing evidence and stop before the next case without
+  fabricating unevaluated results; retry/resume SHALL skip cases with an
+  evaluated verdict. A heartbeat recovery SHALL requeue an interrupted worker
+  after its execution lock is no longer held, preserving pinned corpus/model/
+  prompt/design identity, budgets, provider failures, and tenant isolation.
+  Report compilation SHALL attach available evidence but SHALL NOT accept work,
+  enable enforcement, or grant rollout authority.
+  *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
+  *Code:* `app/services/intent_conformance/shadow_evaluation/request_execution.rb`,
+  `app/services/intent_conformance/shadow_evaluation/cancel_execution.rb`,
+  `app/jobs/intent_conformance/shadow_evaluation/execute_job.rb`,
+  `app/jobs/intent_conformance/shadow_evaluation/recovery_job.rb`.
+  *Test:* `spec/requests/projects/shadow_evaluations_spec.rb`,
+  `spec/services/intent_conformance/shadow_evaluation/execute_reviewer_spec.rb`,
+  `spec/jobs/intent_conformance/shadow_evaluation/execute_job_spec.rb`.
+
 - [ ] **INTENT-CONFORMANCE-ROLLOUT-010** — Before a blinded labeler can open
   case evidence, the system SHALL authorize the project request, SHALL refuse
   the request when the corpus manifest no longer matches the digest recorded
