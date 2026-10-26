@@ -139,6 +139,24 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response.body).not_to include("Execute reviewer")
   end
 
+  it "appends a reasoned post-unblinding correction without overwriting the frozen judgment" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    post freeze_project_facet_confidence_evaluation_path(project, evaluation)
+
+    post revise_project_facet_confidence_evaluation_path(project, evaluation), params: {
+      case_id: "FC-CORPUS-01", verdict: "unknown", intent_band: "unknown",
+      technical_band: "at_or_above_threshold", readiness: "not_ready",
+      cited_evidence_reference: "sync-spike-note", reason: "The unblinded comparison exposed uncertain intent."
+    }
+
+    label = evaluation.labels.find_by!(case_id: "FC-CORPUS-01")
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation))
+    expect(label).to have_attributes(verdict: "completed", revised_verdict: "unknown", revised_by: owner)
+    expect(evaluation.reload.report.dig("cases").find { |entry| entry["case_id"] == "FC-CORPUS-01" }
+      .dig("revision", "reason")).to eq("The unblinded comparison exposed uncertain intent.")
+  end
+
   it "rejects labeling by anyone other than the operator who started the evaluation" do
     evaluation = start_evaluation!
     sign_in member

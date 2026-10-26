@@ -213,3 +213,13 @@ broaden enrollment or change an active run. This closeout tracks
 [#4309](https://github.com/viamin/paid/issues/4309); it does not close the
 umbrella. The shared audit evidence is also recorded in
 [`audit-report-2026-10-22-human-centered-inbox-epic.md`](audit-report-2026-10-22-human-centered-inbox-epic.md).
+
+### 2026-10-26 Reference-judgment evidence audit
+
+The closeout's evaluation flow is ready for the authenticated maintainer's
+independent evidence collection, including an append-only post-unblinding
+correction path. No agent-authored labels are evidence, so the RDR remains
+**Partially Implemented** until the maintainer freezes the reference set and
+the retained report is attached to [#4323](https://github.com/viamin/paid/issues/4323).
+See [`audit-report-2026-10-26-rdr-070.md`](audit-report-2026-10-26-rdr-070.md)
+for the criterion-level assessment.
