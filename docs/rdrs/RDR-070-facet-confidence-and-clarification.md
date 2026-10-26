@@ -27,6 +27,12 @@ established in the outcome worksheet. The umbrella remains open for the
 remaining RDR-071 delivery/activation integration. See the 2026-10-22 final
 acceptance audit for the criterion-level reconciliation.
 
+The 2026-10-26 reference-judgment evidence audit records that the closeout
+evaluation flow is ready but the independent authenticated-maintainer labels
+and frozen report are still pending; it also records the immutable
+post-unblinding correction trail. See
+[`audit-report-2026-10-26-rdr-070.md`](audit-report-2026-10-26-rdr-070.md).
+
 ### 2026-10-12 Implementation progress audit
 
 This non-closeout progress audit for

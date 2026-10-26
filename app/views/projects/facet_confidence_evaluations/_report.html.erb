@@ -86,14 +86,50 @@
             <% end %>
           </td>
         <% end %>
+        <% revisions = Array(entry["post_unblinding_revisions"]) %>
+        <% if revisions.any? %>
+          <tr class="border-b border-gray-100 bg-blue-50">
+            <td colspan="5" class="px-3 py-2 text-xs text-gray-700">
+              <strong>Post-unblinding correction<%= "s" if revisions.many? %>:</strong>
+              <% revisions.each do |revision| %>
+                <div class="mt-1">
+                  <code><%= revision["verdict"] %></code> · intent <code><%= revision["intent_band"] %></code> ·
+                  technical <code><%= revision["technical_band"] %></code> · <code><%= revision["readiness"] %></code> ·
+                  cites <code><%= revision["cited_evidence_reference"] %></code> · <%= revision["reason"] %>
+                </div>
+              <% end %>
+            </td>
+          </tr>
+        <% end %>
       <% end %>
     </tbody>
   </table>
   <p class="text-xs text-gray-500">
     Highlighted rows are divergences between your blinded judgment and the frozen expectation for judge review.
-    The original judgments are preserved as recorded.
+    The original judgments are preserved as recorded; corrections below are post-unblinding audit history.
   </p>
 </div>
+
+<% if current_user.id == evaluation.created_by_id %>
+  <details class="rounded-xl border border-gray-200 bg-white p-6">
+    <summary class="cursor-pointer text-sm font-semibold text-gray-900">Append a post-unblinding correction</summary>
+    <p class="mt-2 text-xs text-gray-500">This does not change the blinded judgment or its comparison. It adds an attributed correction with its own reason.</p>
+    <% evaluation.labels.where(state: "labeled").order(:case_id).each do |label| %>
+      <% references = evaluation.corpus.find_case(label.case_id).fetch("evidence").map { |item| item.fetch("reference") } %>
+      <%= form_with url: revise_project_facet_confidence_evaluation_path(project, evaluation, **inbox_context), method: :post, class: "mt-4 space-y-2 border-t pt-4" do |form| %>
+        <%= form.hidden_field :case_id, value: label.case_id %>
+        <p class="text-sm font-medium text-gray-900"><%= label.case_id %></p>
+        <%= form.select :verdict, options_for_select(FacetConfidenceEvaluationLabel::VERDICTS, label.verdict), {}, class: "rounded-md border-gray-300 text-sm" %>
+        <%= form.select :intent_band, options_for_select(FacetConfidenceEvaluationLabel::BANDS, label.intent_band), {}, class: "rounded-md border-gray-300 text-sm" %>
+        <%= form.select :technical_band, options_for_select(FacetConfidenceEvaluationLabel::BANDS, label.technical_band), {}, class: "rounded-md border-gray-300 text-sm" %>
+        <%= form.select :readiness, options_for_select(FacetConfidenceEvaluationLabel::READINESS, label.readiness), {}, class: "rounded-md border-gray-300 text-sm" %>
+        <%= form.select :cited_evidence_reference, options_for_select(references, label.cited_evidence_reference), {}, class: "rounded-md border-gray-300 text-sm" %>
+        <%= form.text_area :reason, placeholder: "Reason for this correction", required: true, rows: 2, class: "block w-full rounded-md border-gray-300 text-sm" %>
+        <%= form.submit "Append correction", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white" %>
+      <% end %>
+    <% end %>
+  </details>
+<% end %>
 
 <% if evaluation.report_markdown.present? %>
   <details class="rounded-xl border border-gray-200 bg-white p-6">

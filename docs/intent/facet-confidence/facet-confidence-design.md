@@ -167,4 +167,8 @@ with the frozen expected bands, including citation compliance for cases that
 name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
-the 80/80 defaults.
+the 80/80 defaults. If unblinding causes the sole judge to correct a judgment,
+the original blinded label remains immutable comparison evidence and the
+correction is appended with the authenticated judge, cited evidence, timestamp,
+and its own reason; revised values are presented separately from the frozen
+comparison rather than silently replacing it.

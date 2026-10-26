@@ -19,6 +19,7 @@ class FacetConfidenceEvaluation < ApplicationRecord
   belongs_to :created_by, class_name: "User"
   has_many :labels, class_name: "FacetConfidenceEvaluationLabel",
     foreign_key: :facet_confidence_evaluation_id, inverse_of: :facet_confidence_evaluation, dependent: :destroy
+  has_many :judgment_revisions, through: :labels, source: :judgment_revisions
 
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :corpus_path, :corpus_digest, :corpus_version, :rubric_version, :model_version, presence: true

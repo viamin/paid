@@ -139,6 +139,28 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response.body).not_to include("Execute reviewer")
   end
 
+  it "appends a post-unblinding correction without rewriting the frozen judgment" do
+    evaluation = start_evaluation!
+    corpus_case = evaluation.corpus.find_case("FC-CORPUS-01")
+    label_all!(evaluation)
+    post freeze_project_facet_confidence_evaluation_path(project, evaluation)
+    original_reason = evaluation.labels.find_by!(case_id: corpus_case.fetch("id")).reason
+
+    post revise_project_facet_confidence_evaluation_path(project, evaluation), params: {
+      case_id: corpus_case.fetch("id"),
+      **judgment_params(corpus_case, verdict: "completed", intent_band: "at_or_above_threshold",
+        technical_band: "at_or_above_threshold", readiness: "ready",
+        reason: "Unblinded correction with a separately recorded reason.")
+    }
+
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation))
+    expect(evaluation.labels.find_by!(case_id: corpus_case.fetch("id")).reason).to eq(original_reason)
+    expect(evaluation.judgment_revisions.last).to have_attributes(revised_by: owner,
+      reason: "Unblinded correction with a separately recorded reason.")
+    expect(evaluation.reload.report.fetch("cases").find { |entry| entry["case_id"] == corpus_case.fetch("id") }
+      .fetch("post_unblinding_revisions").length).to eq(1)
+  end
+
   it "rejects labeling by anyone other than the operator who started the evaluation" do
     evaluation = start_evaluation!
     sign_in member
