@@ -12,14 +12,18 @@ direction, explicit corrections, repeated agent suggestions, collaborator
 disagreement, unknown intent with strong technical evidence, strong intent
 with weak feasibility, research scope, and the 79/80 boundary.
 
-No operator-executed assessment runs have been recorded yet: executing the
-rubric against live model output is an operator action
-([`operator-runbook.md`](operator-runbook.md)), and no corpus run may release
-work while readiness-driven release stays gated on the RDR-071 delivery path
-(RDR-070 rollout guard). Until the runs exist, every operator-derived measure
-below stays not established — mirroring what
-`bin/facet-confidence-assessment-evaluation compile` emits
-(`pending operator input`, exit 2).
+On 2026-10-26, the shipped assessment path attempted every frozen case but no
+provider in that environment served the pinned model. The eight attempts are
+retained as provenance-valid `failed` `assessment_run` events in
+[`ledger.jsonl`](ledger.jsonl); they are operational failures, not rubric
+verdicts. Consequently, no operator-executed verdict run exists yet, and
+`bin/facet-confidence-assessment-evaluation compile` correctly remains at
+`pending operator input` (exit 2) until a provider serving
+`claude-sonnet-4-6` runs the corpus.
+
+No corpus run may release work while readiness-driven release stays gated on
+the RDR-071 delivery path (RDR-070 rollout guard). The figures below are
+policy-assessment measures of this frozen corpus, not calibrated probabilities.
 
 ## Corpus identity
 
@@ -46,14 +50,14 @@ metric computation (including parity with `ScopedReadiness` at the 79/80 and
 
 | Measure | Result | Ledger evidence |
 |---|---|---|
-| Corpus coverage | 0 / 8 cases | `assessment_run` events required |
-| False readiness | not established | expected readiness band vs `assessment_run` |
-| Unnecessary clarification | not established | expected decisive outcome vs `assessment_run` status |
-| Human corrections | not established | `correction` events required |
-| Assessment cost | not established | `assessment_run.cost_cents` required |
-| Downstream rework | not established | `rework` events required |
-| Band divergences | not established | expected bands vs `assessment_run` scores |
-| Operational failures | not established | `assessment_run` status `failed` |
+| Corpus coverage | 0 / 8 cases | Eight `assessment_run` events are failed; verdict coverage requires a non-failed run |
+| False readiness | not established | No completed verdicts; expected readiness band vs `assessment_run` |
+| Unnecessary clarification | not established | No completed verdicts; expected decisive outcome vs `assessment_run` status |
+| Human corrections | 0 cases (0.0% / 0 of 8) | No `correction` events |
+| Assessment cost | 0 cents | Every recorded provider-unavailable attempt has `cost_cents: 0` |
+| Downstream rework | 0 events / 0 cents | No `rework` events |
+| Band divergences | not established | No completed scores to compare against expected bands |
+| Operational failures | 8 cases (100.0% / 8 of 8) | One `assessment_run` with status `failed` for each corpus case |
 
 A `failed` run is an operational (provider/runtime) failure, never an
 assessment verdict: it is reported as an operational failure above and stays
@@ -69,7 +73,8 @@ measures, so provider outages cannot inflate or deflate assessment quality.
 | Throughput-only justification | Never sufficient (enforced by the report's tuning gate) |
 
 **Tuning-gate outcome: `blocked_incomplete_coverage`.** Threshold or rubric
-tuning proposals stay unevaluated until the operator records the corpus runs
-and the compiled outcome metrics exist; the corrective action is to execute
-the runbook above, append the ledger events, and mirror the compiled
-worksheet here.
+tuning proposals stay unevaluated until a provider serving the pinned model
+produces a non-failed run for every case and the compiled outcome metrics
+exist. The corrective action is to run the corpus through that provider, append
+the verdict events, and mirror the resulting compiled worksheet here. The
+80/80 defaults remain unchanged.
