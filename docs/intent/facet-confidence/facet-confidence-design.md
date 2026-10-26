@@ -168,3 +168,9 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+After unblinding, the same authenticated sole judge may append one correction
+to a labeled case. The correction records the complete amended judgment, a
+cited case-evidence reference, a reason, actor, and timestamp. It does not
+overwrite the frozen blinded judgment or the report's original comparison;
+the refreshed report presents the correction separately for audit.

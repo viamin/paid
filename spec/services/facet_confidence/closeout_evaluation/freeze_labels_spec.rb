@@ -92,6 +92,30 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
     expect(fc01["divergences"]).to include("intent_band", "readiness")
   end
 
+  it "preserves a post-unblinding correction separately from the frozen reference judgment" do
+    label_all!
+    expect(described_class.call(evaluation: evaluation, actor: owner)).to be_success
+
+    result = FacetConfidence::CloseoutEvaluation::ReviseLabel.call(
+      evaluation: evaluation,
+      actor: owner,
+      case_id: "FC-CORPUS-01",
+      judgment: judgment_for(evaluation.corpus.find_case("FC-CORPUS-01")).merge(
+        intent_band: "at_or_above_threshold", technical_band: "at_or_above_threshold", readiness: "ready",
+        reason: "After unblinding, I reconsidered the evidence."
+      )
+    )
+
+    expect(result).to be_success
+    label = evaluation.labels.find_by!(case_id: "FC-CORPUS-01")
+    expect(label).to have_attributes(intent_band: "below_threshold", revised_intent_band: "at_or_above_threshold",
+      revised_readiness: "ready", revised_by: owner)
+    entry = evaluation.reload.report.fetch("cases").find { |item| item.fetch("case_id") == "FC-CORPUS-01" }
+    expect(entry.dig("revision", "original", "intent_band")).to eq("below_threshold")
+    expect(entry.dig("revision", "revised", "intent_band")).to eq("at_or_above_threshold")
+    expect(entry.fetch("judgment").fetch("intent_band")).to eq("below_threshold")
+  end
+
   it "refuses to freeze while any case is unlabeled or skipped" do
     label!("FC-CORPUS-01", judgment_for(evaluation.corpus.find_case("FC-CORPUS-01")))
     FacetConfidence::CloseoutEvaluation::RecordLabel.call(evaluation: evaluation, actor: owner,
