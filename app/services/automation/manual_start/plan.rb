@@ -131,13 +131,18 @@ module Automation
       end
 
       def delegation_permitted?
+        return false unless project_policy.run_agent?
         return merge_delegation_permitted? if endpoint == Automation::Phases::MERGE
 
         true
       end
 
       def merge_delegation_permitted?
-        ProjectPolicy.new(user, project).delegate_merge?
+        project_policy.delegate_merge?
+      end
+
+      def project_policy
+        @project_policy ||= ProjectPolicy.new(user, project)
       end
 
       def permission_message
