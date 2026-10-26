@@ -374,6 +374,26 @@ continues to bind its criterion evidence to the current closeout digest and
 issue-intent revision; a later explicit acceptance audit is required when
 those revisions change.
 
+### Capability-aware technical-prerequisite validation (#4643)
+
+A human prerequisite that asks for execution evidence is not satisfied by a
+statement about the control-plane worker's Docker socket. The Inbox action
+creates one bounded validation run pinned to its selected checkout and records
+the selected native analyzer and, where required, marketplace tool attachment.
+It queries the existing backend scheduler and provisioner compatibility
+contract before provision, so a compatible isolated backend is selected
+independently of this process's local Docker availability.
+
+Absent host capability, credential, image allowlist, scoped pilot authority,
+or `marketplace_tool_sidecars` rollout is a durable `unavailable` outcome with
+the exact authorized setup action. The action never enables flags, exposes a
+host shell, or mounts a Docker socket. Native commands run only through
+`execute_in_execution_environment`; tool sidecars use the existing allowlist,
+hardening, network, budget and cleanup contract. Bounded stdout/stderr, exit
+status, pinned checkout, image/tool identity, endpoint response and cleanup
+evidence are retained on the run and in the audit trail. Results link back to
+the prerequisite for a later canonical assessment; they never close its owner.
+
 ## Alternatives considered
 
 - *Lift the merged-PR guard via paid_state*: explicitly rejected — the guard is

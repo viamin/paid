@@ -4,6 +4,30 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When an authorized Inbox prerequisite
+  validation requests execution evidence, Paid SHALL select a compatible
+  isolated execution backend through the existing scheduler/provisioner
+  capability contract, rather than inferring availability from the
+  control-plane Docker socket. It SHALL retain the pinned checkout and selected
+  analyzer/tool identity, execute native commands only through
+  `execute_in_execution_environment`, and record bounded output, exit status,
+  endpoint response, and cleanup evidence. It SHALL distinguish succeeded,
+  failed, partial, cancelled, and unavailable outcomes, and SHALL link the
+  durable result to the originating prerequisite without closing it.
+  *Code:* `app/services/technical_prerequisites/validate_execution.rb`.
+  *Test:* `spec/services/technical_prerequisites/validate_execution_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-031** — When a requested prerequisite validation
+  requires a marketplace tool sidecar but its rollout flag, image allowlist,
+  credential, host capability, or scoped pilot authorization is absent, Paid
+  SHALL report the exact authorized setup action as `unavailable`; it SHALL not
+  silently enable the flag or repeat an unchanged capability failure. Tool
+  sidecars SHALL continue to use the existing hardened provisioner and cleanup
+  contract, and no validation path SHALL expose a host shell or Docker socket
+  to untrusted repository code.
+  *Code:* `app/services/technical_prerequisites/validate_execution.rb`.
+  *Test:* `spec/services/technical_prerequisites/validate_execution_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its
