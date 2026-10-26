@@ -341,6 +341,19 @@ any repair: a scan never mutates source code or opens a PR on its own.
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
 that acceptance.
 
+A planned optimization recipe family extends that maintenance capability with
+curated, non-functional audits — duplication, maintainability, performance,
+security hardening, cost, architecture, and test quality — chosen from a
+code-defined type menu rather than through a new run goal. It reuses the
+maintenance run, report, and finding contracts, adds no second rollout
+switch, and keeps repair on the existing authorized pathways: automatic
+repair is a separately accepted policy, elected per run and off by default,
+with explicit budgets, revalidation when the target revision has moved, and
+manual-only security repairs. **Draft, not yet accepted**: see
+`docs/intent/optimization-recipes/` for the reviewable LLD/EARS contract and
+[#4636](https://github.com/viamin/paid/issues/4636) for the pending owner
+decision.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the

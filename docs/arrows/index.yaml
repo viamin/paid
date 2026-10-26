@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-24
+last_updated: 2026-10-26
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -736,6 +736,15 @@ arrows:
     status: MAPPED
     sampled: 2026-10-24
     next: "Draft LLD/EARS only; RDR-075 remains Status: Draft (merged to main via #4308) and no implementation exists. #4604 revalidated its tool-handoff evidence environment on 2026-10-24: no Docker client, socket, or alternate local engine was available, so critical assumption 2's native-analyzer and sidecar artifacts remain uncollected. Move both validations to a Docker-capable environment; do not release #4328-#4333 before design acceptance and that evidence."
+  optimization-recipes:
+    title: Optimization Recipes
+    path: docs/intent/optimization-recipes/optimization-recipes-design.md
+    specs: docs/intent/optimization-recipes/optimization-recipes-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: MAPPED
+    sampled: 2026-10-26
+    next: "Draft LLD/EARS only; no implementation, schema, feature flag, or rollout change exists. Accept or amend the precise policy text on #4636 (standing semantics instead of a numeric confidence threshold, supported default minimum standing, completed-only dispatch, election-can-only-narrow, manual_only/denied catalog standings, canonical-finding idempotency key, schedule default-deny) before #4493-#4496 implement anything. Base maintenance acceptance #4635 and the #4604 tool-handoff evidence stay independent prerequisites."
   marketplace-tool-sidecars:
     title: Marketplace Tool Sidecars
     path: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-design.md

@@ -10,6 +10,7 @@
 - **Priority**: —
 - **Related RDRs**: [RDR-073](RDR-073-marketplace-tool-sidecars.md), [RDR-031](RDR-031-focused-agent-runs.md), [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md), [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-054](RDR-054-prompt-assembly-service.md)
 - **Related Issues**: [#4326](https://github.com/viamin/paid/issues/4326) (umbrella), [#4327](https://github.com/viamin/paid/issues/4327) (planning/tool handoff), [#4604](https://github.com/viamin/paid/issues/4604) (deferred live execution-environment validations), [#4334](https://github.com/viamin/paid/issues/4334) (closeout)
+- **Related Optimization Issues**: [#4492](https://github.com/viamin/paid/issues/4492) (optimization recipe tracking umbrella), [#4493](https://github.com/viamin/paid/issues/4493)–[#4496](https://github.com/viamin/paid/issues/4496) (optimization delivery issues), [#4636](https://github.com/viamin/paid/issues/4636) (design prerequisite for the separately approved automatic-repair policy)
 - **Blocked on**: Validating the batch-analyzer checkout-access and
   batch-invocation contract against RDR-073's shipped attachment lifecycle
   (Critical assumption 2). Recorded by [#4327](https://github.com/viamin/paid/issues/4327)'s
@@ -249,6 +250,15 @@ links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
 outside the initial scope and requires a separately approved policy.
 
+That policy is drafted by the optimization recipe family:
+`docs/intent/optimization-recipes/` records the recipe catalog, the family's
+scope forms, and the bounded automatic-repair election it proposes — opt-in,
+per run, off by default, with explicit budgets, revalidation when the target
+revision has moved, and manual-only security repairs. The owner decision on
+that policy is still open on
+[#4636](https://github.com/viamin/paid/issues/4636); while it is outstanding,
+this RDR's report-only default stands unchanged.
+
 ### PR integration
 
 The evidence and verification components should be reusable for PR audits.
@@ -319,7 +329,10 @@ Recurring schedules remain explicitly opt-in after rollout.
    evaluate Ruby/Rails and JS/TS analyzers; support prompt-only investigation
    where no suitable tool exists. Record version/configuration provenance.
 5. **Repair handoff:** selected findings become bounded issues or PR runs
-   through existing authorized pathways, with revision revalidation.
+   through existing authorized pathways, with revision revalidation. The
+   optimization family's opt-in automatic-repair election is a separately
+   accepted policy (`docs/intent/optimization-recipes/`), not part of this
+   step.
 6. **Recurring maintenance:** project schedules, overlap prevention, bounded
    retry/catchup, budgets, disable/cancel behavior, and recurring summaries.
 7. **Advisory PR integration:** reuse evidence in the existing review path;

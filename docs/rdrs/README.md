@@ -257,6 +257,16 @@ guard remains authoritative. The audit tracks #4326 rather than closing it;
 its observed closed GitHub state must be reconciled before the umbrella's own
 final acceptance can legitimately close it.
 
+The optimization recipe family that extends it
+([#4492](https://github.com/viamin/paid/issues/4492) umbrella,
+[#4493](https://github.com/viamin/paid/issues/4493)–
+[#4496](https://github.com/viamin/paid/issues/4496)) drafts the separately
+approved automatic-repair policy RDR-075 requires in
+`docs/intent/optimization-recipes/`, together with the recipe catalog and
+the family's scope forms. That draft awaits the owner decision recorded on
+[#4636](https://github.com/viamin/paid/issues/4636); it authorizes no runtime
+behavior and no rollout.
+
 [RDR-076](RDR-076.md) is the consolidated **Accepted** layered-verification
 design. It covers correspondence between approved business intent and its
 representations, flexible verification selection, durable intent records,

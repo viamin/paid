@@ -243,7 +243,10 @@ shipped code in
   RDR-073's territory, consumed here, not duplicated.
 - Not an automatic-repair mechanism — a scan never deletes source code or
   opens a PR as a side effect; repair is a separate, explicitly authorized
-  run.
+  run. An opt-in automatic-repair election may be added only by a separately
+  accepted policy — drafted by the
+  [optimization recipe family](../optimization-recipes/optimization-recipes-design.md)
+  — and the base default stays report-only.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.
@@ -253,6 +256,9 @@ shipped code in
 - [RDR-075 draft (PR #4308)](https://github.com/viamin/paid/pull/4308)
 - [RDR-073: Marketplace Tool Sidecars](../../rdrs/RDR-073-marketplace-tool-sidecars.md)
   and its [LLD](../marketplace-tool-sidecars/marketplace-tool-sidecars-design.md)
+- [optimization-recipes LLD](../optimization-recipes/optimization-recipes-design.md)
+  — extends this segment with the optimization catalog, the family scope
+  forms, and the draft automatic-repair policy (`MAINT-OPT-*`)
 - [layered-verification LLD](../layered-verification/layered-verification-design.md)
   — owns the optional scheduled-audit trigger contracts
   (`LAYERED-VERIFY-030`–`-032`) that consume this segment's scheduling
