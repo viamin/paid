@@ -2,7 +2,7 @@
 
 class TechnicalPrerequisiteValidationJob < ApplicationJob
   queue_as :low_priority
-  self.perform_timeout = 10.minutes
+  self.perform_timeout = 20.minutes
 
   discard_on ActiveRecord::RecordNotFound
 

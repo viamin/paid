@@ -15,7 +15,7 @@ module TechnicalPrerequisites
   # @spec PARTIAL-CLOSEOUT-030
   class ValidateExecution
     MAX_OUTPUT_BYTES = 20_000
-    COMMAND_TIMEOUT = 9.minutes
+    COMMAND_TIMEOUT = 5.minutes
     Result = Data.define(:status, :evidence, :setup_action) do
       def success? = status == "completed"
     end
@@ -47,8 +47,11 @@ module TechnicalPrerequisites
 
     def execute_validation(inspection)
       persist_planned_host(inspection.host)
-      agent_run.provision_execution_environment(container_host: inspection.host)
+      # Provisioning can create the named workspace volume before a container
+      # identifier is persisted. Mark cleanup required first so its safety-net
+      # volume removal runs even if provisioning raises partway through.
       @environment_provisioned = true
+      agent_run.provision_execution_environment(container_host: inspection.host)
       evidence["checkout"] = prepare_checkout
       provision_sidecars
       record_tool_evidence

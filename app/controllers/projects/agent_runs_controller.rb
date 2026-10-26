@@ -666,6 +666,12 @@ module Projects
         return
       end
 
+      if @agent_run.technical_prerequisite_validation_goal?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Technical-prerequisite validations must be started again from their dedicated Inbox action."
+        return
+      end
+
       unless @agent_run.finished?
         redirect_to project_agent_run_path(@project, @agent_run),
           alert: "Only finished runs can be retried."

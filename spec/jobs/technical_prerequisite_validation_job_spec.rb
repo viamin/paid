@@ -20,7 +20,8 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
   # @spec PARTIAL-CLOSEOUT-030
   it "uses a bounded low-priority worker for isolated network and container execution" do
     expect(described_class.queue_name).to eq("low_priority")
-    expect(described_class.perform_timeout).to eq(10.minutes.to_i)
+    expect(described_class.perform_timeout).to eq(20.minutes.to_i)
+    expect(TechnicalPrerequisites::ValidateExecution::COMMAND_TIMEOUT).to eq(5.minutes)
   end
 
   # @spec PARTIAL-CLOSEOUT-030

@@ -165,6 +165,21 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
   end
 
   # @spec PARTIAL-CLOSEOUT-030
+  it "cleans up resources when provisioning fails before it records a container" do
+    stub_compatible_host
+    allow(agent_run).to receive(:provision_execution_environment)
+      .and_raise(Containers::Provision::Error, "image pull failed")
+    allow(agent_run).to receive(:cleanup_execution_environment)
+
+    result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+
+    expect(result.status).to eq("failed")
+    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true)
+    expect(agent_run.reload.verification_result.dig("technical_prerequisite_validation", "cleanup"))
+      .to include("attempted" => true, "completed" => true)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
   it "records a failed outcome with the analyzer output when the command exits non-zero" do
     stub_compatible_host
     stub_provisioning
