@@ -341,6 +341,18 @@ any repair: a scan never mutates source code or opens a PR on its own.
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
 that acceptance.
 
+The planned optimization recipe family is a scoped consumer of that
+maintenance contract, not a second maintenance workflow. Its catalog presents
+curated objectives while preserving a free-form investigation path; its
+recommendations remain bounded by the requested scope and honest about
+evidence and coverage. A separately reviewed, per-run opt-in policy may later
+queue a bounded repair for an eligible optimization finding, but it does not
+allow a scan to mutate code, enable rollout, or authorize security repairs.
+Semantic assessment belongs to `agent_harness`; the control plane may enforce
+only structural authorization, explicit budgets, stale-evidence revalidation,
+and duplicate-prevention gates. This is draft intent pending RDR-075 and
+maintenance-contract acceptance; see `docs/intent/maintenance-runs/`.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the

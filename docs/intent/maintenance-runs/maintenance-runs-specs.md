@@ -159,3 +159,85 @@
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
       an explicit user selection.
+
+## Optimization Recipe Family
+
+- [ ] **MAINT-OPT-001**: The system shall provide the code-defined
+      optimization catalog for #4493 with the initial Performance, Design /
+      Architecture, Code Duplication, Security Hardening, Cost / Resource
+      Efficiency, Maintainability / Readability, and Test Coverage & Quality
+      entries, each carrying display metadata, objective information, metric
+      hints, and a recipe reference when one exists.
+- [ ] **MAINT-OPT-002**: When an authorized user starts an optimization
+      maintenance run through the UI, authenticated API, or MCP surface, the
+      system shall offer equivalent catalog selection and free-form
+      scope/guidance inputs under the `maintenance_runs` guard.
+- [ ] **MAINT-OPT-003**: When an optimization type is selected, the system
+      shall snapshot that selection with the run and retain it across retries.
+- [ ] **MAINT-OPT-004**: If a submitted optimization type has no catalog
+      entry, then the system shall admit it only as the existing
+      custom-objective maintenance path, rather than rejecting it or creating
+      an enum-specific run contract.
+- [ ] **MAINT-OPT-010**: When executing the #4494 Code Duplication,
+      Maintainability / Readability, or Performance recipes, the system shall
+      record recipe-specific evidence, counterevidence, coverage, and
+      provenance under the MAINT report contract; a missing applicable tool
+      shall remain visible rather than being represented as a clean tool scan.
+- [ ] **MAINT-OPT-011**: When a duplicate-code or complexity collector emits
+      a candidate, the system shall obtain the recommendation's semantic
+      assessment through `agent_harness` and shall not treat similarity or a
+      tool score alone as authority to consolidate code.
+- [ ] **MAINT-OPT-012**: Where the #4494 Performance recipe has no credible
+      applicable collector, the system shall complete a prompt-first
+      investigation with prompt-only coverage disclosed in the report.
+- [ ] **MAINT-OPT-013**: When assessing any optimization finding, the system
+      shall preserve requested scope as a recommendation bound while recording
+      supporting inspection outside that scope and requiring separate
+      authorization for a broader repair.
+- [ ] **MAINT-OPT-014**: When a repeated optimization scan observes the same
+      project-, recipe-, claim-, and symbol-scoped finding, the system shall
+      create a new occurrence under the existing canonical finding rather than
+      duplicate repair work.
+- [ ] **MAINT-OPT-020**: When an authorized user explicitly elects #4495
+      auto-queue at optimization-run start, the system shall snapshot the
+      election, its confidence-threshold policy input, and explicit per-repair
+      cost/time caps; omission shall preserve report-only manual selection.
+- [ ] **MAINT-OPT-021**: When an auto-queue election is evaluated, the system
+      shall obtain semantic eligibility and confidence assessment through a
+      structured `agent_harness` response and shall not derive calibrated
+      confidence from tool output or control-plane text heuristics.
+- [ ] **MAINT-OPT-022**: Before auto-queueing an elected optimization repair,
+      the system shall deterministically require current `maintenance_runs`
+      admission, existing repair-pathway authorization, explicit budgets, a
+      qualifying policy assessment, and an optimization finding outside the
+      Security Hardening category.
+- [ ] **MAINT-OPT-023**: If the selected finding's repair target revision has
+      moved since its report occurrence, then the system shall revalidate the
+      evidence against the repair checkout before dispatching an auto-queued
+      repair and shall surface a failed revalidation without dispatch.
+- [ ] **MAINT-OPT-024**: When an auto-queued repair would duplicate an active
+      or queued repair for the same canonical finding identity and repair
+      lineage, the system shall not dispatch the duplicate.
+- [ ] **MAINT-OPT-025**: When an auto-queued repair exhausts its explicit
+      cost or time cap, the system shall preserve collected evidence and
+      report the bounded exhaustion through the maintenance repair contract.
+- [ ] **MAINT-OPT-026**: The system shall retain report and canonical-finding
+      provenance on every auto-queued repair and shall make every failed
+      authorization, budget, revalidation, or idempotency gate visible.
+- [ ] **MAINT-OPT-027**: When `maintenance_runs` is disabled after an
+      auto-queue election, the system shall refuse new auto-queued repair
+      dispatches without cancelling active repairs or deleting reports.
+- [ ] **MAINT-OPT-030**: When #4496 adds Security Hardening recipes, the
+      system shall keep their findings report-only and manual-repair-selection
+      only until a dedicated safety and accuracy policy is accepted.
+- [ ] **MAINT-OPT-031**: When #4496 adds Cost / Resource Efficiency or Design
+      / Architecture recipes without credible applicable tools, the system
+      shall use prompt-first evidence and disclose that coverage honestly.
+- [ ] **MAINT-OPT-032**: When #4496 adds Test Coverage & Quality, the system
+      shall reconcile its recipe and evidence contract with RDR-075's planned
+      test-quality objective rather than creating a competing maintenance
+      contract.
+- [ ] **MAINT-OPT-033**: The system shall not implement the optimization
+      catalog, recipes, or auto-queue policy until the owner accepts and the
+      repository merges the exact RDR-075 and maintenance LLD/EARS revisions;
+      this preparation does not enable rollout.
