@@ -48,6 +48,10 @@
     <% end %>
   </div>
 
+  <% if agent_run.layered_verification_audit? %>
+    <%= render "agent_runs/layered_verification_audit", agent_run: agent_run %>
+  <% end %>
+
   <div class="mt-6">
     <dl class="grid grid-cols-1 gap-5 sm:grid-cols-4">
       <div class="overflow-hidden rounded-lg bg-white px-4 py-5 shadow sm:p-6 dark:bg-gray-800">

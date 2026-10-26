@@ -1838,6 +1838,11 @@ class AgentRun < ApplicationRecord
     goal.in?(LAYERED_VERIFICATION_GOALS)
   end
 
+  # @spec LAYERED-VERIFY-013
+  def layered_verification_audit?
+    goal == "layered_verification_audit"
+  end
+
   def assign_default_tdd_phase
     return if tdd_phase.present?
     return unless create_pr_goal?

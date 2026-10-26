@@ -1,0 +1,18 @@
+<% audit = agent_run.external_metadata["layered_verification_audit"] || {} %>
+<% coverage = agent_run.reconciliation["layered_verification_coverage"] || {} %>
+<div class="mt-6 rounded-lg bg-white p-5 shadow dark:bg-gray-800">
+  <h2 class="text-lg font-semibold text-gray-900 dark:text-gray-100">Layered verification audit</h2>
+  <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Target revision: <%= audit["target_revision"] || "per-source revision" %>. Budget: <%= number_with_delimiter(audit["budget"].to_i) %> tokens.</p>
+  <h3 class="mt-4 text-sm font-semibold text-gray-700 dark:text-gray-200">Business-intent validation</h3>
+  <ul class="mt-1 list-disc pl-5 text-sm text-gray-600 dark:text-gray-300">
+    <% Array(audit["business_intent_validation"]).each do |item| %>
+      <li><%= item["source"] %>: <%= item["approval_state"] %></li>
+    <% end %>
+  </ul>
+  <h3 class="mt-4 text-sm font-semibold text-gray-700 dark:text-gray-200">Verification coverage</h3>
+  <ul class="mt-1 list-disc pl-5 text-sm text-gray-600 dark:text-gray-300">
+    <% coverage.each do |obligation_id, verdict| %>
+      <li>Obligation <%= obligation_id %>: <%= verdict %></li>
+    <% end %>
+  </ul>
+</div>

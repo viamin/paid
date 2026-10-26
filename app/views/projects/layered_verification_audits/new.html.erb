@@ -1,0 +1,35 @@
+<% content_for(:title) { "Request verification audit - #{@project.name}" } %>
+
+<div class="mx-auto max-w-2xl px-4 py-8">
+  <h1 class="text-xl font-semibold text-gray-900">Request verification audit</h1>
+  <p class="mt-2 text-sm text-gray-600">Review the resolved scope before dispatch. This operation only records evidence and findings; it never starts repair work.</p>
+
+  <div class="mt-6 rounded-lg border border-gray-200 p-4 text-sm text-gray-700">
+    <p><strong>Target revision:</strong> <%= @preview.target_revision || "Per-source revision (mixed)" %></p>
+    <p class="mt-2"><strong>Budget:</strong> <%= number_with_delimiter(@preview.budget) %> tokens</p>
+    <h2 class="mt-4 font-semibold">Resolved sources</h2>
+    <ul class="mt-2 list-disc pl-5">
+      <% @preview.obligations.each do |obligation| %>
+        <li><%= obligation.external_identity %> — <%= obligation.scope_description %></li>
+      <% end %>
+    </ul>
+    <h2 class="mt-4 font-semibold">Selected checks</h2>
+    <ul class="mt-2 list-disc pl-5">
+      <% @preview.plan.selected_checks.each do |check| %>
+        <li><%= check.fetch("producer").humanize %>: <%= check.fetch("fit") %></li>
+      <% end %>
+      <% @preview.plan.omissions.each do |omission| %>
+        <li><%= omission.fetch("producer").humanize %>: <%= omission.fetch("fit") %></li>
+      <% end %>
+    </ul>
+  </div>
+
+  <%= form_with url: project_layered_verification_audit_path(@project), method: :post, class: "mt-6" do %>
+    <% @preview.obligations.each do |obligation| %>
+      <%= hidden_field_tag "obligation_ids[]", obligation.id %>
+    <% end %>
+    <%= hidden_field_tag :budget, @preview.budget %>
+    <%= hidden_field_tag :target_revision, @preview.target_revision %>
+    <%= submit_tag "Dispatch report-only audit", class: "rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white" %>
+  <% end %>
+</div>

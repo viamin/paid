@@ -29,7 +29,8 @@ module Inbox
       Inbox::Queue::TRACEABILITY_GAP_KIND => Automation::Phases::CODING,
       Inbox::Queue::ACTION_REQUIRED_KIND => Automation::Phases::OPERATIONS,
       Inbox::Queue::FEATURE_DECISION_KIND => Automation::Phases::DISCOVERY,
-      Inbox::Queue::PROJECT_SETUP_PENDING_KIND => Automation::Phases::DISCOVERY
+      Inbox::Queue::PROJECT_SETUP_PENDING_KIND => Automation::Phases::DISCOVERY,
+      Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND => Automation::Phases::CODING
     }.freeze
 
     # manual_review has several causes; the stop reason and the latest run goal

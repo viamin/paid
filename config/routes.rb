@@ -252,6 +252,7 @@ Rails.application.routes.draw do
 
   # Projects management
   resources :projects do
+    resource :layered_verification_audit, only: [ :new, :create ], controller: "projects/layered_verification_audits"
     resource :apple_verification, only: [ :show, :update ], controller: "projects/apple_verifications" do
       get :compare
       get :artifact
