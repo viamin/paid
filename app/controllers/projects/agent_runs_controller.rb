@@ -351,6 +351,25 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Acceptance audit queued.")
     end
 
+    # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-014
+    # The project action deliberately dispatches through the same MCP/chat tool
+    # so confirmation, flag gating, authorization, and recorded preview cannot
+    # drift between entry surfaces.
+    def request_layered_verification_audit
+      result = Tools::RequestLayeredVerificationAudit.new(user: current_user, session: nil).dispatch(
+        project_id: @project.id,
+        obligation_ids: params.fetch(:obligation_ids, []),
+        source_references: params.fetch(:source_references, []),
+        target_revision: params[:target_revision],
+        budget_tokens: params[:budget_tokens],
+        confirmed: ActiveModel::Type::Boolean.new.cast(params[:confirmed])
+      )
+
+      redirect_to project_agent_run_path(@project, result.fetch(:id)), notice: "Layered-verification audit queued."
+    rescue ArgumentError, Pundit::NotAuthorizedError, ActiveRecord::RecordNotFound => error
+      redirect_to safe_return_target || project_agent_runs_path(@project), alert: error.message
+    end
+
     # Records the operator's attestation that the recorded closeout evidence
     # completes the issue (evidence-gated; see Issues::ResolveCloseout).
     # @spec PARTIAL-CLOSEOUT-007
