@@ -117,21 +117,49 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
 
   it "surfaces a non-walked eligibility guard via the scoped preflight instead of the duplicate-work fallback" do
     merged_partial_pr(number: 12)
-    create(
-      :issue,
-      project: project,
-      github_state: "open",
-      paid_state: "in_progress",
-      parent_issue_id: issue.id,
-      github_number: 55
-    )
 
-    status = described_class.call(issue)
+    status = described_class.call(issue, eligible_issue_ids: [], continuation_eligible_issue_ids: [])
 
     expect(status.stalled?).to be(true)
     expect(status.blocker_codes).to contain_exactly(:unavailable)
     expect(status.reason).to include("unavailable")
     expect(status.blockers.first.recovery).to include("Investigate")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "explains an open native child without requiring a duplicate dependency edge" do
+    merged_partial_pr(number: 12)
+    child = create(:issue, project: project, github_state: "open", github_number: 55, parent_issue: issue)
+
+    status = described_class.call(issue)
+    blocker = status.blockers.find { |candidate| candidate.code == :open_native_children }
+
+    expect(status.blocker_codes).to include(:open_native_children)
+    expect(blocker.message).to include("#55")
+    expect(blocker.evidence).to include("children" => [ { "id" => child.id, "number" => 55, "url" => child.github_url } ])
+    expect(blocker.recovery).to include("#55")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "explains an active human prerequisite notification alongside other blockers" do
+    merged_partial_pr(number: 12)
+    dependency = create(:issue, project: project, github_state: "open", github_number: 44)
+    create(:issue_dependency, issue: issue, depends_on_issue: dependency)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Human adjudication needs operator action", description: "Choose the approved review policy.",
+      action_url: "/inbox/action_required:2777")
+
+    status = described_class.call(issue)
+    blocker = status.blockers.find { |candidate| candidate.code == :human_prerequisite }
+
+    expect(status.blocker_codes).to include(:unmet_prerequisites, :human_prerequisite)
+    expect(blocker.message).to include("notification ##{notification.id}")
+    expect(blocker.evidence).to include(
+      "notification_id" => notification.id, "title" => "Human adjudication needs operator action",
+      "description" => "Choose the approved review policy.", "action_url" => "/inbox/action_required:2777"
+    )
+    expect(blocker.recovery).to include("Choose the approved review policy.")
   end
 
   it "reports every material blocker, including scanner verification evidence, without treating a merge as a fix" do

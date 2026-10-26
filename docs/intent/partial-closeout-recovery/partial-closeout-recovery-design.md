@@ -79,6 +79,18 @@ PR/run links, the recorded completion outcome, unresolved prerequisites
 (blocking dependencies), and the exact reason automatic continuation cannot
 proceed.
 
+The diagnostic walk mirrors every authoritative persisted exclusion that can
+hold a partial closeout, without becoming a second admission engine. In
+particular it reports open native non-PR children (even where no duplicate
+`IssueDependency` exists) and active `partial_closeout.prerequisite`
+notifications. The reported record IDs, GitHub/action links, and persisted
+description identify the evidence and recovery route: child work must be
+resolved through its owner, and a human prerequisite needs the requested
+decision or evidence. Diagnostics never dismiss a notification, close a child,
+or infer completion. The same additive blockers feed Inbox, chat, continuation,
+and report-only-audit refusals; the residual unavailable reason remains only
+for a canonical exclusion with no diagnostic.
+
 ### Recovery: `IssueContinuationRequest` (scoped authorization)
 
 A deliberate continuation is a persisted, auditable authorization — never a
