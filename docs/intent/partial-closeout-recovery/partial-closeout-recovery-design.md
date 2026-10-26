@@ -101,6 +101,14 @@ paid_state edit and never a blanket guard lift:
   manual review, paused flags, and unmet dependencies all still apply — with
   the unmet prerequisites explained to the user. A targeted blocker walk
   (`CloseoutStatus.admission_blockers`) returns structured, additive reasons
+  for dependency edges, open native non-PR children, and active
+  `partial_closeout.prerequisite` notifications. Those diagnostics carry the
+  exact child or notification identity, current evidence, and its supported
+  Inbox recovery route; notification evidence remains a human decision or
+  evidence request, and a policy request directs the operator to explicit
+  policy selection rather than silently changing policy. A diagnostic never
+  dismisses a notification, closes a child, or infers implementation
+  completion. The walk
   from persisted admission-guard evidence, including scanner attempt, analysis,
   and alert links for synthetic findings; a residual preflight then settles admission with the
   exact scoped `eligible_for_dequeue?` decision the dequeue recheck enforces

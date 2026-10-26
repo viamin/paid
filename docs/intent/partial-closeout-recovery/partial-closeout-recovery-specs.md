@@ -4,6 +4,24 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-030** — When a partial-closeout is excluded by an
+  open native non-pull-request child or an active
+  `partial_closeout.prerequisite` notification, the Inbox, continuation,
+  audit, and tool surfaces SHALL report each applicable canonical admission
+  guard with the child or notification identity, evidence, link, and supported
+  recovery route. Native children SHALL be reported even without a duplicate
+  `IssueDependency` edge. Human prerequisite evidence SHALL remain a human
+  decision or evidence request, including an explicit policy-selection route
+  where the request concerns policy; the diagnostic SHALL not dismiss the
+  notification, close a child, infer implementation completion, or replace a
+  team policy. Unknown admission denial remains available only after all known
+  canonical guards have been checked.
+  *Code:* `app/services/issues/closeout_status.rb`,
+  `app/services/issues/stalled_closeouts.rb`,
+  `app/services/issues/request_continuation.rb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/issues/stalled_closeouts_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
   from the current criterion-level partial-closeout assessment and its
