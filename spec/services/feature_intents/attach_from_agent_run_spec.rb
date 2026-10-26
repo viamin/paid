@@ -28,6 +28,9 @@ RSpec.describe FeatureIntents::AttachFromAgentRun do
     end
 
     it "snapshots the selected policy only while confidence delivery enrollment is enabled" do # @spec CONFIDENCE-DELIVERY-001
+      FeatureFlags.enable!(:confidence_driven_delivery, project: project)
+      FeatureFlags.enable!(:approved_intent_amendments, project: project)
+      FeatureFlags.enable!(:intent_conformance_enforcement, project: project)
       project.update!(
         new_feature_delivery_policy: "confidence_driven",
         confidence_delivery_enrollment_enabled: true

@@ -46,6 +46,9 @@ stays walkable from that point forward.
   `<segment>-specs.md` before (or alongside) the code.
 - **Substantive change to an existing component** → update its LLD and specs,
   then cascade to tests and code.
+- **Proposed architecture decision** → add a proposed RDR plus its LLD and
+  unchecked EARS claims; do not represent the proposal as shipped behavior or
+  change runtime policy before review accepts it.
 - **Bug fix** → find where intent diverged (which spec/LLD it traces to), fix
   the intent there, and cascade. No short-circuit straight to code.
 - **Trivial change** (typo, formatting, broken link) → no segment work needed.

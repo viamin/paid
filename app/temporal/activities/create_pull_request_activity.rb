@@ -519,7 +519,7 @@ module Activities
             client,
             project,
             pr.number,
-            PullRequests::ReviewSurface.call(body: pr.body.to_s, agent_run: agent_run)
+            source_closure_body(PullRequests::ReviewSurface.call(body: pr.body.to_s, agent_run: agent_run), issue, agent_run)
           )
         end
       end
@@ -560,8 +560,8 @@ module Activities
     end
 
     def build_pr_body(issue, agent_run, client: nil)
-      return build_lid_planning_pr_body(agent_run) if agent_run.lid_planning_goal?
-      return build_create_feature_pr_body(agent_run) if agent_run.create_feature_goal?
+      return normalize_pr_body(build_lid_planning_pr_body(agent_run), issue, agent_run) if agent_run.lid_planning_goal?
+      return normalize_pr_body(build_create_feature_pr_body(agent_run), issue, agent_run) if agent_run.create_feature_goal?
 
       summary = agent_run.agent_summary
       validate_summary_scope(summary, issue, agent_run, client: client)
@@ -576,11 +576,23 @@ module Activities
       else
         build_default_pr_body(issue, agent_run, description, quality_warnings: quality_warnings, lid_coherence: lid_coherence)
       end
-
-      {
-        body: PullRequests::ReviewSurface.call(body: body, agent_run: agent_run),
+      normalize_pr_body({
+        body:,
         llm_generated_description: description.present?
-      }
+      }, issue, agent_run)
+    end
+
+    # Keep source-issue closing syntax as the final body transform. Every PR
+    # shape, including goal-specific bodies and review-surface additions, must
+    # reflect the authoritative closeout disposition.
+    def normalize_pr_body(pr_body, issue, agent_run)
+      pr_body.merge(
+        body: source_closure_body(
+          PullRequests::ReviewSurface.call(body: pr_body.fetch(:body), agent_run: agent_run),
+          issue,
+          agent_run
+        )
+      )
     end
 
     def build_default_pr_body(issue, agent_run, description, quality_warnings: nil, lid_coherence: nil)
@@ -602,12 +614,11 @@ module Activities
         parts << lid_coherence
       end
 
-      parts << ""
-
       if issue
+        parts << ""
         parts << "---"
         parts << ""
-        parts << "Closes #{issue_reference(issue, agent_run.project)}"
+        parts << "Tracks #{issue_reference(issue, agent_run.project)}"
       end
 
       parts.join("\n")
@@ -623,6 +634,12 @@ module Activities
       return "##{issue.github_number}" unless project.upstream_pr_target?
 
       "#{project.issue_target_repository}##{issue.github_number}"
+    end
+
+    # @spec PARTIAL-CLOSEOUT-029
+    def source_closure_body(body, issue, agent_run)
+      disposition = PartialCloseouts::SourceClosureDisposition.for(agent_run).fetch("disposition")
+      PullRequests::SourceClosureBody.call(body: body, issue: issue, project: agent_run.project, disposition: disposition)
     end
 
     # Builds a goal-specific PR body for lid_planning runs.

@@ -101,6 +101,14 @@ timezone, next-occurrence computation, non-overlap with an equivalent
 in-flight run, and bounded missed-occurrence catchup. Disabling a schedule
 stops future dispatch without deleting prior reports or cancelling an
 active run — cancellation is a separate explicit action on the run itself.
+Recurring layered-verification audits ([RDR-076](../../rdrs/RDR-076.md)
+optional trigger, [#4440](https://github.com/viamin/paid/issues/4440)) are an
+intended consumer of this scheduling contract: recurrence, overlap
+prevention, catchup, and disable semantics are owned here, while audit
+admission, scope/revision identity, budgets, and evidence/Inbox lifecycle are
+owned by the [layered-verification](../layered-verification/layered-verification-design.md)
+segment (`LAYERED-VERIFY-030`–`-032`); the concrete schedule representation
+for that objective is decided at design acceptance.
 
 ## API, UI, and MCP Contract
 
@@ -245,6 +253,10 @@ shipped code in
 - [RDR-075 draft (PR #4308)](https://github.com/viamin/paid/pull/4308)
 - [RDR-073: Marketplace Tool Sidecars](../../rdrs/RDR-073-marketplace-tool-sidecars.md)
   and its [LLD](../marketplace-tool-sidecars/marketplace-tool-sidecars-design.md)
+- [layered-verification LLD](../layered-verification/layered-verification-design.md)
+  — owns the optional scheduled-audit trigger contracts
+  (`LAYERED-VERIFY-030`–`-032`) that consume this segment's scheduling
+  contract (RDR-076 §2, [#4440](https://github.com/viamin/paid/issues/4440))
 - [2026-10-23 tool-handoff validation report](../../rdrs/audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md)
 - `app/services/pre_commit_requirements/evaluate.rb` — shipped precedent for
   native CLI analyzer invocation inside the execution environment

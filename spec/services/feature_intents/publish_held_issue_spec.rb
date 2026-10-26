@@ -36,7 +36,7 @@ class PublishHeldIssueFakeClient
       number: number,
       title: created[:title],
       body: read_back_body_override || created[:body],
-      labels: read_back_labels_override || [ @planning_label ]
+      labels: read_back_labels_override || created[:labels]
     )
   end
 
@@ -175,6 +175,44 @@ RSpec.describe FeatureIntents::PublishHeldIssue do
     expect(client.created_issues.length).to eq(2)
   end
 
+  it "does not put an implementation planning hold on a planning task" do # @spec CONFIDENCE-DELIVERY-017
+    result = publish(task_kind: "planning")
+
+    expect(client.created_issues.first[:labels]).to eq([])
+    expect(result.link.planning_task?).to be(true)
+    expect(FeatureIntents::RunAdmission.call(issue: result.issue).code).to eq("issue_dependencies_incomplete")
+  end
+
+  it "rejects a reused publication with a conflicting task kind" do # @spec CONFIDENCE-DELIVERY-017
+    published = publish
+
+    expect { publish(task_kind: "planning") }.to raise_error(
+      ArgumentError, /task_kind conflicts with the existing publication/
+    )
+    expect(published.link.reload.planning_task?).to be(false)
+    expect(published.link.readiness_mapping.dig("planning_hold", "task_kind")).to eq("implementation")
+  end
+
+  it "rejects a planning publication retried as implementation before read-back" do # @spec CONFIDENCE-DELIVERY-017
+    published = publish(task_kind: "planning")
+
+    expect { publish }.to raise_error(ArgumentError, /task_kind conflicts with the existing publication/)
+    expect(published.link.reload.planning_task?).to be(true)
+  end
+
+  it "preserves an operator override when reusing a planning publication" do # @spec CONFIDENCE-DELIVERY-017
+    published = publish(task_kind: "planning")
+    published.link.update!(readiness_mapping: published.link.readiness_mapping.deep_merge(
+      "planning_hold" => { "operator_override" => true }
+    ))
+
+    result = publish(task_kind: "planning")
+
+    expect(result).to be_reused
+    expect(result.link.reload.planning_task?).to be(false)
+    expect(result.link.readiness_mapping.dig("planning_hold", "operator_override")).to be(true)
+  end
+
   it "recovers a remotely created issue whose local record was lost" do
     published = publish
     published.issue.destroy!
@@ -188,6 +226,19 @@ RSpec.describe FeatureIntents::PublishHeldIssue do
     expect(client.created_issues.length).to eq(1)
     expect(result.issue.github_number).to eq(4242)
     expect(feature.feature_intent_issues.where(issue_id: result.issue.id)).to exist
+  end
+
+  it "rejects a recovered implementation publication retried as planning" do # @spec CONFIDENCE-DELIVERY-017
+    published = publish
+    published.issue.destroy!
+    FeatureIntentIssue.where(feature_intent: feature).destroy_all
+    client.remote_items << client.remote_issue(number: 4242, body: client.created_issues.first[:body])
+
+    expect { publish(task_kind: "planning") }.to raise_error(
+      ArgumentError, /task_kind conflicts with the existing publication/
+    )
+    expect(FeatureIntentIssuePublication.sole.task_kind).to eq("implementation")
+    expect(feature.feature_intent_issues).to be_empty
   end
 
   it "recovers the create receipt after local upsert fails before search visibility" do
@@ -274,7 +325,9 @@ RSpec.describe FeatureIntents::PublishHeldIssue do
     result = publish(facet_prerequisites: [])
 
     expect(result.link.prerequisite_mapping).to be_nil
-    expect(result.link.current_readiness_mapping).to eq({})
+    expect(result.link.current_readiness_mapping).to include(
+      "planning_hold" => hash_including("owner" => "paid", "task_kind" => "implementation")
+    )
     expect(FeatureIntents::ReleaseIssue.call(issue: result.issue)).not_to be_released
   end
 end

@@ -10,6 +10,11 @@ RSpec.describe FeatureIntents::ReleaseIssue do
   let(:mapping) do
     {
       "coverage" => "complete", "scope_revision" => "scope-v1",
+      "planning_hold" => {
+        "owner" => "paid", "task_kind" => "implementation", "operator_override" => false,
+        "reason" => "Awaiting scoped readiness.", "release_condition" => "Scoped readiness passes.",
+        "provenance" => { "source" => "publish_held_issue" }
+      },
       "prerequisites" => [ { "id" => "scope", "assessment" => { "status" => "completed", "evidence_revision" => "e1", "intent_score" => 80, "technical_score" => 80 } } ],
       "design_artifacts" => [ { "path" => "docs/intent/example.md", "required" => true, "merged" => true, "scope_revision" => "scope-v1", "revision" => "a" * 40 } ]
     }
@@ -31,7 +36,7 @@ RSpec.describe FeatureIntents::ReleaseIssue do
   end
 
   it "uses the persisted prerequisite mapping when the compatibility payload is empty" do # @spec CONFIDENCE-DELIVERY-003
-    link.update!(readiness_mapping: {})
+    link.update!(readiness_mapping: mapping.slice("planning_hold"))
     persisted_mapping = create(:feature_intent_issue_prerequisite_mapping,
       feature_intent_issue: link,
       relevant_design_documents: mapping.fetch("design_artifacts"))
@@ -56,7 +61,7 @@ RSpec.describe FeatureIntents::ReleaseIssue do
   end
 
   it "keeps an unassessed issue held without calling GitHub" do
-    link.update!(readiness_mapping: {})
+    link.update!(readiness_mapping: mapping.slice("planning_hold"))
 
     expect(described_class.call(issue: issue)).not_to be_released
     expect(project.client).not_to have_received(:remove_label_from_issue)
@@ -125,7 +130,7 @@ RSpec.describe FeatureIntents::ReleaseIssue do
     expect(issue.reload.labels).to contain_exactly("human-hold")
   end
 
-  it "keeps the issue held when any design the issue serves is not ready" do
+  it "records readiness blockers before reconciling a legacy shared planning label" do # @spec CONFIDENCE-DELIVERY-003, CONFIDENCE-DELIVERY-017
     second_feature = create(:feature_intent, :confidence_driven, project: project)
     second_link = create(:feature_intent_issue, feature_intent: second_feature, issue: issue, readiness_mapping: {})
 
@@ -141,7 +146,7 @@ RSpec.describe FeatureIntents::ReleaseIssue do
   end
 
   it "records each blocked design's own blockers when several are not ready" do
-    link.update!(readiness_mapping: {})
+    link.update!(readiness_mapping: mapping.slice("planning_hold"))
     second_feature = create(:feature_intent, :confidence_driven, project: project)
     second_link = create(:feature_intent_issue, feature_intent: second_feature, issue: issue, readiness_mapping: {})
 
@@ -164,15 +169,51 @@ RSpec.describe FeatureIntents::ReleaseIssue do
   end
 
   # @spec CONFIDENCE-DELIVERY-006
-  it "removes an externally re-added planning label when every design already released" do
-    link.update!(release_state: "released", released_at: Time.current, release_snapshot: { "scope_revision" => "scope-v1", "preserved" => true })
+  it "retains a planning label when every design released without a Paid-owned hold receipt" do # @spec CONFIDENCE-DELIVERY-017
+    link.update!(
+      readiness_mapping: mapping.except("planning_hold"),
+      release_state: "released",
+      released_at: Time.current,
+      release_snapshot: { "scope_revision" => "scope-v1", "preserved" => true }
+    )
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(result.reason).to include("ownership")
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(link.reload).to have_attributes(release_state: "released", release_error: nil)
+    expect(link.release_snapshot).to include("preserved" => true)
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
+  it "retains a planning label when a released shared design lacks a Paid-owned hold receipt" do # @spec CONFIDENCE-DELIVERY-017
+    link.update!(release_state: "released", released_at: Time.current)
+    legacy_feature = create(:feature_intent, :confidence_driven, project: project)
+    legacy_link = create(:feature_intent_issue,
+      feature_intent: legacy_feature,
+      issue: issue,
+      readiness_mapping: mapping.except("planning_hold"),
+      release_state: "released",
+      released_at: Time.current)
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(result.reason).to include("ownership")
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(link.reload).to have_attributes(release_state: "released", release_error: nil)
+    expect(legacy_link.reload).to have_attributes(release_state: "released", release_error: nil)
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
+  it "removes a re-added planning label when a released design has a Paid-owned hold receipt" do # @spec CONFIDENCE-DELIVERY-017
+    link.update!(release_state: "released", released_at: Time.current)
 
     result = described_class.call(issue: issue)
 
     expect(result).to be_released
     expect(project.client).to have_received(:remove_label_from_issue).with(project.full_name, issue.github_number, "planning")
-    expect(link.reload).to have_attributes(release_state: "released", release_error: nil)
-    expect(link.release_snapshot).to include("preserved" => true)
     expect(issue.reload.labels).to contain_exactly("human-hold")
   end
 
@@ -192,6 +233,166 @@ RSpec.describe FeatureIntents::ReleaseIssue do
     result = described_class.call(issue: issue)
 
     expect(result).to be_released
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
+  it "keeps a legacy planning label visible when no Paid-owned hold receipt exists" do # @spec CONFIDENCE-DELIVERY-017
+    link.update!(readiness_mapping: mapping.except("planning_hold"))
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(result.reason).to include("ownership")
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
+  it "releases a legacy Paid hold identified by its implementation publication receipt" do # @spec CONFIDENCE-DELIVERY-017
+    link.update!(readiness_mapping: mapping.except("planning_hold"))
+    FeatureIntentIssuePublication.create!(
+      feature_intent: feature,
+      task_digest: "legacy-hold",
+      task_kind: "implementation",
+      remote_issue_id: 1,
+      remote_issue_number: issue.github_number
+    )
+
+    result = described_class.call(issue: issue)
+
+    expect(result).to be_released
+    expect(project.client).to have_received(:remove_label_from_issue).with(project.full_name, issue.github_number, "planning")
+    expect(link.reload).to have_attributes(release_state: "released", release_error: nil)
+    expect(issue.reload.labels).to contain_exactly("human-hold")
+  end
+
+  it "retains a legacy hold when its feature receipt belongs to another issue" do # @spec CONFIDENCE-DELIVERY-017
+    link.update!(readiness_mapping: mapping.except("planning_hold"))
+    other_issue = create(:issue, project: project)
+    FeatureIntentIssuePublication.create!(
+      feature_intent: feature,
+      task_digest: "other-issue",
+      task_kind: "implementation",
+      remote_issue_id: 2,
+      remote_issue_number: other_issue.github_number
+    )
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(result.reason).to include("ownership")
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(link.reload).to have_attributes(release_state: "held")
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
+  it "reconciles an unlabelled planning task to the released candidate state" do # @spec CONFIDENCE-DELIVERY-017
+    planning_issue = create(:issue, project: project, labels: [])
+    planning_link = create(:feature_intent_issue,
+      feature_intent: feature,
+      issue: planning_issue,
+      readiness_mapping: mapping.merge("planning_hold" => mapping.fetch("planning_hold").merge("task_kind" => "planning")))
+
+    result = described_class.call(issue: planning_issue)
+
+    expect(result).to be_released
+    expect(planning_link.reload).to have_attributes(release_state: "released", release_error: nil)
+    expect(planning_link.release_snapshot).to eq({})
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+  end
+
+  it "keeps a planning task held while an independent dependency is open" do # @spec CONFIDENCE-DELIVERY-017
+    planning_issue = create(:issue, project: project, labels: [])
+    create(:feature_intent_issue,
+      feature_intent: feature,
+      issue: planning_issue,
+      readiness_mapping: mapping.merge("planning_hold" => mapping.fetch("planning_hold").merge("task_kind" => "planning")))
+    dependency = create(:issue, project: project, github_state: "open")
+    create(:issue_dependency, issue: planning_issue, depends_on_issue: dependency)
+
+    result = described_class.call(issue: planning_issue)
+
+    expect(result).not_to be_released
+    expect(result.reason).to eq("Issue has unresolved dependencies.")
+    expect(planning_issue.feature_intent_issues.first.reload.release_state).to eq("held")
+  end
+
+  it "preserves a planning-task operator hold shared with ready implementation work" do # @spec CONFIDENCE-DELIVERY-004, CONFIDENCE-DELIVERY-017
+    planning_feature = create(:feature_intent, :confidence_driven, project: project)
+    create(:feature_intent_issue,
+      feature_intent: planning_feature,
+      issue: issue,
+      readiness_mapping: mapping.merge("planning_hold" => mapping.fetch("planning_hold").merge("task_kind" => "planning")))
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(result.reason).to include("ownership")
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(link.reload).to have_attributes(release_state: "held")
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
+  it "does not sweep a shared planning-task hold after implementation work released" do # @spec CONFIDENCE-DELIVERY-004, CONFIDENCE-DELIVERY-017
+    link.update!(release_state: "released", released_at: Time.current)
+    planning_feature = create(:feature_intent, :confidence_driven, project: project)
+    create(:feature_intent_issue,
+      feature_intent: planning_feature,
+      issue: issue,
+      readiness_mapping: mapping.merge("planning_hold" => mapping.fetch("planning_hold").merge("task_kind" => "planning")))
+
+    result = described_class.call(issue: issue)
+
+    expect(result).to be_released
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
+  it "preserves an overridden planning-task hold shared with implementation work" do # @spec CONFIDENCE-DELIVERY-004, CONFIDENCE-DELIVERY-017
+    planning_feature = create(:feature_intent, :confidence_driven, project: project)
+    create(:feature_intent_issue,
+      feature_intent: planning_feature,
+      issue: issue,
+      readiness_mapping: mapping.merge("planning_hold" => mapping.fetch("planning_hold").merge(
+        "task_kind" => "planning", "operator_override" => true
+      )))
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
+  it "preserves a string-serialized operator override on an implementation hold" do # @spec CONFIDENCE-DELIVERY-004, CONFIDENCE-DELIVERY-017
+    link.update!(readiness_mapping: mapping.deep_merge("planning_hold" => { "operator_override" => "true" }))
+    FeatureIntentIssuePublication.create!(
+      feature_intent: feature,
+      task_digest: "overridden-hold",
+      task_kind: "implementation",
+      remote_issue_id: 1,
+      remote_issue_number: issue.github_number
+    )
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
+    expect(project.client).not_to have_received(:remove_label_from_issue)
+    expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
+  end
+
+  it "preserves a string-serialized operator override on a planning task" do # @spec CONFIDENCE-DELIVERY-004, CONFIDENCE-DELIVERY-017
+    planning_feature = create(:feature_intent, :confidence_driven, project: project)
+    create(:feature_intent_issue,
+      feature_intent: planning_feature,
+      issue: issue,
+      readiness_mapping: mapping.merge("planning_hold" => mapping.fetch("planning_hold").merge(
+        "task_kind" => "planning", "operator_override" => "true"
+      )))
+
+    result = described_class.call(issue: issue)
+
+    expect(result).not_to be_released
     expect(project.client).not_to have_received(:remove_label_from_issue)
     expect(issue.reload.labels).to contain_exactly("planning", "human-hold")
   end

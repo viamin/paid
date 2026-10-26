@@ -13,6 +13,10 @@ class IntentConformanceShadowEvaluationPolicy < ApplicationPolicy
     user_in_account?
   end
 
+  def evidence?
+    show?
+  end
+
   def create?
     operator?
   end

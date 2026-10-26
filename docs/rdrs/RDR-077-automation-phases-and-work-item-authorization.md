@@ -451,3 +451,11 @@ legacy-classification evidence, continuation-grant persistence, and Inbox
 occurrence/event handling are represented by the accepted LLDs and EARS cited
 above. Runtime rollout stays outside this planning closeout and requires its
 own release authorization.
+
+## Later proposed amendment
+
+[RDR-078](RDR-078-bounded-delivery-phase-authorization.md) proposes a new,
+explicit bounded authorization whose exclusive stop can suppress otherwise
+enabled downstream project automation for one identified lineage. Until that
+proposal is accepted and implemented, this RDR's current rule remains in force:
+continuation endpoints do not prohibit independently enabled project automation.

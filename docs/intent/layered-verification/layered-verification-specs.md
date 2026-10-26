@@ -336,3 +336,109 @@
   release.
   *Tests:* `spec/models/layered_verification_review_package_spec.rb`
   *Code:* `app/models/layered_verification_review_package.rb` (#4433)
+
+## Optional automation: PR-triggered and scheduled audits
+
+- [ ] **LAYERED-VERIFY-026** — Where a project has explicitly opted in to
+  PR-triggered audits and `layered_verification_add_on` is enabled for that
+  project, a pull-request trigger (pull request opened or head updated) SHALL
+  admit a `layered_verification_audit` run carrying the pull request's
+  `source_pull_request_number`, and the system SHALL NOT admit a second
+  active `layered_verification_audit` run for the same pull request (the
+  existing partial unique active-PR-run index
+  `idx_agent_runs_unique_active_pr` on `(project_id,
+  source_pull_request_number, goal)`). While either the add-on flag or the
+  project's PR-trigger opt-in is off, the system SHALL NOT admit a
+  PR-triggered audit run. A trigger blocked by an already-active audit for
+  the same pull request SHALL be recorded with its provenance (arrival,
+  evaluated head revision, blocking run) and SHALL NOT queue duplicate work.
+  *Tests:* `spec/services/layered_verification/triggers/admit_pull_request_audit_spec.rb`
+  *Code:* `LayeredVerification::Triggers::AdmitPullRequestAudit` (#4439)
+
+- [ ] **LAYERED-VERIFY-027** — A PR-triggered audit SHALL pin the pull
+  request's head revision at admission and SHALL resolve its obligation scope
+  to the obligations whose declared scope intersects the pull request's
+  changed files, never an automatic full audit of every project obligation.
+  An audit request — PR-triggered or manual — whose resolved obligation scope
+  and pinned revision match an already-active audit SHALL NOT be admitted,
+  regardless of trigger source. A PR-triggered audit whose obligation scope
+  cannot be resolved from the changed files SHALL surface an actionable
+  request (correct the project's trigger configuration or request a bounded
+  manual audit) rather than silently broadening to a full-project audit. The
+  run SHALL carry the bounded budget configured with the project's
+  PR-trigger opt-in and SHALL reuse evidence the pull request's changes do
+  not invalidate (`LAYERED-VERIFY-019`) rather than recomputing it.
+  *Tests:* `spec/services/layered_verification/triggers/resolve_pull_request_audit_scope_spec.rb`
+  *Code:* `LayeredVerification::Triggers::ResolvePullRequestAuditScope` (#4439)
+
+- [ ] **LAYERED-VERIFY-028** — A PR-triggered audit SHALL NOT create a merge
+  gate by default: it SHALL NOT post a required status check, add a blocking
+  label, or block merge, and mandatory host policies (CI, security, branch
+  protection, code review, approved-intent conformance) SHALL run unchanged
+  and independently per `LAYERED-VERIFY-021`. Completing a PR-triggered audit
+  SHALL NOT grant repair authority or enqueue a repair run
+  (`LAYERED-VERIFY-010`/`-011`); its findings SHALL surface through the
+  Inbox finding lifecycle (`LAYERED-VERIFY-015`/`-017`), and the pull
+  request's merge or closure SHALL NOT resolve a finding — resolution follows
+  `LAYERED-VERIFY-024`'s fresh-evidence rule.
+  *Tests:* `spec/services/layered_verification/triggers/admit_pull_request_audit_spec.rb`,
+  `spec/temporal/workflows/agent_execution_workflow_spec.rb`
+  *Code:* `LayeredVerification::Triggers::AdmitPullRequestAudit`,
+  `app/temporal/workflows/agent_execution_workflow.rb` (#4439)
+
+- [ ] **LAYERED-VERIFY-029** — While a PR-triggered audit is in flight, a new
+  pull-request head or the pull request's closure SHALL NOT silently cancel
+  it: the run SHALL complete against its pinned revision with its evidence
+  and findings preserved and revision-bound, or be cancelled through the
+  existing explicit cancellation path, which reports the outcome as
+  explicitly incomplete per `LAYERED-VERIFY-020`, never as a pass.
+  *Tests:* `spec/services/layered_verification/triggers/admit_pull_request_audit_spec.rb`
+  *Code:* `LayeredVerification::Triggers::AdmitPullRequestAudit` (#4439)
+
+- [ ] **LAYERED-VERIFY-030** — A recurring layered-verification audit SHALL be
+  configured only through the maintenance scheduling contract RDR-075 defines
+  (opt-in, default disabled, timezone/next-occurrence exposure, overlap
+  prevention, bounded missed-occurrence catchup, and
+  disable-stops-future-dispatch semantics — `MAINT-060`–`MAINT-064`), and
+  each occurrence SHALL dispatch the same `layered_verification_audit`
+  operation as a manual audit request, not a maintenance-goal wrapper run.
+  Configuring a schedule SHALL require the audit authorization bar of
+  `LAYERED-VERIFY-010`. A scheduled occurrence SHALL NOT be dispatched while
+  `layered_verification_add_on` is off for the project, and dispatch SHALL
+  NOT grant repair authority or create a repair run or follow-up work as a
+  side effect. Scheduled-audit runtime additionally requires accepted
+  RDR-075 and its scheduling milestone
+  ([#4332](https://github.com/viamin/paid/issues/4332)); this contract does
+  not release that dependency.
+  *Tests:* `spec/services/layered_verification/triggers/admit_scheduled_audit_spec.rb`
+  *Code:* `LayeredVerification::Triggers::AdmitScheduledAudit` (#4440)
+
+- [ ] **LAYERED-VERIFY-031** — Each scheduled-audit occurrence SHALL pin the
+  then-current requested branch revision and carry the schedule's configured
+  budget, and SHALL NOT be dispatched while an equivalent audit for the same
+  obligation scope and pinned revision is already active (the scheduler's
+  non-overlap rule plus the duplicate-work rule of `LAYERED-VERIFY-027`). A
+  scheduled occurrence whose configured sources or scope cannot be resolved
+  at dispatch SHALL surface an actionable Inbox request to correct the
+  schedule's configuration rather than silently broadening or dropping the
+  occurrence. Disabling a schedule SHALL stop future dispatch without
+  cancelling an already-active audit and without deleting recorded evidence;
+  cancelling an active audit remains a separate explicit action, and
+  interruption, resumption, and budget-exhaustion semantics SHALL follow
+  `LAYERED-VERIFY-020`.
+  *Tests:* `spec/services/layered_verification/triggers/admit_scheduled_audit_spec.rb`
+  *Code:* `LayeredVerification::Triggers::AdmitScheduledAudit` (#4440)
+
+- [ ] **LAYERED-VERIFY-032** — Findings recorded by a scheduled audit SHALL
+  use the same `LayeredVerificationFinding` identity and deduplication as
+  every other audit (`LAYERED-VERIFY-017`): a recurring audit reproducing an
+  existing unresolved finding SHALL attach a new observation (timestamp,
+  `LayeredVerificationCheckResult` reference, occurrence provenance) rather
+  than creating a second Inbox entry, and a clean scheduled audit SHALL NOT
+  create an Inbox entry (`LAYERED-VERIFY-015`). Actionable findings from a
+  scheduled audit SHALL surface in the Inbox with the same detail-pane
+  contract as a manual audit's findings.
+  *Tests:* `spec/services/layered_verification/triggers/admit_scheduled_audit_spec.rb`,
+  `spec/services/inbox/layered_verification_finding_spec.rb`
+  *Code:* `LayeredVerification::Triggers::AdmitScheduledAudit`,
+  `app/services/inbox/layered_verification_finding.rb` (#4440)

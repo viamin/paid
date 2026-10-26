@@ -45,6 +45,25 @@ source. The digest is a SHA-256 of the canonical evidence list (PR numbers +
 terminal times + no-code timestamp), so any *new* terminal outcome is a new
 generation.
 
+### Source-closure publication
+
+The existing criterion-level partial-closeout assessment is the sole authority
+for publishing a source issue's closing reference. Before a new source PR is
+published, Paid obtains the assessment through `agent_harness`, snapshots the
+evidence and intent revisions, and persists a `source_closure` disposition on
+the run. Deterministic publication code accepts `close` only when the snapshot
+is current, contains criterion assessments, every criterion is satisfied, and
+no gaps remain. Every other result, including unavailable execution evidence,
+partial or blocked work, malformed data, and stale revisions, is `track`.
+
+PR templates, generated descriptions, fallback text, and later repair paths
+are normalized against that disposition. Any GitHub closing-keyword variant
+that references the source issue — by short or source-repository-qualified
+reference — becomes `Tracks` unless the persisted disposition is `close`;
+free-form PR prose never grants closing authority. Reconciliation and
+acceptance-audit paths reuse the same disposition record, retaining the normal
+owner/prerequisite workflow rather than creating a completion authority.
+
 ### Visibility: the `partial_closeout` Inbox lane
 
 Derived lane (like `retry_limited`), not persisted state. An open, non-PR

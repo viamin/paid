@@ -136,8 +136,9 @@
 
 - [x] **AUTOMATION-PHASES-018** — Each operational capability SHALL declare its
   signal source, activation policy, response scope, limits, escalation
-  behavior, and handoff to other phases, and project Operations SHALL describe
-  ownership and handoffs without adding autonomous remediation.
+  behavior, completion meaning, and handoff to other phases, and project
+  Operations SHALL describe ownership and handoffs without adding autonomous
+  remediation.
   *Tests:* `spec/services/automation/operations/contract_catalog_spec.rb`
   *Code:* `Automation::Operations::ContractCatalog`,
   `docs/intent/automation-phases/operations-ownership.md`

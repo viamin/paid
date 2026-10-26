@@ -53,6 +53,7 @@ module FeatureIntents
 
     def admit_link(link)
       return denied("in_tree_dependency_incomplete", "Issue has incomplete in-tree dependencies.") unless in_tree_dependencies_complete?(link)
+      return allowed if link.planning_task?
       return confidence_admission(link) if link.feature_intent.confidence_driven?
 
       approval_admission(link.feature_intent)
@@ -74,7 +75,7 @@ module FeatureIntents
       return reconcile_changed_scope(link) unless link.release_snapshot["scope_revision"] == readiness.snapshot["scope_revision"]
 
       allowed(
-        link.release_snapshot["merged_baseline"] || readiness.snapshot.dig("design_artifacts", 0, "revision"),
+        link.released_baseline_revision,
         snapshot: link.release_snapshot
       )
     end

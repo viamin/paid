@@ -89,7 +89,8 @@ RSpec.describe AppleVerification::SourceLane::BundleBuilder do
   it "preserves each included file's permission bits in the tar entries" do
     script = write_file("Scripts/build.sh", "#!/bin/sh\nexit 0\n")
     File.chmod(0o755, script)
-    write_file("Sources/App.swift", "let greeting = \"hello\"\n")
+    source = write_file("Sources/App.swift", "let greeting = \"hello\"\n")
+    File.chmod(0o644, source)
 
     result = described_class.call(workspace_root: workspace_root, output_path: output_path)
     modes = tar_entry_modes(result.bundle_path)
