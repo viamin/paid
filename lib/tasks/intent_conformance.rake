@@ -13,11 +13,10 @@ namespace :intent_conformance do
       end
       TenantContext.apply!(account)
 
-      result = IntentConformance::ShadowEvaluation::ExecuteReviewer.call(evaluation: evaluation)
-      IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: evaluation) if result.success?
+      result = IntentConformance::ShadowEvaluation::EnqueueReviewer.call(evaluation: evaluation)
 
       if result.success?
-        puts "executed=#{result.executed} failed=#{result.failed} status=#{evaluation.reload.status}"
+        puts "queued=#{!result.resumed} status=#{evaluation.reload.status}"
       else
         puts result.error
         exit 1

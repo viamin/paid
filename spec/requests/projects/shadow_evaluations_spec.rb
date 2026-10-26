@@ -136,7 +136,9 @@ RSpec.describe "Projects::ShadowEvaluations" do
     evaluation = start_evaluation!
     label!(evaluation, case_id: "A-01", outcome: "within_scope")
 
-    post execute_project_shadow_evaluation_path(project, evaluation)
+    perform_enqueued_jobs do
+      post execute_project_shadow_evaluation_path(project, evaluation)
+    end
     follow_redirect!
 
     expect(response.body).to include("frozen reference label set")
@@ -149,6 +151,37 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("intentionally_drifted")
   end
 
+  it "queues a frozen reviewer execution promptly and deduplicates repeated submissions" do # @spec INTENT-CONFORMANCE-ROLLOUT-011
+    evaluation = start_evaluation_from_committed_corpus!
+    label_all!(evaluation)
+    freeze!(evaluation)
+
+    expect {
+      post execute_project_shadow_evaluation_path(project, evaluation)
+    }.to have_enqueued_job(IntentConformance::ShadowEvaluationJob).with(project.id, evaluation.id)
+    expect(evaluation.reload).to be_queued
+    expect(response).to redirect_to(project_shadow_evaluation_path(project, evaluation))
+
+    expect {
+      post execute_project_shadow_evaluation_path(project, evaluation)
+    }.not_to have_enqueued_job(IntentConformance::ShadowEvaluationJob)
+    expect(flash[:notice]).to include("already queued")
+  end
+
+  it "authorizes cancellation and preserves the completed-case evidence" do # @spec INTENT-CONFORMANCE-ROLLOUT-011
+    evaluation = start_evaluation_from_committed_corpus!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    evaluation.update!(status: "running")
+    evaluation.runs.create!(case_id: "A-01", verdict: "within_scope", reviewer_run_id: "r1", reviewer_model: "m",
+      prompt_digest: "d", cost_cents: 42, recorded_at: Time.current)
+
+    post cancel_project_shadow_evaluation_path(project, evaluation)
+
+    expect(evaluation.reload).to have_attributes(cancel_requested_at: be_present)
+    expect(evaluation.runs.find_by(case_id: "A-01")).to have_attributes(verdict: "within_scope", cost_cents: 42)
+  end
+
   it "executes the real reviewer through agent_harness, records failures as not evaluated, and shows the report" do
     evaluation = start_evaluation_from_committed_corpus!
     label_all!(evaluation)
@@ -157,11 +190,13 @@ RSpec.describe "Projects::ShadowEvaluations" do
     # Corpus cases reference a repository outside this project, so every
     # reviewer attempt fails closed and is recorded as not evaluated —
     # prerequisite validation is never presented as execution.
-    post execute_project_shadow_evaluation_path(project, evaluation)
+    perform_enqueued_jobs do
+      post execute_project_shadow_evaluation_path(project, evaluation)
+    end
     follow_redirect!
 
     expect(response.body).to include("not evaluated")
-    expect(evaluation.reload).to be_failed
+    expect(evaluation.reload).to be_partial
     evaluation.runs.each do |run|
       expect(run).to be_not_evaluated
       expect(run.failure_reason).to eq("case_repository_outside_project")

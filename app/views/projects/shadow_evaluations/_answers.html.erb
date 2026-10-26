@@ -14,16 +14,22 @@
         Execution state: <span data-evaluation-execution><%= evaluation.status %></span><% if evaluation.last_failure_reason.present? %> — <%= evaluation.last_failure_reason %><% end %>.
       </p>
     </div>
-    <% if evaluation.frozen? || evaluation.failed? %>
-      <%= button_to "Execute reviewer now", execute_project_shadow_evaluation_path(project, evaluation, **inbox_context),
+    <% if evaluation.frozen? && !evaluation.queued? && !evaluation.running? %>
+      <%= button_to evaluation.partial? || evaluation.cancelled? ? "Resume reviewer" : "Execute reviewer now", execute_project_shadow_evaluation_path(project, evaluation, **inbox_context),
             form: { data: { turbo_frame: "_top", turbo_confirm: "Run the real conformance reviewer for every case through agent_harness? Costs apply." } },
             class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
+    <% elsif evaluation.queued? || evaluation.running? %>
+      <%= button_to "Cancel reviewer", cancel_project_shadow_evaluation_path(project, evaluation, **inbox_context),
+            form: { data: { turbo_frame: "_top", turbo_confirm: "Stop after the current case? Completed evidence will remain." } },
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     <% end %>
   </div>
   <p class="mt-2 text-xs text-gray-500">
     Equivalent documented command: <code>bin/rails "intent_conformance:shadow_evaluation:execute[<%= evaluation.id %>]"</code>.
     Prerequisite validation alone is never execution.
   </p>
+  <% progress = evaluation.execution_progress %>
+  <p class="mt-2 text-xs text-gray-500">Progress: <%= progress[:completed] %>/<%= progress[:total] %> evaluated, <%= progress[:unavailable] %> unavailable, <%= progress[:cost_cents] %>¢ recorded.</p>
 </div>
 
 <% if evaluation.report_markdown.present? %>
@@ -59,7 +65,7 @@
           <td class="py-2 pr-3 font-medium text-gray-900"><%= case_id %></td>
           <td class="py-2 pr-3 text-gray-600"><%= corpus_case["stratum"] %></td>
           <td class="py-2 pr-3"><code><%= label&.outcome %></code></td>
-          <td class="py-2 pr-3"><code><%= run&.verdict %></code><% if run&.failure_reason.present? %> <span class="text-xs text-red-700"><%= run.failure_reason %></span><% end %></td>
+          <td class="py-2 pr-3"><code><%= run&.verdict&.humanize&.downcase %></code><% if run&.failure_reason.present? %> <span class="text-xs text-red-700"><%= run.failure_reason %></span><% end %></td>
           <td class="py-2 pr-3 text-xs text-gray-600">
             <% if label&.revised? %>
               <%= label.revised_outcome %> (was <%= label.outcome %>)

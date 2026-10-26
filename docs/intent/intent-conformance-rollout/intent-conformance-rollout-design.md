@@ -126,7 +126,14 @@ Paid's project authorization and presentation patterns:
 3. **Freeze.** The explicit finish action refuses to freeze while any case
    is unlabeled or skipped, then stamps the reference set frozen. Answers
    (strata and reviewer outputs) become visible only from freeze onward.
-4. **Execute.** After freeze, the real conformance reviewer runs for every
+4. **Execute.** After freeze, an authorized Start/Resume action durably queues
+   the real conformance reviewer and returns without waiting for provider work.
+   The worker exposes queued, running, partial, failed, cancelled, and
+   completed state plus per-case evidence and cost. Cancellation is
+   cooperative between cases: it retains collected evidence and does not
+   fabricate remaining results. A retry resumes only cases without an
+   evaluated verdict; a timeout or worker failure leaves a retryable failure,
+   never a stranded running state. The real conformance reviewer runs for every
    case through `agent_harness` (the documented operator command or the
    equivalent UI action), recording actual verdicts, reviewer model, prompt
    digest, cost, and failures. Missing or failed reviewer output is recorded

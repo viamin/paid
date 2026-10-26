@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_24_230000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2451,6 +2451,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
   end
 
   create_table "intent_conformance_shadow_evaluations", comment: "Solo-maintainer RDR-067 shadow evaluation: one labeling session per evidence generation (project, purpose, frozen corpus manifest digest) with blinded reference labels, executed reviewer runs, and the reproducible report (#4594).", force: :cascade do |t|
+    t.datetime "cancel_requested_at", comment: "Cooperative stop request checked between reviewer cases; completed evidence is retained."
+    t.datetime "cancelled_at", comment: "When cooperative reviewer execution stopped without fabricating remaining case results."
     t.datetime "completed_at", comment: "When every case had an executed reviewer verdict."
     t.datetime "created_at", null: false
     t.bigint "created_by_id", null: false, comment: "Authenticated operator who started the evaluation."

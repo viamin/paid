@@ -143,7 +143,7 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
 
     expect(result).to be_success
     expect(result.failed).to eq(2)
-    expect(evaluation.reload).to be_failed
+    expect(evaluation.reload).to be_partial
     expect(evaluation.last_failure_reason).to include("without an evaluated reviewer verdict")
     evaluation.runs.each do |run|
       expect(run).to be_not_evaluated
