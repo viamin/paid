@@ -66,4 +66,5 @@ RSpec.configure do |config|
   config.include ShadowEvaluationCorpusHelper, type: :service
   config.include ShadowEvaluationCorpusHelper, file_path: %r{spec/services/intent_conformance/shadow_evaluation}
   config.include ShadowEvaluationCorpusHelper, file_path: %r{spec/requests/projects/shadow_evaluations}
+  config.include ShadowEvaluationCorpusHelper, file_path: %r{spec/jobs/shadow_evaluation}
 end

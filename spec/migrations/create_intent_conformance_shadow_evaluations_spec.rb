@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20261023000000_create_intent_conformance_shadow_evaluations")
+require Rails.root.join("db/migrate/20261026000000_add_shadow_evaluation_execution_lifecycle")
 
 RSpec.describe CreateIntentConformanceShadowEvaluations, :aggregate_failures do
   # @spec INTENT-CONFORMANCE-ROLLOUT-005 @spec INTENT-CONFORMANCE-ROLLOUT-007
@@ -22,6 +23,9 @@ RSpec.describe CreateIntentConformanceShadowEvaluations, :aggregate_failures do
 
     if tables_existed.any? { |_table, existed| existed }
       migration.up
+      # Later migrations on these tables are part of the restored shape;
+      # replaying them keeps the rest of the suite's schema intact.
+      AddShadowEvaluationExecutionLifecycle.new.up
     end
     clear_schema_metadata!
   end

@@ -72,17 +72,25 @@ become visible and execution is allowed.
 
 ## 5. Execute the real reviewer (documented command)
 
-After freeze, run the actual conformance reviewer for every case through
+After freeze, queue the actual conformance reviewer for every case through
 `agent_harness` with either the UI action or the documented command:
 
 ```bash
 bin/rails "intent_conformance:shadow_evaluation:execute[<evaluation-id>]"
 ```
 
-The command records actual verdicts, reviewer model, prompt digest, cost,
-and per-case failures. Missing or failed reviewer output is recorded as not
+The command only enqueues the background job; the request returns promptly
+and no reviewer call happens inline. The evaluation screen (and the Inbox
+item) expose the durable queued/running/partial/failed/cancelled/completed
+execution state, per-case progress and recorded cost, an authorized stop
+action that halts between cases while preserving collected evidence, and a
+retry that re-runs only cases still lacking an evaluated verdict — completed
+cases are never re-spent. A lost job or dead worker is recovered
+automatically by the periodic recovery sweep.
+
+The job records actual verdicts, reviewer model, prompt digest, cost, and
+per-case failures. Missing or failed reviewer output is recorded as not
 evaluated — prerequisite validation alone is never presented as execution.
-Re-running the command retries cases that lack an evaluated verdict.
 
 For the repository-visible JSONL ledger, the operator appends the recorded
 `shadow_run` events with the CLI `append` command after the run, one event

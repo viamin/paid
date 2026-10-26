@@ -96,19 +96,32 @@ module Projects
       redirect_for(result, success_notice: "Reference labels frozen. You can now execute the reviewer.")
     end
 
-    # Runs the documented end-to-end execution path — the same service as
-    # `bin/rails "intent_conformance:shadow_evaluation:execute[<id>]"`.
+    # Enqueues the documented background execution — the same lifecycle as
+    # `bin/rails "intent_conformance:shadow_evaluation:execute[<id>]"`. The
+    # request only authorizes and claims the idempotent operation; reviewer
+    # invocations happen in ShadowEvaluationExecuteJob.
+    # @spec INTENT-CONFORMANCE-ROLLOUT-011
     def execute
       authorize @evaluation
 
-      result = IntentConformance::ShadowEvaluation::ExecuteReviewer.call(evaluation: @evaluation)
+      result = IntentConformance::ShadowEvaluation::EnqueueExecution.call(evaluation: @evaluation, actor: current_user)
       if result.success?
-        IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: @evaluation)
         redirect_to evaluation_path(@evaluation),
-          notice: "Reviewer executed: #{result.executed} evaluated, #{result.failed} not evaluated."
+          notice: result.already_active? ? "Reviewer execution is already queued or running for this evaluation." : "Reviewer execution queued — progress and cancellation appear on this page."
       else
         redirect_to evaluation_path(@evaluation), alert: result.error
       end
+    end
+
+    # Authorized cooperative cancellation: the request is recorded and the
+    # worker stops before the first reviewer invocation or between cases,
+    # preserving collected evidence. Never fabricates unevaluated results.
+    # @spec INTENT-CONFORMANCE-ROLLOUT-011
+    def cancel
+      authorize @evaluation
+
+      result = IntentConformance::ShadowEvaluation::CancelExecution.call(evaluation: @evaluation, actor: current_user)
+      redirect_for(result, success_notice: "Cancellation requested — execution stops after the current case; collected evidence is preserved.")
     end
 
     def revise

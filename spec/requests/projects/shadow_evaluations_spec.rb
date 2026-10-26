@@ -4,12 +4,15 @@ require "rails_helper"
 
 # End-to-end UI flow for the solo-maintainer shadow evaluation: start from
 # the Inbox entry point, label blinded (answers hidden), skip and resume,
-# freeze, execute the reviewer, and revise — with tenant isolation and
-# authorization enforced on direct links and actions.
+# freeze, enqueue async reviewer execution, cancel, and revise — with tenant
+# isolation and authorization enforced on direct links and actions.
 # @spec INTENT-CONFORMANCE-ROLLOUT-005
 # @spec INTENT-CONFORMANCE-ROLLOUT-006
 # @spec INTENT-CONFORMANCE-ROLLOUT-009
+# @spec INTENT-CONFORMANCE-ROLLOUT-011
 RSpec.describe "Projects::ShadowEvaluations" do
+  include ActiveJob::TestHelper
+
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account: account) }
   let(:member) { create(:user, :member, account: account) }
@@ -149,7 +152,35 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("intentionally_drifted")
   end
 
-  it "executes the real reviewer through agent_harness, records failures as not evaluated, and shows the report" do
+  it "enqueues background execution and returns promptly without running the reviewer in the request" do
+    evaluation = start_evaluation_from_committed_corpus!
+    label_all!(evaluation)
+    freeze!(evaluation)
+
+    expect { post execute_project_shadow_evaluation_path(project, evaluation) }
+      .to have_enqueued_job(ShadowEvaluationExecuteJob).with(evaluation.id).exactly(:once)
+    follow_redirect!
+
+    expect(response.body).to include("Reviewer execution queued")
+    evaluation.reload
+    expect(evaluation).to be_queued
+    expect(evaluation.runs).to be_empty
+  end
+
+  it "treats a duplicate execute submission as idempotent while a pass is queued" do
+    evaluation = start_evaluation_from_committed_corpus!
+    label_all!(evaluation)
+    freeze!(evaluation)
+
+    post execute_project_shadow_evaluation_path(project, evaluation)
+    expect { post execute_project_shadow_evaluation_path(project, evaluation) }
+      .not_to have_enqueued_job(ShadowEvaluationExecuteJob)
+    follow_redirect!
+
+    expect(response.body).to include("already queued or running")
+  end
+
+  it "executes the real reviewer in the background, records failures as not evaluated, and shows the report" do
     evaluation = start_evaluation_from_committed_corpus!
     label_all!(evaluation)
     freeze!(evaluation)
@@ -157,10 +188,10 @@ RSpec.describe "Projects::ShadowEvaluations" do
     # Corpus cases reference a repository outside this project, so every
     # reviewer attempt fails closed and is recorded as not evaluated —
     # prerequisite validation is never presented as execution.
-    post execute_project_shadow_evaluation_path(project, evaluation)
+    perform_enqueued_jobs { post execute_project_shadow_evaluation_path(project, evaluation) }
     follow_redirect!
 
-    expect(response.body).to include("not evaluated")
+    expect(response.body).to include("Reviewer execution queued")
     expect(evaluation.reload).to be_failed
     evaluation.runs.each do |run|
       expect(run).to be_not_evaluated
@@ -171,6 +202,65 @@ RSpec.describe "Projects::ShadowEvaluations" do
 
     expect(response.body).to include("Reproducible report")
     expect(response.body).to include("solo")
+  end
+
+  it "exposes durable progress and cost on the evaluation screen while a pass runs" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    evaluation.runs.create!(case_id: "A-01", verdict: "within_scope", reviewer_run_id: "r1", reviewer_model: "m",
+      prompt_digest: "d", cost_cents: 3, recorded_at: Time.current)
+    evaluation.update!(status: "running", execute_started_at: Time.current, execution_heartbeat_at: Time.current)
+
+    get project_shadow_evaluation_path(project, evaluation)
+
+    expect(response.body).to include("running")
+    expect(response.body).to include("1/30 cases evaluated")
+    expect(response.body).to include("Stop execution")
+  end
+
+  it "stops a queued execution through the authorized cancellation action" do
+    evaluation = start_evaluation_from_committed_corpus!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    post execute_project_shadow_evaluation_path(project, evaluation)
+
+    post cancel_project_shadow_evaluation_path(project, evaluation)
+    perform_enqueued_jobs
+    follow_redirect!
+
+    expect(response.body).to include("Cancellation requested")
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs).to be_empty
+  end
+
+  it "keeps collected evidence when cancellation lands between cases" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    evaluation.runs.create!(case_id: "A-01", verdict: "within_scope", reviewer_run_id: "r1", reviewer_model: "m",
+      prompt_digest: "d", cost_cents: 0, recorded_at: Time.current)
+    evaluation.update!(status: "cancelled", cancel_requested_at: Time.current, last_failure_reason: "cancelled by operator")
+
+    get project_shadow_evaluation_path(project, evaluation)
+
+    expect(response.body).to include("cancelled")
+    expect(evaluation.runs.count).to eq(1)
+    expect(response.body).to include("Retry reviewer execution")
+  end
+
+  it "denies cancellation to an operator outside the account (tenant isolation)" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    evaluation.update!(status: "queued", execution_queued_at: Time.current)
+    outsider = create(:user, :owner, account: create(:account))
+    sign_in outsider
+
+    post cancel_project_shadow_evaluation_path(project, evaluation)
+
+    expect(response).to have_http_status(:not_found)
+    expect(evaluation.reload.cancel_requested_at).to be_nil
   end
 
   it "appends post-result revisions without overwriting the original blinded label" do

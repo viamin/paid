@@ -82,12 +82,15 @@
   reviewer output SHALL be recorded as not evaluated rather than counted as
   agreement, and prerequisite validation alone SHALL NOT be presented as
   execution.
-  *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle.
+  *Design:* `intent-conformance-rollout-design.md` §Labeling lifecycle and
+  §Asynchronous execution lifecycle.
   *Code:* `app/services/intent_conformance/reviewer_llm.rb`,
   `app/services/intent_conformance/shadow_evaluation/execute_reviewer.rb`,
+  `app/jobs/shadow_evaluation_execute_job.rb`,
   `lib/tasks/intent_conformance.rake`,
   `bin/intent-conformance-shadow-evaluation`.
   *Test:* `spec/services/intent_conformance/shadow_evaluation/execute_reviewer_spec.rb`,
+  `spec/jobs/shadow_evaluation_execute_job_spec.rb`,
   `spec/bin/intent_conformance_shadow_evaluation_spec.rb`.
 
 - [ ] **INTENT-CONFORMANCE-ROLLOUT-008** — The evaluation record SHALL produce
@@ -139,4 +142,34 @@
   `app/controllers/projects/shadow_evaluations_controller.rb`,
   `app/views/projects/shadow_evaluations/_labeling.html.erb`.
   *Test:* `spec/services/intent_conformance/shadow_evaluation/evidence_spec.rb`,
+  `spec/requests/projects/shadow_evaluations_spec.rb`.
+
+- [ ] **INTENT-CONFORMANCE-ROLLOUT-011** — When an operator triggers reviewer
+  execution from the Inbox-linked evaluation screen or an equivalent tool,
+  the system SHALL only authorize and enqueue an idempotent background
+  execution and SHALL return before any reviewer invocation, preserving
+  freeze-before-execution, pinned corpus/model/prompt/design identity,
+  reference-label blinding, and execution deduplication. The evaluation
+  SHALL expose durable queued/running/partial/failed/cancelled/completed
+  execution state with per-case progress and cost, and SHALL offer an
+  authorized cancellation that stops between cases, preserves collected
+  evidence, and never fabricates unevaluated results. A killed worker, an
+  expired request, or a lost advisory lock SHALL NOT strand an evaluation
+  as executing indefinitely, and a retry or recovery resume SHALL evaluate
+  only cases that still lack an evaluated verdict, never repeating spend on
+  completed cases. Reports SHALL compile and attach through the existing
+  report service whenever any run exists, and a passing report SHALL remain
+  evidence rather than automatic feature acceptance or rollout authority.
+  *Design:* `intent-conformance-rollout-design.md` §Asynchronous execution
+  lifecycle.
+  *Code:* `app/services/intent_conformance/shadow_evaluation/enqueue_execution.rb`,
+  `app/services/intent_conformance/shadow_evaluation/cancel_execution.rb`,
+  `app/services/intent_conformance/shadow_evaluation/recover_stalled_executions.rb`,
+  `app/jobs/shadow_evaluation_execute_job.rb`,
+  `app/jobs/shadow_evaluation_execution_recovery_job.rb`,
+  `app/controllers/projects/shadow_evaluations_controller.rb`.
+  *Test:* `spec/services/intent_conformance/shadow_evaluation/enqueue_execution_spec.rb`,
+  `spec/services/intent_conformance/shadow_evaluation/cancel_execution_spec.rb`,
+  `spec/services/intent_conformance/shadow_evaluation/recover_stalled_executions_spec.rb`,
+  `spec/jobs/shadow_evaluation_execute_job_spec.rb`,
   `spec/requests/projects/shadow_evaluations_spec.rb`.

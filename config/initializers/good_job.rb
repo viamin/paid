@@ -399,11 +399,19 @@ Rails.application.configure do
       description: "Terminate running Apple verification VMs on an actual host-safety condition (APPLE-ATTEMPT-002)"
     },
     apple_verification_retry: {
-      # Offset 11 follows host-safety so a re-enqueued retry is picked up by the
-      # next dispatch tick (12) in the same window.
+      # Offset 11 follows host-safety so a re-enqueued retry is picked up by
+      # the next dispatch tick (12) in the same window.
       cron: "11-59/5 * * * *",
       class: "AppleVerificationRetryJob",
       description: "Re-enqueue retryable Apple verification infrastructure failures (APPLE-ATTEMPT-010)"
+    },
+    shadow_evaluation_execution_recovery: {
+      # Offset 18 stays clear of the Apple maintenance family (6-12) and the
+      # 1-5 wall-clock burst; five-minute ticks bound how long a killed
+      # reviewer worker can leave an evaluation stranded (#4642).
+      cron: "18-59/5 * * * *",
+      class: "ShadowEvaluationExecutionRecoveryJob",
+      description: "Resume or re-enqueue stalled shadow-evaluation reviewer executions (INTENT-CONFORMANCE-ROLLOUT-011)"
     }
   }
 end

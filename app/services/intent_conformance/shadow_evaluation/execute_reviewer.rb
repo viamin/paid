@@ -10,11 +10,20 @@ module IntentConformance
     # counted as agreement. Re-running retries cases that lack an evaluated
     # verdict. Prerequisite validation alone is never presented as
     # execution.
+    #
+    # Runs inside ShadowEvaluationExecuteJob (#4642): it refreshes the
+    # execution heartbeat before every case, honors a cooperative
+    # cancellation between cases (collected evidence survives and no
+    # unevaluated case is fabricated), and maps the pass to a terminal
+    # completed/partial/failed/cancelled state computed from persisted runs.
     # @spec INTENT-CONFORMANCE-ROLLOUT-006
     # @spec INTENT-CONFORMANCE-ROLLOUT-007
+    # @spec INTENT-CONFORMANCE-ROLLOUT-011
     class ExecuteReviewer
-      Result = Data.define(:success, :error, :evaluation, :executed, :failed) do
+      Result = Data.define(:success, :error, :evaluation, :executed, :failed, :cancelled, :busy) do
         def success? = success
+        def cancelled? = cancelled
+        def busy? = busy
       end
 
       MAX_DESIGN_DOCS = 10
@@ -50,7 +59,7 @@ module IntentConformance
             project_id: @evaluation.project_id,
             shadow_evaluation_id: @evaluation.id
           )
-          return failure("reviewer execution is already in progress for this evaluation; retry once it finishes")
+          return busy_failure("reviewer execution is already in progress for this evaluation; retry once it finishes")
         end
 
         begin
@@ -71,7 +80,8 @@ module IntentConformance
       # The session-scoped try-advisory lock claims execution first; the
       # loser skips with a clear error instead of racing, and a crashed
       # holder releases the lock with its database session so retries stay
-      # possible (#4598 review).
+      # possible (#4598 review). Only the lock holder mutates lifecycle
+      # state, so a duplicate recovery enqueue can never fold a live pass.
       def try_lock!
         ActiveRecord::Base.connection.select_value(
           ActiveRecord::Base.sanitize_sql_array([ ADVISORY_TRY_LOCK_SQL, ADVISORY_LOCK_NAMESPACE, @evaluation.id ])
@@ -85,22 +95,79 @@ module IntentConformance
       end
 
       def execute_cases
-        @evaluation.update!(status: "executing", execute_started_at: Time.current)
+        mark_running!
         executed = 0
         failed = 0
 
         @evaluation.corpus.cases.each do |corpus_case|
+          break if cancellation_requested?
           next if evaluated_run_for(corpus_case.fetch("id"))
 
+          heartbeat!
           verdict, failure_reason, model, cost = review_case(corpus_case)
           upsert_run(corpus_case, verdict, failure_reason, model, cost)
           verdict == NOT_EVALUATED ? failed += 1 : executed += 1
         end
 
-        complete_or_fail(executed, failed)
+        finalize(executed: executed, failed: failed, cancelled: cancellation_requested?)
       rescue ShadowEvaluationCorpus::MissingManifest => error
         @evaluation.update!(status: "failed", last_failure_reason: error.message)
         failure(error.message)
+      end
+
+      def mark_running!
+        @evaluation.update!(status: "running", execute_started_at: Time.current, execution_heartbeat_at: Time.current)
+      end
+
+      def heartbeat!
+        @evaluation.update!(execution_heartbeat_at: Time.current)
+      end
+
+      # @spec INTENT-CONFORMANCE-ROLLOUT-011 — cooperative stop between
+      # cases. Collected runs are untouched and cases never reached stay
+      # without a run row rather than being fabricated as results. Read the
+      # flag with a targeted query instead of #reload so the evaluation's
+      # memoized corpus and project associations survive the pass.
+      def cancellation_requested?
+        IntentConformanceShadowEvaluation.where(id: @evaluation.id).pick(:cancel_requested_at).present?
+      end
+
+      # Terminal state is recomputed from persisted runs, never from the
+      # pass-local counters, so an interrupted or resumed pass converges on
+      # the same answer: every case evaluated → completed; some evaluated →
+      # partial; none → failed; operator stop wins only while work remains.
+      def finalize(executed:, failed:, cancelled:)
+        remaining = remaining_case_ids.length
+        evaluated = @evaluation.corpus.case_ids.length - remaining
+        status =
+          if remaining.zero?
+            "completed"
+          elsif cancelled
+            "cancelled"
+          elsif evaluated.positive?
+            "partial"
+          else
+            "failed"
+          end
+        reason = failure_reason_for(status, remaining, failed)
+        @evaluation.update!(status: status, completed_at: status == "completed" ? Time.current : nil, last_failure_reason: reason)
+        log_executed(executed, failed, cancelled)
+        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed,
+          cancelled: cancelled && remaining.positive?, busy: false)
+      end
+
+      def remaining_case_ids
+        evaluated_ids = @evaluation.runs.evaluated.pluck(:case_id).index_with { true }
+        @evaluation.corpus.case_ids.reject { |case_id| evaluated_ids[case_id] }
+      end
+
+      def failure_reason_for(status, remaining, failed)
+        case status
+        when "completed" then nil
+        when "cancelled" then "cancelled by operator — #{remaining} case(s) left without an evaluated reviewer verdict"
+        when "partial" then "#{remaining} case(s) ended without an evaluated reviewer verdict"
+        else "#{failed.positive? ? failed : remaining} case(s) ended without an evaluated reviewer verdict"
+        end
       end
 
       def evaluated_run_for(case_id)
@@ -231,16 +298,6 @@ module IntentConformance
         )
       end
 
-      def complete_or_fail(executed, failed)
-        if failed.zero?
-          @evaluation.update!(status: "completed", completed_at: Time.current, last_failure_reason: nil)
-        else
-          @evaluation.update!(status: "failed", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
-        end
-        log_executed(executed, failed)
-        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
-      end
-
       def prompt_digest
         require "digest"
         Digest::SHA256.hexdigest(ReviewerLlm::PROMPT)
@@ -254,13 +311,14 @@ module IntentConformance
         @client ||= project.client
       end
 
-      def log_executed(executed, failed)
+      def log_executed(executed, failed, cancelled)
         Rails.logger.info(
           message: "intent_conformance.shadow_evaluation_executed",
           project_id: project.id,
           shadow_evaluation_id: @evaluation.id,
           executed_count: executed,
-          failed_count: failed
+          failed_count: failed,
+          cancelled: cancelled
         )
       end
 
@@ -298,7 +356,11 @@ module IntentConformance
       end
 
       def failure(message)
-        Result.new(success: false, error: message, evaluation: nil, executed: 0, failed: 0)
+        Result.new(success: false, error: message, evaluation: nil, executed: 0, failed: 0, cancelled: false, busy: false)
+      end
+
+      def busy_failure(message)
+        Result.new(success: false, error: message, evaluation: nil, executed: 0, failed: 0, cancelled: false, busy: true)
       end
     end
   end

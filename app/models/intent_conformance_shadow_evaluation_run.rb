@@ -10,6 +10,9 @@ class IntentConformanceShadowEvaluationRun < ApplicationRecord
 
   belongs_to :shadow_evaluation, class_name: "IntentConformanceShadowEvaluation", inverse_of: :runs
 
+  scope :evaluated, -> { where.not(verdict: "not_evaluated") }
+  scope :not_evaluated, -> { where(verdict: "not_evaluated") }
+
   validates :case_id, presence: true
   validates :verdict, presence: true, inclusion: { in: VERDICTS }
   validates :recorded_at, presence: true

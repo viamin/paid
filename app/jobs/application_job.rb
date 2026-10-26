@@ -126,6 +126,8 @@ class ApplicationJob < ActiveJob::Base
       Account.find_by(id: hash[:account_id] || hash["account_id"])
     when AbTestAnalysisJob
       AbTest.includes(:prompt).find_by(id: arguments.first)&.prompt&.account
+    when ShadowEvaluationExecuteJob
+      IntentConformanceShadowEvaluation.includes(:project).find_by(id: arguments.first)&.project&.account
     else
       tenant_account_from_project || tenant_account_from_agent_run
     end

@@ -244,4 +244,79 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     expect(second.executed).to eq(2)
     expect(evaluation.reload).to be_completed
   end
+
+  it "marks the pass running with a live heartbeat while executing" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    observed = []
+    allow(AgentHarness).to receive(:send_message) do
+      # Targeted query: reloading the shared instance would drop its
+      # memoized project association mid-pass.
+      observed << IntentConformanceShadowEvaluation.where(id: evaluation.id).pick(:status, :execution_heartbeat_at)
+      llm_response("within_scope")
+    end
+
+    described_class.call(evaluation: evaluation)
+
+    expect(observed.map(&:first)).to all(eq("running"))
+    expect(observed.map(&:last)).to all(be_present)
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011 — cancellation stops between cases:
+  # collected verdicts survive, the untouched case stays absent rather than
+  # being fabricated as a result, and the pass ends cancelled.
+  it "stops between cases when cancellation is requested and preserves collected evidence" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message) do
+      evaluation.update_column(:cancel_requested_at, Time.current) unless evaluation.reload.cancel_requested_at
+      llm_response("within_scope")
+    end
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).to be_success
+    expect(result).to be_cancelled
+    evaluation.reload
+    expect(evaluation).to be_cancelled
+    expect(evaluation.last_failure_reason).to include("1 case(s)")
+    expect(evaluation.runs.pluck(:case_id)).to eq([ "A-01" ])
+    expect(evaluation.runs.first).to be_evaluated
+  end
+
+  it "records a partially evaluated pass as partial while keeping the failure reason" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message).and_return(
+      llm_response("within_scope"),
+      instance_double(AgentHarness::Response, success?: false, model: nil, output: nil, metadata: {})
+    )
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).to be_success
+    expect(result.executed).to eq(1)
+    expect(result.failed).to eq(1)
+    evaluation.reload
+    expect(evaluation).to be_partial
+    expect(evaluation.last_failure_reason).to include("1 case(s) ended without an evaluated reviewer verdict")
+  end
+
+  it "reports the busy path when the lock is held so the caller leaves lifecycle state alone" do
+    prepare_frozen!
+    other_session = raw_pg_session
+    begin
+      other_session.exec_params(
+        "SELECT pg_try_advisory_lock($1, $2)",
+        [ described_class::ADVISORY_LOCK_NAMESPACE, evaluation.id ]
+      )
+
+      result = described_class.call(evaluation: evaluation)
+
+      expect(result).not_to be_success
+      expect(result).to be_busy
+    ensure
+      other_session.close
+    end
+  end
 end

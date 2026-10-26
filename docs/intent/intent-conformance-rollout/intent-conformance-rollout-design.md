@@ -127,11 +127,12 @@ Paid's project authorization and presentation patterns:
    is unlabeled or skipped, then stamps the reference set frozen. Answers
    (strata and reviewer outputs) become visible only from freeze onward.
 4. **Execute.** After freeze, the real conformance reviewer runs for every
-   case through `agent_harness` (the documented operator command or the
-   equivalent UI action), recording actual verdicts, reviewer model, prompt
-   digest, cost, and failures. Missing or failed reviewer output is recorded
-   as not evaluated; prerequisite validation alone is never presented as
-   execution.
+   case through `agent_harness` as a background job (the documented operator
+   command or the equivalent UI action only enqueues it), recording actual
+   verdicts, reviewer model, prompt digest, cost, and failures. Missing or
+   failed reviewer output is recorded as not evaluated; prerequisite
+   validation alone is never presented as execution. See
+   §Asynchronous execution lifecycle.
 5. **Review and revise.** Disagreements surface for maintainer review after
    the run. A post-result revision is appended with its own reason and
    timestamp; it never overwrites the original blinded label, and blinded
@@ -148,6 +149,53 @@ labels, or even a passing evaluation, implements acceptance only — it never
 automatically attests issue completion, closes GitHub work, or enables
 enforcement. Enforcement promotion remains the explicit human decision the
 RDR-067 rollout guard already requires.
+
+## Asynchronous execution lifecycle (#4642)
+
+Reviewer execution is a bounded batch of paid LLM invocations, so the
+triggering request (UI action, documented rake command, or equivalent tool)
+only authorizes and enqueues an idempotent GoodJob job; it never invokes the
+reviewer inline. The evaluation row itself is the durable lifecycle record:
+
+```
+frozen ──execute──▶ queued ──worker──▶ running ──▶ completed
+   ▲                   │                  │  ▲
+   │                   │                  │  └─ recovery resume / retry (skips evaluated cases)
+   │                 cancel              cancel (between cases)
+   └──────────────── partial / failed / cancelled ◀── fatal error / interruption / operator stop
+```
+
+- **Queued** (`execution_queued_at` stamped, `cancel_requested_at` cleared):
+  the enqueue is a conditional `UPDATE ... WHERE status IN (re-executable)`
+  claim, so a duplicate submission cannot double-enqueue; the GoodJob
+  concurrency key and the executor's existing session advisory lock remain
+  the second and third dedup layers.
+- **Running** (`execution_heartbeat_at` refreshed before every case): the
+  worker re-validates freeze, corpus digest, and reviewer identity before
+  the first case, skips cases that already hold an evaluated verdict (retry
+  and recovery never repeat completed-case spend), and persists each verdict
+  as it is produced, so evidence survives any stop.
+- **Cancellation** (`cancel_requested_at` set by the authorized action): the
+  worker stops between cases, marks the evaluation `cancelled`, and leaves
+  collected runs untouched — unevaluated cases stay unevaluated and are
+  never fabricated as results. A cancellation requested while queued is
+  honored before the first reviewer invocation.
+- **Terminal mapping**: all cases evaluated → `completed`; some evaluated,
+  some not → `partial`; none evaluated in the pass → `failed`; operator
+  stop → `cancelled`. `last_failure_reason` always names the cause. The
+  existing report service compiles and attaches a report whenever any run
+  exists, including after cancellation or interruption.
+- **Recovery** (periodic maintenance sweep): a `queued` evaluation whose job
+  was lost is re-enqueued; a `running` evaluation whose heartbeat went stale
+  (dead worker — the advisory lock dies with its database session) is
+  resumed by re-enqueue if no cancellation was requested, or folded to
+  `cancelled` if one was. A job-level perform timeout backstops a hung
+  provider call. No evaluation can therefore strand indefinitely as
+  executing.
+
+A passing report remains evidence for the human promotion decision; it never
+automatically attests issue completion, closes GitHub work, or enables
+enforcement (§Solo-maintainer evaluation policy).
 
 ## Telemetry and promotion criteria
 
