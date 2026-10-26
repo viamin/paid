@@ -13,8 +13,10 @@ evidence revision it assessed; `bin/facet-confidence-assessment-evaluation`
 stamps and validates that provenance and rejects replays of identical case
 input. The outcome worksheet at
 [`outcome-worksheet-2026-10-23.md`](outcome-worksheet-2026-10-23.md) is the
-repository-visible measure record; every operator-derived measure stays
-`not established` until the operator runs the corpus and appends the runs.
+repository-visible measure record. The 2026-10-26 attempts are retained in
+[`ledger.jsonl`](ledger.jsonl) as operational failures because the provider
+did not serve the pinned model; verdict-derived measures remain `not
+established` until a provider serving that exact model completes every case.
 
 No corpus run can release work: readiness-driven release remains gated on the
 complete RDR-071 delivery path, and the 80/80 thresholds stay the provisional
@@ -28,7 +30,7 @@ Follow [`operator-runbook.md`](operator-runbook.md): for each corpus case,
 replay the frozen evidence through the facet-confidence assessment path,
 append one `assessment_run` event with full provenance, then append
 `correction`/`rework` events as humans challenge or rework outcomes. Only
-when every case has a run does
+when every case has a non-failed assessment verdict does
 `bin/facet-confidence-assessment-evaluation compile` emit the outcome
 worksheet with false readiness, unnecessary clarification, human corrections,
 assessment cost, and downstream rework.

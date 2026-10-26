@@ -13,6 +13,7 @@ load Rails.root.join("bin/facet-confidence-assessment-evaluation")
 RSpec.describe FacetConfidence::AssessmentEvaluationCli, :no_db do
   let(:script_path) { File.expand_path("../../../bin/facet-confidence-assessment-evaluation", __dir__) }
   let(:committed_corpus) { File.expand_path("../../../docs/intent/facet-confidence/assessment-corpus-manifest-v1.yml", __dir__) }
+  let(:committed_ledger) { File.expand_path("../../../docs/intent/facet-confidence/assessment-evaluation-2026-10-23/ledger.jsonl", __dir__) }
   let(:corpus_dir) { Pathname.new(Dir.mktmpdir) }
   let(:corpus) { corpus_dir.join("corpus.yml").to_s }
   let(:ledger) { corpus_dir.join("ledger.jsonl").to_s }
@@ -23,6 +24,14 @@ RSpec.describe FacetConfidence::AssessmentEvaluationCli, :no_db do
     _stdout, stderr, status = run_cli("validate", "--corpus", committed_corpus, "--ledger", ledger)
 
     expect(status.exitstatus).to eq(0), -> { "stderr: #{stderr}" }
+  end
+
+  it "retains pinned-model provider failures without treating them as verdicts" do
+    expect(FacetConfidence::AssessmentCorpusLedger.validate!(corpus_path: committed_corpus, ledger_path: committed_ledger)).to be(true)
+
+    runs = FacetConfidence::AssessmentCorpusLedger.events(committed_ledger)
+    expect(runs).to all(include("rubric_version" => "facet-confidence-v1", "model_version" => "claude-sonnet-4-6", "status" => "failed"))
+    expect(runs.map { |run| run.fetch("case_id") }).to match_array(FacetConfidence::AssessmentCorpusLedger.load_corpus(committed_corpus).map { |corpus_case| corpus_case.fetch("id") })
   end
 
   it "prints usage for a bare invocation before validating flags" do
