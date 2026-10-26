@@ -12,14 +12,19 @@ direction, explicit corrections, repeated agent suggestions, collaborator
 disagreement, unknown intent with strong technical evidence, strong intent
 with weak feasibility, research scope, and the 79/80 boundary.
 
-No operator-executed assessment runs have been recorded yet: executing the
-rubric against live model output is an operator action
-([`operator-runbook.md`](operator-runbook.md)), and no corpus run may release
-work while readiness-driven release stays gated on the RDR-071 delivery path
-(RDR-070 rollout guard). Until the runs exist, every operator-derived measure
-below stays not established — mirroring what
-`bin/facet-confidence-assessment-evaluation compile` emits
-(`pending operator input`, exit 2).
+The 2026-10-26 closeout attempted every frozen case through the shipped
+assessment path. All eight attempts failed before a verdict because no provider
+in that environment served the pinned `claude-sonnet-4-6` model. The append-only
+[`ledger.jsonl`](ledger.jsonl) retains each failed run with the frozen corpus
+version and digest, rubric and model versions, and input evidence revision.
+Failed runs are operational evidence, not calibrated probabilities or rubric
+verdicts; a provider environment serving the pinned model must re-run every
+case before verdict measures can be established.
+
+No corpus run may release work while readiness-driven release stays gated on
+the RDR-071 delivery path (RDR-070 rollout guard). The 80/80 defaults remain
+unchanged. Because no non-failed verdict exists, the evaluation CLI remains
+pending operator input (exit 2).
 
 ## Corpus identity
 
@@ -46,14 +51,14 @@ metric computation (including parity with `ScopedReadiness` at the 79/80 and
 
 | Measure | Result | Ledger evidence |
 |---|---|---|
-| Corpus coverage | 0 / 8 cases | `assessment_run` events required |
+| Corpus coverage | 0 / 8 verdicts | 8 `assessment_run` events failed before a verdict |
 | False readiness | not established | expected readiness band vs `assessment_run` |
 | Unnecessary clarification | not established | expected decisive outcome vs `assessment_run` status |
 | Human corrections | not established | `correction` events required |
-| Assessment cost | not established | `assessment_run.cost_cents` required |
+| Assessment cost | 0 cents | failed `assessment_run.cost_cents` |
 | Downstream rework | not established | `rework` events required |
 | Band divergences | not established | expected bands vs `assessment_run` scores |
-| Operational failures | not established | `assessment_run` status `failed` |
+| Operational failures | 8 (100.0%, 8 / 8 runs) | all pinned-model attempts failed as unavailable |
 
 A `failed` run is an operational (provider/runtime) failure, never an
 assessment verdict: it is reported as an operational failure above and stays
@@ -64,12 +69,13 @@ measures, so provider outages cannot inflate or deflate assessment quality.
 
 | Tuning rule | Outcome |
 |---|---|
-| Every corpus case has at least one recorded run | Not met — operator runs absent |
+| Every corpus case has at least one recorded non-failed verdict | Not met — all eight recorded runs failed operationally |
 | Tuning proposal cites false-readiness and unnecessary-clarification metrics | Not evaluable — metrics not established |
 | Throughput-only justification | Never sufficient (enforced by the report's tuning gate) |
 
 **Tuning-gate outcome: `blocked_incomplete_coverage`.** Threshold or rubric
-tuning proposals stay unevaluated until the operator records the corpus runs
-and the compiled outcome metrics exist; the corrective action is to execute
-the runbook above, append the ledger events, and mirror the compiled
-worksheet here.
+tuning proposals stay unevaluated until an operator runs the frozen corpus in
+an environment that serves `claude-sonnet-4-6` and the compiled outcome metrics
+exist. The corrective action is to re-run every case with the pinned model,
+append those provenance-complete verdict events, and mirror the compiled
+worksheet here. Increasing throughput is not a basis for tuning.

@@ -64,7 +64,8 @@ bin/facet-confidence-assessment-evaluation compile   --corpus <manifest> --ledge
 ```
 
 `compile` exits `pending operator input` (2) until every corpus case has at
-least one run. Once complete it prints the outcome worksheet — false
+least one non-failed assessment verdict. Failed runs remain recorded as
+operational failures, but do not establish a verdict. Once complete it prints the outcome worksheet — false
 readiness, unnecessary clarification, human corrections, assessment cost,
 downstream rework, band divergences, operational failures, and the tuning
 gate — which the operator
