@@ -21,6 +21,23 @@ and let the scheduler decide what to *start*. This makes the queue preview
 reflect the real backlog and makes `max_concurrent_runs` the single capacity
 gate.
 
+## Empty-queue diagnosis
+
+An empty rendered preview is not evidence that no work exists. The dashboard
+uses `Dashboard::EligibilityBreakdown` as the canonical candidate source and
+compares its eligible count with persisted queued runs and capacity-inflight
+runs for the same visible projects. It reports an unseeded handoff only when
+eligible candidates exist without backend queue rows; active work without a
+waiting backlog is healthy, and known exclusion buckets are reported as a
+dependency or decision hold. A diagnostic query failure is unknown coverage,
+not an empty queue.
+
+The diagnosis is read-only. It does not invoke an LLM, execute repository code,
+contact GitHub, or mutate holds during rendering. `AutoPickEligibilitySweepJob`
+and `Issues::BulkEnqueueEligible` retain bounded recovery authority, including
+the existing confidence planning-hold reconciliation; queue uniqueness and
+admission policy remain the final guards.
+
 ## Seeding services
 
 - **`Issues::EnqueueEligible`** — the single-issue seeding path. It re-checks

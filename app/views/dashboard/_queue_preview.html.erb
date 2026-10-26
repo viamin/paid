@@ -36,6 +36,30 @@
       </div>
     </div>
   <% else %>
+    <% diagnosis = local_assigns[:queue_diagnosis] %>
+    <% if diagnosis %>
+      <div class="mt-4 rounded-md bg-slate-50 p-3 ring-1 ring-inset ring-slate-200">
+        <p class="text-sm text-slate-700">
+          <%= diagnosis.eligible_count || "Unknown" %> eligible, <%= diagnosis.queued_count || "unknown" %> queued, and <%= diagnosis.active_count || "unknown" %> active.
+          <% case diagnosis.state %>
+          <% when :runnable_queued %>
+            The backend has queued work, but this preview did not render it. <%= link_to "Refresh diagnosis", dashboard_queue_preview_path, class: "font-medium underline" %> before treating the queue as empty.
+          <% when :eligible_unseeded %>
+            Eligible work has not reached the backend queue. <%= diagnosis.recovery_action %>.
+          <% when :healthy_active_work %>
+            Work is active; there is no waiting backlog.
+          <% when :dependency_or_decision_hold %>
+            <%= diagnosis.blocked_count %> issue<%= "s" unless diagnosis.blocked_count == 1 %> need a dependency or decision. <%= link_to "Review Inbox", inbox_path, class: "font-medium underline" %>.
+          <% when :resource_or_policy_pause %>
+            <%= diagnosis.recovery_action %>.
+          <% when :unknown %>
+            Coverage is unavailable; no-work is not assumed. <%= link_to diagnosis.recovery_action, dashboard_queue_preview_path, class: "font-medium underline" %>.
+          <% else %>
+            No waiting work is currently admitted.
+          <% end %>
+        </p>
+      </div>
+    <% end %>
     <% paused_autopick = Array(local_assigns[:paused_projects]).count(&:auto_pick_enabled?) %>
     <% if paused_autopick.positive? %>
       <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200">

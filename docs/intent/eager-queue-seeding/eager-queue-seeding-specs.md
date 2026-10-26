@@ -260,6 +260,18 @@
 
 ## Capacity remains the single gate
 
+- [x] **EAGER-QUEUE-017** — When an operator-visible queue preview is empty,
+  the system SHALL report separately the canonical eligible-candidate count,
+  persisted backend queued-run count, and in-flight count. It SHALL classify
+  eligible work with no queued run as an unseeded handoff, active work with no
+  waiting backlog as healthy, known exclusions as a dependency or decision
+  hold, and a failed diagnostic query as unknown coverage rather than proof of
+  no work. Dashboard rendering SHALL remain read-only; periodic seeding and
+  planning-hold reconciliation retain recovery authority.
+  *Code:* `Dashboard::QueueDiagnosis`, `Dashboard::EligibilityBreakdown`,
+  `AutoPickEligibilitySweepJob`, `Issues::BulkEnqueueEligible`.
+  *Test:* `spec/services/dashboard/queue_diagnosis_spec.rb`.
+
 - [x] **EAGER-QUEUE-008** — Eager seeding SHALL NOT itself limit concurrency
   or PR attention; `max_concurrent_runs` (with tenant guardrail) SHALL be
   the single capacity gate, and `AgentRun::QUEUE_ORDER` with its project/user
