@@ -1522,6 +1522,22 @@ RSpec.describe "Inbox" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("scanner-confirmed recurrence", "Next step:", "Evidence:")
+    expect(response.body).not_to include("Retry enhancement analysis")
+  end
+
+  # @spec MANUAL-REVIEW-RECOVERY-002
+  it "shows the blocking dependency instead of an enhancement retry" do
+    blocker = create(:issue, project: project, github_number: 4321, github_state: "open")
+    parked = create_manual_review_issue(title: "Blocked", github_number: 4322)
+    create(:issue_dependency, issue: parked, depends_on_issue: blocker)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response.body).to include("Waiting for dependency", blocker.github_url)
+    expect(response.body).not_to include("Retry enhancement analysis")
   end
 
   # @spec OPERATOR-INBOX-006

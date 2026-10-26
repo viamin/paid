@@ -417,6 +417,12 @@ module Projects
         return
       end
 
+      recovery = Inbox::ManualReviewRecovery.call(issue)
+      unless recovery.resumable?
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_recovery_alert(recovery)
+        return
+      end
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
@@ -1031,6 +1037,25 @@ module Projects
         "Please select an issue."
       else
         "This issue is no longer waiting for manual review."
+      end
+    end
+
+    # Manual-review is a multiplexed parking state.  A retry is authorized
+    # only for enhancement provenance; every other producer retains ownership
+    # of its recovery action and the hold stays visible in Inbox.
+    # @spec MANUAL-REVIEW-RECOVERY-001 @spec MANUAL-REVIEW-RECOVERY-002
+    def manual_review_recovery_alert(recovery)
+      case recovery.action
+      when :wait_for_dependency
+        "This issue is waiting for dependency ##{recovery.dependency.github_number}; it will be reevaluated when that dependency resolves."
+      when :inspect_scanner_evidence
+        "This scanner recurrence requires evidence recovery; an enhancement retry was not started."
+      when :validate_reopen_intent
+        "This reopened issue requires intent validation before work can continue."
+      when :reconcile_active_run
+        "Run ##{recovery.active_run.id} is already #{recovery.active_run.status}; reconcile that work before starting another run."
+      else
+        "Manual review requires investigation before work can continue."
       end
     end
 

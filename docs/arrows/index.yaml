@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-24
+last_updated: 2026-10-26
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,15 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  manual-review-recovery:
+    title: Manual Review Recovery
+    path: docs/intent/manual-review-recovery/manual-review-recovery-design.md
+    specs: docs/intent/manual-review-recovery/manual-review-recovery-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-10-26
+    next: "Keep recovery classification based on producer-owned provenance and reconcile unfinished work before any continuation."
   dependency-declarations:
     title: Dependency Declarations
     path: docs/intent/dependency-declarations/dependency-declarations-design.md

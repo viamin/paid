@@ -2571,6 +2571,43 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec MANUAL-REVIEW-RECOVERY-002
+      it "keeps a dependency hold and does not create an enhancement run" do
+        blocker = create(:issue, project: project, github_number: 4321, github_state: "open")
+        create(:issue_dependency, issue: parked_issue, depends_on_issue: blocker)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+        expect(flash[:alert]).to include("#4321")
+      end
+
+      # @spec MANUAL-REVIEW-RECOVERY-001
+      it "does not turn a reopen-review hold into an enhancement run" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload).to be_reopen_review_pending
+        expect(flash[:alert]).to include("intent validation")
+      end
+
+      # @spec MANUAL-REVIEW-RECOVERY-004
+      it "deduplicates a second submit while another run is unfinished" do
+        create(:agent_run, project: project, issue: parked_issue, goal: "enhance_issue", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+        expect(flash[:alert]).to include("already queued")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,

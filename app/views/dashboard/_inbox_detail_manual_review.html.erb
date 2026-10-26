@@ -1,12 +1,23 @@
 <%# @spec OPERATOR-INBOX-002D %>
 <div class="space-y-6">
+  <% recovery = Inbox::ManualReviewRecovery.call(entry.issue) %>
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.cause == :reopen_review %>
+        This issue was reopened after closure. Validate the original closure and remaining scope before choosing a supported continuation.
+      <% elsif recovery.cause == :dependency %>
+        This issue is waiting for its recorded dependency. Paid reevaluates it when the dependency resolves; acknowledging this item does not waive the dependency.
+      <% elsif recovery.cause == :scanner_recurrence %>
+        A scanner recurrence requires evidence recovery. Review the scanner evidence below before resuming implementation.
+      <% elsif recovery.active_run %>
+        Run #<%= recovery.active_run.id %> is already <%= recovery.active_run.status %>. Reconcile that work before starting another run.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
+      <% elsif recovery.cause == :enhancement %>
+        This enhancement analysis stopped. Retrying it will analyze the issue again; it does not record a decision or resume implementation.
       <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+        Paid could not classify this manual-review hold from its recorded provenance. It remains visible for investigation and cannot be resumed implicitly.
       <% end %>
     </p>
   </div>
@@ -30,6 +41,13 @@
     </div>
   <% end %>
 
+  <% if recovery.dependency %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <strong>Waiting for dependency:</strong>
+      <%= link_to inbox_issue_link_label(recovery.dependency), recovery.dependency.github_url, target: "_blank", rel: "noopener noreferrer", class: "underline" %>
+    </div>
+  <% end %>
+
   <%# @spec ISSUE-ENHANCEMENT-011
       The terminal round's preserved clarifying questions ARE the manual
       review this state asks for: render the same answer form the
@@ -42,8 +60,8 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
-      <%= button_to "Start enhancement run",
+    <% if policy(entry.project).run_agent? && recovery.resumable? %>
+      <%= button_to "Retry enhancement analysis",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,
             params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
