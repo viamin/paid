@@ -137,6 +137,63 @@ All three surfaces are gated by the `maintenance_runs` guard (below); none
 of the three may admit a maintenance run while the guard is off for the
 project's tenant.
 
+## Optimization Recipe and Bounded-Repair Policy Contract
+
+The optimization family is a catalog inside the maintenance recipe mechanism.
+Its initial entries are performance, design/architecture, code duplication,
+security hardening, cost/resource efficiency, maintainability/readability,
+and test coverage/quality. An entry provides display metadata, objective and
+investigation instructions, evidence collectors, validation guidance, and
+metric hints. Adding an entry must not require an enum or migration. An
+unmapped selection is preserved as a custom-objective run rather than rejected.
+
+Recipe selection narrows recommendation scope, never the agent's access to
+supporting callers, tests, framework entry points, or intent necessary to
+assess a claim. Reports must disclose that supporting inspection and all
+coverage limitations. Prompt-first recipes are valid where no credible tool
+path applies; a missing or failed planned tool check remains partial, rather
+than becoming implied prompt-only coverage.
+
+Semantic assessment is an `agent_harness` responsibility. For each candidate,
+the agent returns a structured assessment containing the claim, supporting
+evidence, counterevidence, recommended disposition, and whether it meets the
+run's snapshotted confidence policy. The confidence field is a policy-input
+result, not a calibrated probability contract: this LLD assigns neither a
+numeric scale nor semantic text heuristics to Rails. Code validates the schema
+and applies deterministic gates; it must not derive a confidence result from
+tool scores, keywords, report text, or its own semantic classification.
+
+An optimization run may carry a per-run `auto_queue_repair` election. It is
+false when omitted, is exposed with equivalent authorization on UI/API/MCP
+start surfaces, and is not a tenant-wide or recipe default. At run start the
+system snapshots that election, the confidence-policy configuration, and
+explicit cost/time limits for each potential repair. The report remains fully
+visible regardless of election; nonqualifying findings remain available for
+ordinary manual M04 selection.
+
+On a `completed` report, code may enter a finding into M04's existing bounded
+repair pathway only when all of the following deterministic gates pass:
+
+1. the saved per-run election is enabled and `maintenance_runs` remains
+   enabled for new admissions;
+2. the agent's typed assessment says the finding meets the snapshotted policy;
+3. the finding is not security-category, is open, and has a canonical identity;
+4. the saved explicit per-repair cost/time budget admits the repair; and
+5. no repair has already been queued for that finding identity under the same
+   source report/policy snapshot.
+
+The queued work keeps source-report and finding provenance and may change only
+the approved finding's bounded scope. If its checkout revision has moved, M04
+revalidates the evidence before applying the recommendation. Revalidation
+failure or unavailability is a visible repair outcome, not an implicit
+authorization or a silent drop. Security findings remain report-only plus
+manual selection until a separately accepted security-repair policy exists.
+
+These are proposed policy contracts reconciled from #4495, not a rollout:
+RDR-075 is Draft, the feature flag remains default-off, and implementation
+also depends independently on base maintenance acceptance and the M01–M04
+delivery contracts.
+
 ## Run-Outcome Contract
 
 A maintenance run's terminal report outcome is one of exactly five values,
@@ -208,6 +265,7 @@ shipped code in
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
 | Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Optimization auto-queue | Per-run, default-off election with an agent-harness assessment and deterministic authorization/budget/category/revalidation/idempotency gates | Tenant-wide/recipe-default automation; Rails-calculated confidence; direct scan mutation | The #4495 owner decision permits only pre-authorized bounded repairs. Keeping semantic assessment in `agent_harness` respects ZFC while deterministic code keeps the saved policy enforceable and auditable. |
 
 ## Open Questions & Future Decisions
 
@@ -236,6 +294,9 @@ shipped code in
    live execution-environment artifact before an implementation uses this
    candidate path. The handoff audit's host-only commands are not evidence for
    this decision.
+6. Owner acceptance of the exact RDR/HLD/LLD/EARS catalog and auto-queue
+   policy revisions — #4636 is the Inbox decision. #4495 records product
+   choices but does not itself accept or release these canonical artifacts.
 
 ## What This Is Not
 
@@ -243,7 +304,8 @@ shipped code in
   RDR-073's territory, consumed here, not duplicated.
 - Not an automatic-repair mechanism — a scan never deletes source code or
   opens a PR as a side effect; repair is a separate, explicitly authorized
-  run.
+  run. The proposed optimization election only queues M04-bounded work after
+  every listed gate; it does not authorize direct mutation or security repair.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.
@@ -262,3 +324,8 @@ shipped code in
   native CLI analyzer invocation inside the execution environment
 - `app/models/agent_run.rb` — `execute_in_execution_environment`,
   `cleanup_execution_environment`
+- [Optimization family tracking #4492](https://github.com/viamin/paid/issues/4492)
+  (tracking only); [catalog #4493](https://github.com/viamin/paid/issues/4493),
+  [initial recipes #4494](https://github.com/viamin/paid/issues/4494),
+  [bounded auto-queue #4495](https://github.com/viamin/paid/issues/4495), and
+  [staged recipes #4496](https://github.com/viamin/paid/issues/4496)

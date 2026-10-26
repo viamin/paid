@@ -129,6 +129,18 @@
       prompt-only investigation rather than failing the run outright.
 - [ ] **MAINT-045**: The system shall not treat a language or repository-file
       match alone as authorization for an automatic fix or a blocking gate.
+- [ ] **MAINT-046**: The system shall resolve an optimization type through a
+      maintenance recipe catalog whose entries carry display metadata,
+      investigation instructions, applicable evidence collectors, validation
+      guidance, and metric hints; adding an entry shall not require an enum or
+      migration, and an unmapped type shall become a custom-objective run.
+- [ ] **MAINT-047**: The system shall obtain a finding's semantic assessment,
+      including its claim, supporting evidence, counterevidence, recommended
+      disposition, and whether it meets the snapshotted confidence policy,
+      through `agent_harness`; deterministic application code shall validate
+      the structured response and shall not infer semantic confidence from
+      report text, tool scores, keywords, or a calibrated numeric meaning not
+      supplied by the approved policy.
 
 ## Recurring Maintenance and Repair Handoff
 
@@ -159,3 +171,37 @@
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
       an explicit user selection.
+- [ ] **MAINT-074**: The system shall default an optimization run's
+      auto-queue-repair election to off and, when an authorized user elects
+      it through UI, API, or MCP, shall snapshot the election, its confidence
+      policy, and explicit per-repair cost/time limits at run start; omitted
+      election shall behave as report-only and shall not use a tenant-wide or
+      recipe-default auto-queue setting.
+- [ ] **MAINT-075**: When an optimization report is `completed`, the system
+      shall queue a bounded repair through the existing authorized M04 pathway
+      only if the saved election is enabled, the typed `agent_harness`
+      assessment meets the snapshotted confidence policy, the finding is open
+      and non-security, its explicit budget admits the repair, and no repair
+      has already been queued for that finding identity under the same source
+      report/policy snapshot.
+- [ ] **MAINT-076**: Where an auto-queued repair's target revision differs
+      from its source report revision, the system shall revalidate the
+      finding's evidence before applying its recommendation; failed or
+      unavailable revalidation shall be visible and shall neither silently
+      authorize nor silently discard the repair.
+- [ ] **MAINT-077**: The system shall keep security-category optimization
+      findings report-only and eligible only for manual repair selection until
+      a separately accepted security-repair policy authorizes otherwise.
+
+## Optimization Delivery Mapping
+
+`#4492` is a tracking umbrella and owns no executable requirement. The
+following scoped EARS claims are preparation contracts for the delivery
+issues; all remain pending RDR-075 and owner acceptance in #4636:
+
+| EARS claims | Executable deliverable |
+| --- | --- |
+| MAINT-011, MAINT-015, MAINT-016, MAINT-046 | [#4493](https://github.com/viamin/paid/issues/4493): catalog and curated menu |
+| MAINT-020–MAINT-029, MAINT-040–MAINT-047 | [#4494](https://github.com/viamin/paid/issues/4494): initial recipes and honest evidence |
+| MAINT-070–MAINT-076 | [#4495](https://github.com/viamin/paid/issues/4495): opt-in bounded auto-queue |
+| MAINT-046–MAINT-047, MAINT-077 | [#4496](https://github.com/viamin/paid/issues/4496): staged recipes and manual-only security repair |

@@ -249,6 +249,52 @@ links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
 outside the initial scope and requires a separately approved policy.
 
+### Optimization recipes and separately approved bounded repair policy
+
+The optimization family is an extension of the maintenance recipe mechanism,
+not a new maintenance lifecycle. Its curated catalog has these initial types:
+performance; design/architecture; code duplication; security hardening; cost/
+resource efficiency; maintainability/readability; and test coverage/quality.
+Each entry supplies its display metadata, investigation instructions,
+applicable evidence collectors, validation guidance, and metric hints. New
+types are catalog entries rather than enum or schema changes; an unknown
+selection remains a custom-objective maintenance run.
+
+The catalog and its broad recommendation scope do not authorize repair. The
+owner decisions recorded in [#4495](https://github.com/viamin/paid/issues/4495)
+define the proposed, narrowly scoped exception for this family: an authorized
+user may elect an auto-queue policy at a run's start, and the election is off
+when omitted. It is neither a tenant-wide setting nor a recipe default. The
+election snapshots its configured confidence policy and explicit cost/time
+budget for every candidate repair. The maintenance report remains complete;
+findings not selected by that policy remain available for manual selection.
+
+An agent assesses the meaning and sufficiency of evidence through
+`agent_harness` using a structured response. The response identifies the
+claim, evidence and counterevidence, recommended disposition, and whether it
+meets the snapshotted confidence policy. Rails must not infer semantic
+confidence from text, tool output, or a self-invented calibrated numeric
+meaning. Rails deterministically validates the response shape and enforces
+the saved election, report completeness, authorization, budget, category,
+revalidation, and idempotency gates.
+
+Only a qualifying, non-security finding from a completed report may enter the
+existing M04 bounded-repair pathway. Its repair retains source report/finding
+provenance, scope no broader than that finding, and the explicit per-repair
+budget. A moved repair revision requires revalidation before the
+recommendation can be applied; a failed or unavailable revalidation is
+visible and does not silently authorize or discard the repair. Canonical
+finding identity prevents duplicate queueing across repeated occurrences.
+Security-category findings are manual-selection only until a separately
+accepted security-repair policy says otherwise. Disabling `maintenance_runs`
+prevents new elections and auto-queues without cancelling active repair runs
+or deleting reports.
+
+This section is a documentation prerequisite, not a runtime authorization:
+the RDR remains Draft, `maintenance_runs` remains default-off, and base
+maintenance acceptance plus its independent implementation dependencies still
+apply.
+
 ### PR integration
 
 The evidence and verification components should be reusable for PR audits.
@@ -320,6 +366,9 @@ Recurring schedules remain explicitly opt-in after rollout.
    where no suitable tool exists. Record version/configuration provenance.
 5. **Repair handoff:** selected findings become bounded issues or PR runs
    through existing authorized pathways, with revision revalidation.
+   The optimization auto-queue exception may be implemented only after the
+   catalog/policy intent in [#4636](https://github.com/viamin/paid/issues/4636)
+   is explicitly accepted and the base M04 handoff is available.
 6. **Recurring maintenance:** project schedules, overlap prevention, bounded
    retry/catchup, budgets, disable/cancel behavior, and recurring summaries.
 7. **Advisory PR integration:** reuse evidence in the existing review path;
@@ -349,6 +398,26 @@ language; only its final audit closes it.
 - [#4332](https://github.com/viamin/paid/issues/4332): Schedule opt-in recurring maintenance with budgets and overlap prevention
 - [#4333](https://github.com/viamin/paid/issues/4333): Reuse maintenance evidence for advisory PR audits
 - [#4334](https://github.com/viamin/paid/issues/4334): Validate and close out general maintenance runs
+
+### Optimization prerequisite and issue mapping
+
+[#4492](https://github.com/viamin/paid/issues/4492) is a tracking umbrella,
+not an executable prerequisite or an authorization to implement its children.
+The executable work remains separately scoped after the preparation work in
+[#4636](https://github.com/viamin/paid/issues/4636):
+
+| Scoped contract | Delivering issue |
+| --- | --- |
+| Catalog entries, menu parity, custom-objective fallback, and run snapshot | [#4493](https://github.com/viamin/paid/issues/4493) |
+| Duplication, maintainability, and performance recipe content with honest evidence | [#4494](https://github.com/viamin/paid/issues/4494) |
+| Per-run off-by-default election; bounded, idempotent auto-queue; revalidation; and security exclusion | [#4495](https://github.com/viamin/paid/issues/4495) |
+| Staged security, cost, architecture, and test-quality recipe content, with security repairs remaining manual | [#4496](https://github.com/viamin/paid/issues/4496) |
+
+The acceptance decision for these exact revisions remains an Inbox decision:
+accept or revise the catalog and bounded-repair policy in #4636. Until that
+decision and the canonical-artifact merge occur, #4636 remains open and no
+optimization runtime work, auto-queue rollout, or security-repair authority
+is released.
 
 ## Validation
 
