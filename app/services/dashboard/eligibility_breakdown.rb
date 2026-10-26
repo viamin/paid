@@ -7,8 +7,10 @@ module Dashboard
     ProjectBreakdown = Struct.new(
       :project, :total_open, :eligible, :needs_input,
       :skip_label, :completed, :in_progress, :manual_review, :other_excluded,
+      :queued, :running, :blockers,
       keyword_init: true
     )
+    Blocker = Struct.new(:issue, :reasons, keyword_init: true)
 
     def self.call(...)
       new(...).call
@@ -87,8 +89,40 @@ module Dashboard
         needs_input: needs_input, skip_label: skip_label,
         completed: completed, in_progress: in_progress,
         manual_review: manual_review,
-        other_excluded: other
+        other_excluded: other,
+        queued: queued_runs_for(project).count,
+        running: running_runs_for(project).count,
+        blockers: blockers_for(excluded, project)
       )
+    end
+
+    # This is an explanation aid, not another eligibility implementation.
+    # Eligibility remains the authoritative candidate scope above; the reasons
+    # below only expose mechanical provenance already visible in local state.
+    def blockers_for(excluded_scope, project)
+      issues = excluded_scope.order(:github_number).limit(20).to_a
+      active_issue_ids = AgentRun.where(project:, status: AgentRun::UNFINISHED_STATUSES)
+        .where(issue_id: issues.map(&:id)).pluck(:issue_id).to_set
+      labels = project.effective_auto_pick_skip_labels.map(&:downcase)
+
+      issues.filter_map do |issue|
+        reasons = []
+        reasons << :active_work if active_issue_ids.include?(issue.id)
+        reasons << :dependency if issue.blocking_issues.exists? || issue.blocking_external_dependencies.exists?
+        reasons << :needs_input if issue.paid_state == "needs_input"
+        reasons << :manual_review if issue.paid_state == "manual_review"
+        reasons << :skip_label if labels.any? { |label| issue.labels.map(&:downcase).include?(label) }
+        reasons << :admission_policy if reasons.empty?
+        Blocker.new(issue:, reasons:)
+      end
+    end
+
+    def queued_runs_for(project)
+      AgentRun.where(project:, status: "queued")
+    end
+
+    def running_runs_for(project)
+      AgentRun.where(project:, status: AgentRun::ACTIVE_STATUSES)
     end
 
     def count_skip_labeled(excluded_scope, analyzable_count, project)

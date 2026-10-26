@@ -38,7 +38,9 @@ class AutoPickEligibilitySweepJob < ApplicationJob
 
       runs = Issues::BulkEnqueueEligible.call(project: project, skip_project_gate: true)
       processed += 1
-      enqueued += runs.count(&:previously_new_record?)
+      created = runs.count(&:previously_new_record?)
+      enqueued += created
+      Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::LISTS_SCOPE) if created.positive?
     rescue => e
       Rails.logger.error(
         message: "auto_pick_eligibility_sweep.project_failed",

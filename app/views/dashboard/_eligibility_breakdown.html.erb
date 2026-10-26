@@ -1,5 +1,5 @@
 <%= turbo_frame_tag "dashboard-eligibility-breakdown" do %>
-  <% if breakdowns.any? %>
+  <% if breakdowns.any? || local_assigns[:diagnosis]&.state == :unknown %>
     <div class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
       <div class="flex items-center justify-between gap-4">
         <div>
@@ -7,6 +7,22 @@
           <p class="mt-1 text-sm text-gray-500">Why open issues are (or aren't) being picked up for automatic work.</p>
         </div>
       </div>
+      <% if local_assigns[:diagnosis] %>
+        <div class="mt-4 rounded-md bg-gray-50 p-3 text-sm text-gray-700">
+          <% case diagnosis.state %>
+          <% when :runnable_unseeded %>
+            <p><%= pluralize(diagnosis.eligible, "eligible issue") %> await queue seeding. The bounded Auto-Pick sweep will retry normal admission; it will not bypass holds or policy.</p>
+          <% when :healthy_active_work %>
+            <p><%= pluralize(diagnosis.running, "run") %> <%= diagnosis.running == 1 ? "is" : "are" %> active; there is no waiting eligible backlog.</p>
+          <% when :blocked %>
+            <p>Open work is currently held by dependencies, active work, labels, or required human input. Inspect the blocker list below or the Inbox for a supported action.</p>
+          <% when :paused %>
+            <p>No runnable or active work is currently visible for these projects.</p>
+          <% when :unknown %>
+            <p class="text-amber-800">Coverage unknown: <%= diagnosis.error %> Refresh this panel after the source recovers.</p>
+          <% end %>
+        </div>
+      <% end %>
 
       <div class="mt-4 divide-y divide-gray-200">
         <% breakdowns.each do |bd| %>
@@ -71,6 +87,16 @@
               <% end %>
             </div>
           </div>
+          <% if bd.blockers.present? %>
+            <details class="mt-2 text-xs text-gray-600">
+              <summary class="cursor-pointer">Inspect blocker provenance</summary>
+              <ul class="mt-1 list-disc pl-4">
+                <% bd.blockers.each do |blocker| %>
+                  <li>#<%= blocker.issue.github_number %>: <%= blocker.reasons.join(", ").humanize %></li>
+                <% end %>
+              </ul>
+            </details>
+          <% end %>
         <% end %>
       </div>
     </div>

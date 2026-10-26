@@ -40,7 +40,13 @@ class DashboardController < ApplicationController
 
   def eligibility_breakdown
     @eligibility_breakdown = Dashboard::EligibilityBreakdown.call(user: current_user)
-    render partial: "dashboard/eligibility_breakdown", locals: { breakdowns: @eligibility_breakdown }
+    @queue_diagnosis = Dashboard::QueueDiagnosis.call(breakdowns: @eligibility_breakdown)
+    render partial: "dashboard/eligibility_breakdown", locals: { breakdowns: @eligibility_breakdown, diagnosis: @queue_diagnosis }
+  rescue StandardError => e
+    Rails.logger.warn(message: "dashboard.queue_diagnosis_unavailable", account_id: current_account.id, error_class: e.class.name)
+    render partial: "dashboard/eligibility_breakdown", locals: {
+      breakdowns: [], diagnosis: Dashboard::QueueDiagnosis.unavailable(error: "Eligibility data is temporarily unavailable.")
+    }
   end
 
   def queue_preview

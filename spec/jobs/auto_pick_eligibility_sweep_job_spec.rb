@@ -22,6 +22,7 @@ RSpec.describe AutoPickEligibilitySweepJob, :no_db do
   before do
     stub_const("Project", Class.new do
       attr_reader :id, :account_id, :created_by_id
+      attr_accessor :account
 
       def initialize(id)
         @id = id
@@ -97,5 +98,22 @@ RSpec.describe AutoPickEligibilitySweepJob, :no_db do
       project: project,
       skip_project_gate: true
     )
+  end
+
+  # @spec QUEUE-HANDOFF-003
+  it "invalidates the visible queue cache only when it seeds new work" do
+    project = Project.new(606)
+    account = instance_double(Account)
+    run = double(previously_new_record?: true)
+
+    stub_projects(project)
+    project.account = account
+    allow(Issues::AutoPickProjectGate).to receive(:call).and_return(true)
+    allow(Issues::BulkEnqueueEligible).to receive(:call).and_return([ run ])
+    allow(Dashboard::CacheVersion).to receive(:bump)
+
+    described_class.perform_now
+
+    expect(Dashboard::CacheVersion).to have_received(:bump).with(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
   end
 end
