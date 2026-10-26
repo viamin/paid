@@ -9,7 +9,7 @@
 - **Type**: Architecture
 - **Priority**: —
 - **Related RDRs**: [RDR-073](RDR-073-marketplace-tool-sidecars.md), [RDR-031](RDR-031-focused-agent-runs.md), [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md), [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-054](RDR-054-prompt-assembly-service.md)
-- **Related Issues**: [#4326](https://github.com/viamin/paid/issues/4326) (umbrella), [#4327](https://github.com/viamin/paid/issues/4327) (planning/tool handoff), [#4604](https://github.com/viamin/paid/issues/4604) (deferred live execution-environment validations), [#4334](https://github.com/viamin/paid/issues/4334) (closeout)
+- **Related Issues**: [#4326](https://github.com/viamin/paid/issues/4326) (umbrella), [#4327](https://github.com/viamin/paid/issues/4327) (planning/tool handoff), [#4604](https://github.com/viamin/paid/issues/4604) (deferred live execution-environment validations), [#4334](https://github.com/viamin/paid/issues/4334) (closeout), [#4492](https://github.com/viamin/paid/issues/4492) (optimization recipe family umbrella), [#4636](https://github.com/viamin/paid/issues/4636) (optimization design prerequisite)
 - **Blocked on**: Validating the batch-analyzer checkout-access and
   batch-invocation contract against RDR-073's shipped attachment lifecycle
   (Critical assumption 2). Recorded by [#4327](https://github.com/viamin/paid/issues/4327)'s
@@ -247,7 +247,15 @@ Maintenance scans are report-only. A user can select findings to create
 bounded repair issues or normal PR-creation runs, preserving source-report
 links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
-outside the initial scope and requires a separately approved policy.
+outside the initial scope and requires a separately approved policy. That
+policy is drafted, not approved: the optimization recipe family
+([#4492](https://github.com/viamin/paid/issues/4492), design prerequisite
+[#4636](https://github.com/viamin/paid/issues/4636)) narrows it to an opt-in,
+off-by-default per-run election to queue bounded repair runs after a report
+completes — confidence-threshold selection, per-run budget caps, revision
+revalidation, idempotency, and security findings excluded until a dedicated
+review — in `docs/intent/optimization-recipes/`. It authorizes no runtime
+behavior until that design review accepts it.
 
 ### PR integration
 
@@ -349,6 +357,18 @@ language; only its final audit closes it.
 - [#4332](https://github.com/viamin/paid/issues/4332): Schedule opt-in recurring maintenance with budgets and overlap prevention
 - [#4333](https://github.com/viamin/paid/issues/4333): Reuse maintenance evidence for advisory PR audits
 - [#4334](https://github.com/viamin/paid/issues/4334): Validate and close out general maintenance runs
+
+Optimization recipe subtree (also under the umbrella, tracked by
+[#4492](https://github.com/viamin/paid/issues/4492)): catalog and curated
+type menu ([#4493](https://github.com/viamin/paid/issues/4493)), first
+recipes ([#4494](https://github.com/viamin/paid/issues/4494)), opt-in
+bounded auto-queue policy ([#4495](https://github.com/viamin/paid/issues/4495)),
+and staged follow-on types
+([#4496](https://github.com/viamin/paid/issues/4496)). The subtree's
+runtime work is gated on its design prerequisite
+([#4636](https://github.com/viamin/paid/issues/4636), drafting
+`docs/intent/optimization-recipes/`) and on the base milestones above;
+[#4492](https://github.com/viamin/paid/issues/4492) itself tracks only.
 
 ## Validation
 

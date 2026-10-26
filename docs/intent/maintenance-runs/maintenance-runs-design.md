@@ -257,6 +257,11 @@ shipped code in
   — owns the optional scheduled-audit trigger contracts
   (`LAYERED-VERIFY-030`–`-032`) that consume this segment's scheduling
   contract (RDR-076 §2, [#4440](https://github.com/viamin/paid/issues/4440))
+- [optimization-recipes LLD](../optimization-recipes/optimization-recipes-design.md)
+  — the draft recipe-family segment (catalog/type selection, first
+  optimization recipes, bounded auto-queue policy) extending these
+  contracts ([#4492](https://github.com/viamin/paid/issues/4492) family,
+  design prerequisite [#4636](https://github.com/viamin/paid/issues/4636))
 - [2026-10-23 tool-handoff validation report](../../rdrs/audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md)
 - `app/services/pre_commit_requirements/evaluate.rb` — shipped precedent for
   native CLI analyzer invocation inside the execution environment

@@ -341,6 +341,18 @@ any repair: a scan never mutates source code or opens a PR on its own.
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
 that acceptance.
 
+A planned optimization recipe family extends that draft maintenance
+capability with non-functional contracting audits (code duplication,
+maintainability, and performance first; security, cost, architecture, and
+test quality staged behind evaluation evidence) selected from a
+code-defined catalog, plus an opt-in, off-by-default per-run election to
+queue bounded repair runs once a report completes — the separately
+approved automatic-repair policy RDR-075 requires, still draft and
+authorizing nothing until its review accepts it. Security-category
+findings stay manual-selection-only until a dedicated review authorizes
+more. See `docs/intent/optimization-recipes/` for that reviewable draft
+contract.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the
