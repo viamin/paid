@@ -249,6 +249,12 @@ links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
 outside the initial scope and requires a separately approved policy.
 
+The draft optimization-recipe policy in
+`docs/intent/optimization-recipes/` is the review artifact for that separate
+approval. Until an owner accepts it and its canonical artifacts merge,
+RDR-075 remains report-only: the artifact does not enable runtime behavior,
+rollout, or automatic repair.
+
 ### PR integration
 
 The evidence and verification components should be reusable for PR audits.

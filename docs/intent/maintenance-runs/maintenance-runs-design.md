@@ -133,6 +133,11 @@ PR-creation pathway:
   pathways — this create path is a new run/issue through existing creation
   goals, not a new side-effecting action hung off the maintenance report.
 
+The report-only default includes every run that has no explicit user selection.
+The separately draft `optimization-recipes` segment may define a narrowly
+bounded run-start election for automatic repair; it is not accepted by this
+LLD alone and cannot widen the base repair authority.
+
 All three surfaces are gated by the `maintenance_runs` guard (below); none
 of the three may admit a maintenance run while the guard is off for the
 project's tenant.
