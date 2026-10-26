@@ -351,6 +351,28 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **closeout_flash(result, "Acceptance audit queued.")
     end
 
+    # Shared with the chat/MCP request tool. This endpoint deliberately has no
+    # repair option: an audit can leave findings open without granting code or
+    # canonical-intent mutation authority.
+    # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-014
+    def request_layered_verification_audit
+      authorize @project, :manage_issues?
+
+      run = LayeredVerification::Audits::Request.call(
+        project: @project,
+        user: current_user,
+        obligation_ids: params[:obligation_ids],
+        target_revision: params[:target_revision],
+        budget_tokens: params[:budget_tokens]
+      )
+      redirect_to project_agent_run_path(@project, run), notice: "Layered-verification audit queued."
+    rescue LayeredVerification::AuditAccess::FeatureDisabledError,
+      LayeredVerification::AuditAccess::UnauthorizedError,
+      LayeredVerification::Audits::Request::InvalidScopeError,
+      ArgumentError => error
+      redirect_to safe_return_target || project_path(@project), alert: error.message
+    end
+
     # Records the operator's attestation that the recorded closeout evidence
     # completes the issue (evidence-gated; see Issues::ResolveCloseout).
     # @spec PARTIAL-CLOSEOUT-007

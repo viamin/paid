@@ -223,6 +223,8 @@ class AgentRun < ApplicationRecord
   # @spec LAYERED-VERIFY-013
   has_many :repair_runs, class_name: "AgentRun", foreign_key: :originating_audit_run_id,
     dependent: :destroy, inverse_of: :originating_audit_run
+  has_many :layered_verification_check_results, class_name: "LayeredVerificationCheckResult", dependent: :restrict_with_exception
+  has_many :layered_verification_findings, class_name: "LayeredVerificationFinding", dependent: :restrict_with_exception
 
   has_many :agent_run_logs, dependent: :destroy
   has_many :agent_run_phases, -> { order(:started_at, :id) }, dependent: :destroy
@@ -4093,6 +4095,10 @@ class AgentRun < ApplicationRecord
     # lid_planning derives its prompt from Prompts::BuildForLidPlanning, so it
     # needs no issue, custom prompt, or source PR.
     return if lid_planning_goal?
+    # A bounded audit derives its prompt from its persisted obligation scope,
+    # sources, target revision, and budget rather than from a GitHub issue.
+    # @spec LAYERED-VERIFY-013
+    return if goal == "layered_verification_audit"
     # create_feature derives its prompt from Prompts::BuildForCreateFeature
     # and external_metadata["feature_brief"], so it needs no issue or source PR.
     return if create_feature_goal?
