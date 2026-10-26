@@ -20,7 +20,7 @@ module FacetConfidence
     end
 
     def call
-      AssessmentCorpusLedger.load_corpus(corpus_path).reject { |corpus_case| recorded_case_ids.include?(corpus_case.fetch("id")) }.map do |corpus_case|
+      AssessmentCorpusLedger.load_corpus(corpus_path).reject { |corpus_case| covered_case_ids.include?(corpus_case.fetch("id")) }.map do |corpus_case|
         run_case(corpus_case)
       end
     end
@@ -29,16 +29,16 @@ module FacetConfidence
 
     attr_reader :corpus_path, :ledger_path, :project
 
-    def recorded_case_ids
-      @recorded_case_ids ||= AssessmentCorpusLedger.events(ledger_path).filter_map do |event|
-        event["case_id"] if event["type"] == "assessment_run"
+    def covered_case_ids
+      @covered_case_ids ||= assessment_runs.filter_map do |event|
+        event["case_id"] unless event["status"] == "failed"
       end.to_set
     end
 
     def run_case(corpus_case)
       assessment = build_assessment(corpus_case)
       result = FeatureIntents::AssessFacet.call(assessment: assessment)
-      event = event_for(corpus_case, result)
+      event = event_for(corpus_case, result, retry_of_event_id: failed_run_event_ids[corpus_case.fetch("id")])
       AssessmentCorpusLedger.append!(ledger_path:, corpus_path:, event:)
       event
     ensure
@@ -89,7 +89,17 @@ module FacetConfidence
       end
     end
 
-    def event_for(corpus_case, result)
+    def assessment_runs
+      @assessment_runs ||= AssessmentCorpusLedger.events(ledger_path).select { |event| event["type"] == "assessment_run" }
+    end
+
+    def failed_run_event_ids
+      @failed_run_event_ids ||= assessment_runs.each_with_object({}) do |event, event_ids|
+        event_ids[event.fetch("case_id")] = event.fetch("event_id") if event["status"] == "failed"
+      end
+    end
+
+    def event_for(corpus_case, result, retry_of_event_id:)
       {
         "event_id" => "assessment-run-#{corpus_case.fetch('id')}-#{SecureRandom.uuid}",
         "recorded_at" => Time.current.iso8601,
@@ -99,11 +109,12 @@ module FacetConfidence
         "model_version" => FeatureIntents::AssessFacet::MODEL_VERSION,
         "input_revision" => corpus_case.fetch("evidence_revision"),
         "status" => ledger_status(result),
+        "retry_of_event_id" => retry_of_event_id,
         "intent_score" => result.intent_score,
         "technical_score" => result.technical_score,
         "evidence_references" => result.evidence_references || [],
         "cost_cents" => 0
-      }
+      }.compact
     end
 
     def ledger_status(result)

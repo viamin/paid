@@ -253,7 +253,8 @@ module FacetConfidence
     def validate_events!(cases, entries)
       evaluation = cases.to_h { |corpus_case| [ corpus_case.fetch("id"), { case: corpus_case, runs: [], corrections: [], rework: [] } ] }
       trackers = cases.to_h do |corpus_case|
-        [ corpus_case.fetch("id"), { baseline_revision: corpus_case.fetch("evidence_revision"), run_seen: false, last_run_revision: nil, pending_corrections: {} } ]
+        [ corpus_case.fetch("id"), { baseline_revision: corpus_case.fetch("evidence_revision"), run_seen: false,
+          last_run_event_id: nil, last_run_revision: nil, last_run_status: nil, pending_corrections: {} } ]
       end
       entries.each { |entry| dispatch_event!(entry, evaluation, trackers) }
       evaluation
@@ -342,15 +343,39 @@ module FacetConfidence
 
       if tracker[:run_seen]
         if revision == tracker[:last_run_revision]
-          raise InvalidLedger, "#{id} identical input cannot be replayed to inflate certainty at input revision #{revision}"
+          ensure_failed_retry!(entry, tracker)
+        else
+          ensure_ordinary_run!(entry, tracker)
         end
-        raise InvalidLedger, "#{id} input revisions must advance" unless revision > tracker[:last_run_revision]
-        raise InvalidLedger, "#{id} re-run requires a recorded correction at the new input revision" unless tracker[:pending_corrections].key?(revision)
       else
         raise InvalidLedger, "#{id} first assessment run must assess the frozen case input revision" unless revision == tracker[:baseline_revision]
+        ensure_not_retry!(entry, id)
       end
       tracker[:run_seen] = true
+      tracker[:last_run_event_id] = entry.fetch("event_id")
       tracker[:last_run_revision] = revision
+      tracker[:last_run_status] = entry.fetch("status")
+    end
+
+    def ensure_failed_retry!(entry, tracker)
+      id = entry["case_id"]
+      unless tracker[:last_run_status] == "failed" && entry["retry_of_event_id"] == tracker[:last_run_event_id]
+        raise InvalidLedger, "#{id} identical input cannot be replayed; same-revision retry must cite the immediately preceding failed assessment run"
+      end
+    end
+
+    def ensure_ordinary_run!(entry, tracker)
+      id = entry["case_id"]
+      raise InvalidLedger, "#{id} input revisions must advance" unless entry["input_revision"] > tracker[:last_run_revision]
+      raise InvalidLedger, "#{id} re-run requires a recorded correction at the new input revision" unless tracker[:pending_corrections].key?(entry["input_revision"])
+
+      ensure_not_retry!(entry, id)
+    end
+
+    def ensure_not_retry!(entry, id)
+      return if entry["retry_of_event_id"].blank?
+
+      raise InvalidLedger, "#{id} assessment run may only cite a failed run when retrying the same input revision"
     end
 
     def validate_correction!(entry, evaluation, trackers)
