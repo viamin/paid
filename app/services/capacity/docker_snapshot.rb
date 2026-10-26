@@ -432,9 +432,14 @@ module Capacity
       bucket.cpu_percent = (bucket.cpu_percent + cpu_percent).round(2)
     end
 
+    # @spec CONTAINER-RUNTIME-049
     def remaining_memory(system_info:, buckets:)
       used_memory = buckets.values.sum(&:memory_bytes)
-      [ system_info.fetch("MemTotal", 0).to_i - used_memory, 0 ].max
+      docker_remaining = [ system_info.fetch("MemTotal", 0).to_i - used_memory, 0 ].max
+      host_available = system_info["PaidHostMemAvailable"]
+      return docker_remaining unless classify_backend_kind(backend) == "local" && host_available
+
+      [ docker_remaining, [ host_available.to_i, 0 ].max ].min
     end
 
     def confidence_for(reasons)

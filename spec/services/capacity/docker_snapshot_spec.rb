@@ -62,6 +62,35 @@ RSpec.describe Capacity::DockerSnapshot do
   end
 
   describe ".call" do
+    # @spec CONTAINER-RUNTIME-049
+    it "caps Docker headroom by available VM memory without double-counting usage" do
+      system_info["PaidHostMemAvailable"] = 2_000
+      snapshot = described_class.call(backend:, now:, cache:)
+      expect(snapshot.available_memory_bytes).to eq(2_000)
+      expect(snapshot.to_run_admission_h[:effective_agent_budget_bytes]).to eq(1_310)
+    end
+
+    # @spec CONTAINER-RUNTIME-049
+    it "does not increase Docker headroom when the host has more available memory" do
+      system_info["PaidHostMemAvailable"] = 12_000
+      expect(described_class.call(backend:, now:, cache:).available_memory_bytes).to eq(7_400)
+    end
+
+    # @spec CONTAINER-RUNTIME-049
+    it "denies optimistic headroom when available host memory is zero" do
+      system_info["PaidHostMemAvailable"] = 0
+      expect(described_class.fetch(backend:, now:, cache:)[:effective_agent_budget_bytes]).to eq(0)
+    end
+
+    # @spec CONTAINER-RUNTIME-049
+    it "does not apply control-plane memory evidence to remote Docker capacity" do
+      system_info["PaidHostMemAvailable"] = 0
+      remote_backend = build_backend_double(identifier: "remote-host", remote: true,
+        host_identifiers: [ "remote-host" ], containers:)
+
+      expect(described_class.call(backend: remote_backend, now:, cache:).available_memory_bytes).to eq(7_400)
+    end
+
     # @spec CONTAINER-RUNTIME-005
     it "returns Docker capacity, aggregate usage buckets, timestamp, and confidence" do
       snapshot = described_class.call(backend: backend, now: now, cache: cache)

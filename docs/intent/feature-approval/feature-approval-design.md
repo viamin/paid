@@ -83,6 +83,22 @@ joining full project rows into the issue result. Project audit history must not
 be repeated for every issue: PostgreSQL results and their Ruby string copies
 would otherwise multiply that history by the synchronized issue count.
 
+PR synchronization schedules repository reconciliation after a fixed 30-second
+coalescing window. Scheduling and coalescing happen after the synchronization
+transaction commits, so an existing job cannot consume stale evidence while
+the update loses its follow-up. Rolled-back syncs do not schedule work.
+PostgreSQL-backed GoodJob concurrency permits one queued
+invocation and one running invocation per project and reconciliation scope.
+Repeated syncs share the queued invocation; a sync during execution may enqueue
+one follow-up that reads the latest synchronized state. The window is not
+extended by subsequent syncs, so continuous activity cannot starve coverage.
+The daily sweep remains a backstop. Each execution records start/end resident
+memory, process peak resident memory, allocated-object delta, elapsed time and
+completion status without logging issue bodies or artifact content. These are
+process-wide measurements, so concurrent work can contribute to their deltas.
+Unavailable process-memory readings leave RSS fields empty and never prevent
+reconciliation or mask its original failure.
+
 Only structural existence and linkage checks happen in Rails. An issue number
 in prose is not a relationship: a line must declare a relationship keyword or
 field before it establishes coverage. Markdown GitHub issue URLs and qualified

@@ -106,7 +106,7 @@ module Issues
       # A merged RDR PR changes the default-branch documents even before it is
       # attached to a FeatureIntent, so every PR sync refreshes repository RDR
       # discovery and tracked design PRs.
-      FeatureIntents::ReconcileDesignArtifactsJob.perform_later(project.id)
+      FeatureIntents::ReconcileDesignArtifactsJob.enqueue_for(project.id)
     end
     private_class_method :enqueue_design_artifact_reconciliation
 

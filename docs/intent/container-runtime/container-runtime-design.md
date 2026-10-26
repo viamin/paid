@@ -109,6 +109,25 @@ over which images may run at all.
 
 ### Capacity snapshots and admission
 
+Failed-run diagnostic retention reserves the container and workspace volumes
+for the existing bounded period before issuing a blocking Docker stop, so
+concurrent janitors cannot delete diagnostic evidence during the stop. It
+accepts only failed or retried runs and confirms the stopped state with a
+fresh backend lookup before reporting success. A failed stop restores the
+previous expiry only if this reservation still owns the recorded container and
+expiry, then propagates to the workflow's retry/cleanup path. A retried activity
+can finish an interrupted stop. Retention must not certify that a running
+workload released its memory. Already-stopped containers are safe to retain
+again. Operators can explicitly
+restart an unexpired retained container on its recorded backend for debugging;
+normal cleanup still removes it when retention expires. Retention does not
+automatically restart any workload.
+
+On the local backend, `docker start <container_id>` explicitly restarts a
+retained container for diagnostics; it does not extend its retention expiry.
+No delete or volume-removal command is needed to release retained workload
+memory. Remote diagnostics must use the backend that owns `container_host`.
+
 `Capacity::DockerSnapshot` is the per-backend Docker visibility layer for
 runtime admission. It classifies visible Docker usage into four buckets:
 
@@ -120,6 +139,13 @@ runtime admission. It classifies visible Docker usage into four buckets:
 Snapshots are cached briefly and are allowed to degrade conservatively when
 Docker reads time out, sampling exceeds its shared budget, or cached data goes
 stale.
+
+For a local Unix-socket Docker daemon, Linux `MemAvailable` additionally caps
+the sampled free-memory budget when `/proc/meminfo` reports the same total
+memory as the daemon. This accounts for VM pressure outside Docker's container
+usage counters. Missing or mismatched host readings leave the Docker-derived
+budget intact; remote and Swarm backends never use the control plane's local
+host readings. The existing spike reserve is applied after this cap.
 
 `Capacity::RunAdmission` consumes those snapshots together with hard
 host/user/project/create-PR ceilings. Auto mode may admit against Docker memory
