@@ -227,9 +227,13 @@ They extend chat and introduce an explicit confidence-driven feature policy;
 RDR-066/067 continue to describe approval-gated features. The
 [2026-10-22 final umbrella audit](audit-report-2026-10-22-human-centered-inbox-epic.md)
 reconciles shipped diagrams, progress, assessments, scoped release, and
-completion-forward-work behavior. It keeps #4309 open for bounded
-investigations, held-issue publication, activation/isolation reporting, the
-assessment corpus, and browser-backed diagram evidence.
+completion-forward-work behavior. The
+[2026-10-26 RDR-070 evidence refresh](audit-report-2026-10-26-rdr-070.md)
+confirms that the corpus and blinded-evaluation workflow have shipped but keeps
+[#4309](https://github.com/viamin/paid/issues/4309) open for
+[#4596](https://github.com/viamin/paid/issues/4596)'s authentic human-reference judgments and measured
+outcome report, plus the existing bounded-investigation, held-issue
+publication, activation/isolation-reporting, and browser-backed diagram gaps.
 
 The [2026-10-22 RDR-069 closeout refresh](audit-report-2026-10-22-rdr-069.md)
 re-audits RDR-069 against shipped code and a live run (3043 examples, 0
