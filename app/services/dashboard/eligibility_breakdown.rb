@@ -7,6 +7,7 @@ module Dashboard
     ProjectBreakdown = Struct.new(
       :project, :total_open, :eligible, :needs_input,
       :skip_label, :completed, :in_progress, :manual_review, :other_excluded,
+      :queued, :active, :unseeded, :diagnostic_state,
       keyword_init: true
     )
 
@@ -54,10 +55,10 @@ module Dashboard
           auto_pick_enabled: true,
           active: true
         )
-        .select { |p| Issues::AutoPickProjectGate.call(p) }
+        .select { |p| Issues::AutoPickProjectGate.call(p) || deliberately_paused?(p) }
     end
 
-    # @spec OPERATOR-INBOX-002D
+    # @spec OPERATOR-INBOX-002D QUEUE-HANDOFF-001 QUEUE-HANDOFF-002
     def breakdown_for(project, tier_feasibility:)
       open = Issue.where(project: project, github_state: "open", is_pull_request: false)
 
@@ -79,6 +80,8 @@ module Dashboard
       manual_review = excluded.where(paid_state: "manual_review").count
       skip_label = count_skip_labeled(excluded, analyzable, project)
       other = excluded_total - needs_input - in_progress - completed - manual_review - skip_label
+      queued, active = handoff_counts(project)
+      unseeded = eligible_count
 
       ProjectBreakdown.new(
         project: project,
@@ -87,8 +90,36 @@ module Dashboard
         needs_input: needs_input, skip_label: skip_label,
         completed: completed, in_progress: in_progress,
         manual_review: manual_review,
-        other_excluded: other
+        other_excluded: other,
+        queued: queued,
+        active: active,
+        unseeded: unseeded,
+        diagnostic_state: diagnostic_state(project:, unseeded:, queued:, active:, total_open: eligible_count + excluded_total)
       )
+    end
+
+    # Candidate eligibility excludes issues that already have an active run.
+    # It is therefore the canonical count of ready work that has not made the
+    # delivery handoff, while these counters retain the independent scheduler
+    # facts for the operator.
+    def handoff_counts(project)
+      runs = AgentRun.where(project: project, issue_id: project.issues.where(github_state: "open", is_pull_request: false))
+      [ runs.where(status: "queued").count, runs.active.count ]
+    end
+
+    # @spec QUEUE-HANDOFF-003
+    def diagnostic_state(project:, unseeded:, queued:, active:, total_open:)
+      return :paused if deliberately_paused?(project)
+      return :runnable_not_seeded if unseeded.positive?
+      return :waiting if queued.positive?
+      return :active_work if active.positive?
+      return :held if total_open.positive?
+
+      :idle
+    end
+
+    def deliberately_paused?(project)
+      project.scheduler_paused? || project.quality_paused? || project.account.scheduler_paused?
     end
 
     def count_skip_labeled(excluded_scope, analyzable_count, project)

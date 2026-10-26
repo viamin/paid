@@ -20,6 +20,38 @@ RSpec.describe Dashboard::EligibilityBreakdown do
   before { Rails.cache.clear }
 
   describe ".call" do
+    # @spec QUEUE-HANDOFF-001 QUEUE-HANDOFF-002
+    it "distinguishes eligible work missing a handoff from queued and active work" do
+      unseeded = create(:issue, project: project, github_state: "open", paid_state: "new")
+      queued = create(:issue, project: project, github_state: "open", paid_state: "new")
+      active = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :queued, :automatic, project: project, issue: queued)
+      create(:agent_run, :running, project: project, issue: active)
+
+      breakdown = described_class.call(user: user).sole
+
+      # The canonical candidate scope intentionally excludes issues already
+      # claimed by queued/active work; its remaining candidate is the stalled
+      # handoff that needs seeding.
+      expect(breakdown.eligible).to eq(1)
+      expect(breakdown.queued).to eq(1)
+      expect(breakdown.active).to eq(1)
+      expect(breakdown.unseeded).to eq(1)
+      expect(breakdown.diagnostic_state).to eq(:runnable_not_seeded)
+      expect(unseeded).to be_persisted
+    end
+
+    # @spec QUEUE-HANDOFF-002
+    it "reports healthy active work without a waiting backlog" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :running, project: project, issue: issue)
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.unseeded).to eq(0)
+      expect(breakdown.diagnostic_state).to eq(:active_work)
+    end
+
     it "returns an empty array when user has no auto-pick projects" do
       project.update!(auto_pick_enabled: false)
 
@@ -112,28 +144,31 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(bd.total_open).to eq(1)
     end
 
-    it "excludes scheduler-paused projects" do
+    # @spec QUEUE-HANDOFF-003
+    it "reports scheduler-paused projects as deliberate pauses" do
       project.update!(scheduler_paused_at: Time.current)
 
       result = described_class.call(user: user)
 
-      expect(result).to eq([])
+      expect(result.sole.diagnostic_state).to eq(:paused)
     end
 
-    it "excludes account-level scheduler-paused projects" do
+    # @spec QUEUE-HANDOFF-003
+    it "reports account-level scheduler pauses without calling them a stall" do
       account.update!(scheduler_paused_at: Time.current)
 
       result = described_class.call(user: user)
 
-      expect(result).to eq([])
+      expect(result.sole.diagnostic_state).to eq(:paused)
     end
 
-    it "excludes quality-paused projects" do
+    # @spec QUEUE-HANDOFF-003
+    it "reports quality-paused projects as deliberate pauses" do
       project.update!(quality_paused_at: Time.current)
 
       result = described_class.call(user: user)
 
-      expect(result).to eq([])
+      expect(result.sole.diagnostic_state).to eq(:paused)
     end
 
     it "excludes inactive projects" do

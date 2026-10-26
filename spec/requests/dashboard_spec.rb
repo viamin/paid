@@ -1013,6 +1013,26 @@ RSpec.describe "Dashboard" do
       expect(link.text).to include("1 needs input")
       expect(link["data-turbo-frame"]).to eq("_top")
     end
+
+    # @spec QUEUE-HANDOFF-001
+    it "explains eligible work that has not reached the scheduler queue" do
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+
+      get dashboard_eligibility_breakdown_path
+
+      expect(response.body).to include("eligible but not queued")
+    end
+
+    # @spec QUEUE-HANDOFF-003
+    it "reports unknown coverage when the diagnostic query is unavailable" do
+      allow(Dashboard::EligibilityBreakdown).to receive(:call).and_raise(ActiveRecord::ConnectionNotEstablished)
+
+      get dashboard_eligibility_breakdown_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Queue diagnosis unavailable")
+      expect(response.body).to include("This does not mean there is no work.")
+    end
   end
 
   describe "GET /dashboard/needs_input" do

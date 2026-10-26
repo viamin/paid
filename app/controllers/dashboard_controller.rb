@@ -38,9 +38,13 @@ class DashboardController < ApplicationController
     render partial: "dashboard/recent_activity_frame", locals: { activity_items: @recent_activity }
   end
 
+  # @spec QUEUE-HANDOFF-001 QUEUE-HANDOFF-003
   def eligibility_breakdown
     @eligibility_breakdown = Dashboard::EligibilityBreakdown.call(user: current_user)
     render partial: "dashboard/eligibility_breakdown", locals: { breakdowns: @eligibility_breakdown }
+  rescue ActiveRecord::ActiveRecordError => e
+    Rails.logger.warn(message: "dashboard.queue_diagnosis_unavailable", error_class: e.class.name)
+    render partial: "dashboard/eligibility_breakdown", locals: { breakdowns: [], unavailable: true }
   end
 
   def queue_preview

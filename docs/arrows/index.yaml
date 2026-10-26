@@ -632,6 +632,15 @@ arrows:
     taxonomy: automation
     status: OK
     audited: 2026-08-04
+  queue-handoff-diagnosis:
+    title: Queue Handoff Diagnosis
+    path: docs/intent/queue-handoff-diagnosis/queue-handoff-diagnosis-design.md
+    specs: docs/intent/queue-handoff-diagnosis/queue-handoff-diagnosis-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-10-26
+    next: "Keep recovery in the existing bounded Auto-Pick sweep and partial-closeout reconciler."
   manual-run-retry:
     title: Manual Run Retry (Issue-less)
     path: docs/intent/manual-run-retry/manual-run-retry-design.md
