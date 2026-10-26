@@ -155,7 +155,8 @@ RSpec.describe CiWorkflowFile, :no_db do
 
     expect(fuzz_command).to include(
       "for attempt in 1 2 3", "Schemathesis contract fuzzing failed",
-      "schemathesis==4.6.0", "--include-path /inbox/entries/{entry_id}",
+      "schemathesis==4.6.0", "--constraint .github/schemathesis-constraints.txt",
+      "--include-path /inbox/entries/{entry_id}",
       "--include-path /inbox/entries/{entry_id}/chat",
       "--phases examples,fuzzing", "--mode positive",
       'run_schemathesis "$MOBILE_API_READ_TOKEN"',
@@ -164,6 +165,7 @@ RSpec.describe CiWorkflowFile, :no_db do
       "--exclude-operation-id resolveChatToolCall"
     )
     expect(fuzz_command).not_to include("--include-method GET")
+    expect(Rails.root.join(".github/schemathesis-constraints.txt").read).to eq("hypothesis==6.169.4\n")
   end
 
   # @spec MOBILE-API-006 MOBILE-API-018
