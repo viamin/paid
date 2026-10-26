@@ -1,12 +1,23 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002K %>
+<% recovery = Inbox::ManualReviewRecovery.call(issue: entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.requires_decision? %>
+        This issue was reopened after closure. Validate the original closure and remaining scope against the current revision before choosing whether to resume enhancement.
+      <% elsif recovery.cause == :dependency %>
+        This issue is waiting on a dependency. It will be reevaluated when that dependency resolves; acknowledging this pane does not waive the hold.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
+      <% elsif recovery.cause == :enhancement_failure %>
+        The prior enhancement run failed. Retry that run to repeat the technical analysis without replacing its provenance.
+      <% elsif recovery.cause == :scanner_recurrence %>
+        Scanner verification found a recurrence. Review its evidence and start remediation through the existing implementation flow if appropriate.
+      <% elsif recovery.cause == :unknown %>
+        Paid retained this hold because its cause is not recorded in supported recovery provenance. No automatic continuation is offered.
       <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+        Automatic picking skips issues in manual review. Start an enhancement run to resume the recorded enhancement work.
       <% end %>
     </p>
   </div>
@@ -41,14 +52,48 @@
           selected_kind: selected_kind %>
   <% end %>
 
+  <% if recovery.cause == :dependency %>
+    <div class="space-y-2">
+      <h3 class="text-sm font-semibold text-gray-900">Waiting on</h3>
+      <% recovery.dependencies.each do |dependency| %>
+        <%= link_to "#{dependency.project.full_name}##{dependency.github_number}: #{dependency.title}",
+              dependency.github_url,
+              target: "_blank", rel: "noopener noreferrer",
+              class: "block text-sm text-indigo-700 hover:text-indigo-500" %>
+      <% end %>
+    </div>
+  <% end %>
+
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && recovery.action == :enhance && recovery.requires_decision? %>
+      <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project), method: :post,
+            data: { turbo_frame: "_top" }, class: "flex flex-wrap items-end gap-2" do |form| %>
+        <%= form.hidden_field :issue_id, value: entry.issue.id %>
+        <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+        <%= form.hidden_field :reopen_review_revision, value: entry.issue.github_updated_at.utc.iso8601 %>
+        <%= form.hidden_field :reopen_review_confirmed, value: "1" %>
+        <%= form.label :reopen_review_reason, "Validation reason", class: "sr-only" %>
+        <%= form.text_field :reopen_review_reason, required: true, placeholder: "Why the current intent is valid", class: "rounded-md border-gray-300 text-sm" %>
+        <%= form.submit "Record decision and start enhancement", class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+      <% end %>
+    <% elsif policy(entry.project).run_agent? && recovery.action == :enhance %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,
             params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
             class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500",
             form: { data: { turbo_confirm: "Queue a manual enhancement run for #{entry.project.full_name}##{entry.issue.github_number}?", turbo_frame: "_top" } } %>
+    <% end %>
+    <% if policy(entry.project).run_agent? && recovery.action == :retry && recovery.run %>
+      <%= button_to "Retry enhancement analysis", retry_project_agent_run_path(entry.project, recovery.run),
+            method: :post,
+            class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500",
+            form: { data: { turbo_confirm: "Retry enhancement run ##{recovery.run.id}?", turbo_frame: "_top" } } %>
+    <% end %>
+    <% if policy(entry.project).run_agent? && recovery.action == :remediate %>
+      <%= link_to "Open remediation run", new_project_agent_run_path(entry.project, goal: "create_pr", issue_id: entry.issue.id),
+            data: { turbo_frame: "_top" },
+            class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
     <% end %>
     <%= link_to inbox_issue_link_label(entry.issue),
           entry.issue.github_url,

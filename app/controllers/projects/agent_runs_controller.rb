@@ -401,8 +401,8 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
-    # manual_review only clears when an explicit operator-triggered run
-    # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
+    # manual_review recovery is routed by persisted provenance. An enhancement
+    # continuation still resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
     # queues a fresh manual enhance_issue run rather than just clearing state,
     # since a queued run is what actually resumes the enhancement work. The
     # queue-time state flip (resume_issue_from_manual_review) removes the
@@ -410,7 +410,7 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002K
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -419,6 +419,21 @@ module Projects
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
         return
       end
+
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue)
+      unless recovery.action == :enhance
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This manual-review item requires #{recovery.cause.to_s.humanize} recovery, not a new enhancement run."
+        return
+      end
+
+      unless reopen_review_decision_current?(issue, recovery)
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Review the reopened issue and provide a reason bound to its current revision before resuming work."
+        return
+      end
+
+      record_reopen_review_decision(issue) if recovery.requires_decision?
 
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
@@ -1049,6 +1064,34 @@ module Projects
       else
         "This issue is no longer waiting for manual review."
       end
+    end
+
+    def reopen_review_decision_current?(issue, recovery)
+      return true unless recovery.requires_decision?
+
+      params[:reopen_review_confirmed] == "1" &&
+        params[:reopen_review_reason].to_s.strip.present? &&
+        ActiveSupport::SecurityUtils.secure_compare(
+          params[:reopen_review_revision].to_s,
+          issue.github_updated_at.utc.iso8601
+        )
+    end
+
+    def record_reopen_review_decision(issue)
+      Audit::RecordEvent.call(
+        action: "issue.reopen_review_validated",
+        actor: current_user,
+        subject: issue,
+        account: @project.account,
+        metadata: {
+          project_id: @project.id,
+          issue_id: issue.id,
+          issue_number: issue.github_number,
+          closure_at: issue.closed_at&.utc&.iso8601,
+          revision: issue.github_updated_at.utc.iso8601,
+          reason: params[:reopen_review_reason].to_s.strip
+        }
+      )
     end
 
     def cancel_in_flight_execution_for_resume!

@@ -323,6 +323,23 @@ bumps the badge cache version; no inbox-side cache work is needed. A stale
 or double click degrades to "This issue is no longer waiting for manual
 review." instead of an active-run error.
 
+Manual-review recovery is cause-specific. `Inbox::ManualReviewRecovery`
+classifies only persisted provenance, in precedence order: the reopen-review
+sentinel, unresolved local or external dependencies, scanner-verification
+attempts, stored enhancement questions, and the latest enhancement run. It
+never infers a cause from arbitrary reason text. Unknown provenance remains
+visible as unknown and does not offer a destructive clearing action. Reopen
+review shows the prior closure and current revision, requires an authorized
+operator's non-blank, revision-bound validation reason before it can continue,
+and records that decision in the account activity trail. A live dependency
+links to its owner and remains held until normal dependency reconciliation
+resolves it. Scanner recurrence retains its scanner evidence and directs the
+operator to the existing remediation path; a failed enhancement run directs to
+that run's existing retry action. Only question and enhancement causes retain
+the existing enhancement continuation. Before any continuation, normal active
+run admission remains authoritative, so a stale or duplicate submission cannot
+clear the hold alongside incompatible queued work.
+
 When the parked state still has clarifying questions stored — preserved by
 `EnhanceIssueActivity` when the terminal round's comment has a parseable
 `## Clarifying questions` section, and kept by
