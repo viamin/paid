@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FACET-CONFIDENCE-002 FACET-CONFIDENCE-003 FACET-CONFIDENCE-004
+# @spec FACET-CONFIDENCE-002 FACET-CONFIDENCE-003 FACET-CONFIDENCE-004 FACET-CONFIDENCE-017
 # @spec FACET-CONFIDENCE-012 FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
 RSpec.describe FeatureIntents::AssessFacet do
   let(:direction) { create(:feature_intent_facet_direction) }
@@ -37,16 +37,24 @@ RSpec.describe FeatureIntents::AssessFacet do
     expect(AgentHarness).to have_received(:send_message).with(a_string_including("human_statement"), hash_including(tools: :none))
   end
 
-  it "exposes attributable evidence context and captures provider cost provenance" do
+  it "exposes attributable evidence context and derives cost from the Claude text response usage" do
     evidence.update!(textual_context: "Corpus actor role: collaborator.")
-    response_with_cost = double(success?: true, output: response.output, metadata: { cost_cents: 17 })
+    response_with_cost = AgentHarness::Response.new(
+      output: response.output,
+      exit_code: 0,
+      duration: 0.1,
+      provider: :claude,
+      model: described_class::MODEL_VERSION,
+      tokens: { input: 1_200, output: 800 },
+      metadata: { transport: :http, headers: {} }
+    )
     allow(AgentHarness).to receive(:send_message).and_return(response_with_cost)
 
     assessor = described_class.new(assessment:)
     assessor.call
 
     expect(AgentHarness).to have_received(:send_message).with(a_string_including("actor_context", "collaborator"), anything)
-    expect(assessor.cost_cents).to eq(17)
+    expect(assessor.cost_cents).to eq(TokenUsageTracker.calculate_cost(1_200, 800, llm_model: described_class::MODEL_VERSION))
   end
 
   it "fails closed for malformed agent output" do

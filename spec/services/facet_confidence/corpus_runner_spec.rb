@@ -34,6 +34,31 @@ RSpec.describe FacetConfidence::CorpusRunner do
     expect(FeatureIntents::AssessFacet).to have_received(:new).exactly(8).times
   end
 
+  it "records successful Claude text responses using their provider-reported token usage" do
+    allow(AgentHarness).to receive(:send_message) do |prompt, **|
+      active_evidence = JSON.parse(prompt.split("Active evidence: ").last)
+      AgentHarness::Response.new(
+        output: JSON.generate(
+          "status" => "completed", "intent_score" => 80, "technical_score" => 80,
+          "inferred_fit" => nil, "explanation" => "The frozen evidence supports this direction.",
+          "evidence_references" => [ active_evidence.first.fetch("reference") ]
+        ),
+        exit_code: 0,
+        duration: 0.1,
+        provider: :claude,
+        model: FeatureIntents::AssessFacet::MODEL_VERSION,
+        tokens: { input: 1_200, output: 800 },
+        metadata: { transport: :http, headers: {} }
+      )
+    end
+
+    events = described_class.call(project:, ledger_path: ledger)
+
+    expect(events).to all(include("status" => "completed", "cost_cents" => TokenUsageTracker.calculate_cost(
+      1_200, 800, llm_model: FeatureIntents::AssessFacet::MODEL_VERSION
+    )))
+  end
+
   it "dispatches uncovered cases while holding the ledger lock" do
     lock_held = false
     allow(FacetConfidence::AssessmentCorpusLedger).to receive(:with_ledger_lock).and_wrap_original do |method, *arguments, &block|

@@ -4,7 +4,7 @@ module FeatureIntents
   # Runs the semantic facet evaluation at a background boundary. Rails only
   # validates and persists the agent's structured result; it never derives a
   # score from counts or keywords.
-  # @spec FACET-CONFIDENCE-002 FACET-CONFIDENCE-003 FACET-CONFIDENCE-004
+  # @spec FACET-CONFIDENCE-002 FACET-CONFIDENCE-003 FACET-CONFIDENCE-004 FACET-CONFIDENCE-017
   # @spec FACET-CONFIDENCE-012 FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
   class AssessFacet
     include Llm::OutputNormalizer
@@ -112,10 +112,13 @@ module FeatureIntents
     def active_references = @active_references ||= facet.evidence.where(superseded_by: nil).pluck(:source_reference)
 
     def cost_cents_from(response)
-      return unless response.respond_to?(:metadata)
+      return unless response.respond_to?(:input_tokens) && response.respond_to?(:output_tokens)
 
-      cost = response.metadata.to_h.with_indifferent_access[:cost_cents]
-      cost.to_i if cost.is_a?(Numeric)
+      input_tokens = response.input_tokens
+      output_tokens = response.output_tokens
+      return unless [ input_tokens, output_tokens ].all? { |tokens| tokens.is_a?(Integer) && tokens >= 0 }
+
+      TokenUsageTracker.calculate_cost(input_tokens, output_tokens, llm_model: MODEL_VERSION)
     end
 
     def prompt
