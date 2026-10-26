@@ -91,9 +91,36 @@
   </table>
   <p class="text-xs text-gray-500">
     Highlighted rows are divergences between your blinded judgment and the frozen expectation for judge review.
-    The original judgments are preserved as recorded.
+    The original judgments are preserved as recorded; a correction is appended separately and never changes this comparison.
   </p>
 </div>
+
+<% if evaluation.created_by_id == current_user.id %>
+  <div class="space-y-3 rounded-xl border border-gray-200 bg-white p-6">
+    <h2 class="text-sm font-semibold text-gray-900">Post-unblinding corrections</h2>
+    <p class="text-xs text-gray-500">A correction is optional and must be reasoned. It preserves the original blinded judgment and does not change the frozen report measures.</p>
+    <% evaluation.labels.where(state: "labeled").order(:case_id).each do |label| %>
+      <div class="rounded border border-gray-100 p-3" data-correction-case="<%= label.case_id %>">
+        <p class="mb-2 text-sm font-medium text-gray-900"><%= label.case_id %></p>
+        <% if label.revised? %>
+          <p class="text-xs text-gray-600">Correction recorded by <%= label.revised_by.email %> at <%= label.revised_at.strftime("%Y-%m-%d %H:%M UTC") %>: <%= label.revised_reason %></p>
+        <% else %>
+          <% current = evaluation.corpus.find_case(label.case_id) %>
+          <%= form_with url: revise_project_facet_confidence_evaluation_path(project, evaluation, **inbox_context), method: :post, class: "grid gap-2 md:grid-cols-2" do |form| %>
+            <%= form.hidden_field :case_id, value: label.case_id %>
+            <%= form.select :verdict, FacetConfidenceEvaluationLabel::VERDICTS, selected: label.verdict %>
+            <%= form.select :intent_band, FacetConfidenceEvaluationLabel::BANDS, selected: label.intent_band %>
+            <%= form.select :technical_band, FacetConfidenceEvaluationLabel::BANDS, selected: label.technical_band %>
+            <%= form.select :readiness, FacetConfidenceEvaluationLabel::READINESS, selected: label.readiness %>
+            <%= form.select :cited_evidence_reference, current.fetch("evidence").map { |evidence| evidence.fetch("reference") }, selected: label.cited_evidence_reference %>
+            <%= form.text_field :reason, required: true, placeholder: "Reason for correction" %>
+            <%= form.submit "Append correction", class: "justify-self-start rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+          <% end %>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+<% end %>
 
 <% if evaluation.report_markdown.present? %>
   <details class="rounded-xl border border-gray-200 bg-white p-6">

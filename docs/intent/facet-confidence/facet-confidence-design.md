@@ -167,4 +167,7 @@ with the frozen expected bands, including citation compliance for cases that
 name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
-the 80/80 defaults.
+the 80/80 defaults. After unblinding, the sole judge may append one reasoned
+correction for a frozen case. The original blinded judgment and frozen report
+remain immutable; the attributed correction is displayed separately and never
+recomputes the blinded comparison.
