@@ -166,6 +166,7 @@ module Inbox
       when Inbox::Queue::TEST_REVIEW_PENDING_KIND then test_review_pending_by_project
       when Inbox::Queue::PROJECT_SETUP_PENDING_KIND then project_setup_pending_by_project
       when Inbox::Queue::TRACEABILITY_GAP_KIND then traceability_gap_by_project
+      when Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND then layered_verification_finding_by_project
       end
     end
 
@@ -271,6 +272,12 @@ module Inbox
       return {} if visible_project_ids.empty?
 
       DesignArtifactFinding.actionable_findings.where(project_id: visible_project_ids).group(:project_id).count
+    end
+
+    def layered_verification_finding_by_project
+      return {} if visible_project_ids.empty?
+
+      LayeredVerificationFinding.where(project_id: visible_project_ids, state: %w[unresolved deferred]).group(:project_id).count
     end
 
     def preload_runner_users(notifications)
