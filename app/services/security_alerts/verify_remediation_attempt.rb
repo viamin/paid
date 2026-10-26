@@ -119,7 +119,8 @@ module SecurityAlerts
       return if issue.paid_state == "manual_review"
 
       reason = Issues::CloseoutStatus.scanner_blocker(issue, attempt).message
-      issue.update!(paid_state: "manual_review", manual_review_reason: reason)
+      issue.update!(paid_state: "manual_review", manual_review_reason: reason,
+        manual_review_cause: "scanner_verification")
     end
   end
 end

@@ -410,13 +410,25 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002N
     def resume_manual_review
       authorize @project, :run_agent?
 
       issue = resolve_manual_review_issue
       unless issue
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      status = Issues::ManualReviewCause.call(issue)
+      if status.active_run
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Run ##{status.active_run.id} is already queued or running; reconcile it before resuming this hold."
+        return
+      end
+      unless status.enhancement?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This manual-review hold requires #{status.action.tr('_', ' ')}; it is not an enhancement retry."
         return
       end
 
@@ -428,6 +440,25 @@ module Projects
         goal: "enhance_issue",
         priority_tier: nil
       )
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002N
+    def record_reopen_review_decision
+      authorize @project, :run_agent?
+
+      issue = resolve_manual_review_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      Issues::RecordReopenReviewDecision.call(
+        issue: issue, actor: current_user, decision: params[:decision], reason: params[:reason]
+      )
+      redirect_to safe_return_target || dashboard_path,
+        notice: "Recorded the reopen-review decision against the current issue evidence."
+    rescue ArgumentError => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
     end
 
     # Operator-driven counterpart to

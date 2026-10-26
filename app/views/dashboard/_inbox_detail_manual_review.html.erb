@@ -1,15 +1,52 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002N %>
+<% status = entry.manual_review_status %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if status.enhancement? && entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
+      <% elsif status.enhancement? %>
+        This enhancement hold can be retried after you review its recorded reason.
+      <% elsif status.reopen_review? %>
+        Review the prior closure and current scope, then record a decision bound to this evidence before choosing implementation work.
+      <% elsif status.dependency_blocked? %>
+        This issue is waiting on a dependency. An acknowledgement does not waive that dependency.
+      <% elsif status.scanner_verification? %>
+        A scanner-confirmed recurrence needs remediation review, not an enhancement retry.
       <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+        Paid cannot determine why this hold was created. Investigate its provenance before resuming work.
       <% end %>
     </p>
   </div>
+
+  <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+    <span class="font-semibold">Recovery:</span> <%= status.name.humanize %> — <%= status.action.humanize %>
+    <% if status.active_run %>
+      <p class="mt-1">Run #<%= status.active_run.id %> is already <%= status.active_run.status %>; reconcile it before starting another run.</p>
+    <% end %>
+  </div>
+
+  <% if status.reopen_review? %>
+    <div class="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+      <h3 class="text-sm font-semibold text-indigo-900">Reopen intent validation</h3>
+      <p class="text-sm text-indigo-800">Original closure hold: <%= Issue::REOPEN_REVIEW_REQUIRED_REASON %></p>
+      <p class="text-sm text-indigo-800">Current scope: <%= entry.issue.title %></p>
+      <% if !entry.issue.reopen_review_valid_for_current_evidence? %>
+        <%= form_with url: record_reopen_review_decision_project_agent_runs_path(entry.project), method: :post, class: "space-y-3" do |form| %>
+          <%= hidden_field_tag :issue_id, entry.issue.id %>
+          <%= hidden_field_tag :return_to, inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+          <%= form.select :decision, [["Continue with implementation", "continue"], ["No further work", "no_further_work"]], { include_blank: "Select decision" }, class: "rounded-md border-gray-300 text-sm" %>
+          <%= form.text_area :reason, required: true, placeholder: "Why this decision is valid for the current scope", class: "block w-full rounded-md border-gray-300 text-sm" %>
+          <%= form.submit "Record validation decision", class: "rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white" %>
+        <% end %>
+      <% elsif entry.issue.reopen_review_decision == "continue" %>
+        <%= link_to "Start implementation run", new_project_agent_run_path(entry.project, goal: "create_pr"), class: "inline-flex rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white" %>
+      <% else %>
+        <p class="text-sm text-indigo-800">No further work was recorded for this evidence revision.</p>
+      <% end %>
+    </div>
+  <% end %>
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
@@ -34,7 +71,7 @@
       The terminal round's preserved clarifying questions ARE the manual
       review this state asks for: render the same answer form the
       clarifying_questions lane uses, submitting to the same endpoint. %>
-  <% if entry.questions.any? %>
+  <% if status.enhancement? && entry.questions.any? %>
     <%= render "dashboard/inbox_clarifying_answer_form",
           entry: entry,
           scoped_project: scoped_project,
@@ -42,7 +79,7 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && status.enhancement? && status.active_run.nil? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

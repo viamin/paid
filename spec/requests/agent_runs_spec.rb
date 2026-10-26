@@ -2582,6 +2582,35 @@ RSpec.describe "AgentRuns" do
     context "when authenticated" do
       before { sign_in user }
 
+      # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002N
+      it "records a revision-bound reopen decision instead of queuing enhancement work" do
+        parked_issue.require_reopen_review!
+
+        expect {
+          post record_reopen_review_decision_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id, decision: "continue", reason: "The reopened scope needs implementation.",
+            return_to: inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+          }
+        }.not_to change(AgentRun, :count)
+
+        parked_issue.reload
+        expect(parked_issue.reopen_review_decision).to eq("continue")
+        expect(parked_issue.reopen_review_valid_for_current_evidence?).to be(true)
+        expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND))
+      end
+
+      # @spec OPERATOR-INBOX-002N
+      it "does not queue another run while incompatible work is queued" do
+        create(:agent_run, project: project, issue: parked_issue, status: "queued", goal: "create_pr")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("already queued or running")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
         expect {

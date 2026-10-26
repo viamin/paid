@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_26_110845) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2580,6 +2580,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
     t.datetime "last_pr_scan_at"
     t.string "last_scanned_head_sha", limit: 40, comment: "PR HEAD commit SHA recorded by the most recent PR scan pass. Lets scan-time and Inbox-time consumers (e.g. intent-conformance verdict lookups) identify the current HEAD without an extra GitHub API call outside the scan cycle."
     t.datetime "last_scanner_reconciled_at", comment: "Timestamp of the most recent SecurityAlerts::ProcessCodeScanningAlerts pass that reconciled this synthetic code-scanning issue against the live alert list. Used to tell a merged remediation PR (not yet verified) from a scanner-confirmed still-open/recurrent alert (#4052)."
+    t.string "manual_review_cause", comment: "Machine-readable cause of the current manual_review hold (reopen_review, dependency_blocked, scanner_verification, enhancement). NULL for rows parked before this column existed."
     t.text "manual_review_reason", comment: "Why automation stopped and parked this issue in manual_review, surfaced in the operator inbox."
     t.datetime "manual_review_started_at", comment: "Timestamp when this issue entered paid_state: manual_review. Falls back to updated_at for legacy rows predating this column."
     t.datetime "merge_permission_rejected_at", comment: "When non-null, the most recent auto-merge attempt was rejected by GitHub because the App installation token lacks a required permission (e.g. `workflows` for a change under .github/workflows/). Such rejections are permanent until the App's permissions change, so this timestamp gates a retry cooldown instead of re-attempting every poll cycle."
@@ -2611,6 +2612,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
     t.datetime "reconciled_at", comment: "When this issue was last verified via reconciliation; null = never reconciled"
     t.datetime "relationships_parsed_at"
     t.text "reopen_reason", comment: "Reason supplied when this closed issue was last reopened through chat."
+    t.string "reopen_review_decision", comment: "Recorded reopen-intent decision (continue or no_further_work)."
+    t.text "reopen_review_reason", comment: "Operator-authored rationale for the recorded reopen-intent decision."
+    t.datetime "reopen_review_validated_at", comment: "When an operator validated the current intent of a reopened issue."
+    t.bigint "reopen_review_validated_by_id", comment: "Operator (users.id) who recorded the reopen-intent decision."
+    t.string "reopen_review_validation_digest", comment: "Evidence revision the reopen-intent decision was bound to; a newer revision makes the recorded decision stale."
     t.datetime "reopened_at", comment: "When a closed issue was last reopened through chat."
     t.bigint "reopened_by_id", comment: "Paid user who last reopened this issue through chat."
     t.integer "review_goal_retry_count", default: 0, null: false
@@ -2647,6 +2653,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
     t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
     t.index ["project_id"], name: "index_issues_on_project_id"
     t.index ["relationships_parsed_at"], name: "index_issues_on_relationships_parsed_at"
+    t.index ["reopen_review_validated_by_id"], name: "index_issues_on_reopen_review_validated_by_id", where: "(reopen_review_validated_by_id IS NOT NULL)"
     t.index ["reopened_by_id"], name: "index_issues_on_reopened_by_id"
     t.index ["source"], name: "index_issues_on_source"
   end
@@ -4823,6 +4830,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
   add_foreign_key "issues", "users", column: "closeout_resolved_by_id", validate: false
+  add_foreign_key "issues", "users", column: "reopen_review_validated_by_id"
   add_foreign_key "issues", "users", column: "reopened_by_id"
   add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
   add_foreign_key "knowledge_artifacts", "projects"

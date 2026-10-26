@@ -176,6 +176,20 @@
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002N** — When an open issue is in `manual_review`, the
+  system SHALL classify the hold from its durable provenance and visibly retain
+  an unknown cause. It SHALL use the same classification in Inbox, API, chat,
+  and action routing. Enhancement-origin holds retain their existing question
+  answer and retry flows; reopen review, unresolved dependencies, scanner
+  recurrence, and technical recovery holds SHALL instead present their own
+  evidence and supported recovery. Before any continuation, the system SHALL
+  inspect queued or running work and reuse it or require reconciliation rather
+  than create a conflicting second run.
+  *Tests:* `spec/services/issues/manual_review_cause_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Issues::ManualReviewCause`, `Projects::AgentRunsController`,
+  `Inbox::Queue`, `Api::V1::InboxEntrySerializer`.
+
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by
   `Issue#abandon_due_to_runner_retry_cap!` after every available runner hit

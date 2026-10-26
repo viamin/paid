@@ -30,3 +30,11 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When a reopened issue is in manual review,
+  the system SHALL show its closure and current-scope evidence, require an
+  authorized operator to record a non-blank revision-bound validation decision
+  and reason, and SHALL offer only the continuation supported by that decision.
+  *Tests:* `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Issues::ManualReviewCause`, `Issues::RecordReopenReviewDecision`,
+  `Projects::AgentRunsController`, Inbox manual-review detail.

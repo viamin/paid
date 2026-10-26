@@ -103,7 +103,14 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        status = entry.manual_review_status
+        {
+          questions: entry.questions,
+          comment_url: entry.manual_review_comment_url,
+          cause: status.name,
+          recovery_action: status.action,
+          active_run_id: status.active_run&.id
+        }
       end
 
       def manual_review_list_payload

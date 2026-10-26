@@ -116,6 +116,10 @@ module Inbox
         kind == MANUAL_REVIEW_KIND
       end
 
+      def manual_review_status
+        @manual_review_status ||= Issues::ManualReviewCause.call(issue)
+      end
+
       def intent_conformance?
         kind == INTENT_CONFORMANCE_KIND
       end
@@ -690,7 +694,7 @@ module Inbox
           waiting_since: issue.manual_review_started_at || issue.updated_at,
           questions: self.class.questions_for(issue),
           tasks: [],
-          summary_text: issue.manual_review_reason.presence || "Manual review required.",
+          summary_text: issue.manual_review_reason.presence || "Manual review required (cause unknown).",
           title_text: nil,
           action_url: nil
         )

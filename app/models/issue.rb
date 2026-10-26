@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
+require "digest"
+
 class Issue < ApplicationRecord
   belongs_to :reopened_by, class_name: "User", optional: true
+  belongs_to :reopen_review_validated_by, class_name: "User", optional: true
 
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
   REOPEN_REVIEW_REQUIRED_REASON =
@@ -321,11 +324,25 @@ class Issue < ApplicationRecord
     paid_state == "manual_review" && manual_review_reason == REOPEN_REVIEW_REQUIRED_REASON
   end
 
+  # @spec ISSUE-REOPEN-REVIEW-005
+  def reopen_review_evidence_digest
+    Digest::SHA256.hexdigest([ github_state, title, body, github_updated_at&.utc&.iso8601 ].join("\u0000"))
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-005
+  def reopen_review_valid_for_current_evidence?
+    reopen_review_decision.present? &&
+      reopen_review_validation_digest == reopen_review_evidence_digest
+  end
+
   # @spec ISSUE-REOPEN-REVIEW-001
   def require_reopen_review!
     with_lock do
       reload
-      update!(paid_state: "manual_review", manual_review_reason: REOPEN_REVIEW_REQUIRED_REASON)
+      update!(paid_state: "manual_review", manual_review_reason: REOPEN_REVIEW_REQUIRED_REASON,
+        manual_review_cause: "reopen_review", reopen_review_validated_at: nil,
+        reopen_review_validated_by: nil, reopen_review_decision: nil,
+        reopen_review_reason: nil, reopen_review_validation_digest: nil)
     end
   end
 
@@ -489,6 +506,7 @@ class Issue < ApplicationRecord
     elsif paid_state_was == "manual_review"
       self.manual_review_started_at = nil
       self.manual_review_reason = nil
+      self.manual_review_cause = nil
     end
   end
 
