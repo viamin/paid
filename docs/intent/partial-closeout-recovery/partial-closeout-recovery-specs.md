@@ -496,7 +496,14 @@
 
 - [x] **PARTIAL-CLOSEOUT-012** — When continuation admission is denied, the
   system SHALL return every material structured blocker from the current guard
-  evidence, with a recovery action or wait condition. For synthetic
+  evidence, with a recovery action or wait condition. An open native child
+  excluded by `without_open_non_pr_subissues` SHALL identify and link every
+  open child even when no duplicate `IssueDependency` exists; an active
+  `partial_closeout.prerequisite` notification SHALL identify the notification,
+  retain its exact requested human evidence, and link to that notification.
+  These two conditions SHALL remain distinct from missing implementation and
+  SHALL never be cleared, closed, dismissed, or inferred complete merely to
+  admit a continuation. For synthetic
   code-scanning issues it SHALL distinguish pending, retryable, and failed
   verification and include the latest remediation attempt and scan evidence;
   a merged PR alone SHALL never be represented as proof that an alert is fixed.
@@ -515,6 +522,7 @@
   `app/views/dashboard/_inbox_detail_manual_review.html.erb`,
   `app/views/dashboard/_inbox_closeout_blockers.html.erb`.
   *Test:* `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/issues/request_continuation_spec.rb`,
   `spec/services/inbox/chat_context_spec.rb`,
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
   `spec/requests/inbox_spec.rb`.

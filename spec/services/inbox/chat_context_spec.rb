@@ -145,6 +145,26 @@ RSpec.describe Inbox::ChatContext do
     )
   end
 
+  it "uses the same native-child and human-evidence blockers as the partial-closeout Inbox detail" do # @spec PARTIAL-CLOSEOUT-012
+    create(:issue, :pull_request, project:, github_state: "closed", pr_review_phase: "merged", parent_issue: issue)
+    child = create(:issue, project:, github_state: "open", paid_state: "in_progress", parent_issue: issue)
+    notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      description: "Human adjudicator: select the applicable review policy.")
+    chat_session.update!(
+      inbox_item_key: "partial_closeout:#{issue.id}",
+      inbox_item_metadata: { "kind" => "partial_closeout", "issue_id" => issue.id }
+    )
+
+    context = described_class.call(chat_session:, user:, sections: [ :partial_closeout ])
+
+    expect(context.fetch("partial_closeout").fetch(:scheduling_blockers)).to include(
+      hash_including(code: :open_native_children, evidence: { "children" => [ hash_including("id" => child.id) ] }),
+      hash_including(code: :human_prerequisite_notification,
+        evidence: hash_including("notification_id" => notification.id, "requested_evidence" => notification.description))
+    )
+  end
+
   # @spec PARTIAL-CLOSEOUT-023
   it "exposes persisted criterion evidence and freshness through authorized chat context" do
     pull_request = create(:issue, :pull_request, project:, github_state: "closed", pr_review_phase: "merged", parent_issue: issue)

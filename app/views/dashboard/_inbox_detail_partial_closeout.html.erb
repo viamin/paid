@@ -3,12 +3,7 @@
 <% issue = entry.issue %>
 <% status = entry.closeout_status || Issues::CloseoutStatus.call(issue) %>
 <% assessment = PartialCloseouts::Assessment.call(issue, evidence: status.evidence) %>
-<% human_prerequisite = entry.project.account.notifications.where(
-      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
-      subject: issue,
-      resolved_at: nil,
-      dismissed_at: nil
-    ).order(created_at: :desc).first %>
+<% human_prerequisite = status.blockers.find { |blocker| blocker.code == :human_prerequisite_notification } %>
 <div class="space-y-6">
   <div class="rounded-xl border border-violet-200 bg-violet-50 p-4">
     <h3 class="text-sm font-semibold text-violet-900">
@@ -209,7 +204,14 @@
     <% if human_prerequisite.present? %>
         <div class="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
           <h4 class="text-sm font-semibold text-amber-900">Human evidence requested</h4>
-          <p class="whitespace-pre-line text-sm text-amber-900"><%= human_prerequisite.description %></p>
+          <% notifications = human_prerequisite.evidence["notifications"] || [ human_prerequisite.evidence ] %>
+          <% notifications.each do |notification| %>
+            <p class="whitespace-pre-line text-sm text-amber-900"><%= notification["requested_evidence"] %></p>
+            <%= link_to "View prerequisite notification ##{notification["notification_id"]}",
+                  notification["action_url"].presence || notifications_path,
+                  data: { turbo_frame: "_top" },
+                  class: "text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+          <% end %>
           <p class="text-xs text-amber-800">
             Each line names the requested evidence, who must supply it, and the exact step. Submit the evidence
             where the step says (usually a comment or linked artifact on the prerequisite), then link that work

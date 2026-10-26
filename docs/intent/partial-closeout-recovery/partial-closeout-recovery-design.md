@@ -101,8 +101,14 @@ paid_state edit and never a blanket guard lift:
   manual review, paused flags, and unmet dependencies all still apply — with
   the unmet prerequisites explained to the user. A targeted blocker walk
   (`CloseoutStatus.admission_blockers`) returns structured, additive reasons
-  from persisted admission-guard evidence, including scanner attempt, analysis,
-  and alert links for synthetic findings; a residual preflight then settles admission with the
+  from persisted admission-guard evidence, including open native child identities
+  (which are eligibility exclusions even without `IssueDependency` rows) and
+  active partial-closeout prerequisite notification identities and requested
+  human evidence. These explanations distinguish a pending human decision or
+  evidence from missing implementation: they offer the linked child or
+  notification as the recovery route and never close, dismiss, or infer either
+  merely to admit work. Scanner attempt, analysis, and alert links for synthetic
+  findings remain included; a residual preflight then settles admission with the
   exact scoped `eligible_for_dequeue?` decision the dequeue recheck enforces
   (evaluated from one shared set of project inputs per `StalledCloseouts`
   project batch), so a request the walk

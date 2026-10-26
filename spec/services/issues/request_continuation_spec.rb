@@ -177,6 +177,30 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
       expect(result.message).to include("#44")
     end
 
+    it "refuses an open native child with its exact identity instead of an unavailable guard" do # @spec PARTIAL-CLOSEOUT-012
+      merged_partial_pr(number: 12)
+      child = create(:issue, project:, github_state: "open", paid_state: "in_progress", parent_issue: issue)
+
+      result = request_continuation
+
+      expect(result.code).to eq(:open_native_children)
+      expect(result.message).to include("##{child.github_number}")
+      expect(issue.agent_runs).to be_empty
+    end
+
+    it "refuses an active human-prerequisite notification with its requested evidence" do # @spec PARTIAL-CLOSEOUT-012
+      merged_partial_pr(number: 12)
+      notification = create(:notification, :error, account:, subject: issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+        description: "Human adjudicator: select the applicable review policy.")
+
+      result = request_continuation
+
+      expect(result.code).to eq(:human_prerequisite_notification)
+      expect(result.message).to include("notification ##{notification.id}")
+      expect(issue.agent_runs).to be_empty
+    end
+
     it "refuses an untrusted creator's issue" do
       merged_partial_pr(number: 12)
       issue.update!(github_creator_login: "random-stranger")
@@ -222,19 +246,12 @@ RSpec.describe Issues::RequestContinuation do # @spec PARTIAL-CLOSEOUT-003 @spec
     end
 
     it "refuses instead of queueing a run another eligibility guard would cancel at dequeue" do
-      # A guard the targeted blocker walk does not enumerate (here: an open
-      # non-PR sub-issue keeps the parent out of every eligible scope) must
+      # A genuinely unwalked guard (a design-amendment pause) must
       # refuse up front with its reason, never queue a run the dequeue-time
       # recheck would cancel and supersede (#4130 review).
       merged_partial_pr(number: 12)
-      create(
-        :issue,
-        project: project,
-        github_state: "open",
-        paid_state: "in_progress",
-        parent_issue_id: issue.id,
-        github_number: 55
-      )
+      amendment = create(:design_amendment, project: project)
+      create(:design_amendment_pause, design_amendment: amendment, issue: issue, status: "held")
 
       result = request_continuation
 

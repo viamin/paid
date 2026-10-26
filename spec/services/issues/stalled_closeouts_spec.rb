@@ -61,14 +61,8 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
 
     it "keeps a stall held by a non-walked eligibility guard in the lane with an unavailable-guard reason" do # @spec PARTIAL-CLOSEOUT-012
       merged_pr_row(number: 12, parent_issue_id: issue.id)
-      create(
-        :issue,
-        project: project,
-        github_state: "open",
-        paid_state: "in_progress",
-        parent_issue_id: issue.id,
-        github_number: 55
-      )
+      amendment = create(:design_amendment, project: project)
+      create(:design_amendment_pause, design_amendment: amendment, issue: issue, status: "held")
 
       pairs = described_class.pairs_for(project)
 
@@ -77,7 +71,7 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
       expect(pairs.first.status.blockers.first.recovery).to include("Investigate")
     end
 
-    it "builds partial-closeout eligibility inputs once per project" do # @spec PARTIAL-CLOSEOUT-002 PARTIAL-CLOSEOUT-004
+    it "batches partial-closeout eligibility and diagnostic inputs per project" do # @spec PARTIAL-CLOSEOUT-002 PARTIAL-CLOSEOUT-004 PARTIAL-CLOSEOUT-026
       merged_pr_row(number: 13, parent_issue_id: issue.id)
       queries = []
       subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
@@ -86,7 +80,9 @@ RSpec.describe Issues::StalledCloseouts do # @spec PARTIAL-CLOSEOUT-002
         expect(described_class.pairs_for(project).map { |pair| pair.issue.id }).to contain_exactly(issue.id)
       end
 
-      expect(queries.grep(/FROM "notifications"/)).to have_attributes(size: 1)
+      # One query is the canonical eligibility input; one loads the exact
+      # notification identities for diagnostics. Neither grows per issue.
+      expect(queries.grep(/FROM "notifications"/)).to have_attributes(size: 2)
     end
   end
 
