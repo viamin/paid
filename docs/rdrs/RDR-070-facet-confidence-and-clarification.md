@@ -27,6 +27,13 @@ established in the outcome worksheet. The umbrella remains open for the
 remaining RDR-071 delivery/activation integration. See the 2026-10-22 final
 acceptance audit for the criterion-level reconciliation.
 
+The closeout evaluation flow now supports append-only post-unblinding
+corrections without changing the original frozen reference set. The current
+human-evidence status is recorded in
+[`audit-report-2026-10-26-rdr-070.md`](audit-report-2026-10-26-rdr-070.md):
+the authenticated maintainer's blinded labels and frozen report remain the
+outstanding prerequisite, and no delivery setting has changed.
+
 ### 2026-10-12 Implementation progress audit
 
 This non-closeout progress audit for

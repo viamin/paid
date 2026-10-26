@@ -144,4 +144,18 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
     expect(result.error).to include("corpus manifest changed")
     expect(evaluation.reload).to be_labeling
   end
+
+  it "keeps the frozen report unchanged when a later correction is recorded" do # @spec FACET-CONFIDENCE-022
+    label_all!
+    described_class.call(evaluation: evaluation, actor: owner)
+    frozen_report = evaluation.reload.report.deep_dup
+
+    result = FacetConfidence::CloseoutEvaluation::ReviseLabel.call(
+      evaluation: evaluation, actor: owner, case_id: "FC-CORPUS-01",
+      judgment: judgment_for(evaluation.corpus.find_case("FC-CORPUS-01")).merge(reason: "Corrected after unblinding.")
+    )
+
+    expect(result).to be_success
+    expect(evaluation.reload.report).to eq(frozen_report)
+  end
 end

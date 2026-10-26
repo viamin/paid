@@ -168,3 +168,9 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+After unblinding, the sole judge may correct a case only by appending a new
+judgment with its own reason, actor, and timestamp. The original blinded
+label, its frozen comparison, and the compiled report remain immutable
+evidence; corrections are displayed as a separate post-unblinding history and
+cannot close the source issue, enable delivery, or alter the 80/80 defaults.
