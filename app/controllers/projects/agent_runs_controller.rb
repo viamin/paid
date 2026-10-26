@@ -417,6 +417,38 @@ module Projects
         return
       end
 
+      recovery = Issues::ManualReviewRecovery.call(issue: issue)
+      if recovery.active_run
+        redirect_to safe_return_target || dashboard_path,
+          notice: "Run ##{recovery.active_run.id} is already #{recovery.active_run.status}; no second run was queued."
+        return
+      end
+
+      if recovery.dependency_wait?
+        redirect_to safe_return_target || dashboard_path, alert: "This issue is waiting on an unresolved dependency. Resolve the linked dependency before resuming work."
+        return
+      end
+
+      if recovery.unknown?
+        redirect_to safe_return_target || dashboard_path, alert: "Manual-review cause is unknown. Review the recorded reason before selecting a supported recovery action."
+        return
+      end
+
+      if recovery.reopen_review?
+        unless issue.reopen_review_validated_for_current_revision?
+          redirect_to safe_return_target || dashboard_path, alert: "Validate the reopened issue's current intent before resuming work."
+          return
+        end
+
+        create_manual_review_implementation_run(issue)
+        return
+      end
+
+      if recovery.scanner_recurrence?
+        create_manual_review_implementation_run(issue)
+        return
+      end
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
@@ -425,6 +457,14 @@ module Projects
         goal: "enhance_issue",
         priority_tier: nil
       )
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005
+    def validate_reopen_review
+      authorize @project, :run_agent?
+      issue = resolve_manual_review_issue
+      result = issue && Issues::ValidateReopenReview.call(issue:, actor: current_user, reason: params[:reason], revision: params[:revision])
+      redirect_to safe_return_target || dashboard_path, **(result&.success? ? { notice: result.message } : { alert: result&.message || manual_review_issue_missing_alert })
     end
 
     # Operator-driven counterpart to
@@ -1019,6 +1059,19 @@ module Projects
       return unless issue.paid_state == "manual_review"
 
       issue.update!(paid_state: "in_progress")
+    end
+
+    def create_manual_review_implementation_run(issue)
+      ActiveRecord::Base.transaction do
+        create_agent_run(issue:, goal: "create_pr")
+        resume_issue_from_manual_review(issue)
+      end
+      ProcessRunQueueJob.perform_later
+      redirect_to safe_return_target || dashboard_path, notice: "Implementation run queued."
+    rescue NoRunnableRunnerError, InvalidDockerHostSelectionError => error
+      redirect_to safe_return_target || dashboard_path, alert: error.message
+    rescue ActiveRecord::RecordNotUnique
+      redirect_to safe_return_target || dashboard_path, alert: "A compatible run was queued concurrently. Refresh the Inbox."
     end
 
     # A stale page can still render the "Start enhancement run" button after

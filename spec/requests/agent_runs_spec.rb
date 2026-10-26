@@ -578,7 +578,10 @@ RSpec.describe "AgentRuns" do
     end
 
     context "when authenticated" do
-      before { sign_in user }
+      before do
+        sign_in user
+        parked_issue
+      end
 
       it "renders the index page" do
         get project_agent_runs_path(project)
@@ -2524,12 +2527,14 @@ RSpec.describe "AgentRuns" do
 
   describe "POST /projects/:project_id/agent_runs/resume_manual_review" do
     let(:parked_issue) do
-      create(:issue,
+      issue = create(:issue,
         project: project,
         github_number: 89,
         title: "Fix flaky specs",
         paid_state: "manual_review",
         manual_review_reason: "Paid reached the configured limit of enhancement re-evaluation rounds.")
+      create(:agent_run, project: project, issue: issue, goal: "enhance_issue", status: "failed")
+      issue
     end
 
     context "when not authenticated" do
@@ -2560,6 +2565,7 @@ RSpec.describe "AgentRuns" do
 
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
+        parked_issue
         expect {
           post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
         }.to change(AgentRun, :count).by(1)
@@ -2571,12 +2577,47 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002K
+      it "requires revision-bound validation before a reopened issue resumes implementation" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("Validate")
+
+        post validate_reopen_review_project_agent_runs_path(project), params: {
+          issue_id: parked_issue.id,
+          revision: parked_issue.reload.reopen_review_revision,
+          reason: "Live validation artifacts are still required."
+        }
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.to change(AgentRun, :count).by(1)
+        expect(AgentRun.last.goal).to eq("create_pr")
+      end
+
+      # @spec OPERATOR-INBOX-002K
+      it "reuses incompatible queued work instead of clearing a manual-review hold" do
+        create(:agent_run, project: project, issue: parked_issue, goal: "create_pr", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+        expect(flash[:notice]).to include("already queued")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,
           owner: "acme", repo: "lane", auto_pick_enabled: true, active: true)
         parked = create(:issue, project: gated_project, github_number: 90, paid_state: "manual_review",
           manual_review_reason: "Round limit reached.")
+        create(:agent_run, project: gated_project, issue: parked, goal: "enhance_issue", status: "failed")
 
         entries = Inbox::Queue.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)
         expect(entries.map(&:issue)).to include(parked)
@@ -2598,6 +2639,7 @@ RSpec.describe "AgentRuns" do
           limit_cents: 100, current_usage_cents: 200,
           period_started_at: Time.current.beginning_of_day)
 
+        parked_issue
         expect {
           post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
         }.not_to change(AgentRun, :count)
@@ -2616,6 +2658,7 @@ RSpec.describe "AgentRuns" do
         allow(Runner).to receive(:for_identifier).and_return(nil)
         allow(Runner).to receive(:ensure_default_for).with(owner).and_return(nil)
 
+        parked_issue
         expect {
           post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
         }.not_to change(AgentRun, :count)

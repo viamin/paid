@@ -27,6 +27,17 @@ the issue back into active work through the existing manual-review workflow.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 
+## Cause-specific Inbox recovery
+
+`Issues::ManualReviewRecovery` classifies a hold only from durable provenance:
+the reopen gate, current unresolved dependency edges, scanner verification
+attempts, or enhancement evidence. It never guesses from free-text reasons;
+unclassified holds stay visibly unknown. A reopen reviewer records a nonblank
+reason against the displayed `github_updated_at` revision. The validation is
+stale after a GitHub update. Only then may the existing Inbox action queue the
+normal implementation continuation. Existing queued/running work wins over a
+new continuation and is reported rather than duplicated.
+
 ## Chat-tool policy
 
 The chat `edit_issue` tool directs callers to `create_issue` for new work

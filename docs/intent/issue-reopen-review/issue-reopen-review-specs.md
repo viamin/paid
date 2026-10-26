@@ -30,3 +30,14 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When a reopened issue is in Inbox manual
+  review, the system SHALL require an authorized operator to record a nonblank
+  current-intent reason bound to the displayed GitHub revision before it queues
+  implementation work. It SHALL reuse an existing queued/running work item
+  rather than create a duplicate, and a changed revision SHALL require a new
+  validation.
+  *Tests:* `spec/services/issues/validate_reopen_review_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Issues::ValidateReopenReview`, `Issues::ManualReviewRecovery`,
+  `Projects::AgentRunsController`.

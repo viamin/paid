@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_26_035900) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2567,6 +2567,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
     t.datetime "reconciled_at", comment: "When this issue was last verified via reconciliation; null = never reconciled"
     t.datetime "relationships_parsed_at"
     t.text "reopen_reason", comment: "Reason supplied when this closed issue was last reopened through chat."
+    t.datetime "reopen_review_validated_at", comment: "When an operator last validated a reopened issue's current intent."
+    t.bigint "reopen_review_validated_by_id", comment: "Operator who validated the current reopen intent."
+    t.text "reopen_review_validation_reason", comment: "Operator's reason for resuming work after reopen review."
+    t.string "reopen_review_validation_revision", comment: "GitHub updated-at revision bound to the reopen validation."
     t.datetime "reopened_at", comment: "When a closed issue was last reopened through chat."
     t.bigint "reopened_by_id", comment: "Paid user who last reopened this issue through chat."
     t.integer "review_goal_retry_count", default: 0, null: false
@@ -2603,6 +2607,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
     t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
     t.index ["project_id"], name: "index_issues_on_project_id"
     t.index ["relationships_parsed_at"], name: "index_issues_on_relationships_parsed_at"
+    t.index ["reopen_review_validated_by_id"], name: "index_issues_on_reopen_review_validated_by_id"
     t.index ["reopened_by_id"], name: "index_issues_on_reopened_by_id"
     t.index ["source"], name: "index_issues_on_source"
   end
@@ -4721,6 +4726,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_165531) do
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
   add_foreign_key "issues", "users", column: "closeout_resolved_by_id", validate: false
+  add_foreign_key "issues", "users", column: "reopen_review_validated_by_id"
   add_foreign_key "issues", "users", column: "reopened_by_id"
   add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
   add_foreign_key "knowledge_artifacts", "projects"

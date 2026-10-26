@@ -176,6 +176,20 @@
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002K** — When an issue is held in `manual_review`, the
+  Inbox SHALL classify recovery from existing durable provenance, keep unknown
+  provenance visible, and route only enhancement holds to enhancement retry.
+  Reopen review SHALL record a revision-bound intent-validation decision before
+  implementation continuation; dependency holds SHALL link to the outstanding
+  owner and remain held; scanner recurrence SHALL resume implementation. Before
+  any continuation, the system SHALL reuse or explicitly report queued/running
+  work rather than silently clear the hold or queue a duplicate.
+  *Tests:* `spec/services/issues/manual_review_recovery_spec.rb`,
+  `spec/services/issues/validate_reopen_review_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Issues::ManualReviewRecovery`, `Issues::ValidateReopenReview`,
+  `Projects::AgentRunsController`, `dashboard/_inbox_detail_manual_review`.
+
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by
   `Issue#abandon_due_to_runner_retry_cap!` after every available runner hit

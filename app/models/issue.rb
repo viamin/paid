@@ -2,6 +2,7 @@
 
 class Issue < ApplicationRecord
   belongs_to :reopened_by, class_name: "User", optional: true
+  belongs_to :reopen_review_validated_by, class_name: "User", optional: true
 
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
   REOPEN_REVIEW_REQUIRED_REASON =
@@ -318,6 +319,16 @@ class Issue < ApplicationRecord
   # @spec ISSUE-REOPEN-REVIEW-001
   def reopen_review_pending?
     paid_state == "manual_review" && manual_review_reason == REOPEN_REVIEW_REQUIRED_REASON
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-005
+  def reopen_review_revision
+    github_updated_at&.iso8601
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-005
+  def reopen_review_validated_for_current_revision?
+    reopen_review_validated_at.present? && reopen_review_validation_revision == reopen_review_revision
   end
 
   # @spec ISSUE-REOPEN-REVIEW-001
