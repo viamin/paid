@@ -333,6 +333,28 @@ RDR-073 extension can be decided from an unprovisioned environment; retain
 the existing direction that an extension is filed only if a completed live
 validation identifies a checkout-dependent sidecar need.
 
+## #4604 execution-environment capability check — 2026-10-26
+
+**Result: not executed; no supported Docker-capable backend is available in
+this workspace.** Before attempting either scenario, this run checked for the
+supported local and configured remote paths. `docker`, `podman`, and `nerdctl`
+are absent; neither `/var/run/docker.sock` nor `/run/docker.sock` exists; and
+no `DOCKER_*`, `REMOTE_DOCKER_*`, or Swarm endpoint configuration is present.
+The repository therefore selects its local backend here, which cannot provision
+an `AgentRun` without a local daemon. Installing a client, running host
+commands, or using mocks would not exercise Paid's supported lifecycle and was
+not substituted for either artifact.
+
+No native-analyzer or sidecar interaction was started, and no container was
+created. This check supplies no acceptance artifact, does not close #4604, and
+does not decide whether RDR-073 needs an extension. Recovery remains to run the
+two documented scenarios in an authorized Paid environment with either an
+available local socket or a configured Docker-capable remote backend: first the
+bounded, read-only native CLI invocation and run cleanup; then the allowlisted
+sidecar request from its paired run and both cleanup records. Preserve the
+returned command results and identities with this audit before changing the
+RDR-075 blocker or releasing an implementation phase.
+
 ## Disposition
 
 This report resolves critical assumption 1 only. Critical assumption 2 remains
@@ -355,12 +377,13 @@ arrow entry track #4604 as the evidence owner. This report does not:
 - Determine whether an upstream RDR-073 extension is needed — that decision
   follows the required native and sidecar execution evidence.
 
-The #4604 revalidation on 2026-10-24 confirms that those two evidence
-artifacts remain blocked specifically by the absence of a Docker-capable
-execution environment. RDR-075 remains Draft, its `maintenance-runs` arrow
-remains a draft-only mapping, and implementation phases #4328–#4333 remain
-unreleased. Move the validation to a Docker-capable environment rather than
-inferring live lifecycle behavior from static tests or host-only commands.
+The #4604 revalidation on 2026-10-24 and the 2026-10-26 capability check
+confirm that those two evidence artifacts remain blocked specifically by the
+absence of a Docker-capable execution environment. RDR-075 remains Draft, its
+`maintenance-runs` arrow remains a draft-only mapping, and implementation
+phases #4328–#4333 remain unreleased. Move the validation to a Docker-capable
+environment rather than inferring live lifecycle behavior from static tests or
+host-only commands.
 
 Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
 an HLD pointer) are reviewable drafts for the same pending human-review gate,
