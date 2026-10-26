@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 module FacetConfidence
   module CloseoutEvaluation
     # Compiles the reproducible closeout-evaluation report from the persisted
@@ -27,6 +29,7 @@ module FacetConfidence
         report = build_report
         markdown = render_markdown(report)
         @evaluation.update!(report: report, report_markdown: markdown)
+        attach_to_originating_closeout
         Result.new(success: true, error: nil, report: report, markdown: markdown)
       rescue ActiveRecord::RecordInvalid => error
         failure(error.record.errors.full_messages.to_sentence)
@@ -61,6 +64,32 @@ module FacetConfidence
           "policy" => "reference judgments are policy assessments, not calibrated probabilities; " \
             "this report neither closes the source issue, enables delivery, nor changes the 80/80 defaults"
         }
+      end
+
+      # A frozen solo report is durable provenance, but it does not establish
+      # the human prerequisite by itself: the report explicitly lacks
+      # production measures and has a single reference judge. Persist that
+      # limitation beside the originating closeout instead of letting a green
+      # evaluation or notification dismissal look like acceptance.
+      def attach_to_originating_closeout
+        result = PartialCloseouts::SubmitEvidence.call(
+          issue: @evaluation.issue, actor: @evaluation.created_by,
+          criterion: "facet-confidence closeout evaluation", evidence_type: "report",
+          evidence_reference: "facet-confidence-evaluation:#{@evaluation.id}",
+          source_revision: @evaluation.source_revision.to_s,
+          explanation: "Frozen facet-confidence evaluation report attached to the originating closeout.",
+          provenance: {
+            "evaluation_id" => @evaluation.id, "corpus_digest" => @evaluation.corpus_digest,
+            "policy" => "solo", "report_digest" => Digest::SHA256.hexdigest(@evaluation.report_markdown.to_s)
+          }
+        )
+        return unless result.success? && result.submission.status == "submitted"
+
+        result.submission.update!(
+          status: "insufficient",
+          reasoning: "Frozen solo reference judgments are attached, but missing production measures and weaker solo-policy assurance require separate prerequisite validation.",
+          assessed_at: Time.current
+        )
       end
 
       def case_entries

@@ -518,3 +518,19 @@
   `spec/services/inbox/chat_context_spec.rb`,
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-030** — When an authorized operator submits
+  prerequisite evidence from an originating partial-closeout Inbox item, the
+  system SHALL persist the exact criterion identity, current closeout evidence
+  revision, actor, provenance, required explanation, and an explicit
+  submitted, sufficient, insufficient, stale, unavailable, or revoked
+  disposition. A changed revision SHALL make a submission stale. A durable
+  link SHALL remain pending validation, and a notification dismissal, green
+  run, or compiled solo facet-confidence report alone SHALL NOT be represented
+  as satisfied acceptance. Freezing a facet-confidence report SHALL attach it
+  to its originating closeout as insufficient evidence, including its missing
+  production measures and weaker solo-policy assurance.
+  *Code:* `app/models/partial_closeout_evidence_submission.rb`,
+  `app/services/partial_closeouts/submit_evidence.rb`,
+  `app/services/facet_confidence/closeout_evaluation/compile_report.rb`.
+  *Test:* `spec/services/partial_closeouts/submit_evidence_spec.rb`.

@@ -384,6 +384,30 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **prerequisite_flash(result)
     end
 
+    # Stores a criterion-scoped evidence offer. Submission is intentionally
+    # separate from notification dismissal and from a closeout attestation.
+    # @spec PARTIAL-CLOSEOUT-030
+    def submit_closeout_evidence
+      authorize @project, :run_agent?
+
+      issue = resolve_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: "Please select an issue."
+        return
+      end
+
+      result = PartialCloseouts::SubmitEvidence.call(
+        issue:, actor: current_user, criterion: params[:criterion], evidence_type: params[:evidence_type],
+        evidence_reference: params[:evidence_reference], source_revision: params[:source_revision],
+        explanation: params[:explanation], provenance: { "submitted_from" => "partial_closeout_inbox" }
+      )
+      if result.success?
+        redirect_to safe_return_target || dashboard_path, notice: "Evidence submitted with status: #{result.submission.status.humanize}."
+      else
+        redirect_to safe_return_target || dashboard_path, alert: result.error
+      end
+    end
+
     # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
     # @spec OPERATOR-INBOX-002C
     def unblock_escalation

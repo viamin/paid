@@ -383,3 +383,21 @@ those revisions change.
 - *Persisted inbox items*: the lane derives from evidence columns like
   `retry_limited` does; only the scoped authorization and the resolution
   dismissal are persisted.
+
+### Submitted prerequisite evidence (#4641)
+
+A prerequisite notification is a scheduling guard, not an acceptance
+assessment. Operators may submit durable, criterion-identified evidence from
+the originating Inbox item. Each submission records the exact criterion,
+closeout evidence revision, actor, provenance, explanation, and an explicit
+disposition. A changed closeout revision makes the submission stale rather
+than silently reusing it.
+
+Built-in facet-confidence reports are submitted automatically when their
+reference set freezes. They remain insufficient evidence for a human
+prerequisite: a solo reference judge and missing production measures are
+recorded limitations, not proof that the prerequisite is satisfied. External
+links remain pending validation; neither a URL, a green run, nor dismissing a
+notification resolves a prerequisite. Dismissal retains its documented
+personal scheduling-release behavior, which the Inbox describes separately
+from evidence satisfaction.

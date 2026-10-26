@@ -238,6 +238,10 @@
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Prerequisites</h3>
+    <p class="rounded-md bg-amber-50 p-2 text-xs text-amber-900">
+      Dismissing the action-required notification removes that personal scheduling guard and can release the issue for re-enqueue;
+      it does not validate evidence or satisfy this prerequisite.
+    </p>
     <% if status.unresolved_prerequisites.any? %>
       <p class="text-sm text-gray-600">
         <%= status.unresolved_prerequisites.join(", ") %> — create or link the prerequisite work before
@@ -245,6 +249,30 @@
         <code>Depends on #B</code> to this stalled issue's body, then sync. An agent can file the follow-up
         with the existing <code>create_issue</code> tool.
       </p>
+    <% end %>
+
+    <% if policy(entry.project).run_agent? %>
+      <%= form_with url: submit_closeout_evidence_project_agent_runs_path(entry.project),
+            data: { turbo_frame: "_top" }, class: "space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3" do |form| %>
+        <%= form.hidden_field :issue_id, value: issue.id %>
+        <%= form.hidden_field :source_revision, value: assessment.source_revision %>
+        <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+        <p class="text-xs text-gray-600">Submitting evidence is pending validation; it does not dismiss or satisfy the prerequisite.</p>
+        <%= form.text_field :criterion, required: true, placeholder: "Exact prerequisite or criterion", class: "w-full rounded border-gray-300 text-sm" %>
+        <%= form.select :evidence_type, [["Durable link", "link"], ["Artifact", "artifact"], ["Existing run", "run"], ["Existing report", "report"]], {}, class: "rounded border-gray-300 text-sm" %>
+        <%= form.text_field :evidence_reference, required: true, placeholder: "Evidence URL or durable reference", class: "w-full rounded border-gray-300 text-sm" %>
+        <%= form.text_area :explanation, required: true, rows: 2, placeholder: "Why this evidence applies to this exact prerequisite", class: "w-full rounded border-gray-300 text-sm" %>
+        <%= form.submit "Submit evidence for validation", class: "inline-flex rounded bg-indigo-600 px-3 py-2 text-sm font-semibold text-white" %>
+      <% end %>
+    <% end %>
+
+    <% submissions = PartialCloseoutEvidenceSubmission.where(issue: issue).order(created_at: :desc).limit(5) %>
+    <% if submissions.any? %>
+      <ul class="space-y-1 text-sm text-gray-700">
+        <% submissions.each do |submission| %>
+          <li><span class="font-medium"><%= submission.criterion %></span>: <%= submission.status.humanize %> — <%= submission.reasoning %></li>
+        <% end %>
+      </ul>
     <% end %>
 
     <% if policy(entry.project).run_agent? %>

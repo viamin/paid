@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_26_130000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3225,6 +3225,30 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
     t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'resolved'::character varying::text, 'superseded'::character varying::text])", name: "chk_page_load_findings_status_valid"
   end
 
+  create_table "partial_closeout_evidence_submissions", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "actor_id"
+    t.datetime "assessed_at"
+    t.datetime "created_at", null: false
+    t.string "criterion", null: false
+    t.string "evidence_reference", null: false
+    t.string "evidence_type", null: false
+    t.text "explanation", null: false
+    t.bigint "issue_id", null: false
+    t.bigint "project_id", null: false
+    t.jsonb "provenance", default: {}, null: false
+    t.text "reasoning", default: "", null: false
+    t.datetime "revoked_at"
+    t.string "source_revision", null: false
+    t.string "status", default: "submitted", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_partial_closeout_evidence_submissions_on_account_id"
+    t.index ["actor_id"], name: "index_partial_closeout_evidence_submissions_on_actor_id"
+    t.index ["issue_id", "criterion", "evidence_type", "evidence_reference", "source_revision"], name: "idx_closeout_evidence_submissions_idempotency", unique: true
+    t.index ["issue_id"], name: "index_partial_closeout_evidence_submissions_on_issue_id"
+    t.index ["project_id"], name: "index_partial_closeout_evidence_submissions_on_project_id"
+  end
+
   create_table "pending_install_claims", comment: "Server-side claims tying a freshly-returned GitHub App installation to a Paid account, so the signed `installation` webhook can finalize the GithubInstallation row for a first-time install into a brand-new org where the existing signals (project owner match, prior installation row) cannot resolve the account.", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.datetime "created_at", null: false
@@ -4875,6 +4899,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
   add_foreign_key "page_load_regression_findings", "accounts", on_delete: :cascade
   add_foreign_key "page_load_regression_findings", "agent_runs", on_delete: :nullify
   add_foreign_key "page_load_regression_findings", "projects", on_delete: :cascade
+  add_foreign_key "partial_closeout_evidence_submissions", "accounts"
+  add_foreign_key "partial_closeout_evidence_submissions", "issues"
+  add_foreign_key "partial_closeout_evidence_submissions", "projects"
+  add_foreign_key "partial_closeout_evidence_submissions", "users", column: "actor_id"
   add_foreign_key "pending_install_claims", "accounts"
   add_foreign_key "personal_access_tokens", "accounts"
   add_foreign_key "personal_access_tokens", "users"

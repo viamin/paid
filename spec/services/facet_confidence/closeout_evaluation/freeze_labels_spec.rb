@@ -65,6 +65,18 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
     expect(evaluation.report_markdown).to include("FC-CORPUS-01").and include("80/80")
   end
 
+  it "attaches the frozen solo report as insufficient closeout evidence without releasing a prerequisite" do # @spec PARTIAL-CLOSEOUT-030
+    allow(Issues::CloseoutEvidence).to receive(:call).with(issue)
+      .and_return(instance_double(Issues::CloseoutEvidence::Result, digest: "intent-sha"))
+    label_all!
+
+    expect(described_class.call(evaluation: evaluation, actor: owner)).to be_success
+
+    submission = PartialCloseoutEvidenceSubmission.find_by!(issue: issue, evidence_type: "report")
+    expect(submission).to have_attributes(status: "insufficient", criterion: "facet-confidence closeout evaluation")
+    expect(submission.reasoning).to include("missing production measures").and include("solo-policy")
+  end
+
   it "measures divergences and citation violations instead of hiding them" do
     evaluation.corpus.cases.each do |corpus_case|
       case_id = corpus_case.fetch("id")
