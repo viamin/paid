@@ -494,7 +494,10 @@ module Automation
               account_id: project.account_id,
               source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
               subject_type: "Issue"
-            ).where(resolved_at: nil, dismissed_at: nil)
+              # Dismissal only removes the operator's notification presentation.
+              # It is not evidence satisfaction and therefore cannot release the
+              # partial-closeout scheduling guard.
+            ).where(resolved_at: nil)
               .where("subject_id IN (?)", project.issues.select(:id))
               .pluck(:subject_id)
           end

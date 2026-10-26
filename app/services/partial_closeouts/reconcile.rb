@@ -177,7 +177,8 @@ module PartialCloseouts
         account: agent_run.project.account, subject: agent_run.issue,
         source: PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
         title: operator_prerequisite_title(human_gaps),
-        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n")
+        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n"),
+        metadata: { "prerequisites" => human_gaps.each_with_index.map { |gap, index| prerequisite_metadata(gap, index) } }
       )
     end
 
@@ -195,6 +196,18 @@ module PartialCloseouts
     # "review the prerequisite" placeholder (#4119).
     def operator_prerequisite_step(gap)
       "#{gap["criterion"]}: #{gap["next_step"].to_s.strip}"
+    end
+
+    # The notification is a projection, but the occurrence identity must be
+    # stable across its re-publications so submitted evidence can never resolve
+    # a similarly-worded sibling prerequisite.
+    def prerequisite_metadata(gap, index)
+      {
+        "id" => "#{agent_run.id}:#{index}", "criterion" => gap.fetch("criterion"),
+        "kind" => gap.fetch("kind"), "requested_evidence" => gap["prerequisite"],
+        "next_step" => gap.fetch("next_step"),
+        "source_revision" => assessment["source_revision"], "intent_revision" => assessment["intent_revision"]
+      }
     end
 
     def publish_parent_dependencies!

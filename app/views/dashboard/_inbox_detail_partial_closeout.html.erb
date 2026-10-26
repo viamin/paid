@@ -6,8 +6,7 @@
 <% human_prerequisite = entry.project.account.notifications.where(
       source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
       subject: issue,
-      resolved_at: nil,
-      dismissed_at: nil
+      resolved_at: nil
     ).order(created_at: :desc).first %>
 <div class="space-y-6">
   <div class="rounded-xl border border-violet-200 bg-violet-50 p-4">
@@ -277,12 +276,23 @@
           <h4 class="text-sm font-semibold text-amber-900">Human evidence requested</h4>
           <p class="whitespace-pre-line text-sm text-amber-900"><%= human_prerequisite.description %></p>
           <p class="text-xs text-amber-800">
-            Each line names the requested evidence, who must supply it, and the exact step. Submit the evidence
-            where the step says (usually a comment or linked artifact on the prerequisite), then link that work
-            here. When an agent-owned prerequisite closes, scheduling resumes automatically; supplied human
-            evidence never retries an agent by itself — afterwards, request a deliberate continuation and say
-            what the run should do with the evidence.
+            Dismissal only removes this notice from your view; it does not verify evidence or release scheduling.
+            Submit evidence for each named prerequisite below. A submitted link, report, run, or artifact is
+            assessed explicitly and must be current and sufficient before the prerequisite can resolve.
           </p>
+          <% Array(human_prerequisite.metadata["prerequisites"]).each do |prerequisite| %>
+            <%= form_with url: project_closeout_evidence_submissions_path(entry.project), class: "space-y-2 rounded border border-amber-300 bg-white p-3" do |form| %>
+              <%= form.hidden_field :notification_id, value: human_prerequisite.id %>
+              <%= form.hidden_field :prerequisite_id, value: prerequisite["id"] %>
+              <p class="text-sm font-medium text-amber-900"><%= prerequisite["criterion"] %></p>
+              <div class="grid gap-2 sm:grid-cols-2">
+                <%= form.select :evidence_type, [["Evaluation report", "evaluation_report"], ["Agent run", "agent_run"], ["Durable artifact", "artifact"], ["Link", "link"]], {}, class: "rounded-md border-gray-300 text-sm" %>
+                <%= form.text_field :reference, required: true, placeholder: "Durable URL or record reference", class: "rounded-md border-gray-300 text-sm" %>
+              </div>
+              <%= form.text_area :explanation, required: true, rows: 2, maxlength: 2000, placeholder: "Why this evidence satisfies this exact prerequisite", class: "w-full rounded-md border-gray-300 text-sm" %>
+              <%= form.submit "Submit for validation", class: "rounded-md bg-amber-700 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-600" %>
+            <% end %>
+          <% end %>
         </div>
     <% end %>
   </div>

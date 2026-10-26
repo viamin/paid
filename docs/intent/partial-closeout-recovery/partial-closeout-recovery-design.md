@@ -27,6 +27,23 @@ delivers visibility + authorized recovery on its own.
 
 ## Design
 
+### Verified prerequisite evidence
+
+Human/external prerequisites are occurrence-level records, not a generic
+"comment posted" state. Reconciliation projects their stable run-and-gap
+identity, requested evidence, and assessment revisions into the blocking
+notification. The Inbox submits one supported durable report, run, artifact,
+or link with an explanation against that identity. It then persists an
+explicit disposition (`pending`, `sufficient`, `insufficient`, `stale`, or
+`unavailable`), provenance and reasoning. Structural code verifies the target
+and revision; the bounded semantic question is delegated to `agent_harness`.
+
+The aggregate notification remains a scheduling guard until every occurrence
+it projects is current and sufficient. A dismissal is only a personal removal
+from notification presentation; it neither attests satisfaction nor lifts that
+guard. This keeps partial sufficiency, revoked/stale evidence, retries, and
+duplicate submissions visible without manufacturing whole-issue completion.
+
 ### Evidence: `Issues::CloseoutEvidence`
 
 One value object computes the *closeout evidence* for an issue and a stable

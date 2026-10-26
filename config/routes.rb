@@ -64,6 +64,7 @@ Rails.application.routes.draw do
   get "inbox/disabled-phases", to: "inbox#index", as: :inbox_disabled_phases, defaults: { scope: "disabled_phases" }
   get "inbox/removed", to: "inbox#index", as: :inbox_removed, defaults: { scope: "removed" }
   get "inbox/partial-closeout-guide", to: "inbox#partial_closeout_guide", as: :partial_closeout_guide
+  post "projects/:project_id/closeout_evidence_submissions", to: "projects/closeout_evidence_submissions#create", as: :project_closeout_evidence_submissions
   post "design_artifact_findings/:id/resolve", to: "design_artifact_findings#resolve", as: :resolve_design_artifact_finding
   post "design_artifact_findings/:id/file_issue", to: "design_artifact_findings#file_issue", as: :file_issue_design_artifact_finding
   post "design_artifact_findings/:id/repair_document_links", to: "design_artifact_findings#repair_document_links", as: :repair_document_links_design_artifact_finding
