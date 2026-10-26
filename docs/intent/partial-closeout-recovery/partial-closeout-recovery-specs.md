@@ -518,3 +518,16 @@
   `spec/services/inbox/chat_context_spec.rb`,
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-028** — When an authorized operator submits durable
+  artifact, link, evaluation, report, or run evidence for an active
+  partial-closeout human prerequisite, the system SHALL retain the exact
+  prerequisite occurrence, submitted reference, explanation, actor, source
+  revisions, and `pending_validation` disposition. Submission SHALL NOT
+  dismiss or resolve the notification, lift its scheduling guard, or represent
+  a URL, report, green run, or dismissal as accepted evidence; a bounded
+  acceptance audit remains the authority that can record criterion sufficiency.
+  *Code:* `app/services/partial_closeouts/submit_evidence.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/services/partial_closeouts/submit_evidence_spec.rb`.

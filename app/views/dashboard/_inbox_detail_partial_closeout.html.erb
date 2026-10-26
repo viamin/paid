@@ -283,6 +283,17 @@
             evidence never retries an agent by itself — afterwards, request a deliberate continuation and say
             what the run should do with the evidence.
           </p>
+          <% if policy(entry.project).run_agent? %>
+            <%= form_with url: submit_prerequisite_evidence_project_agent_runs_path(entry.project), data: { turbo_frame: "_top" }, class: "space-y-2" do |form| %>
+              <%= form.hidden_field :notification_id, value: human_prerequisite.id %>
+              <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+              <div class="grid gap-2 sm:grid-cols-2"><%= form.select :evidence_kind, PartialCloseouts::SubmitEvidence::KINDS.map { |kind| [kind.humanize, kind] }, {}, class: "rounded-md border-gray-300 text-sm" %><%= form.url_field :evidence_reference, required: true, placeholder: "Durable artifact or evidence URL", class: "rounded-md border-gray-300 text-sm" %></div>
+              <%= form.text_area :explanation, required: true, rows: 2, placeholder: "Why this evidence satisfies the named prerequisite", class: "w-full rounded-md border-gray-300 text-sm" %>
+              <%= form.submit "Submit evidence for validation", class: "inline-flex rounded-md bg-amber-700 px-3 py-2 text-sm font-semibold text-white hover:bg-amber-600" %>
+            <% end %>
+          <% end %>
+          <% submissions = Array(human_prerequisite.metadata.to_h["evidence_submissions"]) %>
+          <% if submissions.any? %><p class="text-xs text-amber-900"><%= submissions.size %> submission(s) pending validation. Dismissing this notification is only a scheduling action, never evidence acceptance.</p><% end %>
         </div>
     <% end %>
   </div>

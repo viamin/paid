@@ -384,6 +384,22 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **prerequisite_flash(result)
     end
 
+    # Records a reviewable evidence submission; it never dismisses or resolves
+    # the prerequisite scheduling guard.
+    # @spec PARTIAL-CLOSEOUT-028
+    def submit_prerequisite_evidence
+      authorize @project, :run_agent?
+
+      notification = @project.account.notifications.find_by(id: params[:notification_id], source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+      result = notification && PartialCloseouts::SubmitEvidence.call(
+        notification:, actor: current_user, kind: params[:evidence_kind].to_s,
+        reference: params[:evidence_reference].to_s.strip, explanation: params[:explanation].to_s.strip,
+        revisions: { "closeout_evidence" => Issues::CloseoutEvidence.call(notification.subject).digest }
+      )
+      message = result&.success? ? "Evidence submitted for validation; the prerequisite remains blocking until an audit records it sufficient." : (result&.error || "This prerequisite is unavailable.")
+      redirect_to safe_return_target || dashboard_path, result&.success? ? { notice: message } : { alert: message }
+    end
+
     # @spec PR-ESCALATION-014 @spec PR-ESCALATION-015 @spec PR-ESCALATION-017
     # @spec OPERATOR-INBOX-002C
     def unblock_escalation
