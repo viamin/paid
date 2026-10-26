@@ -35,6 +35,14 @@ every policy decision reads it through `Automation::RolloutGuard.enabled?`
 `Automation::EffectivePolicy` returns a permitted `legacy_policy` decision, so
 existing execution and Inbox behavior is untouched.
 
+The authorized project feature-flag management surface is the pilot enablement
+surface. An operator uses `Automation::Phases::MigrationPreview` to validate
+phase mappings, configuration, grants, and Inbox effects together before
+enabling a project. `FeatureFlags.disable!(:automation_phases, project:)`
+refuses rollback while the project has active continuation grants; an operator
+must let them complete or explicitly revoke them and reconcile queued work
+before returning the project to legacy policy.
+
 ## Project phase defaults
 
 `projects.automation_phase_settings` (jsonb) stores:

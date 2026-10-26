@@ -18,6 +18,8 @@ class WorkItemContinuationGrant < ApplicationRecord
   validates :endpoint, presence: true, inclusion: { in: Automation::Phases::CONTINUATION_ENDPOINTS }
   validates :source, presence: true, inclusion: { in: SOURCES }
   validate :endpoint_follows_start_phase
+  validate :issue_belongs_to_project
+  validate :created_by_belongs_to_project_account
 
   scope :active, -> { where(revoked_at: nil, completed_at: nil) }
   scope :revoked, -> { where.not(revoked_at: nil) }
@@ -68,5 +70,21 @@ class WorkItemContinuationGrant < ApplicationRecord
     return if start_phase.blank? || endpoint.blank?
 
     errors.add(:endpoint, "must be the start phase or a later delivery phase") if covered_phases.empty?
+  end
+
+  # A grant must never bridge project or tenant boundaries, even if a caller
+  # bypasses the project-scoped controller and constructs the record directly.
+  def issue_belongs_to_project
+    return unless issue && project
+
+    errors.add(:issue, "must belong to the project") unless issue.project_id == project_id
+  end
+
+  def created_by_belongs_to_project_account
+    return unless created_by && project
+
+    unless created_by.account_id == project.account_id
+      errors.add(:created_by, "must belong to the project's account")
+    end
   end
 end

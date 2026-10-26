@@ -33,6 +33,14 @@ class ProjectPolicy < ApplicationPolicy
   # reserved to the roles that already own project automation settings.
   # @spec AUTOMATION-PHASES-009
   def delegate_merge?
+    delegate_automation?
+  end
+
+  # A continuation grant delegates automatic delivery work beyond the current
+  # manual action. Keep that authority with the people who administer project
+  # automation, even when its selected endpoint is before merge.
+  # @spec AUTOMATION-PHASES-009
+  def delegate_automation?
     return false unless user_in_account?
 
     has_any_account_role?(:owner, :admin) || user.has_role?(:project_admin, record)

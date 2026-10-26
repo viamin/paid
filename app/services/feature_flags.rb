@@ -144,6 +144,7 @@ class FeatureFlags
     end
 
     def disable!(flag_name, project: nil, actor: nil)
+      ensure_automation_phases_rollback_allowed!(flag_name, project)
       resolved_actor = resolve_actor(project:, actor:)
 
       unless resolved_actor
@@ -195,6 +196,12 @@ class FeatureFlags
     end
 
     private
+
+    def ensure_automation_phases_rollback_allowed!(flag_name, project)
+      return unless flag_name.to_sym == :automation_phases && project
+
+      Automation::RolloutGuard.ensure_rollback_allowed!(project)
+    end
 
     def feature(flag_name)
       flipper[definition(flag_name).name]
