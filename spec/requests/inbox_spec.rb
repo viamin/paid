@@ -385,6 +385,29 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("Depends on #500")
   end
 
+  it "links native-child and preserved human-prerequisite admission evidence" do # @spec PARTIAL-CLOSEOUT-030
+    issue = create(:issue, project: project, github_number: 510, paid_state: "in_progress")
+    child = create(:issue, project: project, github_number: 511, github_state: "open", paid_state: "in_progress",
+      parent_issue: issue, github_html_url: "https://example.test/acme/alpha/issues/511")
+    notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+      title: "Human adjudication required", description: "Select the recorded review policy.")
+    create(:issue, :pull_request, project: project, github_number: 512, github_state: "closed",
+      pr_review_phase: "merged", parent_issue: issue, created_at: 2.days.ago)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue),
+      project_id: project.id,
+      kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND
+    )
+
+    expect(response.body).to include("Open child ##{child.github_number}")
+    expect(response.body).to include(child.github_url)
+    expect(response.body).to include("Notification ##{notification.id}")
+    expect(response.body).to include(notification.description)
+    expect(response.body).to include("Do not dismiss")
+  end
+
   # @spec PARTIAL-CLOSEOUT-022 @spec PARTIAL-CLOSEOUT-014 @spec PARTIAL-CLOSEOUT-015 @spec PARTIAL-CLOSEOUT-016
   describe "partial closeout pane guidance" do
     let(:guided_issue) { create(:issue, project: project, github_number: 510, paid_state: "in_progress") }

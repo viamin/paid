@@ -18,7 +18,8 @@ module Issues
     Blocker = Struct.new(:code, :message, :evidence, :recovery, keyword_init: true)
     Inputs = Struct.new(:evidence_by_issue_id, :prerequisites_by_issue_id,
       :open_requests_by_issue_id, :active_run_issue_ids, :feature_links_by_issue_id,
-      :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id, keyword_init: true)
+      :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id,
+      :native_children_by_issue_id, :prerequisite_notifications_by_issue_id, keyword_init: true)
 
     # Blockers that are deliberate operator states or active work rather than
     # a partial-closeout stall; the lane must not surface them.
@@ -97,6 +98,17 @@ module Issues
       feature_links = FeatureIntentIssue.where(issue_id: issue_ids).includes(:feature_intent, :prerequisite_mapping,
         in_tree_dependencies: :issue).order(:id).to_a.group_by(&:issue_id)
       scanner_attempts = CodeScanningRemediationAttempt.where(issue_id: issue_ids).latest_per_issue.index_by(&:issue_id)
+      native_children = Issue.joins("INNER JOIN issues parents ON parents.id = issues.parent_issue_id " \
+        "AND parents.project_id = issues.project_id")
+        .where(parent_issue_id: issue_ids, is_pull_request: false, github_state: "open")
+        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES).order(:id).to_a
+        .group_by(&:parent_issue_id)
+      prerequisite_notifications = Notification.where(
+        subject_type: "Issue", source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+        resolved_at: nil, dismissed_at: nil, subject_id: issue_ids
+      ).joins("INNER JOIN issues ON issues.id = notifications.subject_id")
+        .joins("INNER JOIN projects ON projects.id = issues.project_id")
+        .where("notifications.account_id = projects.account_id").order(:id).to_a.group_by(&:subject_id)
       reset_at = issues.group_by(&:project_id).transform_values do |project_issues|
         next unless project_issues.any? { |issue| issue.issue_analysis_next_attempt_at.present? && issue.issue_analysis_next_attempt_at > Time.current }
 
@@ -109,7 +121,9 @@ module Issues
         active_run_issue_ids: AgentRun.where(issue_id: issue_ids, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).distinct.pluck(:issue_id).to_set,
         feature_links_by_issue_id: feature_links,
         analysis_backoff_reset_by_project_id: reset_at,
-        scanner_attempts_by_issue_id: scanner_attempts
+        scanner_attempts_by_issue_id: scanner_attempts,
+        native_children_by_issue_id: native_children,
+        prerequisite_notifications_by_issue_id: prerequisite_notifications
       )
     end
 
@@ -153,9 +167,51 @@ module Issues
     # candidate source. Keep this list additive: simultaneous guards must all
     # be visible rather than having the first one conceal the rest.
     def self.admission_blockers(issue, prerequisites: prerequisite_labels(issue), inputs: nil)
-      prerequisite_blockers(issue, labels: prerequisites) + operator_pause_blockers(issue) +
+      prerequisite_blockers(issue, labels: prerequisites) + native_child_blockers(issue, inputs:) +
+        prerequisite_notification_blockers(issue, inputs:) + operator_pause_blockers(issue) +
         run_in_flight_blockers(issue, inputs:) + trust_blockers(issue) + feature_hold_blockers(issue, inputs:) +
         analysis_backoff_blockers(issue, inputs:) + scanner_verification_blockers(issue, inputs:)
+    end
+
+    # These predicates mirror the two authoritative exclusions in
+    # DefaultCandidateSource: an open native child and an active human
+    # prerequisite notification. They explain admission; they never alter it.
+    # @spec PARTIAL-CLOSEOUT-030
+    def self.native_child_blockers(issue, inputs: nil)
+      children = if inputs
+        inputs.native_children_by_issue_id.fetch(issue.id, [])
+      else
+        Issue.where(parent_issue_id: issue.id, project_id: issue.project_id, is_pull_request: false, github_state: "open")
+          .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES).order(:id).to_a
+      end
+      return [] if children.empty?
+
+      labels = children.map { |child| "##{child.github_number}" }
+      [ Blocker.new(
+        code: :open_native_children,
+        message: "Open native child #{'issue'.pluralize(children.size)} (#{labels.join(', ')}) keep this issue out of automatic scheduling.",
+        evidence: { "children" => children.map { |child| native_child_evidence(child) } },
+        recovery: "Finish or otherwise resolve each listed child only when its work is genuinely complete; do not close children merely to admit this issue."
+      ) ]
+    end
+
+    # @spec PARTIAL-CLOSEOUT-030
+    def self.prerequisite_notification_blockers(issue, inputs: nil)
+      notifications = if inputs
+        inputs.prerequisite_notifications_by_issue_id.fetch(issue.id, [])
+      else
+        Notification.where(account: issue.project.account, subject: issue,
+          source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, resolved_at: nil, dismissed_at: nil).order(:id).to_a
+      end
+      return [] if notifications.empty?
+
+      titles = notifications.map(&:title)
+      [ Blocker.new(
+        code: :human_prerequisite_notification,
+        message: "Active human prerequisite #{'notification'.pluralize(notifications.size)} (#{titles.join(', ')}) keep this issue out of automatic scheduling.",
+        evidence: { "notifications" => notifications.map { |notification| prerequisite_notification_evidence(notification) } },
+        recovery: "Complete the named human decision or evidence step using its recorded policy and provenance. Do not dismiss the notification or substitute a solo policy merely to admit this issue."
+      ) ]
     end
 
     # The scoped preflight is the admission authority. If it rejects after all
@@ -321,6 +377,19 @@ module Issues
         "status" => attempt.status, "blocked_reason" => attempt.blocked_reason
       }.compact
     end
+
+    def self.native_child_evidence(child)
+      { "id" => child.id, "number" => child.github_number, "url" => child.github_url, "title" => child.title }
+    end
+    private_class_method :native_child_evidence
+
+    def self.prerequisite_notification_evidence(notification)
+      {
+        "id" => notification.id, "title" => notification.title, "description" => notification.description,
+        "action_url" => notification.action_url, "created_at" => notification.created_at.utc.iso8601
+      }.compact
+    end
+    private_class_method :prerequisite_notification_evidence
 
     def self.scanner_alert_number(issue)
       issue.github_issue_id - Issue::SYNTHETIC_CODE_SCANNING_ID_OFFSET

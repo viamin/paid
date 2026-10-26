@@ -148,6 +148,24 @@
   `app/services/issues/closeout_status.rb`, `app/services/issues/stalled_closeouts.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-030** — When canonical scoped admission excludes a
+  partial closeout because it has an open native non-PR child or an active
+  `partial_closeout.prerequisite` notification, the system SHALL explain every
+  such blocker from the same persisted predicates used by
+  `DefaultCandidateSource`, including exact child/notification identities,
+  evidence, links, and a safe recovery route. The diagnostic SHALL preserve
+  unresolved human decisions, selected policy, and assessment provenance: it
+  SHALL NOT dismiss a notification, close a child, infer completion, or replace
+  a team policy with a solo decision merely to admit work. The same structured
+  reasons SHALL drive Inbox detail/count, continuation refusal, and authorized
+  tool/chat context; `unavailable` remains only for a genuinely undiagnosed
+  canonical exclusion.
+  *Code:* `app/services/issues/closeout_status.rb`,
+  `app/views/dashboard/_inbox_closeout_blockers.html.erb`.
+  *Test:* `spec/services/issues/closeout_status_spec.rb`,
+  `spec/services/issues/request_continuation_spec.rb`,
+  `spec/services/inbox/chat_context_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-003** — When an authorized user requests a
   continuation for such an issue, the system SHALL persist an
   `IssueContinuationRequest` recording the actor, a required reason, the

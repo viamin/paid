@@ -177,6 +177,19 @@ recording completion, so a continuation cannot dispatch after the attestation.
   work reuses the existing `create_issue` tool (dependency wording is parsed
   by the existing sync parser).
 
+### Admission diagnostics
+
+`Issues::CloseoutStatus` is a diagnostic mirror of canonical scoped admission,
+not a second eligibility engine. Alongside dependency and hold diagnostics, it
+reads the exact persisted predicates for open native non-PR children and active
+`partial_closeout.prerequisite` notifications. It preserves all simultaneous
+blockers in the Inbox, continuation refusal, and tool/chat context. Child links
+lead to the owning work; notification evidence retains its identifier,
+description, action link, and recorded policy/evidence provenance. Recovery
+guidance never closes work, dismisses evidence, infers acceptance, or changes a
+team-selected policy to force admission. A residual `unavailable` diagnostic is
+reserved for a canonical guard that has no corresponding supported diagnosis.
+
 ### Legacy reconciliation: `PartialCloseouts::ReconcileLegacy`
 
 The `partial-closeout-reconciliation-v1` Temporal patch only intercepts new
