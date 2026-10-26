@@ -46,11 +46,13 @@ module TechnicalPrerequisites
       @environment_provisioned = true
       checkout = prepare_checkout
       provisioner.provision(agent_run)
-      native = capture(native_command)
-      sidecar = sidecar_command && capture(sidecar_command)
+      tool_endpoints = agent_run.reload.tool_sidecar_endpoints
+      command_environment = tool_sidecar_environment(tool_endpoints)
+      native = capture(native_command, env: command_environment)
+      sidecar = sidecar_command && capture(sidecar_command, env: command_environment)
       status = [ native, sidecar ].compact.all? { |result| result["exit_code"] == 0 } ? "completed" : "failed"
       persist_terminal(status, checkout:, native:, sidecar:,
-        tool_endpoints: agent_run.reload.tool_sidecar_endpoints, inspection: inspection.to_h)
+        tool_endpoints:, inspection: inspection.to_h)
     end
 
     def prepare_checkout
@@ -62,8 +64,14 @@ module TechnicalPrerequisites
       git_operations.head_sha
     end
 
-    def capture(command)
-      result = agent_run.execute_in_execution_environment(command, stream: false)
+    def tool_sidecar_environment(endpoints)
+      return {} if endpoints.blank?
+
+      { "PAID_TOOL_SIDECAR_ENDPOINTS" => endpoints.to_json }
+    end
+
+    def capture(command, env:)
+      result = agent_run.execute_in_execution_environment(command, stream: false, env:)
       output(result[:stdout], result[:stderr], result[:exit_code])
     rescue Containers::Provision::ExecutionError => error
       output(error.stdout, error.stderr, error.exit_code)

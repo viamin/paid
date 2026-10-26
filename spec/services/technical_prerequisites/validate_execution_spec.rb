@@ -36,7 +36,11 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler_result([ "remote" ]))
     allow(FeatureFlags).to receive(:enabled?).with(:marketplace_tool_sidecars, project:).and_return(true)
     allow(agent_run).to receive(:provision_execution_environment)
-    allow(agent_run).to receive(:execute_in_execution_environment).with([ "analyzer", "--version" ], stream: false)
+    allow(agent_run).to receive(:execute_in_execution_environment).with(
+      [ "analyzer", "--version" ],
+      stream: false,
+      env: { "PAID_TOOL_SIDECAR_ENDPOINTS" => '[{"name":"analyzer","url":"http://analyzer:8080"}]' }
+    )
       .and_return(stdout: "analyzer 1.0", stderr: "", exit_code: 0)
     allow(agent_run).to receive(:cleanup_execution_environment)
 
@@ -57,6 +61,23 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
   end
 
   # @spec PARTIAL-CLOSEOUT-030
+  it "provisions sidecars before executing with their persisted endpoints" do
+    allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler_result([ "remote" ]))
+    allow(FeatureFlags).to receive(:enabled?).with(:marketplace_tool_sidecars, project:).and_return(true)
+    allow(agent_run).to receive(:provision_execution_environment)
+    allow(agent_run).to receive(:cleanup_execution_environment)
+
+    expect(provisioner).to receive(:provision).with(agent_run).ordered
+    expect(agent_run).to receive(:execute_in_execution_environment).with(
+      [ "analyzer", "--version" ],
+      stream: false,
+      env: { "PAID_TOOL_SIDECAR_ENDPOINTS" => '[{"name":"analyzer","url":"http://analyzer:8080"}]' }
+    ).ordered.and_return(stdout: "analyzer 1.0", stderr: "", exit_code: 0)
+
+    described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], provisioner:)
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
   it "records no compatible backend as unavailable without running an unchanged validation" do
     allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler_result([]))
     allow(agent_run).to receive(:provision_execution_environment)
@@ -68,7 +89,28 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(agent_run).not_to have_received(:provision_execution_environment)
   end
 
-  def scheduler_result(hosts)
-    Containers::BackendScheduler::Result.new(candidate_hosts: hosts, compatibility_failures: {}, health_failures: {})
+  # @spec PARTIAL-CLOSEOUT-030
+  it "preserves a capability-requirements failure as the unavailable setup action" do
+    error = 'Runtime image reference "retired" is deprecated'
+    allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler_result([], requirements_error: error))
+    allow(agent_run).to receive(:provision_execution_environment)
+
+    result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], provisioner:)
+
+    expect(result.status).to eq("unavailable")
+    expect(result.setup_action).to eq("Resolve execution requirements: #{error}")
+    expect(agent_run.reload.verification_result.dig(
+      "technical_prerequisite_validation", "inspection", "requirements_error"
+    )).to eq(error)
+    expect(agent_run).not_to have_received(:provision_execution_environment)
+  end
+
+  def scheduler_result(hosts, requirements_error: nil)
+    Containers::BackendScheduler::Result.new(
+      candidate_hosts: hosts,
+      requirements_error:,
+      compatibility_failures: {},
+      health_failures: {}
+    )
   end
 end
