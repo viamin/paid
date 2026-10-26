@@ -1378,6 +1378,27 @@ RSpec.describe "Dashboard" do
       expect(frame["src"]).to be_nil
       expect(frame.to_html).to include("Upcoming Queue")
     end
+
+    # @spec QUEUE-HANDOFF-001
+    it "explains eligible work that has not yet been seeded instead of treating an empty queue as no work" do
+      project.update!(auto_pick_enabled: true)
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+
+      get dashboard_queue_preview_path
+
+      expect(response.body).to include("waiting to be seeded")
+      expect(response.body).to include("periodic eligibility sweep")
+    end
+
+    # @spec QUEUE-HANDOFF-002
+    it "does not represent an unavailable diagnostic as an empty backlog" do
+      allow(Dashboard::EligibilityBreakdown).to receive(:call).and_raise(ActiveRecord::ConnectionNotEstablished)
+
+      get dashboard_queue_preview_path
+
+      expect(response.body).to include("Queue diagnosis is currently unavailable")
+      expect(response.body).to include("does not mean there is no work")
+    end
   end
 
   describe "GET /dashboard/live" do

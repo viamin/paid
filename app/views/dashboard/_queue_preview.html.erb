@@ -48,7 +48,22 @@
         </p>
       </div>
     <% else %>
-      <p class="mt-4 text-sm text-gray-500">No queued runs for your projects.</p>
+      <% diagnosis = local_assigns[:queue_diagnosis] %>
+      <% if diagnosis&.state == :runnable_unseeded %>
+        <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200" data-testid="queue-diagnosis-runnable-unseeded">
+          <p class="text-sm text-amber-800"><%= pluralize(diagnosis.eligible_count, "eligible issue") %> <%= diagnosis.eligible_count == 1 ? "is" : "are" %> waiting to be seeded; no queued run is visible yet.</p>
+          <p class="mt-1 text-xs text-amber-700"><%= diagnosis.next_action %></p>
+        </div>
+      <% elsif diagnosis&.state == :healthy_active %>
+        <p class="mt-4 text-sm text-gray-500" data-testid="queue-diagnosis-healthy-active"><%= pluralize(diagnosis.active_count, "active run") %> <%= diagnosis.active_count == 1 ? "is" : "are" %> in progress; no additional eligible work is waiting.</p>
+      <% elsif diagnosis&.state == :unknown %>
+        <div class="mt-4 rounded-md bg-amber-50 p-3 ring-1 ring-inset ring-amber-200" data-testid="queue-diagnosis-unknown">
+          <p class="text-sm text-amber-800">Queue diagnosis is currently unavailable. This does not mean there is no work.</p>
+          <p class="mt-1 text-xs text-amber-700"><%= diagnosis.next_action %></p>
+        </div>
+      <% else %>
+        <p class="mt-4 text-sm text-gray-500">No queued runs for your projects. <%= diagnosis&.next_action %></p>
+      <% end %>
     <% end %>
   <% end %>
 </div>
