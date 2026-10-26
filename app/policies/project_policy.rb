@@ -28,6 +28,11 @@ class ProjectPolicy < ApplicationPolicy
 
   # @spec APPLE-VERIFY-002
   # @spec APPLE-VERIFY-003
+  # @spec AUTOMATION-PHASES-009
+  def delegate_automation?
+    run_agent?
+  end
+
   # RDR-077 §3: only users who may delegate the covered actions may create a
   # continuation grant that reaches merge. Delegating merge authority is
   # reserved to the roles that already own project automation settings.
