@@ -3,13 +3,32 @@
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if entry.manual_review_cause == :reopen_review %>
+        Validate the prior closure and remaining scope. This records a decision, then resumes implementation under normal admission controls.
+      <% elsif entry.manual_review_cause == :dependency %>
+        This issue is waiting on its dependency. Resolving or acknowledging this review cannot waive that hold.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
         Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
       <% end %>
     </p>
   </div>
+
+  <% if entry.manual_review_cause == :dependency %>
+    <div class="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Waiting for dependency</h3>
+      <% if entry.manual_review_blockers.any? %>
+        <ul class="list-disc space-y-1 pl-5 text-sm text-amber-900">
+          <% entry.manual_review_blockers.each do |blocker| %>
+            <li><%= link_to "##{blocker.github_number} #{blocker.title}", blocker.github_url, target: "_blank", rel: "noopener noreferrer", class: "underline" %></li>
+          <% end %>
+        </ul>
+      <% else %>
+        <p class="text-sm text-amber-900">Paid will re-evaluate this external or deployment dependency when its recorded state changes.</p>
+      <% end %>
+    </div>
+  <% end %>
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
@@ -42,13 +61,28 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
-      <%= button_to "Start enhancement run",
+    <% if policy(entry.project).run_agent? && entry.manual_review_cause != :dependency && entry.manual_review_cause != :unknown %>
+      <% if entry.manual_review_cause == :reopen_review %>
+        <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project), method: :post, class: "flex flex-wrap items-end gap-3", data: { turbo_frame: "_top" } do |form| %>
+          <%= form.hidden_field :issue_id, value: entry.issue.id %>
+          <%= form.hidden_field :manual_review_started_at, value: entry.issue.manual_review_started_at&.utc&.iso8601 %>
+          <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+          <div>
+            <%= form.label :reopen_review_reason, "Validation reason", class: "block text-sm font-medium text-gray-700" %>
+            <%= form.text_field :reopen_review_reason, required: true, class: "mt-1 rounded-md border-gray-300 text-sm" %>
+          </div>
+          <%= form.submit "Record decision and resume implementation", class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+        <% end %>
+      <% else %>
+      <%= button_to(entry.manual_review_cause == :scanner_recurrence ? "Resume scanner remediation" : "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,
             params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
             class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500",
-            form: { data: { turbo_confirm: "Queue a manual enhancement run for #{entry.project.full_name}##{entry.issue.github_number}?", turbo_frame: "_top" } } %>
+            form: { data: { turbo_confirm: "Queue a manual enhancement run for #{entry.project.full_name}##{entry.issue.github_number}?", turbo_frame: "_top" } }) %>
+      <% end %>
+    <% elsif entry.manual_review_cause == :unknown %>
+      <p class="text-sm text-amber-800">Recovery is unavailable until the originating cause is recorded.</p>
     <% end %>
     <%= link_to inbox_issue_link_label(entry.issue),
           entry.issue.github_url,

@@ -30,3 +30,13 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resolves a
+  reopen-review Inbox entry, the system SHALL require a non-blank validation
+  reason bound to the current manual-review revision, persist the decision and
+  actor in the account audit trail, and only then queue one compatible
+  implementation continuation. A stale revision, active incompatible run, or
+  duplicate submit SHALL leave the hold intact and report the existing work.
+  *Tests:* `spec/services/issues/manual_review_recovery_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Issues::ManualReviewRecovery`, `Projects::AgentRunsController`.

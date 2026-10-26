@@ -21,9 +21,28 @@ review reason. The Inbox exposes this state to an operator, and ordinary
 automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
-An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+An operator resolves reopen review only after validating whether the original
+closure remains sufficient and whether the reopened scope needs more work. The
+resolution records the authorized actor, a non-blank reason, and the current
+manual-review revision (the durable entry timestamp) before it may queue the
+supported continuation. A stale form therefore cannot attest a later reopen.
+The continuation is implementation work, not issue enhancement: it follows
+normal admission and never clears a hold while an incompatible queued or
+running run exists.
+
+## Inbox recovery routing
+
+`manual_review` is a shared parking state, not a recovery instruction. The
+Inbox classifies it from durable provenance: the dedicated reopen-review
+reason; live dependency state; scanner-remediation evidence; an enhancement
+run/stop reason; or `unknown`. It shows the classification and action outcome
+instead of deriving a route from prose. Enhancement stops retain their existing
+questions and enhancement retry. A live dependency remains visible with links
+to its owner work and is re-evaluated by ordinary dependency resolution;
+acknowledging another review never waives it. Scanner recurrence resumes the
+scanner remediation continuation, and unknown provenance stays visible without
+an invented retry. Every route uses the same authorized recovery service for
+web, API, and chat callers and refreshes the Inbox after its durable result.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

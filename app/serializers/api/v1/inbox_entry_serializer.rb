@@ -103,7 +103,12 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        {
+          questions: entry.questions,
+          comment_url: entry.manual_review_comment_url,
+          cause: entry.manual_review_cause,
+          blockers: entry.manual_review_blockers.map { |issue| { number: issue.github_number, title: issue.title, url: issue.github_url } }
+        }
       end
 
       def manual_review_list_payload

@@ -176,6 +176,19 @@
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** — When a `manual_review` entry is rendered, the
+  system SHALL classify its durable cause as reopen review, unresolved
+  dependency, scanner recurrence, enhancement recovery, technical recovery,
+  or unknown, retaining unknown provenance visibly. The entry SHALL explain
+  whether its action records a decision, retries analysis, resumes
+  implementation, or waits for evidence; it SHALL use the authorized
+  cause-specific recovery service and SHALL not create a second run while any
+  incompatible queued or running work exists.
+  *Tests:* `spec/services/issues/manual_review_recovery_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Issues::ManualReviewRecovery`, `Inbox::Queue`,
+  `Projects::AgentRunsController`, manual-review Inbox detail.
+
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by
   `Issue#abandon_due_to_runner_retry_cap!` after every available runner hit

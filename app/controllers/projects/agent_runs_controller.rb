@@ -398,16 +398,7 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
-    # manual_review only clears when an explicit operator-triggered run
-    # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
-    # queues a fresh manual enhance_issue run rather than just clearing state,
-    # since a queued run is what actually resumes the enhancement work. The
-    # queue-time state flip (resume_issue_from_manual_review) removes the
-    # inbox entry as soon as the run is queued, so the item leaves the lane
-    # immediately instead of surviving the whole queue wait; re-entry
-    # producers (parse failure, round limit, needs_input) bring it back if
-    # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002L
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -417,14 +408,16 @@ module Projects
         return
       end
 
-      create_enhance_issue_runs_and_redirect(
-        issue_ids: [ issue.id ],
-        on_error_path: safe_return_target || dashboard_path,
-        success_path: safe_return_target || dashboard_path,
-        custom_prompt: nil,
-        goal: "enhance_issue",
-        priority_tier: nil
+      result = Issues::ManualReviewRecovery.call(
+        issue: issue,
+        actor: current_user,
+        reason: params[:reopen_review_reason],
+        review_revision: params[:manual_review_started_at],
+        runner_resolver: ->(goal) {
+          resolve_runner_selection(requested_agent_type: nil, requested_runner_identifier: nil, goal: goal)
+        }
       )
+      redirect_to safe_return_target || dashboard_path, **manual_review_recovery_flash(result)
     end
 
     # Operator-driven counterpart to
@@ -1032,6 +1025,13 @@ module Projects
       else
         "This issue is no longer waiting for manual review."
       end
+    end
+
+    def manual_review_recovery_flash(result)
+      return { alert: result.message } unless result.success?
+
+      action = result.cause == :reopen_review ? "Implementation continuation queued." : "Recovery run queued."
+      { notice: action }
     end
 
     def cancel_in_flight_execution_for_resume!
