@@ -16,6 +16,7 @@ module Inbox
     TEST_REVIEW_PENDING_KIND = "test_review_pending"
     PROJECT_SETUP_PENDING_KIND = "project_setup_pending"
     TRACEABILITY_GAP_KIND = "traceability_gap"
+    LAYERED_VERIFICATION_FINDING_KIND = "layered_verification_finding"
     DEFAULT_SORT = "oldest"
     # RDR-077 §5 scopes: the default actionable list, the requests held back by
     # a disabled phase, and the requests this user personally removed.
@@ -41,7 +42,8 @@ module Inbox
       PARTIAL_CLOSEOUT_KIND,
       TEST_REVIEW_PENDING_KIND,
       PROJECT_SETUP_PENDING_KIND,
-      TRACEABILITY_GAP_KIND
+      TRACEABILITY_GAP_KIND,
+      LAYERED_VERIFICATION_FINDING_KIND
     ].freeze
     KIND_LABELS = KINDS.to_h { |kind| [ kind, kind.titleize ] }.merge(
       ESCALATED_PR_KIND => "Blocked PRs",
@@ -49,7 +51,8 @@ module Inbox
       CHANGE_INTENT_DRAFT_KIND => "CIR Drafts",
       PARTIAL_CLOSEOUT_KIND => "Partial closeouts",
       PROJECT_SETUP_PENDING_KIND => "Project setup",
-      TRACEABILITY_GAP_KIND => "Traceability gaps"
+      TRACEABILITY_GAP_KIND => "Traceability gaps",
+      LAYERED_VERIFICATION_FINDING_KIND => "Audit findings"
     ).freeze
 
     # The TDD red-phase gate label (RDR-056): test-writing runs apply it to
@@ -407,6 +410,7 @@ module Inbox
         entries.concat(test_review_pending_entries) if include_kind?(TEST_REVIEW_PENDING_KIND)
         entries.concat(project_setup_pending_entries) if include_kind?(PROJECT_SETUP_PENDING_KIND)
         entries.concat(traceability_gap_entries) if include_kind?(TRACEABILITY_GAP_KIND)
+        entries.concat(layered_verification_finding_entries) if include_kind?(LAYERED_VERIFICATION_FINDING_KIND)
         entries_by_id = entries.index_by(&:id)
         Inbox::PhaseOwnership.for_entries(entries).each do |entry_id, ownership|
           entries_by_id.fetch(entry_id).instance_variable_set(:@phase_ownership, ownership)
@@ -422,6 +426,20 @@ module Inbox
 
     def include_kind?(entry_kind)
       kind.blank? || kind == entry_kind
+    end
+
+    # @spec LAYERED-VERIFY-015
+    def layered_verification_finding_entries
+      scope = LayeredVerificationFinding.where(project_id: scoped_projects.map(&:id), status: %w[open deferred])
+      scope = scope.where(project:) if project
+      only_record(scope).includes(:project, :obligation).map do |finding|
+        Entry.new(
+          id: "#{LAYERED_VERIFICATION_FINDING_KIND}:#{finding.id}", kind: LAYERED_VERIFICATION_FINDING_KIND,
+          project: finding.project, issue: nil, record: finding, waiting_since: finding.created_at,
+          questions: [], tasks: [], summary_text: Inbox::LayeredVerificationFinding.new(finding:).detail[:resolution],
+          title_text: "Audit finding: #{finding.obligation_external_identity}", action_url: nil
+        )
+      end
     end
 
     def sort_entries(entries)
