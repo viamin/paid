@@ -66,7 +66,7 @@ module FacetConfidence
       def case_entries
         # Reload: the calling request or spec may hold a memoized evaluation
         # whose association targets predate the judgments.
-        labels = @evaluation.labels.reload.index_by(&:case_id)
+        labels = @evaluation.labels.includes(:revision).reload.index_by(&:case_id)
         @evaluation.corpus.cases.map { |corpus_case| case_entry(corpus_case, labels[corpus_case.fetch("id")]) }
       end
 
@@ -77,6 +77,7 @@ module FacetConfidence
           "case_id" => corpus_case.fetch("id"),
           "shape" => corpus_case["shape"],
           "judgment" => judgment,
+          "correction" => correction_of(label),
           "expected" => expected.slice("status", "intent_band", "technical_band", "readiness"),
           "divergences" => divergences(judgment, expected),
           "citation_compliance" => citation_compliance(judgment, expected)
@@ -89,6 +90,13 @@ module FacetConfidence
           "readiness" => label.readiness, "cited_evidence_reference" => label.cited_evidence_reference,
           "reason" => label.reason
         }
+      end
+
+      def correction_of(label)
+        return unless label&.revision
+
+        judgment_of(label.revision).merge("recorded_by" => label.revision.recorded_by.email,
+          "recorded_at" => label.revision.recorded_at.iso8601)
       end
 
       def divergences(judgment, expected)

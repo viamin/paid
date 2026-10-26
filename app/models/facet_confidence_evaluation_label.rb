@@ -16,6 +16,7 @@ class FacetConfidenceEvaluationLabel < ApplicationRecord
 
   belongs_to :facet_confidence_evaluation, class_name: "FacetConfidenceEvaluation", inverse_of: :labels
   belongs_to :recorded_by, class_name: "User"
+  has_one :revision, class_name: "FacetConfidenceEvaluationLabelRevision", dependent: :destroy
 
   validates :case_id, presence: true
   validates :state, inclusion: { in: STATES }

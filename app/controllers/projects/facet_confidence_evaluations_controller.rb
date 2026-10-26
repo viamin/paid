@@ -9,6 +9,7 @@ module Projects
   # URL.
   # @spec FACET-CONFIDENCE-020
   # @spec FACET-CONFIDENCE-021
+  # @spec FACET-CONFIDENCE-022
   class FacetConfidenceEvaluationsController < ApplicationController
     before_action :set_project
     before_action :set_evaluation, except: %i[new create]
@@ -73,6 +74,14 @@ module Projects
 
       result = FacetConfidence::CloseoutEvaluation::FreezeLabels.call(evaluation: @evaluation, actor: current_user)
       redirect_for(result, success_notice: "Reference set frozen. The compiled report is ready to return to the Inbox item.")
+    end
+
+    def revise
+      authorize @evaluation
+
+      result = FacetConfidence::CloseoutEvaluation::ReviseLabel.call(
+        evaluation: @evaluation, actor: current_user, case_id: params[:case_id].to_s, judgment: judgment_params)
+      redirect_for(result, success_notice: "Correction appended — the original blinded judgment is preserved.")
     end
 
     private

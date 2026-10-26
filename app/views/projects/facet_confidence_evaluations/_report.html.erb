@@ -95,6 +95,39 @@
   </p>
 </div>
 
+<div class="space-y-3 rounded-xl border border-gray-200 bg-white p-6">
+  <h2 class="text-sm font-semibold text-gray-900">Post-unblinding corrections</h2>
+  <p class="text-xs text-gray-500">A correction is retained separately; it never replaces the blinded judgment or rescales the frozen comparison.</p>
+  <% entries.each do |entry| %>
+    <% correction = entry["correction"] %>
+    <% if correction %>
+      <div class="rounded-lg border border-gray-100 p-3 text-sm text-gray-700">
+        <strong><%= entry["case_id"] %></strong> · <code><%= correction["verdict"] %></code> · intent <code><%= correction["intent_band"] %></code> · technical <code><%= correction["technical_band"] %></code> · <code><%= correction["readiness"] %></code><br>
+        <span class="text-xs">cites <code><%= correction["cited_evidence_reference"] %></code> · <%= correction["reason"] %> · recorded by <%= correction["recorded_by"] %> at <%= correction["recorded_at"] %></span>
+      </div>
+    <% end %>
+  <% end %>
+  <% if entries.none? { |entry| entry["correction"] } %><p class="text-sm text-gray-600">No corrections recorded.</p><% end %>
+  <% entries.each do |entry| %>
+    <% next if entry["correction"] || entry["judgment"].blank? %>
+    <details class="rounded-lg border border-gray-100 p-3">
+      <summary class="cursor-pointer text-sm font-medium text-gray-700">Correct <%= entry["case_id"] %></summary>
+      <% judgment = entry["judgment"] %>
+      <% references = evaluation.corpus.find_case(entry["case_id"]).fetch("evidence").map { |item| item.fetch("reference") } %>
+      <%= form_with url: revise_project_facet_confidence_evaluation_path(project, evaluation, **inbox_context), method: :post, class: "mt-3 grid gap-3 text-sm" do |form| %>
+        <%= form.hidden_field :case_id, value: entry["case_id"] %>
+        <%= form.select :verdict, FacetConfidenceEvaluationLabel::VERDICTS, selected: judgment["verdict"] %>
+        <%= form.select :intent_band, FacetConfidenceEvaluationLabel::BANDS, selected: judgment["intent_band"] %>
+        <%= form.select :technical_band, FacetConfidenceEvaluationLabel::BANDS, selected: judgment["technical_band"] %>
+        <%= form.select :readiness, FacetConfidenceEvaluationLabel::READINESS, selected: judgment["readiness"] %>
+        <%= form.select :cited_evidence_reference, references, selected: judgment["cited_evidence_reference"] %>
+        <%= form.text_area :reason, required: true, rows: 2, placeholder: "Reason for this post-unblinding correction" %>
+        <%= form.submit "Append correction", class: "w-fit rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300" %>
+      <% end %>
+    </details>
+  <% end %>
+</div>
+
 <% if evaluation.report_markdown.present? %>
   <details class="rounded-xl border border-gray-200 bg-white p-6">
     <summary class="cursor-pointer text-sm font-semibold text-gray-900">Reproducible report (markdown)</summary>

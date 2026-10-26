@@ -10,6 +10,7 @@ require "rails_helper"
 # links and actions.
 # @spec FACET-CONFIDENCE-020
 # @spec FACET-CONFIDENCE-021
+# @spec FACET-CONFIDENCE-022
 RSpec.describe "Projects::FacetConfidenceEvaluations" do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account: account) }
@@ -137,6 +138,22 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response.body).to include("FC-CORPUS-01")
     expect(response.body).to include("Frozen expectations")
     expect(response.body).not_to include("Execute reviewer")
+  end
+
+  it "appends a post-unblinding correction without replacing the frozen comparison" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    post freeze_project_facet_confidence_evaluation_path(project, evaluation)
+
+    post revise_project_facet_confidence_evaluation_path(project, evaluation), params: {
+      case_id: "FC-CORPUS-01", **judgment_params(evaluation.corpus.find_case("FC-CORPUS-01"),
+        reason: "Post-unblinding correction reason.")
+    }
+
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation))
+    expect(evaluation.labels.find_by!(case_id: "FC-CORPUS-01").revision.reason).to eq("Post-unblinding correction reason.")
+    follow_redirect!
+    expect(response.body).to include("Post-unblinding corrections", "Post-unblinding correction reason.")
   end
 
   it "rejects labeling by anyone other than the operator who started the evaluation" do
