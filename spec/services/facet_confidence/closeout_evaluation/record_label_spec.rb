@@ -106,6 +106,29 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::RecordLabel do
     expect(result.error).to include("frozen")
   end
 
+  it "preserves the original blinded judgment when a post-unblinding correction is appended" do
+    label = described_class.call(evaluation: evaluation, actor: owner, case_id: "FC-CORPUS-01", judgment: judgment).label
+    evaluation.update!(status: "frozen", labels_frozen_at: Time.current)
+
+    result = FacetConfidence::CloseoutEvaluation::ReviseLabel.call(
+      evaluation: evaluation, actor: owner, case_id: label.case_id,
+      judgment: judgment.merge(reason: "Correction after reading the frozen expectation.")
+    )
+
+    expect(result).to be_success
+    expect(label.reload).to have_attributes(**judgment)
+    expect(label).to have_attributes(
+      revised_verdict: judgment[:verdict],
+      revised_intent_band: judgment[:intent_band],
+      revised_technical_band: judgment[:technical_band],
+      revised_readiness: judgment[:readiness],
+      revised_cited_evidence_reference: judgment[:cited_evidence_reference],
+      revised_reason: "Correction after reading the frozen expectation.",
+      revised_by: owner,
+      revised_at: be_present
+    )
+  end
+
   it "refuses recording when freezing commits behind a stale labeling read" do
     # The two-tab race from review: this request loaded the evaluation while
     # it was still labeling, FreezeLabels then froze the set and compiled the

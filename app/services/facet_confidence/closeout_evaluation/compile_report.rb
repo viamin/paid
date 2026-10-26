@@ -66,7 +66,7 @@ module FacetConfidence
       def case_entries
         # Reload: the calling request or spec may hold a memoized evaluation
         # whose association targets predate the judgments.
-        labels = @evaluation.labels.reload.index_by(&:case_id)
+        labels = @evaluation.labels.includes(:revised_by).reload.index_by(&:case_id)
         @evaluation.corpus.cases.map { |corpus_case| case_entry(corpus_case, labels[corpus_case.fetch("id")]) }
       end
 
@@ -77,6 +77,7 @@ module FacetConfidence
           "case_id" => corpus_case.fetch("id"),
           "shape" => corpus_case["shape"],
           "judgment" => judgment,
+          "revision" => revision_of(label),
           "expected" => expected.slice("status", "intent_band", "technical_band", "readiness"),
           "divergences" => divergences(judgment, expected),
           "citation_compliance" => citation_compliance(judgment, expected)
@@ -88,6 +89,17 @@ module FacetConfidence
           "verdict" => label.verdict, "intent_band" => label.intent_band, "technical_band" => label.technical_band,
           "readiness" => label.readiness, "cited_evidence_reference" => label.cited_evidence_reference,
           "reason" => label.reason
+        }
+      end
+
+      def revision_of(label)
+        return unless label&.revised?
+
+        {
+          "verdict" => label.revised_verdict, "intent_band" => label.revised_intent_band,
+          "technical_band" => label.revised_technical_band, "readiness" => label.revised_readiness,
+          "cited_evidence_reference" => label.revised_cited_evidence_reference,
+          "reason" => label.revised_reason, "by" => label.revised_by.email, "at" => label.revised_at.iso8601
         }
       end
 
@@ -153,11 +165,11 @@ module FacetConfidence
       def cases_table(entries)
         entries.map do |entry|
           judgment = entry.fetch("judgment") || {}
-          format("| %s | %s | %s | %s | %s | %s | %s |",
+          format("| %s | %s | %s | %s | %s | %s | %s | %s |",
             entry.fetch("case_id"), entry.fetch("shape"),
             judgment["verdict"], judgment["intent_band"],
             judgment["technical_band"], judgment["readiness"],
-            divergences_cell(entry))
+            divergences_cell(entry), revision_cell(entry))
         end.join("\n")
       end
 
@@ -165,6 +177,13 @@ module FacetConfidence
         parts = entry.fetch("divergences").dup
         parts += entry.fetch("citation_compliance").to_a.map { |violation| "citation:#{violation}" }
         parts.empty? ? "aligned" : parts.join(", ")
+      end
+
+      def revision_cell(entry)
+        revision = entry["revision"]
+        return "" unless revision
+
+        "#{revision.fetch('verdict')} / #{revision.fetch('intent_band')} / #{revision.fetch('technical_band')} / #{revision.fetch('readiness')} (#{revision.fetch('reason')})"
       end
 
       WORKSHEET_TEMPLATE = <<~WORKSHEET
@@ -182,8 +201,8 @@ module FacetConfidence
 
         ## Per-case judgments vs frozen expectations
 
-        | Case | Shape | Verdict | Intent band | Technical band | Readiness | Divergences |
-        | --- | --- | --- | --- | --- | --- | --- |
+        | Case | Shape | Verdict | Intent band | Technical band | Readiness | Divergences | Post-unblinding correction |
+        | --- | --- | --- | --- | --- | --- | --- | --- |
         %{cases}
 
         Reference judgments are policy assessments, not calibrated probabilities.
