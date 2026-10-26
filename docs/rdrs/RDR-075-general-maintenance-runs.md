@@ -247,7 +247,11 @@ Maintenance scans are report-only. A user can select findings to create
 bounded repair issues or normal PR-creation runs, preserving source-report
 links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
-outside the initial scope and requires a separately approved policy.
+outside the initial scope and requires a separately approved policy. The
+draft optimization-family policy in
+[`docs/intent/maintenance-optimization/`](../intent/maintenance-optimization/)
+is a reviewable prerequisite for #4493–#4496, not that approval and not
+runtime authorization.
 
 ### PR integration
 

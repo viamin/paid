@@ -341,6 +341,19 @@ any repair: a scan never mutates source code or opens a PR on its own.
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
 that acceptance.
 
+A proposed optimization recipe family refines that maintenance capability with
+a curated catalog and report-only assessments for performance, architecture,
+duplication, security hardening, cost efficiency, maintainability, and test
+quality. Semantic assessment belongs to `agent_harness`; deterministic code
+only enforces the selected recipe's authorization, pinned revision, budget,
+idempotency, and stale-evidence gates. Automatic bounded repair remains an
+opt-in, off-by-default policy proposal: security hardening is manual-only and
+no repair is authorized until the owner accepts the policy and the base
+maintenance design. See the draft
+`docs/intent/maintenance-optimization/` segment, which tracks executable
+delivery through #4493–#4496 rather than treating the #4492 umbrella as an
+implementation deliverable.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the

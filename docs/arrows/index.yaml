@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-24
+last_updated: 2026-10-26
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -736,6 +736,16 @@ arrows:
     status: MAPPED
     sampled: 2026-10-24
     next: "Draft LLD/EARS only; RDR-075 remains Status: Draft (merged to main via #4308) and no implementation exists. #4604 revalidated its tool-handoff evidence environment on 2026-10-24: no Docker client, socket, or alternate local engine was available, so critical assumption 2's native-analyzer and sidecar artifacts remain uncollected. Move both validations to a Docker-capable environment; do not release #4328-#4333 before design acceptance and that evidence."
+  maintenance-optimization:
+    title: Maintenance Optimization Recipes and Bounded Repair
+    path: docs/intent/maintenance-optimization/maintenance-optimization-design.md
+    specs: docs/intent/maintenance-optimization/maintenance-optimization-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: MAPPED
+    sampled: 2026-10-26
+    blockedBy: [maintenance-runs]
+    next: "Owner must accept or amend the draft confidence-standing and opt-in bounded-repair policy before #4493–#4496 implement it; #4492 remains a tracking umbrella."
   marketplace-tool-sidecars:
     title: Marketplace Tool Sidecars
     path: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-design.md

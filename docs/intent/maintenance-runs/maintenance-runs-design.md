@@ -45,7 +45,7 @@ model. Each run persists, immutably once started:
   investigated, and `issue_id` (nullable — issue-less manual runs are
   first-class).
 - `objective` (the recipe key, or `nil` for a free-text user question),
-  `scope` (optional paths/symbols the user named), and `guidance` (free-text
+  `scope` (optional paths, symbols, or a bounded free-text scope statement), and `guidance` (free-text
   instructions), captured verbatim at run start.
 - `recipe_version` and the resolved tool versions/configuration actually
   used, for provenance (RDR-073 attachment metadata plus any native-CLI
@@ -243,7 +243,9 @@ shipped code in
   RDR-073's territory, consumed here, not duplicated.
 - Not an automatic-repair mechanism — a scan never deletes source code or
   opens a PR as a side effect; repair is a separate, explicitly authorized
-  run.
+  run. The draft optimization-policy extension may propose an opt-in
+  auto-queue after a completed report, but it has no effect unless separately
+  accepted; see `../maintenance-optimization/`.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.
