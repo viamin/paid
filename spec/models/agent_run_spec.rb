@@ -163,6 +163,9 @@ RSpec.describe AgentRun do
       feature = create(:feature_intent, :confidence_driven, project: project)
       mapping = {
         "coverage" => "complete", "scope_revision" => "scope-v1",
+        "planning_hold" => {
+          "owner" => "paid", "task_kind" => "implementation", "operator_override" => false
+        },
         "prerequisites" => [ { "id" => "scope", "assessment" => { "status" => "completed", "evidence_revision" => "e1", "intent_score" => 80, "technical_score" => 80 } } ],
         "design_artifacts" => [ { "path" => "docs/intent/example.md", "required" => true, "merged" => true, "scope_revision" => "scope-v1", "revision" => "a" * 40 } ]
       }

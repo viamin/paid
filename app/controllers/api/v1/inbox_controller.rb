@@ -52,7 +52,9 @@ module Api
       def chat
         authorize :inbox, policy_class: InboxPolicy
         entry = Inbox::FindEntry.call(user: current_user, entry_id: params[:entry_id])
-        chat_session = if entry&.clarifying_questions? && entry.issue
+        return render_entry_not_found unless entry
+
+        chat_session = if entry.clarifying_questions? && entry.issue
           authorize entry.project, :manage_issues?, policy_class: ProjectPolicy
           ClarifyingQuestions::OpenChat.call(issue: entry.issue, user: current_user)
         else

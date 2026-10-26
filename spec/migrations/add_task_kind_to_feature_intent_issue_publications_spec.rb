@@ -23,9 +23,7 @@ RSpec.describe AddTaskKindToFeatureIntentIssuePublications, :aggregate_failures 
     enforcement_migration.migrate(:up) if task_kind_column.null
     receipt_class.reset_column_information
     FeatureIntentIssuePublication.reset_column_information
-    receipt = FeatureIntentIssuePublication.find_by(task_digest: "legacy-receipt")
-    FeatureIntent.find_by_id(receipt.feature_intent_id)&.destroy! if receipt
-    receipt&.destroy!
+    cleanup_test_receipts
   end
 
   # @spec CONFIDENCE-DELIVERY-017
@@ -63,5 +61,12 @@ RSpec.describe AddTaskKindToFeatureIntentIssuePublications, :aggregate_failures 
 
   def task_kind_column
     connection.columns(:feature_intent_issue_publications).find { |column| column.name == "task_kind" }
+  end
+
+  def cleanup_test_receipts
+    receipts = FeatureIntentIssuePublication.where(task_digest: %w[legacy-receipt rollback-legacy])
+    feature_intent_ids = receipts.pluck(:feature_intent_id)
+    receipts.delete_all
+    FeatureIntent.where(id: feature_intent_ids).destroy_all
   end
 end
