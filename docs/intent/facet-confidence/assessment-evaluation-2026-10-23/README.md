@@ -31,4 +31,7 @@ append one `assessment_run` event with full provenance, then append
 when every case has a run does
 `bin/facet-confidence-assessment-evaluation compile` emit the outcome
 worksheet with false readiness, unnecessary clarification, human corrections,
-assessment cost, and downstream rework.
+assessment cost, and downstream rework. The 2026-10-26 attempts are retained
+in `ledger.jsonl` as eight operational failures because no provider served the
+pinned rubric model; they do not establish verdict coverage or outcome
+measures.

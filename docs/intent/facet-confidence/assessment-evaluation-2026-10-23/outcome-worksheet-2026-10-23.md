@@ -12,14 +12,12 @@ direction, explicit corrections, repeated agent suggestions, collaborator
 disagreement, unknown intent with strong technical evidence, strong intent
 with weak feasibility, research scope, and the 79/80 boundary.
 
-No operator-executed assessment runs have been recorded yet: executing the
-rubric against live model output is an operator action
-([`operator-runbook.md`](operator-runbook.md)), and no corpus run may release
-work while readiness-driven release stays gated on the RDR-071 delivery path
-(RDR-070 rollout guard). Until the runs exist, every operator-derived measure
-below stays not established — mirroring what
-`bin/facet-confidence-assessment-evaluation compile` emits
-(`pending operator input`, exit 2).
+On 2026-10-26, the shipped assessment path attempted every frozen corpus case.
+No provider in that environment served the pinned model
+`claude-sonnet-4-6`, so all eight attempts were recorded as operational
+failures in [`ledger.jsonl`](ledger.jsonl). No assessment verdict exists. The
+attempts do not release work: readiness-driven release remains gated on the
+complete RDR-071 delivery path (RDR-070 rollout guard).
 
 ## Corpus identity
 
@@ -29,6 +27,7 @@ below stays not established — mirroring what
 | Rubric / model | `facet-confidence-v1` / `claude-sonnet-4-6` (matches `FeatureIntents::AssessFacet`) |
 | Thresholds | intent 80 / technical 80 (provisional policy defaults) |
 | Case shapes | 8 required shapes, 8 cases, one per shape |
+| Corpus digest | `126b30c6b4796466f3057f78d0bedbb901e6fdb942ca14cafb7549ac396ecc0c` |
 | Provenance per run | corpus version + digest, rubric, model, input evidence revision (ledger-validated) |
 | Replay guard | identical case input rejected; re-runs require an advanced input revision plus a recorded correction |
 | Evidence fidelity | completed runs must cite case evidence; corrections must be cited, superseded statements must not be |
@@ -46,14 +45,14 @@ metric computation (including parity with `ScopedReadiness` at the 79/80 and
 
 | Measure | Result | Ledger evidence |
 |---|---|---|
-| Corpus coverage | 0 / 8 cases | `assessment_run` events required |
+| Corpus coverage | 0 / 8 verdicts (8 / 8 attempts) | all attempts failed before a verdict |
 | False readiness | not established | expected readiness band vs `assessment_run` |
 | Unnecessary clarification | not established | expected decisive outcome vs `assessment_run` status |
 | Human corrections | not established | `correction` events required |
-| Assessment cost | not established | `assessment_run.cost_cents` required |
+| Assessment cost | 0 cents | `assessment_run.cost_cents` (no model invocation completed) |
 | Downstream rework | not established | `rework` events required |
 | Band divergences | not established | expected bands vs `assessment_run` scores |
-| Operational failures | not established | `assessment_run` status `failed` |
+| Operational failures | 8 (100.0% of 8 attempts) | `assessment_run` status `failed` |
 
 A `failed` run is an operational (provider/runtime) failure, never an
 assessment verdict: it is reported as an operational failure above and stays
@@ -64,12 +63,12 @@ measures, so provider outages cannot inflate or deflate assessment quality.
 
 | Tuning rule | Outcome |
 |---|---|
-| Every corpus case has at least one recorded run | Not met — operator runs absent |
+| Every corpus case has at least one recorded verdict | Not met — all eight attempts failed before a verdict |
 | Tuning proposal cites false-readiness and unnecessary-clarification metrics | Not evaluable — metrics not established |
 | Throughput-only justification | Never sufficient (enforced by the report's tuning gate) |
 
-**Tuning-gate outcome: `blocked_incomplete_coverage`.** Threshold or rubric
-tuning proposals stay unevaluated until the operator records the corpus runs
-and the compiled outcome metrics exist; the corrective action is to execute
-the runbook above, append the ledger events, and mirror the compiled
-worksheet here.
+**Tuning-gate outcome: `blocked_incomplete_coverage`.** The 80/80 defaults and
+the rubric are unchanged. Threshold or rubric tuning proposals stay
+unevaluated until a provider serves the pinned model, every case has a
+non-failed verdict, and the compiler can produce the outcome measures. The
+recorded figures are policy assessments, not calibrated probabilities.
