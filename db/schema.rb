@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_26_111124) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1805,6 +1805,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
     t.index ["project_id", "connector_key", "external_event_id"], name: "idx_connector_events_project_external_id", unique: true
     t.index ["project_id"], name: "index_external_connector_events_on_project_id"
     t.index ["status", "created_at"], name: "idx_connector_events_status_created"
+  end
+
+  create_table "facet_confidence_evaluation_label_revisions", comment: "Append-only post-unblinding corrections to frozen facet-confidence reference judgments (#4662).", force: :cascade do |t|
+    t.text "cited_evidence_reference", null: false, comment: "Case evidence reference cited for the correction."
+    t.datetime "created_at", null: false
+    t.bigint "facet_confidence_evaluation_label_id", null: false, comment: "The immutable blinded reference judgment being corrected."
+    t.string "intent_band", null: false, comment: "Corrected intent assessment band."
+    t.string "readiness", null: false, comment: "Corrected readiness derived from the corrected bands."
+    t.text "reason", null: false, comment: "Judge's reason for the corrected judgment."
+    t.datetime "revised_at", null: false, comment: "When the post-unblinding correction was recorded."
+    t.bigint "revised_by_id", null: false, comment: "Authenticated sole reference judge who recorded this correction."
+    t.text "revision_reason", null: false, comment: "Why the frozen blinded judgment was corrected after unblinding."
+    t.string "technical_band", null: false, comment: "Corrected technical assessment band."
+    t.datetime "updated_at", null: false
+    t.string "verdict", null: false, comment: "Corrected verdict status."
+    t.index ["facet_confidence_evaluation_label_id", "revised_at"], name: "idx_facet_confidence_label_revisions_chronological"
+    t.index ["facet_confidence_evaluation_label_id"], name: "idx_on_facet_confidence_evaluation_label_id_937c99e1eb"
+    t.index ["revised_by_id"], name: "idx_on_revised_by_id_186c25ac76"
   end
 
   create_table "facet_confidence_evaluation_labels", comment: "Durable blinded reference judgment for one corpus case of a facet-confidence closeout evaluation: save/resume state per case (#4596).", force: :cascade do |t|
@@ -4740,6 +4758,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_24_224630) do
   add_foreign_key "explicit_preferences", "users", on_delete: :cascade
   add_foreign_key "external_connector_events", "accounts"
   add_foreign_key "external_connector_events", "projects"
+  add_foreign_key "facet_confidence_evaluation_label_revisions", "facet_confidence_evaluation_labels"
+  add_foreign_key "facet_confidence_evaluation_label_revisions", "users", column: "revised_by_id"
   add_foreign_key "facet_confidence_evaluation_labels", "facet_confidence_evaluations"
   add_foreign_key "facet_confidence_evaluation_labels", "users", column: "recorded_by_id"
   add_foreign_key "facet_confidence_evaluations", "issues"

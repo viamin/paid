@@ -79,7 +79,8 @@ module FacetConfidence
           "judgment" => judgment,
           "expected" => expected.slice("status", "intent_band", "technical_band", "readiness"),
           "divergences" => divergences(judgment, expected),
-          "citation_compliance" => citation_compliance(judgment, expected)
+          "citation_compliance" => citation_compliance(judgment, expected),
+          "revisions" => revisions_of(label)
         }
       end
 
@@ -89,6 +90,19 @@ module FacetConfidence
           "readiness" => label.readiness, "cited_evidence_reference" => label.cited_evidence_reference,
           "reason" => label.reason
         }
+      end
+
+      def revisions_of(label)
+        return [] unless label
+
+        label.revisions.includes(:revised_by).order(:revised_at, :id).map do |revision|
+          {
+            "judgment" => judgment_of(revision),
+            "revision_reason" => revision.revision_reason,
+            "revised_by" => revision.revised_by.email,
+            "revised_at" => revision.revised_at.iso8601
+          }
+        end
       end
 
       def divergences(judgment, expected)

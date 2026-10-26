@@ -91,9 +91,55 @@
   </table>
   <p class="text-xs text-gray-500">
     Highlighted rows are divergences between your blinded judgment and the frozen expectation for judge review.
-    The original judgments are preserved as recorded.
+    The original judgments are preserved as recorded; post-unblinding corrections never replace them.
   </p>
 </div>
+
+<% if policy(evaluation).revise? %>
+  <div class="space-y-4 rounded-xl border border-gray-200 bg-white p-6">
+    <div>
+      <h2 class="text-sm font-semibold text-gray-900">Correct a judgment after unblinding</h2>
+      <p class="mt-1 text-xs text-gray-500">
+        This appends a correction for the sole reference judge. It does not alter the blinded judgment or its frozen measures.
+      </p>
+    </div>
+    <% entries.each do |entry| %>
+      <% original = entry["judgment"] || {} %>
+      <% current = entry.fetch("revisions", []).last&.fetch("judgment") || original %>
+      <details class="rounded-lg border border-gray-100 p-4">
+        <summary class="cursor-pointer text-sm font-medium text-gray-800"><%= entry["case_id"] %></summary>
+        <%= form_with url: revise_project_facet_confidence_evaluation_path(project, evaluation), method: :post, class: "mt-4 grid gap-3" do |form| %>
+          <%= form.hidden_field :case_id, value: entry["case_id"] %>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <%= form.select :verdict, FacetConfidenceEvaluationLabel::VERDICTS, selected: current["verdict"] %>
+            <%= form.select :intent_band, FacetConfidenceEvaluationLabel::BANDS, selected: current["intent_band"] %>
+            <%= form.select :technical_band, FacetConfidenceEvaluationLabel::BANDS, selected: current["technical_band"] %>
+            <%= form.select :readiness, FacetConfidenceEvaluationLabel::READINESS, selected: current["readiness"] %>
+          </div>
+          <%= form.text_field :cited_evidence_reference, value: current["cited_evidence_reference"], placeholder: "Cited case evidence reference" %>
+          <%= form.text_area :reason, value: current["reason"], rows: 2, placeholder: "Reason for the corrected judgment" %>
+          <%= form.text_area :revision_reason, rows: 2, placeholder: "Why this blinded judgment is being corrected" %>
+          <%= form.submit "Record correction", class: "w-fit rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white" %>
+        <% end %>
+      </details>
+    <% end %>
+  </div>
+<% end %>
+
+<% revised_entries = entries.select { |entry| entry.fetch("revisions", []).any? } %>
+<% if revised_entries.any? %>
+  <div class="space-y-3 rounded-xl border border-gray-200 bg-white p-6">
+    <h2 class="text-sm font-semibold text-gray-900">Post-unblinding correction history</h2>
+    <% revised_entries.each do |entry| %>
+      <% entry.fetch("revisions").each do |revision| %>
+        <div class="border-t border-gray-100 pt-3 text-sm text-gray-700">
+          <strong><%= entry["case_id"] %></strong> corrected by <%= revision["revised_by"] %> at <%= revision["revised_at"] %>:
+          <%= revision["revision_reason"] %>
+        </div>
+      <% end %>
+    <% end %>
+  </div>
+<% end %>
 
 <% if evaluation.report_markdown.present? %>
   <details class="rounded-xl border border-gray-200 bg-white p-6">

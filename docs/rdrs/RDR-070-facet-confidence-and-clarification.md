@@ -213,3 +213,13 @@ broaden enrollment or change an active run. This closeout tracks
 [#4309](https://github.com/viamin/paid/issues/4309); it does not close the
 umbrella. The shared audit evidence is also recorded in
 [`audit-report-2026-10-22-human-centered-inbox-epic.md`](audit-report-2026-10-22-human-centered-inbox-epic.md).
+
+### 2026-10-26 reference-judgment evidence audit
+
+Issue [#4662](https://github.com/viamin/paid/issues/4662) records the required
+human reference-judgment evidence for the frozen corpus. Its
+[criterion-level audit](audit-report-2026-10-26-rdr-070.md) confirms the
+shipped blinded-labeling, freeze, report, and append-only post-unblinding
+correction controls, but records the actual judgment set and compiled report
+as pending the authenticated maintainer's session. It does not treat an agent
+or a report-less workflow as independent human validation.
