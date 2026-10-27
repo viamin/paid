@@ -35,6 +35,14 @@ every policy decision reads it through `Automation::RolloutGuard.enabled?`
 `Automation::EffectivePolicy` returns a permitted `legacy_policy` decision, so
 existing execution and Inbox behavior is untouched.
 
+Pilot activation is a project-scoped `FeatureFlags.enable!` operation performed
+by the authorized rollout operator after the migration preview and focused
+execution and Inbox checks pass. `FeatureFlags.disable!` rejects a project
+rollback while it has active continuation grants; the operator must first let
+them complete or revoke them through the project grant surface, reconcile any
+queued work, and then disable the flag. This prevents a rollback from silently
+changing the policy around granted work.
+
 ## Project phase defaults
 
 `projects.automation_phase_settings` (jsonb) stores:

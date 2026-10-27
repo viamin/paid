@@ -6,6 +6,7 @@ class FeatureFlags
   UnknownFlagError = Class.new(ArgumentError)
   InvalidActorError = Class.new(ArgumentError)
   InvalidPercentageError = Class.new(ArgumentError)
+  RollbackBlockedError = Class.new(ArgumentError)
 
   DEFINITIONS = {
     question_exploration: Definition.new(
@@ -145,6 +146,7 @@ class FeatureFlags
 
     def disable!(flag_name, project: nil, actor: nil)
       resolved_actor = resolve_actor(project:, actor:)
+      prevent_automation_phases_rollback!(flag_name, project: resolved_actor)
 
       unless resolved_actor
         # Flipper's boolean-gate disable already calls clear(feature), which
@@ -220,6 +222,20 @@ class FeatureFlags
       return actor if actor
 
       nil
+    end
+
+    # RDR-077 pilot rollback must not strand an active work-item exception
+    # behind the legacy policy. A global disable affects every pilot, so it is
+    # blocked whenever any active continuation grant remains.
+    # @spec AUTOMATION-PHASES-014
+    def prevent_automation_phases_rollback!(flag_name, project:)
+      return unless flag_name.to_sym == :automation_phases
+
+      grants = project ? project.work_item_continuation_grants.active : WorkItemContinuationGrant.active
+      return unless grants.exists?
+
+      raise RollbackBlockedError,
+        "Cannot disable automation_phases while active continuation grants remain; complete or revoke them first."
     end
 
     def update_percentage_gate(flipper_feature, gate, percentage)
