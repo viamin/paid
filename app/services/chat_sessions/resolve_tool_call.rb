@@ -23,7 +23,7 @@ module ChatSessions
 
     attr_reader :chat_session, :actor, :tool_call_message, :decision, :llm_client,
       :on_chunk, :on_message_persisted, :on_tool_call_resolved, :stream_message_id,
-      :transport_attempt_message
+      :transport_attempt_message, :chat_turn
 
     def initialize(chat_session:, actor: chat_session.created_by, tool_call_message:, decision:, llm_client: nil, on_chunk: nil,
       on_message_persisted: nil, on_tool_call_resolved: nil, stream_message_id: nil)
@@ -48,14 +48,17 @@ module ChatSessions
       # @spec API-CONVERSATION-DELEGATION-004
       validate_decision!
       prepare_resolution!
+      resume_turn
       on_tool_call_resolved&.call(tool_call_message)
 
-      if post_dispatch_confirmation?
+      result = if post_dispatch_confirmation?
         resolve_post_dispatch_confirmation!
       else
         resolve_pending_tool_call!
         resume_loop_unless_other_pending
       end
+      conclude_turn(result)
+      result
     end
 
     private
@@ -66,6 +69,18 @@ module ChatSessions
     # @spec API-CONVERSATION-DELEGATION-002
     def originating_user_message
       chat_session.messages.where(role: "user").where("id < ?", tool_call_message.id).order(id: :desc).first
+    end
+
+    # @spec CHAT-API-026
+    def resume_turn
+      @chat_turn = ChatTurn.find_by(user_message: transport_attempt_message)
+      @chat_turn&.mark_streaming!
+    end
+
+    def conclude_turn(result)
+      return unless @chat_turn
+
+      result ? @chat_turn.mark_completed! : @chat_turn.mark_awaiting_confirmation!
     end
 
     # @spec QUESTION-EXPLORATION-001

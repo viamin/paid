@@ -217,6 +217,24 @@ What ships today:
   `search_code` for ordinary code discovery instead of exhausting shared
   GitHub Code Search rate limits (#3392).
 
+### Durable stalled-turn detection
+
+Each user message starts a `ChatTurn` lifecycle (`pending`, `streaming`,
+`awaiting_confirmation`, `completed`, `failed`, `stalled`, or `abandoned`).
+Only persisted transcript activity updates the turn heartbeat; browser chunks
+and disconnect state are deliberately not durable evidence. A five-minute
+sweep marks only expired `pending`/`streaming` rows stalled under a row lock and
+adds a transcript notice in that same transaction. Confirmation, rate-limit,
+budget, and provider paths reach explicit non-detectable states instead.
+
+The first release never auto-replays a stalled turn. An authenticated user may
+explicitly retry a stalled turn only when no tool result followed its user
+message; the recovery row lock deduplicates concurrent clicks and reuses the
+original stream/turn identity. A turn with saved tool activity remains visible
+for inspection and requires a new user request, preventing duplicate
+side-effecting calls. The lifecycle rows and notice metadata make classification,
+detection time, retry attempts, and duplicate-prevention decisions queryable.
+
 ## What this is not
 
 - **Not workspace/container mutation behavior.** That shipped behavior is owned

@@ -45,12 +45,16 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       }
     })
   rescue ArgumentError => e
+    mark_turn_failed(chat_session_id, stream_message_id, "invalid_request")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue NotImplementedError => e
+    mark_turn_failed(chat_session_id, stream_message_id, "configuration")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::LlmClientConfigurationError => e
+    mark_turn_failed(chat_session_id, stream_message_id, "configuration")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
+    mark_turn_failed(chat_session_id, stream_message_id, "budget_exhausted")
     broadcast_error(chat_session_id, stream_message_id, e.message,
       limit_type: e.limit_type, limit: e.limit, used: e.used)
   rescue AgentHarness::RateLimitError => e
@@ -62,9 +66,11 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error: e.message
     )
     pause_message = ChatSessions::MarkRateLimited.call(chat_session: chat_session, error: e)
+    mark_turn_failed(chat_session_id, stream_message_id, "rate_limited")
     broadcast_persisted_message(stream_name, pause_message)
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue AgentHarness::Error => e
+    mark_turn_failed(chat_session_id, stream_message_id, "provider_error")
     Rails.logger.error(
       message: "chat_process_message_job.provider_error",
       chat_session_id: chat_session_id,
@@ -75,6 +81,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   rescue ActiveRecord::RecordNotFound
     raise
   rescue StandardError => e
+    mark_turn_failed(chat_session_id, stream_message_id, "infrastructure_error")
     Rails.logger.error(
       message: "chat_process_message_job.failed",
       chat_session_id: chat_session_id,
@@ -120,6 +127,11 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       message_id: stream_message_id,
       message: error_message
     }.merge(extra.compact))
+  end
+
+  def mark_turn_failed(chat_session_id, stream_message_id, classification)
+    turn = ChatTurn.find_by(chat_session_id:, stream_message_id:)
+    turn&.mark_failed!(classification:)
   end
 
   def tenant_account

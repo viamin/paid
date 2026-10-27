@@ -588,3 +588,19 @@
   `app/views/chat_messages/_tool_call_group.html.erb`,
   `app/javascript/controllers/chat_controller.js#appendToolCard`,
   `#mergeResolvedCardIntoAdjacentRun`.
+
+- [x] **CHAT-API-026** — When a persisted chat turn has remained `pending` or
+  `streaming` without durable activity for the configured stall threshold, the
+  system SHALL atomically mark it `stalled` and append one persistent transcript
+  notice. The notice SHALL state that no final assistant response was saved,
+  preserve the existing transcript, summarize saved tool results, and offer a
+  retry only when no tool result followed the turn's user message. A pending
+  tool confirmation, rate-limit pause, budget rejection, provider failure, and
+  completed turn SHALL remain terminal or explicitly paused states and SHALL
+  NOT be reclassified as stalled. Retry requests SHALL be row-locked,
+  authorization-checked, and reuse the original turn identity; saved tool
+  activity SHALL never be replayed automatically (#4680).
+  *Tests:* `spec/services/chat_turns/detect_stalled_spec.rb`,
+  `spec/services/chat_turns/recover_spec.rb`.
+  *Code:* `ChatTurn`, `ChatTurns::DetectStalled`, `ChatTurns::Recover`,
+  `ChatSessions::DetectStalledTurnsJob`.
