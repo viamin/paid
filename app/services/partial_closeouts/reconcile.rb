@@ -189,28 +189,42 @@ module PartialCloseouts
       owner if owner && owner.id != agent_run.issue.id
     end
 
+    # @spec PARTIAL-CLOSEOUT-033
     def publish_operator_prerequisites!(human_gaps)
       return if human_gaps.empty?
 
+      agent_run.issue.with_lock do
+        previous = existing_prerequisite_notification
+        if previous
+          previous.with_lock { publish_prerequisite_notification!(human_gaps, previous:) }
+        else
+          publish_prerequisite_notification!(human_gaps, previous: nil)
+        end
+      end
+    end
+
+    def publish_prerequisite_notification!(human_gaps, previous:)
       Notifications::Publish.call(
         account: agent_run.project.account, subject: agent_run.issue,
         source: PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
         title: operator_prerequisite_title(human_gaps),
         description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n"),
-        metadata: prerequisite_metadata(human_gaps)
+        metadata: prerequisite_metadata(human_gaps, previous:)
       )
     end
 
     # @spec PARTIAL-CLOSEOUT-031
-    def prerequisite_metadata(human_gaps)
+    def prerequisite_metadata(human_gaps, previous:)
       references = human_gaps.flat_map { |gap| Array(gap["references"]) }
       identities = human_gaps.map { |gap| prerequisite_identity(gap) }.sort_by { |identity| JSON.generate(identity) }
       identity = Digest::SHA256.hexdigest(JSON.generate(identities))
-      metadata = { "prerequisite_identity" => identity, "references" => references }
+      metadata = { "prerequisite_identity" => identity, "references" => references,
+                   "prerequisites" => human_gaps.map { |gap| prerequisite_occurrence(gap) } }
+      submissions = reconciled_evidence_submissions(previous, metadata.fetch("prerequisites"))
+      metadata["evidence_submissions"] = submissions if submissions.any?
       policy_selection = replacement_policy_action(human_gaps)
       metadata["policy_selection"] = policy_selection if policy_selection
 
-      previous = existing_prerequisite_notification
       superseded = Array(previous&.metadata&.fetch("superseded_references", nil))
       if previous&.metadata&.fetch("prerequisite_identity", nil) != identity
         superseded = Array(previous&.metadata&.fetch("references", nil)) + superseded
@@ -219,12 +233,45 @@ module PartialCloseouts
       metadata
     end
 
+    def reconciled_evidence_submissions(previous, occurrences)
+      prior_occurrences = Array(previous&.metadata&.fetch("prerequisites", nil)).index_by { |occurrence| occurrence["identity"] }
+      current_occurrences = occurrences.index_by { |occurrence| occurrence["identity"] }
+      Array(previous&.metadata&.fetch("evidence_submissions", nil)).map do |submission|
+        reconcile_evidence_submission(submission, prior_occurrences, current_occurrences)
+      end
+    end
+
+    def reconcile_evidence_submission(submission, prior_occurrences, current_occurrences)
+      source_revision = submission["source_revision"] || prior_occurrences.dig(submission["prerequisite_identity"], "source_revision")
+      current_occurrence = current_occurrences[submission["prerequisite_identity"]]
+      revision_current = source_revision.blank? || current_occurrence&.fetch("source_revision", nil) == source_revision
+      return submission if current_occurrence && revision_current
+
+      submission.merge(
+        "source_revision" => source_revision,
+        "outcome" => "stale",
+        "reason" => "The closeout evidence changed; submit evidence for the current prerequisite revision."
+      )
+    end
+
     def prerequisite_identity(gap)
       identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection"))
       identity["references"] = Array(gap["references"])
         .map { |reference| canonicalize(reference) }
         .sort_by { |reference| JSON.generate(reference) }
       identity
+    end
+
+    def prerequisite_occurrence(gap)
+      { "identity" => Digest::SHA256.hexdigest(JSON.generate(prerequisite_identity(gap))),
+        "criterion" => gap["criterion"], "references" => Array(gap["references"]),
+        "source_revision" => source_revision }
+    end
+
+    def source_revision
+      return @source_revision if defined?(@source_revision)
+
+      @source_revision = assessment["source_revision"]
     end
 
     def canonicalize(value)
