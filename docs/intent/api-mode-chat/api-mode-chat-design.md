@@ -158,6 +158,14 @@ What ships today:
 - `ChatSessions::AgentLoop` executes read-only tools inline and persists
   pending write-tool confirmations without letting the model self-authorize
   mutations
+- each submitted chat message has a durable `ChatTurn` lifecycle. The worker
+  records `pending`, `streaming`, terminal, and confirmation-waiting states;
+  a maintenance sweep marks only inactive non-terminal turns as `stalled`.
+  Pending confirmations and known failures are explicit non-stall states.
+  A stalled turn adds a visible transcript notice while retaining all partial
+  tool evidence. The first release deliberately does not replay a turn or a
+  tool: recovery remains an explicit follow-up because automatic replay needs
+  a checkpoint and per-tool idempotency contract
 - `ChatSessions::ResolveToolCall` atomically resolves pending confirmations and
   resumes the loop only when the final pending confirmation has been settled
 - rate-limited sessions are resumed by a maintenance sweep after their recorded

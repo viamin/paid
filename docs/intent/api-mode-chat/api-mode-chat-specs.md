@@ -588,3 +588,17 @@
   `app/views/chat_messages/_tool_call_group.html.erb`,
   `app/javascript/controllers/chat_controller.js#appendToolCard`,
   `#mergeResolvedCardIntoAdjacentRun`.
+
+- [x] **CHAT-API-027** — When a server-side chat turn has persisted its user
+  message but remains `pending` or `streaming` without durable activity for
+  the configured stall threshold, the maintenance sweep SHALL atomically mark
+  it `stalled` and persist a visible system notice. The notice SHALL state that
+  completed tool evidence is preserved, that the remaining answer is unknown,
+  and that completed actions must be reviewed before retrying. A turn awaiting
+  a pending tool confirmation, or one already terminal or rate-limit failed,
+  SHALL NOT be classified as stalled. The detector SHALL never synthesize an
+  assistant answer or replay a tool call.
+  *Tests:* `spec/models/chat_turn_spec.rb`,
+  `spec/jobs/chat_sessions/detect_stalled_turns_job_spec.rb`.
+  *Code:* `ChatTurn#stall!`, `ChatTurn#stallable?`,
+  `ChatSessions::DetectStalledTurnsJob`, `ChatSessions::SendMessage#turn`.
