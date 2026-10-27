@@ -148,8 +148,8 @@
 - [ ] **MAINT-OPT-035**: The default minimum standing for automatic repair
       shall be `supported`.
 - [ ] **MAINT-OPT-036**: Where a run-start election sets a minimum standing,
-      the system shall apply the stricter of that elected minimum and the
-      repair standing of the finding's optimization type.
+      the system shall apply the stricter of the elected minimum standing and
+      the configured default minimum standing.
 - [ ] **MAINT-OPT-037**: The system shall not permit a maintenance schedule
       to elect automatic repair.
 - [ ] **MAINT-OPT-038**: Each optimization type's repair standing shall be
