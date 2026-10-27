@@ -584,15 +584,19 @@
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
-- [ ] **PARTIAL-CLOSEOUT-033** — When an authorized operator submits durable
+- [x] **PARTIAL-CLOSEOUT-033** — When an authorized operator submits durable
   prerequisite evidence from the partial-closeout Inbox item, the system SHALL
   record the exact prerequisite occurrence identity, artifact URL, explanation,
   actor, timestamp, and explicit disposition. A URL, comment, upload, green
   run, or dismissed notification SHALL start as `pending_validation`, not as
   acceptance satisfaction; evidence for an obsolete source revision SHALL be
-  `stale`. The unresolved notification remains active until a current,
-  sufficient assessment resolves that occurrence.
+  `stale`. An active legacy prerequisite notification without a
+  `prerequisites` array SHALL expose its one persisted prerequisite identity as
+  a compatible occurrence and atomically upgrade it with the current source
+  revision before recording the submission. The unresolved notification remains
+  active until a current, sufficient assessment resolves that occurrence.
   *Code:* `app/services/partial_closeouts/submit_evidence.rb`,
+  `app/services/partial_closeouts/prerequisite_occurrences.rb`,
   `app/services/partial_closeouts/reconcile.rb`,
   `app/controllers/projects/closeout_evidence_controller.rb`,
   `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.

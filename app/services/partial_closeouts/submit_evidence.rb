@@ -26,6 +26,7 @@ module PartialCloseouts
     def call
       notification.with_lock do
         validate!
+        PrerequisiteOccurrences.upgrade!(notification)
         record_submission!
       end
     end
@@ -94,7 +95,7 @@ module PartialCloseouts
     end
 
     def occurrence
-      @occurrence ||= Array(notification.metadata["prerequisites"]).find { |item| item["identity"] == prerequisite_identity }
+      PrerequisiteOccurrences.for(notification).find { |item| item["identity"] == prerequisite_identity }
     end
   end
 end

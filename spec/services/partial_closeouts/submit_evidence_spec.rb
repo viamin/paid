@@ -22,6 +22,23 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
       "prerequisite_identity" => identity, "outcome" => "pending_validation")
   end
 
+  it "upgrades a legacy prerequisite notification before recording its evidence" do # @spec PARTIAL-CLOSEOUT-033
+    notification.update!(metadata: {
+      "prerequisite_identity" => identity,
+      "references" => [ { "kind" => "artifact", "label" => "Pilot report", "revision" => "v1" } ]
+    })
+
+    described_class.call(notification:, actor:, prerequisite_identity: identity,
+      evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached.")
+
+    occurrence = notification.reload.metadata.fetch("prerequisites").sole
+    expect(occurrence).to include("identity" => identity, "source_revision" => PartialCloseouts::Assessment.source_revision_for(issue))
+    expect(notification.metadata.fetch("evidence_submissions")).to contain_exactly(
+      include("prerequisite_identity" => identity, "outcome" => "pending_validation")
+    )
+    expect(notification).to be_active
+  end
+
   it "rejects evidence for a different prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-033
     expect {
       described_class.call(notification:, actor:, prerequisite_identity: "other",

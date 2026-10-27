@@ -483,6 +483,21 @@ RSpec.describe "Inbox" do
         "Submitted by user ##{user.id}", "pending_validation")
     end
 
+    it "renders an evidence form for a legacy prerequisite notification" do # @spec PARTIAL-CLOSEOUT-033
+      notification = Notification.find_by!(account: account, subject: guided_issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+      notification.update!(metadata: {
+        "prerequisite_identity" => "legacy-pilot-results",
+        "references" => [ { "kind" => "artifact", "label" => "Pilot report", "revision" => "v1" } ]
+      })
+
+      render_guided_pane
+
+      document = Nokogiri::HTML(response.body)
+      expect(document.css("#prerequisite_legacy-pilot-results_evidence_url").size).to eq(1)
+      expect(response.body).to include("Submit for validation")
+    end
+
     # @spec PARTIAL-CLOSEOUT-023
     it "shows stale criterion evidence and prevents a duplicate run on an open owner on narrow layouts" do
       owner = create(:issue, project:, github_state: "open", github_number: 512)

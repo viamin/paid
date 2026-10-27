@@ -322,7 +322,7 @@
           </p>
           <p class="text-xs text-amber-800">Evidence is submitted for validation; it does not dismiss this blocker, attest acceptance, or retry work.</p>
           <% if policy(entry.project).run_agent? %>
-            <% Array(human_prerequisite.metadata["prerequisites"]).each do |prerequisite| %>
+            <% PartialCloseouts::PrerequisiteOccurrences.for(human_prerequisite).each do |prerequisite| %>
               <% identity = prerequisite.fetch("identity") %>
               <% scope = "prerequisite_#{identity}" %>
               <% submissions = Array(human_prerequisite.metadata["evidence_submissions"]).select { |submission| submission["prerequisite_identity"] == identity } %>
