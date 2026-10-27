@@ -158,4 +158,84 @@
       back to its source maintenance report and finding.
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
-      an explicit user selection.
+      an explicit user selection or a separately accepted auto-queue election
+      satisfying MAINT-100 through MAINT-105.
+
+## Optimization Recipe Family — Draft Prerequisite
+
+Tracks #4636. The following claims are proposed intent only. They remain
+inactive until the owner accepts the precise policy and these canonical
+artifacts merge; they neither enable the `maintenance_runs` guard nor change
+the base report-only behavior.
+
+### Catalog and Initial Recipes (#4493, #4494)
+
+- [ ] **MAINT-080**: The system shall represent optimization types as catalog
+      entries, not an enum, and shall provide the initial Performance, Design /
+      Architecture, Code Duplication, Security Hardening, Cost / Resource
+      Efficiency, Maintainability / Readability, and Test Coverage & Quality
+      entries with objective, instructions, evidence collectors, validation
+      guidance, and metric hints. (#4493)
+- [ ] **MAINT-081**: The system shall expose equivalent catalog selection on
+      maintenance-run UI, authenticated API, and MCP start surfaces, composing
+      it with optional scope and guidance under the existing authorization.
+      (#4493)
+- [ ] **MAINT-082**: The system shall persist the selected catalog entry and
+      resolved recipe version in the immutable run snapshot and retain them on
+      retries. (#4493)
+- [ ] **MAINT-083**: If a submitted optimization type is unmapped, then the
+      system shall admit it as a custom objective rather than rejecting the
+      run. (#4493)
+- [ ] **MAINT-090**: The system shall provide Code Duplication,
+      Maintainability / Readability, and Performance recipes through the
+      catalog, preserving applicable analyzer provenance and prompt-first
+      coverage limitations in their reports. (#4494)
+- [ ] **MAINT-091**: The system shall use `agent_harness` for semantic
+      assessment of optimization candidates and shall record structured claim,
+      evidence, counterevidence, action, validation, disposition, and
+      assessment-confidence outputs. (#4494)
+- [ ] **MAINT-092**: The system shall not represent an unavailable collector,
+      prompt-first investigation, or unresolved candidate as complete tool
+      coverage or as proof that a repair is safe. (#4494)
+
+### Bounded Auto-Queue (#4495)
+
+- [ ] **MAINT-100**: The system shall default optimization auto-queue off and
+      shall require an explicit per-run election captured at start with its
+      threshold and per-repair cost/time budgets; omission shall retain
+      report-only behavior. (#4495)
+- [ ] **MAINT-101**: When evaluating an elected finding, the system shall use
+      the `agent_harness` assessment for semantic meaning and may apply the
+      captured threshold only as a deterministic numeric gate; it shall not
+      claim that assessment confidence is calibrated across recipes, models,
+      or repositories. (#4495)
+- [ ] **MAINT-102**: The system shall auto-queue a repair only through the
+      existing authorized repair pathway when the election, threshold,
+      non-security category, bounded scope, explicit budget reservation,
+      canonical-finding idempotency reservation, and required revalidation
+      gates all pass. (#4495)
+- [ ] **MAINT-103**: If a repair checkout differs from the source report's
+      revision, then the system shall revalidate the selected finding before
+      applying its recommendation and shall visibly report a failed or stale
+      revalidation rather than silently queueing or dropping the repair.
+      (#4495)
+- [ ] **MAINT-104**: The system shall link each queued repair to its source
+      report and canonical finding and shall prevent repeated occurrences of
+      that identity from creating duplicate repair work. (#4495)
+- [ ] **MAINT-105**: When an auto-queued repair exhausts its captured budget,
+      the system shall preserve collected evidence and surface the exhaustion
+      without cancelling unrelated reports or repairs. (#4495)
+
+### Staged Follow-On Recipes (#4496)
+
+- [ ] **MAINT-110**: The system shall register Security Hardening, Cost /
+      Resource Efficiency, Design / Architecture, and Test Coverage & Quality
+      only as catalog recipes using the #4493 contract and shall retain honest
+      evidence limitations where no credible collector is available. (#4496)
+- [ ] **MAINT-111**: The system shall keep Security Hardening findings
+      report-only and available for manual repair selection; no auto-queue
+      policy may authorize a security repair until a dedicated policy is
+      accepted. (#4496)
+- [ ] **MAINT-112**: The system shall reconcile the Test Coverage & Quality
+      recipe with the RDR-075 test-quality objective rather than create a
+      duplicate maintenance lifecycle or repair pathway. (#4496)

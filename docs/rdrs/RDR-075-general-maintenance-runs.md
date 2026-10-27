@@ -249,6 +249,39 @@ links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
 outside the initial scope and requires a separately approved policy.
 
+### Proposed optimization recipe extension
+
+The optimization family is a proposed extension, tracked by #4492 and
+specified for review by #4636. It does not amend the report-only initial scope
+until its precise LLD/EARS policy is accepted and merged. The executable
+prerequisites are #4493–#4496; #4492 is coordination only.
+
+The proposed catalog is data-backed rather than an enum: performance,
+design/architecture, code duplication, security hardening, cost/resource
+efficiency, maintainability/readability, and test coverage/quality. Each entry
+defines its objective, investigation instructions, applicable evidence
+collectors, validation guidance, and metric hints. Unknown catalog values
+remain valid custom objectives rather than an admission error.
+
+Finding assessment is semantic work performed through `agent_harness`, with
+structured evidence, counterevidence, recommendation, and an assessment
+confidence value. That value is not a calibrated probability or a substitute
+for evidence. Code performs only structural validation and deterministic
+policy gates; it must not infer eligibility from prose, labels, or score
+meaning. A configured threshold is an owner-selected gate over the structured
+assessment output, not a claim that equal numerical values have calibrated
+meaning across recipes, repositories, or models.
+
+If separately accepted, auto-queue is a per-run election, default off. It may
+create a repair only after the report is complete and all deterministic gates
+pass: the captured election and threshold, a non-security category, explicit
+per-repair cost/time budgets, canonical-finding idempotency, existing repair
+pathway authorization, and revalidation against the repair checkout when its
+revision is stale. The queue retains report/finding provenance and surfaces a
+failed gate; it never broadens scope. Security findings remain report-only and
+available for manual selection until a dedicated policy authorizes their
+automatic repair.
+
 ### PR integration
 
 The evidence and verification components should be reusable for PR audits.
@@ -330,7 +363,9 @@ Recurring schedules remain explicitly opt-in after rollout.
 
 The implementation issue tree is filed under the linked umbrella. Planned
 implementation remains held until the design and required LID artifacts are
-finalized and merged. The umbrella, planning task, and each child explicitly
+finalized and merged. Tracks #4636 for the optimization catalog and
+bounded-repair policy acceptance; this document change neither accepts that
+policy nor enables maintenance rollout. The umbrella, planning task, and each child explicitly
 depend on viamin/paid#4263 (closed; satisfied) and on the Critical
 assumption 2 validation outcome — recorded by #4327 and now owned by
 [#4604](https://github.com/viamin/paid/issues/4604) — with phase
