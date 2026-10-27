@@ -149,3 +149,25 @@
   *Code:* `ChatSessions::BuildLlmClient#openai_compatible_client`,
   `ChatSessions::BuildLlmClient::HttpClient`, `ChatSessions::AgentLoop`,
   `ChatSessions::RecordTransportAttempt`.
+
+- [x] **API-CONVERSATION-DELEGATION-008** — When a user-initiated chat turn
+  has durable partial activity but no terminal outcome beyond the configured
+  inactivity threshold, Paid SHALL persist a `stalled` turn outcome and a
+  warning transcript notice. A pending confirmation, known rate-limit pause,
+  or terminal completed/failed/abandoned turn SHALL NOT be classified as a
+  stall. The detector SHALL preserve the transcript, record the detection time
+  and whether an approved write tool exists, and SHALL NOT mark the turn
+  successful or replay a tool.
+  *Tests:* `spec/services/chat_turns/detect_stalled_spec.rb`.
+  *Code:* `ChatTurn`, `ChatTurns::DetectStalled`,
+  `ChatTurns::DetectStalledJob`.
+
+- [x] **API-CONVERSATION-DELEGATION-009** — When a turn is classified as
+  stalled, Paid SHALL render an in-transcript warning that distinguishes
+  completed durable tool activity from unknown unfinished work, directs the
+  collaborator to existing confirmations before continuing, and states that no
+  tool was replayed.
+  *Tests:* `spec/models/chat_message_spec.rb`,
+  `spec/services/chat_turns/detect_stalled_spec.rb`.
+  *Code:* `ChatMessage#stalled_turn_notice?`,
+  `chat_messages/_stalled_turn_notice`.

@@ -23,7 +23,7 @@ module ChatSessions
 
     attr_reader :chat_session, :actor, :tool_call_message, :decision, :llm_client,
       :on_chunk, :on_message_persisted, :on_tool_call_resolved, :stream_message_id,
-      :transport_attempt_message
+      :transport_attempt_message, :chat_turn
 
     def initialize(chat_session:, actor: chat_session.created_by, tool_call_message:, decision:, llm_client: nil, on_chunk: nil,
       on_message_persisted: nil, on_tool_call_resolved: nil, stream_message_id: nil)
@@ -37,6 +37,7 @@ module ChatSessions
       @on_tool_call_resolved = on_tool_call_resolved
       @stream_message_id = stream_message_id
       @transport_attempt_message = originating_user_message
+      @chat_turn = ChatTurn.find_by(initiating_message: transport_attempt_message)
     end
 
     def self.call(...)

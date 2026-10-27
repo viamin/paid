@@ -16,7 +16,7 @@ module ChatSessions
     include FallbackLoop
 
     attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
-      :transport_attempt_message
+      :transport_attempt_message, :chat_turn
 
     MAX_CONTENT_LENGTH = 12_000
 
@@ -43,10 +43,14 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
       update_session_activity
       assistant_message
+    rescue StandardError => error
+      chat_turn&.failed!(error.class.name.underscore) unless error.is_a?(IOError)
+      raise
     end
 
     private
@@ -132,6 +136,17 @@ module ChatSessions
         content: content,
         metadata: { "stream_message_id" => stream_message_id }.compact
       )
+    end
+
+    # @spec API-CONVERSATION-DELEGATION-008
+    def start_turn
+      @chat_turn = ChatTurn.create_or_find_by!(initiating_message: transport_attempt_message) do |turn|
+        turn.chat_session = chat_session
+        turn.actor = actor
+        turn.status = "streaming"
+        turn.last_activity_at = Time.current
+      end
+      chat_turn.update!(status: "streaming", last_activity_at: Time.current) unless chat_turn.completed?
     end
 
     # A conversational reply (e.g. "yes") is not a confirmation. When a write

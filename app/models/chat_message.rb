@@ -20,6 +20,7 @@ class ChatMessage < ApplicationRecord
   scope :pending_tool_confirmations, -> { where.not(tool_status: nil).where(tool_status: "pending") }
   scope :system, -> { where(role: "system") }
   scope :container_capability_notices, -> { system.where("metadata ->> 'container_capability_notice' = 'true'") }
+  scope :stalled_turn_notices, -> { system.where("metadata ->> 'stalled_turn_notice' = 'true'") }
   scope :groupable_tools, -> {
     where(<<~SQL.squish)
       (role = 'tool' OR NULLIF(BTRIM(tool_name), '') IS NOT NULL)
@@ -95,7 +96,12 @@ class ChatMessage < ApplicationRecord
   end
 
   def transcript_notice?
-    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice?
+    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice? || stalled_turn_notice?
+  end
+
+  # @spec API-CONVERSATION-DELEGATION-009
+  def stalled_turn_notice?
+    metadata.is_a?(Hash) && metadata["stalled_turn_notice"] == true
   end
 
   private

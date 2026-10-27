@@ -92,6 +92,24 @@ state or convert it to an empty result.
 
 ## Request attempts, retries, and recovery
 
+## Durable stalled-turn detection
+
+Paid records each user-initiated turn separately from its transcript rows. A
+turn advances through `pending`, `streaming`, `waiting_confirmation`, and a
+terminal `completed`, `failed`, `stalled`, or `abandoned` state. A recurring
+server-side sweep classifies only `pending` or `streaming` turns with no
+durable activity for the configured threshold. It excludes pending human
+confirmations and known rate-limit pauses because those states already have a
+specific visible recovery path.
+
+Classification is append-only evidence: it retains all message and tool rows,
+records the detection timestamp, writes a warning notice into the transcript,
+and never manufactures an assistant answer. The first slice deliberately does
+not automatically resume a stalled turn. A later automatic recovery path must
+be opt-in for a classified infrastructure failure and demonstrate a checkpoint
+and idempotency contract for every replayable tool; ambiguous model stops and
+turns with completed side-effecting tools require a collaborator decision.
+
 An **attempt** is one outbound provider request. A chat turn may have many
 attempts, and an attempt has no authority to replay a completed tool. Paid
 allocates an immutable attempt ID before invoking the harness. The ID includes
