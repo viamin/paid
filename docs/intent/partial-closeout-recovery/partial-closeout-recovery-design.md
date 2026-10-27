@@ -47,6 +47,19 @@ generation.
 
 ### Source-closure publication
 
+Closeout assessment uses the run's effective configured runner through
+`Llm::Request` and `agent_harness`, with its tier model resolved through
+the existing runner model policy and its credentials in the isolated execution
+environment when present. Report-only host calls use the same runner's
+explicit API credential or native subscription authentication; managed
+subscription credentials require an isolated environment. It supplies the
+JSON schema in the prompt and validates the
+response locally. Unrelated host API keys never select a provider or change
+billing mode. Missing or disabled runners and unavailable managed credentials fail
+explicitly. Failed responses identify the runner and safe status metadata
+without provider payloads or credentials. Harness authentication exceptions
+retain their type. Assessment failures never become acceptance evidence.
+
 The existing criterion-level partial-closeout assessment is the sole authority
 for publishing a source issue's closing reference. Before a new source PR is
 published, Paid obtains the assessment through `agent_harness`, snapshots the

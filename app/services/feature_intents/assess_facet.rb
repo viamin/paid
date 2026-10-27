@@ -6,10 +6,11 @@ module FeatureIntents
   # score from counts or keywords.
   # @spec FACET-CONFIDENCE-002 FACET-CONFIDENCE-003 FACET-CONFIDENCE-004
   # @spec FACET-CONFIDENCE-012 FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
+  # @spec LLM-ROUTING-004
   class AssessFacet
     include Llm::OutputNormalizer
     RUBRIC_VERSION = "facet-confidence-v1"
-    MODEL_VERSION = "claude-sonnet-4-6"
+    MODEL_VERSION = "pending"
     TIMEOUT = 60
     STATUSES = %w[completed clarification_needed unknown].freeze
 
@@ -31,11 +32,12 @@ module FeatureIntents
     attr_reader :agent_harness, :assessment
 
     def response_payload
-      response = agent_harness.send_message(prompt, provider: :claude, model: MODEL_VERSION,
-        timeout: TIMEOUT, tools: :none, **Llm::TextMode.options)
+      response = Llm::Request.call(prompt: prompt, project: facet.feature_intent.project, timeout: TIMEOUT, harness: agent_harness)
+      @response_model = response.respond_to?(:model) ? response.model.presence || "unknown" : "unknown"
       return unless response.respond_to?(:success?) && response.success?
 
-      JSON.parse(strip_markdown_fence(response.output.to_s)).deep_stringify_keys
+      parsed = JSON.parse(strip_markdown_fence(response.output.to_s))
+      parsed.deep_stringify_keys if parsed.is_a?(Hash)
     rescue JSON::ParserError
       nil
     end
@@ -46,7 +48,7 @@ module FeatureIntents
         return fail!("invalid_structured_output") unless valid_payload?(payload)
 
         attributes = payload.slice("intent_score", "technical_score", "explanation", "inferred_fit", "evidence_references").merge(
-          rubric_version: RUBRIC_VERSION, model_version: MODEL_VERSION
+          rubric_version: RUBRIC_VERSION, model_version: @response_model
         )
         if payload["status"] == "completed"
           assessment.update!(attributes.merge(status: "completed", assessed_at: Time.current))

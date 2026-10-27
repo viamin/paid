@@ -16,7 +16,6 @@ module PromptEvolution
   class Mutate
     include Llm::OutputNormalizer
 
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 60
     MAX_TEMPLATE_INPUT = 10_000
     MAX_SAMPLE_OUTPUT = 2_000
@@ -42,6 +41,7 @@ module PromptEvolution
     end
 
     def initialize(prompt:, quality_metrics: [], sample_outputs: {}, options: {})
+      @routing_project = options[:project] || prompt.project
       @prompt = prompt
       @quality_metrics = quality_metrics
       @sample_outputs = sample_outputs
@@ -67,14 +67,7 @@ module PromptEvolution
     end
 
     def request_mutations
-      response = AgentHarness.send_message(
-        build_prompt,
-        provider: :claude,
-        model: DEFAULT_MODEL,
-        timeout: TIMEOUT,
-        tools: :none,
-        **Llm::TextMode.options
-      )
+      response = Llm::Request.call(prompt: build_prompt, project: @routing_project, account: @prompt.account, timeout: TIMEOUT)
       unless response.success?
         Rails.logger.warn(
           message: "prompt_evolution.mutate_unsuccessful_response",

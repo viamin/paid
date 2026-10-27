@@ -135,8 +135,8 @@ one). The activity uses an agent-harness structured assessment of approved
 intent, the run/PR evidence, and current open issues (the assessment prompt
 lists the bounded open-issue set so owner reuse is grounded, not guessed from
 evidence prose). The assessment follows the same transport routing as the other
-schema-boundary services: the API-key schema transport when `Llm::TextMode` is
-enabled, the CLI transport otherwise, so a keyless deployment keeps working. The
+schema-boundary services through the configured runner, with a JSON contract
+in the prompt and local structural validation. The
 assessment is persisted on the run on first success and reused across activity
 retries, keeping gap indices — the replay keys — stable. The deterministic
 reconciler validates that assessment, reuses only current open owners (never the

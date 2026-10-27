@@ -33,11 +33,12 @@ module Reviews
       # @param github_client [GithubClient]
       # @param poster [#call] anything responding to +call(agent_run:, body:, comments:, commit_sha:)+
       # @return [Hash] :outcome, :review_id, :review_url, :comments_posted, :metrics
-      def self.call(agent_run:, github_client:, poster:)
-        new(agent_run:, github_client:, poster:).call
+      def self.call(agent_run:, github_client:, poster:, clock: Process.method(:clock_gettime))
+        new(agent_run:, github_client:, poster:, clock:).call
       end
 
-      def initialize(agent_run:, github_client:, poster:)
+      def initialize(agent_run:, github_client:, poster:, clock: Process.method(:clock_gettime))
+        @clock = clock
         @agent_run = agent_run
         @project = agent_run.project
         @github_client = github_client
@@ -237,7 +238,7 @@ module Reviews
       end
 
       def monotonic_now
-        Process.clock_gettime(Process::CLOCK_MONOTONIC)
+        @clock.call(Process::CLOCK_MONOTONIC)
       end
 
       def build_result

@@ -113,6 +113,7 @@ module IntentConformance
         return [ NOT_EVALUATED, preparation[:failure], nil, 0 ] if preparation.key?(:failure)
 
         result = ReviewerLlm.call(
+          project: project,
           repository: preparation[:repository],
           revision: preparation[:revision],
           design_docs: preparation[:design_docs],

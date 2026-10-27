@@ -95,6 +95,7 @@ module Reviews
 
       def session
         LlmSession.new(
+          project: @project,
           operation: OPERATION,
           error_class: Error,
           invalid_output_error: InvalidOutputError,

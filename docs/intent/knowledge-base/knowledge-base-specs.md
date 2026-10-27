@@ -25,9 +25,9 @@
   `spec/jobs/run_collectors_job_spec.rb`.
 
 - [x] **KNOWLEDGE-CREDENTIAL-001** — When a knowledge owner selects a saved
-  credential for embeddings or decision drafting, Paid SHALL persist a binding
+  credential for embeddings, Paid SHALL persist a binding
   to that existing credential, resolve it ahead of platform fallback in direct
-  embedding, container drafting, and host drafting, and expose only safe
+  embedding, and expose only safe
   owner/service/source/status metadata. An incompatible binding, including one
   configured on a runner without a supported API transport, SHALL fail with
   actionable configuration status rather than fall through to ambient CLI
@@ -425,10 +425,8 @@
   Callers that already compute a `reason:` (`Knowledge::Decisions::Draft`,
   `Knowledge::Embeddings::ProxyGenerator`, the provider/runner executors)
   SHALL route that reason into the persisted record rather than only
-  logging it. `Knowledge::Decisions::Draft` SHALL keep the
-  containerized-path run distinct from the in-process fallback's run when
-  the container itself fails, so the container-error reason is preserved
-  instead of being overwritten by the fallback's success.
+  logging it. Decision drafting SHALL record each configured runner attempt
+  and its final outcome through the shared application LLM routing path.
   *Code:* `app/models/knowledge_run.rb`,
   `app/services/knowledge/decisions/draft.rb`,
   `app/services/knowledge/embeddings/proxy_generator.rb`,

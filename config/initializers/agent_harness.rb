@@ -227,21 +227,11 @@ AgentHarness.configure do |config|
   # Order is deterministic: follows APP_RUNNER_KEYS declaration order.
   supported_runner_keys = RunnerSupport.supported_runner_keys
 
-  default_key = if supported_runner_keys.include?("claude")
-    :claude
-  elsif supported_runner_keys.any?
-    RunnerSupport.harness_runner_key_for(supported_runner_keys.first).to_sym
-  end
-
-  config.default_provider = default_key if default_key
-  config.fallback_providers = %w[cursor].filter_map do |runner_key|
-    next unless supported_runner_keys.include?(runner_key)
-
-    harness_runner_key = RunnerSupport.harness_runner_key_for(runner_key).to_sym
-    next if default_key && harness_runner_key == default_key
-
-    harness_runner_key
-  end
+  # The registry requires a default for validation. Application requests bind
+  # a configured runner and use execute_direct; this is never tenant routing.
+  default_key = supported_runner_keys.first
+  config.default_provider = RunnerSupport.harness_runner_key_for(default_key).to_sym if default_key
+  config.fallback_providers = []
   config.default_timeout = AGENT_TIMEOUT_DEFAULT
 
   supported_runner_keys.each_with_index do |runner_key, index|
@@ -250,7 +240,7 @@ AgentHarness.configure do |config|
     config.provider(harness_runner_key) do |provider|
       provider.enabled = true
       provider.priority = (index + 1) * 10
-      provider.timeout = AGENT_TIMEOUT_DEFAULT if harness_runner_key == :claude
+      provider.timeout = AGENT_TIMEOUT_DEFAULT
 
       # Tell the harness that container-executed runners are externally
       # sandboxed so runner-specific nested sandbox mechanisms (e.g.
@@ -261,8 +251,8 @@ AgentHarness.configure do |config|
 
   config.orchestration do |orch|
     orch.enabled = true
-    orch.auto_switch_on_error = true
-    orch.auto_switch_on_rate_limit = true
+    orch.auto_switch_on_error = false
+    orch.auto_switch_on_rate_limit = false
 
     orch.circuit_breaker do |cb|
       cb.enabled = true

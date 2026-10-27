@@ -52,6 +52,14 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  llm-routing:
+    title: Application LLM Routing
+    path: docs/intent/llm-routing/llm-routing-design.md
+    specs: docs/intent/llm-routing/llm-routing-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-10-26
   dependency-declarations:
     title: Dependency Declarations
     path: docs/intent/dependency-declarations/dependency-declarations-design.md

@@ -5,7 +5,6 @@ module Models
   class MetaAgentSelector
     include RunnerTierLookup
 
-    MODEL = "claude-haiku-4-5-20251001"
     TIMEOUT = 15
     MAX_BODY_LENGTH = 2000
 
@@ -97,14 +96,7 @@ module Models
     end
 
     def request_selection(candidates)
-      response = AgentHarness.send_message(
-        build_prompt(candidates),
-        provider: :claude,
-        model: MODEL,
-        timeout: @selection_timeout,
-        tools: :none,
-        **Llm::TextMode.options
-      )
+      response = Llm::Request.call(prompt: build_prompt(candidates), project: @agent_run.project, timeout: @selection_timeout)
       return nil unless response.success?
 
       parse_response(response.output, candidates)
