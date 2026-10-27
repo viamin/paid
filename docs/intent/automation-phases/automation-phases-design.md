@@ -124,7 +124,9 @@ Completion and revocation:
 `#create` re-plans against current policy and compares the signature with the
 submitted one: a mismatch returns the updated notice for review and creates no
 run (`AUTOMATION-PHASES-011`). Grant creation requires permission to delegate
-the covered actions; a merge endpoint requires permission to delegate merge.
+every covered action; a merge endpoint requires the named merge-delegation
+permission. The grant author and work item must belong to the project's account
+and project respectively.
 
 There is deliberately no per-item "stop after this phase" override
 (`AUTOMATION-PHASES-012`).
