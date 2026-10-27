@@ -15,7 +15,7 @@ module ChatSessions
   class SendMessage
     include FallbackLoop
 
-    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
+    attr_reader :chat_session, :actor, :content, :on_chunk, :llm_client, :stream_message_id,
       :transport_attempt_message
 
     MAX_CONTENT_LENGTH = 12_000
@@ -37,6 +37,7 @@ module ChatSessions
     def call
       # @spec CHAT-API-002
       # @spec CHAT-API-005
+      # @spec CHAT-TURN-001 CHAT-TURN-007
       validate_content!
       validate_session_state!
       check_token_limit!
@@ -45,8 +46,12 @@ module ChatSessions
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      complete_turn!
       update_session_activity
       assistant_message
+    rescue StandardError
+      fail_turn!
+      raise
     end
 
     private
@@ -111,6 +116,11 @@ module ChatSessions
 
     def persist_user_message
       @transport_attempt_message = existing_user_message || create_user_message
+      @chat_turn = chat_session.chat_turns.find_or_create_by!(user_message: transport_attempt_message) do |turn|
+        turn.status = "pending"
+        turn.last_activity_at = Time.current
+      end
+      @chat_turn.update!(status: "streaming", last_activity_at: Time.current) if @chat_turn.incomplete?
 
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
@@ -172,6 +182,26 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    def complete_turn!
+      @chat_turn&.update!(status: "completed", completed_at: Time.current, last_activity_at: Time.current)
+    end
+
+    def fail_turn!
+      return unless @chat_turn&.incomplete?
+
+      @chat_turn.update!(status: "failed", classification: "execution_error", completed_at: Time.current,
+        last_activity_at: Time.current)
+    end
+
+    # Every persisted row is durable progress for the detector. Preserve the
+    # caller callback while recording it before a process can disappear.
+    def on_message_persisted
+      @activity_callback ||= lambda do |message, **kwargs|
+        @chat_turn&.update!(last_activity_at: Time.current) if message.persisted?
+        @on_message_persisted&.call(message, **kwargs)
+      end
     end
 
     # Reuse the pre-loop budget baseline so the mid-loop guard does not issue a

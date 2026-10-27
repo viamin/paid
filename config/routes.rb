@@ -534,6 +534,7 @@ Rails.application.routes.draw do
       get :recent_messages
     end
     resources :chat_messages, path: "messages", only: %i[index create] do
+      post :recover_stalled_turn, on: :collection
       member do
         post :resolve
       end

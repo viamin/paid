@@ -65,6 +65,20 @@ class ChatMessagesController < ApplicationController
     end
   end
 
+  def recover_stalled_turn
+    authorize ChatMessage.new(chat_session: @chat_session), :create?, policy_class: ChatMessagePolicy
+    turn = @chat_session.chat_turns.find(params[:turn_id])
+    ChatSessions::RecoverStalledTurn.call(turn: turn, actor: current_user, expected_revision: params[:revision])
+    respond_to do |format|
+      format.html { redirect_to chat_session_path(@chat_session), notice: "Safe retry started." }
+      format.json { render json: { status: "recovery_enqueued", turn_id: turn.id } }
+    end
+  rescue ChatSessions::RecoverStalledTurn::ConfirmationRequired => e
+    render json: { error: e.message }, status: :unprocessable_content
+  rescue ChatSessions::RecoverStalledTurn::Conflict => e
+    render json: { error: e.message }, status: :conflict
+  end
+
   private
 
   def set_chat_session
