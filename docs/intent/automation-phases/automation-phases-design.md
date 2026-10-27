@@ -35,6 +35,12 @@ every policy decision reads it through `Automation::RolloutGuard.enabled?`
 `Automation::EffectivePolicy` returns a permitted `legacy_policy` decision, so
 existing execution and Inbox behavior is untouched.
 
+The authorized project feature-flag management surface uses
+`FeatureFlags.disable!`; `Automation::RolloutGuard` rejects a project rollback
+while it has active continuation grants. Operators must let those grants finish
+or explicitly revoke them before the legacy policy can resume, preventing that
+policy from interpreting a grant as broader execution authority.
+
 ## Project phase defaults
 
 `projects.automation_phase_settings` (jsonb) stores:

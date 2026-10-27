@@ -8,11 +8,22 @@ module Automation
   # @spec AUTOMATION-PHASES-014
   module RolloutGuard
     FLAG = :automation_phases
+    ActiveGrantsError = Class.new(StandardError)
 
     module_function
 
     def enabled?(project)
       FeatureFlags.enabled?(FLAG, project:)
+    end
+
+    # RDR-077 requires grants to finish or be explicitly revoked before the
+    # old policy can take over again. It cannot interpret an active grant, so
+    # allowing a project rollback would silently widen its execution scope.
+    # @spec AUTOMATION-PHASES-014
+    def assert_rollback_allowed!(project)
+      return unless project.work_item_continuation_grants.active.exists?
+
+      raise ActiveGrantsError, "Cannot disable automation phases while active continuation grants remain."
     end
 
     # Resolve a collection with tenant overrides preloaded, so checking many

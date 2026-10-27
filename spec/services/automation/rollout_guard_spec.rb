@@ -39,4 +39,25 @@ RSpec.describe Automation::RolloutGuard do
     expect(queries.grep(/FROM \"accounts\"/).size).to eq(1)
     expect(queries.grep(/FROM \"tenant_settings\"/).size).to eq(1)
   end
+
+  it "blocks project rollback while continuation grants are active" do
+    issue = create(:issue, project:)
+    create(:work_item_continuation_grant, project:, issue:)
+    FeatureFlags.enable!(described_class::FLAG, project:)
+
+    expect { FeatureFlags.disable!(described_class::FLAG, project:) }
+      .to raise_error(described_class::ActiveGrantsError, /active continuation grants/)
+    expect(described_class.enabled?(project)).to be(true)
+  end
+
+  it "allows project rollback after active grants are revoked" do
+    issue = create(:issue, project:)
+    grant = create(:work_item_continuation_grant, project:, issue:)
+    grant.revoke!(user: create(:user, account:))
+    FeatureFlags.enable!(described_class::FLAG, project:)
+
+    FeatureFlags.disable!(described_class::FLAG, project:)
+
+    expect(described_class.enabled?(project)).to be(false)
+  end
 end
