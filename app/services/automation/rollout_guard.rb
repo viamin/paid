@@ -8,11 +8,25 @@ module Automation
   # @spec AUTOMATION-PHASES-014
   module RolloutGuard
     FLAG = :automation_phases
+    ActiveGrantsError = Class.new(StandardError)
 
     module_function
 
     def enabled?(project)
       FeatureFlags.enabled?(FLAG, project:)
+    end
+
+    # A continuation grant only has meaning while the phase model is active.
+    # Do not let a project return to legacy policy until its grants have
+    # reached an endpoint or an operator has explicitly revoked them.
+    #
+    # @spec AUTOMATION-PHASES-014
+    def ensure_rollback_allowed!(project)
+      return unless project.work_item_continuation_grants.active.exists?
+
+      raise ActiveGrantsError,
+        "Cannot disable automation_phases while the project has active continuation grants. " \
+        "Complete or revoke the grants and reconcile queued work first."
     end
 
     # Resolve a collection with tenant overrides preloaded, so checking many
