@@ -73,6 +73,24 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation))
   end
 
+  # @spec FACET-CONFIDENCE-022 OPERATOR-INBOX-002L
+  it "starts the declared Action Required evaluation workflow and preserves its Inbox context" do
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Internal remediation", description: "Internal workflow prose",
+      metadata: { "workflow" => Inbox::FacetConfidenceEvaluationAction::WORKFLOW })
+    context = {
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      inbox_sort: "newest",
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+    }
+
+    post project_facet_confidence_evaluations_path(project), params: { issue_id: issue.id, **context }
+
+    evaluation = issue.facet_confidence_evaluations.sole
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation, **context))
+  end
+
   it "refuses to start for an originating work item outside the project" do
     other_project = create(:project, account: account, created_by: owner)
     other_issue = create(:issue, project: other_project, github_number: 99)

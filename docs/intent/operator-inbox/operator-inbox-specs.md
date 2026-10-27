@@ -88,6 +88,16 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** — When a visible blocking notification declares
+  a supported typed workflow, the Action Required detail SHALL render that
+  workflow's safe, persisted-state adapter rather than raw internal producer
+  prose. A facet-confidence evaluation declaration SHALL show plain-language
+  independent-review guidance, progress, and the appropriate in-product
+  action; untyped notifications SHALL retain the generic fallback rendering.
+  *Code:* `app/services/inbox/facet_confidence_evaluation_action.rb`,
+  `app/services/inbox/queue.rb`, `app/views/dashboard/_inbox_detail_action_required.html.erb`.
+  *Test:* `spec/requests/inbox_spec.rb`, `spec/services/inbox/queue_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002C** — When an open pull request's review phase is
   `escalated` and its project is within the operator's authorized Inbox
   visibility (`INBOX-FOUNDATION-006` — account isolation plus owner

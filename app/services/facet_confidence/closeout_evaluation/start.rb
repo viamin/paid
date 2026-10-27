@@ -28,7 +28,7 @@ module FacetConfidence
         return failure("the originating work item must belong to this project") unless @issue.project_id == @project.id
         return failure("an authenticated operator must start the evaluation") if @actor.blank?
 
-        blockers = closeout_status.blockers
+        blockers = start_blockers
         return failure("the closeout entry point is blocked until its recorded prerequisites resolve: #{blockers.map(&:message).join(' ')}") if blockers.any?
 
         corpus = FacetConfidence::Corpus.new(path: CloseoutEvaluationPacket::MANIFEST_PATH)
@@ -73,6 +73,29 @@ module FacetConfidence
 
       def closeout_status
         @status || Issues::CloseoutStatus.call(@issue)
+      end
+
+      # A declared evaluation notification is the work this service starts,
+      # not an independent prerequisite. Keep every other closeout blocker in
+      # force, including a mixed set of generic human prerequisites.
+      def start_blockers
+        blockers = closeout_status.blockers
+        return blockers unless declared_evaluation_notification?
+
+        blockers.reject { |blocker| blocker.code == :human_prerequisite_notification }
+      end
+
+      def declared_evaluation_notification?
+        notifications = Notification.where(
+          account: project.account,
+          subject: issue,
+          source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+          resolved_at: nil,
+          dismissed_at: nil
+        )
+        notifications.exists? && notifications.all? do |notification|
+          notification.metadata["workflow"] == Inbox::FacetConfidenceEvaluationAction::WORKFLOW
+        end
       end
 
       def log_started(evaluation, resumed:)

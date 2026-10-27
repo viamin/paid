@@ -43,7 +43,9 @@
           selected_kind: selected_kind %>
   <% elsif entry.action_required? %>
     <%= render "dashboard/inbox_detail_action_required",
-          entry: entry %>
+          entry: entry,
+          scoped_project: scoped_project,
+          selected_kind: selected_kind %>
   <% elsif entry.merge_approval? %>
     <%= render "dashboard/inbox_detail_merge_approval",
           entry: entry,

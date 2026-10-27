@@ -52,6 +52,10 @@ module PartialCloseouts
         raise ArgumentError, "human gap reference identity is invalid" unless valid
       end
       selection = gap["policy_selection"]
+      workflow = gap["workflow"]
+      unless workflow.nil? || Llm::AnalyzePartialCloseout::VALID_WORKFLOWS.include?(workflow)
+        raise ArgumentError, "human gap workflow is invalid"
+      end
       return if selection.nil?
 
       valid_selection = selection.is_a?(Hash) && [ true, false ].include?(selection["required"])
@@ -220,6 +224,8 @@ module PartialCloseouts
       identity = Digest::SHA256.hexdigest(JSON.generate(identities))
       metadata = { "prerequisite_identity" => identity, "references" => references,
                    "prerequisites" => human_gaps.map { |gap| prerequisite_occurrence(gap) } }
+      workflow = human_gaps.map { |gap| gap["workflow"] }.uniq
+      metadata["workflow"] = workflow.sole if workflow.one? && workflow.first.present?
       submissions = reconciled_evidence_submissions(previous, metadata.fetch("prerequisites"))
       metadata["evidence_submissions"] = submissions if submissions.any?
       policy_selection = replacement_policy_action(human_gaps)
@@ -255,7 +261,7 @@ module PartialCloseouts
     end
 
     def prerequisite_identity(gap)
-      identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection"))
+      identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection", "workflow"))
       identity["references"] = Array(gap["references"])
         .map { |reference| canonicalize(reference) }
         .sort_by { |reference| JSON.generate(reference) }

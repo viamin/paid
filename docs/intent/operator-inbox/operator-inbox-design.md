@@ -171,6 +171,13 @@ absent, the description is also the entry summary. `Notifications::Publish`
 rejects a blocking notification that has neither a non-blank description nor
 remediation guidance, so every Action Required entry has meaningful context.
 
+When a notification declares a typed workflow, the Inbox adapts that
+workflow's persisted state rather than inferring meaning from notification
+text. The facet-confidence evaluation adapter translates the closeout block,
+displays progress, and links directly to the authorized evaluation flow while
+retaining Inbox context. Notifications without a recognized typed workflow
+keep the safe generic rendering.
+
 ### `merge_approval`
 
 Backed by the PR scanner's persisted current-head policy snapshot on `Issue`.

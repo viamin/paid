@@ -174,3 +174,15 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+## Action-required evaluation guidance
+
+A blocking notification may declare the typed `facet_confidence_evaluation`
+workflow instead of exposing its producer's internal remediation prose. The
+Inbox translates that escalation into plain language and offers the
+state-specific evaluation action: start when no evaluation exists, continue
+judging while cases remain, freeze when every case is judged, and open the
+completed report after freezing. The action carries the selected Inbox filters
+and entry id through the evaluation routes so the operator can return to the
+same Inbox context. Untyped notifications retain their generic description and
+remediation guidance.

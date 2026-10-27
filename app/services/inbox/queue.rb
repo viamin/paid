@@ -88,6 +88,7 @@ module Inbox
       :action_url,
       :guidance,
       :closeout_status,
+      :workflow,
       keyword_init: true
     ) do
       def to_param
@@ -108,6 +109,11 @@ module Inbox
 
       def action_required?
         kind == ACTION_REQUIRED_KIND
+      end
+
+      # @spec FACET-CONFIDENCE-022 OPERATOR-INBOX-002L
+      def facet_confidence_evaluation_action?
+        workflow.present?
       end
 
       def escalated_pr?
@@ -586,6 +592,8 @@ module Inbox
         next unless project
         next if project_filter_excludes?(project)
 
+        workflow = Inbox::FacetConfidenceEvaluationAction.call(notification:, issue:)
+
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
           kind: ACTION_REQUIRED_KIND,
@@ -595,9 +603,10 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
-          action_url: notification.action_url
+          summary_text: workflow&.summary || notification.metadata["recommended_action"].presence || notification.description,
+          title_text: workflow&.title || notification.title,
+          action_url: notification.action_url,
+          workflow:
         )
       end
     end

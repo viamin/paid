@@ -1,6 +1,56 @@
 <%# @spec OPERATOR-INBOX-002B %>
 <div class="space-y-6">
   <% notification = entry.record %>
+  <% workflow = entry.workflow %>
+  <% inbox_context = {
+    inbox_kind: selected_kind,
+    inbox_sort: params[:sort].presence_in(Inbox::Queue::SORTS.keys),
+    inbox_entry_id: entry.id
+  }.compact %>
+  <% if workflow %>
+    <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4" data-facet-confidence-evaluation-action-required>
+      <h3 class="text-sm font-semibold text-indigo-900">Evaluation needed before this closeout can proceed</h3>
+      <p class="mt-1 text-sm text-indigo-800">
+        Review each frozen test case independently, record your judgment, then freeze the completed set.
+        This gives the closeout the human evidence it is missing.
+      </p>
+      <p class="mt-2 text-sm text-indigo-900">
+        <% if workflow.evaluation %>
+          <%= workflow.recorded %> recorded · <%= workflow.remaining %> remaining · <%= workflow.total %> total.
+          <% if workflow.frozen? %>The completed set is frozen and its report is ready to review.<% end %>
+        <% else %>
+          No judgments have been recorded yet.
+        <% end %>
+      </p>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <% case workflow.action %>
+      <% when :start %>
+        <%= link_to "Start evaluation",
+              new_project_facet_confidence_evaluation_path(entry.project, issue_id: entry.issue.id, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% when :continue %>
+        <%= link_to "Continue judging",
+              project_facet_confidence_evaluation_path(entry.project, workflow.evaluation, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% when :freeze %>
+        <%= button_to "Freeze judgments",
+              freeze_project_facet_confidence_evaluation_path(entry.project, workflow.evaluation, **inbox_context),
+              form: { data: { turbo_frame: "_top" } },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% when :open %>
+        <%= link_to "Open evaluation and report",
+              project_facet_confidence_evaluation_path(entry.project, workflow.evaluation, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% end %>
+      <%= link_to inbox_issue_link_label(entry.issue), entry.issue.github_url, target: "_blank", rel: "noopener noreferrer",
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    </div>
+  <% else %>
   <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
     <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
     <% if notification.description.present? %>
@@ -60,5 +110,6 @@
             data: { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
+  <% end %>
   <% end %>
 </div>
