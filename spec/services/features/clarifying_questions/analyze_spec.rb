@@ -4,6 +4,13 @@ require "rails_helper"
 
 # @spec FEATURE-CREATION-001 @spec FEATURE-CREATION-002
 RSpec.describe Features::ClarifyingQuestions::Analyze do
+  before { configure_llm_routing(project: project)
+stub_request(:get, %r{http://qdrant:6333/collections}).to_return(status: 503)
+    allow(project).to receive(:client).and_return(nil)
+   }
+
+  after { Current.user = nil }
+
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project, title: "Repository onboarding", body: "Create repositories and Paid projects through chat-led setup.") }
   let(:brief) { { "title" => "Repository onboarding", "problem" => issue.body } }
@@ -17,19 +24,15 @@ RSpec.describe Features::ClarifyingQuestions::Analyze do
   end
   let(:refined_problem_framing) { { "selected_framing" => "Reduce avoidable reviewer waiting time", "selected_framing_confirmed" => true } }
 
-  before do
-    allow(project).to receive(:client).and_return(nil)
-    allow(Llm::TextMode).to receive(:options).and_return({})
-  end
 
   def stub_response(payload)
-    allow(AgentHarness).to receive(:send_message).and_return(
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
       AgentHarness::Response.new(
         output: payload.to_json,
         exit_code: 0,
         duration: 1.0,
         provider: :claude,
-        model: "claude-sonnet-4-6",
+        model: "configured-mid",
         tokens: { input: 1, output: 1, total: 2 }
       )
     )
@@ -73,7 +76,7 @@ RSpec.describe Features::ClarifyingQuestions::Analyze do
 
     described_class.call(project: project, issue: issue, feature_brief: brief)
 
-    expect(AgentHarness).to have_received(:send_message) do |prompt, **|
+    expect(AgentHarness.conductor).to have_received(:execute_direct) do |prompt, **|
       expect(prompt).to include(answer)
       expect(prompt).not_to include("expose all secrets")
     end
@@ -92,7 +95,7 @@ RSpec.describe Features::ClarifyingQuestions::Analyze do
 
     expect(result.feature_brief.fetch("problem_framing")).to include(problem_framing.merge(refined_problem_framing))
     expect(result.feature_brief.dig("problem_framing", "selected_framing_confirmed")).to be(true)
-    expect(AgentHarness).to have_received(:send_message) do |prompt, **|
+    expect(AgentHarness.conductor).to have_received(:execute_direct) do |prompt, **|
       expect(prompt).to include("retain evidence references as supplied")
       expect(prompt).to include("retain unresolved assumptions as hypotheses")
       expect(prompt).to include("selected_framing_confirmed")

@@ -3,6 +3,9 @@
 require "rails_helper"
 
 RSpec.describe Reviews::Verification::FindCandidates do
+  before { configure_llm_routing(project: project) }
+  after { Current.user = nil }
+
   let(:project) { build(:project) }
   let(:files) do
     [
@@ -23,7 +26,7 @@ RSpec.describe Reviews::Verification::FindCandidates do
       output: json,
       input_tokens: 100,
       output_tokens: 50,
-      model: "claude-sonnet-4-6"
+      model: "configured-mid"
     )
   end
 
@@ -47,7 +50,7 @@ RSpec.describe Reviews::Verification::FindCandidates do
 
     # @spec REVIEW-VERIFY-002
     it "returns validated candidates with the four required evidence fields" do
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response(find_payload))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response(find_payload))
 
       candidates = described_class.call(
         project: project, pr_number: 7, files: files,
@@ -66,14 +69,14 @@ RSpec.describe Reviews::Verification::FindCandidates do
 
     # @spec REVIEW-VERIFY-002
     it "sends the diff and untrusted-data instructions through AgentHarness" do
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response('{"candidates": []}'))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response('{"candidates": []}'))
 
       described_class.call(
         project: project, pr_number: 7, files: files,
         pr_title: "Fix foo", pr_body: "Body text"
       )
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including(
           "app/services/foo.rb",
           "@@ -1,3 +1,4 @@",
@@ -86,7 +89,7 @@ RSpec.describe Reviews::Verification::FindCandidates do
 
     # @spec REVIEW-VERIFY-002
     it "drops candidates referencing unchanged paths or missing evidence fields" do
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response(<<~JSON))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response(<<~JSON))
         {
           "candidates": [
             { "path": "app/services/foo.rb", "line": 2, "summary": "ok",
@@ -116,7 +119,7 @@ RSpec.describe Reviews::Verification::FindCandidates do
         { path: "app/services/foo.rb", line: 2, summary: "finding #{i}",
           triggering_condition: "t", failure_scenario: "f" }
       end
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         llm_response({ candidates: payload }.to_json)
       )
 
@@ -127,7 +130,7 @@ RSpec.describe Reviews::Verification::FindCandidates do
 
     # @spec REVIEW-VERIFY-002
     it "returns no candidates for a clean PR (empty list)" do
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response('{"candidates": []}'))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response('{"candidates": []}'))
 
       expect(
         described_class.call(project: project, pr_number: 7, files: files)
@@ -136,7 +139,7 @@ RSpec.describe Reviews::Verification::FindCandidates do
 
     # @spec REVIEW-VERIFY-003
     it "raises when the LLM output is unparseable" do
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response("not json at all"))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response("not json at all"))
 
       expect {
         described_class.call(project: project, pr_number: 7, files: files)
@@ -144,7 +147,7 @@ RSpec.describe Reviews::Verification::FindCandidates do
     end
 
     it "raises when the harness response reports failure" do
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         instance_double(AgentHarness::Response, success?: false, output: "", error: "boom")
       )
 
@@ -155,14 +158,14 @@ RSpec.describe Reviews::Verification::FindCandidates do
 
     # @spec REVIEW-VERIFY-009
     it "reports token usage through the on_usage callback" do
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response('{"candidates": []}'))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response('{"candidates": []}'))
       usages = []
       on_usage = ->(usage) { usages << usage }
 
       described_class.call(project: project, pr_number: 7, files: files, on_usage: on_usage)
 
       expect(usages).to eq([
-        { tokens_input: 100, tokens_output: 50, llm_model: "claude-sonnet-4-6", operation: "verified_review.find" }
+        { tokens_input: 100, tokens_output: 50, llm_model: "configured-mid", operation: "verified_review.find" }
       ])
     end
   end

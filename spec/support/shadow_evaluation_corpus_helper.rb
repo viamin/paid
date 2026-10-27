@@ -38,7 +38,7 @@ module ShadowEvaluationCorpusHelper
 
   def reviewer_identity
     {
-      "model" => IntentConformance::ReviewerLlm::DEFAULT_MODEL,
+      "model" => "claude-sonnet-4-6",
       "prompt_version" => IntentConformance::ReviewerLlm::PROMPT_VERSION,
       "prompt_sha256" => Digest::SHA256.hexdigest(IntentConformance::ReviewerLlm::PROMPT)
     }

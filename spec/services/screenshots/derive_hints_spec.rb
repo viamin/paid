@@ -2,8 +2,12 @@
 
 require "rails_helper"
 
-RSpec.describe Screenshots::DeriveHints, :no_db do
-  before { allow(Llm::TextMode).to receive(:options).and_return(mode: :text) }
+RSpec.describe Screenshots::DeriveHints do
+  before { configure_llm_routing(project: agent_run.project)
+  }
+
+  after { Current.user = nil }
+
 
   let(:route_struct) { Struct.new(:name, :path) }
   let(:routes) do
@@ -12,16 +16,11 @@ RSpec.describe Screenshots::DeriveHints, :no_db do
       route_struct.new("sign_in", "/users/sign_in")
     ]
   end
-  let(:agent_run) do
-    instance_double(
-      AgentRun,
-      id: 7
-    )
-  end
+  let(:agent_run) { create(:agent_run) }
 
   def stub_llm(output, success: true)
     response = instance_double(AgentHarness::Response, success?: success, output: output)
-    allow(AgentHarness).to receive(:send_message).and_return(response)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
   end
 
   describe ".call" do
@@ -43,20 +42,17 @@ RSpec.describe Screenshots::DeriveHints, :no_db do
 
       described_class.call(agent_run: agent_run, routes: routes, changed_files: [ "app/views/dashboard/show.html.erb" ])
 
-      expect(AgentHarness).to have_received(:send_message).with(
-        a_string_including("dashboard — /dashboard", "app/views/dashboard/show.html.erb"),
-        provider: :claude,
-        model: described_class::DEFAULT_MODEL,
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+        a_string_including("dashboard — /dashboard", "app/views/dashboard/show.html.erb"), hash_including(provider: :claude,
+        model: "configured-mid",
         timeout: described_class::TIMEOUT,
-        tools: :none,
-        mode: :text
-      )
+        tools: :none))
     end
 
     it "does not reuse the agent summary in the hinting prompt" do
       captured_prompt = nil
       response = instance_double(AgentHarness::Response, success?: true, output: "{}")
-      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |prompt, **|
         captured_prompt = prompt
         response
       end
@@ -134,10 +130,10 @@ RSpec.describe Screenshots::DeriveHints, :no_db do
     end
 
     it "returns empty hints without calling the LLM when there are no routes" do
-      allow(AgentHarness).to receive(:send_message)
+      allow(AgentHarness.conductor).to receive(:execute_direct)
 
       expect(described_class.call(agent_run: agent_run, routes: [])).to eq({})
-      expect(AgentHarness).not_to have_received(:send_message)
+      expect(AgentHarness.conductor).not_to have_received(:execute_direct)
     end
 
     it "swallows persistence failures and returns empty hints" do

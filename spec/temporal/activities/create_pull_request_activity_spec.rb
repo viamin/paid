@@ -6,6 +6,23 @@ require "ostruct"
 # @spec LID-RUNS-003
 RSpec.describe Activities::CreatePullRequestActivity do
   fixture "activities/create_pull_request/base"
+  before { configure_llm_routing(project: project)
+allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive_messages(
+      pull_requests: [],
+      create_pull_request: pr_response,
+      issue: issue_response,
+      ref: instance_double(Sawyer::Resource),
+      compare_changed_files: []
+    )
+    allow(github_client).to receive(:add_labels_to_issue)
+    allow(github_client).to receive(:update_pull_request)
+    # Stub external agent harness so Llm::GeneratePrDescription runs without real external calls.
+    # By default, return a failed response so the activity falls back to a deterministic description.
+    allow(AgentHarness.conductor).to receive(:execute_direct)
+      .and_return(instance_double(AgentHarness::Response, success?: false, output: "", error: nil))
+    allow_any_instance_of(Llm::GeneratePrDescription).to receive(:sleep) # rubocop:disable RSpec/AnyInstance
+   }
 
   let(:activity) { described_class.new }
   let(:fixture_repository) { instance_variable_get(:@_fixture_kit_repository) }
@@ -85,23 +102,6 @@ RSpec.describe Activities::CreatePullRequestActivity do
     TEXT
   end
 
-  before do
-    allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive_messages(
-      pull_requests: [],
-      create_pull_request: pr_response,
-      issue: issue_response,
-      ref: instance_double(Sawyer::Resource),
-      compare_changed_files: []
-    )
-    allow(github_client).to receive(:add_labels_to_issue)
-    allow(github_client).to receive(:update_pull_request)
-    # Stub external agent harness so Llm::GeneratePrDescription runs without real external calls.
-    # By default, return a failed response so the activity falls back to a deterministic description.
-    allow(AgentHarness).to receive(:send_message)
-      .and_return(instance_double(AgentHarness::Response, success?: false, output: "", error: nil))
-    allow_any_instance_of(Llm::GeneratePrDescription).to receive(:sleep) # rubocop:disable RSpec/AnyInstance
-  end
 
   describe "#execute" do
     # @spec FEATURE-APPROVAL-015
@@ -1004,7 +1004,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
       it "uses goal-specific PR body when agent summary is present" do
         lid_agent_run.log!("stdout", "## LID Brownfield Analysis\n\nInferred decisions...")
 
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_return(instance_double(AgentHarness::Response, success?: true,
                                      output: "Bootstrapped LID design tree with 5 LLDs and EARS specs."))
 
@@ -1045,7 +1045,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         SUMMARY
         lid_agent_run.log!("stdout", summary)
 
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_return(instance_double(AgentHarness::Response, success?: true,
                                      output: "Bootstrapped LID design tree with 5 LLDs and EARS specs."))
 
@@ -1071,7 +1071,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         lid_agent_run.log!("stdout", summary)
 
         # The generated description already includes the checklist
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_return(instance_double(AgentHarness::Response, success?: true,
                                      output: "Bootstrapped LID design tree.\n\n## Confirm these inferred decisions\n\n- [ ] auth: session tokens use JWT with RS256"))
 
@@ -1099,7 +1099,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         SUMMARY
         lid_agent_run.log!("stdout", summary)
 
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_return(instance_double(AgentHarness::Response, success?: true,
                                      output: "Generated description without checklist."))
 
@@ -1124,7 +1124,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
         SUMMARY
         lid_agent_run.log!("stdout", summary)
 
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_return(instance_double(AgentHarness::Response, success?: true,
                                      output: "Generated description without checklist."))
 
@@ -1758,7 +1758,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       it "uses the LLM-generated description in the PR body" do
         agent_run.log!("stdout", "Added OAuth middleware")
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_return(instance_double(AgentHarness::Response, success?: true, output: llm_description))
 
         expect(github_client).to receive(:create_pull_request).with(
@@ -1775,7 +1775,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       it "records a PR description metric when the LLM generates the description" do
         agent_run.log!("stdout", "Added OAuth middleware")
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_return(instance_double(AgentHarness::Response, success?: true, output: llm_description))
 
         expect {
@@ -1793,16 +1793,16 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       it "passes issue context to the LLM service via AgentHarness" do
         agent_run.log!("stdout", "Added OAuth middleware")
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_return(instance_double(AgentHarness::Response, success?: true, output: llm_description))
 
         activity.execute(agent_run_id: agent_run.id)
 
-        expect(AgentHarness).to have_received(:send_message).with(
+        expect(AgentHarness.conductor).to have_received(:execute_direct).with(
           a_string_including(issue.title).and(including(issue.body)),
           hash_including(
             provider: :claude,
-            model: Llm::GeneratePrDescription::DEFAULT_MODEL,
+            model: "configured-mid",
             timeout: Llm::GeneratePrDescription::TIMEOUT
           )
         )
@@ -1810,7 +1810,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       it "falls back to issue-title description when LLM retries are exhausted" do
         agent_run.log!("stdout", "Raw agent output here")
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))
         mock_logger = instance_double(ActiveSupport::Logger, info: nil)
         allow(activity).to receive(:logger).and_return(mock_logger)
@@ -1829,7 +1829,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       it "falls back to issue-title description when LLM raises a non-retryable error" do
         agent_run.log!("stdout", "Raw agent output here")
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_raise(RuntimeError.new("unexpected failure"))
         mock_logger = instance_double(ActiveSupport::Logger, info: nil)
         allow(activity).to receive(:logger).and_return(mock_logger)
@@ -1862,7 +1862,7 @@ RSpec.describe Activities::CreatePullRequestActivity do
 
       it "does not record a PR description metric when LLM retries are exhausted" do
         agent_run.log!("stdout", "Raw agent output here")
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))
 
         expect {

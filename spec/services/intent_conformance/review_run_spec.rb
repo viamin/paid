@@ -11,6 +11,20 @@ require "rails_helper"
 # @spec INTENT-CONFORMANCE-REVIEW-007
 # @spec INTENT-CONFORMANCE-ROLLOUT-002
 RSpec.describe IntentConformance::ReviewRun do
+  before { configure_llm_routing(project: project)
+project.account.tenant_setting!.update!(features: { "intent_conformance_shadow_review" => true })
+    create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+    allow(project).to receive(:client).and_return(github_client)
+    allow(project).to receive_messages(full_name: "acme/widgets", client: github_client)
+    allow(github_client).to receive(:file_content)
+      .with("acme/widgets", path: "docs/rdrs/RDR-999-example.md", ref: "rev1")
+      .and_return("# RDR-999\n\nThe widget SHALL always be blue.")
+    allow(github_client).to receive(:pull_request).with("acme/widgets", 42).and_return(pr_data)
+    allow(github_client).to receive(:compare_summary).with("acme/widgets", "base_sha", pr_head_sha).and_return(comparison)
+   }
+
+  after { Current.user = nil }
+
   let(:project) { create(:project) }
   let(:issue) { create(:issue, :pull_request, project: project, github_number: 42, github_creator_login: "viamin") }
   let(:feature_intent) do
@@ -36,21 +50,10 @@ RSpec.describe IntentConformance::ReviewRun do
     described_class.call(project: project, issue: issue, pr_head_sha: pr_head_sha)
   end
 
-  def response_double(output:, success: true, model: "claude-sonnet-4-6", metadata: {})
+  def response_double(output:, success: true, model: "configured-mid", metadata: {})
     instance_double(AgentHarness::Response, success?: success, output: output, model: model, metadata: metadata)
   end
 
-  before do
-    project.account.tenant_setting!.update!(features: { "intent_conformance_shadow_review" => true })
-    create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
-    allow(project).to receive(:client).and_return(github_client)
-    allow(project).to receive_messages(full_name: "acme/widgets", client: github_client)
-    allow(github_client).to receive(:file_content)
-      .with("acme/widgets", path: "docs/rdrs/RDR-999-example.md", ref: "rev1")
-      .and_return("# RDR-999\n\nThe widget SHALL always be blue.")
-    allow(github_client).to receive(:pull_request).with("acme/widgets", 42).and_return(pr_data)
-    allow(github_client).to receive(:compare_summary).with("acme/widgets", "base_sha", pr_head_sha).and_return(comparison)
-  end
 
   # @spec INTENT-CONFORMANCE-REVIEW-001
   context "when the issue is not linked to a feature intent" do
@@ -79,7 +82,7 @@ RSpec.describe IntentConformance::ReviewRun do
     before { project.account.tenant_setting!.update!(features: { "intent_conformance_shadow_review" => true }) }
 
     it "persists a verdict for measurement without changing merge eligibility" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: {
         outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "Within scope."
       }.to_json))
 
@@ -92,7 +95,7 @@ RSpec.describe IntentConformance::ReviewRun do
     before { project.account.tenant_setting!.update!(features: { "approved_intent_amendments" => true }) }
 
     it "does not run a shadow review or persist a verdict" do
-      expect(AgentHarness).not_to receive(:send_message)
+      expect(AgentHarness.conductor).not_to receive(:execute_direct)
 
       expect(call).to be_nil
       expect(IntentConformanceVerdict.count).to eq(0)
@@ -108,7 +111,7 @@ RSpec.describe IntentConformance::ReviewRun do
     end
 
     it "runs the independent review" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: {
         outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "Within scope."
       }.to_json))
 
@@ -121,7 +124,7 @@ RSpec.describe IntentConformance::ReviewRun do
     let(:issue) { create(:issue, :pull_request, project: project, github_number: 42, github_creator_login: "attacker") }
 
     it "records not_evaluated without sending any content to the reviewer" do
-      expect(AgentHarness).not_to receive(:send_message)
+      expect(AgentHarness.conductor).not_to receive(:execute_direct)
 
       verdict = call
 
@@ -138,7 +141,7 @@ RSpec.describe IntentConformance::ReviewRun do
     end
 
     it "records not_evaluated without calling the reviewer" do
-      expect(AgentHarness).not_to receive(:send_message)
+      expect(AgentHarness.conductor).not_to receive(:execute_direct)
 
       expect(call).to be_not_evaluated
     end
@@ -153,7 +156,7 @@ RSpec.describe IntentConformance::ReviewRun do
     end
 
     it "records not_evaluated without calling the reviewer" do
-      expect(AgentHarness).not_to receive(:send_message)
+      expect(AgentHarness.conductor).not_to receive(:execute_direct)
 
       expect(call).to be_not_evaluated
     end
@@ -162,7 +165,7 @@ RSpec.describe IntentConformance::ReviewRun do
   context "when the reviewer call succeeds" do
     # @spec INTENT-CONFORMANCE-REVIEW-002
     it "persists a within_scope verdict with reviewer evidence bound to the exact head and revision" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: {
         outcome: "within_scope",
         cited_design_claims: [],
         cited_diff_locations: [ { file: "app/models/widget.rb", note: "Color logic unchanged" } ],
@@ -174,14 +177,14 @@ RSpec.describe IntentConformance::ReviewRun do
       expect(verdict).to be_within_scope
       expect(verdict.pr_head_sha).to eq(pr_head_sha)
       expect(verdict.approved_design_revision).to eq("rev1")
-      expect(verdict.reviewer_model).to eq("claude-sonnet-4-6")
+      expect(verdict.reviewer_model).to eq("configured-mid")
       expect(verdict.cited_diff_locations).to eq([ { "file" => "app/models/widget.rb", "anchor" => "Color logic unchanged" } ])
       expect(verdict.reasoning_summary).to eq("The PR keeps the widget blue as required.")
       expect(verdict.evaluated_at).to be_present
     end
 
     it "persists a material_drift verdict when the reviewer cites a changed claim" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: {
         outcome: "material_drift",
         cited_design_claims: [ "The widget SHALL always be blue." ],
         cited_diff_locations: [ { file: "app/models/widget.rb", note: "Now defaults to red" } ],
@@ -195,7 +198,7 @@ RSpec.describe IntentConformance::ReviewRun do
     end
 
     it "persists an uncertain verdict with cited missing evidence" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: {
         outcome: "uncertain",
         cited_design_claims: [ "The widget SHALL always be blue." ],
         cited_diff_locations: [ { file: "app/models/widget.rb", note: "The patch omits the default path." } ],
@@ -207,7 +210,7 @@ RSpec.describe IntentConformance::ReviewRun do
 
     it "strips a markdown fence around the JSON output" do
       fenced = "```json\n" + { outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "OK" }.to_json + "\n```"
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: fenced))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: fenced))
 
       expect(call).to be_within_scope
     end
@@ -218,7 +221,7 @@ RSpec.describe IntentConformance::ReviewRun do
         pull_request_number: 42,
         verification_result: { "status" => "passed", "summary" => "All good, fully in scope." })
 
-      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |prompt, **|
         expect(prompt).to include("self-reported")
         expect(prompt).to include("NOT authoritative")
         response_double(output: {
@@ -263,7 +266,7 @@ RSpec.describe IntentConformance::ReviewRun do
     end
 
     it "uses the released confidence link rather than the compatibility feature accessor" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: {
         outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "Within scope."
       }.to_json))
 
@@ -273,7 +276,7 @@ RSpec.describe IntentConformance::ReviewRun do
     it "prefers an explicit merged baseline when the release snapshot records one" do
       link = confidence_feature.feature_intent_issues.find_by!(issue: issue)
       link.update!(release_snapshot: link.release_snapshot.merge("merged_baseline" => "explicit-baseline"))
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: {
         outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "Within scope."
       }.to_json))
       allow(github_client).to receive(:file_content)
@@ -286,7 +289,7 @@ RSpec.describe IntentConformance::ReviewRun do
     it "does not review using a pending confidence snapshot" do
       confidence_feature.feature_intent_issues.find_by!(issue: issue).update!(release_state: "pending")
 
-      expect(AgentHarness).not_to receive(:send_message)
+      expect(AgentHarness.conductor).not_to receive(:execute_direct)
       expect(call).to be_nil
     end
 
@@ -294,7 +297,7 @@ RSpec.describe IntentConformance::ReviewRun do
     it "reviews the design artifacts admitted at release rather than a later revised mapping" do
       link = confidence_feature.feature_intent_issues.find_by!(issue: issue)
       link.update!(readiness_mapping: { "design_artifacts" => [ { "path" => "docs/rdrs/RDR-9999-revised.md" } ] })
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: {
         outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "Within scope."
       }.to_json))
 
@@ -311,13 +314,13 @@ RSpec.describe IntentConformance::ReviewRun do
   # @spec INTENT-CONFORMANCE-REVIEW-003
   context "when the reviewer call is unsuccessful" do
     it "records not_evaluated" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: nil, success: false))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: nil, success: false))
 
       expect(call).to be_not_evaluated
     end
 
     it "records the reviewer_model sentinel rather than fabricating a model identity" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: nil, success: false))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: nil, success: false))
 
       verdict = call
 
@@ -348,7 +351,7 @@ RSpec.describe IntentConformance::ReviewRun do
   # @spec INTENT-CONFORMANCE-REVIEW-003
   context "when the reviewer output is not valid JSON" do
     it "records not_evaluated" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: "not json at all"))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: "not json at all"))
 
       expect(call).to be_not_evaluated
     end
@@ -357,7 +360,7 @@ RSpec.describe IntentConformance::ReviewRun do
   # @spec INTENT-CONFORMANCE-REVIEW-003
   context "when the reviewer returns an outcome outside the allowed set" do
     it "records not_evaluated rather than trusting the label" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: {
         outcome: "approved",
         cited_design_claims: [],
         cited_diff_locations: [],
@@ -371,7 +374,7 @@ RSpec.describe IntentConformance::ReviewRun do
   # @spec INTENT-CONFORMANCE-REVIEW-003
   context "when the reviewer returns material_drift with no cited claims" do
     it "records not_evaluated instead of an unexplained drift call" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: {
         outcome: "material_drift",
         cited_design_claims: [],
         cited_diff_locations: [],
@@ -385,7 +388,7 @@ RSpec.describe IntentConformance::ReviewRun do
   # @spec INTENT-CONFORMANCE-REVIEW-003
   context "when cited_diff_locations is not an array" do
     it "records not_evaluated" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: {
         outcome: "within_scope",
         cited_design_claims: [],
         cited_diff_locations: "app/models/widget.rb",
@@ -399,7 +402,7 @@ RSpec.describe IntentConformance::ReviewRun do
   # @spec INTENT-CONFORMANCE-REVIEW-006
   context "when called again for a new PR head" do
     it "records a new verdict per call, so IntentConformanceVerdict.current_for reflects the latest review" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: {
         outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "OK"
       }.to_json))
       first = call
@@ -417,7 +420,7 @@ RSpec.describe IntentConformance::ReviewRun do
   # this machine-readable reason instead of parsing the reasoning prose.
   describe "#failure_reason" do
     it "exposes the classified reason of a not_evaluated verdict" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: nil, success: false))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: nil, success: false))
 
       review = described_class.new(project: project, issue: issue, pr_head_sha: pr_head_sha)
       review.call
@@ -435,7 +438,7 @@ RSpec.describe IntentConformance::ReviewRun do
     end
 
     it "is nil after a successful review" do
-      allow(AgentHarness).to receive(:send_message).and_return(response_double(output: {
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_double(output: {
         outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "OK"
       }.to_json))
 

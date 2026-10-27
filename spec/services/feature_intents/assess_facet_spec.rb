@@ -5,6 +5,9 @@ require "rails_helper"
 # @spec FACET-CONFIDENCE-002 FACET-CONFIDENCE-003 FACET-CONFIDENCE-004
 # @spec FACET-CONFIDENCE-012 FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
 RSpec.describe FeatureIntents::AssessFacet do
+  before { configure_llm_routing(project: facet.feature_intent.project) }
+  after { Current.user = nil }
+
   let(:direction) { create(:feature_intent_facet_direction) }
   let(:facet) { direction.feature_intent_facet }
   let!(:evidence) do
@@ -28,23 +31,23 @@ RSpec.describe FeatureIntents::AssessFacet do
   end
 
   it "persists independently scored, cited assessment output through agent_harness" do
-    allow(AgentHarness).to receive(:send_message).and_return(response)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
 
     result = described_class.call(assessment:)
 
     expect(result).to have_attributes(status: "completed", intent_score: 90, technical_score: 75,
       inferred_fit: "Keyboard first directly serves the issue scope.", evidence_references: [ evidence.source_reference ], rubric_version: described_class::RUBRIC_VERSION)
-    expect(AgentHarness).to have_received(:send_message).with(a_string_including("human_statement"), hash_including(tools: :none))
+    expect(AgentHarness.conductor).to have_received(:execute_direct).with(a_string_including("human_statement"), hash_including(tools: :none))
   end
 
   it "fails closed for malformed agent output" do
-    allow(AgentHarness).to receive(:send_message).and_return(double(success?: true, output: "not json"))
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(double(success?: true, output: "not json"))
 
     expect(described_class.call(assessment:)).to have_attributes(status: "failed", intent_score: nil, technical_score: nil)
   end
 
   it "rejects output made obsolete by concurrent evidence" do
-    allow(AgentHarness).to receive(:send_message) do
+    allow(AgentHarness.conductor).to receive(:execute_direct) do
       FeatureIntents::IngestFacetEvidence.call(facet:, attributes: {
         idempotency_key: "human-message-2", source_type: "human_statement", source_reference: "chat-message-2",
         statement: "It must also work with touch.", occurred_at: Time.current
@@ -56,7 +59,7 @@ RSpec.describe FeatureIntents::AssessFacet do
   end
 
   it "leaves conflicting collaborators unresolved rather than selecting a majority direction" do
-    allow(AgentHarness).to receive(:send_message).and_return(double(success?: true, output: JSON.generate(
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(double(success?: true, output: JSON.generate(
       "status" => "clarification_needed", "intent_score" => nil, "technical_score" => 80,
       "inferred_fit" => nil,
       "explanation" => "Collaborators disagree about keyboard-only behavior.", "evidence_references" => [ evidence.source_reference ]
@@ -74,7 +77,7 @@ RSpec.describe FeatureIntents::AssessFacet do
   ].each do |evaluation_case|
     it "retains the two independent axes for #{evaluation_case[:name]}" do
       status = evaluation_case[:intent].nil? ? "unknown" : "completed"
-      allow(AgentHarness).to receive(:send_message).and_return(double(success?: true, output: JSON.generate(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(double(success?: true, output: JSON.generate(
         "status" => status, "intent_score" => evaluation_case[:intent], "technical_score" => evaluation_case[:technical],
         "inferred_fit" => nil,
         "explanation" => evaluation_case[:name], "evidence_references" => [ evidence.source_reference ]

@@ -4,24 +4,24 @@ require "rails_helper"
 
 # @spec AGENT-HARNESS-003, MODEL-SELECTION-002
 RSpec.describe Models::MetaAgentSelector do
+  before { configure_llm_routing(project: agent_run.project) }
+  after { Current.user = nil }
+
   describe ".call" do
     let(:agent_run) { create(:agent_run) }
-    let!(:capable_model) { create(:llm_model, model_id: "claude-sonnet-4-6", capability_score: 9.0) }
+    let!(:capable_model) { create(:llm_model, model_id: "configured-mid", capability_score: 9.0) }
     let!(:cheap_model) { create(:llm_model, :cheap, model_id: "claude-haiku-4-5-20251001") }
 
     let(:successful_response) do
       instance_double(
         AgentHarness::Response,
         success?: true,
-        output: '{"model": "claude-sonnet-4-6", "reasoning": "Complex task needs high capability", "complexity_score": 7.5}'
+        output: '{"model": "configured-mid", "reasoning": "Complex task needs high capability", "complexity_score": 7.5}'
       )
     end
 
     before do
-      allow(AgentHarness).to receive(:send_message).and_return(successful_response)
-      # Default: preserve CLI transport so existing exact-match expectations
-      # pass. Individual specs flip this on to prove text-mode routing.
-      allow(Llm::TextMode).to receive(:options).and_return({})
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(successful_response)
     end
 
     it "selects a model via LLM meta-agent" do
@@ -104,7 +104,7 @@ RSpec.describe Models::MetaAgentSelector do
 
       expect(result[:model]).to eq(minimax_model)
       expect(result[:candidates]).to eq([ minimax_model ])
-      expect(AgentHarness).not_to have_received(:send_message)
+      expect(AgentHarness.conductor).not_to have_received(:execute_direct)
     end
 
     it "includes all candidates in the result" do
@@ -116,23 +116,13 @@ RSpec.describe Models::MetaAgentSelector do
     it "sends a prompt to AgentHarness with the correct parameters" do
       described_class.call(agent_run: agent_run)
 
-      expect(AgentHarness).to have_received(:send_message).with(
-        a_string_matching(/Select the best LLM model/),
-        provider: :claude,
-        model: "claude-haiku-4-5-20251001",
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+        a_string_matching(/Select the best LLM model/), hash_including(provider: :claude,
+        model: "configured-mid",
         timeout: 15,
-        tools: :none
-      )
+        tools: :none))
     end
 
-    it "routes through agent-harness text mode when an API key is configured" do
-      allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
-
-      described_class.call(agent_run: agent_run)
-
-      expect(AgentHarness).to have_received(:send_message)
-        .with(anything, hash_including(mode: :text))
-    end
 
     context "when meta-agent selects a cheap model for simple task" do
       let(:successful_response) do
@@ -163,7 +153,7 @@ RSpec.describe Models::MetaAgentSelector do
 
     context "when AgentHarness raises an error" do
       before do
-        allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::Error, "API error")
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(AgentHarness::Error, "API error")
       end
 
       it "returns nil" do
@@ -206,7 +196,7 @@ RSpec.describe Models::MetaAgentSelector do
         result = described_class.call(agent_run: agent_run)
 
         expect(result).to be_nil
-        expect(AgentHarness).not_to have_received(:send_message)
+        expect(AgentHarness.conductor).not_to have_received(:execute_direct)
       end
     end
 
@@ -227,7 +217,7 @@ RSpec.describe Models::MetaAgentSelector do
         instance_double(
           AgentHarness::Response,
           success?: true,
-          output: '{"model": "claude-sonnet-4-6", "reasoning": "test", "complexity_score": 15.0}'
+          output: '{"model": "configured-mid", "reasoning": "test", "complexity_score": 15.0}'
         )
       end
 
@@ -243,7 +233,7 @@ RSpec.describe Models::MetaAgentSelector do
         instance_double(
           AgentHarness::Response,
           success?: true,
-          output: "Here is my selection:\n```json\n{\"model\": \"claude-sonnet-4-6\", \"reasoning\": \"best fit\"}\n```"
+          output: "Here is my selection:\n```json\n{\"model\": \"configured-mid\", \"reasoning\": \"best fit\"}\n```"
         )
       end
 

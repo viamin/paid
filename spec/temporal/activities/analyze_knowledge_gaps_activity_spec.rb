@@ -12,6 +12,12 @@ RSpec.describe Activities::AnalyzeKnowledgeGapsActivity do
   end
 
   describe "#execute" do
+    before { configure_llm_routing(project: project)
+allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response)
+     }
+
+    after { Current.user = nil }
+
     let(:account) { create(:account) }
     let(:project) { create(:project, account: account) }
 
@@ -51,17 +57,13 @@ RSpec.describe Activities::AnalyzeKnowledgeGapsActivity do
 
     let(:llm_response) { instance_double(AgentHarness::Response, output: llm_output) }
 
-    before do
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response)
-      allow(Llm::TextMode).to receive(:options).and_return({})
-    end
 
     it "calls AgentHarness with a prompt" do
       activity.execute(input)
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("knowledge base effectiveness"),
-        hash_including(provider: :claude, model: "claude-sonnet-4-6")
+        hash_including(provider: :claude, model: "configured-mid")
       )
     end
 
@@ -86,7 +88,7 @@ RSpec.describe Activities::AnalyzeKnowledgeGapsActivity do
 
     context "when AgentHarness raises an error" do
       before do
-        allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::Error, "timeout")
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(AgentHarness::Error, "timeout")
       end
 
       it "returns empty recommendations" do

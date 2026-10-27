@@ -3,6 +3,9 @@
 require "rails_helper"
 
 RSpec.describe Reviews::Verification::SynthesizeReview do
+  before { configure_llm_routing(project: project) }
+  after { Current.user = nil }
+
   let(:project) { build(:project) }
   let(:changed_lines) do
     Reviews::Verification::ChangedLines.from_files([
@@ -47,7 +50,7 @@ RSpec.describe Reviews::Verification::SynthesizeReview do
       output: json,
       input_tokens: 60,
       output_tokens: 30,
-      model: "claude-sonnet-4-6"
+      model: "configured-mid"
     )
   end
 
@@ -71,7 +74,7 @@ RSpec.describe Reviews::Verification::SynthesizeReview do
     # @spec REVIEW-VERIFY-005
     it "returns one validated comment per deduplicated confirmed finding" do
       finding = confirmed_finding(id: 1, members: [ 1, 2 ])
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response(deduplicated_payload))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response(deduplicated_payload))
 
       draft = described_class.call(
         project: project, findings: [ finding ], changed_lines: changed_lines
@@ -90,7 +93,7 @@ RSpec.describe Reviews::Verification::SynthesizeReview do
     # @spec REVIEW-VERIFY-004
     it "drops a comment citing candidate ids outside the confirmed findings" do
       finding = confirmed_finding(id: 1)
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response(<<~JSON))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response(<<~JSON))
         {
           "body": "Summary",
           "comments": [
@@ -112,7 +115,7 @@ RSpec.describe Reviews::Verification::SynthesizeReview do
     # @spec REVIEW-VERIFY-008
     it "drops a comment with an invalid anchor and surfaces it as an unanchored bullet" do
       finding = confirmed_finding(id: 1)
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response(<<~JSON))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response(<<~JSON))
         {
           "body": "Summary",
           "comments": [
@@ -140,7 +143,7 @@ RSpec.describe Reviews::Verification::SynthesizeReview do
       comments = [ 1, 2, 3 ].map do |i|
         { path: "app/services/foo.rb", line: 3, body: "comment #{i}", source_candidate_ids: [ i ] }
       end
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         llm_response({ body: "Summary", comments: comments }.to_json)
       )
 
@@ -154,7 +157,7 @@ RSpec.describe Reviews::Verification::SynthesizeReview do
     # @spec REVIEW-VERIFY-008
     it "moves an unanchored confirmed finding into a mechanical body bullet" do
       finding = confirmed_finding(id: 1, line: nil)
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         llm_response({ body: "Summary", comments: [] }.to_json)
       )
 
@@ -169,7 +172,7 @@ RSpec.describe Reviews::Verification::SynthesizeReview do
 
     # @spec REVIEW-VERIFY-009
     it "reports token usage through the on_usage callback" do
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         llm_response({ body: "Summary", comments: [] }.to_json)
       )
       usages = []
@@ -180,12 +183,12 @@ RSpec.describe Reviews::Verification::SynthesizeReview do
       )
 
       expect(usages).to eq([
-        { tokens_input: 60, tokens_output: 30, llm_model: "claude-sonnet-4-6", operation: "verified_review.synthesize" }
+        { tokens_input: 60, tokens_output: 30, llm_model: "configured-mid", operation: "verified_review.synthesize" }
       ])
     end
 
     it "raises when synthesis output is unparseable" do
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response("nope"))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response("nope"))
 
       expect {
         described_class.call(project: project, findings: [], changed_lines: changed_lines)

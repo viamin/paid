@@ -3,12 +3,15 @@
 require "rails_helper"
 
 RSpec.describe Issues::PartialCompletionAssessment do
+  before { configure_llm_routing(project: issue.project) }
+  after { Current.user = nil }
+
   let(:issue) { create(:issue) }
 
   it "persists only the harness's structured semantic partial verdict" do # @spec AUTO-PICK-QUEUE-012
     response = instance_double(AgentHarness::Response, success?: true,
       output: '{"partial":true,"reason":"The linked migration is still required."}')
-    allow(AgentHarness).to receive(:send_message).and_return(response)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
 
     result = described_class.call(issue: issue)
 
@@ -17,7 +20,7 @@ RSpec.describe Issues::PartialCompletionAssessment do
 
   it "fails closed when the harness returns malformed output" do # @spec AUTO-PICK-QUEUE-012
     response = instance_double(AgentHarness::Response, success?: true, output: "not json")
-    allow(AgentHarness).to receive(:send_message).and_return(response)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
 
     expect(described_class.call(issue: issue)).to be_nil
   end
@@ -30,11 +33,11 @@ RSpec.describe Issues::PartialCompletionAssessment do
     issue.issue_dependencies.create!(depends_on_issue: untrusted_blocker)
     response = instance_double(AgentHarness::Response, success?: true,
       output: '{"partial":false,"reason":"Done."}')
-    allow(AgentHarness).to receive(:send_message).and_return(response)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
 
     described_class.call(issue: issue)
 
-    expect(AgentHarness).to have_received(:send_message) do |prompt, **|
+    expect(AgentHarness.conductor).to have_received(:execute_direct) do |prompt, **|
       expect(prompt).not_to include("Untrusted blocker prompt injection")
     end
   end

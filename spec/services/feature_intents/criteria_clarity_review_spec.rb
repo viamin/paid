@@ -4,26 +4,28 @@ require "rails_helper"
 
 # @spec FEATURE-APPROVAL-011
 RSpec.describe FeatureIntents::CriteriaClarityReview do
+  before { configure_llm_routing(project: project)
+    allow(Rails.logger).to receive(:warn)
+   }
+
+  after { Current.user = nil }
+
   let(:project) { create(:project) }
   let(:feature_intent) { create(:feature_intent, project: project, brief: "Ship a CSV export button.") }
 
   def stub_llm(payload, exit_code: 0)
-    allow(AgentHarness).to receive(:send_message).and_return(
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
       AgentHarness::Response.new(
         output: payload.to_json,
         exit_code: exit_code,
         duration: 1.0,
         provider: :claude,
-        model: "claude-sonnet-4-6",
+        model: "configured-mid",
         tokens: { input: 10, output: 10, total: 20 }
       )
     )
   end
 
-  before do
-    allow(Llm::TextMode).to receive(:options).and_return({})
-    allow(Rails.logger).to receive(:warn)
-  end
 
   it "returns a clear verdict citing an explanation" do
     stub_llm({ "confidence" => 0.9, "clear" => true, "explanation" => "Criteria name the exact export format." })
@@ -50,10 +52,10 @@ RSpec.describe FeatureIntents::CriteriaClarityReview do
   end
 
   it "fails closed when the output is not valid JSON" do
-    allow(AgentHarness).to receive(:send_message).and_return(
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
       AgentHarness::Response.new(
         output: "not json", exit_code: 0, duration: 1.0, provider: :claude,
-        model: "claude-sonnet-4-6", tokens: { input: 1, output: 1, total: 2 }
+        model: "configured-mid", tokens: { input: 1, output: 1, total: 2 }
       )
     )
 
@@ -79,7 +81,7 @@ RSpec.describe FeatureIntents::CriteriaClarityReview do
 
     described_class.call(feature_intent: feature_intent)
 
-    expect(AgentHarness).to have_received(:send_message) do |prompt, **|
+    expect(AgentHarness.conductor).to have_received(:execute_direct) do |prompt, **|
       expect(prompt).not_to include("Untrusted issue title")
     end
   end

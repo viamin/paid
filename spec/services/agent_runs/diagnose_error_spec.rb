@@ -3,6 +3,17 @@
 require "rails_helper"
 
 RSpec.describe AgentRuns::DiagnoseError do
+  before { configure_llm_routing(project: project)
+allow(project).to receive_messages(
+      github_credential_present?: true,
+      client: github_client
+    )
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response)
+    allow(github_client).to receive(:create_issue).and_return(gh_issue)
+   }
+
+  after { Current.user = nil }
+
   let(:account) { create(:account) }
   let(:github_token) { create(:github_token, account: account) }
   let(:project) { create(:project, account: account, github_token: github_token) }
@@ -17,22 +28,11 @@ RSpec.describe AgentRuns::DiagnoseError do
       exit_code: 0,
       duration: 5.0,
       provider: :claude,
-      model: "claude-sonnet-4-6",
+      model: "configured-mid",
       tokens: { input: 500, output: 200, total: 700 }
     )
   end
 
-  before do
-    allow(project).to receive_messages(
-      github_credential_present?: true,
-      client: github_client
-    )
-    allow(AgentHarness).to receive(:send_message).and_return(llm_response)
-    allow(github_client).to receive(:create_issue).and_return(gh_issue)
-    # Default: preserve CLI transport so existing exact-match expectations
-    # pass. Individual specs flip this on to prove text-mode routing.
-    allow(Llm::TextMode).to receive(:options).and_return({})
-  end
 
   describe ".call" do
     it "returns a successful result with issue URL" do
@@ -45,23 +45,13 @@ RSpec.describe AgentRuns::DiagnoseError do
     it "calls AgentHarness to analyze the error" do
       described_class.call(agent_run: agent_run)
 
-      expect(AgentHarness).to have_received(:send_message).with(
-        a_string_including("diagnosing a failed agent run"),
-        provider: :claude,
-        model: "claude-sonnet-4-6",
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+        a_string_including("diagnosing a failed agent run"), hash_including(provider: :claude,
+        model: "configured-mid",
         timeout: 60,
-        tools: :none
-      )
+        tools: :none))
     end
 
-    it "routes through agent-harness text mode when an API key is configured" do
-      allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
-
-      described_class.call(agent_run: agent_run)
-
-      expect(AgentHarness).to have_received(:send_message)
-        .with(anything, hash_including(mode: :text))
-    end
 
     it "creates a GitHub issue with the diagnosis" do
       described_class.call(agent_run: agent_run)
@@ -87,7 +77,7 @@ RSpec.describe AgentRuns::DiagnoseError do
           exit_code: 1,
           duration: 5.0,
           provider: :claude,
-          model: "claude-sonnet-4-6",
+          model: "configured-mid",
           tokens: nil
         )
       end
@@ -130,7 +120,7 @@ RSpec.describe AgentRuns::DiagnoseError do
 
     context "when AgentHarness raises an error" do
       before do
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_raise(AgentHarness::Error.new("LLM unavailable"))
       end
 
@@ -151,13 +141,11 @@ RSpec.describe AgentRuns::DiagnoseError do
       it "redacts secrets before sending to the LLM" do
         described_class.call(agent_run: agent_run)
 
-        expect(AgentHarness).to have_received(:send_message).with(
-          a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_abcdef1234567890") }),
-          provider: :claude,
-          model: "claude-sonnet-4-6",
+        expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+          a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_abcdef1234567890") }), hash_including(provider: :claude,
+          model: "configured-mid",
           timeout: 60,
-          tools: :none
-        )
+          tools: :none))
       end
 
       it "redacts secrets in the GitHub issue body" do
@@ -178,13 +166,11 @@ RSpec.describe AgentRuns::DiagnoseError do
       it "redacts secrets in the issue title sent to the LLM" do
         described_class.call(agent_run: agent_run)
 
-        expect(AgentHarness).to have_received(:send_message).with(
-          a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_secret123") }),
-          provider: :claude,
-          model: "claude-sonnet-4-6",
+        expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+          a_string_including("API_KEY=[REDACTED]").and(satisfy { |s| !s.include?("sk_live_secret123") }), hash_including(provider: :claude,
+          model: "configured-mid",
           timeout: 60,
-          tools: :none
-        )
+          tools: :none))
       end
 
       it "redacts secrets in the GitHub issue title" do
@@ -207,13 +193,11 @@ RSpec.describe AgentRuns::DiagnoseError do
       it "redacts secrets in the custom_prompt before sending to the LLM" do
         described_class.call(agent_run: agent_run)
 
-        expect(AgentHarness).to have_received(:send_message).with(
-          a_string_including("TOKEN=[REDACTED]").and(satisfy { |s| !s.include?("ghp_abc123secret") }),
-          provider: :claude,
-          model: "claude-sonnet-4-6",
+        expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+          a_string_including("TOKEN=[REDACTED]").and(satisfy { |s| !s.include?("ghp_abc123secret") }), hash_including(provider: :claude,
+          model: "configured-mid",
           timeout: 60,
-          tools: :none
-        )
+          tools: :none))
       end
     end
 
@@ -224,7 +208,7 @@ RSpec.describe AgentRuns::DiagnoseError do
           exit_code: 0,
           duration: 5.0,
           provider: :claude,
-          model: "claude-sonnet-4-6",
+          model: "configured-mid",
           tokens: { input: 500, output: 200, total: 700 }
         )
       end
@@ -249,13 +233,11 @@ RSpec.describe AgentRuns::DiagnoseError do
       it "redacts standalone GitHub tokens before sending to the LLM" do
         described_class.call(agent_run: agent_run)
 
-        expect(AgentHarness).to have_received(:send_message).with(
-          satisfy { |s| !s.include?("ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789") },
-          provider: :claude,
-          model: "claude-sonnet-4-6",
+        expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+          satisfy { |s| !s.include?("ghp_aBcDeFgHiJkLmNoPqRsTuVwXyZ0123456789") }, hash_including(provider: :claude,
+          model: "configured-mid",
           timeout: 60,
-          tools: :none
-        )
+          tools: :none))
       end
 
       it "redacts standalone GitHub tokens in the GitHub issue body" do
