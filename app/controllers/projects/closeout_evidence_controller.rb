@@ -4,16 +4,16 @@ module Projects
   class CloseoutEvidenceController < ApplicationController
     before_action :set_project
 
-    # @spec PARTIAL-CLOSEOUT-032
+    # @spec PARTIAL-CLOSEOUT-033
     def create
       authorize @project, :run_agent?
       notification = @project.account.notifications.find(params[:notification_id])
       raise ArgumentError, "notification does not belong to this project" unless notification.resolved_project == @project
       result = PartialCloseouts::SubmitEvidence.call(notification:, actor: current_user,
         prerequisite_identity: params[:prerequisite_identity], **evidence_params)
-      redirect_to inbox_entry_path(params[:inbox_entry_id]), notice: result.reason
+      redirect_to inbox_entry_redirect_target, notice: result.reason
     rescue ArgumentError => error
-      redirect_to inbox_entry_path(params[:inbox_entry_id]), alert: error.message
+      redirect_to inbox_entry_redirect_target, alert: error.message
     end
 
     private
@@ -22,6 +22,11 @@ module Projects
 
     def evidence_params
       params.fetch("prerequisite_#{params[:prerequisite_identity]}").permit(:evidence_url, :explanation).to_h.symbolize_keys
+    end
+
+    def inbox_entry_redirect_target
+      entry_id = params[:inbox_entry_id].presence
+      entry_id ? inbox_entry_path(entry_id) : inbox_path
     end
   end
 end

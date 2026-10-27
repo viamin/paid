@@ -189,7 +189,7 @@ module PartialCloseouts
       owner if owner && owner.id != agent_run.issue.id
     end
 
-    # @spec PARTIAL-CLOSEOUT-032
+    # @spec PARTIAL-CLOSEOUT-033
     def publish_operator_prerequisites!(human_gaps)
       return if human_gaps.empty?
 
@@ -269,7 +269,7 @@ module PartialCloseouts
     def source_revision
       return @source_revision if defined?(@source_revision)
 
-      @source_revision = PartialCloseouts::Assessment.call(agent_run.issue).source_revision
+      @source_revision = assessment["source_revision"]
     end
 
     def canonicalize(value)

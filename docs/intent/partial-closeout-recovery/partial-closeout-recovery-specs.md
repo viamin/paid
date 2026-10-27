@@ -584,7 +584,7 @@
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
-- [ ] **PARTIAL-CLOSEOUT-032** — When an authorized operator submits durable
+- [ ] **PARTIAL-CLOSEOUT-033** — When an authorized operator submits durable
   prerequisite evidence from the partial-closeout Inbox item, the system SHALL
   record the exact prerequisite occurrence identity, artifact URL, explanation,
   actor, timestamp, and explicit disposition. A URL, comment, upload, green

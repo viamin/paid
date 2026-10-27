@@ -12,7 +12,7 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
       severity: :error, blocking: true, metadata: { "prerequisites" => [ { "identity" => identity } ] })
   end
 
-  it "records external evidence as pending validation without releasing the prerequisite" do # @spec PARTIAL-CLOSEOUT-032
+  it "records external evidence as pending validation without releasing the prerequisite" do # @spec PARTIAL-CLOSEOUT-033
     result = described_class.call(notification:, actor:, prerequisite_identity: identity,
       evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached.")
 
@@ -22,14 +22,14 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
       "prerequisite_identity" => identity, "outcome" => "pending_validation")
   end
 
-  it "rejects evidence for a different prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-032
+  it "rejects evidence for a different prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-033
     expect {
       described_class.call(notification:, actor:, prerequisite_identity: "other",
         evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached.")
     }.to raise_error(ArgumentError, "prerequisite occurrence is no longer current")
   end
 
-  it "rejects malformed HTTP(S) URLs" do # @spec PARTIAL-CLOSEOUT-032
+  it "rejects malformed HTTP(S) URLs" do # @spec PARTIAL-CLOSEOUT-033
     [ "https://", "https:///report" ].each do |evidence_url|
       expect {
         described_class.call(notification:, actor:, prerequisite_identity: identity, evidence_url:, explanation: "Pilot report attached.")
@@ -37,7 +37,7 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     end
   end
 
-  it "revalidates after locking when reconciliation resolves the notification" do # @spec PARTIAL-CLOSEOUT-032
+  it "revalidates after locking when reconciliation resolves the notification" do # @spec PARTIAL-CLOSEOUT-033
     allow(notification).to receive(:with_lock).and_wrap_original do |original, &block|
       notification.update!(resolved_at: Time.current)
       original.call(&block)
@@ -50,7 +50,7 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     expect(notification.reload.metadata).not_to have_key("evidence_submissions")
   end
 
-  it "marks evidence stale when the prerequisite source revision changed" do # @spec PARTIAL-CLOSEOUT-032
+  it "marks evidence stale when the prerequisite source revision changed" do # @spec PARTIAL-CLOSEOUT-033
     source_revision = Issues::CloseoutEvidence.call(issue).digest
     create(:agent_run, :completed, project:, issue:,
       reconciliation: { "assessment" => { "source_revision" => source_revision } })
@@ -64,7 +64,7 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     expect(notification.reload).to be_active
   end
 
-  it "keeps evidence pending when the current revision includes technical prerequisite evidence" do # @spec PARTIAL-CLOSEOUT-032
+  it "keeps evidence pending when the current revision includes technical prerequisite evidence" do # @spec PARTIAL-CLOSEOUT-033
     create(:agent_run, :completed, project:, issue:, reconciliation: {
       TechnicalPrerequisites::Evidence::RECONCILIATION_KEY => { "status" => "completed", "exit_code" => 0 }
     })
@@ -77,7 +77,7 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     expect(result.outcome).to eq("pending_validation")
   end
 
-  it "updates an identical submission instead of recording a retry twice" do # @spec PARTIAL-CLOSEOUT-032
+  it "updates an identical submission instead of recording a retry twice" do # @spec PARTIAL-CLOSEOUT-033
     attributes = { notification:, actor:, prerequisite_identity: identity,
                    evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
 

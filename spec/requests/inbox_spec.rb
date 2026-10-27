@@ -82,7 +82,6 @@ RSpec.describe "Inbox" do
       get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
         headers: { "Turbo-Frame" => "inbox-detail" }
     end
-
     expect(response).to have_http_status(:ok)
     expect(response.body).to include('id="inbox-detail"', "Selected question")
     expect(response.body).not_to include("Other question", "Filters and sort", 'id="inbox-list"')
@@ -399,7 +398,6 @@ RSpec.describe "Inbox" do
         source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
         title: "Pilot results need operator action",
         description: "Pilot latency results: attach the measured p95 to the follow-up comment and link it here")
-
     end
 
     def create_evidence_notification
@@ -474,7 +472,7 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("deliberate continuation")
     end
 
-    it "renders recorded evidence and unique fields for every prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-032
+    it "renders recorded evidence and unique fields for every prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-033
       create_evidence_notification
       render_guided_pane
 

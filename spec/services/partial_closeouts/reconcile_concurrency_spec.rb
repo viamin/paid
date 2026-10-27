@@ -17,7 +17,7 @@ RSpec.describe PartialCloseouts::Reconcile do
     project.account.destroy!
   end
 
-  it "does not discard evidence submitted while reconciliation waits to publish" do # @spec PARTIAL-CLOSEOUT-032
+  it "does not discard evidence submitted while reconciliation waits to publish" do # @spec PARTIAL-CLOSEOUT-033
     publishing = Queue.new
     release = Queue.new
     delay_reconciliation_publish(publishing, release)

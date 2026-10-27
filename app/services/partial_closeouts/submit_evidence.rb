@@ -6,7 +6,7 @@ module PartialCloseouts
   # Records an operator's evidence against one durable prerequisite occurrence.
   # A submission is deliberately not an attestation: only a future assessor may
   # mark an occurrence sufficient and release its scheduling guard.
-  # @spec PARTIAL-CLOSEOUT-032
+  # @spec PARTIAL-CLOSEOUT-033
   class SubmitEvidence
     OUTCOMES = %w[pending_validation sufficient insufficient stale unavailable].freeze
     Result = Data.define(:outcome, :reason, :notification) do
