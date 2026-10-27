@@ -133,6 +133,7 @@ text. It stores:
 | `project_id` | Tenant/project scope. |
 | `framework` | `lid` \| `okf` \| `paid_offered_cir` \| `unresolved`. |
 | `external_identity` | The EARS ID (`AUTH-UI-003`), OKF `scope_path`, or offered-CIR file path that is the canonical source. |
+| `canonical_source_path` | Repository-relative path containing the canonical source. Kept separate because a LID EARS ID is an identifier, not a file path. |
 | `external_revision` | The git SHA (or OKF content digest) the record was last synchronized against. |
 | `scope_description` | The bounded slice of behavior this obligation claims, in the project's own language — never the full source text. |
 | `approval_state` | `proposed` \| `approved` \| `unresolved`. Mirrors the external framework's own approval state; Paid does not grant approval the source repository hasn't recorded. |

@@ -13,6 +13,7 @@ RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
 
   around do |example|
     tables_existed = layered_verification_tables.to_h { |table| [ table, connection.table_exists?(table) ] }
+    finding_foreign_key_existed = detach_finding_foreign_key!
 
     teardown_layered_verification_tables!
     clear_schema_metadata!
@@ -24,6 +25,7 @@ RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
     if tables_existed.any? { |_table, existed| existed }
       migration.up
     end
+    restore_finding_foreign_key! if finding_foreign_key_existed
     clear_schema_metadata!
   end
 
@@ -64,6 +66,22 @@ RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
   # The list is parent-first; children must drop before their parent.
   def teardown_layered_verification_tables!
     layered_verification_tables.reverse_each { |table| connection.drop_table(table, if_exists: true) }
+  end
+
+  def detach_finding_foreign_key!
+    return false unless connection.foreign_key_exists?(:layered_verification_findings, :layered_verification_obligations)
+
+    connection.remove_foreign_key(:layered_verification_findings, :layered_verification_obligations)
+    true
+  end
+
+  def restore_finding_foreign_key!
+    connection.add_foreign_key(
+      :layered_verification_findings,
+      :layered_verification_obligations,
+      column: :obligation_id,
+      on_delete: :cascade
+    )
   end
 
   def expect_schema

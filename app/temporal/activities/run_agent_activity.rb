@@ -1140,7 +1140,11 @@ module Activities
     # over the project-level value. This allows users to override the
     # project default (eventually deprecating the project-level setting).
     def resolve_max_execution_seconds(agent_run, user_settings)
-      user_settings&.max_execution_seconds || agent_run.project.max_execution_seconds
+      configured = user_settings&.max_execution_seconds || agent_run.project.max_execution_seconds
+      audit_budget = agent_run.external_metadata.dig("layered_verification", "budget", "max_minutes")
+      return configured unless agent_run.layered_verification_audit_goal? && audit_budget.present?
+
+      [ configured, audit_budget.to_i.minutes.to_i ].compact.min
     end
 
     def effective_startup_timeout(runner_key:, heartbeat:, effective_idle_timeout:, effective_timeout:, create_pr_goal:)

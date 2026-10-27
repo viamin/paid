@@ -665,6 +665,7 @@ components:
         - $ref: '#/components/schemas/TestReviewPendingEntry'
         - $ref: '#/components/schemas/ProjectSetupPendingEntry'
         - $ref: '#/components/schemas/TraceabilityGapEntry'
+        - $ref: '#/components/schemas/LayeredVerificationFindingEntry'
       discriminator:
         propertyName: kind
         mapping:
@@ -682,6 +683,7 @@ components:
           test_review_pending: '#/components/schemas/TestReviewPendingEntry'
           project_setup_pending: '#/components/schemas/ProjectSetupPendingEntry'
           traceability_gap: '#/components/schemas/TraceabilityGapEntry'
+          layered_verification_finding: '#/components/schemas/LayeredVerificationFindingEntry'
     InboxEntry:
       oneOf:
         - $ref: '#/components/schemas/ClarifyingQuestionsEntry'
@@ -698,6 +700,7 @@ components:
         - $ref: '#/components/schemas/TestReviewPendingEntry'
         - $ref: '#/components/schemas/ProjectSetupPendingEntry'
         - $ref: '#/components/schemas/TraceabilityGapEntry'
+        - $ref: '#/components/schemas/LayeredVerificationFindingEntry'
       discriminator:
         propertyName: kind
         mapping:
@@ -715,6 +718,7 @@ components:
           test_review_pending: '#/components/schemas/TestReviewPendingEntry'
           project_setup_pending: '#/components/schemas/ProjectSetupPendingEntry'
           traceability_gap: '#/components/schemas/TraceabilityGapEntry'
+          layered_verification_finding: '#/components/schemas/LayeredVerificationFindingEntry'
     InboxEntryBase:
       type: object
       required: [id, kind]
@@ -890,6 +894,12 @@ components:
             evidence: {type: array, items: {type: string}}
             covered_at: {type: string, format: date-time}
             recommended_action: {type: string}
+    LayeredVerificationFindingEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          properties:
+            kind: {type: string, enum: [layered_verification_finding]}
     DesignArtifactFinding:
       type: object
       required: [id, artifact_path, revision, state, evidence, covered_at, status]

@@ -454,6 +454,60 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
     end
   end
 
+  describe "layered-verification audit goal" do
+    let(:input) { { project_id: 1, goal: "layered_verification_audit" } }
+
+    before do
+      allow(Temporalio::Workflow).to receive_messages(
+        logger: Rails.logger, patched: true, now: Time.zone.at(100)
+      )
+      allow(workflow).to receive(:run_activity) do |klass, _input, **_opts|
+        case klass.name
+        when "Activities::CreateAgentRunActivity"
+          { agent_run_id: 42, focus: "general", runner_attempt_count: 1,
+            agent_timeout_seconds: 3600, issue_goal_timeout_seconds: 600,
+            audit_timeout_seconds: 60 }
+        when "Activities::RunAgentActivity"
+          { agent_run_id: 42, success: true, has_changes: false }
+        when "Activities::RecordLayeredVerificationResultsActivity"
+          { agent_run_id: 42, check_result_count: 1 }
+        when "Activities::CompleteLayeredVerificationAuditActivity"
+          { agent_run_id: 42, success: true, coverage: {} }
+        else {}
+        end
+      end
+    end
+
+    # @spec LAYERED-VERIFY-010 LAYERED-VERIFY-024
+    it "synthesizes coverage and completes without entering issue or pull-request handling" do
+      result = workflow.execute(input)
+
+      expect(result).to eq(success: true, agent_run_id: 42, coverage: {})
+      expect(workflow).to have_received(:run_activity).with(Activities::RunAgentActivity,
+        { agent_run_id: 42 }, hash_including(start_to_close_timeout: 60, schedule_to_close_timeout: 60)).ordered
+      expect(workflow).to have_received(:run_activity).with(Activities::RunLayeredVerificationChecksActivity,
+        { agent_run_id: 42 }, timeout: 60, retry_policy: described_class::NO_RETRY).ordered
+      expect(workflow).to have_received(:run_activity).with(Activities::RecordLayeredVerificationResultsActivity,
+        { agent_run_id: 42 }, timeout: 30, retry_policy: described_class::NO_RETRY).ordered
+      expect(workflow).to have_received(:run_activity).with(Activities::CompleteLayeredVerificationAuditActivity,
+        { agent_run_id: 42 }, timeout: 30, retry_policy: described_class::NO_RETRY).ordered
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::MarkAgentRunCompleteActivity, anything, any_args)
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::CreatePullRequestActivity, anything, any_args)
+    end
+
+    # @spec LAYERED-VERIFY-024
+    it "gives formal checks only the audit budget remaining after the agent" do
+      allow(Temporalio::Workflow).to receive(:now).and_return(Time.zone.at(100), Time.zone.at(145))
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity).with(Activities::RunLayeredVerificationChecksActivity,
+        { agent_run_id: 42 }, timeout: 15, retry_policy: described_class::NO_RETRY)
+    end
+  end
+
   describe "quality gate" do
     let(:input) { { project_id: 1, issue_id: 1 } }
 
