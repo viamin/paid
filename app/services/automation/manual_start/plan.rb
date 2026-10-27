@@ -123,14 +123,15 @@ module Automation
         raise EndpointNotApplicable, "Choose a continuation endpoint offered for this action."
       end
 
-      # Automating through merge requires permission to delegate merge; other
-      # endpoints require the ability to start work in the phase itself.
+      # Every continuation delegates automatic work and must be authorized in
+      # this project. A merge endpoint additionally delegates merge authority.
       # @spec AUTOMATION-PHASES-009
       def ensure_delegation_permitted!
         raise PermissionDenied, permission_message unless delegation_permitted?
       end
 
       def delegation_permitted?
+        return false unless ProjectPolicy.new(user, project).delegate_automation?
         return merge_delegation_permitted? if endpoint == Automation::Phases::MERGE
 
         true

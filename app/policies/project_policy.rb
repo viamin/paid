@@ -26,6 +26,15 @@ class ProjectPolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin, :member) || has_project_role?
   end
 
+  # RDR-077 §3: a continuation grant delegates automatic work beyond the
+  # operator's one manual action. Every grant therefore needs the same
+  # project-scoped authority as starting agent work; merge grants add the
+  # elevated merge-delegation requirement below.
+  # @spec AUTOMATION-PHASES-009
+  def delegate_automation?
+    run_agent?
+  end
+
   # @spec APPLE-VERIFY-002
   # @spec APPLE-VERIFY-003
   # RDR-077 §3: only users who may delegate the covered actions may create a
@@ -33,7 +42,7 @@ class ProjectPolicy < ApplicationPolicy
   # reserved to the roles that already own project automation settings.
   # @spec AUTOMATION-PHASES-009
   def delegate_merge?
-    return false unless user_in_account?
+    return false unless delegate_automation?
 
     has_any_account_role?(:owner, :admin) || user.has_role?(:project_admin, record)
   end
