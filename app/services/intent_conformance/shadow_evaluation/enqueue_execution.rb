@@ -21,8 +21,11 @@ module IntentConformance
         return failure("reviewer execution requires a frozen reference label set") unless evaluation.answers_visible?
         return failure("corpus manifest changed since reference labels were frozen — start a new evaluation") unless evaluation.corpus.matches_recorded_digest?
 
-        enqueued = evaluation.queue_execution!
-        enqueue_job if enqueued
+        enqueued = false
+        evaluation.transaction do
+          enqueued = evaluation.queue_execution!
+          enqueue_job if enqueued
+        end
         Result.new(success: true, error: nil, enqueued: enqueued)
       rescue StandardError => error
         evaluation.update!(status: "failed", last_failure_reason: error.message) if evaluation.persisted?

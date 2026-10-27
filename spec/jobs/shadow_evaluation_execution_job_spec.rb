@@ -39,8 +39,12 @@ RSpec.describe ShadowEvaluationExecutionJob do
   end
 
   it "makes an exhausted report compilation failure retryable without discarding runs" do
-    evaluation.update!(status: "completed", labels_frozen_at: Time.current)
+    evaluation.update!(status: "partial", labels_frozen_at: Time.current)
     run = create(:intent_conformance_shadow_evaluation_run, shadow_evaluation: evaluation)
+    notifier = instance_double(Paid::ExceptionNotifier, call: nil)
+    allow(Paid::ExceptionNotifier).to receive(:new).and_return(notifier)
+    result = instance_double(IntentConformance::ShadowEvaluation::ExecuteReviewer::Result, success?: true)
+    allow(IntentConformance::ShadowEvaluation::ExecuteReviewer).to receive(:call).and_return(result)
     allow(IntentConformance::ShadowEvaluation::CompileReport).to receive(:call)
       .and_raise(StandardError, "report storage unavailable")
     job = described_class.new(project.id, evaluation.id)
@@ -48,9 +52,14 @@ RSpec.describe ShadowEvaluationExecutionJob do
 
     expect { job.perform_now }.to raise_error(StandardError, "report storage unavailable")
 
-    expect(evaluation.reload).to have_attributes(status: "failed", last_failure_reason: "report storage unavailable")
+    expect(evaluation.reload).to have_attributes(status: "partial", last_failure_reason: "report storage unavailable")
     expect(evaluation.runs).to contain_exactly(run)
     expect(evaluation.queue_execution!).to be(true)
+    expect(IntentConformance::ShadowEvaluation::CompileReport).to have_received(:call).once
+    expect(notifier).to have_received(:call) do |error, data:|
+      expect(error).to be_a(StandardError)
+      expect(data).to include(project_id: project.id)
+    end
   end
 
   it "converges an unsuccessful service result to a retryable terminal state" do
@@ -113,5 +122,9 @@ RSpec.describe ShadowEvaluationExecutionJob do
 
   it "uses the dedicated shadow evaluation queue" do
     expect(described_class.queue_name).to eq("shadow_evaluation")
+  end
+
+  it "enqueues inside the caller's transaction" do
+    expect(described_class.enqueue_after_transaction_commit).to be(false)
   end
 end

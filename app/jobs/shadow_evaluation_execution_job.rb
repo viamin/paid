@@ -7,14 +7,18 @@
 class ShadowEvaluationExecutionJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
+  class ReportCompilationError < StandardError; end
+
   queue_as :shadow_evaluation
+  self.enqueue_after_transaction_commit = false
   self.perform_timeout = IntentConformanceShadowEvaluation::EXECUTION_TIMEOUT
   good_job_control_concurrency_with(total_limit: 1,
     key: -> { "shadow_evaluation_#{arguments.second}" })
   retry_on StandardError, wait: :polynomially_longer, attempts: 3 do |job, error|
     job.mark_interrupted(error)
-    job.notify_terminal_failure(error)
-    raise error
+    terminal_error = error.is_a?(ReportCompilationError) ? error.cause : error
+    job.notify_terminal_failure(terminal_error)
+    raise terminal_error
   end
   discard_on ActiveRecord::RecordNotFound
 
@@ -32,15 +36,13 @@ class ShadowEvaluationExecutionJob < ApplicationJob
   end
 
   def mark_interrupted(error)
-    report_compilation_failed = false
+    report_compilation_failed = error.is_a?(ReportCompilationError)
     TenantContext.with_system_access do
       evaluation = IntentConformanceShadowEvaluation.find_by(id: arguments.second)
       return unless evaluation
 
       evaluation.with_lock do
-        report_compilation_failed = evaluation.completed? && report_missing?(evaluation)
-
-        if report_compilation_failed
+        if evaluation.completed? && report_compilation_failed
           evaluation.update!(status: "failed", last_failure_reason: failure_reason(error))
         elsif !evaluation.cancelled? && !evaluation.completed?
           if evaluation.cancellation_requested?
@@ -52,7 +54,7 @@ class ShadowEvaluationExecutionJob < ApplicationJob
           end
         end
       end
-      compile_report(evaluation) unless report_compilation_failed
+      compile_recovery_report(evaluation) unless report_compilation_failed
     end
   end
 
@@ -64,6 +66,20 @@ class ShadowEvaluationExecutionJob < ApplicationJob
 
   def compile_report(evaluation)
     IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: evaluation) if evaluation.runs.exists?
+  rescue StandardError => error
+    raise ReportCompilationError, error.message
+  end
+
+  def compile_recovery_report(evaluation)
+    compile_report(evaluation)
+  rescue StandardError => error
+    Rails.logger.warn(
+      message: "intent_conformance.shadow_evaluation_recovery_report_failed",
+      project_id: evaluation.project_id,
+      shadow_evaluation_id: evaluation.id,
+      status: evaluation.status,
+      error: error.message
+    )
   end
 
   def report_missing?(evaluation)
