@@ -36,10 +36,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Ruby (pinned version for reproducible builds)
-# Checksum from official release: https://www.ruby-lang.org/en/news/2026/06/30/ruby-3-4-10-released/
+# Checksum from official release: https://www.ruby-lang.org/en/news/2026/09/23/ruby-3-4-11-released/
 # Keep version in sync with .tool-versions
-RUN RUBY_VERSION=3.4.10 \
-    && EXPECTED_CHECKSUM="ecee2d072a14f2d14347dd56dfd8fe5c3130abf5117bfaacbda0f4ef9cc429ec" \
+RUN RUBY_VERSION=3.4.11 \
+    && EXPECTED_CHECKSUM="5c22be44524312b3d433d68739bcc530633b1da5ef8ba0afa0a37680da17d3de" \
     && TARBALL="ruby-${RUBY_VERSION}.tar.gz" \
     && curl -fsSLO "https://cache.ruby-lang.org/pub/ruby/${RUBY_VERSION%.*}/${TARBALL}" \
     && echo "${EXPECTED_CHECKSUM}  ${TARBALL}" | sha256sum -c - \
