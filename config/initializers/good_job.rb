@@ -321,6 +321,11 @@ Rails.application.configure do
       class: "ChatSessions::AutoResumeRateLimitedSweepJob",
       description: "Resend the last message for chat sessions whose runner rate-limit pause has elapsed (#3953)"
     },
+    chat_detect_stalled_turns: {
+      cron: "2-59/5 * * * *",
+      class: "ChatSessions::DetectStalledTurnsJob",
+      description: "Mark chat turns with no durable progress as stalled"
+    },
     preview_session_expiry_reaper: {
       cron: "*/5 * * * *",
       class: "PreviewSessions::ExpireJob",

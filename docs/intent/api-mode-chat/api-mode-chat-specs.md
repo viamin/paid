@@ -62,6 +62,19 @@
 > Testable claims for the shipped API-mode portion of interactive chat. Status
 > markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 
+- [x] **CHAT-API-027** — When an accepted API-mode chat turn has no durable
+  terminal outcome or durable activity for the configured stall threshold,
+  Paid SHALL mark its persisted lifecycle `stalled` and append a visible,
+  actionable transcript notice without fabricating an assistant response or
+  replaying a tool. A turn awaiting user confirmation or a known rate-limit
+  recovery window SHALL not be marked stalled. The lifecycle SHALL retain the
+  last activity time, terminal classification, detection time, and whether a
+  side-effecting tool completed, so stalled-turn outcomes are queryable and a
+  repeated sweep cannot create duplicate notices.
+  *Tests:* `spec/jobs/chat_sessions/detect_stalled_turns_job_spec.rb`.
+  *Code:* `ChatSessions::TurnLifecycle`,
+  `ChatSessions::DetectStalledTurnsJob`.
+
 - [x] **CHAT-API-001** — When a user creates or opens an API-mode chat session,
   the system SHALL persist and expose an active inline chat session with a
   system prompt and session/message routes, defaulting to

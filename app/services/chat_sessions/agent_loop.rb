@@ -548,6 +548,7 @@ module ChatSessions
     # since neither SendMessage nor ResolveToolCall locks the session.
     def track_created_message(message)
       @created_message_ids << message.id
+      ChatSessions::TurnLifecycle.for_stream(chat_session: chat_session, stream_message_id: stream_message_id)&.activity!(message)
       message
     end
 

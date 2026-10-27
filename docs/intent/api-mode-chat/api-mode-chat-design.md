@@ -165,6 +165,15 @@ What ships today:
   provider error creates a durable transcript notice and requires a user to
   correct the runner configuration or resend rather than retrying a permanent
   authentication or configuration failure indefinitely
+- every accepted user message carries a durable turn lifecycle in its metadata.
+  The lifecycle records pending, streaming, completed, failed, stalled, or
+  abandoned state and its last durable activity. A maintenance sweep marks an
+  inactive pending/streaming turn stalled only when it is not waiting for a
+  tool confirmation or a known rate-limit recovery window. The sweep preserves
+  the transcript and appends a visible notice; it never invents an assistant
+  response or replays a tool call. The first release makes recovery an explicit
+  user follow-up after reviewing the preserved evidence; automatic replay is
+  deferred until tool checkpoints carry idempotency contracts.
 - `ChatSessions::BuildLlmClient` raises the OpenAI-compatible transport
   `max_tokens` cap to 16,384 for direct-provider z.ai chat runners so GLM
   responses are not truncated by the transport default
