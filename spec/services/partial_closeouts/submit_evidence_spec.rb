@@ -64,6 +64,19 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     expect(notification.reload).to be_active
   end
 
+  it "keeps evidence pending when the current revision includes technical prerequisite evidence" do # @spec PARTIAL-CLOSEOUT-032
+    create(:agent_run, :completed, project:, issue:, reconciliation: {
+      TechnicalPrerequisites::Evidence::RECONCILIATION_KEY => { "status" => "completed", "exit_code" => 0 }
+    })
+    source_revision = PartialCloseouts::Assessment.source_revision_for(issue)
+    notification.update!(metadata: { "prerequisites" => [ { "identity" => identity, "source_revision" => source_revision } ] })
+
+    result = described_class.call(notification:, actor:, prerequisite_identity: identity,
+      evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached.")
+
+    expect(result.outcome).to eq("pending_validation")
+  end
+
   it "updates an identical submission instead of recording a retry twice" do # @spec PARTIAL-CLOSEOUT-032
     attributes = { notification:, actor:, prerequisite_identity: identity,
                    evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
