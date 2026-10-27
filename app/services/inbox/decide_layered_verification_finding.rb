@@ -39,7 +39,7 @@ module Inbox
 
     def stale?
       external_revision != recorded_target_revision ||
-        current_obligation_revision != finding.obligation.external_revision.to_s ||
+        !canonical_source_unchanged? ||
         !obligation_source_matches_evidence?
     end
 
@@ -47,10 +47,11 @@ module Inbox
       finding.agent_run.external_metadata.dig("layered_verification", "target_revision").to_s
     end
 
-    def current_obligation_revision
-      return current_project_revision if git_revision?(finding.obligation.external_revision)
+    def canonical_source_unchanged?
+      revision = finding.obligation.external_revision.to_s
+      return source_at(revision) == source_at(current_project_revision) if git_revision?(revision)
 
-      Digest::SHA256.hexdigest(current_obligation_source)
+      Digest::SHA256.hexdigest(source_at(current_project_revision)) == revision
     rescue GithubClient::Error, Faraday::Error
       raise StaleRevisionError, "The obligation source could not be verified; try again before deciding."
     end
@@ -59,10 +60,11 @@ module Inbox
       @current_project_revision ||= project.client.ref(project.full_name, "heads/#{project.default_branch}").object.sha.to_s
     end
 
-    def current_obligation_source
-      project.client.file_content(
-        project.full_name, path: finding.obligation.external_identity, ref: current_project_revision
-      ).presence || raise(StaleRevisionError, "The obligation source could not be verified; try again before deciding.")
+    def source_at(revision)
+      path = finding.obligation.canonical_source_path.presence ||
+        raise(StaleRevisionError, "The obligation source could not be verified; try again before deciding.")
+      project.client.file_content(project.full_name, path:, ref: revision).presence ||
+        raise(StaleRevisionError, "The obligation source could not be verified; try again before deciding.")
     end
 
     def git_revision?(revision)

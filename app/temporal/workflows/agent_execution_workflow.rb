@@ -324,6 +324,7 @@ module Workflows
           activity_timeout = [ activity_timeout, execution_limit ].min
         end
         activity_timeout = [ activity_timeout, audit_timeout_seconds ].min if audit_timeout_seconds
+        audit_deadline = Temporalio::Workflow.now + audit_timeout_seconds if audit_timeout_seconds
         runner_step_reached = true
         agent_result = run_activity(Activities::RunAgentActivity,
           { agent_run_id: agent_run_id },
@@ -348,8 +349,11 @@ module Workflows
         if goal == "layered_verification_audit" && Temporalio::Workflow.patched("layered-verification-audit-completion-v1")
           if Temporalio::Workflow.patched("layered-verification-audit-result-ingestion-v1")
             if Temporalio::Workflow.patched("layered-verification-formal-checks-v1")
-              run_activity(Activities::RunLayeredVerificationChecksActivity,
-                { agent_run_id: agent_run_id }, timeout: audit_timeout_seconds || 30, retry_policy: NO_RETRY)
+              remaining_audit_seconds = audit_deadline && [ (audit_deadline - Temporalio::Workflow.now).ceil, 0 ].max
+              if remaining_audit_seconds.nil? || remaining_audit_seconds.positive?
+                run_activity(Activities::RunLayeredVerificationChecksActivity,
+                  { agent_run_id: agent_run_id }, timeout: remaining_audit_seconds || 30, retry_policy: NO_RETRY)
+              end
             end
             run_activity(Activities::RecordLayeredVerificationResultsActivity,
               { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090001) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2857,6 +2857,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090001) do
   create_table "layered_verification_obligations", force: :cascade do |t|
     t.string "approval_state", default: "unresolved", null: false
     t.string "approved_revision_reference"
+    t.string "canonical_source_path"
     t.bigint "change_intent_id"
     t.datetime "created_at", null: false
     t.string "external_identity", null: false
@@ -4879,8 +4880,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090001) do
   add_foreign_key "layered_verification_check_results", "layered_verification_correspondence_claims", column: "correspondence_claim_id", on_delete: :cascade
   add_foreign_key "layered_verification_check_results", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
   add_foreign_key "layered_verification_correspondence_claims", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
-  add_foreign_key "layered_verification_findings", "agent_runs"
-  add_foreign_key "layered_verification_findings", "layered_verification_obligations", column: "obligation_id", on_delete: :restrict
+  add_foreign_key "layered_verification_findings", "agent_runs", on_delete: :cascade
+  add_foreign_key "layered_verification_findings", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
   add_foreign_key "layered_verification_findings", "projects", on_delete: :cascade
   add_foreign_key "layered_verification_obligations", "change_intents", on_delete: :nullify
   add_foreign_key "layered_verification_obligations", "layered_verification_obligations", column: "superseded_by_id", on_delete: :nullify

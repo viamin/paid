@@ -5,8 +5,8 @@ class CreateLayeredVerificationAuditFindings < ActiveRecord::Migration[8.1]
   def change
     create_table :layered_verification_findings do |t|
       t.references :project, null: false, foreign_key: { on_delete: :cascade }
-      t.references :obligation, null: false, foreign_key: { to_table: :layered_verification_obligations, on_delete: :restrict }
-      t.references :agent_run, null: false, foreign_key: true
+      t.references :obligation, null: false, foreign_key: { to_table: :layered_verification_obligations, on_delete: :cascade }
+      t.references :agent_run, null: false, foreign_key: { on_delete: :cascade }
       t.string :obligation_external_identity, null: false
       t.string :correspondence_claim_type, null: false
       t.string :cause_signature, null: false

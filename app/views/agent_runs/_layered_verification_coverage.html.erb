@@ -1,0 +1,26 @@
+<% coverage = agent_run.external_metadata.dig("layered_verification", "coverage") %>
+<% result_ids = coverage.values.flat_map { |entry| entry.fetch("check_result_ids", []) } %>
+<% results_by_id = LayeredVerificationCheckResult.where(agent_run:, id: result_ids).index_by(&:id) %>
+<% obligations_by_id = agent_run.project.layered_verification_obligations.where(id: coverage.keys).index_by { |obligation| obligation.id.to_s } %>
+
+<section class="mt-6 rounded-lg bg-white p-4 shadow dark:bg-gray-800" aria-labelledby="verification-coverage-heading">
+  <h2 id="verification-coverage-heading" class="text-sm font-semibold text-gray-900 dark:text-gray-100">Verification coverage</h2>
+  <div class="mt-3 space-y-3">
+    <% coverage.each do |obligation_id, entry| %>
+      <% obligation = obligations_by_id[obligation_id] %>
+      <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+        <div class="flex items-center justify-between gap-4">
+          <p class="text-sm font-medium text-gray-900 dark:text-gray-100"><%= obligation&.external_identity || "Obligation ##{obligation_id}" %></p>
+          <span class="text-sm text-gray-600 dark:text-gray-300"><%= entry.fetch("obligation_coverage").humanize %></span>
+        </div>
+        <ul class="mt-2 space-y-1 text-sm text-gray-600 dark:text-gray-300">
+          <% entry.fetch("check_result_ids", []).each do |result_id| %>
+            <% result = results_by_id[result_id] %>
+            <% next unless result %>
+            <li>Check result #<%= result.id %> · <%= result.producer.humanize %> · <%= result.execution_state.humanize %> · <%= result.obligation_coverage.humanize %></li>
+          <% end %>
+        </ul>
+      </div>
+    <% end %>
+  </div>
+</section>

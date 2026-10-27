@@ -136,6 +136,20 @@ RSpec.describe Project do
       expect { result.reload }.to raise_error(ActiveRecord::RecordNotFound)
     end
 
+    # @spec LAYERED-VERIFY-015 POSTGRESQL-PERSISTENCE-006
+    it "deletes findings without blocking project-owned obligations or agent runs" do
+      project = create(:project)
+      obligation = create(:layered_verification_obligation, project:)
+      run = create(:agent_run, project:, goal: "layered_verification_audit")
+      finding = create(:layered_verification_finding, project:, obligation:, agent_run: run)
+
+      expect { project.destroy! }
+        .to change(LayeredVerificationFinding, :count).by(-1)
+        .and change(LayeredVerificationObligation, :count).by(-1)
+        .and change(AgentRun, :count).by(-1)
+      expect { finding.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
     # @spec LAYERED-VERIFY-006 @spec LAYERED-VERIFY-007 @spec LAYERED-VERIFY-008
     it "deletes owned records through account destruction" do
       account = create(:account)

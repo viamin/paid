@@ -62,7 +62,14 @@ module LayeredVerification
             "consequences" => [ "Repair requires separate authorization; this decision does not start one." ]
           }
         end
-        finding.add_observation!(obligation:, agent_run:, check_result_ids: contradictory.map(&:id))
+        finding.add_observation!(
+          obligation:, agent_run:, check_result_ids: contradictory.map(&:id),
+          evidence: {
+            source_passages: contradictory.map(&:evidence_summary),
+            observed_behavior: { "check_results" => contradictory.map(&:id) },
+            check_limitations: contradictory.map(&:limitations)
+          }
+        )
       end
 
       def claim_type(result)

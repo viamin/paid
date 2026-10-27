@@ -8,7 +8,8 @@ RSpec.describe LayeredVerificationObligation do
     obligation = described_class.new(project: create(:project))
 
     expect(obligation).to be_invalid
-    expect(obligation.errors.attribute_names).to include(:framework, :external_identity, :scope_description)
+    expect(obligation.errors.attribute_names)
+      .to include(:framework, :external_identity, :canonical_source_path, :scope_description)
     expect(obligation.approval_state).to eq("unresolved")
   end
 

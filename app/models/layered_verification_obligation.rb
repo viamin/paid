@@ -22,7 +22,7 @@ class LayeredVerificationObligation < ApplicationRecord
     dependent: :restrict_with_exception
 
   validates :framework, inclusion: { in: FRAMEWORKS }
-  validates :external_identity, :scope_description, presence: true
+  validates :external_identity, :canonical_source_path, :scope_description, presence: true
   validates :approval_state, inclusion: { in: APPROVAL_STATES }
   validates :external_identity, uniqueness: { scope: [ :project_id, :framework, :external_identity ] }
   validate :change_intent_belongs_to_project

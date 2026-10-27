@@ -53,6 +53,9 @@ RSpec.describe LayeredVerification::Audits::SynthesizeCoverage do
     expect(finding.reload.status).to eq("open")
     expect(finding.agent_run).to eq(next_audit)
     expect(finding.observations.last.fetch("check_result_ids")).to eq([ next_result.id ])
+    expect(finding.source_passages).to eq([ next_result.evidence_summary ])
+    expect(finding.observed_behavior).to eq("check_results" => [ next_result.id ])
+    expect(finding.check_limitations).to eq([ next_result.limitations ])
   end
 
   # @spec LAYERED-VERIFY-017

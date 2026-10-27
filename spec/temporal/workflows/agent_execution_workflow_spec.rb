@@ -458,7 +458,9 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
     let(:input) { { project_id: 1, goal: "layered_verification_audit" } }
 
     before do
-      allow(Temporalio::Workflow).to receive_messages(logger: Rails.logger, patched: true)
+      allow(Temporalio::Workflow).to receive_messages(
+        logger: Rails.logger, patched: true, now: Time.zone.at(100)
+      )
       allow(workflow).to receive(:run_activity) do |klass, _input, **_opts|
         case klass.name
         when "Activities::CreateAgentRunActivity"
@@ -493,6 +495,16 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::MarkAgentRunCompleteActivity, anything, any_args)
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::CreatePullRequestActivity, anything, any_args)
+    end
+
+    # @spec LAYERED-VERIFY-024
+    it "gives formal checks only the audit budget remaining after the agent" do
+      allow(Temporalio::Workflow).to receive(:now).and_return(Time.zone.at(100), Time.zone.at(145))
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity).with(Activities::RunLayeredVerificationChecksActivity,
+        { agent_run_id: 42 }, timeout: 15, retry_policy: described_class::NO_RETRY)
     end
   end
 

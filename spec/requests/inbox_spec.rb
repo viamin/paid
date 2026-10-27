@@ -2076,29 +2076,35 @@ RSpec.describe "Inbox" do
   end
 
   # @spec LAYERED-VERIFY-018
-  it "rejects a finding decision when the repository revision has advanced" do
+  it "accepts a finding decision when the branch advances without changing the canonical source" do
     finding = create_layered_verification_finding
-    finding.obligation.update!(external_revision: "a" * 40)
+    finding.obligation.update!(external_revision: "a" * 40, canonical_source_path: "docs/intent/payments-specs.md")
+    create(:layered_verification_check_result, obligation: finding.obligation, agent_run: finding.agent_run,
+      input_revision: { "external_revision" => "a" * 40 })
     key = entry_id(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND, finding)
     allow(github_client).to receive(:ref).with("acme/alpha", "heads/main")
       .and_return(OpenStruct.new(object: OpenStruct.new(sha: "b" * 40)))
+    allow(github_client).to receive(:file_content)
+      .with("acme/alpha", path: "docs/intent/payments-specs.md", ref: "a" * 40).and_return("same source")
+    allow(github_client).to receive(:file_content)
+      .with("acme/alpha", path: "docs/intent/payments-specs.md", ref: "b" * 40).and_return("same source")
 
     post inbox_layered_verification_finding_decision_path(key), params: {
       decision: { action: "defer", reason: "Awaiting a business-owner answer.", external_revision: "abc123" }
     }
 
     expect(response).to redirect_to(inbox_entry_path(key))
-    expect(flash[:alert]).to eq("The obligation source changed; review fresh evidence before deciding.")
-    expect(finding.reload).to have_attributes(status: "open")
-    expect(finding.decision).not_to have_key("selected_action")
+    expect(flash[:alert]).to be_nil
+    expect(finding.reload).to have_attributes(status: "deferred")
   end
 
   # @spec LAYERED-VERIFY-018
   it "rejects a finding decision when the current canonical source content changed" do
     finding = create_layered_verification_finding
+    finding.obligation.update!(canonical_source_path: "docs/intent/payments-specs.md")
     key = entry_id(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND, finding)
     allow(github_client).to receive(:file_content)
-      .with("acme/alpha", path: "PAYMENTS-017", ref: "abc123")
+      .with("acme/alpha", path: "docs/intent/payments-specs.md", ref: "abc123")
       .and_return("changed obligation source")
 
     post inbox_layered_verification_finding_decision_path(key), params: {
@@ -2113,8 +2119,9 @@ RSpec.describe "Inbox" do
   def create_layered_verification_finding
     source = "PAYMENTS-017 requires one captured charge."
     allow(github_client).to receive(:file_content)
-      .with("acme/alpha", path: "PAYMENTS-017", ref: "abc123").and_return(source)
+      .with("acme/alpha", path: "docs/intent/payments-specs.md", ref: "abc123").and_return(source)
     obligation = create(:layered_verification_obligation, project:, external_identity: "PAYMENTS-017",
+      canonical_source_path: "docs/intent/payments-specs.md",
       scope_description: "Retry a charge without duplicating it.", external_revision: Digest::SHA256.hexdigest(source))
     LayeredVerificationFinding.create!(project:, obligation:,
       agent_run: create(:agent_run, project:, goal: "layered_verification_audit",
