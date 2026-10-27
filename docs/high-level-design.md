@@ -341,6 +341,20 @@ any repair: a scan never mutates source code or opens a PR on its own.
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
 that acceptance.
 
+A planned optimization recipe family extends that capability with
+non-functional "contracting" audits — duplication, maintainability,
+performance, security hardening, cost, architecture, and test quality —
+selected from a code-defined catalog rather than a run-type enum, and scoped
+by a free-form natural-language target as readily as by paths or symbols.
+Semantic judgment about whether a finding may be acted on belongs to an
+`agent_harness` assessment; authorization, budgets, idempotency, and
+revalidation stay deterministic in code. Automatic repair is a per-run,
+off-by-default election, bounded to the approved finding, and absent for
+report-only types such as security hardening. **Draft, not yet accepted**:
+see `docs/intent/optimization-recipes/` for the reviewable LLD/EARS contract
+pending that acceptance, and RDR-075's requirement that automatic repair
+follow a separately approved policy.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the
