@@ -247,7 +247,12 @@ Maintenance scans are report-only. A user can select findings to create
 bounded repair issues or normal PR-creation runs, preserving source-report
 links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
-outside the initial scope and requires a separately approved policy.
+outside the initial scope and requires a separately approved policy. The
+optimization recipe family's draft
+[`optimization-recipes` LLD](../intent/optimization-recipes/optimization-recipes-design.md)
+(#4492, pending acceptance via #4636) is the candidate draft of that policy,
+scoped narrowly to its own recipes; this RDR's own report-only scope is
+unchanged until that acceptance happens.
 
 ### PR integration
 

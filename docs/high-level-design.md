@@ -339,7 +339,14 @@ any repair: a scan never mutates source code or opens a PR on its own.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
-that acceptance.
+that acceptance. A planned optimization recipe family (#4492) extends this
+capability with a curated, extensible catalog of non-functional audits
+(performance, duplication, maintainability, security, cost, architecture,
+test quality) and the narrow, opt-in automatic-repair policy RDR-075
+withholds pending separate approval. **Also draft, not yet accepted**: see
+`docs/intent/optimization-recipes/` and
+[#4636](https://github.com/viamin/paid/issues/4636) for that reviewable
+contract, independent of and pending alongside base maintenance acceptance.
 
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container

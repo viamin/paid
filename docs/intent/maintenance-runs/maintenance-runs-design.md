@@ -45,8 +45,10 @@ model. Each run persists, immutably once started:
   investigated, and `issue_id` (nullable — issue-less manual runs are
   first-class).
 - `objective` (the recipe key, or `nil` for a free-text user question),
-  `scope` (optional paths/symbols the user named), and `guidance` (free-text
-  instructions), captured verbatim at run start.
+  `scope` (optional paths, symbols, or a free-form natural-language target
+  the user named — a feature, a workflow, a page in the app, not only
+  literal paths/symbols), and `guidance` (free-text instructions), captured
+  verbatim at run start.
 - `recipe_version` and the resolved tool versions/configuration actually
   used, for provenance (RDR-073 attachment metadata plus any native-CLI
   analyzer version string captured at invocation time).
@@ -120,7 +122,8 @@ selection also applies the existing authorization of the selected issue or
 PR-creation pathway:
 
 - **Start**: an authorized user supplies a project, optional objective (recipe
-  key), optional scope (paths/symbols), and optional free-text guidance. A
+  key), optional scope (paths, symbols, or a free-form natural-language
+  target), and optional free-text guidance. A
   start request must include either a recipe objective or nonblank guidance;
   scope alone is not an investigation objective. Response identifies the
   created run and its resolved (or pending-clarification) scope.
@@ -236,6 +239,13 @@ shipped code in
    live execution-environment artifact before an implementation uses this
    candidate path. The handoff audit's host-only commands are not evidence for
    this decision.
+6. The optimization recipe family's catalog, first recipes, and bounded
+   automatic-repair ("auto-queue") policy — drafted as a separate, nested
+   [optimization-recipes](../optimization-recipes/optimization-recipes-design.md)
+   LLD under [#4636](https://github.com/viamin/paid/issues/4636) rather than
+   folded into this segment, since it is a distinct intent (RDR-075's
+   separately-approved automatic-repair policy) layered on top of this
+   LLD's unchanged report-only contract.
 
 ## What This Is Not
 
@@ -243,7 +253,13 @@ shipped code in
   RDR-073's territory, consumed here, not duplicated.
 - Not an automatic-repair mechanism — a scan never deletes source code or
   opens a PR as a side effect; repair is a separate, explicitly authorized
-  run.
+  run. A per-run opt-in election made under a separately accepted
+  automatic-repair policy (the draft
+  [optimization-recipes](../optimization-recipes/optimization-recipes-design.md)
+  LLD, pending acceptance via
+  [#4636](https://github.com/viamin/paid/issues/4636)) counts as that
+  explicit authorization for the findings it qualifies — it does not make
+  dispatch an unauthorized side effect of the scan itself.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.
@@ -262,3 +278,7 @@ shipped code in
   native CLI analyzer invocation inside the execution environment
 - `app/models/agent_run.rb` — `execute_in_execution_environment`,
   `cleanup_execution_environment`
+- [optimization-recipes LLD](../optimization-recipes/optimization-recipes-design.md)
+  — nested child segment drafting RDR-075's separately-approved automatic-repair
+  policy, scoped to the optimization recipe family
+  ([#4636](https://github.com/viamin/paid/issues/4636))

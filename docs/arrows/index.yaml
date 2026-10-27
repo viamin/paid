@@ -745,6 +745,16 @@ arrows:
     status: MAPPED
     sampled: 2026-10-24
     next: "Draft LLD/EARS only; RDR-075 remains Status: Draft (merged to main via #4308) and no implementation exists. #4604 revalidated its tool-handoff evidence environment on 2026-10-24: no Docker client, socket, or alternate local engine was available, so critical assumption 2's native-analyzer and sidecar artifacts remain uncollected. Move both validations to a Docker-capable environment; do not release #4328-#4333 before design acceptance and that evidence."
+  optimization-recipes:
+    title: Optimization Recipe Family
+    path: docs/intent/optimization-recipes/optimization-recipes-design.md
+    specs: docs/intent/optimization-recipes/optimization-recipes-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: MAPPED
+    sampled: 2026-10-27
+    blockedBy: [maintenance-runs]
+    next: "Draft LLD/EARS only, pending owner acceptance via #4636 (nested child of maintenance-runs; RDR-075's required separately-approved automatic-repair policy, scoped to the optimization family #4492-#4496). Do not release #4493-#4496 before this segment and base maintenance (#4635) are both accepted, and the #4604 tool-handoff evidence lands."
   marketplace-tool-sidecars:
     title: Marketplace Tool Sidecars
     path: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-design.md
