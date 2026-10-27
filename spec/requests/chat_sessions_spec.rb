@@ -1032,7 +1032,7 @@ RSpec.describe "ChatSessions" do
       end
 
       it "renders the popup variant for embedded requests" do
-        # @spec CHAT-API-021 CHAT-API-025
+        # @spec CHAT-API-021 CHAT-API-025 CHAT-API-027
         chat_session.update!(
           metadata: {
             "page_context" => {
@@ -1050,7 +1050,9 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to include("Keep Chat Open")
         expect(response.body).to include('data-action="chat-popup#toggleKeepOpen"')
         expect(response.body).to include("New Chat")
-        expect(response.body).to include("Open page")
+        full_chat_link = Nokogiri::HTML(response.body).at_css("a[href='#{chat_session_path(chat_session)}']")
+        expect(full_chat_link.text).to eq("Open full chat")
+        expect(full_chat_link["href"]).to eq(chat_session_path(chat_session))
         expect(response.body).to include("Projects - Paid")
         expect(response.body).not_to include("turbo-frame")
       end

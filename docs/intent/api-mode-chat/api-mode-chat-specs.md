@@ -352,6 +352,12 @@
   `app/javascript/lib/safe_markdown.js`,
   `app/services/chat_sessions/build_system_prompt.rb`.
 
+- [x] **CHAT-API-027** — When the global chat popup renders its action menu,
+  the link to the current session's dedicated chat view SHALL be labeled
+  "Open full chat" and target that session's full chat route.
+  *Test:* `spec/requests/chat_sessions_spec.rb`.
+  *Code:* `app/views/chat_sessions/_popup.html.erb`.
+
 - [x] **CHAT-API-010** — When a chat repo-read tool (`grep_repo`,
   `read_repo_file`, `list_repo_tree`, `search_issues`) resolves a GitHub
   client for a project, the system SHALL prefer the project's own credential
