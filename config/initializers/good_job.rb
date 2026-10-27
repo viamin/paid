@@ -2,6 +2,8 @@
 
 module Paid
   module GoodJobConfig
+    DEFAULT_QUEUES = "default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1;shadow_evaluation:1"
+
     module_function
 
     def execution_mode(env = ENV)
@@ -12,9 +14,15 @@ module Paid
       resolve_from_db("good_job_max_threads", env_key: "GOOD_JOB_MAX_THREADS", env: env, default: 12)
     end
 
+    # A tenant may persist its own queue allocation, which wins over the
+    # environment. Reconciliation keeps the platform-required queues served and
+    # the per-queue threads inside the pool budget.
+    # @spec INTENT-CONFORMANCE-ROLLOUT-011
     def queues(env = ENV)
-      resolve_from_db("good_job_queues", env_key: "GOOD_JOB_QUEUES", env: env,
-        default: "default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1;shadow_evaluation:1")
+      WorkerSettings::GoodJobQueues.reconcile(
+        resolve_from_db("good_job_queues", env_key: "GOOD_JOB_QUEUES", env: env, default: DEFAULT_QUEUES),
+        max_threads: max_threads(env)
+      )
     end
 
     def resolve_from_db(key, env_key:, env:, default:)

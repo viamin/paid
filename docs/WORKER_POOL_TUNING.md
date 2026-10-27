@@ -18,6 +18,14 @@ GoodJob processes background jobs using a thread pool backed by PostgreSQL.
 | `GOOD_JOB_SHUTDOWN_TIMEOUT` | `25` | Seconds to wait for in-flight jobs during shutdown |
 | `GOOD_JOB_ENABLE_CRON` | `true` | Enable cron-scheduled jobs |
 
+A tenant can persist its own `good_job_queues` allocation in the tenant
+configuration, and that stored allocation wins over the environment. The
+platform-required queues are always re-added to a stored allocation, and the
+per-queue threads are reconciled against `GOOD_JOB_MAX_THREADS` (threads are
+reclaimed from the lowest-priority queue first). Without that, a stored
+allocation that predates a new required queue would leave the matching jobs
+queued with no worker to run them.
+
 ### Queue Priority Design
 
 Design-artifact reconciliation emits `feature_intents.reconciliation_started`
@@ -27,7 +35,7 @@ and `feature_intents.reconciliation_finished` structured logs. Compare
 Linux process lifetime high-water mark, not a job-specific peak. RSS fields
 are null when `/proc` is unavailable. Deltas include other jobs in the process.
 
-Jobs are assigned to five priority queues:
+Jobs are assigned to six priority queues:
 
 | Queue | Priority | Jobs | Rationale |
 |---|---|---|---|
@@ -35,7 +43,8 @@ Jobs are assigned to five priority queues:
 | `maintenance` | 2 | DockerOrphanCleanup, StaleRunDetector, WorktreeCleanup, PollWorkflowHealthCheck, etc. | Infrastructure health; important but tolerates brief delays |
 | `metrics` | 3 | ContainerMetrics, ServiceContainerMetrics, QualityMetrics, AbTestAnalysis | Telemetry and analytics; deferrable under load without user impact |
 | `knowledge` | 4 | EmbedChunks, StyleGuideExtraction, StyleGuideCompression, EnqueueKnowledgeCollection, RunCollectors | CPU-intensive embedding and LLM work; bursty, benefits from backpressure |
-| `low_priority` | 5 (lowest) | DashboardBroadcast, LiveDashboardBroadcast, DelayedHumanFeedback | Non-urgent UI updates and batch processing |
+| `low_priority` | 5 | DashboardBroadcast, LiveDashboardBroadcast, DelayedHumanFeedback | Non-urgent UI updates and batch processing |
+| `shadow_evaluation` | 6 (lowest) | ShadowEvaluationExecutionJob | Long-running, provider-bound reviewer evaluations; isolated so they cannot starve the other queues |
 
 ### Thread Pool Sizing
 
@@ -53,6 +62,7 @@ bulk low-priority work cannot starve them:
 | `metrics` | 2 | Telemetry collection |
 | `knowledge` | 3 | Collection and embedding (CPU-bound) |
 | `low_priority` | 1 | Non-urgent batch work |
+| `shadow_evaluation` | 1 | Long-running reviewer evaluations |
 
 **Key constraint**: `DB_POOL >= RAILS_MAX_THREADS + GOOD_JOB_MAX_THREADS` when using
 `async_server` mode (jobs run in the web process).
@@ -188,7 +198,7 @@ RAILS_MAX_THREADS=5
 # GoodJob (dedicated worker process)
 GOOD_JOB_EXECUTION_MODE=external
 GOOD_JOB_MAX_THREADS=20
-GOOD_JOB_QUEUES=default:6;maintenance:4;metrics:4;knowledge:4;low_priority:2
+GOOD_JOB_QUEUES=default:6;maintenance:4;metrics:4;knowledge:4;low_priority:1;shadow_evaluation:1
 GOOD_JOB_POLL_INTERVAL=1
 
 # Temporal worker (scale horizontally with multiple worker processes)

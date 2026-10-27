@@ -95,6 +95,15 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
       )
     end
 
+    it "serves the platform-required queues" do
+      queue_entries = Paid::GoodJobConfig.queues.split(";").to_h do |entry|
+        name, threads = entry.split(":")
+        [ name, threads.to_i ]
+      end
+
+      expect(queue_entries.fetch("shadow_evaluation")).to be >= 1
+    end
+
     it "does not allocate more per-queue threads than max_threads" do
       queues = Paid::GoodJobConfig.queues
       total_threads = queues.split(";").sum { |e| e.split(":").last.to_i }
