@@ -31,12 +31,15 @@ STEP_TIMEOUT="${LID_STEP_TIMEOUT:-180}"
 # Run a network/plugin step under a hard timeout, with stdin closed. This keeps
 # container creation from hanging if a tool hits a first-run prompt on a fresh
 # (empty) config volume or a network call stalls: </dev/null turns any prompt
-# into immediate EOF, and `timeout` is the backstop. Always returns 0 (non-fatal)
+# into immediate EOF, and `timeout` is the backstop. Output is piped through cat
+# because lifecycle commands run under a TTY, and `claude plugin ...` finishes
+# its work but never exits when stdout is a terminal, burning the full timeout
+# (pipefail keeps the step's own exit status). Always returns 0 (non-fatal)
 # — on failure or timeout it logs a warning and the build continues.
 run_step() {
   local desc="$1"
   shift
-  if ! timeout -k 10 "$STEP_TIMEOUT" "$@" </dev/null; then
+  if ! timeout -k 10 "$STEP_TIMEOUT" "$@" </dev/null 2>&1 | cat; then
     echo "WARNING: ${desc} failed or timed out (${STEP_TIMEOUT}s); skipping." >&2
   fi
 }
