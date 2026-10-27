@@ -29,6 +29,27 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     }.to raise_error(ArgumentError, "prerequisite occurrence is no longer current")
   end
 
+  it "rejects malformed HTTP(S) URLs" do # @spec PARTIAL-CLOSEOUT-032
+    [ "https://", "https:///report" ].each do |evidence_url|
+      expect {
+        described_class.call(notification:, actor:, prerequisite_identity: identity, evidence_url:, explanation: "Pilot report attached.")
+      }.to raise_error(ArgumentError, "evidence must be an HTTP(S) URL")
+    end
+  end
+
+  it "revalidates after locking when reconciliation resolves the notification" do # @spec PARTIAL-CLOSEOUT-032
+    allow(notification).to receive(:with_lock).and_wrap_original do |original, &block|
+      notification.update!(resolved_at: Time.current)
+      original.call(&block)
+    end
+
+    expect {
+      described_class.call(notification:, actor:, prerequisite_identity: identity,
+        evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached.")
+    }.to raise_error(ArgumentError, "notification is no longer active")
+    expect(notification.reload.metadata).not_to have_key("evidence_submissions")
+  end
+
   it "marks evidence stale when the prerequisite source revision changed" do # @spec PARTIAL-CLOSEOUT-032
     source_revision = Issues::CloseoutEvidence.call(issue).digest
     create(:agent_run, :completed, project:, issue:,

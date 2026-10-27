@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "uri"
+
 module PartialCloseouts
   # Records an operator's evidence against one durable prerequisite occurrence.
   # A submission is deliberately not an attestation: only a future assessor may
@@ -22,8 +24,10 @@ module PartialCloseouts
     end
 
     def call
-      validate!
-      notification.with_lock { record_submission! }
+      notification.with_lock do
+        validate!
+        record_submission!
+      end
     end
 
     private
@@ -34,7 +38,7 @@ module PartialCloseouts
       raise ArgumentError, "notification is not a partial-closeout prerequisite" unless notification.source == PREREQUISITE_NOTIFICATION_SOURCE
       raise ArgumentError, "notification is no longer active" unless notification.active?
       raise ArgumentError, "prerequisite identity is required" if prerequisite_identity.blank?
-      raise ArgumentError, "evidence must be an HTTP(S) URL" unless evidence_url.match?(%r{\Ahttps?://})
+      raise ArgumentError, "evidence must be an HTTP(S) URL" unless valid_evidence_url?
       raise ArgumentError, "explanation is required" if explanation.blank?
       raise ArgumentError, "prerequisite occurrence is no longer current" unless occurrence
     end
@@ -43,7 +47,7 @@ module PartialCloseouts
       submissions = Array(notification.metadata["evidence_submissions"])
       entry = { "prerequisite_identity" => prerequisite_identity, "evidence_url" => evidence_url,
                 "explanation" => explanation, "actor_id" => actor.id, "submitted_at" => Time.current.iso8601,
-                "outcome" => outcome, "reason" => reason }
+                "source_revision" => occurrence.fetch("source_revision", nil), "outcome" => outcome, "reason" => reason }
       notification.update!(metadata: notification.metadata.merge("evidence_submissions" => submissions + [ entry ]))
       Result.new(outcome:, reason:, notification:)
     end
@@ -65,6 +69,13 @@ module PartialCloseouts
     end
 
     def current_source_revision = @current_source_revision ||= Issues::CloseoutEvidence.call(notification.subject).digest
+
+    def valid_evidence_url?
+      uri = URI.parse(evidence_url)
+      uri.is_a?(URI::HTTP) && uri.host.present?
+    rescue URI::InvalidURIError
+      false
+    end
 
     def occurrence
       @occurrence ||= Array(notification.metadata["prerequisites"]).find { |item| item["identity"] == prerequisite_identity }

@@ -73,6 +73,28 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(notification.reload.metadata.fetch("evidence_submissions")).to eq([ submission ])
   end
 
+  it "marks submitted evidence stale when reconciliation changes its source revision" do # @spec PARTIAL-CLOSEOUT-032
+    gap = { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot." }
+    source_revision = Issues::CloseoutEvidence.call(parent).digest
+    run.update!(reconciliation: { "assessment" => { "source_revision" => source_revision } })
+    described_class.call(agent_run: run, assessment: gaps([ gap ]))
+    notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    occurrence = notification.metadata.fetch("prerequisites").sole
+    actor = create(:user, account: project.account)
+    PartialCloseouts::SubmitEvidence.call(notification:, actor:, prerequisite_identity: occurrence.fetch("identity"),
+      evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached.")
+
+    create(:issue, :pull_request, project:, parent_issue: parent, github_state: "closed", pr_review_phase: "merged")
+    run.update!(reconciliation: run.reconciliation.merge("assessment" => {
+      "source_revision" => Issues::CloseoutEvidence.call(parent).digest
+    }))
+    described_class.call(agent_run: run, assessment: gaps([ gap ]))
+
+    submission = notification.reload.metadata.fetch("evidence_submissions").sole
+    expect(submission).to include("outcome" => "stale",
+      "reason" => "The closeout evidence changed; submit evidence for the current prerequisite revision.")
+  end
+
   it "reconciles changed policy guidance while preserving the unresolved prerequisite" do # @spec PARTIAL-CLOSEOUT-031
     first = policy_gap(revision: "v1", next_step: "Complete the team review.")
     described_class.call(agent_run: run, assessment: gaps([ first ]))

@@ -209,7 +209,7 @@ module PartialCloseouts
       identity = Digest::SHA256.hexdigest(JSON.generate(identities))
       metadata = { "prerequisite_identity" => identity, "references" => references,
                    "prerequisites" => human_gaps.map { |gap| prerequisite_occurrence(gap) } }
-      submissions = Array(previous&.metadata&.fetch("evidence_submissions", nil))
+      submissions = reconciled_evidence_submissions(previous, metadata.fetch("prerequisites"))
       metadata["evidence_submissions"] = submissions if submissions.any?
       policy_selection = replacement_policy_action(human_gaps)
       metadata["policy_selection"] = policy_selection if policy_selection
@@ -220,6 +220,25 @@ module PartialCloseouts
       end
       metadata["superseded_references"] = superseded.uniq if superseded.any?
       metadata
+    end
+
+    def reconciled_evidence_submissions(previous, occurrences)
+      prior_occurrences = Array(previous&.metadata&.fetch("prerequisites", nil)).index_by { |occurrence| occurrence["identity"] }
+      current_revisions = occurrences.filter_map { |occurrence| occurrence["source_revision"] }.uniq
+      Array(previous&.metadata&.fetch("evidence_submissions", nil)).map do |submission|
+        reconcile_evidence_submission(submission, prior_occurrences, current_revisions)
+      end
+    end
+
+    def reconcile_evidence_submission(submission, prior_occurrences, current_revisions)
+      source_revision = submission["source_revision"] || prior_occurrences.dig(submission["prerequisite_identity"], "source_revision")
+      return submission unless source_revision.present? && !current_revisions.include?(source_revision)
+
+      submission.merge(
+        "source_revision" => source_revision,
+        "outcome" => "stale",
+        "reason" => "The closeout evidence changed; submit evidence for the current prerequisite revision."
+      )
     end
 
     def prerequisite_identity(gap)
