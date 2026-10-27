@@ -122,8 +122,9 @@
   automation stopped (`manual_review_reason`) and how long it has been stopped
   (`manual_review_started_at`, falling back to `updated_at` for legacy rows —
   `ISSUE-ENHANCEMENT-012`). The entry SHALL offer an operator-triggered manual
-  `enhance_issue` run as its clearing action, since automatic picking excludes
-  `manual_review` and only an explicit operator-triggered run resumes work
+  supported cause-specific action. Enhancement provenance offers an explicit
+  `enhance_issue` retry, since automatic picking excludes `manual_review` and
+  only an explicit operator-triggered run resumes enhancement work
   (`ISSUE-ENHANCEMENT-011`). Queuing that run SHALL transition the issue out
   of `manual_review` in the same request — inside the same transaction that
   creates the run — so the entry clears from the queue and the badge at queue
@@ -160,8 +161,10 @@
   SHALL resume that run under the same `in_progress` queue-time flip an
   operator-triggered run gets, rather than leaving the issue in a lane
   auto-pick skips until the run completes. An entry with no preserved
-  questions renders the state + "Start
-  enhancement run" button only, as before.
+  questions renders the state + "Start enhancement run" button only when
+  explicit enhancement provenance supports that retry. Reopen-review,
+  dependency, scanner-recurrence, and unknown provenance remain visible with
+  their own recovery explanation rather than being inferred from reason text.
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
   `app/services/inbox/manual_review_comment_link.rb`,
   `app/services/dashboard/eligibility_breakdown.rb`, `app/models/issue.rb`,
@@ -175,6 +178,21 @@
   `spec/services/dashboard/eligibility_breakdown_spec.rb`,
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`.
+
+- [x] **OPERATOR-INBOX-002K** — When a manual-review item is rendered or its
+  recovery endpoint is invoked, the system SHALL classify its cause only from
+  durable provenance: the dedicated reopen-review marker, unresolved dependency
+  edges, scanner remediation evidence, or enhancement run/question provenance.
+  Unknown provenance SHALL remain visible and SHALL not default to enhancement.
+  An unfinished queued or running run SHALL be shown and reused rather than
+  creating a second run. Dependency acknowledgment SHALL not clear the hold;
+  scanner recurrence SHALL direct the operator to scanner evidence collection;
+  and reopen review SHALL require the authorized, reasoned, revision-bound
+  intent-validation decision before an implementation run is queued.
+  *Code:* `ManualReviews::Classify`, `Inbox::Queue`,
+  `Projects::AgentRunsController`, `Issue`.
+  *Test:* `spec/services/manual_reviews/classify_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by

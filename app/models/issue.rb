@@ -2,6 +2,7 @@
 
 class Issue < ApplicationRecord
   belongs_to :reopened_by, class_name: "User", optional: true
+  belongs_to :reopen_review_reviewed_by, class_name: "User", optional: true
 
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
   REOPEN_REVIEW_REQUIRED_REASON =
@@ -326,6 +327,22 @@ class Issue < ApplicationRecord
     with_lock do
       reload
       update!(paid_state: "manual_review", manual_review_reason: REOPEN_REVIEW_REQUIRED_REASON)
+    end
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-005
+  def record_reopen_review_validation!(user:, decision:, reason:)
+    with_lock do
+      reload
+      raise ArgumentError, "Reopen review is no longer pending" unless reopen_review_pending?
+
+      update!(
+        reopen_review_decision: decision,
+        reopen_review_review_reason: reason,
+        reopen_review_reviewed_at: Time.current,
+        reopen_review_reviewed_by: user,
+        reopen_review_revision: github_updated_at&.iso8601
+      )
     end
   end
 

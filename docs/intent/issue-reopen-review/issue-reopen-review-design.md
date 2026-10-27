@@ -27,6 +27,17 @@ the issue back into active work through the existing manual-review workflow.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 
+## Recovery decision
+
+The manual-review recovery classifier uses persisted producer evidence, never
+free-form reason text, to distinguish reopen review from enhancement stops,
+scanner recurrence, unresolved dependencies, and unknown provenance. A reopen
+review shows the captured reopen scope, requires an authorized operator to
+confirm intent validation and supply a reason, and records that decision with
+the observed GitHub revision before it queues implementation. An unfinished
+run is reused rather than duplicated. A dependency remains a hold after a
+decision and is reevaluated through its normal resolution path.
+
 ## Chat-tool policy
 
 The chat `edit_issue` tool directs callers to `create_issue` for new work

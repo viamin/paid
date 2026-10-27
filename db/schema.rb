@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_27_100000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2630,6 +2630,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.datetime "reconciled_at", comment: "When this issue was last verified via reconciliation; null = never reconciled"
     t.datetime "relationships_parsed_at"
     t.text "reopen_reason", comment: "Reason supplied when this closed issue was last reopened through chat."
+    t.string "reopen_review_decision", comment: "Authorized disposition of a reopen review."
+    t.text "reopen_review_review_reason", comment: "Operator rationale for the reopen-review disposition."
+    t.datetime "reopen_review_reviewed_at", comment: "When the current reopen-review disposition was recorded."
+    t.bigint "reopen_review_reviewed_by_id", comment: "Paid user who recorded the current reopen-review disposition."
+    t.string "reopen_review_revision", comment: "GitHub revision observed when the reopen-review disposition was recorded."
     t.datetime "reopened_at", comment: "When a closed issue was last reopened through chat."
     t.bigint "reopened_by_id", comment: "Paid user who last reopened this issue through chat."
     t.integer "review_goal_retry_count", default: 0, null: false

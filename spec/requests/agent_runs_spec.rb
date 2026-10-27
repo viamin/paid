@@ -2586,7 +2586,8 @@ RSpec.describe "AgentRuns" do
         github_number: 89,
         title: "Fix flaky specs",
         paid_state: "manual_review",
-        manual_review_reason: "Paid reached the configured limit of enhancement re-evaluation rounds.")
+        manual_review_reason: "Paid reached the configured limit of enhancement re-evaluation rounds.",
+        needs_input_questions: [ "Which test behavior is required?" ])
     end
 
     context "when not authenticated" do
@@ -2628,12 +2629,33 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002K
+      it "records a reopen validation before queuing implementation" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_confirmed: "1",
+            reopen_review_reason: "The remaining regression is still in scope."
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(AgentRun.last).to have_attributes(issue: parked_issue, goal: "create_pr")
+        expect(parked_issue.reload).to have_attributes(
+          reopen_review_decision: "resume_implementation",
+          reopen_review_review_reason: "The remaining regression is still in scope.",
+          reopen_review_reviewed_by: user,
+          paid_state: "in_progress"
+        )
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,
           owner: "acme", repo: "lane", auto_pick_enabled: true, active: true)
         parked = create(:issue, project: gated_project, github_number: 90, paid_state: "manual_review",
-          manual_review_reason: "Round limit reached.")
+          manual_review_reason: "Round limit reached.", needs_input_questions: [ "Which outcome is required?" ])
 
         entries = Inbox::Queue.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)
         expect(entries.map(&:issue)).to include(parked)

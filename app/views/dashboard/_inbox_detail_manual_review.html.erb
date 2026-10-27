@@ -1,15 +1,51 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec OPERATOR-INBOX-002D OPERATOR-INBOX-002K %>
+<% recovery = entry.manual_review_recovery %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.active? %>
+        Paid already has a <%= recovery.active_run.status %> <%= recovery.active_run.goal.humanize.downcase %> run for this issue. Refresh the Inbox to follow it; starting another run is blocked.
+      <% elsif recovery.action == :record_decision %>
+        This issue was reopened after closure. Review the original reopen reason and current scope, then record an intent-validation decision before resuming implementation.
+      <% elsif recovery.action == :wait_for_dependency %>
+        This issue is waiting for a real unresolved dependency. It will be reevaluated when that dependency resolves; an acknowledgment cannot waive the hold.
+      <% elsif recovery.action == :collect_scanner_evidence %>
+        A scanner-confirmed recurrence needs fresh scanner evidence. The scanner recovery path, not enhancement, reevaluates it.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
+      <% elsif recovery.action == :retry_enhancement %>
+        Enhancement analysis stopped without questions. Retrying enhancement analyzes the issue again; it does not resume implementation.
       <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+        Paid retained an unknown manual-review cause. Inspect the issue provenance before taking further action.
       <% end %>
     </p>
   </div>
+
+  <% if recovery.action == :record_decision && !recovery.active? %>
+    <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+      <h3 class="text-sm font-semibold text-indigo-900">Reopen intent validation</h3>
+      <p class="mt-1 text-sm text-indigo-800">
+        Original closure/reopen scope: <%= entry.issue.reopen_reason.presence || "GitHub reopened this issue; no earlier reopen reason was recorded." %>
+      </p>
+      <% if policy(entry.project).run_agent? %>
+        <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project), method: :post, class: "mt-3 space-y-3", data: { turbo_frame: "_top" } do |form| %>
+          <%= form.hidden_field :issue_id, value: entry.issue.id %>
+          <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+          <label class="flex items-center gap-2 text-sm text-indigo-900"><%= form.check_box :reopen_review_confirmed %> I validated the prior closure and remaining scope.</label>
+          <%= form.text_area :reopen_review_reason, required: true, rows: 3, class: "block w-full rounded-md border-gray-300", placeholder: "Why implementation should resume at this revision" %>
+          <%= form.submit "Record decision and resume implementation", class: "inline-flex rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white" %>
+        <% end %>
+      <% end %>
+    </div>
+  <% elsif recovery.action == :wait_for_dependency %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Waiting on dependency</h3>
+      <% recovery.blockers.each do |blocker| %>
+        <%= link_to "#{blocker.project.full_name}##{blocker.github_number}: #{blocker.title}", blocker.github_url, target: "_blank", rel: "noopener noreferrer", class: "block mt-2 text-sm text-amber-800 underline" %>
+      <% end %>
+    </div>
+  <% end %>
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
@@ -42,7 +78,7 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && recovery.action == :retry_enhancement && !recovery.active? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

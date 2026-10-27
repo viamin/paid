@@ -104,11 +104,21 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        recovery = entry.manual_review_recovery
+        {
+          questions: entry.questions,
+          comment_url: entry.manual_review_comment_url,
+          recovery: {
+            cause: recovery.cause,
+            action: recovery.action,
+            active_run_id: recovery.active_run&.id,
+            blockers: recovery.blockers.map { |blocker| { number: blocker.github_number, url: blocker.github_url } }
+          }
+        }
       end
 
       def manual_review_list_payload
-        { questions: entry.questions }
+        { questions: entry.questions, recovery: { cause: entry.manual_review_recovery.cause, action: entry.manual_review_recovery.action } }
       end
 
       # entry.record is Inbox::IntentConformance::Snapshot, already carrying

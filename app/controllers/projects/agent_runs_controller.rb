@@ -480,14 +480,25 @@ module Projects
         return
       end
 
-      create_enhance_issue_runs_and_redirect(
+      recovery = ManualReviews::Classify.call(issue: issue)
+      return redirect_manual_review_with_active_run(recovery) if recovery.active?
+
+      case recovery.action
+      when :retry_enhancement
+        create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
         success_path: safe_return_target || dashboard_path,
         custom_prompt: nil,
         goal: "enhance_issue",
         priority_tier: nil
-      )
+        )
+      when :record_decision
+        record_reopen_review_and_continue(issue)
+      else
+        redirect_to safe_return_target || dashboard_path,
+          alert: manual_review_action_required_alert(recovery)
+      end
     end
 
     # Operator-driven counterpart to
@@ -1117,6 +1128,62 @@ module Projects
       return unless issue.paid_state == "manual_review"
 
       issue.update!(paid_state: "in_progress")
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002K
+    def record_reopen_review_and_continue(issue)
+      unless params[:reopen_review_confirmed] == "1" && params[:reopen_review_reason].present?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Confirm the reopen review and provide a reason before continuing."
+        return
+      end
+
+      if issue.blocking_issues.exists?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This issue still has unresolved dependencies. Resolve them before continuing."
+        return
+      end
+
+      issue.record_reopen_review_validation!(
+        user: current_user,
+        decision: "resume_implementation",
+        reason: params[:reopen_review_reason]
+      )
+      create_manual_review_implementation_run(issue)
+    end
+
+    def create_manual_review_implementation_run(issue)
+      CostBudgets::Check.call(@project).then do |budget_result|
+        unless budget_result[:allowed]
+          redirect_to safe_return_target || dashboard_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+          return
+        end
+
+        ActiveRecord::Base.transaction do
+          create_agent_run(issue: issue, goal: "create_pr")
+          resume_issue_from_manual_review(issue)
+        end
+        ProcessRunQueueJob.perform_later
+        redirect_to safe_return_target || dashboard_path, notice: "Reopen review recorded. Implementation run queued."
+      end
+    rescue NoRunnableRunnerError, InvalidDockerHostSelectionError => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
+    rescue ActiveRecord::RecordNotUnique
+      redirect_to safe_return_target || dashboard_path, alert: "Existing work was queued; refresh the Inbox."
+    end
+
+    def redirect_manual_review_with_active_run(recovery)
+      run = recovery.active_run
+      redirect_to safe_return_target || dashboard_path,
+        alert: "Run ##{run.id} (#{run.goal}) is already #{run.status}; refresh the Inbox instead of creating another run."
+    end
+
+    def manual_review_action_required_alert(recovery)
+      case recovery.action
+      when :wait_for_dependency then "This issue is waiting for its unresolved dependency; acknowledgment does not clear the hold."
+      when :collect_scanner_evidence then "Scanner recurrence remains under verification. Wait for the supported scanner evidence collection."
+      else "Manual-review provenance is unknown. Inspect the issue before selecting a supported recovery action."
+      end
     end
 
     # A stale page can still render the "Start enhancement run" button after

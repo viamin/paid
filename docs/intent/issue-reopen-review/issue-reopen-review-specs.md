@@ -30,3 +30,13 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resolves a
+  pending reopen review, the system SHALL require an explicit intent-validation
+  confirmation and non-blank reason, record the actor, time, and current
+  GitHub revision, and only then queue the supported implementation
+  continuation. It SHALL reuse an unfinished run and SHALL NOT clear a real
+  dependency hold.
+  *Tests:* `spec/requests/agent_runs_spec.rb`,
+  `spec/services/manual_reviews/classify_spec.rb`.
+  *Code:* `ManualReviews::Classify`, `Projects::AgentRunsController`, `Issue`.
