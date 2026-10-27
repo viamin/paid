@@ -102,5 +102,12 @@ RSpec.describe Automation::ManualStart::Plan do
     it "permits a non-merge continuation for a user who can start work" do
       expect { plan(user: member, continuation: true, endpoint: "coding").build_grant(issue:) }.not_to raise_error
     end
+
+    it "rejects continuation when the actor cannot start work for the project" do
+      viewer = create(:user, :viewer, account:)
+
+      expect { plan(user: viewer, continuation: true, endpoint: "coding").build_grant(issue:) }
+        .to raise_error(described_class::PermissionDenied, /permission to delegate this action/)
+    end
   end
 end
