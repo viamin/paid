@@ -120,7 +120,8 @@ selection also applies the existing authorization of the selected issue or
 PR-creation pathway:
 
 - **Start**: an authorized user supplies a project, optional objective (recipe
-  key), optional scope (paths/symbols), and optional free-text guidance. A
+  key), optional scope (paths, symbols, or a free-text boundary), and optional
+  free-text guidance. A
   start request must include either a recipe objective or nonblank guidance;
   scope alone is not an investigation objective. Response identifies the
   created run and its resolved (or pending-clarification) scope.
@@ -243,7 +244,9 @@ shipped code in
   RDR-073's territory, consumed here, not duplicated.
 - Not an automatic-repair mechanism — a scan never deletes source code or
   opens a PR as a side effect; repair is a separate, explicitly authorized
-  run.
+  run. The draft optimization-recipe policy may add a separately authorized,
+  per-run election for bounded repair; until it is accepted, this default is
+  unchanged.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.

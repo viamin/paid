@@ -249,6 +249,13 @@ links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
 outside the initial scope and requires a separately approved policy.
 
+The optimization-recipe family has a reviewable draft of that separate policy
+in [`optimization-recipes`](../intent/optimization-recipes/optimization-recipes-design.md).
+It is limited to an explicit, per-run election for bounded repairs and remains
+pending owner acceptance in [#4636](https://github.com/viamin/paid/issues/4636).
+It does not change this RDR's report-only default, rollout guard, or initial
+scope.
+
 ### PR integration
 
 The evidence and verification components should be reusable for PR audits.

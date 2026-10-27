@@ -341,6 +341,14 @@ any repair: a scan never mutates source code or opens a PR on its own.
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
 that acceptance.
 
+A draft optimization-recipe family refines that planned capability with a
+curated catalog, honest tool and prompt evidence, and a narrowly bounded,
+per-run automatic-repair election. Semantic recommendation assessment remains
+behind `agent_harness`; deterministic code enforces authorization, budgets,
+revalidation, scope, and idempotency. It is review-only intent pending owner
+acceptance in #4636: the base maintenance default stays report-only,
+`maintenance_runs` stays off by default, and security repairs stay manual-only.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the
