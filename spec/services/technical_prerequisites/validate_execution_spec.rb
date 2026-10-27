@@ -27,6 +27,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
 
   # @spec PARTIAL-CLOSEOUT-032
   it "records an exact rollout approval action instead of retrying when the tool flag is off" do
+    FeatureFlags.disable!(:marketplace_tool_sidecars, project:)
     AgentRun.where(id: agent_run.id).update_all(tool_sidecar_snapshot: [ { "name" => "analyzer", "image" => "example/analyzer" } ])
     agent_run.reload
     allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler_result([ "remote" ]))
@@ -72,7 +73,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
       agent_run.update!(status: "cancelled", completed_at: Time.current)
       scheduler_result([ "remote" ])
     end
-    allow(FeatureFlags).to receive(:enabled?).with(:marketplace_tool_sidecars, project:).and_return(true)
+    FeatureFlags.enable!(:marketplace_tool_sidecars, project:)
     allow(agent_run).to receive(:provision_execution_environment)
 
     result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
@@ -265,7 +266,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
 
   def stub_compatible_host(hosts = [ "remote" ])
     allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler_result(hosts))
-    allow(FeatureFlags).to receive(:enabled?).with(:marketplace_tool_sidecars, project:).and_return(true)
+    FeatureFlags.enable!(:marketplace_tool_sidecars, project:)
   end
 
   def stub_command_execution(stdout: "analyzer 1.0", stderr: "", exit_code: 0)
