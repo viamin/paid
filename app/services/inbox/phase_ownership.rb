@@ -32,10 +32,6 @@ module Inbox
       Inbox::Queue::PROJECT_SETUP_PENDING_KIND => Automation::Phases::DISCOVERY
     }.freeze
 
-    # manual_review has several causes; the stop reason and the latest run goal
-    # say which phase owns the stop.
-    ENHANCEMENT_REASONS = /enhance|clarif|question/i
-
     Ownership = Struct.new(:request_key, :entry_kind, :record_id, :project, :responsible_phase,
       :classification_state, :origin_kind, :origin_id, :stored, keyword_init: true) do
       def platform?
@@ -193,14 +189,13 @@ module Inbox
       phase_for_manual_review_issue(entry.issue, latest_runs:)
     end
 
-    # manual_review has several causes; the stop reason and the latest run goal
-    # say which phase owns the stop.
+    # Manual-review ownership follows the same durable provenance classifier
+    # that chooses its recovery action; reason copy is not a control input.
     def phase_for_manual_review_issue(issue, latest_runs: nil)
       return nil unless issue
-      return Automation::Phases::ISSUE_PREPARATION if issue.manual_review_reason.to_s.match?(ENHANCEMENT_REASONS)
 
-      latest_run = latest_runs ? latest_runs[issue.id] : issue.agent_runs.order(created_at: :desc, id: :desc).first
-      return Automation::Phases::ISSUE_PREPARATION if latest_run&.enhance_issue_goal?
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue)
+      return Automation::Phases::ISSUE_PREPARATION if recovery.enhancement?
 
       Automation::Phases::CODING
     end

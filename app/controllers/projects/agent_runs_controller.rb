@@ -461,22 +461,28 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
-    # manual_review only clears when an explicit operator-triggered run
-    # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
-    # queues a fresh manual enhance_issue run rather than just clearing state,
-    # since a queued run is what actually resumes the enhancement work. The
-    # queue-time state flip (resume_issue_from_manual_review) removes the
-    # inbox entry as soon as the run is queued, so the item leaves the lane
-    # immediately instead of surviving the whole queue wait; re-entry
-    # producers (parse failure, round limit, needs_input) bring it back if
-    # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # A manual-review row is not synonymous with an enhancement retry.  Its
+    # recovery is classified from persisted provenance before any state can be
+    # cleared or work can be created, so a dependency/reopen/scanner hold
+    # cannot be silently converted into a second enhancement run.
+    # @spec ISSUE-REOPEN-REVIEW-005 @spec GITHUB-SYNC-017 @spec ISSUE-ENHANCEMENT-011
     def resume_manual_review
       authorize @project, :run_agent?
 
       issue = resolve_manual_review_issue
       unless issue
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue)
+      unless recovery.enhancement?
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_recovery_alert(recovery)
+        return
+      end
+      if recovery.active_run
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Work is already #{recovery.active_run.status} in run ##{recovery.active_run.id}; reconcile it before retrying enhancement."
         return
       end
 
@@ -1129,6 +1135,19 @@ module Projects
         "Please select an issue."
       else
         "This issue is no longer waiting for manual review."
+      end
+    end
+
+    def manual_review_recovery_alert(recovery)
+      case recovery.action
+      when :record_intent_validation
+        "This reopened issue needs an authorized intent-validation decision before work can resume."
+      when :wait_for_dependency
+        "This issue remains blocked by an unresolved dependency; resolve the dependency before resuming work."
+      when :review_scanner_evidence
+        "This issue has a scanner-confirmed recurrence; review the scanner evidence and use its recovery action."
+      else
+        "This manual-review hold has unknown provenance and cannot be retried automatically."
       end
     end
 

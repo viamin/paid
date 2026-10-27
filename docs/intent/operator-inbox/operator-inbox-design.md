@@ -32,6 +32,14 @@ what action clears it.
 Introduce a small typed inbox abstraction that merges human-actionable queue
 entries into one responsive page.
 
+Manual-review entries derive their recovery cause from durable provenance, not
+their display reason. Enhancement provenance may offer an analysis retry;
+reopen review, unresolved dependencies, scanner recurrence, and unknown
+provenance retain their distinct decision, wait, evidence, or reconciliation
+actions. Before an enhancement retry is admitted, the shared recovery service
+checks for queued, running, or paused work and keeps the hold visible when work
+already exists.
+
 1. `Inbox::Queue` collects inbox entries the signed-in user can act on.
 2. Each entry declares a `kind`, the project/issue context, waiting timestamp,
    and the payload needed to render its detail pane.

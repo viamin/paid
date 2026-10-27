@@ -104,7 +104,16 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        recovery = Inbox::ManualReviewRecovery.call(issue: entry.issue)
+        {
+          questions: entry.questions,
+          comment_url: entry.manual_review_comment_url,
+          recovery: {
+            cause: recovery.cause,
+            action: recovery.action,
+            active_run_id: recovery.active_run&.id
+          }
+        }
       end
 
       def manual_review_list_payload

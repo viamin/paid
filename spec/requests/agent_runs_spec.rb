@@ -15,7 +15,10 @@ RSpec.describe "AgentRuns" do
     end
 
     context "when authenticated" do
-      before { sign_in user }
+      before do
+        sign_in user
+        create(:agent_run, project: project, issue: parked_issue, goal: "enhance_issue", status: "failed")
+      end
 
       it "renders the index page" do
         get agent_runs_path
@@ -2628,12 +2631,38 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec ISSUE-REOPEN-REVIEW-005
+      it "does not turn a reopen-review hold into an enhancement run" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload).to be_reopen_review_pending
+        expect(flash[:alert]).to include("intent-validation")
+      end
+
+      # @spec ISSUE-ENHANCEMENT-011
+      it "does not clear a hold or create a duplicate while work is already queued" do
+        AgentRun.where(issue: parked_issue).delete_all
+        existing = create(:agent_run, project: project, issue: parked_issue, goal: "enhance_issue", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+        expect(flash[:alert]).to include("run ##{existing.id}")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,
           owner: "acme", repo: "lane", auto_pick_enabled: true, active: true)
         parked = create(:issue, project: gated_project, github_number: 90, paid_state: "manual_review",
           manual_review_reason: "Round limit reached.")
+        create(:agent_run, project: gated_project, issue: parked, goal: "enhance_issue", status: "failed")
 
         entries = Inbox::Queue.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)
         expect(entries.map(&:issue)).to include(parked)
