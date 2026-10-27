@@ -43,10 +43,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn!
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      ChatTurns::Track.completed!(@chat_turn, awaiting_confirmation: assistant_message.nil?)
       update_session_activity
       assistant_message
+    rescue StandardError => e
+      ChatTurns::Track.failed!(@chat_turn, error: e) if @chat_turn
+      raise
     end
 
     private
@@ -105,7 +110,7 @@ module ChatSessions
         used: result[:used_tokens]
       )
       message = chat_session.messages.create!(role: "system", content: built.content, metadata: built.metadata)
-      on_message_persisted&.call(message)
+      record_persisted_message(message)
       message
     end
 
@@ -113,7 +118,7 @@ module ChatSessions
       @transport_attempt_message = existing_user_message || create_user_message
 
       chat_session.generate_title_from_content!
-      on_message_persisted&.call(transport_attempt_message)
+      record_persisted_message(transport_attempt_message)
       transport_attempt_message
     end
 
@@ -156,7 +161,7 @@ module ChatSessions
           "pending_message_ids" => pending.map(&:id)
         }
       )
-      on_message_persisted&.call(message)
+      record_persisted_message(message)
       message
     end
 
@@ -172,6 +177,21 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001
+    def start_turn!
+      @chat_turn = ChatTurns::Track.start!(
+        chat_session: chat_session,
+        user_message: transport_attempt_message,
+        stream_message_id: stream_message_id
+      )
+      ChatTurns::Track.activity!(@chat_turn, message: transport_attempt_message)
+    end
+
+    def record_persisted_message(message)
+      ChatTurns::Track.activity!(@chat_turn, message:) if @chat_turn
+      on_message_persisted&.call(message)
     end
 
     # Reuse the pre-loop budget baseline so the mid-loop guard does not issue a
