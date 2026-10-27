@@ -1592,6 +1592,22 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("scanner-confirmed recurrence", "Next step:", "Evidence:")
   end
 
+  # @spec OPERATOR-INBOX-002H
+  it "renders a dependency wait without offering an irrelevant enhancement retry" do
+    blocker = create(:issue, project: project, github_number: 4321, github_state: "open")
+    issue = create(:issue, project: project, github_number: 4640, github_state: "open", paid_state: "manual_review")
+    create(:issue_dependency, issue: issue, depends_on_issue: blocker)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, issue),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Waiting for dependency resolution", "#4321")
+    expect(response.body).not_to include("Start enhancement run")
+  end
+
   # @spec OPERATOR-INBOX-006
   it "renders an unknown waiting age for a legacy entry without a timestamp" do
     issue = create(:issue, :needs_input, project: project, title: "Legacy question", body: questions_body)

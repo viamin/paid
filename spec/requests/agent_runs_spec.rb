@@ -2615,6 +2615,61 @@ RSpec.describe "AgentRuns" do
     context "when authenticated" do
       before { sign_in user }
 
+      # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002H
+      it "records a revision-bound reopen decision and queues analysis" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+          reopen_reason: "Required live validation artifacts remain uncollected")
+        revision = (parked_issue.github_updated_at || parked_issue.updated_at).iso8601
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_reason: "The remaining live validation must be collected.",
+            reopen_review_revision: revision
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(AgentRun.last).to have_attributes(issue: parked_issue, goal: "analyze_issue", trigger_type: "manual")
+        expect(AccountActivityEvent.last).to have_attributes(action: "issue.reopen_review_resolved", actor: user)
+        expect(parked_issue.reload.paid_state).to eq("in_progress")
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002H
+      it "rejects a repeated reopen-review submission" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+        revision = (parked_issue.github_updated_at || parked_issue.updated_at).iso8601
+        post resume_manual_review_project_agent_runs_path(project), params: {
+          issue_id: parked_issue.id,
+          reopen_review_reason: "The remaining live validation must be collected.",
+          reopen_review_revision: revision
+        }
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_reason: "Duplicate decision.",
+            reopen_review_revision: revision
+          }
+        }.not_to change(AgentRun, :count)
+        expect(flash[:alert]).to include("no longer waiting")
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002H
+      it "keeps reopen review visible when its evidence revision is stale" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_reason: "This is stale.",
+            reopen_review_revision: 1.hour.ago.iso8601
+          }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+        expect(flash[:alert]).to include("changed")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
         expect {

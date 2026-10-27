@@ -21,9 +21,16 @@ review reason. The Inbox exposes this state to an operator, and ordinary
 automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
-An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+An operator resolves reopen review only after validating whether the original
+closure still covers the remaining scope. The Inbox presents the recorded
+reopen reason, the prior closure baseline, and the current issue revision. An
+authorized operator supplies a non-blank decision reason bound to that
+revision; the decision is audited before the supported `analyze_issue`
+continuation is queued. A stale revision, an existing incompatible active run,
+or a repeated submission leaves the hold visible rather than silently clearing
+it. Other manual-review causes retain their own recovery action: dependencies
+wait for their owning work, enhancement stops retain the enhancement retry and
+question form, and scanner recurrence resumes remediation rather than analysis.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

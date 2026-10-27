@@ -470,7 +470,7 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D OPERATOR-INBOX-002H
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -480,14 +480,7 @@ module Projects
         return
       end
 
-      create_enhance_issue_runs_and_redirect(
-        issue_ids: [ issue.id ],
-        on_error_path: safe_return_target || dashboard_path,
-        success_path: safe_return_target || dashboard_path,
-        custom_prompt: nil,
-        goal: "enhance_issue",
-        priority_tier: nil
-      )
+      resume_manual_review_by_cause(issue)
     end
 
     # Operator-driven counterpart to
@@ -1117,6 +1110,90 @@ module Projects
       return unless issue.paid_state == "manual_review"
 
       issue.update!(paid_state: "in_progress")
+    end
+
+    # @spec OPERATOR-INBOX-002H ISSUE-REOPEN-REVIEW-005
+    def resume_manual_review_by_cause(issue)
+      recovery = Inbox::ManualReviewRecovery.call(issue)
+      return redirect_to_manual_review_error(recovery.summary) if recovery.action == :none
+      return redirect_to_manual_review_error(recovery.summary) if recovery.action == :wait_for_dependency
+
+      create_manual_review_run_and_redirect(issue:, recovery:)
+    end
+
+    # Keeps every manual-review continuation behind the same authorization,
+    # admission, and queue-time Inbox transition. Unlike the legacy enhancement
+    # helper, it checks all unfinished work because a parser hold can coexist
+    # with a queued implementation run.
+    # @spec OPERATOR-INBOX-002H ISSUE-REOPEN-REVIEW-005
+    def create_manual_review_run_and_redirect(issue:, recovery:)
+      budget_result = CostBudgets::Check.call(@project)
+      unless budget_result[:allowed]
+        return redirect_to_manual_review_error(
+          "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+        )
+      end
+
+      ActiveRecord::Base.transaction do
+        issue.lock!
+        issue.reload
+        recovery = Inbox::ManualReviewRecovery.call(issue)
+        raise ActiveRecord::Rollback unless manual_review_action_still_available?(issue, recovery)
+
+        resolve_reopen_review!(issue) if recovery.cause == :reopen_review
+        create_agent_run(issue:, goal: recovery.action.to_s)
+        resume_issue_from_manual_review(issue)
+      end
+      return if performed?
+
+      ProcessRunQueueJob.perform_later
+      redirect_to safe_return_target || dashboard_path, notice: manual_review_success_notice(recovery)
+    rescue Inbox::ResolveReopenReview::StaleRevisionError, ArgumentError => e
+      redirect_to_manual_review_error(e.message)
+    rescue NoRunnableRunnerError, InvalidDockerHostSelectionError => e
+      redirect_to_manual_review_error(e.message)
+    rescue ActiveRecord::RecordNotUnique
+      redirect_to_manual_review_error("An incompatible run is already queued for this issue.")
+    end
+
+    def manual_review_action_still_available?(issue, recovery)
+      unless issue.paid_state == "manual_review"
+        redirect_to_manual_review_error("This issue is no longer waiting for manual review.")
+        return false
+      end
+      unless recovery.action.in?(%i[enhance_issue analyze_issue create_pr])
+        redirect_to_manual_review_error(recovery.summary)
+        return false
+      end
+      if @project.agent_runs.where(issue:, status: AgentRun::UNFINISHED_STATUSES).exists?
+        redirect_to_manual_review_error(
+          "An unfinished run already owns this issue; reconcile it before resuming manual review."
+        )
+        return false
+      end
+
+      true
+    end
+
+    def resolve_reopen_review!(issue)
+      Inbox::ResolveReopenReview.call(
+        issue:,
+        user: current_user,
+        reason: params[:reopen_review_reason],
+        revision: params[:reopen_review_revision]
+      )
+    end
+
+    def manual_review_success_notice(recovery)
+      case recovery.action
+      when :analyze_issue then "Reopen review recorded; analysis run queued to collect current validation evidence."
+      when :create_pr then "Remediation implementation run queued for scanner recurrence."
+      else "Agent run queued for issue enhancement."
+      end
+    end
+
+    def redirect_to_manual_review_error(message)
+      redirect_to safe_return_target || dashboard_path, alert: message
     end
 
     # A stale page can still render the "Start enhancement run" button after
