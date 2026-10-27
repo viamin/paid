@@ -69,6 +69,19 @@ RSpec.describe PartialCloseouts::Assessment do
     expect(result.next_action.fetch("kind")).to eq("wait_for_owner")
   end
 
+  # @spec PARTIAL-CLOSEOUT-032
+  it "marks an assessment stale when its source run records validation evidence" do
+    pull_request
+    run = create(:agent_run, :completed, project:, issue:, pull_request_number: pull_request.github_number)
+    run.update!(reconciliation: { "assessment" => described_class.snapshot(run, { "classification" => "unknown" }) })
+
+    run.update!(reconciliation: run.reconciliation.merge(
+      "technical_prerequisite_evidence" => { "validation_run_id" => 42, "status" => "completed" }
+    ))
+
+    expect(described_class.call(issue)).to be_stale
+  end
+
   # @spec PARTIAL-CLOSEOUT-023 — defense-in-depth for already-persisted
   # assessments that pre-date the LLM-side schema validation, or that
   # escaped it on the legacy text path: a non-Hash `next_action` value

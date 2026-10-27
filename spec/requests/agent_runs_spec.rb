@@ -2323,6 +2323,20 @@ RSpec.describe "AgentRuns" do
         end
       end
 
+      # @spec PARTIAL-CLOSEOUT-032
+      it "does not use the generic manual retry path for technical-prerequisite validations" do
+        validation = create(:agent_run, :failed, project: project,
+          goal: "technical_prerequisite_validation", synthetic: true)
+
+        expect {
+          post retry_project_agent_run_path(project, validation)
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(project_agent_run_path(project, validation))
+        follow_redirect!
+        expect(response.body).to include("Technical-prerequisite validations must be started again")
+      end
+
       it "does not queue a bootstrap attempt while a rate-limited attempt recovers" do
         # A rate-limited run remains dedup-blocking while its recovery window
         # is pending, even though it is not in UNFINISHED_STATUSES.

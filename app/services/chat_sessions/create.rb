@@ -196,8 +196,10 @@ module ChatSessions
 
     def curated_model_for(runner)
       # @spec CHAT-API-026
-      CuratedModelOptions.resolve(runner:, projects: policy_projects) ||
-        raise(ArgumentError, "No compatible Low chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy.")
+      resolution = CuratedModelOptions.resolve_with_diagnostics(runner:, projects: policy_projects)
+      return resolution.option if resolution.option
+
+      raise ModelUnavailableError.new(runner:, rejection_reasons: resolution.rejection_reasons)
     end
 
     def policy_projects

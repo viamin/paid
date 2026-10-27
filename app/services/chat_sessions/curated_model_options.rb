@@ -4,6 +4,7 @@ module ChatSessions
   # @spec CHAT-SESSION-PREFERENCES-003
   # @spec CHAT-API-026
   class CuratedModelOptions
+    Resolution = Data.define(:option, :rejection_reasons)
     TIERS = {
       "low" => "Low",
       "mid" => "Medium",
@@ -16,11 +17,19 @@ module ChatSessions
     }.freeze
 
     def self.for_runner(runner, projects: [])
-      new(runner, projects: projects).options
+      Models::CatalogSnapshot.consistent_read { new(runner, projects: projects).options }
     end
 
     def self.resolve(runner:, tier: "low", projects: [])
-      for_runner(runner, projects: projects).find { |option| option.tier == tier.to_s }
+      resolve_with_diagnostics(runner:, tier:, projects:).option
+    end
+
+    def self.resolve_with_diagnostics(runner:, tier: "low", projects: [])
+      Models::CatalogSnapshot.consistent_read do
+        curated = new(runner, projects: projects)
+        option = curated.options.find { |candidate| candidate.tier == tier.to_s }
+        Resolution.new(option:, rejection_reasons: option ? [] : curated.rejection_reasons)
+      end
     end
 
     def initialize(runner, projects: [])
@@ -47,12 +56,39 @@ module ChatSessions
       candidate_models.reject { |model| unavailable?(model) }.select { |model| permitted?(model) }
     end
 
+    def rejection_reasons
+      return [ :catalog_empty ] if catalog_models.empty?
+      return [ :runner_incompatible ] if runner_compatible_models.empty?
+      return [ :capability_mismatch ] if candidate_models.empty?
+
+      available_models = candidate_models.reject { |model| unavailable?(model) }
+      return [ :unavailable ] if available_models.empty?
+
+      verified = available_models.select { |model| verified_models.permitted?(model.model_id, model: model) }
+      return [ :verified_model_restriction ] if verified.empty?
+
+      permitted = verified.select { |model| policy_permitted?(model) }
+      return [ :operator_policy ] if permitted.empty?
+      return [ :low_tier_unavailable ] unless permitted.any? { |model| model.tier == "low" }
+
+      [ :operator_policy ]
+    end
+    public :rejection_reasons
+
     def candidate_models
-      @candidate_models ||= Runners::ModelOptions.call(
+      @candidate_models ||= runner_compatible_models.select(&:supports_tools?)
+    end
+
+    def runner_compatible_models
+      @runner_compatible_models ||= Runners::ModelOptions.call(
         runner_key: runner.runner_key,
         api_provider: model_provider,
         auth_type: runner.auth_type
-      ).select(&:model?).map(&:model).select(&:supports_tools?)
+      ).select(&:model?).map(&:model)
+    end
+
+    def catalog_models
+      @catalog_models ||= LlmModel.active.by_provider(model_provider).to_a
     end
 
     def preferred_model(tier, models)
@@ -76,6 +112,10 @@ module ChatSessions
     def permitted?(model)
       return false unless verified_models.permitted?(model.model_id, model: model)
 
+      policy_permitted?(model)
+    end
+
+    def policy_permitted?(model)
       projects.all? do |project|
         verified_models.permitted?(model.model_id, model: model, project: project) &&
           PolicyControls::Evaluate.call(project: project, runner: runner, model: model).violations.empty?

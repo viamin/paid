@@ -384,6 +384,33 @@ module Projects
       redirect_to project_path(@project), alert: error.message
     end
 
+    # Starts a reviewed recipe against a fresh pinned run; the resulting run
+    # detail provides progress and cancellation, and this action provides retry.
+    # @spec PARTIAL-CLOSEOUT-032
+    def validate_technical_prerequisite
+      authorize @project, :run_agent?
+
+      source_run = @project.agent_runs.find_by(id: params[:source_run_id])
+      requirement = PreCommitRequirement.resolve(project: @project, user: current_user)
+        .find { |candidate| candidate.id == params[:requirement_id].to_i }
+      unless source_run&.issue_id == params[:issue_id].to_i && requirement
+        redirect_to safe_return_target || dashboard_path, alert: "Select a pinned run and enabled validation recipe."
+        return
+      end
+
+      result = TechnicalPrerequisites::StartValidation.call(source_run:, requirement:, actor: current_user)
+      if result.success?
+        redirect_to project_agent_run_path(@project, result.agent_run), notice: result.message
+      else
+        redirect_to safe_return_target || dashboard_path, alert: result.message
+      end
+    rescue ActiveRecord::RecordInvalid => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
+    rescue ActiveRecord::RecordNotUnique
+      redirect_to safe_return_target || dashboard_path,
+        alert: "A prerequisite validation is already in progress for this issue."
+    end
+
     # Records the operator's attestation that the recorded closeout evidence
     # completes the issue (evidence-gated; see Issues::ResolveCloseout).
     # @spec PARTIAL-CLOSEOUT-007
@@ -669,6 +696,12 @@ module Projects
       if @agent_run.layered_verification_goal?
         redirect_to project_agent_run_path(@project, @agent_run),
           alert: "Layered-verification runs must be started again from their dedicated entry point."
+        return
+      end
+
+      if @agent_run.technical_prerequisite_validation_goal?
+        redirect_to project_agent_run_path(@project, @agent_run),
+          alert: "Technical-prerequisite validations must be started again from their dedicated Inbox action."
         return
       end
 
