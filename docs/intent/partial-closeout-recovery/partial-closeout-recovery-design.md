@@ -114,12 +114,14 @@ paid_state edit and never a blanket guard lift:
   cancel and supersede — the walk explains the authority, it never
   substitutes for it.
 
-The diagnostic preserves and links the notification exactly as recorded. It
-does not yet determine that referenced policy or evidence has become stale,
-reconcile the notification against a newer policy revision, or offer a
-structured policy-selection action. Those behaviors require durable policy and
-evidence identities from the prerequisite publisher; free-text notification
-content is not a safe basis for silently changing a team's review policy.
+Human prerequisites carry structured policy and evidence references with stable
+keys and revisions. The prerequisite publisher derives a durable identity from
+that structured record. When a later assessment changes the referenced identity
+or guidance, it updates the existing unresolved notification, retains the prior
+references as superseded history, and exposes the explicit replacement-policy
+step when operator selection is required. Reconciliation never resolves the
+prerequisite, discards valid human evidence, or substitutes solo review for a
+team policy; free-text notification content is not used to infer policy changes.
 
 For Inbox lane construction, `StalledCloseouts` batch-loads the evidence and
 persisted diagnostic inputs for each project's candidates before evaluating

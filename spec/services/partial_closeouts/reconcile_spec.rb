@@ -46,6 +46,29 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(run.reload.reconciliation.fetch("status")).to eq("awaiting_operator")
   end
 
+  it "reconciles changed policy guidance while preserving the unresolved prerequisite" do # @spec PARTIAL-CLOSEOUT-031
+    first = policy_gap(revision: "v1", next_step: "Complete the team review.")
+    described_class.call(agent_run: run, assessment: gaps([ first ]))
+    notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+
+    replacement = policy_gap(revision: "v2", next_step: "Select the replacement policy, then record its review evidence.").merge(
+      "policy_selection" => { "required" => true, "next_step" => "Select team-review v2 or another approved team policy." }
+    )
+    described_class.call(agent_run: run, assessment: gaps([ replacement ]))
+
+    expect(notification.reload).to be_active
+    expect(notification.description).to include("Select the replacement policy")
+    expect(notification.metadata).to include(
+      "prerequisite_identity" => a_string_matching(/\A[0-9a-f]{64}\z/),
+      "policy_selection" => { "required" => true,
+        "next_step" => "Select team-review v2 or another approved team policy." }
+    )
+    expect(notification.metadata.fetch("references")).to contain_exactly(hash_including("revision" => "v2"))
+    expect(notification.metadata.fetch("superseded_references")).to contain_exactly(hash_including("revision" => "v1"))
+    blocker = Issues::CloseoutStatus.call(parent, eligible_issue_ids: [], continuation_eligible_issue_ids: []).blockers.first
+    expect(blocker.recovery).to include("Replacement policy action: Select team-review v2")
+  end
+
   # @spec NO-OUTPUT-ISSUE-007
   it "labels a created owner issue for automation and generated routing" do
     created = OpenStruct.new(number: 445, html_url: "https://example.test/issues/445", id: 445, title: "Finish dispatch", body: "")
@@ -260,5 +283,13 @@ RSpec.describe PartialCloseouts::Reconcile do
 
   def gaps(gaps)
     { "gaps" => gaps }
+  end
+
+  def policy_gap(revision:, next_step:)
+    {
+      "criterion" => "review policy", "kind" => "human", "next_step" => next_step,
+      "references" => [ { "kind" => "policy", "key" => "team-review", "revision" => revision,
+        "label" => "Team review #{revision}", "url" => "https://example.test/policies/team-review/#{revision}" } ]
+    }
   end
 end

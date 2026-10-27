@@ -396,9 +396,17 @@ module Issues
         code: :human_prerequisite_notification,
         message: "Active partial-closeout human prerequisite notification#{'s' if notifications.many?} (#{ids.join(', ')}) requires unresolved human evidence or a human decision before continuation.",
         evidence: { "notifications" => notifications.map { |notification| notification_evidence(notification) }, "links" => notifications.filter_map { |notification| evidence_link("Notification ##{notification.id}", notification.action_url) } },
-        recovery: "Supply and record the requested human decision or evidence at the listed notification route. Dismiss or resolve it only after that prerequisite is genuinely satisfied; never replace a team policy with solo review silently."
+        recovery: prerequisite_notification_recovery(notifications)
       ) ]
     end
+
+    def self.prerequisite_notification_recovery(notifications)
+      policy_steps = notifications.filter_map { |notification| notification.metadata.dig("policy_selection", "next_step") }
+      guidance = "Supply and record the requested human decision or evidence at the listed notification route."
+      guidance += " Replacement policy action: #{policy_steps.join(' ')}" if policy_steps.any?
+      "#{guidance} Dismiss or resolve it only after that prerequisite is genuinely satisfied; never replace a team policy with solo review silently."
+    end
+    private_class_method :prerequisite_notification_recovery
 
     def self.prerequisite_notifications(issue)
       Notification.where(account: issue.project.account, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,

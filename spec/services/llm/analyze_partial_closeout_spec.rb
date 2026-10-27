@@ -141,6 +141,32 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       expect(result.dig("gaps", 0, "next_step")).to eq("Run the approved macOS pilot.")
     end
 
+    it "accepts durable policy references and an explicit replacement-policy action" do # @spec PARTIAL-CLOSEOUT-031
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      gap = {
+        criterion: "review policy", kind: "human", next_step: "Record the selected policy and evidence.",
+        references: [ { kind: "policy", key: "team-review", revision: "v2", label: "Team review v2" } ],
+        policy_selection: { required: true, next_step: "Select an approved team policy." }
+      }
+      allow(legacy_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.dig("gaps", 0, "references", 0)).to include("key" => "team-review", "revision" => "v2")
+      expect(result.dig("gaps", 0, "policy_selection", "next_step")).to eq("Select an approved team policy.")
+    end
+
+    it "rejects replacement-policy requirements without an explicit action" do # @spec PARTIAL-CLOSEOUT-031
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      gap = {
+        criterion: "review policy", kind: "human", next_step: "Replace the stale policy.",
+        policy_selection: { required: true }
+      }
+      allow(legacy_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
+
+      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+    end
+
     context "when API-key authentication is configured" do
       let(:chat_transport) { instance_double(AgentHarness::Api::ChatTransport, call: schema_result) }
 

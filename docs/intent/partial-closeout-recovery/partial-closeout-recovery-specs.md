@@ -206,12 +206,17 @@
   `spec/services/issues/request_continuation_spec.rb`,
   `spec/services/issues/stalled_closeouts_spec.rb`.
 
-- [ ] **PARTIAL-CLOSEOUT-031** — When a partial-closeout human prerequisite
+- [x] **PARTIAL-CLOSEOUT-031** — When a partial-closeout human prerequisite
   references policy or evidence, Paid SHALL persist the referenced identity,
   reconcile active guidance when that identity changes, and offer an explicit
   operator action to select a replacement policy where required. Reconciliation
   SHALL preserve valid unresolved human evidence and SHALL NOT silently replace
   a team policy with solo review.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/services/partial_closeouts/reconcile.rb`,
+  `app/services/issues/closeout_status.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-005** — When a queued continuation run is considered
   for dispatch, the system SHALL recheck its scoped authorization at dequeue
