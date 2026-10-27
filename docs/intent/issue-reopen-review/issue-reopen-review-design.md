@@ -41,3 +41,13 @@ review even when the pre-update local state was stale. While the synchronized
 reopen review is pending, the tool refuses a close transition. These checks
 make an agent's confirmation intentional and prevent it from immediately
 undoing the gate it triggered.
+
+## Recovery decision
+
+The manual-review recovery classifier reads durable provenance before it offers
+an action. A pending reopen-review marker takes precedence over generic
+manual-review explanations. The operator records an `intent_validated`
+decision, a non-blank reason, and the exact GitHub revision reviewed; a changed
+revision requires fresh validation. Recording the decision releases only the
+reopen hold and does not queue work. The Inbox then directs the operator to a
+supported implementation continuation if work remains.

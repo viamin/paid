@@ -480,6 +480,19 @@ module Projects
         return
       end
 
+      recovery = Issues::ManualReviewRecovery.call(issue: issue)
+      unless recovery.enhancement?
+        redirect_to safe_return_target || dashboard_path, alert: recovery.message
+        return
+      end
+
+      active_run = @project.agent_runs.where(issue: issue, status: AgentRun::UNFINISHED_STATUSES).order(:id).first
+      if active_run
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Run ##{active_run.id} is already #{active_run.status}; reconcile it before retrying enhancement."
+        return
+      end
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
@@ -488,6 +501,20 @@ module Projects
         goal: "enhance_issue",
         priority_tier: nil
       )
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005
+    def resolve_reopen_review
+      authorize @project, :run_agent?
+
+      issue = resolve_manual_review_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      result = Issues::ResolveReopenReview.call(issue:, actor: current_user, reason: params[:reason], revision: params[:revision])
+      redirect_to safe_return_target || dashboard_path, **closeout_flash(result, result.message)
     end
 
     # Operator-driven counterpart to

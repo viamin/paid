@@ -5,6 +5,20 @@
 > Each ID is a grep target across specs, tests, and code
 > (`grep -r OPERATOR-INBOX-001`).
 
+- [x] **OPERATOR-INBOX-002K** — When an issue is in `manual_review`, the
+  Inbox SHALL classify the hold from durable provenance before showing a
+  recovery action: pending reopen review records a revision-bound decision,
+  an unresolved dependency remains linked and waits for resolution, a
+  scanner-confirmed recurrence presents scanner evidence, established
+  enhancement provenance preserves the enhancement retry and question forms,
+  and unknown provenance remains visibly held without a clearing action.
+  A recovery action SHALL not create work while an incompatible active run
+  exists.
+  *Code:* `Issues::ManualReviewRecovery`,
+  `Projects::AgentRunsController`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+  *Test:* `spec/services/issues/manual_review_recovery_spec.rb`.
+
 - [x] **OPERATOR-INBOX-001** — When a signed-in user opens the inbox, the
   system SHALL list actionable clarifying-question entries drawn from the
   existing needs-input queue, preserving the user's project visibility and any

@@ -30,3 +30,11 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an operator resolves a pending reopen
+  review, the system SHALL require a non-blank validation reason and the exact
+  current GitHub revision, record the authorized actor, decision, reason, and
+  reviewed revision, and release only the reopen hold without queueing work.
+  A changed revision SHALL require a new decision.
+  *Tests:* `spec/services/issues/manual_review_recovery_spec.rb`.
+  *Code:* `Issues::ResolveReopenReview`, `Projects::AgentRunsController`.

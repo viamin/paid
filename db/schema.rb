@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_27_090007) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2630,6 +2630,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.datetime "reconciled_at", comment: "When this issue was last verified via reconciliation; null = never reconciled"
     t.datetime "relationships_parsed_at"
     t.text "reopen_reason", comment: "Reason supplied when this closed issue was last reopened through chat."
+    t.string "reopen_review_decision"
+    t.text "reopen_review_reason"
+    t.datetime "reopen_review_revision"
+    t.datetime "reopen_reviewed_at"
+    t.bigint "reopen_reviewed_by_id"
     t.datetime "reopened_at", comment: "When a closed issue was last reopened through chat."
     t.bigint "reopened_by_id", comment: "Paid user who last reopened this issue through chat."
     t.integer "review_goal_retry_count", default: 0, null: false
@@ -2666,6 +2671,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["project_id", "source", "github_state"], name: "idx_issues_on_project_source_state"
     t.index ["project_id"], name: "index_issues_on_project_id"
     t.index ["relationships_parsed_at"], name: "index_issues_on_relationships_parsed_at"
+    t.index ["reopen_reviewed_by_id"], name: "index_issues_on_reopen_reviewed_by_id"
     t.index ["reopened_by_id"], name: "index_issues_on_reopened_by_id"
     t.index ["source"], name: "index_issues_on_source"
   end
@@ -4867,6 +4873,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   add_foreign_key "issues", "issues", column: "parent_issue_id"
   add_foreign_key "issues", "projects"
   add_foreign_key "issues", "users", column: "closeout_resolved_by_id", validate: false
+  add_foreign_key "issues", "users", column: "reopen_reviewed_by_id"
   add_foreign_key "issues", "users", column: "reopened_by_id"
   add_foreign_key "knowledge_artifacts", "collector_runs", on_delete: :cascade
   add_foreign_key "knowledge_artifacts", "projects"
