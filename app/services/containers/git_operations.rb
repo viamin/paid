@@ -332,7 +332,7 @@ module Containers
     # @param base_commit_sha [String] the pinned commit to restore
     # @return [String] the restored commit SHA
     # @raise [CloneError] when the clone, the fetch, or the checkout fails
-  # @spec PARTIAL-CLOSEOUT-032
+    # @spec PARTIAL-CLOSEOUT-032
     def clone_and_checkout_pinned_commit(branch_name:, base_commit_sha:)
       raise Error, "A pinned commit is required to restore the checkout" if base_commit_sha.blank?
 
@@ -1065,7 +1065,7 @@ module Containers
     # @param base_commit_sha [String] the pinned commit
     # @return [void]
     # @raise [Error] when the commit cannot be fetched or checked out
-  # @spec PARTIAL-CLOSEOUT-032
+    # @spec PARTIAL-CLOSEOUT-032
     def checkout_pinned_commit(base_commit_sha)
       fetch_pinned_commit(base_commit_sha) unless commit_present?(base_commit_sha)
 

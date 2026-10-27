@@ -525,12 +525,13 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
     INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::PARTIAL_CLOSEOUT_KIND
 
     let(:stalled_status) do
-      Struct.new(:reason, :outcome, :blockers, :unresolved_prerequisites, :evidence, :admissible,
+      Struct.new(:reason, :outcome, :blockers, :unresolved_prerequisites, :evidence, :technical_evidence, :admissible,
         :open_request, :resolved_current_generation, :stalled?, keyword_init: true)
         .new(reason: "merged partial PR keeps auto-pick off",
           outcome: "Merged partial PR", blockers: [], unresolved_prerequisites: [],
           evidence: Struct.new(:merged_prs, :terminal_at, :no_code_required_at, keyword_init: true)
             .new(merged_prs: [], terminal_at: 1.day.ago, no_code_required_at: nil),
+          technical_evidence: [],
           admissible: false, open_request: nil, resolved_current_generation: false, stalled?: true)
     end
     let(:entry) do

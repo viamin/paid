@@ -547,7 +547,7 @@ module ApplicationHelper
     "lid_planning" => "LID Planning",
     "create_feature" => "Feature Creation",
     "bootstrap_readiness" => "Bootstrap Readiness",
-  # @spec PARTIAL-CLOSEOUT-032
+    # @spec PARTIAL-CLOSEOUT-032
     "technical_prerequisite_validation" => "Prerequisite Validation",
     # @spec LAYERED-VERIFY-013
     "layered_verification_audit" => "Layered Verification Audit",
