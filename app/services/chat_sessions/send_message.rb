@@ -15,7 +15,7 @@ module ChatSessions
   class SendMessage
     include FallbackLoop
 
-    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
+    attr_reader :chat_session, :actor, :content, :on_chunk, :llm_client, :stream_message_id,
       :transport_attempt_message
 
     MAX_CONTENT_LENGTH = 12_000
@@ -25,7 +25,7 @@ module ChatSessions
       @actor = actor
       @content = content
       @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @persisted_message_callback = on_message_persisted
       @llm_client = llm_client
       @stream_message_id = stream_message_id
     end
@@ -43,8 +43,12 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      turn = persist_turn
+      @current_turn = turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
+      turn.mark_streaming!
       assistant_message = run_with_fallbacks
+      assistant_message ? turn.complete!(status: "completed") : turn.update!(status: "pending")
       update_session_activity
       assistant_message
     end
@@ -132,6 +136,24 @@ module ChatSessions
         content: content,
         metadata: { "stream_message_id" => stream_message_id }.compact
       )
+    end
+
+    def persist_turn
+      ChatTurn.find_or_create_by!(user_message: transport_attempt_message) do |turn|
+        turn.chat_session = chat_session
+        turn.status = "pending"
+        turn.last_activity_at = Time.current
+      end
+    end
+
+    # Every durable transcript row advances the watchdog checkpoint. This is
+    # intentionally attached at the SendMessage boundary so tool dispatch does
+    # not need to know about turn lifecycle persistence.
+    def on_message_persisted
+      ->(message, **kwargs) {
+        @current_turn&.update_columns(last_activity_at: Time.current, updated_at: Time.current)
+        @persisted_message_callback&.call(message, **kwargs)
+      }
     end
 
     # A conversational reply (e.g. "yes") is not a confirmation. When a write
