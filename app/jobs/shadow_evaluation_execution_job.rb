@@ -36,8 +36,17 @@ class ShadowEvaluationExecutionJob < ApplicationJob
       evaluation = IntentConformanceShadowEvaluation.find_by(id: arguments.second)
       return unless evaluation
 
-      status = evaluation.runs.where.not(verdict: "not_evaluated").exists? ? "partial" : "failed"
-      evaluation.update!(status:, last_failure_reason: failure_reason(error)) unless evaluation.cancelled? || evaluation.completed?
+      evaluation.with_lock do
+        next if evaluation.cancelled? || evaluation.completed?
+
+        if evaluation.cancellation_requested?
+          evaluation.update!(status: "cancelled", cancelled_at: Time.current,
+            last_failure_reason: "cancelled after #{evaluated_case_count(evaluation)} evaluated case(s)")
+        else
+          status = evaluated_case_count(evaluation).positive? ? "partial" : "failed"
+          evaluation.update!(status:, last_failure_reason: failure_reason(error))
+        end
+      end
       IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: evaluation) if evaluation.runs.exists?
     end
   end
@@ -58,6 +67,10 @@ class ShadowEvaluationExecutionJob < ApplicationJob
 
   def failure_reason(error)
     error.respond_to?(:message) ? error.message : error.to_s
+  end
+
+  def evaluated_case_count(evaluation)
+    evaluation.runs.where.not(verdict: "not_evaluated").count
   end
 
   def tenant_account

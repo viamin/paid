@@ -57,6 +57,27 @@ RSpec.describe ShadowEvaluationExecutionJob do
     expect(IntentConformance::ShadowEvaluation::CompileReport).to have_received(:call).with(evaluation: evaluation)
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  it "preserves a cancellation requested while a failed worker is recovering" do
+    evaluation.update!(status: "running", labels_frozen_at: Time.current, execute_started_at: Time.current)
+    result = IntentConformance::ShadowEvaluation::ExecuteReviewer::Result.new(
+      success: false,
+      error: "provider unavailable",
+      evaluation: nil,
+      executed: 0,
+      failed: 0
+    )
+    allow(IntentConformance::ShadowEvaluation::ExecuteReviewer).to receive(:call) do
+      evaluation.request_cancellation!(actor: evaluation.created_by)
+      result
+    end
+    allow(IntentConformance::ShadowEvaluation::CompileReport).to receive(:call)
+
+    described_class.perform_now(project.id, evaluation.id)
+
+    expect(evaluation.reload).to be_cancelled
+  end
+
   it "reports an incident after retries are exhausted" do
     notifier = instance_double(Paid::ExceptionNotifier, call: nil)
     allow(Paid::ExceptionNotifier).to receive(:new).and_return(notifier)

@@ -12,6 +12,7 @@ module IntentConformance
     # execution.
     # @spec INTENT-CONFORMANCE-ROLLOUT-006
     # @spec INTENT-CONFORMANCE-ROLLOUT-007
+    # @spec INTENT-CONFORMANCE-ROLLOUT-011
     class ExecuteReviewer
       Result = Data.define(:success, :error, :evaluation, :executed, :failed) do
         def success? = success
@@ -90,7 +91,7 @@ module IntentConformance
         failed = 0
 
         @evaluation.corpus.cases.each do |corpus_case|
-          return cancel_execution(executed, failed) if cancellation_requested?
+          return cancel_execution(@evaluation, executed, failed) if cancellation_requested?
 
           next if evaluated_run_for(corpus_case.fetch("id"))
 
@@ -99,7 +100,7 @@ module IntentConformance
           verdict == NOT_EVALUATED ? failed += 1 : executed += 1
         end
 
-        return cancel_execution(executed, failed) if cancellation_requested?
+        return cancel_execution(@evaluation, executed, failed) if cancellation_requested?
 
         complete_or_fail(executed, failed)
       rescue ShadowEvaluationCorpus::MissingManifest => error
@@ -236,31 +237,42 @@ module IntentConformance
       end
 
       def complete_or_fail(executed, failed)
-        failed = @evaluation.runs.where(verdict: NOT_EVALUATED).count
+        terminal_evaluation = IntentConformanceShadowEvaluation.find(@evaluation.id)
+        terminal_evaluation.with_lock do
+          if terminal_evaluation.cancellation_requested?
+            cancel_execution(terminal_evaluation, executed, failed)
+          else
+            complete_execution(terminal_evaluation, executed, failed)
+          end
+        end
+      end
+
+      def complete_execution(evaluation, executed, failed)
+        failed = evaluation.runs.where(verdict: NOT_EVALUATED).count
         if failed.zero?
-          @evaluation.update!(status: "completed", completed_at: Time.current, last_failure_reason: nil)
-        elsif @evaluation.runs.where.not(verdict: NOT_EVALUATED).exists?
-          @evaluation.update!(status: "partial", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
+          evaluation.update!(status: "completed", completed_at: Time.current, last_failure_reason: nil)
+        elsif evaluation.runs.where.not(verdict: NOT_EVALUATED).exists?
+          evaluation.update!(status: "partial", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
         else
-          @evaluation.update!(status: "failed", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
+          evaluation.update!(status: "failed", last_failure_reason: "#{failed} case(s) ended without an evaluated reviewer verdict")
         end
         log_executed(executed, failed)
-        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
+        Result.new(success: true, error: nil, evaluation: evaluation, executed: executed, failed: failed)
       end
 
       def cancellation_requested?
         IntentConformanceShadowEvaluation.where(id: @evaluation.id).pick(:cancellation_requested_at).present?
       end
 
-      def cancel_execution(executed, failed)
-        @evaluation.update!(status: "cancelled", cancelled_at: Time.current,
-          last_failure_reason: "cancelled after #{evaluated_case_count} evaluated case(s)")
+      def cancel_execution(evaluation, executed, failed)
+        evaluation.update!(status: "cancelled", cancelled_at: Time.current,
+          last_failure_reason: "cancelled after #{evaluated_case_count(evaluation)} evaluated case(s)")
         log_executed(executed, failed)
-        Result.new(success: true, error: nil, evaluation: @evaluation, executed: executed, failed: failed)
+        Result.new(success: true, error: nil, evaluation: evaluation, executed: executed, failed: failed)
       end
 
-      def evaluated_case_count
-        @evaluation.runs.where.not(verdict: NOT_EVALUATED).count
+      def evaluated_case_count(evaluation)
+        evaluation.runs.where.not(verdict: NOT_EVALUATED).count
       end
 
       def prompt_digest
