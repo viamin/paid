@@ -24,6 +24,11 @@ review is resolved.
 An operator resumes the issue from manual review only after validating whether
 the original intent remains valid and whether new work is required. This moves
 the issue back into active work through the existing manual-review workflow.
+The Inbox presents the original reopen reason and binds the validation to the
+current reopen evidence revision. The authorized operator supplies a reason;
+Paid records that decision in the account audit trail before it queues the
+existing implementation continuation. A changed revision or already active
+run leaves the review parked for explicit reconciliation.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

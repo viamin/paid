@@ -3,6 +3,9 @@
 module IssueEnhancements
   class StopForManualReview
     COMMENT_MARKER = "<!-- paid:enhance-issue-manual-review -->"
+    UNPARSEABLE_OUTPUT_REASON = "Paid could not validate the enhancement agent's structured output."
+    LEGACY_UNPARSEABLE_OUTPUT_REASON = "Structured output failed validation."
+    ROUND_LIMIT_REASON = "Paid reached the configured limit of enhancement re-evaluation rounds."
 
     def self.call(...)
       new(...).call

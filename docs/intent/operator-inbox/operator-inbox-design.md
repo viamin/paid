@@ -19,6 +19,26 @@ completion dependencies under RDR-071 instead of requesting Mark approved.
 Paid already pauses work in multiple human-in-the-loop states, but the UI
 surfaces were fragmented:
 
+### Cause-specific manual-review recovery
+
+`manual_review` is a lane, not a recovery instruction. Its controller first
+classifies durable provenance instead of interpreting arbitrary reason text:
+the reopen-review marker, an unresolved structured dependency, a persisted
+scanner verification failure, or a recognized enhancement stop. Any other
+reason is displayed as unknown and cannot start a run. This keeps a newly
+introduced producer visible without accidentally treating it as enhancement
+work.
+
+Recovery remains in the existing authorized agent-run boundary. Enhancement
+holds preserve the question form and retry path. Dependency holds link to the
+blocking work and wait for normal dependency resolution. Scanner recurrence
+queues the existing implementation/remediation goal. Reopen review requires a
+reason and the current reopen evidence revision; its audit event records the
+decision before it queues implementation. Before any of those continuations,
+the boundary checks every queued/running run for the issue and asks the
+operator to reconcile it rather than adding competing work or clearing the
+hold.
+
 - clarifying-question issues lived in the dashboard needs-input queue
 - planning approvals lived on a separate plan-reviews page
 - each surface had its own navigation and selection model

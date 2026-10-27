@@ -2628,12 +2628,71 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002L
+      it "records a revision-bound reopen decision before resuming implementation" do
+        parked_issue.update!(
+          manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+          reopened_at: Time.current
+        )
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_confirmed: true,
+            reopen_review_reason: "The regression remains in scope.",
+            reopen_review_revision: parked_issue.reopened_at.utc.iso8601
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(AgentRun.last).to have_attributes(goal: "create_pr", trigger_type: "manual")
+        expect(parked_issue.reload.paid_state).to eq("in_progress")
+        expect(AccountActivityEvent.where(action: "issue.reopen_review_validated", subject: parked_issue)).to exist
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "does not replace an unresolved dependency hold with an enhancement run" do
+        blocker = create(:issue, project:, github_number: 4321, github_state: "open", paid_state: "new")
+        create(:issue_dependency, issue: parked_issue, depends_on_issue: blocker)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("#4321")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "reuses an existing queued run instead of creating a second recovery run" do
+        create(:agent_run, project:, issue: parked_issue, goal: "create_pr", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("already queued")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "deduplicates a double submit after the first enhancement retry" do
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.to change(AgentRun, :count).by(1)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to eq("This issue is no longer waiting for manual review.")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,
           owner: "acme", repo: "lane", auto_pick_enabled: true, active: true)
         parked = create(:issue, project: gated_project, github_number: 90, paid_state: "manual_review",
-          manual_review_reason: "Round limit reached.")
+          manual_review_reason: IssueEnhancements::StopForManualReview::UNPARSEABLE_OUTPUT_REASON)
 
         entries = Inbox::Queue.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)
         expect(entries.map(&:issue)).to include(parked)

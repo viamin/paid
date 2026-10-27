@@ -176,6 +176,26 @@
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** — When a manual-review Inbox entry is rendered or
+  resumed, the system SHALL classify its cause only from durable provenance:
+  the reopen-review marker, unresolved structured dependency, scanner
+  verification attempt, or recognized enhancement stop. Unknown provenance
+  SHALL remain visibly unknown and SHALL not start work. A dependency hold
+  SHALL identify its dependency and wait for normal dependency resolution;
+  it SHALL not be acknowledged away. Reopen review SHALL show the prior
+  closure context and require an authorized, revision-bound decision and
+  reason before it records that decision and resumes implementation. Scanner
+  recurrence SHALL resume remediation implementation, while enhancement holds
+  retain their answer form and enhancement retry. Before any continuation the
+  system SHALL inspect all queued/running work for the issue and refuse to
+  create a second run. The web action uses the same authorized controller
+  boundary and redirects to the refreshed Inbox.
+  *Code:* `app/services/inbox/manual_review_recovery.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+  *Test:* `spec/services/inbox/manual_review_recovery_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by
   `Issue#abandon_due_to_runner_retry_cap!` after every available runner hit

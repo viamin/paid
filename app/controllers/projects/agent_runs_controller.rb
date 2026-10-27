@@ -461,16 +461,7 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
-    # manual_review only clears when an explicit operator-triggered run
-    # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
-    # queues a fresh manual enhance_issue run rather than just clearing state,
-    # since a queued run is what actually resumes the enhancement work. The
-    # queue-time state flip (resume_issue_from_manual_review) removes the
-    # inbox entry as soon as the run is queued, so the item leaves the lane
-    # immediately instead of surviving the whole queue wait; re-entry
-    # producers (parse failure, round limit, needs_input) bring it back if
-    # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec OPERATOR-INBOX-002L
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -480,14 +471,34 @@ module Projects
         return
       end
 
-      create_enhance_issue_runs_and_redirect(
-        issue_ids: [ issue.id ],
-        on_error_path: safe_return_target || dashboard_path,
-        success_path: safe_return_target || dashboard_path,
-        custom_prompt: nil,
-        goal: "enhance_issue",
-        priority_tier: nil
-      )
+      recovery = Inbox::ManualReviewRecovery.call(issue:)
+      if (active_run = active_manual_review_run(issue))
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Run ##{active_run.id} is already #{active_run.status} for this issue; reconcile it before resuming this hold."
+        return
+      end
+
+      case recovery.kind
+      when :enhancement
+        create_enhance_issue_runs_and_redirect(
+          issue_ids: [ issue.id ], on_error_path: safe_return_target || dashboard_path,
+          success_path: safe_return_target || dashboard_path, custom_prompt: nil,
+          goal: "enhance_issue", priority_tier: nil
+        )
+      when :reopen_review
+        resume_reopen_review(issue)
+      when :scanner_recurrence
+        create_run_and_redirect(
+          on_error_path: safe_return_target || dashboard_path, success_path: safe_return_target || dashboard_path,
+          issue: issue, goal: "create_pr", resume_manual_review: true
+        )
+      when :dependency
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This issue is waiting for dependency ##{recovery.dependency.github_number}; it will be reevaluated when that dependency resolves."
+      else
+        redirect_to safe_return_target || dashboard_path,
+          alert: "The cause of this manual-review hold is unknown. No work was started."
+      end
     end
 
     # Operator-driven counterpart to
@@ -1106,13 +1117,13 @@ module Projects
       end
     end
 
-    # Queuing an operator-triggered enhance run resumes work on a manual_review
+    # Queuing an operator-triggered recovery run resumes work on a manual_review
     # issue, so the issue leaves the manual-review inbox lane at queue time —
     # the same paid_state CreateAgentRunActivity sets when the run starts —
     # instead of lingering in the lane through the whole queue wait. Model
     # callbacks clear manual_review_started_at/manual_review_reason
     # (ISSUE-ENHANCEMENT-012) and bump the inbox badge cache version.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec OPERATOR-INBOX-002L
     def resume_issue_from_manual_review(issue)
       return unless issue.paid_state == "manual_review"
 
@@ -1130,6 +1141,39 @@ module Projects
       else
         "This issue is no longer waiting for manual review."
       end
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002L
+    def resume_reopen_review(issue)
+      unless ActiveModel::Type::Boolean.new.cast(params[:reopen_review_confirmed])
+        redirect_to safe_return_target || dashboard_path, alert: "Validate the original closure before resuming this reopened issue."
+        return
+      end
+      if params[:reopen_review_reason].to_s.strip.blank?
+        redirect_to safe_return_target || dashboard_path, alert: "A reopen-review decision reason is required."
+        return
+      end
+      unless params[:reopen_review_revision] == reopen_review_revision(issue)
+        redirect_to safe_return_target || dashboard_path, alert: "The reopen evidence changed; review the current issue before deciding."
+        return
+      end
+
+      Audit::RecordEvent.call(
+        action: "issue.reopen_review_validated", actor: current_user, subject: issue,
+        metadata: { reason: params[:reopen_review_reason].to_s.strip, revision: reopen_review_revision(issue) }
+      )
+      create_run_and_redirect(
+        on_error_path: safe_return_target || dashboard_path, success_path: safe_return_target || dashboard_path,
+        issue: issue, goal: "create_pr", resume_manual_review: true
+      )
+    end
+
+    def reopen_review_revision(issue)
+      (issue.reopened_at || issue.github_updated_at).utc.iso8601
+    end
+
+    def active_manual_review_run(issue)
+      @project.agent_runs.where(issue: issue, status: AgentRun::UNFINISHED_STATUSES).order(:created_at, :id).first
     end
 
     def cancel_in_flight_execution_for_resume!
@@ -1381,7 +1425,7 @@ module Projects
       end
     end
 
-    def create_run_and_redirect(on_error_path:, **attrs)
+    def create_run_and_redirect(on_error_path:, success_path: project_path(@project), resume_manual_review: false, **attrs)
       budget_result = CostBudgets::Check.call(@project)
       unless budget_result[:allowed]
         Rails.logger.info(
@@ -1401,6 +1445,7 @@ module Projects
       github_sync_args = nil
       ActiveRecord::Base.transaction do
         agent_run = create_agent_run(**attrs)
+        resume_issue_from_manual_review(issue) if resume_manual_review && issue
         github_sync_args = apply_priority_label(issue, priority_tier) if issue && priority_tier
       end
 
@@ -1421,7 +1466,7 @@ module Projects
         "Agent run queued. It will start automatically when a slot opens."
       end
 
-      redirect_to project_path(@project), notice: notice
+      redirect_to success_path, notice: notice
     rescue NoRunnableRunnerError => e
       redirect_to on_error_path, alert: e.message
     rescue InvalidDockerHostSelectionError => e

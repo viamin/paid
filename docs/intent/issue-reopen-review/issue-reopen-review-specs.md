@@ -30,3 +30,12 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resumes a
+  pending reopen review from Inbox, the system SHALL require a non-blank
+  decision reason and the current reopen evidence revision, record the
+  decision in the audit trail, and only then queue the supported
+  implementation continuation. A stale revision or existing active work SHALL
+  leave the review hold in place.
+  *Tests:* `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Projects::AgentRunsController`, `Inbox::ManualReviewRecovery`.

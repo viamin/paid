@@ -306,7 +306,7 @@ module Activities
         IssueEnhancements::StopForManualReview.call(
           project: agent_run.project,
           issue: agent_run.issue,
-          reason: "Paid could not validate the enhancement agent's structured output."
+          reason: IssueEnhancements::StopForManualReview::UNPARSEABLE_OUTPUT_REASON
         )
         refund_enhancement_round!(agent_run.issue) if discarded_valid_payload && agent_run.automatic?
       end
