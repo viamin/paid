@@ -19,7 +19,11 @@
         <dt class="text-sm font-medium text-gray-500">Scope</dt>
         <dd class="mt-1 space-y-2 text-sm text-gray-900">
           <% @audit_obligations.each do |obligation| %>
-            <p><span class="font-medium"><%= obligation.scope_description %></span><br><span class="text-gray-500"><%= obligation.external_identity %></span></p>
+            <p>
+              <span class="font-medium"><%= obligation.scope_description %></span><br>
+              <span class="text-gray-500"><%= obligation.external_identity %></span><br>
+              <span class="text-gray-600"><%= @audit_preview.dig("plan", obligation.id.to_s, "selected_checks").map(&:humanize).to_sentence %></span>
+            </p>
           <% end %>
         </dd>
       </div>
@@ -32,6 +36,20 @@
       <%= hidden_field_tag :target_revision, @audit_preview.fetch("target_revision") %>
       <% @audit_preview.fetch("budget").to_h.each do |key, value| %>
         <%= hidden_field_tag "budget[#{key}]", value %>
+      <% end %>
+      <% @audit_preview.fetch("plan").each do |obligation_id, plan| %>
+        <% plan.fetch("selected_checks").each do |selected_check| %>
+          <%= hidden_field_tag "selections[#{obligation_id}][selected_checks][]", selected_check %>
+        <% end %>
+        <%= hidden_field_tag "selections[#{obligation_id}][fit]", plan.fetch("fit") %>
+        <% %w[exclusions required_inputs assumptions residual_gaps].each do |field| %>
+          <% plan.fetch(field).each do |value| %>
+            <%= hidden_field_tag "selections[#{obligation_id}][#{field}][]", value %>
+          <% end %>
+        <% end %>
+        <% plan.fetch("resource_expectations").each do |key, value| %>
+          <%= hidden_field_tag "selections[#{obligation_id}][resource_expectations][#{key}]", value %>
+        <% end %>
       <% end %>
       <%= hidden_field_tag :confirmed, true %>
       <%= submit_tag "Confirm and queue audit", class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>

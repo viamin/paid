@@ -353,24 +353,26 @@ module Projects
 
     # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-014
     def request_layered_verification_audit
-      result = Tools::RequestLayeredVerificationAudit.new(user: current_user, session: nil).dispatch(
+      authorize @project, :manage_issues?
+      tool = Tools::RequestLayeredVerificationAudit.new(user: current_user, session: nil)
+      preview = tool.dispatch(
         project_id: @project.id, obligation_ids: params[:obligation_ids], target_revision: params[:target_revision],
-        budget: params[:budget] || {}, selections: params[:selections] || {},
-        confirmed: ActiveModel::Type::Boolean.new.cast(params[:confirmed])
+        budget: layered_verification_budget_params, selections: layered_verification_selection_params
       )
-      unless result[:id]
+      unless ActiveModel::Type::Boolean.new.cast(params[:confirmed])
         respond_to do |format|
           format.html do
-            @audit_preview = result
+            @audit_preview = preview
             @audit_obligations = @project.layered_verification_obligations
-              .where(id: result.fetch("obligation_ids")).order(:external_identity).load
+              .where(id: preview.fetch("obligation_ids")).order(:external_identity).load
             render :request_layered_verification_audit
           end
-          format.json { render json: result }
+          format.json { render json: preview }
         end
         return
       end
 
+      result = tool.resolve_confirmation(decision: :approve, pending_result: preview)
       redirect_to project_agent_run_path(@project, result[:id]), notice: "Verification audit queued."
     rescue LayeredVerification::AuditAccess::FeatureDisabledError,
            LayeredVerification::AuditAccess::UnauthorizedError,
@@ -866,6 +868,21 @@ module Projects
     end
 
     private
+
+    def layered_verification_budget_params
+      params.fetch(:budget, ActionController::Parameters.new).permit(:max_minutes).to_h
+    end
+
+    def layered_verification_selection_params
+      raw = params.fetch(:selections, ActionController::Parameters.new)
+      raw.each_key.to_h do |obligation_id|
+        permitted = raw.require(obligation_id).permit(
+          :fit, selected_checks: [], exclusions: [], required_inputs: [], assumptions: [],
+          residual_gaps: [], resource_expectations: {}
+        )
+        [ obligation_id, permitted.to_h ]
+      end
+    end
 
     # Clear auto-generated prompts on retry so PreparePrPromptActivity rebuilds
     # them with current state (service containers, CI status, review threads).

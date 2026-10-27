@@ -28,14 +28,18 @@ RSpec.describe Tools::RequestLayeredVerificationAudit do
       .and_return(OpenStruct.new(object: OpenStruct.new(sha: "abc123")))
   end
 
+  it "uses post-dispatch confirmation so the human reviews the resolved preview" do
+    expect(described_class.confirmation_mode).to eq(:post_dispatch)
+  end
+
   # @spec LAYERED-VERIFY-014 LAYERED-VERIFY-021
-  it "previews before human confirmation and creates a run only when confirmed" do
+  it "previews before post-dispatch confirmation and creates a run only when approved" do
     preview = tool.dispatch(**audit_arguments)
 
     expect(preview.fetch("plan")).to have_key(obligation.id.to_s)
     expect(AgentRun.where(goal: "layered_verification_audit")).to be_empty
 
-    result = tool.dispatch(**audit_arguments.merge(confirmed: true))
+    result = tool.resolve_confirmation(decision: :approve, pending_result: preview)
     run = AgentRun.find(result.fetch(:id))
     stored_plan = run.external_metadata.dig("layered_verification", "plan", obligation.id.to_s)
 
@@ -46,6 +50,14 @@ RSpec.describe Tools::RequestLayeredVerificationAudit do
     )
   end
 
+  it "does not create a run when the resolved preview is denied" do
+    preview = tool.dispatch(**audit_arguments)
+
+    expect {
+      tool.resolve_confirmation(decision: :deny, pending_result: preview)
+    }.not_to change(AgentRun, :count)
+  end
+
   # @spec LAYERED-VERIFY-014
   it "rejects an unresolvable target revision before dispatch" do
     allow(github_client).to receive(:ref).with(project.full_name, "missing")
@@ -54,7 +66,7 @@ RSpec.describe Tools::RequestLayeredVerificationAudit do
     expect {
       tool.dispatch(
         project_id: project.id, obligation_ids: [ obligation.id ], target_revision: "missing",
-        budget: {}, confirmed: true
+        budget: {}, selections:
       )
     }.to raise_error(LayeredVerification::Audits::Request::InvalidTargetRevisionError, "target revision could not be resolved")
   end

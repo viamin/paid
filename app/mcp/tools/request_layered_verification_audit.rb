@@ -7,6 +7,7 @@ module Tools
     def self.tool_name = "request_layered_verification_audit"
     def self.write_operation? = true
     def self.mcp_available? = true
+    def self.confirmation_mode = :post_dispatch
 
     def self.description
       "Prepare and dispatch a bounded, issue-less verification audit for a project. It records evidence and findings only; it never starts repair."
@@ -33,29 +34,34 @@ module Tools
         type: "object",
         properties: {
           project_id: { type: "integer" }, obligation_ids: { type: "array", items: { type: "integer" } },
-          target_revision: { type: "string" }, budget: { type: "object" }, selections: { type: "object" },
-          confirmed: { type: "boolean" }
-        }, required: %w[project_id obligation_ids target_revision budget confirmed]
+          target_revision: { type: "string" }, budget: { type: "object" }, selections: { type: "object" }
+        }, required: %w[project_id obligation_ids target_revision budget selections]
       }
     end
 
-    # A preview is safe to return before a human approves it. The registry
-    # injects +confirmed+ only after chat confirmation; MCP and the project UI
-    # must explicitly provide the same human-approved value.
-    def perform(project_id:, obligation_ids:, target_revision:, budget:, selections: {}, confirmed: false)
+    def perform(project_id:, obligation_ids:, target_revision:, budget:, selections:)
       project = project_for(project_id)
       obligations = project.layered_verification_obligations.where(id: obligation_ids).order(:id)
       raise ArgumentError, "select at least one obligation" if obligations.empty?
 
-      payload = preview(project:, obligations:, target_revision:, budget:, selections:)
-      return payload unless confirmed
+      preview(project:, obligations:, target_revision:, budget:, selections:)
+    end
 
-      run = LayeredVerification::Audits::Request.call(
-        project:, user: current_user,
-        obligation_ids: payload.fetch("obligation_ids"), target_revision: payload.fetch("target_revision"),
-        budget: payload.fetch("budget"), selections: payload.fetch("plan")
-      )
-      { id: run.id, status: run.status, goal: run.goal }
+    def resolve_confirmation(decision:, pending_result:)
+      return { status: "denied" } if decision == :deny
+      raise ArgumentError, "decision must be approve or deny" unless decision == :approve
+
+      TenantContext.with(account) do
+        payload = pending_result.to_h.deep_stringify_keys
+        project = project_for(payload.fetch("project_id"))
+        authorize(project, :manage_issues?, policy_class: ProjectPolicy)
+        run = LayeredVerification::Audits::Request.call(
+          project:, user: current_user,
+          obligation_ids: payload.fetch("obligation_ids"), target_revision: payload.fetch("target_revision"),
+          budget: payload.fetch("budget"), selections: payload.fetch("plan")
+        )
+        { id: run.id, status: run.status, goal: run.goal }
+      end
     end
 
     private

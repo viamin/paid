@@ -16,13 +16,17 @@ class LayeredVerificationFinding < ApplicationRecord
 
   after_commit :bump_inbox_cache_version, if: :inbox_visibility_changed?
 
-  def add_observation!(agent_run:, check_result_ids:)
+  def add_observation!(obligation:, agent_run:, check_result_ids:)
     with_lock do
-      update!(status: status == "resolved" ? "open" : status, observations: observations + [ {
-        "agent_run_id" => agent_run.id,
-        "check_result_ids" => check_result_ids,
-        "recorded_at" => Time.current.iso8601
-      } ])
+      update!(
+        obligation:, agent_run:,
+        status: status == "resolved" ? "open" : status,
+        observations: observations + [ {
+          "agent_run_id" => agent_run.id,
+          "check_result_ids" => check_result_ids,
+          "recorded_at" => Time.current.iso8601
+        } ]
+      )
     end
   end
 

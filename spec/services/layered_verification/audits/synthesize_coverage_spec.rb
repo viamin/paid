@@ -37,6 +37,7 @@ RSpec.describe LayeredVerification::Audits::SynthesizeCoverage do
     expect { described_class.call(agent_run: next_audit, obligations: [ obligation ]) }
       .not_to change(LayeredVerificationFinding, :count)
     expect(finding.reload.status).to eq("open")
+    expect(finding.agent_run).to eq(next_audit)
     expect(finding.observations.last.fetch("check_result_ids")).to eq([ next_result.id ])
   end
 

@@ -19,10 +19,22 @@ RSpec.describe LayeredVerification::Plans::Build do
     obligation = create(:layered_verification_obligation)
     selections = ActionController::Parameters.new(
       obligation.id.to_s => { selected_checks: [ "spec_to_code" ], fit: "mapped specification" }
-    )
+    ).permit(obligation.id.to_s => [ :fit, { selected_checks: [] } ])
 
     plan = described_class.call(obligations: [ obligation ], selections:).fetch(obligation.id.to_s)
 
     expect(plan).to include("selected_checks" => [ "spec_to_code" ], "fit" => "mapped specification")
+  end
+
+  # @spec LAYERED-VERIFY-021
+  it "rejects an obligation without a selected check" do
+    obligation = create(:layered_verification_obligation)
+
+    expect {
+      described_class.call(obligations: [ obligation ], selections: {})
+    }.to raise_error(
+      LayeredVerification::Plans::Build::EmptySelectionError,
+      "select at least one verification check for every obligation"
+    )
   end
 end

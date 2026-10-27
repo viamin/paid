@@ -11,10 +11,16 @@
           <legend class="text-sm font-medium text-gray-700">Scope</legend>
           <div class="mt-2 max-h-40 space-y-2 overflow-y-auto">
             <% obligations.each do |obligation| %>
-              <label class="flex gap-2 text-sm text-gray-700">
-                <%= check_box_tag "obligation_ids[]", obligation.id, false, id: dom_id(obligation, :audit) %>
-                <span><%= obligation.scope_description %> <span class="text-gray-500">(<%= obligation.external_identity %>)</span></span>
-              </label>
+              <div class="rounded-md border border-gray-200 p-2">
+                <label class="flex gap-2 text-sm text-gray-700">
+                  <%= check_box_tag "obligation_ids[]", obligation.id, false, id: dom_id(obligation, :audit) %>
+                  <span><%= obligation.scope_description %> <span class="text-gray-500">(<%= obligation.external_identity %>)</span></span>
+                </label>
+                <label class="ml-6 mt-2 flex gap-2 text-xs text-gray-600">
+                  <%= check_box_tag "selections[#{obligation.id}][selected_checks][]", "semantic_audit", true, id: dom_id(obligation, :semantic_audit) %>
+                  <span>Semantic audit</span>
+                </label>
+              </div>
             <% end %>
           </div>
         </fieldset>

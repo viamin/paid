@@ -62,8 +62,7 @@ module LayeredVerification
             "consequences" => [ "Repair requires separate authorization; this decision does not start one." ]
           }
         end
-        finding.update!(obligation:, agent_run:) unless finding.obligation == obligation
-        finding.add_observation!(agent_run:, check_result_ids: contradictory.map(&:id))
+        finding.add_observation!(obligation:, agent_run:, check_result_ids: contradictory.map(&:id))
       end
 
       def claim_type(result)

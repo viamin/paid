@@ -2,19 +2,26 @@
 
 module LayeredVerification
   module Plans
-    # Produces an explicit, auditable plan; semantic selection is supplied by
-    # agent_harness at execution time, while this class preserves its contract.
+    # Produces an explicit, auditable plan; semantic selection is supplied at
+    # the request boundary, while this class preserves its structural contract.
     # @spec LAYERED-VERIFY-021
     class Build
+      class EmptySelectionError < ArgumentError; end
+
       def self.call(...) = new(...).call
 
       def initialize(obligations:, selections: {})
         @obligations = obligations
-        @selections = selections.respond_to?(:to_unsafe_h) ? selections.to_unsafe_h : selections
+        @selections = selections.to_h
       end
 
       def call
-        obligations.to_h { |obligation| [ obligation.id.to_s, plan_for(obligation) ] }
+        obligations.to_h do |obligation|
+          plan = plan_for(obligation)
+          raise EmptySelectionError, "select at least one verification check for every obligation" if plan["selected_checks"].empty?
+
+          [ obligation.id.to_s, plan ]
+        end
       end
 
       private
