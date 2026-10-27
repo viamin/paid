@@ -586,6 +586,8 @@ module Inbox
         next unless project
         next if project_filter_excludes?(project)
 
+        guidance = FacetConfidenceEvaluationGuidance.call(notification:, issue:)
+
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
           kind: ACTION_REQUIRED_KIND,
@@ -594,10 +596,11 @@ module Inbox
           record: notification,
           waiting_since: notification.created_at,
           questions: [],
-          tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
-          action_url: notification.action_url
+          tasks: guidance ? [ guidance.remaining ] : remediation_steps_for(notification),
+          summary_text: guidance&.summary || notification.metadata["recommended_action"].presence || notification.description,
+          title_text: guidance&.title || notification.title,
+          action_url: notification.action_url,
+          guidance: guidance
         )
       end
     end

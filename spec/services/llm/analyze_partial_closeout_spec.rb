@@ -141,6 +141,28 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       expect(result.dig("gaps", 0, "next_step")).to eq("Run the approved macOS pilot.")
     end
 
+    it "accepts an explicit facet-confidence evaluation workflow marker" do # @spec FACET-CONFIDENCE-022
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      gap = {
+        criterion: "Facet-confidence closeout evaluation", kind: "human",
+        workflow: PartialCloseouts::FACET_CONFIDENCE_EVALUATION_WORKFLOW,
+        next_step: "Start the evaluation and record every judgment."
+      }
+      allow(legacy_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.dig("gaps", 0, "workflow")).to eq(PartialCloseouts::FACET_CONFIDENCE_EVALUATION_WORKFLOW)
+    end
+
+    it "rejects an unknown human workflow marker" do # @spec FACET-CONFIDENCE-022
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      gap = { criterion: "Evaluation", kind: "human", workflow: "unknown", next_step: "Do the work." }
+      allow(legacy_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
+
+      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+    end
+
     it "accepts durable policy references and an explicit replacement-policy action" do # @spec PARTIAL-CLOSEOUT-031
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
       gap = {

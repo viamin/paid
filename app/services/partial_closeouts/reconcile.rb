@@ -5,6 +5,7 @@ module PartialCloseouts
   class Reconcile
     MAX_GAPS = 10
     VALID_REFERENCE_KINDS = %w[policy evidence].freeze
+    VALID_WORKFLOWS = [ PartialCloseouts::FACET_CONFIDENCE_EVALUATION_WORKFLOW ].freeze
 
     def self.call(...)
       new(...).call
@@ -52,6 +53,8 @@ module PartialCloseouts
         raise ArgumentError, "human gap reference identity is invalid" unless valid
       end
       selection = gap["policy_selection"]
+      workflow = gap["workflow"]
+      raise ArgumentError, "human gap workflow is invalid" if workflow.present? && !VALID_WORKFLOWS.include?(workflow)
       return if selection.nil?
 
       valid_selection = selection.is_a?(Hash) && [ true, false ].include?(selection["required"])
@@ -265,7 +268,7 @@ module PartialCloseouts
     def prerequisite_occurrence(gap)
       { "identity" => Digest::SHA256.hexdigest(JSON.generate(prerequisite_identity(gap))),
         "criterion" => gap["criterion"], "references" => Array(gap["references"]),
-        "source_revision" => source_revision }
+        "source_revision" => source_revision, "workflow" => gap["workflow"] }.compact
     end
 
     def source_revision

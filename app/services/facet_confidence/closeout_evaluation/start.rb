@@ -28,7 +28,7 @@ module FacetConfidence
         return failure("the originating work item must belong to this project") unless @issue.project_id == @project.id
         return failure("an authenticated operator must start the evaluation") if @actor.blank?
 
-        blockers = closeout_status.blockers
+        blockers = Eligibility.blockers(closeout_status)
         return failure("the closeout entry point is blocked until its recorded prerequisites resolve: #{blockers.map(&:message).join(' ')}") if blockers.any?
 
         corpus = FacetConfidence::Corpus.new(path: CloseoutEvaluationPacket::MANIFEST_PATH)

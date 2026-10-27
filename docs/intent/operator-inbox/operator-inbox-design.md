@@ -171,6 +171,14 @@ absent, the description is also the entry summary. `Notifications::Publish`
 rejects a blocking notification that has neither a non-blank description nor
 remediation guidance, so every Action Required entry has meaningful context.
 
+A closeout assessment may mark a human prerequisite with the explicit
+`facet_confidence_closeout_evaluation` workflow. For that typed notification,
+the Inbox replaces internal assessment prose with plain-language evaluation
+guidance, shows recorded and remaining judgments, and routes the primary action
+to the authorized start, resume, continue, freeze, or report step for that
+issue and project. The route preserves the selected Inbox entry and filters.
+Other Action Required notifications retain the generic safe fallback.
+
 ### `merge_approval`
 
 Backed by the PR scanner's persisted current-head policy snapshot on `Issue`.

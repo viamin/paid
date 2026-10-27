@@ -155,6 +155,10 @@ assessments rather than calibrated probabilities, and that a completed
 evaluation neither closes the source issue nor enables delivery or changes the
 default 80/80 thresholds.
 
+An explicitly typed facet-confidence evaluation prerequisite is the exception:
+it routes into this entry point and is therefore not a prerequisite to starting
+it. A mixed notification, or any other recorded prerequisite, remains blocking.
+
 Start/Resume begins one persisted evaluation per originating closeout, pinned
 to the frozen corpus digest: repeated clicks resume the same evaluation, and a
 changed corpus digest is a new evidence generation that supersedes the old

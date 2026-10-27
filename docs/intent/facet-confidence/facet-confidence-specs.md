@@ -64,8 +64,23 @@ blinded reference-judgment flow over the frozen corpus.
 
 - [x] **FACET-CONFIDENCE-020** — When a partial-closeout Inbox item requires a facet-confidence closeout evaluation, Paid SHALL display the frozen corpus, rubric, model, input and source revisions with a Start/Resume control that starts or resumes one persisted evaluation for that item's originating closeout, pinned to the frozen corpus digest; if the closeout records unresolved blockers, it SHALL display each blocker's recorded owner and recovery route rather than represent the evaluation as ready. Starting or completing this evaluation SHALL NOT close the source issue, enable delivery, or change the 80/80 defaults.
   *Tests:* `spec/services/facet_confidence/closeout_evaluation_packet_spec.rb`, `spec/services/facet_confidence/closeout_evaluation/start_spec.rb`, `spec/requests/projects/facet_confidence_evaluations_spec.rb`.
-  *Code:* `app/services/facet_confidence/closeout_evaluation_packet.rb`, `app/services/facet_confidence/closeout_evaluation/start.rb`, `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  An explicit facet-confidence evaluation prerequisite is the work this entry
+  point starts, not a blocker to itself; all other and mixed prerequisites
+  remain blocking.
+  *Code:* `app/services/facet_confidence/closeout_evaluation_packet.rb`, `app/services/facet_confidence/closeout_evaluation/start.rb`, `app/services/facet_confidence/closeout_evaluation/eligibility.rb`, `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
 - [x] **FACET-CONFIDENCE-021** — While a facet-confidence closeout evaluation is open, the operator who started it SHALL be its sole reference judge and SHALL record one blinded reference judgment per corpus case (verdict status, intent band, technical band, readiness, one cited evidence reference, and reason); the corpus shape, selection rationale, and frozen expectations SHALL stay hidden until every case is labeled and the judge freezes the reference set, and the compiled report comparing the frozen judgments with the frozen expected bands SHALL be retained on the evaluation and reachable from the originating Inbox item.
   After unblinding, Paid SHALL preserve every frozen judgment and compiled report while allowing that same judge to append an attributable, reasoned correction with its own complete judgment and cited evidence.
   *Tests:* `spec/services/facet_confidence/closeout_evaluation/record_label_spec.rb`, `spec/services/facet_confidence/closeout_evaluation/freeze_labels_spec.rb`, `spec/requests/projects/facet_confidence_evaluations_spec.rb`.
   *Code:* `app/services/facet_confidence/closeout_evaluation/`, `app/controllers/projects/facet_confidence_evaluations_controller.rb`, `app/views/projects/facet_confidence_evaluations/`.
+- [x] **FACET-CONFIDENCE-022** — When closeout analysis identifies the
+  facet-confidence evaluator as a human prerequisite, it SHALL carry an
+  explicit workflow marker to Action Required. The Inbox SHALL translate that
+  marker into plain language, show labeled and remaining case counts, and route
+  its state-specific primary action through the authorized evaluation flow while
+  preserving Inbox context; it SHALL not infer the workflow from notification
+  prose or imply that judgments are frozen before they are.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/services/partial_closeouts/reconcile.rb`,
+  `app/services/inbox/facet_confidence_evaluation_guidance.rb`.
+  *Test:* `spec/services/partial_closeouts/reconcile_spec.rb`,
+  `spec/requests/inbox_spec.rb`.

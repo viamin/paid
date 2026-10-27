@@ -10,7 +10,7 @@
   existing needs-input queue, preserving the user's project visibility and any
   explicit project scope filter.
   *Code:* `app/services/inbox/queue.rb`, `app/controllers/inbox_controller.rb`.
-  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Test:* `spec/requests/inbox_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002** — When a planning workflow records an open
   `plan_pending_review` decomposition decision and the user can manage the
@@ -87,6 +87,18 @@
   `app/views/dashboard/_inbox_detail_action_required.html.erb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
+
+- [x] **OPERATOR-INBOX-002L** — When an Action Required notification carries
+  the explicit `facet_confidence_closeout_evaluation` workflow marker for an
+  authorized issue, the Inbox SHALL explain that a maintainer must independently
+  review each frozen test case, record every judgment, and freeze the completed
+  set. It SHALL show judgment progress and a state-specific primary action that
+  preserves Inbox context; other Action Required notifications SHALL retain the
+  generic fallback rendering.
+  *Code:* `app/services/inbox/facet_confidence_evaluation_guidance.rb`,
+  `app/services/inbox/queue.rb`,
+  `app/views/dashboard/_inbox_detail_action_required.html.erb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002C** — When an open pull request's review phase is
   `escalated` and its project is within the operator's authorized Inbox

@@ -10,4 +10,5 @@ module PartialCloseouts
   # be observed by the scheduling block, so the parent issue would be
   # re-picked ahead of the prerequisite (#4119).
   PREREQUISITE_NOTIFICATION_SOURCE = "partial_closeout.prerequisite"
+  FACET_CONFIDENCE_EVALUATION_WORKFLOW = "facet_confidence_closeout_evaluation"
 end

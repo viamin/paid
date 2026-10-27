@@ -44,7 +44,7 @@ module FacetConfidence
     def source_revision = PartialCloseouts::Assessment.call(issue).source_revision
 
     def blockers
-      status.blockers.map do |blocker|
+      CloseoutEvaluation::Eligibility.blockers(status).map do |blocker|
         { code: blocker.code, message: blocker.message, evidence: blocker.evidence, recovery: blocker.recovery }
       end
     end
