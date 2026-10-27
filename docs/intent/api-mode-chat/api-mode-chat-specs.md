@@ -340,15 +340,18 @@
   persistent "Keep Chat Open" preference. The navigation SHALL accept a
   normal link `href` or a `data-chat-navigate-url` value and SHALL preserve a
   URL fragment so the browser scrolls to the specified destination section.
-  Assistant markdown SHALL retain root-relative Paid links and reject
-  protocol-relative and unsafe-scheme URLs.
+  The popup actions menu SHALL label its link to the chat session's full-page
+  surface "Open full chat". Assistant markdown SHALL retain root-relative Paid
+  links and reject protocol-relative and unsafe-scheme URLs.
   *Tests:* `spec/lib/chat_controller_node_harness_spec.rb`,
   `spec/lib/chat_popup_controller_node_harness_spec.rb`,
   `spec/lib/chat_message_controller_node_harness_spec.rb`,
+  `spec/requests/chat_sessions_spec.rb`,
   `spec/services/chat_sessions/build_system_prompt_spec.rb`.
   *Code:* `app/javascript/controllers/chat_controller.js`,
   `app/javascript/controllers/chat_popup_controller.js`,
   `app/views/layouts/application.html.erb`,
+  `app/views/chat_sessions/_popup.html.erb`,
   `app/javascript/lib/safe_markdown.js`,
   `app/services/chat_sessions/build_system_prompt.rb`.
 

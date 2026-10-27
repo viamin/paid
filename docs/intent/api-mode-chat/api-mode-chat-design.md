@@ -124,7 +124,9 @@ What ships today:
   an explicit "Keep Chat Open" preference in account-scoped local storage.
   A full-page navigation restores the same persisted conversation only while
   that preference is enabled; otherwise the popup starts closed. Explicit
-  dismissal persists closed without discarding the selected session.
+  dismissal persists closed without discarding the selected session. Its
+  actions menu labels the link to the session's full-page surface "Open full
+  chat" so the destination is clear alongside popup-specific actions.
 - A same-origin navigation initiated from either chat surface explicitly hands
   its active session to the global popup for the destination load. Chat links
   may use their normal `href` or a `data-chat-navigate-url` value; the browser
