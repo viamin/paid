@@ -1061,11 +1061,8 @@ RSpec.describe "Inbox" do
 
   # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
   it "renders manual_review detail with the reason and the inbox-scoped resume action" do
-    parked = create_manual_review_issue(
-      title: "Parked issue",
-      github_number: 509,
-      reason: "Structured output failed validation."
-    )
+    parked = create_manual_review_issue(title: "Parked issue", github_number: 509, reason: "Structured output failed validation.")
+    create(:agent_run, project: project, issue: parked, goal: "enhance_issue", status: "failed")
 
     get inbox_entry_path(
       entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
@@ -1084,6 +1081,19 @@ RSpec.describe "Inbox" do
     expect(form.at_css('input[name="return_to"]')["value"]).to eq(
       inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
     )
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-005
+  it "renders revision-bound reopen validation instead of an enhancement retry" do
+    reopened = create_manual_review_issue(
+      title: "Reopened issue", github_number: 519, reason: Issue::REOPEN_REVIEW_REQUIRED_REASON
+    )
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, reopened), kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Record reopen-intent validation")
+    expect(response.body).not_to include("Starting a new enhancement run is the only way")
   end
 
   # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011

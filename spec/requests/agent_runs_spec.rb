@@ -2581,12 +2581,14 @@ RSpec.describe "AgentRuns" do
 
   describe "POST /projects/:project_id/agent_runs/resume_manual_review" do
     let(:parked_issue) do
-      create(:issue,
+      issue = create(:issue,
         project: project,
         github_number: 89,
         title: "Fix flaky specs",
         paid_state: "manual_review",
         manual_review_reason: "Paid reached the configured limit of enhancement re-evaluation rounds.")
+      create(:agent_run, project: project, issue: issue, goal: "enhance_issue", status: "failed")
+      issue
     end
 
     context "when not authenticated" do
@@ -2617,6 +2619,8 @@ RSpec.describe "AgentRuns" do
 
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
+        parked_issue
+
         expect {
           post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
         }.to change(AgentRun, :count).by(1)
@@ -2626,6 +2630,38 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.goal).to eq("enhance_issue")
         expect(agent_run.trigger_type).to eq("manual")
         expect(response).to redirect_to(dashboard_path)
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005
+      it "records a revision-bound reopen decision before offering continuation" do
+        parked_issue.agent_runs.destroy_all
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        post resume_manual_review_project_agent_runs_path(project), params: {
+          issue_id: parked_issue.id,
+          reopen_review_confirmed: true,
+          reopen_reason: "The reopened regression still needs implementation."
+        }
+
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:alert]).to be_nil
+        event = AccountActivityEvent.where(action: "issue.reopen_review_validated").last
+        expect(event).to be_present
+        expect(event).to have_attributes(action: "issue.reopen_review_validated", subject: parked_issue, actor: user)
+        expect(event.metadata).to include("github_updated_at" => parked_issue.github_updated_at.utc.iso8601)
+        expect(parked_issue.reload).to be_reopen_review_pending
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005
+      it "does not create a second run while manual-review work is queued" do
+        create(:agent_run, project: project, issue: parked_issue, goal: "create_pr", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("already queued or in progress")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
       end
 
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D

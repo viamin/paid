@@ -22,8 +22,10 @@ automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
 An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+the original intent remains valid and whether new work is required. The Inbox
+records that decision with its actor, reason, and the current GitHub revision;
+a later GitHub revision requires a fresh decision. Only after that record may
+the Inbox offer implementation continuation.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

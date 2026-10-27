@@ -1,10 +1,21 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec OPERATOR-INBOX-002D @spec ISSUE-REOPEN-REVIEW-005 %>
+<% recovery = Issues::ManualReviewRecovery.call(issue: entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.cause == :reopen_review %>
+        This issue was reopened after closure. Record a revision-bound intent decision before starting any new work.
+      <% elsif recovery.cause == :dependency %>
+        This issue is waiting for its unresolved dependency. Resolving or acknowledging another concern does not waive that dependency.
+      <% elsif recovery.cause == :scanner_recurrence %>
+        A scanner-confirmed recurrence needs remediation recovery, not issue enhancement.
+      <% elsif recovery.cause == :active_work %>
+        Work is already queued or running. Reconcile that run before submitting another recovery action.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
+      <% elsif recovery.cause == :unknown %>
+        Paid retained the recorded manual-review provenance, but cannot safely classify a recovery action.
       <% else %>
         Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
       <% end %>
@@ -41,8 +52,31 @@
           selected_kind: selected_kind %>
   <% end %>
 
+  <% if recovery.cause == :dependency %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <h3 class="font-semibold">Unresolved dependency</h3>
+      <p class="mt-1">Waiting on <%= recovery.dependencies.join(", ") %>. GitHub synchronization reevaluates this hold when the dependency resolves.</p>
+    </div>
+  <% elsif recovery.cause == :active_work %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <p>Run #<%= recovery.active_run.id %> is <%= recovery.active_run.status %>. Open it to reconcile the existing work.</p>
+      <%= link_to "Open existing run", project_agent_run_path(entry.project, recovery.active_run), class: "mt-2 inline-block font-medium text-indigo-700" %>
+    </div>
+  <% end %>
+
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && recovery.action == :record_reopen_decision %>
+      <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id), method: :post, class: "space-y-2", data: { turbo_frame: "_top" } do |form| %>
+        <%= hidden_field_tag :return_to, inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+        <label class="block text-sm font-medium text-gray-700"><%= form.check_box :reopen_review_confirmed %> I reviewed the original closure and current remaining scope.</label>
+        <%= form.text_field :reopen_reason, required: true, placeholder: "Decision and remaining scope for this revision", class: "rounded border-gray-300 text-sm" %>
+        <%= form.submit "Record reopen-intent validation", class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+      <% end %>
+    <% elsif policy(entry.project).run_agent? && recovery.action == :implementation %>
+      <%= button_to "Start implementation run", resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id), method: :post, params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) }, class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500", form: { data: { turbo_frame: "_top" } } %>
+    <% elsif policy(entry.project).run_agent? && recovery.action == :retry_source_run %>
+      <%= link_to "Open remediation runs", project_agent_runs_path(entry.project, q: { issue_id_eq: entry.issue.id }), class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+    <% elsif policy(entry.project).run_agent? && recovery.action == :enhance %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

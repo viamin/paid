@@ -470,7 +470,7 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -480,14 +480,34 @@ module Projects
         return
       end
 
-      create_enhance_issue_runs_and_redirect(
+      recovery = Issues::ManualReviewRecovery.call(issue: issue)
+      if recovery.active_run
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Run ##{recovery.active_run.id} is already queued or in progress; reconcile it before resuming this review."
+        return
+      end
+
+      case recovery.action
+      when :record_reopen_decision
+        record_reopen_review_decision(issue)
+      when :enhance
+        create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
         success_path: safe_return_target || dashboard_path,
         custom_prompt: nil,
         goal: "enhance_issue",
-        priority_tier: nil
-      )
+          priority_tier: nil
+        )
+      when :retry_source_run
+        redirect_to project_agent_runs_path(@project), alert: "Review the scanner recurrence and retry its remediation run from the run record."
+      when :implementation
+        redirect_to new_project_agent_run_path(@project, goal: "create_pr", issue_ids: [ issue.id ]),
+          notice: "Reopen intent was recorded for the current GitHub revision. Start an implementation run when ready."
+      else
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This manual-review cause is not safely recoverable automatically. Review the recorded provenance first."
+      end
     end
 
     # Operator-driven counterpart to
@@ -1130,6 +1150,23 @@ module Projects
       else
         "This issue is no longer waiting for manual review."
       end
+    end
+
+    def record_reopen_review_decision(issue)
+      confirmed = ActiveModel::Type::Boolean.new.cast(params[:reopen_review_confirmed])
+      reason = params[:reopen_reason].to_s.strip
+      unless confirmed && reason.present?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Confirm that you reviewed the prior closure and provide the remaining scope."
+        return
+      end
+
+      issue.project.account.account_activity_events.create!(
+        action: "issue.reopen_review_validated", actor: current_user, subject: issue,
+        metadata: { "reason" => reason, "github_updated_at" => issue.github_updated_at&.utc&.iso8601.to_s }
+      )
+      redirect_to safe_return_target || dashboard_path,
+        notice: "Reopen intent validation recorded for the current GitHub revision. Choose the supported continuation next."
     end
 
     def cancel_in_flight_execution_for_resume!

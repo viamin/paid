@@ -30,3 +30,13 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator acts on a
+  reopen-review Inbox entry, the system SHALL require an explicit original-
+  closure/current-scope decision and non-blank reason, persist it against the
+  current GitHub revision, and only then offer implementation continuation.
+  A queued or running run SHALL be surfaced for reconciliation instead of
+  creating a duplicate run.
+  *Tests:* `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Issues::ManualReviewRecovery`, `Projects::AgentRunsController`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
