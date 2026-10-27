@@ -32,6 +32,20 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
       .with(hash_including(type: "message_start", message_id: stream_message_id))
   end
 
+  it "does not resume a turn already classified as stalled" do
+    # @spec CHAT-TURN-LIFECYCLE-003
+    ChatTurn.create!(chat_session:, stream_message_id:, status: "stalled", last_activity_at: 16.minutes.ago)
+    allow(ChatSessions::SendMessage).to receive(:call)
+
+    described_class.perform_now(
+      chat_session_id: chat_session.id,
+      content: "Hello",
+      stream_message_id: stream_message_id
+    )
+
+    expect(ChatSessions::SendMessage).not_to have_received(:call)
+  end
+
   it "calls SendMessage and broadcasts message_complete with aggregate tokens" do
     assistant_msg = create(:chat_message, :assistant, chat_session: chat_session,
       tokens_input: 20, tokens_output: 10)

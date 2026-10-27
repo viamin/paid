@@ -13,7 +13,8 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     # @spec CHAT-API-002, CHAT-API-022
     chat_session = ChatSession.find(chat_session_id)
     turn = ChatTurn.find_by(stream_message_id: stream_message_id)
-    turn&.mark_streaming!
+    return if turn && !turn.mark_streaming!
+
     actor = chat_session.account.users.find(actor_id || chat_session.created_by_id)
     stream_name = "chat_session:#{chat_session.id}"
 

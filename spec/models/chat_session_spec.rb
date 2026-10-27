@@ -19,6 +19,7 @@ RSpec.describe ChatSession do
     it { is_expected.to belong_to(:runner).optional }
     it { is_expected.to belong_to(:created_by).class_name("User").optional }
     it { is_expected.to have_many(:messages).class_name("ChatMessage").dependent(:destroy) }
+    it { is_expected.to have_many(:chat_turns).dependent(:destroy) }
     it { is_expected.to have_many(:token_usages).dependent(:destroy) }
     it { is_expected.to have_many(:chat_session_projects).dependent(:destroy) }
     it { is_expected.to have_many(:projects).through(:chat_session_projects) }

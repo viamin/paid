@@ -10,7 +10,7 @@ class ChatSessions::DetectStalledTurnsJob < ApplicationJob
   def perform
     detected = 0
     TenantContext.with_system_access do
-      ChatTurn.stale_before(ChatTurn::STALL_THRESHOLD.ago).find_each do |turn|
+      ChatTurn.stale_before(ChatTurn.stall_threshold.ago).find_each do |turn|
         detected += 1 if ChatSessions::DetectStalledTurn.call(chat_turn: turn)
       end
     end
