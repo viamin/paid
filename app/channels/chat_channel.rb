@@ -35,13 +35,19 @@ class ChatChannel < ApplicationCable::Channel
       end
 
       stream_message_id = SecureRandom.uuid
+      turn = @chat_session.chat_turns.create!(
+        initiated_by: current_user,
+        stream_message_id: stream_message_id,
+        activity_at: Time.current
+      )
       broadcast_event("message_start", { message_id: stream_message_id, model: @chat_session.model })
 
       ChatSessions::ProcessMessageJob.perform_later(
         chat_session_id: @chat_session.id,
         actor_id: current_user.id,
         content: content,
-        stream_message_id: stream_message_id
+        stream_message_id: stream_message_id,
+        chat_turn_id: turn.id
       )
     end
   rescue StandardError => e

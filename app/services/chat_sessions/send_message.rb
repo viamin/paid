@@ -15,12 +15,12 @@ module ChatSessions
   class SendMessage
     include FallbackLoop
 
-    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
+    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id, :chat_turn,
       :transport_attempt_message
 
     MAX_CONTENT_LENGTH = 12_000
 
-    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
+    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil, chat_turn: nil)
       @chat_session = chat_session
       @actor = actor
       @content = content
@@ -28,6 +28,7 @@ module ChatSessions
       @on_message_persisted = on_message_persisted
       @llm_client = llm_client
       @stream_message_id = stream_message_id
+      @chat_turn = chat_turn
     end
 
     def self.call(...)
@@ -42,11 +43,16 @@ module ChatSessions
       check_token_limit!
       resume_session_if_needed!
 
+      ensure_turn!
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
       update_session_activity
+      chat_turn.complete!
       assistant_message
+    rescue StandardError => error
+      chat_turn&.fail!(classification: failure_classification(error))
+      raise
     end
 
     private
@@ -113,8 +119,27 @@ module ChatSessions
       @transport_attempt_message = existing_user_message || create_user_message
 
       chat_session.generate_title_from_content!
+      chat_turn.record_activity!(transport_attempt_message)
       on_message_persisted&.call(transport_attempt_message)
       transport_attempt_message
+    end
+
+    def ensure_turn!
+      return chat_turn if chat_turn
+
+      @chat_turn = chat_session.chat_turns.create!(
+        initiated_by: actor,
+        stream_message_id: stream_message_id || SecureRandom.uuid,
+        status: "streaming",
+        activity_at: Time.current
+      )
+    end
+
+    def failure_classification(error)
+      return "rate_limited" if error.is_a?(AgentHarness::RateLimitError)
+      return "provider_error" if error.is_a?(AgentHarness::Error)
+
+      "infrastructure"
     end
 
     # A restarted job retains its stream id. Reusing the original user row
