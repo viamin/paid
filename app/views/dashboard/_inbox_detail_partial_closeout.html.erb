@@ -44,6 +44,7 @@
           Status: <span class="font-medium"><%= shadow_evaluation.status %></span> ·
           labels <%= shadow_evaluation.labels.where(state: "labeled").count %>/<%= shadow_evaluation.corpus.case_ids.length %>
           (skipped <%= shadow_evaluation.labels.where(state: "skipped").count %>).
+          Reviewer progress <%= shadow_evaluation.runs.where.not(verdict: "not_evaluated").count %>/<%= shadow_evaluation.corpus.case_ids.length %> evaluated.
           Repeated opens resume the same evaluation for its evidence generation.
         </p>
         <div class="flex flex-wrap items-center gap-3">
@@ -51,9 +52,9 @@
                 project_shadow_evaluation_path(entry.project, shadow_evaluation, **inbox_context),
                 data: { turbo_frame: "_top" },
                 class: "inline-flex items-center rounded-md bg-violet-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-violet-500" %>
-          <% if shadow_evaluation.completed? || shadow_evaluation.failed? %>
+          <% if shadow_evaluation.completed? || shadow_evaluation.failed? || shadow_evaluation.partial? || shadow_evaluation.cancelled? %>
             <span class="text-xs <%= shadow_evaluation.completed? ? "text-green-700" : "text-red-700" %>">
-              <%= shadow_evaluation.completed? ? "reviewer execution completed" : "reviewer execution failed — retry from the evaluation screen" %>
+              <%= shadow_evaluation.completed? ? "reviewer execution completed" : "reviewer execution #{shadow_evaluation.status} — retry or resume from the evaluation screen" %>
             </span>
           <% end %>
         </div>

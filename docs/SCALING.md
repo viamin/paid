@@ -131,8 +131,8 @@ Total web threads = `WEB_CONCURRENCY × RAILS_MAX_THREADS`.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `GOOD_JOB_EXECUTION_MODE` | `async_server` | `async_server` (in-process) or `external` (dedicated worker) |
-| `GOOD_JOB_MAX_THREADS` | `11` | Total job worker threads |
-| `GOOD_JOB_QUEUES` | `default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1` | Per-queue thread caps |
+| `GOOD_JOB_MAX_THREADS` | `12` | Total job worker threads |
+| `GOOD_JOB_QUEUES` | `default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1;shadow_evaluation:1` | Per-queue thread caps |
 | `GOOD_JOB_POLL_INTERVAL` | `3` | Seconds between DB polls |
 | `GOOD_JOB_SHUTDOWN_TIMEOUT` | `25` | Graceful shutdown timeout (seconds) |
 | `GOOD_JOB_ENABLE_CRON` | `true` | Enable cron-scheduled jobs |
@@ -229,8 +229,8 @@ All processes run on one host. GoodJob runs in-process with the web server.
 WEB_CONCURRENCY=1
 RAILS_MAX_THREADS=3
 GOOD_JOB_EXECUTION_MODE=async_server
-GOOD_JOB_MAX_THREADS=6
-GOOD_JOB_QUEUES=default:2;maintenance:1;metrics:1;knowledge:1;low_priority:1
+GOOD_JOB_MAX_THREADS=7
+GOOD_JOB_QUEUES=default:2;maintenance:1;metrics:1;knowledge:1;low_priority:1;shadow_evaluation:1
 GOOD_JOB_POLL_INTERVAL=5
 TEMPORAL_WORKFLOW_SLOTS=10
 TEMPORAL_ACTIVITY_SLOTS=4
@@ -278,8 +278,8 @@ GoodJob runs as a separate process. Consider splitting the database to its own h
 WEB_CONCURRENCY=2
 RAILS_MAX_THREADS=5
 GOOD_JOB_EXECUTION_MODE=external
-GOOD_JOB_MAX_THREADS=10
-GOOD_JOB_QUEUES=default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1
+GOOD_JOB_MAX_THREADS=11
+GOOD_JOB_QUEUES=default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1;shadow_evaluation:1
 GOOD_JOB_POLL_INTERVAL=3
 TEMPORAL_WORKFLOW_SLOTS=20
 TEMPORAL_ACTIVITY_SLOTS=8
@@ -333,7 +333,7 @@ WEB_CONCURRENCY=auto
 RAILS_MAX_THREADS=5
 GOOD_JOB_EXECUTION_MODE=external
 GOOD_JOB_MAX_THREADS=20
-GOOD_JOB_QUEUES=default:6;maintenance:4;metrics:4;knowledge:4;low_priority:2
+GOOD_JOB_QUEUES=default:6;maintenance:4;metrics:4;knowledge:4;low_priority:1;shadow_evaluation:1
 GOOD_JOB_POLL_INTERVAL=1
 TEMPORAL_WORKFLOW_SLOTS=50
 TEMPORAL_ACTIVITY_SLOTS=16

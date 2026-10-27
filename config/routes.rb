@@ -367,6 +367,7 @@ Rails.application.routes.draw do
         post :freeze
         post :revise
         post :execute
+        post :cancel
       end
     end
     # Facet-confidence closeout evaluation (#4596): blinded reference

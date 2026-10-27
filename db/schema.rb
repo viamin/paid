@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_26_194943) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_27_060229) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2467,10 +2467,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_26_194943) do
   end
 
   create_table "intent_conformance_shadow_evaluations", comment: "Solo-maintainer RDR-067 shadow evaluation: one labeling session per evidence generation (project, purpose, frozen corpus manifest digest) with blinded reference labels, executed reviewer runs, and the reproducible report (#4594).", force: :cascade do |t|
+    t.datetime "cancellation_requested_at", comment: "Cooperative stop requested by an authorized operator; observed between reviewer cases."
+    t.datetime "cancelled_at", comment: "When a queued or running execution stopped without fabricating remaining case results."
     t.datetime "completed_at", comment: "When every case had an executed reviewer verdict."
     t.datetime "created_at", null: false
     t.bigint "created_by_id", null: false, comment: "Authenticated operator who started the evaluation."
     t.datetime "execute_started_at", comment: "When reviewer execution last started."
+    t.datetime "execution_enqueued_at", comment: "When the authorized asynchronous reviewer execution was queued."
     t.datetime "labels_frozen_at", comment: "Set by the explicit finish action; reviewer outputs stay hidden until then."
     t.text "last_failure_reason", comment: "Why execution ended (or partially ended) without evaluated verdicts for every case."
     t.string "manifest_commit", default: "", null: false, comment: "Git commit SHA of the frozen corpus manifest."
@@ -2482,7 +2485,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_26_194943) do
     t.jsonb "report", default: {}, null: false, comment: "Structured reproducible report (identities, labels, verdicts, confusion counts, provenance)."
     t.text "report_markdown", comment: "Rendered markdown of the reproducible report."
     t.bigint "solo_maintainer_id", comment: "The single authenticated maintainer declared for a solo evaluation; only this user labels, revises, and freezes."
-    t.string "status", default: "labeling", null: false, comment: "labeling → frozen → executing → completed | failed (see IntentConformanceShadowEvaluation::STATUSES)."
+    t.string "status", default: "labeling", null: false, comment: "labeling → frozen → queued → running → partial | failed | cancelled | completed (see IntentConformanceShadowEvaluation::STATUSES)."
     t.datetime "updated_at", null: false
     t.index ["created_by_id"], name: "index_intent_conformance_shadow_evaluations_on_created_by_id"
     t.index ["project_id", "purpose", "manifest_digest"], name: "idx_shadow_evaluations_one_per_evidence_generation", unique: true, comment: "Repeated Start/Resume actions reuse the same evaluation for the same evidence generation."

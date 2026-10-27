@@ -324,6 +324,20 @@ RSpec.describe TenantSetting do
       expect(setting).to be_valid
     end
 
+    it "serves the platform-required queue for a stored allocation that predates it" do
+      setting = build(:tenant_setting, worker_settings: { "good_job_queues" => "default:3;maintenance:2" })
+
+      expect(setting.effective_worker_settings["good_job_queues"])
+        .to eq("default:3;maintenance:2;shadow_evaluation:1")
+    end
+
+    it "persists the platform-required queue when a stored allocation predates it" do
+      setting = create(:tenant_setting, worker_settings: { "good_job_queues" => "default:3;maintenance:2" })
+
+      expect(setting.reload.worker_settings["good_job_queues"])
+        .to eq("default:3;maintenance:2;shadow_evaluation:1")
+    end
+
     it "normalizes integer values from string input" do
       setting = build(:tenant_setting, worker_settings: { "temporal_workflow_slots" => "25" })
       setting.valid?
@@ -476,7 +490,24 @@ RSpec.describe TenantSetting do
         env: { "GOOD_JOB_QUEUES" => "default:5;maintenance:3" },
         default: "default:3;maintenance:2"
       )
-      expect(result).to eq("default:5;maintenance:3")
+      expect(result).to eq("default:5;maintenance:3;shadow_evaluation:1")
+    end
+
+    it "serves the platform-required queue when the stored allocation predates it" do
+      account = create(:account)
+      create(:tenant_setting, account: account,
+        worker_settings: { "good_job_queues" => "default:3;maintenance:2" })
+
+      result = TenantContext.with(account) do
+        described_class.resolve_worker_setting(
+          "good_job_queues",
+          env_key: "GOOD_JOB_QUEUES",
+          env: { "GOOD_JOB_QUEUES" => "default:5;maintenance:3" },
+          default: "default:3;maintenance:2"
+        )
+      end
+
+      expect(result).to eq("default:3;maintenance:2;shadow_evaluation:1")
     end
   end
 end
