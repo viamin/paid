@@ -11,8 +11,8 @@ RSpec.describe LayeredVerification::Audits::Request do
     project = create(:project, account: user.account)
     obligation = create(:layered_verification_obligation, project:)
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
-    allow(project.client).to receive(:ref).with(project.full_name, "abc123")
-      .and_return(OpenStruct.new(object: OpenStruct.new(sha: "resolved-sha")))
+    allow(project.client).to receive(:commit).with(project.full_name, "abc123")
+      .and_return(OpenStruct.new(sha: "resolved-sha"))
 
     run = nil
     expect {
@@ -26,5 +26,21 @@ RSpec.describe LayeredVerification::Audits::Request do
     expect(run).to have_attributes(goal: "layered_verification_audit", issue: nil, status: "queued")
     expect(run).to have_attributes(base_commit_sha: "resolved-sha")
     expect(run.effective_prompt).to include("Layered-verification audit", "resolved-sha", "spec_to_code")
+    expect(run.external_metadata.dig("layered_verification", "budget", "max_minutes")).to eq(15)
+  end
+
+  it "rejects non-numeric and out-of-range budgets" do
+    user = create(:user, :owner)
+    project = create(:project, account: user.account)
+    obligation = create(:layered_verification_obligation, project:)
+    allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
+    allow(project.client).to receive(:commit).and_return(OpenStruct.new(sha: "resolved-sha"))
+
+    [ nil, "fifteen", 0, 121 ].each do |max_minutes|
+      expect {
+        described_class.call(project:, user:, obligation_ids: [ obligation.id ], target_revision: "main",
+          budget: { "max_minutes" => max_minutes }, selections: { obligation.id => { "selected_checks" => [ "spec_to_code" ] } })
+      }.to raise_error(described_class::InvalidBudgetError, "budget must be between 1 and 120 minutes")
+    end
   end
 end

@@ -377,6 +377,7 @@ module Projects
     rescue LayeredVerification::AuditAccess::FeatureDisabledError,
            LayeredVerification::AuditAccess::UnauthorizedError,
            LayeredVerification::Audits::Request::EmptyScopeError,
+           LayeredVerification::Audits::Request::InvalidBudgetError,
            LayeredVerification::Audits::Request::InvalidTargetRevisionError,
            ActiveRecord::RecordInvalid,
            ArgumentError => error

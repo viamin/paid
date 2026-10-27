@@ -53,7 +53,9 @@ RSpec.describe "Inbox" do
   before do
     sign_in user
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive(:ref).and_return(OpenStruct.new(object: OpenStruct.new(sha: "abc123")))
+    allow(github_client).to receive_messages(
+      ref: OpenStruct.new(object: OpenStruct.new(sha: "abc123")), commit: OpenStruct.new(sha: "abc123")
+    )
   end
 
   def entry_id(entry_kind, record)

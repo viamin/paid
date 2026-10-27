@@ -24,8 +24,8 @@ RSpec.describe Tools::RequestLayeredVerificationAudit do
   before do
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive(:ref).with(project.full_name, "abc123")
-      .and_return(OpenStruct.new(object: OpenStruct.new(sha: "abc123")))
+    allow(github_client).to receive(:commit).with(project.full_name, "abc123")
+      .and_return(OpenStruct.new(sha: "abc123"))
   end
 
   it "uses post-dispatch confirmation so the human reviews the resolved preview" do
@@ -60,7 +60,7 @@ RSpec.describe Tools::RequestLayeredVerificationAudit do
 
   # @spec LAYERED-VERIFY-014
   it "rejects an unresolvable target revision before dispatch" do
-    allow(github_client).to receive(:ref).with(project.full_name, "missing")
+    allow(github_client).to receive(:commit).with(project.full_name, "missing")
       .and_raise(GithubClient::NotFoundError)
 
     expect {

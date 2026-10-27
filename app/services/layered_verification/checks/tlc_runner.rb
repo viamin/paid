@@ -18,11 +18,16 @@ module LayeredVerification
         return non_applicable("no declared TLA+ model/config pair") if module_path.blank? || config_path.blank?
 
         output, status = command_runner.call("tlc", "-config", config_path, module_path)
-        return completed(output) if output.include?("Model checking completed.")
+        return non_applicable("tlc binary is unavailable") if status == 127
+        return completed(output) if status.zero? && output.include?("Model checking completed.")
         return contradicted(output) if output.match?(/invariant.*violation|error: invariant/i)
 
         { execution_state: "execution_error", obligation_coverage: "unresolved", limitations: "tlc exited #{status}" }
       rescue Errno::ENOENT
+        non_applicable("tlc binary is unavailable")
+      rescue Docker::Error::ServerError => error
+        raise unless error.message.match?(/executable file not found|no such file or directory/i)
+
         non_applicable("tlc binary is unavailable")
       end
 

@@ -4,6 +4,20 @@ require "rails_helper"
 
 RSpec.describe LayeredVerification::Audits::SynthesizeCoverage do
   # @spec LAYERED-VERIFY-024
+  it "keeps mixed supported and unresolved selected results unresolved" do
+    audit = create(:agent_run, goal: "layered_verification_audit")
+    obligation = create(:layered_verification_obligation, project: audit.project)
+    create(:layered_verification_check_result, obligation:, agent_run: audit,
+      obligation_coverage: "supported", limitations: "bounded input")
+    create(:layered_verification_check_result, obligation:, agent_run: audit,
+      execution_state: "not_run", obligation_coverage: "unresolved", limitations: "tool unavailable")
+
+    coverage = described_class.call(agent_run: audit, obligations: [ obligation ])
+
+    expect(coverage.dig(obligation, :obligation_coverage)).to eq("unresolved")
+  end
+
+  # @spec LAYERED-VERIFY-024
   it "derives contradicted coverage and deduplicates a repeated cause into one finding" do
     audit = create(:agent_run, goal: "layered_verification_audit")
     obligation = create(:layered_verification_obligation, project: audit.project)

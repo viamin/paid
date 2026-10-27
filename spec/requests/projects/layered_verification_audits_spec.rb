@@ -28,10 +28,10 @@ RSpec.describe "Layered verification audits" do
     allow(FeatureFlags).to receive(:enabled?).and_call_original
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
     allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive(:ref).with(project.full_name, "main")
-      .and_return(OpenStruct.new(object: OpenStruct.new(sha: "a" * 40)))
-    allow(github_client).to receive(:ref).with(project.full_name, "a" * 40)
-      .and_return(OpenStruct.new(object: OpenStruct.new(sha: "a" * 40)))
+    allow(github_client).to receive(:commit).with(project.full_name, "main")
+      .and_return(OpenStruct.new(sha: "a" * 40))
+    allow(github_client).to receive(:commit).with(project.full_name, "a" * 40)
+      .and_return(OpenStruct.new(sha: "a" * 40))
   end
 
   # @spec LAYERED-VERIFY-010 LAYERED-VERIFY-013 LAYERED-VERIFY-014
@@ -61,6 +61,15 @@ RSpec.describe "Layered verification audits" do
     expect(project.agent_runs.last.external_metadata.dig(
       "layered_verification", "plan", obligation.id.to_s, "selected_checks"
     )).to eq([ "semantic_audit" ])
+    expect(github_client).to have_received(:commit).with(project.full_name, "a" * 40)
+  end
+
+  it "rejects an invalid budget before rendering the preview" do
+    post request_layered_verification_audit_project_agent_runs_path(project),
+      params: request_parameters.deep_merge(budget: { max_minutes: 0 })
+
+    expect(response).to redirect_to(project_path(project))
+    expect(flash[:alert]).to eq("budget must be between 1 and 120 minutes")
   end
 
   # @spec LAYERED-VERIFY-021

@@ -70,6 +70,7 @@ module Tools
 
     def preview(project:, obligations:, target_revision:, budget:, selections:)
       target_revision = LayeredVerification::Audits::Request.resolve_target_revision!(project:, target_revision:)
+      budget = LayeredVerification::Audits::Request.resolve_budget!(budget)
       { "project_id" => project.id, "obligation_ids" => obligations.ids, "target_revision" => target_revision,
         "budget" => budget, "plan" => LayeredVerification::Plans::Build.call(obligations:, selections:) }
     end

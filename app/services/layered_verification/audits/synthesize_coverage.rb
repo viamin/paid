@@ -32,7 +32,7 @@ module LayeredVerification
 
       def coverage_for(results)
         return "contradicted" if results.any? { |result| result.obligation_coverage == "contradicted" }
-        return "supported" if results.any? { |result| result.obligation_coverage == "supported" }
+        return "supported" if results.any? && results.all? { |result| result.obligation_coverage == "supported" }
 
         "unresolved"
       end

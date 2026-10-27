@@ -5,16 +5,30 @@ module LayeredVerification
     # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-014
     class Request
       class EmptyScopeError < StandardError; end
+      class InvalidBudgetError < StandardError; end
       class InvalidTargetRevisionError < StandardError; end
 
+      MIN_BUDGET_MINUTES = 1
+      MAX_BUDGET_MINUTES = 120
+
       def self.call(...) = new(...).call
+
+      def self.resolve_budget!(budget)
+        value = budget.to_h["max_minutes"] || budget.to_h[:max_minutes]
+        minutes = Integer(value, exception: false)
+        unless minutes&.between?(MIN_BUDGET_MINUTES, MAX_BUDGET_MINUTES)
+          raise InvalidBudgetError, "budget must be between 1 and 120 minutes"
+        end
+
+        { "max_minutes" => minutes }
+      end
 
       def self.resolve_target_revision!(project:, target_revision:)
         revision = target_revision.to_s
         raise InvalidTargetRevisionError, "target revision is required" if revision.blank?
         raise InvalidTargetRevisionError, "target revision must be 40 characters or fewer" if revision.length > 40
 
-        project.client.ref(project.full_name, revision).object.sha.to_s.presence ||
+        project.client.commit(project.full_name, revision).sha.to_s.presence ||
           raise(InvalidTargetRevisionError, "target revision could not be resolved")
       rescue GithubClient::Error, Faraday::Error
         raise InvalidTargetRevisionError, "target revision could not be resolved"
@@ -32,6 +46,7 @@ module LayeredVerification
       def call
         AuditAccess.authorize!(user:, project:)
         raise EmptyScopeError, "select at least one obligation" if obligations.empty?
+        validate_budget!
         validate_target_revision!
 
         run = AgentRun.create!(run_attributes)
@@ -64,6 +79,10 @@ module LayeredVerification
 
       def validate_target_revision!
         @target_revision = self.class.resolve_target_revision!(project:, target_revision:)
+      end
+
+      def validate_budget!
+        @budget = self.class.resolve_budget!(budget)
       end
     end
   end

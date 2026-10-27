@@ -77,8 +77,14 @@ module LayeredVerification
         obligation = obligations_by_id[attributes["obligation_id"].to_i]
         selected_check = attributes["selected_check"].to_s
         return unless obligation && selected_for?(obligation, selected_check)
+        return if recorded_result?(obligation, selected_check)
 
         result_attributes(obligation, selected_check, attributes)
+      end
+
+      def recorded_result?(obligation, selected_check)
+        LayeredVerificationCheckResult.where(agent_run:, obligation:)
+          .where("agent_reported ->> 'selected_check' = ?", selected_check).exists?
       end
 
       def result_attributes(obligation, selected_check, attributes)
