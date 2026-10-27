@@ -65,6 +65,19 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::FreezeLabels do
     expect(evaluation.report_markdown).to include("FC-CORPUS-01").and include("80/80")
   end
 
+  # @spec FACET-CONFIDENCE-022
+  it "resolves the typed evaluation prerequisite after freezing the completed set" do
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      metadata: { "workflow" => Inbox::ActionRequiredGuidance::FACET_CONFIDENCE_CLOSEOUT_EVALUATION })
+    label_all!
+
+    result = described_class.call(evaluation: evaluation, actor: owner)
+
+    expect(result).to be_success
+    expect(notification.reload.resolved_at).to be_present
+  end
+
   it "measures divergences and citation violations instead of hiding them" do
     evaluation.corpus.cases.each do |corpus_case|
       case_id = corpus_case.fetch("id")

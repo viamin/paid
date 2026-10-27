@@ -85,6 +85,7 @@ module Inbox
       :title_text,
       :action_url,
       :guidance,
+      :action_required_guidance,
       :closeout_status,
       keyword_init: true
     ) do
@@ -572,13 +573,14 @@ module Inbox
       end
     end
 
-    # @spec OPERATOR-INBOX-002B
+    # @spec OPERATOR-INBOX-002B @spec FACET-CONFIDENCE-022
     def action_required_entries
       visible_blocking_notifications.filter_map do |notification|
         project, issue = notification_context(notification)
         next unless project
         next if project_filter_excludes?(project)
 
+        typed_guidance = Inbox::ActionRequiredGuidance.call(notification:, issue:)
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
           kind: ACTION_REQUIRED_KIND,
@@ -587,9 +589,10 @@ module Inbox
           record: notification,
           waiting_since: notification.created_at,
           questions: [],
-          tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
+          tasks: typed_guidance ? [] : remediation_steps_for(notification),
+          summary_text: typed_guidance&.explanation || notification.metadata["recommended_action"].presence || notification.description,
+          title_text: typed_guidance&.title || notification.title,
+          action_required_guidance: typed_guidance,
           action_url: notification.action_url
         )
       end

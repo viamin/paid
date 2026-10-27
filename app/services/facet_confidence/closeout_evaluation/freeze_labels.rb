@@ -11,7 +11,7 @@ module FacetConfidence
     # persisting a judgment — so the report is compiled from exactly the
     # committed label set, exactly once. Frozen expectations become visible
     # only from here on.
-    # @spec FACET-CONFIDENCE-021
+    # @spec FACET-CONFIDENCE-021 @spec FACET-CONFIDENCE-022
     class FreezeLabels
       Result = Data.define(:success, :error, :evaluation) do
         def success? = success
@@ -58,6 +58,7 @@ module FacetConfidence
 
         @evaluation.update!(status: "frozen", labels_frozen_at: Time.current)
         CompileReport.call(evaluation: @evaluation)
+        resolve_evaluation_prerequisite
         Result.new(success: true, error: nil, evaluation: @evaluation)
       end
 
@@ -66,6 +67,15 @@ module FacetConfidence
         unlabeled = @evaluation.corpus.case_ids.count - done_ids.length
         skipped = @evaluation.labels.where(state: "skipped").count
         [ unlabeled, skipped ]
+      end
+
+      def resolve_evaluation_prerequisite
+        Notification.active.where(subject: @evaluation.issue,
+          source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE).find_each do |notification|
+          next unless notification.metadata["workflow"] == Inbox::ActionRequiredGuidance::FACET_CONFIDENCE_CLOSEOUT_EVALUATION
+
+          Notifications::Resolve.call(account: notification.account, source: notification.source, subject: notification.subject, user: notification.user)
+        end
       end
 
       def log_frozen

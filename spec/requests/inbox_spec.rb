@@ -243,6 +243,28 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec FACET-CONFIDENCE-022
+  it "translates a typed evaluation escalation and routes its primary action back through the Inbox" do
+    issue = create(:issue, project: project, github_number: 4323)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Remediation Required — Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.",
+      description: "Internal workflow prose that must not be shown to the operator.",
+      metadata: { "workflow" => Inbox::ActionRequiredGuidance::FACET_CONFIDENCE_CLOSEOUT_EVALUATION })
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort: "newest")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Human evaluation needed", "Start evaluation")
+    expect(response.body).to include("independently reviews every frozen test case")
+    expect(response.body).not_to include("blinded reference judgments", "facet-confidence corpus", "Internal workflow prose")
+    expect(response.body).to include(new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_sort: "newest",
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)).gsub("&", "&amp;"))
+    expect(response.body).to include("View Issue")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a

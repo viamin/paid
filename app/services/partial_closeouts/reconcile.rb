@@ -5,6 +5,7 @@ module PartialCloseouts
   class Reconcile
     MAX_GAPS = 10
     VALID_REFERENCE_KINDS = %w[policy evidence].freeze
+    WORKFLOWS = [ Inbox::ActionRequiredGuidance::FACET_CONFIDENCE_CLOSEOUT_EVALUATION ].freeze
 
     def self.call(...)
       new(...).call
@@ -51,6 +52,8 @@ module PartialCloseouts
           %w[key revision label].all? { |field| reference[field].to_s.strip.present? }
         raise ArgumentError, "human gap reference identity is invalid" unless valid
       end
+      raise ArgumentError, "human gap workflow is invalid" if gap["workflow"].present? && !WORKFLOWS.include?(gap["workflow"])
+
       selection = gap["policy_selection"]
       return if selection.nil?
 
@@ -220,6 +223,8 @@ module PartialCloseouts
       identity = Digest::SHA256.hexdigest(JSON.generate(identities))
       metadata = { "prerequisite_identity" => identity, "references" => references,
                    "prerequisites" => human_gaps.map { |gap| prerequisite_occurrence(gap) } }
+      workflows = human_gaps.filter_map { |gap| gap["workflow"] }.uniq
+      metadata["workflow"] = workflows.sole if workflows.one? && human_gaps.one?
       submissions = reconciled_evidence_submissions(previous, metadata.fetch("prerequisites"))
       metadata["evidence_submissions"] = submissions if submissions.any?
       policy_selection = replacement_policy_action(human_gaps)
@@ -255,7 +260,7 @@ module PartialCloseouts
     end
 
     def prerequisite_identity(gap)
-      identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection"))
+      identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection", "workflow"))
       identity["references"] = Array(gap["references"])
         .map { |reference| canonicalize(reference) }
         .sort_by { |reference| JSON.generate(reference) }
@@ -265,7 +270,7 @@ module PartialCloseouts
     def prerequisite_occurrence(gap)
       { "identity" => Digest::SHA256.hexdigest(JSON.generate(prerequisite_identity(gap))),
         "criterion" => gap["criterion"], "references" => Array(gap["references"]),
-        "source_revision" => source_revision }
+        "source_revision" => source_revision, "workflow" => gap["workflow"] }.compact
     end
 
     def source_revision
