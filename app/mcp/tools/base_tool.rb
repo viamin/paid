@@ -99,6 +99,23 @@ module Tools
       false
     end
 
+    # Whether re-dispatching this tool after an interrupted chat turn is safe.
+    #
+    # Read-only tools can simply run again. A write tool has to opt in
+    # explicitly, because a tool call that was dispatched without a persisted
+    # result may already have had its effect, and replaying it would repeat
+    # that effect.
+    def self.replay_safe?
+      !write_operation?
+    end
+
+    # Whether this tool normally runs long enough that a chat turn waiting on
+    # it is not stalled. Defaults to false; a tool opts in when its normal
+    # execution time can exceed the chat stall threshold.
+    def self.long_running?
+      false
+    end
+
     def self.available_to?(user:)
       user.present?
     end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_27_210758) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -884,6 +884,50 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["rate_limited_until"], name: "index_chat_sessions_on_rate_limited_until"
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
+  end
+
+  create_table "chat_turn_events", comment: "Audit trail for chat turn stalls and recovery attempts.", force: :cascade do |t|
+    t.bigint "actor_id", comment: "User who triggered the event, when a human did."
+    t.bigint "chat_session_id", null: false
+    t.bigint "chat_turn_id", null: false
+    t.datetime "created_at", null: false
+    t.string "event_type", null: false, comment: "detected, recovery_attempted, recovery_succeeded, recovery_failed, user_action, duplicate_prevented, or abandoned."
+    t.jsonb "metadata", default: {}, null: false, comment: "Non-secret event details."
+    t.string "outcome", comment: "Outcome of the recorded event: succeeded, failed, blocked, or duplicate."
+    t.datetime "updated_at", null: false
+    t.index ["chat_session_id", "created_at"], name: "index_chat_turn_events_on_chat_session_id_and_created_at"
+    t.index ["chat_session_id"], name: "index_chat_turn_events_on_chat_session_id"
+    t.index ["chat_turn_id", "created_at"], name: "index_chat_turn_events_on_chat_turn_id_and_created_at"
+    t.index ["chat_turn_id"], name: "index_chat_turn_events_on_chat_turn_id"
+    t.index ["event_type", "created_at"], name: "index_chat_turn_events_on_event_type_and_created_at"
+  end
+
+  create_table "chat_turns", comment: "Durable lifecycle record for one interactive chat turn.", force: :cascade do |t|
+    t.datetime "abandoned_at", comment: "When the stalled turn was abandoned."
+    t.bigint "chat_session_id", null: false
+    t.bigint "checkpoint_message_id", comment: "Last durable message the turn produced."
+    t.datetime "completed_at", comment: "When the turn reached a terminal outcome."
+    t.datetime "created_at", null: false
+    t.datetime "detected_at", comment: "When the stall was detected."
+    t.string "failure_class", comment: "Last failure class observed on the turn."
+    t.datetime "last_activity_at", null: false, comment: "When the turn last recorded durable activity."
+    t.integer "lock_version", default: 0, null: false, comment: "Optimistic-locking revision token for recovery requests."
+    t.jsonb "metadata", default: {}, null: false, comment: "Non-secret turn signals, e.g. client_disconnect."
+    t.integer "recovery_attempts", default: 0, null: false, comment: "Recovery attempts the turn has consumed."
+    t.string "recovery_key", comment: "Idempotency key of the in-flight recovery attempt."
+    t.string "recovery_status", default: "none", null: false, comment: "Recovery state: none, in_progress, succeeded, failed."
+    t.string "stall_classification", comment: "Why the turn was classified as stalled: infrastructure_failure, provider_timeout, budget_exhausted, client_disconnect, or model_stop."
+    t.datetime "stalled_at", comment: "When the turn was marked stalled."
+    t.datetime "started_at", null: false, comment: "When the turn opened."
+    t.string "status", default: "pending", null: false, comment: "Turn lifecycle: pending, streaming, completed, failed, stalled, abandoned."
+    t.datetime "updated_at", null: false
+    t.bigint "user_message_id", comment: "User message that opened the turn."
+    t.index ["chat_session_id", "status"], name: "index_chat_turns_on_chat_session_id_and_status"
+    t.index ["chat_session_id", "user_message_id"], name: "index_chat_turns_on_chat_session_id_and_user_message_id"
+    t.index ["chat_session_id"], name: "index_chat_turns_on_chat_session_id"
+    t.index ["checkpoint_message_id"], name: "index_chat_turns_on_checkpoint_message_id"
+    t.index ["status", "last_activity_at"], name: "index_chat_turns_on_status_and_last_activity_at"
+    t.index ["user_message_id"], name: "index_chat_turns_on_user_message_id"
   end
 
   create_table "clarifying_question_progresses", comment: "Durable per-question exploration progress and attributable answer evidence.", force: :cascade do |t|
@@ -4133,6 +4177,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["account_id"], name: "index_service_containers_on_account_id"
   end
 
+  create_table "solid_cable_messages", force: :cascade do |t|
+    t.binary "channel", null: false
+    t.bigint "channel_hash", null: false
+    t.datetime "created_at", null: false
+    t.binary "payload", null: false
+    t.index ["channel"], name: "index_solid_cable_messages_on_channel"
+    t.index ["channel_hash"], name: "index_solid_cable_messages_on_channel_hash"
+    t.index ["created_at"], name: "index_solid_cable_messages_on_created_at"
+  end
+
   create_table "strategies", comment: "Scoped orchestration strategies selected for workflow decisions.", force: :cascade do |t|
     t.bigint "account_id", comment: "Owning account for account-scoped and project-scoped strategies."
     t.datetime "created_at", null: false
@@ -4679,6 +4733,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "chat_turn_events", "chat_sessions", on_delete: :cascade
+  add_foreign_key "chat_turn_events", "chat_turns", on_delete: :cascade
+  add_foreign_key "chat_turns", "chat_messages", column: "checkpoint_message_id", on_delete: :nullify
+  add_foreign_key "chat_turns", "chat_messages", column: "user_message_id", on_delete: :nullify
+  add_foreign_key "chat_turns", "chat_sessions"
   add_foreign_key "clarifying_question_progresses", "accounts"
   add_foreign_key "clarifying_question_progresses", "chat_sessions"
   add_foreign_key "clarifying_question_progresses", "issues"

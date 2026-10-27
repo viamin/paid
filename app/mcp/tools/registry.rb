@@ -179,6 +179,21 @@ module Tools
         find(name)&.auto_approve_eligible? ? true : false
       end
 
+      # Whether the tool may be dispatched again after an interrupted chat
+      # turn without repeating its side effect. Delegates to each tool's own
+      # +replay_safe?+ declaration.
+      # @spec CHAT-TURN-STALL-006
+      def replay_safe?(name)
+        find(name)&.replay_safe? ? true : false
+      end
+
+      # Whether the tool normally runs long enough that a chat turn waiting on
+      # it is not stalled.
+      # @spec CHAT-TURN-STALL-004
+      def long_running?(name)
+        find(name)&.long_running? ? true : false
+      end
+
       def resolve_confirmation(name:, decision:, pending_result:, user:, session:)
         registry = registry_for(name)
         raise ArgumentError, "Unknown tool: #{name}" unless registry
