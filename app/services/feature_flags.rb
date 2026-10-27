@@ -144,6 +144,8 @@ class FeatureFlags
     end
 
     def disable!(flag_name, project: nil, actor: nil)
+      return Automation::RolloutGuard.disable!(project:) if flag_name.to_sym == :automation_phases && project
+
       resolved_actor = resolve_actor(project:, actor:)
 
       unless resolved_actor

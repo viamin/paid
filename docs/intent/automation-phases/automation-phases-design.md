@@ -33,7 +33,10 @@ from a coding or later start.
 every policy decision reads it through `Automation::RolloutGuard.enabled?`
 (`FeatureFlags.enabled?(:automation_phases, project:)`). While off,
 `Automation::EffectivePolicy` returns a permitted `legacy_policy` decision, so
-existing execution and Inbox behavior is untouched.
+existing execution and Inbox behavior is untouched. The project-scoped
+flag-management path delegates disabling to `Automation::RolloutGuard.disable!`:
+it locks the project and rejects rollback while an active continuation grant
+exists, so the legacy policy never has to interpret an outstanding grant.
 
 ## Project phase defaults
 
