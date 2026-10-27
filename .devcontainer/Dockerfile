@@ -139,7 +139,7 @@ COPY Gemfile.lock /tmp/paid-devcontainer/Gemfile.lock
 RUN BUNDLER_VERSION="$(awk '/^BUNDLED WITH$/{getline; gsub(/^ +/, "", $0); print $0}' /tmp/paid-devcontainer/Gemfile.lock)" \
   && test -n "${BUNDLER_VERSION}" \
   && gem install "bundler:${BUNDLER_VERSION}" \
-  && chmod -R g+w /usr/local/rvm/gems/default
+  && chown -R vscode:vscode "$(gem env gemdir)"
 
 # Ensure the docker group exists so the vscode user can access the Docker socket
 RUN groupadd -f docker && usermod -aG docker vscode
