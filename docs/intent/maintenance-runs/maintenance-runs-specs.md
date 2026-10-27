@@ -158,4 +158,54 @@
       back to its source maintenance report and finding.
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
-      an explicit user selection.
+      either an explicit user selection or an eligible MAINT-084 per-run
+      auto-queue election.
+
+## Optimization Recipe and Bounded Auto-Queue Policy
+
+- [ ] **MAINT-080**: The system shall represent optimization types as
+      extensible maintenance catalog/recipe entries, initially including
+      performance, design/architecture, code duplication, security hardening,
+      cost/resource efficiency, maintainability/readability, and test
+      coverage/quality; an unrecognized selection shall start a
+      custom-objective maintenance run rather than fail.
+- [ ] **MAINT-081**: The system shall expose the optimization catalog and
+      optional type selection with equivalent authorization in the UI,
+      authenticated API, and MCP surfaces, compose it with optional free-text
+      scope and guidance, and persist the selected type in the immutable run
+      snapshot across retries.
+- [ ] **MAINT-082**: The system shall record each optimization recipe's
+      objective, investigation instructions, applicable evidence collectors,
+      validation guidance, and metric hints; it shall disclose prompt-only or
+      incomplete coverage honestly and shall not treat a metric hint or raw
+      tool output as proof of a recommendation.
+- [ ] **MAINT-083**: Where an optimization run has no explicit auto-queue
+      election at start, the system shall retain report-only behavior and
+      shall require MAINT-070 manual selection for every repair.
+- [ ] **MAINT-084**: The system shall permit an authorized user to elect
+      optimization auto-queue only at run start, with a confidence policy and
+      explicit per-repair cost/time caps persisted in the immutable run
+      snapshot; neither a recipe nor a tenant setting shall elect auto-queue
+      by default.
+- [ ] **MAINT-085**: The system shall obtain each elected confidence-policy
+      assessment through `agent_harness` as structured evidence and shall not
+      calculate, calibrate, or semantically reinterpret confidence in
+      application code.
+- [ ] **MAINT-086**: The system shall queue an elected optimization repair
+      only when the agent-harness assessment satisfies the elected policy and
+      deterministic checks confirm project authorization, a non-security
+      category, explicit per-repair budget availability, and no existing
+      repair for the canonical finding identity.
+- [ ] **MAINT-087**: If an elected auto-queued repair's target revision has
+      changed since its source report, then the system shall revalidate the
+      finding through the MAINT-070 repair path before applying its
+      recommendation; a failed or unavailable revalidation shall remain
+      visible on the report and shall not dispatch a repair.
+- [ ] **MAINT-088**: The system shall preserve source report and finding
+      provenance on every auto-queued repair, enforce its finding-bounded
+      scope and explicit budget, and preserve evidence when that budget is
+      exhausted.
+- [ ] **MAINT-089**: The system shall exclude security-hardening findings
+      from auto-queue and require MAINT-070 manual selection unless a
+      separately accepted security repair policy explicitly replaces this
+      requirement.

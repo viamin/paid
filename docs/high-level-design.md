@@ -335,7 +335,12 @@ repository investigations — focused, issue-less questions and durable,
 evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
 building a second provisioning path, and keeps investigation separate from
-any repair: a scan never mutates source code or opens a PR on its own.
+any repair: a scan never mutates source code or opens a PR on its own. An
+optimization-family run may only queue a bounded follow-up repair under a
+separately accepted, per-run pre-authorization policy; that narrow policy
+does not make maintenance scans generally self-repairing. Security findings
+remain manual-selection-only until a separate safety decision authorizes
+otherwise. The policy is draft intent, not rollout authorization.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending

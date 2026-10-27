@@ -137,6 +137,76 @@ All three surfaces are gated by the `maintenance_runs` guard (below); none
 of the three may admit a maintenance run while the guard is off for the
 project's tenant.
 
+## Optimization Recipe and Bounded Auto-Queue Policy
+
+The optimization family is a catalog overlay on the maintenance recipe
+contract, not a second run type or a hard-coded run enum. A catalog entry
+provides a stable key, display name, description, default metric hints, and
+the underlying recipe definition when one exists. The initial menu contains
+performance, design/architecture, code duplication, security hardening,
+cost/resource efficiency, maintainability/readability, and test
+coverage/quality. A selected catalog key composes with optional natural-
+language scope and guidance; no scope shape is rejected merely because it
+names files, a feature, or an application page. An unrecognized key falls
+back to the normal custom-objective maintenance run rather than failing.
+
+Recipe definitions provide an objective, investigation instructions,
+applicable evidence collectors, validation guidance, and metric hints. They
+reuse the report and finding contracts above: scope bounds recommendations,
+not supporting evidence access; tool and prompt-only paths disclose what they
+actually covered; and a metric hint is neither a quality score nor a
+guarantee of improvement. The first delivery candidates are code duplication,
+maintainability/readability, and performance. Follow-on security, cost,
+architecture, and test-quality recipes use the same catalog and report
+contract; test quality reconciles with, rather than duplicates, RDR-075's
+planned test-quality objective.
+
+Optimization runs are report-only by default. The one proposed exception is
+the owner-recorded OPT-03 policy: a user may elect auto-queue at the start of
+an individual optimization run. The election is absent by default, is never a
+tenant-wide or recipe default, is retained in that run's immutable snapshot,
+and includes the chosen confidence policy and explicit per-repair cost and
+time caps. Omission has exactly the report-only behavior. This draft policy
+is not accepted intent and cannot enable runtime admission or rollout.
+
+Semantic assessment belongs to `agent_harness`. For each finding, the agent
+receives the elected confidence policy and returns a structured assessment
+that states whether the finding satisfies it, with supporting evidence,
+counterevidence, and an explanation. Application code must not calibrate a
+numeric score, derive confidence from keywords, or reinterpret the evidence.
+It deterministically validates the response shape and applies only these
+gates before using the assessment: the run's explicit election and existing
+project authorization; a non-security category; the elected per-repair
+budget; the canonical finding identity's idempotency state; and the M04
+repair-path revalidation requirement. A false or unavailable assessment,
+failed gate, stale evidence that cannot be revalidated, or exhausted budget
+creates no repair; the report and its visible disposition remain preserved.
+
+An eligible auto-queued repair follows the same bounded issue/PR-creation
+path as a manually selected repair, carries links to its source report and
+finding identity, and cannot expand beyond that finding's approved scope.
+If its checkout revision differs from the report revision, it must revalidate
+the finding before applying a recommendation. Revalidation failure is a
+visible non-dispatch outcome, never a silent drop. A repeated occurrence of
+the same canonical finding must not create duplicate repair work. Security
+hardening findings are always report-only and manual-selection-only until a
+separately accepted security accuracy and blast-radius policy says otherwise.
+
+### Optimization Delivery Mapping
+
+| Scoped contract | Deliverable |
+| --- | --- |
+| Catalog overlay, curated menu, snapshot, and custom-objective fallback | [#4493](https://github.com/viamin/paid/issues/4493) (OPT-01) |
+| First three recipe definitions, evidence provenance, and honest prompt-only coverage | [#4494](https://github.com/viamin/paid/issues/4494) (OPT-02) |
+| Per-run auto-queue election, agent-harness assessment, and deterministic bounded-repair gates | [#4495](https://github.com/viamin/paid/issues/4495) (OPT-03) |
+| Staged security, cost, architecture, and test-quality recipes; manual-only security repair | [#4496](https://github.com/viamin/paid/issues/4496) (OPT-04) |
+
+[#4492](https://github.com/viamin/paid/issues/4492) is the tracking umbrella,
+not an executable prerequisite or authority to implement any row above. All
+four deliverables independently remain blocked on accepted base-maintenance
+intent and its live tool-handoff evidence; this policy does not change those
+dependencies.
+
 ## Run-Outcome Contract
 
 A maintenance run's terminal report outcome is one of exactly five values,
@@ -208,6 +278,7 @@ shipped code in
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
 | Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Optimization auto-queue | Per-run, explicitly elected policy after agent-harness assessment and deterministic gates | Tenant-wide/recipe default; code-calibrated confidence; scan-time mutation | #4495 records the owner's narrow policy. Per-run election preserves report-only default, agent assessment preserves ZFC, and deterministic authorization/budget/idempotency/revalidation gates bound a follow-up repair without turning the scan into a repair authority. |
 
 ## Open Questions & Future Decisions
 
@@ -242,8 +313,9 @@ shipped code in
 - Not a tool marketplace, matching engine, or provisioning system — that is
   RDR-073's territory, consumed here, not duplicated.
 - Not an automatic-repair mechanism — a scan never deletes source code or
-  opens a PR as a side effect; repair is a separate, explicitly authorized
-  run.
+  opens a PR as a side effect, except for the draft OPT-03 per-run policy
+  above after its semantic assessment and every deterministic gate succeeds;
+  repair always remains a separate, explicitly authorized run.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.
