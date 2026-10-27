@@ -2,6 +2,7 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20261024055249_create_layered_verification_contracts")
+require Rails.root.join("db/migrate/20261027090001_add_cause_signature_to_layered_verification_check_results")
 require Rails.root.join("db/migrate/20261027090002_add_canonical_source_path_to_layered_verification_obligations")
 
 RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
@@ -71,7 +72,8 @@ RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
 
   def restore_current_schema!
     migration.up
-    AddCanonicalSourcePathToLayeredVerificationObligations.new.up
+    AddCauseSignatureToLayeredVerificationCheckResults.new.change
+    AddCanonicalSourcePathToLayeredVerificationObligations.new.change
   end
 
   def detach_finding_foreign_key!
