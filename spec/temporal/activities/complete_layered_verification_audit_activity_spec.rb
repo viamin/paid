@@ -47,6 +47,56 @@ RSpec.describe Activities::CompleteLayeredVerificationAuditActivity do
     expect(response.dig(:coverage, obligation.id.to_s, :check_result_ids)).to eq([ result.id ])
   end
 
+  # @spec LAYERED-VERIFY-008 LAYERED-VERIFY-024
+  it "downgrades agent outcomes reported against the wrong revision" do
+    audit = create(:agent_run, goal: "layered_verification_audit", status: "running")
+    obligation = create(:layered_verification_obligation, project: audit.project, external_revision: "intent123")
+    audit.update!(external_metadata: {
+      "layered_verification" => {
+        "obligation_ids" => [ obligation.id ],
+        "target_revision" => "code123",
+        "plan" => { obligation.id.to_s => { "selected_checks" => [ "semantic_audit" ] } }
+      }
+    })
+    audit.log!("stdout", <<~OUTPUT)
+      paid-layered-verification-output
+      {"check_results":[{"obligation_id":#{obligation.id},"selected_check":"semantic_audit","producer":"semantic_audit","execution_state":"completed","obligation_coverage":"contradicted","input_revision":{"external_revision":"intent123","code":"wrong-code"},"evidence_summary":{"source_passages":["PAYMENTS-001"]},"cause_signature":"wrong-behavior","limitations":"Bounded to the selected obligation."}]}
+      paid-layered-verification-output
+    OUTPUT
+
+    response = described_class.new.execute(agent_run_id: audit.id)
+
+    result = obligation.check_results.sole
+    expect(result).to have_attributes(execution_state: "stale", obligation_coverage: "unresolved")
+    expect(result.limitations).to include("reported input revision does not match")
+    expect(response.dig(:coverage, obligation.id.to_s, :obligation_coverage)).to eq("unresolved")
+    expect(LayeredVerificationFinding.where(obligation:)).to be_empty
+  end
+
+  # @spec LAYERED-VERIFY-008 LAYERED-VERIFY-024
+  it "downgrades agent outcomes that omit their input revision" do
+    audit = create(:agent_run, goal: "layered_verification_audit", status: "running")
+    obligation = create(:layered_verification_obligation, project: audit.project)
+    audit.update!(external_metadata: {
+      "layered_verification" => {
+        "obligation_ids" => [ obligation.id ],
+        "target_revision" => "abc123",
+        "plan" => { obligation.id.to_s => { "selected_checks" => [ "semantic_audit" ] } }
+      }
+    })
+    audit.log!("stdout", <<~OUTPUT)
+      paid-layered-verification-output
+      {"check_results":[{"obligation_id":#{obligation.id},"selected_check":"semantic_audit","producer":"semantic_audit","execution_state":"completed","obligation_coverage":"supported","input_revision":{},"evidence_summary":{},"limitations":"Bounded to the selected obligation."}]}
+      paid-layered-verification-output
+    OUTPUT
+
+    described_class.new.execute(agent_run_id: audit.id)
+
+    expect(obligation.check_results.sole).to have_attributes(
+      execution_state: "stale", obligation_coverage: "unresolved"
+    )
+  end
+
   # @spec LAYERED-VERIFY-024
   it "records selected checks omitted from agent output as not run" do
     audit = create(:agent_run, goal: "layered_verification_audit", status: "running")

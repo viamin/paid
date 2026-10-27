@@ -52,6 +52,7 @@ RSpec.describe "Inbox" do
   before do
     sign_in user
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive(:ref).and_return(OpenStruct.new(object: OpenStruct.new(sha: "abc123")))
   end
 
   def entry_id(entry_kind, record)
@@ -2043,6 +2044,23 @@ RSpec.describe "Inbox" do
     expect(finding.reload).to have_attributes(status: "deferred")
     expect(finding.decision).to include("selected_action" => "defer", "reason" => "Awaiting a business-owner answer.")
     expect(AgentRun.where(goal: "layered_verification_repair", project:)).to be_empty
+  end
+
+  # @spec LAYERED-VERIFY-018
+  it "rejects a finding decision when the repository revision has advanced" do
+    finding = create_layered_verification_finding
+    key = entry_id(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND, finding)
+    allow(github_client).to receive(:ref).with("acme/alpha", "heads/main")
+      .and_return(OpenStruct.new(object: OpenStruct.new(sha: "new-revision")))
+
+    post inbox_layered_verification_finding_decision_path(key), params: {
+      decision: { action: "defer", reason: "Awaiting a business-owner answer.", external_revision: "abc123" }
+    }
+
+    expect(response).to redirect_to(inbox_entry_path(key))
+    expect(flash[:alert]).to eq("The obligation source changed; review fresh evidence before deciding.")
+    expect(finding.reload).to have_attributes(status: "open")
+    expect(finding.decision).not_to have_key("selected_action")
   end
 
   def create_layered_verification_finding

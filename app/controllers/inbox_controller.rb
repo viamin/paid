@@ -79,7 +79,7 @@ class InboxController < ApplicationController
     redirect_back_to_inbox(notice: "Restored to your inbox.")
   end
 
-  # @spec LAYERED-VERIFY-015 LAYERED-VERIFY-016
+  # @spec LAYERED-VERIFY-015 LAYERED-VERIFY-016 LAYERED-VERIFY-018
   def decide_layered_verification_finding
     entry = Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id])
     return redirect_to(inbox_path, alert: "That verification finding is no longer available.") unless entry&.layered_verification_finding?

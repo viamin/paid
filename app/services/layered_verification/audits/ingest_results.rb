@@ -71,7 +71,7 @@ module LayeredVerification
       end
 
       def normalized_attributes(raw)
-        return unless raw.respond_to?(:to_h)
+        return unless raw.is_a?(Hash)
 
         attributes = raw.to_h.deep_stringify_keys
         obligation = obligations_by_id[attributes["obligation_id"].to_i]
@@ -87,16 +87,37 @@ module LayeredVerification
         coverage = attributes["obligation_coverage"].to_s
         return invalid_attributes(obligation, selected_check) unless valid_outcome?(obligation, producer, state, coverage, attributes)
 
-        {
+        result = {
           obligation:, correspondence_claim: claim_for(obligation, attributes), agent_run:, producer:,
           execution_state: state, obligation_coverage: coverage,
-          input_revision: attributes["input_revision"].to_h,
-          evidence_ref: attributes["evidence_ref"], evidence_summary: attributes["evidence_summary"].to_h,
+          input_revision: hash_value(attributes["input_revision"]),
+          evidence_ref: attributes["evidence_ref"], evidence_summary: hash_value(attributes["evidence_summary"]),
           cause_signature: attributes["cause_signature"],
-          agent_reported: attributes["agent_reported"].to_h.merge("selected_check" => selected_check),
-          recorder_verified: { "structured_output" => true }, cost: attributes["cost"].to_h,
+          agent_reported: hash_value(attributes["agent_reported"]).merge("selected_check" => selected_check),
+          recorder_verified: { "structured_output" => true }, cost: hash_value(attributes["cost"]),
           limitations: attributes["limitations"].to_s
         }
+        revisions_match?(obligation, result[:input_revision]) ? result : stale_attributes(result)
+      end
+
+      def revisions_match?(obligation, input_revision)
+        reported = input_revision.values.map(&:to_s).select(&:present?)
+        expected_revisions(obligation).all? { |revision| reported.include?(revision) }
+      end
+
+      def expected_revisions(obligation)
+        [ audit_metadata["target_revision"], obligation.external_revision ].map(&:to_s).select(&:present?).uniq
+      end
+
+      def hash_value(value)
+        value.is_a?(Hash) ? value : {}
+      end
+
+      def stale_attributes(attributes)
+        attributes.merge(
+          execution_state: "stale", obligation_coverage: "unresolved", cause_signature: nil,
+          limitations: "The reported input revision does not match the audit's pinned revisions."
+        )
       end
 
       def valid_outcome?(obligation, producer, state, coverage, attributes)
