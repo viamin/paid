@@ -399,6 +399,25 @@ RSpec.describe "Inbox" do
         source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
         title: "Pilot results need operator action",
         description: "Pilot latency results: attach the measured p95 to the follow-up comment and link it here")
+
+    end
+
+    def create_evidence_notification
+      Notification.find_by!(account: account, subject: guided_issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE).update!(
+        title: "Evidence submission", description: "Evidence submission is awaiting validation",
+        metadata: {
+          "prerequisites" => [
+            { "identity" => "pilot-results", "criterion" => "Pilot results" },
+            { "identity" => "accessibility-review", "criterion" => "Accessibility review" }
+          ],
+          "evidence_submissions" => [
+            { "prerequisite_identity" => "pilot-results", "evidence_url" => "https://evidence.example.test/pilot",
+              "explanation" => "The pilot report is attached.", "actor_id" => user.id,
+              "submitted_at" => "2026-10-27T00:00:00Z", "outcome" => "pending_validation",
+              "reason" => "Evidence was recorded for validation. A link alone does not satisfy acceptance." }
+          ]
+        })
     end
 
     def render_guided_pane
@@ -453,6 +472,17 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("who must supply it")
       expect(response.body).to include("resumes automatically")
       expect(response.body).to include("deliberate continuation")
+    end
+
+    it "renders recorded evidence and unique fields for every prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-032
+      create_evidence_notification
+      render_guided_pane
+
+      document = Nokogiri::HTML(response.body)
+      expect(document.css("#prerequisite_pilot-results_evidence_url").size).to eq(1)
+      expect(document.css("#prerequisite_accessibility-review_evidence_url").size).to eq(1)
+      expect(response.body).to include("https://evidence.example.test/pilot", "The pilot report is attached.",
+        "Submitted by user ##{user.id}", "pending_validation")
     end
 
     # @spec PARTIAL-CLOSEOUT-023

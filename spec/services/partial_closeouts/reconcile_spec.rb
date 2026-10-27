@@ -58,6 +58,15 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(occurrences.map { |occurrence| occurrence.fetch("criterion") }).to contain_exactly("macOS acceptance", "Accessibility sign-off")
   end
 
+  it "reads the source revision once for all human prerequisite occurrences" do # @spec PARTIAL-CLOSEOUT-032
+    expect(PartialCloseouts::Assessment).to receive(:call).once.and_call_original
+
+    described_class.call(agent_run: run, assessment: gaps([
+      { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot." },
+      { "criterion" => "Accessibility sign-off", "kind" => "human", "next_step" => "Record the review." }
+    ]))
+  end
+
   it "preserves submitted evidence when reconciling the prerequisite again" do # @spec PARTIAL-CLOSEOUT-032
     gap = { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot." }
     described_class.call(agent_run: run, assessment: gaps([ gap ]))

@@ -252,7 +252,13 @@ module PartialCloseouts
     def prerequisite_occurrence(gap)
       { "identity" => Digest::SHA256.hexdigest(JSON.generate(prerequisite_identity(gap))),
         "criterion" => gap["criterion"], "references" => Array(gap["references"]),
-        "source_revision" => PartialCloseouts::Assessment.call(agent_run.issue).source_revision }
+        "source_revision" => source_revision }
+    end
+
+    def source_revision
+      return @source_revision if defined?(@source_revision)
+
+      @source_revision = PartialCloseouts::Assessment.call(agent_run.issue).source_revision
     end
 
     def canonicalize(value)

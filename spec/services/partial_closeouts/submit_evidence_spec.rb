@@ -63,4 +63,16 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     expect(result.outcome).to eq("stale")
     expect(notification.reload).to be_active
   end
+
+  it "updates an identical submission instead of recording a retry twice" do # @spec PARTIAL-CLOSEOUT-032
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+
+    described_class.call(**attributes)
+    described_class.call(**attributes)
+
+    expect(notification.reload.metadata.fetch("evidence_submissions")).to contain_exactly(
+      include("prerequisite_identity" => identity, "evidence_url" => attributes[:evidence_url])
+    )
+  end
 end

@@ -1,5 +1,5 @@
 <%# @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-007 @spec PARTIAL-CLOSEOUT-010 %>
-<%# @spec PARTIAL-CLOSEOUT-022 @spec PARTIAL-CLOSEOUT-014 @spec PARTIAL-CLOSEOUT-015 @spec PARTIAL-CLOSEOUT-016 %>
+<%# @spec PARTIAL-CLOSEOUT-022 @spec PARTIAL-CLOSEOUT-014 @spec PARTIAL-CLOSEOUT-015 @spec PARTIAL-CLOSEOUT-016 @spec PARTIAL-CLOSEOUT-032 %>
 <% issue = entry.issue %>
 <% status = entry.closeout_status || Issues::CloseoutStatus.call(issue) %>
 <% assessment = PartialCloseouts::Assessment.call(issue, evidence: status.evidence, technical_evidence: status.technical_evidence) %>
@@ -316,14 +316,27 @@
           <p class="text-xs text-amber-800">Evidence is submitted for validation; it does not dismiss this blocker, attest acceptance, or retry work.</p>
           <% if policy(entry.project).run_agent? %>
             <% Array(human_prerequisite.metadata["prerequisites"]).each do |prerequisite| %>
-              <%= form_with url: project_closeout_evidence_index_path(entry.project), method: :post, class: "space-y-2" do |form| %>
-                <%= hidden_field_tag :notification_id, human_prerequisite.id %>
-                <%= hidden_field_tag :prerequisite_identity, prerequisite["identity"] %>
-                <%= hidden_field_tag :inbox_entry_id, entry.id %>
+              <% identity = prerequisite.fetch("identity") %>
+              <% scope = "prerequisite_#{identity}" %>
+              <% submissions = Array(human_prerequisite.metadata["evidence_submissions"]).select { |submission| submission["prerequisite_identity"] == identity } %>
+              <%= form_with url: project_closeout_evidence_index_path(entry.project), method: :post, scope:, class: "space-y-2" do |form| %>
+                <%= hidden_field_tag :notification_id, human_prerequisite.id, id: "notification_id_#{identity}" %>
+                <%= hidden_field_tag :prerequisite_identity, identity, id: "prerequisite_identity_#{identity}" %>
+                <%= hidden_field_tag :inbox_entry_id, entry.id, id: "inbox_entry_id_#{identity}" %>
                 <p class="text-xs font-medium text-amber-900"><%= prerequisite["criterion"] %></p>
+                <%= form.label :evidence_url, "Evidence URL", class: "sr-only" %>
                 <%= form.url_field :evidence_url, required: true, placeholder: "https://artifact.example", class: "block w-full rounded border-gray-300 text-sm" %>
+                <%= form.label :explanation, "Explanation", class: "sr-only" %>
                 <%= form.text_area :explanation, required: true, rows: 2, placeholder: "Why this evidence applies", class: "block w-full rounded border-gray-300 text-sm" %>
                 <%= form.submit "Submit for validation", class: "rounded bg-amber-700 px-3 py-2 text-sm font-semibold text-white" %>
+              <% end %>
+              <% submissions.each do |submission| %>
+                <div class="rounded border border-amber-200 bg-white p-2 text-xs text-amber-900">
+                  <p><%= link_to submission["evidence_url"], submission["evidence_url"], target: "_blank", rel: "noopener noreferrer", class: "underline" %></p>
+                  <p class="whitespace-pre-line"><%= submission["explanation"] %></p>
+                  <p>Submitted by user #<%= submission["actor_id"] %> at <%= submission["submitted_at"] %> — <%= submission["outcome"] %></p>
+                  <p><%= submission["reason"] %></p>
+                </div>
               <% end %>
             <% end %>
           <% end %>

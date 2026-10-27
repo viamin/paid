@@ -48,8 +48,24 @@ module PartialCloseouts
       entry = { "prerequisite_identity" => prerequisite_identity, "evidence_url" => evidence_url,
                 "explanation" => explanation, "actor_id" => actor.id, "submitted_at" => Time.current.iso8601,
                 "source_revision" => occurrence.fetch("source_revision", nil), "outcome" => outcome, "reason" => reason }
-      notification.update!(metadata: notification.metadata.merge("evidence_submissions" => submissions + [ entry ]))
+      notification.update!(metadata: notification.metadata.merge("evidence_submissions" => replace_duplicate(submissions, entry)))
       Result.new(outcome:, reason:, notification:)
+    end
+
+    def replace_duplicate(submissions, entry)
+      index = submissions.index { |submission| duplicate_submission?(submission) }
+      return submissions + [ entry ] unless index
+
+      submissions.dup.tap { |updated| updated[index] = entry }
+    end
+
+    def duplicate_submission?(submission)
+      submission.slice("prerequisite_identity", "evidence_url", "explanation") ==
+        entry_identity
+    end
+
+    def entry_identity
+      { "prerequisite_identity" => prerequisite_identity, "evidence_url" => evidence_url, "explanation" => explanation }
     end
 
     # A link proves neither its contents nor applicability. Keep it pending for

@@ -594,5 +594,8 @@
   sufficient assessment resolves that occurrence.
   *Code:* `app/services/partial_closeouts/submit_evidence.rb`,
   `app/services/partial_closeouts/reconcile.rb`,
-  `app/controllers/projects/closeout_evidence_controller.rb`.
-  *Test:* `spec/services/partial_closeouts/submit_evidence_spec.rb`.
+  `app/controllers/projects/closeout_evidence_controller.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/services/partial_closeouts/submit_evidence_spec.rb`,
+  `spec/requests/projects/closeout_evidence_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
