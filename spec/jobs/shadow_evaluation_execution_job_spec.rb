@@ -44,4 +44,26 @@ RSpec.describe ShadowEvaluationExecutionJob do
     expect(evaluation.reload).to have_attributes(status: "partial", last_failure_reason: "corpus manifest changed")
     expect(IntentConformance::ShadowEvaluation::CompileReport).to have_received(:call).with(evaluation: evaluation)
   end
+
+  it "reports an incident after retries are exhausted" do
+    notifier = instance_double(Paid::ExceptionNotifier, call: nil)
+    allow(Paid::ExceptionNotifier).to receive(:new).and_return(notifier)
+    allow(IntentConformance::ShadowEvaluation::ExecuteReviewer).to receive(:call)
+      .and_raise(StandardError, "provider unavailable")
+    allow(IntentConformance::ShadowEvaluation::CompileReport).to receive(:call)
+    job = described_class.new(project.id, evaluation.id)
+    job.exception_executions = { "[StandardError]" => 2 }
+
+    expect { job.perform_now }.to raise_error(StandardError, "provider unavailable")
+
+    expect(evaluation.reload).to be_failed
+    expect(notifier).to have_received(:call).with(
+      an_instance_of(StandardError),
+      data: hash_including(project_id: project.id)
+    )
+  end
+
+  it "uses the dedicated shadow evaluation queue" do
+    expect(described_class.queue_name).to eq("shadow_evaluation")
+  end
 end

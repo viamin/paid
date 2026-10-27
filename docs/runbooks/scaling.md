@@ -94,10 +94,10 @@ bin/rails runner "
 
    ```bash
    # Increase total threads
-   export GOOD_JOB_MAX_THREADS=15
+   export GOOD_JOB_MAX_THREADS=16
 
    # Or increase threads for the specific backed-up queue
-   export GOOD_JOB_QUEUES="default:5;maintenance:3;metrics:3;knowledge:3;low_priority:1"
+   export GOOD_JOB_QUEUES="default:5;maintenance:3;metrics:3;knowledge:3;low_priority:1;shadow_evaluation:1"
    ```
 
 4. For persistent backlogs, run a second GoodJob worker:

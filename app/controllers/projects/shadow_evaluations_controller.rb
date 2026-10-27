@@ -101,7 +101,7 @@ module Projects
     def execute
       authorize @evaluation
 
-      result = IntentConformance::ShadowEvaluation::EnqueueExecution.call(evaluation: @evaluation)
+      result = IntentConformance::ShadowEvaluation::EnqueueExecution.call(evaluation: @evaluation, actor: current_user)
       if result.success?
         redirect_to evaluation_path(@evaluation),
           notice: result.enqueued ? "Reviewer execution queued. You can leave this page and return for progress." : "Reviewer execution is already queued or running."
@@ -113,7 +113,7 @@ module Projects
     def cancel
       authorize @evaluation, :cancel?
 
-      if @evaluation.request_cancellation!
+      if @evaluation.request_cancellation!(actor: current_user)
         redirect_to evaluation_path(@evaluation), notice: "Cancellation requested. Collected case evidence is preserved."
       else
         redirect_to evaluation_path(@evaluation), alert: "Only queued or running reviewer execution can be cancelled."

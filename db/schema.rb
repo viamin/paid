@@ -2485,7 +2485,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_000000) do
     t.jsonb "report", default: {}, null: false, comment: "Structured reproducible report (identities, labels, verdicts, confusion counts, provenance)."
     t.text "report_markdown", comment: "Rendered markdown of the reproducible report."
     t.bigint "solo_maintainer_id", comment: "The single authenticated maintainer declared for a solo evaluation; only this user labels, revises, and freezes."
-    t.string "status", default: "labeling", null: false, comment: "labeling → frozen → executing → completed | failed (see IntentConformanceShadowEvaluation::STATUSES)."
+    t.string "status", default: "labeling", null: false, comment: "labeling → frozen → queued → running → partial | failed | cancelled | completed (see IntentConformanceShadowEvaluation::STATUSES)."
     t.datetime "updated_at", null: false
     t.index ["created_by_id"], name: "index_intent_conformance_shadow_evaluations_on_created_by_id"
     t.index ["project_id", "purpose", "manifest_digest"], name: "idx_shadow_evaluations_one_per_evidence_generation", unique: true, comment: "Repeated Start/Resume actions reuse the same evaluation for the same evidence generation."

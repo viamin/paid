@@ -158,12 +158,21 @@ RSpec.describe "Projects::ShadowEvaluations" do
     # Corpus cases reference a repository outside this project, so every
     # reviewer attempt fails closed and is recorded as not evaluated —
     # prerequisite validation is never presented as execution.
+    allow(Rails.logger).to receive(:info)
     expect { post execute_project_shadow_evaluation_path(project, evaluation) }
       .to have_enqueued_job(ShadowEvaluationExecutionJob).with(project.id, evaluation.id)
     follow_redirect!
 
     expect(evaluation.reload).to be_queued
     expect(response.body).to include("Reviewer execution queued")
+    expect(Rails.logger).to have_received(:info).with(
+      hash_including(
+        message: "intent_conformance.shadow_evaluation_execution_queued",
+        project_id: project.id,
+        shadow_evaluation_id: evaluation.id,
+        actor_user_id: owner.id
+      )
+    )
 
     ShadowEvaluationExecutionJob.perform_now(project.id, evaluation.id)
 
@@ -177,6 +186,19 @@ RSpec.describe "Projects::ShadowEvaluations" do
 
     expect(response.body).to include("Reproducible report")
     expect(response.body).to include("solo")
+  end
+
+
+  it "does not offer a retry action after execution completed" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    evaluation.update!(status: "completed", completed_at: Time.current)
+
+    get project_shadow_evaluation_path(project, evaluation)
+
+    expect(response.body).not_to include("Retry remaining reviewer cases")
+    expect(response.body).not_to include("Execute reviewer now")
   end
 
   it "appends post-result revisions without overwriting the original blinded label" do

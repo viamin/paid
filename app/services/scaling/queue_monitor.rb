@@ -2,7 +2,7 @@
 
 module Scaling
   class QueueMonitor
-    GOOD_JOB_QUEUES = %w[default maintenance metrics knowledge low_priority].freeze
+    GOOD_JOB_QUEUES = %w[default maintenance metrics knowledge low_priority shadow_evaluation].freeze
 
     DEFAULT_THRESHOLDS = {
       good_job: {

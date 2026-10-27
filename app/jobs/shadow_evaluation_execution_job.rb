@@ -7,12 +7,14 @@
 class ShadowEvaluationExecutionJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
-  queue_as :low_priority
-  self.perform_timeout = 15.minutes
-  good_job_control_concurrency_with(total_limit: 1, enqueue_limit: 1,
+  queue_as :shadow_evaluation
+  self.perform_timeout = IntentConformanceShadowEvaluation::EXECUTION_TIMEOUT
+  good_job_control_concurrency_with(total_limit: 1,
     key: -> { "shadow_evaluation_#{arguments.second}" })
   retry_on StandardError, wait: :polynomially_longer, attempts: 3 do |job, error|
     job.mark_interrupted(error)
+    job.notify_terminal_failure(error)
+    raise error
   end
   discard_on ActiveRecord::RecordNotFound
 
@@ -36,6 +38,10 @@ class ShadowEvaluationExecutionJob < ApplicationJob
       evaluation.update!(status:, last_failure_reason: failure_reason(error)) unless evaluation.cancelled? || evaluation.completed?
       IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: evaluation) if evaluation.runs.exists?
     end
+  end
+
+  def notification_project_id
+    arguments.first
   end
 
   private

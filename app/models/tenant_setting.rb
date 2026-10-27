@@ -167,8 +167,8 @@ class TenantSetting < ApplicationRecord
     "temporal_activity_slots" => 4,
     "temporal_poll_workflow_slots" => 20,
     "temporal_poll_activity_slots" => 10,
-    "good_job_max_threads" => 11,
-    "good_job_queues" => "default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1"
+    "good_job_max_threads" => 12,
+    "good_job_queues" => "default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1;shadow_evaluation:1"
   }.freeze
   WORKER_SETTING_INTEGER_KEYS = %w[
     temporal_workflow_slots temporal_activity_slots

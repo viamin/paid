@@ -11,6 +11,7 @@
 # @spec INTENT-CONFORMANCE-ROLLOUT-005
 # @spec INTENT-CONFORMANCE-ROLLOUT-006
 class IntentConformanceShadowEvaluation < ApplicationRecord
+  EXECUTION_TIMEOUT = 15.minutes
   STATUSES = %w[labeling frozen queued running partial failed cancelled completed].freeze
   POLICIES = IntentConformance::ShadowEvaluationPolicy::POLICIES
   OUTCOMES = IntentConformance::ShadowEvaluationPolicy::LABELS
@@ -69,26 +70,46 @@ class IntentConformanceShadowEvaluation < ApplicationRecord
   # can be enqueued. Completed cases stay intact for a retry/resume.
   def queue_execution!
     with_lock do
-      return false if queued? || running? || completed?
+      return false if queued? || active_execution? || completed?
 
       update!(status: "queued", execution_enqueued_at: Time.current,
-        cancellation_requested_at: nil, cancelled_at: nil, last_failure_reason: nil)
+        execute_started_at: nil, cancellation_requested_at: nil,
+        cancelled_at: nil, last_failure_reason: nil)
       true
     end
   end
 
   # Cancellation is cooperative: a running LLM call is allowed to finish,
   # then ExecuteReviewer stops before spending on the next case.
-  def request_cancellation!
+  def request_cancellation!(actor:)
     with_lock do
       return false unless queued? || running?
 
-      if queued?
+      if queued? || stale_execution?
         update!(status: "cancelled", cancellation_requested_at: Time.current, cancelled_at: Time.current)
       else
         update!(cancellation_requested_at: Time.current)
       end
+      log_cancellation_requested(actor)
       true
     end
+  end
+
+  private
+
+  def active_execution?
+    running? && !stale_execution?
+  end
+
+  def stale_execution?
+    running? && (execute_started_at.nil? || execute_started_at <= EXECUTION_TIMEOUT.ago)
+  end
+
+  def log_cancellation_requested(actor)
+    Rails.logger.info(
+      message: "intent_conformance.shadow_evaluation_execution_cancellation_requested",
+      project_id:, shadow_evaluation_id: id, actor_user_id: actor.id,
+      status:, evaluated_case_count: runs.where.not(verdict: "not_evaluated").count
+    )
   end
 end

@@ -9,12 +9,12 @@ module Paid
     end
 
     def max_threads(env = ENV)
-      resolve_from_db("good_job_max_threads", env_key: "GOOD_JOB_MAX_THREADS", env: env, default: 11)
+      resolve_from_db("good_job_max_threads", env_key: "GOOD_JOB_MAX_THREADS", env: env, default: 12)
     end
 
     def queues(env = ENV)
       resolve_from_db("good_job_queues", env_key: "GOOD_JOB_QUEUES", env: env,
-        default: "default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1")
+        default: "default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1;shadow_evaluation:1")
     end
 
     def resolve_from_db(key, env_key:, env:, default:)
@@ -67,13 +67,15 @@ end
 #   3. metrics     — telemetry and analytics (deferrable under load)
 #   4. knowledge   — embedding and indexing (CPU-intensive, bursty)
 #   5. low_priority — dashboard broadcasts, delayed feedback, non-urgent batch work
+#   6. shadow_evaluation — long-running, provider-bound reviewer evaluations
 #
-# Thread allocation (default total: 11 threads):
+# Thread allocation (default total: 12 threads):
 #   - default:3     — reserves 3 threads for critical work
 #   - maintenance:2  — 2 threads for cleanup/reconciliation
 #   - metrics:2      — 2 threads for telemetry collection
 #   - knowledge:3    — 3 threads for collection and embedding (CPU-bound, bursty)
 #   - low_priority:1 — 1 thread for non-urgent work
+#   - shadow_evaluation:1 — isolates long-running reviewer evaluations
 #
 # See docs/WORKER_POOL_TUNING.md for deployment sizing guidance.
 Rails.application.configure do
