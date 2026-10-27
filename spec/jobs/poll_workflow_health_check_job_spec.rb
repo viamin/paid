@@ -7,6 +7,9 @@ RSpec.describe PollWorkflowHealthCheckJob do # @spec TEMPORAL-ORCHESTRATION-001
   let(:temporal_client) { instance_double(Temporalio::Client) }
 
   before do
+    # Non-transactional concurrency and migration specs can run earlier in the
+    # shard, so these examples must scope the job to the projects they create.
+    Project.update_all(active: false)
     allow(Paid).to receive_messages(temporal_client: temporal_client, poll_task_queue: "paid-poll-tasks")
     allow(temporal_client).to receive(:start_workflow)
   end
