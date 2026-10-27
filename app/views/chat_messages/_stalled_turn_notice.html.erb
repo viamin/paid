@@ -1,0 +1,9 @@
+<div class="mx-auto max-w-2xl rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="alert">
+  <p class="font-medium">This turn needs attention</p>
+  <p class="mt-1"><%= message.content %></p>
+  <p class="mt-2 text-xs">Resume is deliberately not automatic: it may ask the model to continue, but never replays a completed tool call.</p>
+  <% if (turn_id = message.metadata["chat_turn_id"]).present? %>
+    <%= button_to "Resume turn", resume_turn_chat_session_path(message.chat_session, turn_id: turn_id), method: :post,
+      class: "mt-3 rounded bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-800" %>
+  <% end %>
+</div>

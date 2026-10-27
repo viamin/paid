@@ -20,12 +20,16 @@ module ChatSessions
 
     MAX_CONTENT_LENGTH = 12_000
 
-    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
+    def initialize(chat_session:, actor: chat_session.created_by, content:, user_message: nil, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
       @chat_session = chat_session
       @actor = actor
       @content = content
-      @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @user_message = user_message
+      @on_chunk = ->(chunk) { record_turn_activity; on_chunk&.call(chunk) }
+      @on_message_persisted = ->(message, stream_message_id: nil) {
+        record_turn_activity
+        on_message_persisted&.call(message, stream_message_id: stream_message_id)
+      }
       @llm_client = llm_client
       @stream_message_id = stream_message_id
     end
@@ -43,10 +47,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      conclude_turn(assistant_message)
       update_session_activity
       assistant_message
+    rescue AgentHarness::Error, ChatSessions::TokenLimitExceededError, ChatSessions::LlmClientConfigurationError, ArgumentError, NotImplementedError
+      fail_turn
+      raise
     end
 
     private
@@ -110,7 +119,7 @@ module ChatSessions
     end
 
     def persist_user_message
-      @transport_attempt_message = existing_user_message || create_user_message
+      @transport_attempt_message = @user_message || existing_user_message || create_user_message
 
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
@@ -132,6 +141,30 @@ module ChatSessions
         content: content,
         metadata: { "stream_message_id" => stream_message_id }.compact
       )
+    end
+
+    def start_turn
+      @chat_turn = ChatTurn.find_or_create_by!(user_message: transport_attempt_message) do |turn|
+        turn.chat_session = chat_session
+        turn.status = "streaming"
+        turn.activity_at = Time.current
+      end
+      @chat_turn.update!(status: "streaming", activity_at: Time.current) if @chat_turn.status.in?(%w[pending stalled])
+    end
+
+    def conclude_turn(assistant_message)
+      @chat_turn.update!(status: assistant_message ? "completed" : "awaiting_confirmation", activity_at: Time.current)
+    end
+
+    def fail_turn
+      return unless @chat_turn
+      return if @chat_turn.awaiting_confirmation? || @chat_turn.terminal?
+
+      @chat_turn.update!(status: "failed", activity_at: Time.current)
+    end
+
+    def record_turn_activity
+      @chat_turn&.update_columns(activity_at: Time.current, updated_at: Time.current)
     end
 
     # A conversational reply (e.g. "yes") is not a confirmation. When a write

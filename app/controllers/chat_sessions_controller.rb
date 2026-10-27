@@ -8,7 +8,7 @@ class ChatSessionsController < ApplicationController
   SIDEBAR_PAGE_SIZE = 50
 
   skip_after_action :verify_authorized, only: %i[index sidebar_page]
-  before_action :set_chat_session, only: %i[show update destroy archive unarchive reopen clone_project older_messages recent_messages]
+  before_action :set_chat_session, only: %i[show update destroy archive unarchive reopen clone_project older_messages recent_messages resume_turn]
   before_action :reject_archived_chat_session, only: %i[update destroy archive clone_project]
   before_action :enforce_create_rate_limit, only: :create
   before_action :default_request_format_to_json, only: %i[index create show update destroy archive unarchive]
@@ -79,6 +79,16 @@ class ChatSessionsController < ApplicationController
       @chat_session.messages.where("chat_messages.id > ?", messages.last.id).exists?
 
     render json: { messages: messages.map { |m| recent_message_payload(m) }, has_more: has_more }
+  end
+
+  # @spec CHAT-TURN-003
+  def resume_turn
+    authorize ChatMessage.new(chat_session: @chat_session), :create?, policy_class: ChatMessagePolicy
+    turn = @chat_session.chat_turns.find(params.require(:turn_id))
+    ChatTurns::Resume.call(turn:, actor: current_user)
+    redirect_to chat_session_path(@chat_session), notice: "Turn recovery has started. Completed tool calls will not be replayed."
+  rescue ChatTurns::Resume::ConflictError, ActiveRecord::RecordNotFound => e
+    redirect_to chat_session_path(@chat_session), alert: e.message
   end
 
   # @spec CHAT-SESSION-PREFERENCES-003

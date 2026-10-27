@@ -225,3 +225,20 @@ What ships today:
   tool segments such as `chat-tool-confirmation`.
 - **Not unrestricted cross-project execution.** Every chat/tool path remains
   account-scoped and Pundit-checked.
+
+## Durable turn-stall detection
+
+A persisted user message starts one `ChatTurn`. Its lifecycle is `pending`,
+`streaming`, `awaiting_confirmation`, `completed`, `failed`, `stalled`, or
+`abandoned`; only `completed`, `failed`, and `abandoned` claim a terminal
+outcome. The turn is independent of an ActionCable or SSE connection, which
+is delivery state rather than execution evidence.
+
+The periodic detector only considers inactive `pending` and `streaming` turns.
+It excludes rate-limited sessions and sessions with a pending write-tool
+confirmation, because each has a known, user-visible wait condition. A
+compare-and-swap transition creates at most one durable system notice. The
+notice preserves the transcript and states that no uncompleted tool has been
+replayed. This first slice does not automatically resume turns: automatic
+replay remains disabled until each eligible tool has an idempotency and
+checkpoint contract.

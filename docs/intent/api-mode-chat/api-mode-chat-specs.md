@@ -1,5 +1,29 @@
 # EARS Specs: API-Mode Interactive Chat
 
+- [x] **CHAT-TURN-001** — When an API-mode chat persists a user message, Paid
+  SHALL persist one durable turn lifecycle record. A successful assistant
+  outcome SHALL mark that turn completed; a pause awaiting a write-tool
+  confirmation SHALL remain awaiting confirmation rather than be represented
+  as successful.
+  *Tests:* `spec/services/chat_turns/detect_stalls_spec.rb`.
+  *Code:* `ChatSessions::SendMessage`, `ChatTurn`.
+
+- [x] **CHAT-TURN-002** — When a pending or streaming chat turn has no durable
+  activity beyond the configured inactivity threshold, Paid SHALL atomically
+  mark it stalled and append one durable transcript notice. A rate-limited
+  session or pending tool confirmation SHALL not be marked stalled; detection
+  SHALL not automatically replay tool calls.
+  *Tests:* `spec/services/chat_turns/detect_stalls_spec.rb`.
+  *Code:* `ChatTurns::DetectStalls`, `ChatTurns::DetectStallsJob`.
+
+- [x] **CHAT-TURN-003** — When an authorized collaborator explicitly resumes a
+  stalled turn, Paid SHALL atomically claim one recovery attempt and resume
+  from its persisted user-message checkpoint. Concurrent or repeated requests
+  SHALL be rejected, and completed tool calls SHALL remain transcript evidence
+  rather than be replayed.
+  *Tests:* `spec/services/chat_turns/resume_spec.rb`.
+  *Code:* `ChatTurns::Resume`, `ChatSessions::ProcessMessageJob`.
+
 - [x] **CHAT-API-026** — When non-free-policy API-key chat creates a session,
   executes a legacy Automatic session, or switches to a fallback runner, Paid
   SHALL use the same curated Low/Medium/High resolver. It SHALL default new and

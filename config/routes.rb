@@ -529,6 +529,7 @@ Rails.application.routes.draw do
     member do
       get :older_messages
       get :recent_messages
+      post :resume_turn
     end
     resources :chat_messages, path: "messages", only: %i[index create] do
       member do
