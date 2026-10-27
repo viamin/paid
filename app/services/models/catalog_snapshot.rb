@@ -6,6 +6,8 @@ module Models
   # @spec MODEL-AVAILABILITY-008
   class CatalogSnapshot
     LOCK_ID = 4668
+    EXCLUSIVE_LOCK_SQL = "SELECT pg_advisory_xact_lock(#{LOCK_ID})"
+    SHARED_LOCK_SQL = "SELECT pg_advisory_xact_lock_shared(#{LOCK_ID})"
 
     def self.refresh(&) = new(:exclusive).with_lock(&)
     def self.consistent_read(&) = new(:shared).with_lock(&)
@@ -26,11 +28,7 @@ module Models
     attr_reader :mode
 
     def acquire_lock
-      ActiveRecord::Base.connection.execute("SELECT pg_advisory_xact_lock#{shared_suffix}(#{LOCK_ID})")
-    end
-
-    def shared_suffix
-      "_shared" if mode == :shared
+      ActiveRecord::Base.connection.execute(mode == :shared ? SHARED_LOCK_SQL : EXCLUSIVE_LOCK_SQL)
     end
   end
 end
