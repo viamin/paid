@@ -212,6 +212,8 @@ module Inbox
       end
 
       def title
+        return facet_confidence_closeout_guidance.title if action_required? && facet_confidence_closeout_guidance
+
         title_text.presence || issue&.title || record.try(:title)
       end
 
@@ -243,6 +245,22 @@ module Inbox
         return @manual_review_comment_url if defined?(@manual_review_comment_url)
 
         @manual_review_comment_url = manual_review? ? manual_review_comment_link : nil
+      end
+
+      # Lazy accessor, mirroring `context_markdown`: a partial-closeout
+      # human-prerequisite action_required escalation for the shipped
+      # facet-confidence reference-judgment evaluation (#4596/#4323/#4662)
+      # routes to plain-language guidance and a state-specific Start/Resume/
+      # Freeze action instead of the raw AI-authored prerequisite text
+      # (#4678). Resolved only for the SELECTED entry's detail render; nil
+      # means the generic action_required rendering applies.
+      # @spec FACET-CONFIDENCE-022
+      def facet_confidence_closeout_guidance
+        return @facet_confidence_closeout_guidance if defined?(@facet_confidence_closeout_guidance)
+
+        applicable = action_required? && record.is_a?(Notification) &&
+          FacetConfidence::CloseoutEvaluation::InboxEscalation.applicable?(notification: record, issue: issue)
+        @facet_confidence_closeout_guidance = applicable ? FacetConfidence::CloseoutEvaluation::InboxEscalation.call(issue: issue) : nil
       end
 
       private

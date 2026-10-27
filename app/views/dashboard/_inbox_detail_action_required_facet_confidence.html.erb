@@ -1,0 +1,63 @@
+<%# @spec FACET-CONFIDENCE-022 %>
+<% evaluation = facet_confidence.evaluation %>
+<% inbox_context = {
+     inbox_kind: params[:kind].presence_in(Inbox::Queue::KINDS),
+     inbox_sort: params[:sort].presence_in(Inbox::Queue::SORTS.keys),
+     inbox_entry_id: entry.id
+   }.compact %>
+<div class="space-y-4 rounded-xl border border-indigo-200 bg-indigo-50 p-4" data-facet-confidence-action-required>
+  <div>
+    <h3 class="text-sm font-semibold text-indigo-900"><%= facet_confidence.title %></h3>
+    <p class="mt-1 text-sm text-indigo-800">
+      This closeout is blocked until an independent maintainer reviews every frozen test case, records a judgment for each one, and freezes the completed set.
+    </p>
+  </div>
+
+  <% if evaluation %>
+    <% progress = facet_confidence.progress %>
+    <% remaining = progress[:total] - progress[:labeled] %>
+    <p class="text-sm text-indigo-900">
+      Progress: <span class="font-medium"><%= progress[:labeled] %> of <%= progress[:total] %> judgments recorded</span>
+      · <%= remaining %> remaining<%= "; #{progress[:skipped]} skipped case#{'s' if progress[:skipped] != 1} still need judgment" if progress[:skipped].positive? %>.
+    </p>
+  <% else %>
+    <p class="text-sm text-indigo-900">No evaluation has been started yet. Starting one assigns its independent review to the maintainer who starts it.</p>
+  <% end %>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <% case facet_confidence.primary_action %>
+    <% when :start %>
+      <% if policy(FacetConfidenceEvaluation.new(project: entry.project)).create? %>
+        <%= link_to facet_confidence.primary_action_label,
+              new_project_facet_confidence_evaluation_path(entry.project, issue_id: entry.issue.id, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% end %>
+    <% when :freeze %>
+      <% if policy(evaluation).freeze? %>
+        <%= button_to facet_confidence.primary_action_label,
+              freeze_project_facet_confidence_evaluation_path(entry.project, evaluation, **inbox_context),
+              method: :post,
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% else %>
+        <%= link_to "Open evaluation",
+              project_facet_confidence_evaluation_path(entry.project, evaluation, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% end %>
+    <% else %>
+      <%= link_to facet_confidence.primary_action_label,
+            project_facet_confidence_evaluation_path(entry.project, evaluation, **inbox_context),
+            data: { turbo_frame: "_top" },
+            class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    <% end %>
+
+    <% if entry.issue %>
+      <%= link_to inbox_issue_link_label(entry.issue), entry.issue.github_url,
+            target: "_blank", rel: "noopener noreferrer",
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    <% end %>
+  </div>
+
+  <p class="text-xs text-indigo-800">Completing this evaluation adds closeout evidence; it does not close the issue or enable delivery.</p>
+</div>

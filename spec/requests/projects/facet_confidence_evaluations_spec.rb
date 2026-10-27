@@ -158,7 +158,7 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response.body).to include("Corrected after review.")
   end
 
-  it "rejects labeling by anyone other than the operator who started the evaluation" do
+  it "rejects labeling by anyone other than the operator who started the evaluation" do # @spec FACET-CONFIDENCE-022
     evaluation = start_evaluation!
     sign_in member
 

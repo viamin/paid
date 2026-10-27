@@ -73,6 +73,10 @@ class Notification < ApplicationRecord
     subject.project if subject.respond_to?(:project)
   end
 
+  def partial_closeout_prerequisite?
+    source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE
+  end
+
   private
 
   # @spec NOTIFICATION-SEVERITY-007
@@ -104,7 +108,7 @@ class Notification < ApplicationRecord
   end
 
   def partial_closeout_prerequisite_released?
-    return false unless source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE
+    return false unless partial_closeout_prerequisite?
     return false unless subject.is_a?(Issue)
 
     dismissed_now = saved_change_to_dismissed_at? && attribute_before_last_save("dismissed_at").nil?

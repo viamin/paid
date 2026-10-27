@@ -174,3 +174,13 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+When the same requirement arrives as a blocking Action Required notification,
+the Inbox recognizes the typed partial-closeout prerequisite rather than
+rendering its agent-authored workflow prose. The detail uses plain language to
+say that the closeout is waiting for an independent human review of each
+frozen test case, shows recorded and remaining judgments, and makes the next
+state-specific action primary: start, resume, continue judging, freeze, or
+open the completed report. The route carries the validated Inbox entry and
+filters into the evaluation and back again. Other Action Required
+notifications retain their generic remediation rendering.
