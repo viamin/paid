@@ -580,11 +580,14 @@ module Inbox
     end
 
     # @spec OPERATOR-INBOX-002B
+    # @spec OPERATOR-INBOX-002L
     def action_required_entries
       visible_blocking_notifications.filter_map do |notification|
         project, issue = notification_context(notification)
         next unless project
         next if project_filter_excludes?(project)
+
+        typed_action = Inbox::ActionRequired::FacetConfidenceEvaluation.for(notification, user: user)
 
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
@@ -595,10 +598,10 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
+          summary_text: typed_action ? "Review and record the remaining evaluation judgments." : notification.metadata["recommended_action"].presence || notification.description,
+          title_text: typed_action ? "Evaluation needed before this closeout can finish" : notification.title,
           action_url: notification.action_url
-        )
+        ).tap { |entry| entry.guidance = typed_action }
       end
     end
 

@@ -171,6 +171,15 @@ absent, the description is also the entry summary. `Notifications::Publish`
 rejects a blocking notification that has neither a non-blank description nor
 remediation guidance, so every Action Required entry has meaningful context.
 
+A publisher may additionally declare a structural `inbox_action` when a
+blocking notification has an authorized in-product remediation flow. The
+Inbox dispatches only known action types; it never infers a workflow from the
+notification's prose. A facet-confidence closeout evaluation action replaces
+internal evaluation terms with a plain-language explanation, shows recorded
+and remaining judgments, and links to the state-appropriate evaluation step
+while carrying the selected Inbox entry and filters. Unknown or absent action
+types retain the generic notification rendering.
+
 ### `merge_approval`
 
 Backed by the PR scanner's persisted current-head policy snapshot on `Issue`.

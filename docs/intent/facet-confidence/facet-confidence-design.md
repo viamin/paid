@@ -174,3 +174,12 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+When a closeout evaluation is escalated through Action Required, the typed
+Inbox action explains the operator's concrete work in plain language: review
+each saved test case independently, record a judgment, then freeze the
+completed set. It shows the recorded and remaining counts and offers Start
+evaluation, Continue judging, Freeze judgments, or the completed report from
+the persisted state. The action type is declared by the notification producer;
+the Inbox does not classify arbitrary remediation text. Navigation carries the
+originating Inbox selection so the operator can return to the escalation.

@@ -88,6 +88,17 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** — When a blocking notification declares a typed
+  in-product remediation workflow, the Action Required entry SHALL render that
+  workflow's plain-language explanation, state-specific primary action, and
+  progress instead of exposing its producer's internal remediation prose. The
+  action SHALL preserve the selected Inbox context. Notifications without a
+  recognized typed workflow SHALL retain the generic safe fallback rendering.
+  *Code:* `app/services/inbox/action_required/facet_confidence_evaluation.rb`,
+  `app/services/inbox/queue.rb`, `app/services/notifications/publish.rb`,
+  `app/views/dashboard/_inbox_detail_action_required.html.erb`.
+  *Test:* `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002C** — When an open pull request's review phase is
   `escalated` and its project is within the operator's authorized Inbox
   visibility (`INBOX-FOUNDATION-006` — account isolation plus owner

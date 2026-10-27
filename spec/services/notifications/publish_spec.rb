@@ -99,6 +99,22 @@ RSpec.describe Notifications::Publish do
       expect(notification.action_url).to eq("/projects/#{project.id}/quality_dashboard")
     end
 
+    # @spec OPERATOR-INBOX-002L
+    it "persists an explicit typed Inbox action without deriving it from notification prose" do
+      notification = described_class.call(
+        account: account,
+        source: "facet_confidence.closeout_escalation",
+        subject: project,
+        severity: :error,
+        blocking: true,
+        title: "Internal workflow text",
+        description: "Internal workflow text",
+        inbox_action: "facet_confidence_closeout_evaluation"
+      )
+
+      expect(notification.metadata).to include("inbox_action" => "facet_confidence_closeout_evaluation")
+    end
+
     # @spec OPERATOR-INBOX-002B
     it "rejects blocking notifications without inline context or remediation guidance" do
       expect {

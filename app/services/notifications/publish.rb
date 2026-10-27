@@ -8,7 +8,7 @@ module Notifications
       new(...).call
     end
 
-    def initialize(account:, source:, subject:, severity:, title:, description: nil, metadata: {}, action_url: nil, nav_section: nil, user: nil, blocking: false)
+    def initialize(account:, source:, subject:, severity:, title:, description: nil, metadata: {}, action_url: nil, nav_section: nil, user: nil, blocking: false, inbox_action: nil)
       @account = account
       @source = source
       @subject = subject
@@ -20,6 +20,7 @@ module Notifications
       @nav_section = nav_section
       @user = user
       @blocking = blocking
+      @inbox_action = inbox_action
     end
 
     def call
@@ -36,7 +37,7 @@ module Notifications
         severity: severity,
         title: title,
         description: description,
-        metadata: metadata,
+        metadata: published_metadata,
         action_url: resolved_action_url(notification),
         nav_section: nav_section,
         user: user,
@@ -59,7 +60,16 @@ module Notifications
     private
 
     attr_reader :account, :source, :subject, :severity, :title,
-      :description, :metadata, :action_url, :nav_section, :user, :blocking
+      :description, :metadata, :action_url, :nav_section, :user, :blocking, :inbox_action
+
+    # Typed Inbox actions are an explicit publisher contract. The Inbox must
+    # never infer a workflow from untrusted or stale notification prose.
+    # @spec OPERATOR-INBOX-002L
+    def published_metadata
+      return metadata if inbox_action.blank?
+
+      metadata.merge("inbox_action" => inbox_action)
+    end
 
     def resolved_action_url(notification)
       return action_url if action_url.present?

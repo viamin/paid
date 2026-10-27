@@ -247,6 +247,47 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec OPERATOR-INBOX-002L FACET-CONFIDENCE-022
+  it "routes a typed closeout-evaluation escalation into the plain-language evaluation workflow" do
+    issue = create(:issue, project: project, github_number: 4323, paid_state: "in_progress")
+    create(:issue, :pull_request, project: project, github_number: 4324, github_state: "closed",
+      pr_review_phase: "merged", parent_issue: issue, created_at: 2.days.ago)
+    notification = create(
+      :notification,
+      :error,
+      account: account,
+      subject: issue,
+      source: "facet_confidence.closeout_escalation",
+      blocking: true,
+      title: "Remediation Required — Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.",
+      description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.",
+      metadata: { "inbox_action" => "facet_confidence_closeout_evaluation" }
+    )
+    entry = entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+
+    get inbox_entry_path(entry, project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    start_path = new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
+      inbox_entry_id: entry, inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Evaluation needed before this closeout can finish", "Start evaluation", start_path.gsub("&", "&amp;"))
+    expect(response.body).to include("0 judgments recorded", "judgments remaining")
+    expect(response.body).not_to include("blinded reference judgments", "facet-confidence corpus")
+
+    post project_facet_confidence_evaluations_path(project), params: {
+      issue_id: issue.id,
+      inbox_entry_id: entry,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND
+    }
+    evaluation = issue.facet_confidence_evaluations.find_by!(issue_id: issue.id)
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation,
+      inbox_entry_id: entry, inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND))
+
+    get inbox_entry_path(entry, project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response.body).to include("Continue judging", "0 judgments recorded (0 of #{evaluation.progress[:total]})")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a
