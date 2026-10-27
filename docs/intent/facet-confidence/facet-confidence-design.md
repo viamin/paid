@@ -174,3 +174,21 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+## Action-required escalation guidance
+
+An Action Required notification produced for a partial-closeout prerequisite
+uses its typed source and originating issue to offer the facet-confidence
+evaluation when the closeout packet is ready. It does not infer that workflow
+from notification wording. The Inbox explains that the closeout remains
+blocked pending an independent human review of every frozen test case, then
+shows recorded judgments and judgments still requiring attention. Its primary
+control follows the evaluation state: Start evaluation before a record exists,
+Continue judging while cases remain, Freeze judgments after every case is
+judged, and Review evaluation after freezing. The control carries the
+validated Inbox context into the authorized evaluation route and the route
+returns to the same Inbox item. Users who cannot perform the state transition
+can view the evaluation where permitted and are told that its sole judge or an
+authorized operator must take the next step. Other Action Required sources
+retain their safe generic description, remediation guidance, and linked action
+fallback.

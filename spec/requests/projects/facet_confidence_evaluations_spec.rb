@@ -73,6 +73,39 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation))
   end
 
+  # @spec FACET-CONFIDENCE-022
+  it "preserves a validated Action Required Inbox context after starting the evaluation" do
+    notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Evaluation needed", description: "Record independent judgments.")
+    inbox_entry_id = entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+
+    post project_facet_confidence_evaluations_path(project), params: {
+      issue_id: issue.id, inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      inbox_sort: "newest", inbox_entry_id: inbox_entry_id
+    }
+
+    evaluation = issue.facet_confidence_evaluations.first!
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_sort: "newest", inbox_entry_id: inbox_entry_id))
+  end
+
+  # @spec FACET-CONFIDENCE-022
+  it "does not let an unvalidated Inbox entry bypass another closeout blocker" do
+    create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Evaluation needed", description: "Record independent judgments.")
+
+    post project_facet_confidence_evaluations_path(project), params: {
+      issue_id: issue.id, inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      inbox_entry_id: "action_required:missing"
+    }
+
+    expect(response).to redirect_to(new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND))
+    expect(issue.facet_confidence_evaluations).to be_empty
+  end
+
   it "refuses to start for an originating work item outside the project" do
     other_project = create(:project, account: account, created_by: owner)
     other_issue = create(:issue, project: other_project, github_number: 99)

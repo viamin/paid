@@ -215,6 +215,17 @@ module Inbox
         title_text.presence || issue&.title || record.try(:title)
       end
 
+      # The detail pane resolves this only for the selected Action Required
+      # entry, avoiding closeout-status work while building the Inbox list.
+      # @spec FACET-CONFIDENCE-022
+      def facet_confidence_escalation
+        return unless action_required?
+
+        @facet_confidence_escalation ||= Inbox::FacetConfidenceEscalation.for(
+          notification: record, project:, issue:
+        )
+      end
+
       def summary
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
@@ -579,6 +590,8 @@ module Inbox
         next unless project
         next if project_filter_excludes?(project)
 
+        facet_confidence_escalation = facet_confidence_escalation_notification?(notification, issue)
+
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
           kind: ACTION_REQUIRED_KIND,
@@ -588,8 +601,8 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
+          summary_text: action_required_summary(notification, facet_confidence_escalation),
+          title_text: facet_confidence_escalation ? "Evaluation needed" : notification.title,
           action_url: notification.action_url
         )
       end
@@ -1018,6 +1031,16 @@ module Inbox
       return steps if steps.any?
 
       Array(notification.metadata["recommended_action"])
+    end
+
+    def facet_confidence_escalation_notification?(notification, issue)
+      notification.source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE && issue.present?
+    end
+
+    def action_required_summary(notification, facet_confidence_escalation)
+      return "An independent human evaluation is needed before this closeout can proceed." if facet_confidence_escalation
+
+      notification.metadata["recommended_action"].presence || notification.description
     end
 
     def notification_context(notification)

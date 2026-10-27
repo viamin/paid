@@ -219,6 +219,26 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Open the quality dashboard", "Resume manually or adjust thresholds")
   end
 
+  # @spec FACET-CONFIDENCE-022
+  it "turns a ready partial-closeout escalation into a plain-language evaluation action" do
+    issue = create(:issue, project: project, github_number: 4678, paid_state: "in_progress")
+    create(:issue, :pull_request, project: project, github_number: 4679, github_state: "closed",
+      pr_review_phase: "merged", parent_issue: issue, created_at: 2.days.ago)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Remediation Required", description: "Independent maintainers froze the blinded reference judgments.")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort: "newest")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Evaluation needed", "independently reviews every frozen test case", "Start evaluation")
+    expect(response.body).to include(new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_sort: "newest",
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)).gsub("&", "&amp;"))
+    expect(response.body).not_to include("blinded reference judgments")
+  end
+
   # @spec OPERATOR-INBOX-002B
   it "renders a blocking notification description when remediation guidance is absent" do
     notification = create(

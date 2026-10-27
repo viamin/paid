@@ -17,7 +17,7 @@ module Projects
       authorize FacetConfidenceEvaluation.new(project: @project)
       @issue = @project.issues.find(params[:issue_id])
       @existing = @issue.facet_confidence_evaluations.latest_first.first
-      @packet = FacetConfidence::CloseoutEvaluationPacket.call(issue: @issue, status: Issues::CloseoutStatus.call(@issue))
+      @packet = FacetConfidence::CloseoutEvaluationPacket.call(issue: @issue, status: closeout_status)
       @inbox_context = inbox_context
     end
 
@@ -25,7 +25,7 @@ module Projects
       authorize FacetConfidenceEvaluation.new(project: @project)
 
       issue = @project.issues.find(params[:issue_id])
-      result = FacetConfidence::CloseoutEvaluation::Start.call(project: @project, issue: issue, actor: current_user)
+      result = FacetConfidence::CloseoutEvaluation::Start.call(project: @project, issue: issue, actor: current_user, status: closeout_status)
       if result.success?
         redirect_to evaluation_path(result.evaluation),
           notice: result.resumed ? "Resumed the existing evaluation for this closeout." : "Evaluation started. Record the blinded reference judgments, then freeze the reference set."
@@ -143,6 +143,31 @@ module Projects
 
     def evaluation_path(evaluation)
       project_facet_confidence_evaluation_path(@project, evaluation, **inbox_context)
+    end
+
+    # An evaluation Action Required entry is allowed to resolve its own lone
+    # human-prerequisite notification. `valid_inbox_entry_id` checks that the
+    # entry is visible to this operator and belongs to this project first.
+    # @spec FACET-CONFIDENCE-022
+    def closeout_status
+      status = Issues::CloseoutStatus.call(@issue || @project.issues.find(params[:issue_id]))
+      notification = action_required_escalation_notification
+      return status unless notification
+
+      FacetConfidence::CloseoutEvaluation::EscalationStatus.call(status:, notification_id: notification.id)
+    end
+
+    def action_required_escalation_notification
+      return unless params[:inbox_kind] == Inbox::Queue::ACTION_REQUIRED_KIND
+
+      entry = Inbox::Queue.find_entry(user: current_user, entry_id: params[:inbox_entry_id].to_s,
+        project: @project, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+      notification = entry&.record
+      return unless notification.is_a?(Notification)
+      return unless notification.subject == (@issue || @project.issues.find(params[:issue_id]))
+      return unless notification.source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE
+
+      notification
     end
   end
 end
