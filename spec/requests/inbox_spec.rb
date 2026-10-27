@@ -517,6 +517,27 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("Link a prerequisite")
       expect(response.body).to include(link_prerequisite_project_agent_runs_path(project))
     end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    it "shows the latest unavailable prerequisite validation action and retry control" do
+      source_run = create(:agent_run, :completed, project:, issue: guided_issue, base_commit_sha: "a" * 40)
+      source_run.update!(reconciliation: {
+        "technical_prerequisite_evidence" => {
+          "recorded_at" => 1.minute.ago.iso8601,
+          "status" => "unavailable",
+          "setup_action" => "Request scoped pilot authorization to enable marketplace_tool_sidecars for this project.",
+          "validation_run_id" => 123
+        }
+      })
+      create(:pre_commit_requirement, project:, account:, command: "bin/audit")
+
+      render_guided_pane
+
+      expect(response.body).to include("Latest technical prerequisite validation", "Unavailable")
+      expect(response.body).to include("Request scoped pilot authorization to enable marketplace_tool_sidecars for this project.")
+      expect(response.body).to include("Retry prerequisite validation")
+      expect(response.body).to include(validate_technical_prerequisite_project_agent_runs_path(project))
+    end
   end
 
   # @spec CHANGE-INTENT-INBOX-001

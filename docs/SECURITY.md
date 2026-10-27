@@ -66,7 +66,7 @@ Agents are treated as potentially compromised:
 # Dockerfile.agent
 FROM ubuntu:24.04
 
-# Ruby 3.4.10 compiled from source (no pre-built Ruby image). Version follows
+# Ruby 3.4.11 compiled from source (no pre-built Ruby image). Version follows
 # the pin in .tool-versions; see docker/agent/Dockerfile for the verified
 # source checksum.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -81,14 +81,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && apt-get clean
 
-# Compile and install Ruby 3.4.10 from source
+# Compile and install Ruby 3.4.11 from source
 # Version pin and checksum live in .tool-versions and docker/agent/Dockerfile.
-RUN curl -fsSL https://cache.ruby-lang.org/pub/ruby/3.4/ruby-3.4.10.tar.gz | tar -xzC /tmp \
-    && cd /tmp/ruby-3.4.10 \
+RUN curl -fsSL https://cache.ruby-lang.org/pub/ruby/3.4/ruby-3.4.11.tar.gz | tar -xzC /tmp \
+    && cd /tmp/ruby-3.4.11 \
     && ./configure --disable-install-doc \
     && make -j$(nproc) \
     && make install \
-    && rm -rf /tmp/ruby-3.4.10
+    && rm -rf /tmp/ruby-3.4.11
 
 # Remove unnecessary tools that could aid attacks
 RUN rm -rf /usr/bin/wget /usr/bin/nc /usr/bin/ncat

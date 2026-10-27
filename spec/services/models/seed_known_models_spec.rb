@@ -31,6 +31,14 @@ RSpec.describe Models::SeedKnownModels do
       expect(registry).to have_received(:refresh).once
     end
 
+    it "uses a prepared registry snapshot without refreshing it again" do
+      prepared_registry = Models::RegistryModels.fetch
+
+      described_class.call(registry_models: prepared_registry)
+
+      expect(registry).to have_received(:refresh).once
+    end
+
     # @spec DIRECT-OUTBOUND-CATALOG-002
     it "updates existing models on re-sync" do
       described_class.call

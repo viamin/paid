@@ -574,6 +574,10 @@ class StaleRunDetectorJob < ApplicationJob
   def update_issue_state_after_terminal_recovery(agent_run)
     issue = agent_run.issue
     return unless issue
+    # A report-only validation never authorizes implementation, so recovering
+    # it must not rewrite the issue's paid state.
+    # @spec PARTIAL-CLOSEOUT-032
+    return if agent_run.technical_prerequisite_validation_goal?
 
     target_state = if active_clarification_gate?(agent_run, issue)
       "needs_input"

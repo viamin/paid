@@ -327,6 +327,59 @@ refresh local records immediately, showing the successful linkage and when a
 full sync is still required — the same services the agent `create_issue` /
 `edit_issue` tools use.
 
+### Capability-aware technical prerequisite validation
+
+An Inbox prerequisite that needs execution-environment evidence may offer a
+bounded validation against a fresh, pinned `AgentRun`. Before it starts, the
+action asks `Containers::BackendScheduler` for compatible execution hosts and
+uses the existing runner/provisioner capability contract. It never treats the
+control-plane browser or investigation workspace's Docker socket as evidence
+about those hosts. The inspected host is persisted as the run's planned host,
+so the container, its workspace volume, and its sidecars are created on the
+daemon the capability decision approved instead of the local default.
+
+The analyzer command is the reviewed recipe input, not an operator-provided
+shell command. The attached marketplace tool is not a second recipe input: a
+tool sidecar carries an image, a port, and its own environment, so the tool is
+exercised by provisioning it through `Containers::McpProvisioner` and
+publishing its endpoint to the analyzer. The validation provisions the normal
+isolated environment, restores the pinned commit into the shallow clone
+(the clone only carries the default-branch tip, so a commit pinned by an
+earlier run is fetched before it is checked out), invokes the analyzer through
+`execute_in_execution_environment`, records bounded stdout/stderr/exit status
+plus pinned checkout, image, tool identity, sidecar endpoint, and cleanup
+outcome, and then tears down both resources. Commands do not receive host
+shell access or a Docker socket; existing image allowlists, network policy,
+hardening profiles, and resource budgets remain authoritative.
+
+The validation run is report-only. It carries its own goal, so it never
+inherits the implementation-admission gate of an implementation goal — a
+stalled issue whose feature intent is not released can still collect evidence
+— and it is a synthetic operational run, so the agent execution queue never
+dispatches it. Its lifecycle is the job that owns it: queued, running, then a
+terminal state that a cancelled or failed run never overwrites. The executor
+reloads that lifecycle state around provisioning and before command execution,
+so cancellation stops work at the next external-operation boundary; its ensure
+path still removes any workspace, container, or sidecar already provisioned.
+
+Missing prerequisites are terminal evidence, not a retry cue. No compatible
+backend yields a backend setup action. A disabled `marketplace_tool_sidecars`
+flag yields the exact scoped pilot-authorization action; it is never enabled
+by the validation. Denied images and missing credentials similarly retain the
+provisioner's explicit rejection. Results are `unavailable`, `failed`, or
+`completed` and are stored on the synthetic run plus a bounded latest-record
+projection on its originating run's reconciliation data. That projection is
+included in the closeout assessment source revision and in the next bounded
+assessment's evidence, so a terminal validation invalidates stale criteria
+without treating the result itself as acceptance. A changed checkout, image,
+tool snapshot, or scope requires a fresh validation.
+
+When a validation record is present, the partial-closeout Inbox pane shows its
+latest outcome and exact setup action alongside the reviewed-recipe retry
+control. The operator can therefore resolve an unavailable backend or rollout
+authorization before rerunning it, rather than inferring remediation from a
+stale acceptance assessment.
+
 Pending chat write-tool confirmations visibly distinguish proposed/awaiting
 confirmation, queued, refused, and completed actions, link a completed action
 to the run it created, and a conversational message sent while a confirmation
