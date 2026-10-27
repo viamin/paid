@@ -247,6 +247,65 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec FACET-CONFIDENCE-022 OPERATOR-INBOX-002L
+  it "renders a typed closeout-evaluation escalation with plain-language progress and an Inbox-preserving start action" do
+    issue = create(:issue, project: project, github_number: 4323)
+    create(:issue, :pull_request, project: project, github_number: 4324, github_state: "closed",
+      pr_review_phase: "merged", parent_issue_id: issue.id)
+    notification = create(
+      :notification,
+      :error,
+      account: account,
+      subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+      blocking: true,
+      title: "Remediation Required — Independent maintainers have entered and frozen the blinded reference judgments.",
+      description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.",
+      metadata: { "workflow" => Inbox::FacetConfidenceCloseoutEscalation::WORKFLOW }
+    )
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort: "newest")
+
+    start_path = new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_sort: "newest",
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification))
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Review test cases before closeout", "0 of", "judgments recorded", "Start evaluation")
+    expect(response.body).to include(start_path.gsub("&", "&amp;"))
+    expect(response.body).not_to include("blinded reference judgments", "facet-confidence corpus")
+
+    get start_path
+    expect(response.body).to include("Start evaluation")
+  end
+
+  # @spec FACET-CONFIDENCE-022 OPERATOR-INBOX-002L
+  it "updates the typed escalation action as judgments are recorded and frozen" do
+    issue = create(:issue, project: project, github_number: 4662)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: "closeout_evaluation_escalation", blocking: true,
+      metadata: { "workflow" => Inbox::FacetConfidenceCloseoutEscalation::WORKFLOW })
+    corpus = FacetConfidence::Corpus.new(path: FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH)
+    evaluation = FacetConfidenceEvaluation.create!(project: project, issue: issue, created_by: user,
+      status: "labeling", corpus_path: FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH,
+      corpus_digest: corpus.content_digest, **corpus.identity.slice("corpus_version", "rubric_version", "model_version"))
+    corpus_case = corpus.cases.first
+    evaluation.labels.create!(case_id: corpus_case.fetch("id"), state: "labeled", recorded_by: user, recorded_at: Time.current,
+      verdict: "completed", intent_band: "at_or_above_threshold", technical_band: "at_or_above_threshold",
+      readiness: "ready", cited_evidence_reference: corpus_case.fetch("evidence").first.fetch("reference"), reason: "Reviewed independently.")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification), kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response.body).to include("Continue reviewing test cases", "Continue judging", "1 of")
+    expect(response.body).to include("still need a judgment")
+
+    evaluation.update!(status: "frozen", labels_frozen_at: Time.current)
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification), kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response.body).to include("Evaluation judgments are frozen", "View evaluation report")
+    expect(response.body).not_to include("still need a judgment")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a

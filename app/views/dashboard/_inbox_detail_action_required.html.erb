@@ -1,6 +1,36 @@
 <%# @spec OPERATOR-INBOX-002B %>
 <div class="space-y-6">
   <% notification = entry.record %>
+  <% escalation = Inbox::FacetConfidenceCloseoutEscalation.for(notification) %>
+  <% inbox_context = { inbox_kind: selected_kind, inbox_sort: params[:sort].presence_in(Inbox::Queue::SORTS.keys), inbox_entry_id: entry.id }.compact %>
+  <% if escalation %>
+    <div class="rounded-xl border border-rose-200 bg-rose-50 p-4" data-facet-confidence-escalation>
+      <h3 class="text-sm font-semibold text-rose-900"><%= escalation.title %></h3>
+      <p class="mt-1 text-sm text-rose-800"><%= escalation.explanation %></p>
+      <p class="mt-3 text-sm text-rose-900">
+        <span class="font-medium"><%= escalation.recorded %> of <%= escalation.total %> judgments recorded.</span>
+        <% if escalation.active? %>
+          <%= escalation.remaining %> <%= "test case".pluralize(escalation.remaining) %> still <%= escalation.remaining == 1 ? "needs" : "need" %> a judgment.
+          <% if escalation.skipped.positive? %> <%= escalation.skipped %> skipped <%= "case".pluralize(escalation.skipped) %> must also be judged before freezing.<% end %>
+        <% end %>
+      </p>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <% if escalation.started? %>
+        <%= link_to escalation.judge?(current_user) ? escalation.action_label : "View evaluation",
+              project_facet_confidence_evaluation_path(entry.project, escalation.evaluation, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
+      <% else %>
+        <%= link_to escalation.action_label,
+              new_project_facet_confidence_evaluation_path(entry.project, issue_id: entry.issue.id, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
+      <% end %>
+      <%= link_to inbox_issue_link_label(entry.issue), entry.issue.github_url, target: "_blank", rel: "noopener noreferrer",
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    </div>
+  <% else %>
   <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
     <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
     <% if notification.description.present? %>
@@ -60,5 +90,6 @@
             data: { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
+  <% end %>
   <% end %>
 </div>

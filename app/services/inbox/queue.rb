@@ -586,6 +586,7 @@ module Inbox
         next unless project
         next if project_filter_excludes?(project)
 
+        escalation = FacetConfidenceCloseoutEscalation.for(notification)
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
           kind: ACTION_REQUIRED_KIND,
@@ -595,8 +596,8 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
+          summary_text: escalation&.explanation || notification.metadata["recommended_action"].presence || notification.description,
+          title_text: escalation&.title || notification.title,
           action_url: notification.action_url
         )
       end

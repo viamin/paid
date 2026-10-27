@@ -58,6 +58,8 @@ module FacetConfidence
 
         @evaluation.update!(status: "frozen", labels_frozen_at: Time.current)
         CompileReport.call(evaluation: @evaluation)
+        Notifications::Resolve.call(account: @evaluation.project.account,
+          source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, subject: @evaluation.issue)
         Result.new(success: true, error: nil, evaluation: @evaluation)
       end
 

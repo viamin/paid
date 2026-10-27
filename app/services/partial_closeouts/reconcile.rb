@@ -41,6 +41,7 @@ module PartialCloseouts
         # operator next step reaches the Inbox notification; a generic
         # fallback would leave the prerequisite unactionable (#4119).
         raise ArgumentError, "human gap next_step is required" if human_gap?(gap) && gap["next_step"].to_s.strip.blank?
+        raise ArgumentError, "human gap workflow is invalid" if human_gap?(gap) && gap["workflow"].present? && !Llm::AnalyzePartialCloseout::VALID_WORKFLOWS.include?(gap["workflow"])
         validate_human_references!(gap) if human_gap?(gap)
       end
     end
@@ -224,6 +225,8 @@ module PartialCloseouts
       metadata["evidence_submissions"] = submissions if submissions.any?
       policy_selection = replacement_policy_action(human_gaps)
       metadata["policy_selection"] = policy_selection if policy_selection
+      workflow = shared_workflow(human_gaps)
+      metadata["workflow"] = workflow if workflow
 
       superseded = Array(previous&.metadata&.fetch("superseded_references", nil))
       if previous&.metadata&.fetch("prerequisite_identity", nil) != identity
@@ -231,6 +234,11 @@ module PartialCloseouts
       end
       metadata["superseded_references"] = superseded.uniq if superseded.any?
       metadata
+    end
+
+    def shared_workflow(human_gaps)
+      workflows = human_gaps.filter_map { |gap| gap["workflow"] }.uniq
+      workflows.sole if workflows.one? && human_gaps.all? { |gap| gap["workflow"].present? }
     end
 
     def reconciled_evidence_submissions(previous, occurrences)
@@ -255,7 +263,7 @@ module PartialCloseouts
     end
 
     def prerequisite_identity(gap)
-      identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection"))
+      identity = canonicalize(gap.slice("criterion", "next_step", "workflow", "policy_selection"))
       identity["references"] = Array(gap["references"])
         .map { |reference| canonicalize(reference) }
         .sort_by { |reference| JSON.generate(reference) }

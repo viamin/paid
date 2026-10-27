@@ -174,3 +174,11 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+When a closeout-evaluation escalation is published as Action Required, its
+notification metadata declares the `facet_confidence_closeout_evaluation`
+workflow. The Inbox uses that declaration to say plainly that a human must
+review every frozen test case, record judgments, and freeze the completed set.
+It displays progress without exposing frozen answers, selects Start,
+Continue judging, Freeze judgments, or the report from persisted evaluation
+state, and preserves the originating Inbox context in every workflow link.

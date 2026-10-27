@@ -171,6 +171,17 @@ absent, the description is also the entry summary. `Notifications::Publish`
 rejects a blocking notification that has neither a non-blank description nor
 remediation guidance, so every Action Required entry has meaningful context.
 
+Some notifications declare a typed in-product workflow in their metadata.
+The Inbox renders a workflow-specific presentation only from that explicit
+declaration, never by matching notification prose. The facet-confidence
+closeout-evaluation declaration replaces implementation language with an
+explanation of the independent human review, recorded/remaining judgment
+progress, and the state-appropriate route into Start, judging, freezing, or
+the report. Its links retain the validated Inbox selection context. Untyped
+notifications continue to use the generic description, remediation, and
+linked-action rendering, so a missing declaration remains understandable and
+safe rather than silently hidden.
+
 ### `merge_approval`
 
 Backed by the PR scanner's persisted current-head policy snapshot on `Issue`.
