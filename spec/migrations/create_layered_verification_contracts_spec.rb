@@ -2,6 +2,8 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20261024055249_create_layered_verification_contracts")
+require Rails.root.join("db/migrate/20261027090001_add_cause_signature_to_layered_verification_check_results")
+require Rails.root.join("db/migrate/20261027090002_add_canonical_source_path_to_layered_verification_obligations")
 
 RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
   # @spec LAYERED-VERIFY-004 @spec LAYERED-VERIFY-006
@@ -23,7 +25,7 @@ RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
     teardown_layered_verification_tables!
 
     if tables_existed.any? { |_table, existed| existed }
-      migration.up
+      restore_current_schema!
     end
     restore_finding_foreign_key! if finding_foreign_key_existed
     clear_schema_metadata!
@@ -66,6 +68,12 @@ RSpec.describe CreateLayeredVerificationContracts, :aggregate_failures do
   # The list is parent-first; children must drop before their parent.
   def teardown_layered_verification_tables!
     layered_verification_tables.reverse_each { |table| connection.drop_table(table, if_exists: true) }
+  end
+
+  def restore_current_schema!
+    migration.up
+    AddCauseSignatureToLayeredVerificationCheckResults.new.change
+    AddCanonicalSourcePathToLayeredVerificationObligations.new.change
   end
 
   def detach_finding_foreign_key!
