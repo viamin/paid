@@ -662,6 +662,12 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(targets.map(&:slug)).to eq([ "dashboard" ])
     end
 
+    it "maps closeout evidence submissions to the dashboard inbox" do
+      targets = described_class.call(changed_files: [ "app/controllers/projects/closeout_evidence_controller.rb" ])
+
+      expect(targets.map(&:slug)).to eq([ "dashboard" ])
+    end
+
     it "maps convention settings controller to the convention settings page" do
       targets = described_class.call(changed_files: [ "app/controllers/projects/convention_settings_controller.rb" ])
 
