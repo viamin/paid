@@ -40,7 +40,8 @@ class TenantSetting < ApplicationRecord
     # When true (default), a chat session paused by a runner rate limit
     # (CHAT-API-017) is automatically resumed — the message that hit the
     # rate limit is resent — once the runner's rate limit window clears.
-    "chat_auto_resume_rate_limited" => true
+    "chat_auto_resume_rate_limited" => true,
+    "chat_stall_timeout_seconds" => 300
   }.freeze
   DEFAULT_QUALITY_THRESHOLDS = Project::DEFAULT_QUALITY_GATE_SETTINGS.freeze
   DEFAULT_AGENT_SETTINGS = {
@@ -364,6 +365,10 @@ class TenantSetting < ApplicationRecord
     ActiveModel::Type::Boolean.new.cast(effective_chat_settings["chat_auto_resume_rate_limited"])
   end
 
+  def chat_stall_timeout_seconds
+    effective_chat_settings["chat_stall_timeout_seconds"]
+  end
+
   def chat_settings=(value)
     merged_features = normalize_hash(features)
     merged_features["chat_settings"] = normalize_chat_settings(value)
@@ -529,7 +534,7 @@ class TenantSetting < ApplicationRecord
       end
     end
 
-    %w[chat_session_token_limit chat_monthly_token_limit].each do |key|
+    %w[chat_session_token_limit chat_monthly_token_limit chat_stall_timeout_seconds].each do |key|
       next unless chat.key?(key) && chat[key].present?
 
       val = chat[key]

@@ -106,6 +106,12 @@ Rails.application.configure do
       cron: "2-59/5 * * * *",
       class: "StaleRunDetectorJob"
     },
+    chat_turn_stall_detector: {
+      cron: "4-59/5 * * * *",
+      class: "ChatSessions::DetectStalledTurnsJob",
+      queue: "maintenance",
+      description: "Detect chat turns that stopped without a terminal outcome"
+    },
     docker_orphan_cleanup: {
       cron: "3-59/5 * * * *",
       class: "DockerOrphanCleanupJob",

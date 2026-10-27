@@ -649,6 +649,14 @@ arrows:
     taxonomy: automation
     status: OK
     audited: 2026-10-10
+  chat-turn-recovery:
+    title: Chat Turn Recovery
+    path: docs/intent/chat-turn-recovery/chat-turn-recovery-design.md
+    specs: docs/intent/chat-turn-recovery/chat-turn-recovery-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-10-27
   queue-priority-tiers:
     title: Queue Priority Tiers
     path: docs/intent/queue-priority-tiers/queue-priority-tiers-design.md

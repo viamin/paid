@@ -300,6 +300,11 @@
         Automatically resume chats paused by a runner rate limit
       </label>
       <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">When enabled (default), a chat paused because its runner hit a rate limit resends the message that failed once the rate limit clears, without user intervention.</p>
+      <div class="mt-4 max-w-xs">
+        <%= label_tag "tenant_setting_chat_settings_chat_stall_timeout_seconds", "Stall detection timeout (seconds)", class: "block text-sm font-medium text-gray-700 dark:text-gray-200" %>
+        <%= number_field_tag "tenant_setting[chat_settings][chat_stall_timeout_seconds]", chat["chat_stall_timeout_seconds"], min: 1, class: "mt-1 block w-full rounded-md border-gray-300 text-sm shadow-sm dark:border-gray-600 dark:bg-gray-800 dark:text-white" %>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">How long a turn may have no durable activity before it is marked stalled. Default: 300.</p>
+      </div>
     </section>
 
     <div class="flex justify-end">

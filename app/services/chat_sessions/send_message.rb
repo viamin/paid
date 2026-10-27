@@ -15,12 +15,12 @@ module ChatSessions
   class SendMessage
     include FallbackLoop
 
-    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
+    attr_reader :chat_session, :actor, :content, :on_chunk, :llm_client, :stream_message_id,
       :transport_attempt_message
 
     MAX_CONTENT_LENGTH = 12_000
 
-    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
+    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil, user_message: nil, force_manual_confirmation: false)
       @chat_session = chat_session
       @actor = actor
       @content = content
@@ -28,6 +28,8 @@ module ChatSessions
       @on_message_persisted = on_message_persisted
       @llm_client = llm_client
       @stream_message_id = stream_message_id
+      @recovery_user_message = user_message
+      @force_manual_confirmation = force_manual_confirmation
     end
 
     def self.call(...)
@@ -44,9 +46,18 @@ module ChatSessions
 
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
+      open_turn!
       assistant_message = run_with_fallbacks
+      @chat_turn.complete! if assistant_message&.role == "assistant"
       update_session_activity
       assistant_message
+    rescue AgentHarness::RateLimitError
+      @chat_turn&.fail!("rate_limited")
+      raise
+    rescue AgentHarness::Error => error
+      @chat_turn&.fail!(provider_timeout?(error) ? "provider_timeout" : "infrastructure_error")
+      automatically_recover! if @chat_turn
+      raise
     end
 
     private
@@ -117,10 +128,33 @@ module ChatSessions
       transport_attempt_message
     end
 
+    # @spec CHAT-TURN-RECOVERY-001
+    def open_turn!
+      @chat_turn = ChatSessions::Turns::Open.call(chat_session:, user_message: transport_attempt_message)
+    end
+
+    def on_message_persisted
+      lambda do |message, **kwargs|
+        @chat_turn&.record_activity!(message)
+        @on_message_persisted&.call(message, **kwargs)
+      end
+    end
+
+    def provider_timeout?(error)
+      error.message.to_s.match?(/timeout|timed out/i)
+    end
+
+    def automatically_recover!
+      ChatSessions::Turns::Recover.call(turn: @chat_turn, automatic: true)
+    rescue ChatSessions::Turns::Recover::Conflict, ChatSessions::Turns::Recover::ConfirmationRequired
+      nil
+    end
+
     # A restarted job retains its stream id. Reusing the original user row
     # lets its already-persisted tool results remain in the reconstructed
     # transcript instead of turning recovery into another tool dispatch.
     def existing_user_message
+      return @recovery_user_message if @recovery_user_message
       return unless stream_message_id
 
       chat_session.messages.find_by(role: "user", metadata: { "stream_message_id" => stream_message_id })
@@ -178,7 +212,7 @@ module ChatSessions
     # second SUM query per turn. Only forward when a limit is configured; a nil
     # baseline means "unlimited" and AgentLoop re-derives nil cheaply.
     def extra_agent_loop_kwargs
-      @token_budget ? { token_budget: @token_budget } : {}
+      { token_budget: @token_budget, force_manual_confirmation: @force_manual_confirmation }.compact
     end
   end
 end

@@ -178,6 +178,19 @@ module Tools
         find(name)&.auto_approve_eligible? ? true : false
       end
 
+      # A completed read-only tool can be reconstructed from the durable
+      # transcript without replaying a mutation. Write tools must opt in
+      # explicitly before automatic recovery is ever permitted.
+      # @spec CHAT-TURN-RECOVERY-006
+      def replay_safe?(name)
+        tool = find(name)
+        tool.present? && !tool.write_operation?
+      end
+
+      def long_running?(_name)
+        false
+      end
+
       def resolve_confirmation(name:, decision:, pending_result:, user:, session:)
         registry = registry_for(name)
         raise ArgumentError, "Unknown tool: #{name}" unless registry

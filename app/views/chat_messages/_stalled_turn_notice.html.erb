@@ -1,0 +1,13 @@
+<%# @spec CHAT-TURN-RECOVERY-005 %>
+<% turn_id = message.metadata["chat_turn_id"] %>
+<div class="flex justify-center" data-message-id="<%= message.id %>">
+  <article class="mx-auto max-w-2xl rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+    <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-amber-700">Turn needs attention</div>
+    <div class="whitespace-pre-wrap break-words leading-6"><%= message.content %></div>
+    <% if turn_id.present? %>
+      <%= button_to "Resume safely", resume_chat_turn_path(turn_id), method: :post,
+            params: { revision: message.metadata["turn_revision"], confirmed: true },
+            class: "mt-2 rounded bg-amber-700 px-3 py-1.5 text-xs font-semibold text-white" %>
+    <% end %>
+  </article>
+</div>
