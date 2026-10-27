@@ -121,11 +121,11 @@ selection also applies the existing authorization of the selected issue or
 PR-creation pathway:
 
 - **Start**: an authorized user supplies a project, optional objective (recipe
-  key), optional scope (paths/symbols or a free-form natural-language
-  target), and optional free-text guidance. A
-  start request must include either a recipe objective or nonblank guidance;
-  scope alone is not an investigation objective. Response identifies the
-  created run and its resolved (or pending-clarification) scope.
+  key), optional scope (paths/symbols or a free-form natural-language target),
+  and optional free-text guidance. A start request must include either a
+  recipe objective or nonblank guidance; scope alone is not an investigation
+  objective. Response identifies the created run and its resolved (or
+  pending-clarification) scope.
 - **Inspect**: an authorized user reads run status, report outcome once
   terminal, and findings with their status.
 - **Cancel**: an authorized user takes an explicit action distinct from
