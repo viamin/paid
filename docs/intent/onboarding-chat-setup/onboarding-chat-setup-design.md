@@ -110,3 +110,19 @@ Tracked under the umbrella (#4280):
 
 Phase 1–4 tools and the chat persona are implemented by #4282. The curated
 product-docs corpus is version controlled at `config/onboarding_product_docs.yml`.
+
+### Catalog-safe chat bootstrap
+
+Onboarding resolves its initial Low-tier model from one shared catalog snapshot.
+`ModelsSyncJob` prepares the RubyLLM registry snapshot before taking its
+exclusive transaction-scoped catalog lock, then seeds from that snapshot and
+reconciles availability; curated chat resolution holds the corresponding
+shared lock while it applies catalog, tool capability,
+availability, verified-model, and project/operator-policy filters. A refresh
+therefore cannot expose an intermediate provider catalog to a new account.
+
+If the completed snapshot contains no eligible Low-tier model, bootstrap rolls
+back its credential, runner, and session and reports a typed reason: empty
+catalog, runner incompatibility, tool-capability mismatch, unavailability,
+verified-model restriction, operator/project policy restriction, or lack of a
+Low-tier candidate.
