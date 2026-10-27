@@ -55,9 +55,11 @@
   *Code:* `Models::DetectCatalogDrift`.
 
 - [x] **MODEL-AVAILABILITY-008** — When a scheduled model sync updates the
-  catalog and availability evidence, it SHALL hold an exclusive catalog
-  snapshot through both operations. Eligibility readers SHALL hold a shared
-  snapshot while evaluating catalog, availability, verified-model, and policy
-  filters, so they cannot observe a partially refreshed provider catalog.
+  catalog and availability evidence, it SHALL prepare any external registry
+  snapshot before taking an exclusive catalog snapshot, then hold that lock
+  through catalog writes and availability reconciliation. Eligibility readers
+  SHALL hold a shared snapshot while evaluating catalog, availability,
+  verified-model, and policy filters, so they cannot observe a partially
+  refreshed provider catalog or be blocked by an upstream registry fetch.
   *Code:* `Models::CatalogSnapshot`, `ModelsSyncJob`,
   `ChatSessions::CuratedModelOptions`.

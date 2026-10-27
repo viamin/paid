@@ -114,9 +114,10 @@ product-docs corpus is version controlled at `config/onboarding_product_docs.yml
 ### Catalog-safe chat bootstrap
 
 Onboarding resolves its initial Low-tier model from one shared catalog snapshot.
-`ModelsSyncJob` holds an exclusive transaction-scoped catalog lock while it
-seeds RubyLLM-backed rows and reconciles availability; curated chat resolution
-holds the corresponding shared lock while it applies catalog, tool capability,
+`ModelsSyncJob` prepares the RubyLLM registry snapshot before taking its
+exclusive transaction-scoped catalog lock, then seeds from that snapshot and
+reconciles availability; curated chat resolution holds the corresponding
+shared lock while it applies catalog, tool capability,
 availability, verified-model, and project/operator-policy filters. A refresh
 therefore cannot expose an intermediate provider catalog to a new account.
 

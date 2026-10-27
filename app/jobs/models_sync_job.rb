@@ -5,8 +5,10 @@ class ModelsSyncJob < ApplicationJob
 
   # @spec MODEL-AVAILABILITY-004 MODEL-AVAILABILITY-008
   def perform
+    registry_models = Models::RegistryModels.fetch
+
     synced, checked = Models::CatalogSnapshot.refresh do
-      [ Models::SeedKnownModels.call, Models::ReconcileAvailability.refresh_known_contexts! ]
+      [ Models::SeedKnownModels.call(registry_models:), Models::ReconcileAvailability.refresh_known_contexts! ]
     end
 
     Rails.logger.info(
