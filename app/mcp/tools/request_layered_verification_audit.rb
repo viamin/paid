@@ -7,7 +7,6 @@ module Tools
     def self.tool_name = "request_layered_verification_audit"
     def self.write_operation? = true
     def self.mcp_available? = true
-    def self.confirmation_mode = :post_dispatch
 
     def self.description
       "Prepare and dispatch a bounded, issue-less verification audit for a project. It records evidence and findings only; it never starts repair."
@@ -29,29 +28,25 @@ module Tools
         type: "object",
         properties: {
           project_id: { type: "integer" }, obligation_ids: { type: "array", items: { type: "integer" } },
-          target_revision: { type: "string" }, budget: { type: "object" }, selections: { type: "object" }
-        }, required: %w[project_id obligation_ids target_revision budget]
+          target_revision: { type: "string" }, budget: { type: "object" }, selections: { type: "object" },
+          confirmed: { type: "boolean" }
+        }, required: %w[project_id obligation_ids target_revision budget confirmed]
       }
     end
 
-    # The returned preview is the confirmation payload; dispatch occurs only
-    # after the chat/MCP confirmation resolver approves it.
-    def perform(project_id:, obligation_ids:, target_revision:, budget:, selections: {})
+    # A preview is safe to return before a human approves it. The registry
+    # injects +confirmed+ only after chat confirmation; MCP and the project UI
+    # must explicitly provide the same human-approved value.
+    def perform(project_id:, obligation_ids:, target_revision:, budget:, selections: {}, confirmed: false)
       project = project_for(project_id)
       obligations = project.layered_verification_obligations.where(id: obligation_ids).order(:id)
       raise ArgumentError, "select at least one obligation" if obligations.empty?
 
-      { "project_id" => project.id, "obligation_ids" => obligations.ids, "target_revision" => target_revision,
-        "budget" => budget, "plan" => LayeredVerification::Plans::Build.call(obligations:, selections:) }
-    end
+      payload = preview(project:, obligations:, target_revision:, budget:, selections:)
+      return payload unless confirmed
 
-    def resolve_confirmation(decision:, pending_result:)
-      raise ArgumentError, "decision must be approve or deny" unless decision.in?([ :approve, :deny ])
-      return { status: "cancelled" } if decision == :deny
-
-      payload = pending_result.deep_stringify_keys
       run = LayeredVerification::Audits::Request.call(
-        project: project_for(payload.fetch("project_id")), user: current_user,
+        project:, user: current_user,
         obligation_ids: payload.fetch("obligation_ids"), target_revision: payload.fetch("target_revision"),
         budget: payload.fetch("budget"), selections: payload.fetch("plan")
       )
@@ -66,5 +61,11 @@ module Tools
     end
 
     def project_for(id) = policy_scope(Project).find(id)
+
+    def preview(project:, obligations:, target_revision:, budget:, selections:)
+      target_revision = LayeredVerification::Audits::Request.resolve_target_revision!(project:, target_revision:)
+      { "project_id" => project.id, "obligation_ids" => obligations.ids, "target_revision" => target_revision,
+        "budget" => budget, "plan" => LayeredVerification::Plans::Build.call(obligations:, selections:) }
+    end
   end
 end

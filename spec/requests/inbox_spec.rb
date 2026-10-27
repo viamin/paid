@@ -2028,12 +2028,17 @@ RSpec.describe "Inbox" do
   # @spec LAYERED-VERIFY-015 LAYERED-VERIFY-016
   it "renders finding evidence and records a decision without plan-review actions" do
     finding = create_layered_verification_finding
+    check_result = create(:layered_verification_check_result, obligation: finding.obligation, agent_run: finding.agent_run,
+      execution_state: "completed", obligation_coverage: "contradicted", cause_signature: "missing-idempotency-guard",
+      input_revision: { "code" => "abc123", "intent" => "content-digest" })
+    finding.update!(observations: [ { "check_result_ids" => [ check_result.id ] } ])
     key = entry_id(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND, finding)
 
     get inbox_entry_path(key), headers: { "Turbo-Frame" => "inbox-detail" }
 
     expect(response.body).to include("PAYMENTS-017", "Two captures occur after retry.",
-      "Only the retry path was exercised.", "Request a separately authorized repair")
+      "Only the retry path was exercised.", "Request a separately authorized repair", "Contributing check results",
+      "completed", "contradicted", "matches audit revision")
     expect(response.body).not_to include("Approve plan", "Reject plan", "Revise plan")
 
     post inbox_layered_verification_finding_decision_path(key), params: {
@@ -2050,7 +2055,7 @@ RSpec.describe "Inbox" do
   it "rejects a finding decision when the repository revision has advanced" do
     finding = create_layered_verification_finding
     key = entry_id(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND, finding)
-    allow(github_client).to receive(:ref).with("acme/alpha", "heads/main")
+    allow(github_client).to receive(:ref).with("acme/alpha", "abc123")
       .and_return(OpenStruct.new(object: OpenStruct.new(sha: "new-revision")))
 
     post inbox_layered_verification_finding_decision_path(key), params: {
@@ -2067,7 +2072,8 @@ RSpec.describe "Inbox" do
     obligation = create(:layered_verification_obligation, project:, external_identity: "PAYMENTS-017",
       scope_description: "Retry a charge without duplicating it.", external_revision: "abc123")
     LayeredVerificationFinding.create!(project:, obligation:,
-      agent_run: create(:agent_run, project:, goal: "layered_verification_audit"),
+      agent_run: create(:agent_run, project:, goal: "layered_verification_audit",
+        external_metadata: { "layered_verification" => { "target_revision" => "abc123" } }),
       correspondence_claim_type: "spec_to_code", cause_signature: "missing-idempotency-guard",
       source_passages: [ "PAYMENTS-017 requires one captured charge." ],
       observed_behavior: { "summary" => "Two captures occur after retry." },

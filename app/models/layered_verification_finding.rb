@@ -12,6 +12,8 @@ class LayeredVerificationFinding < ApplicationRecord
   validates :status, inclusion: { in: STATUSES }
   validate :records_belong_to_same_project
 
+  after_commit :bump_inbox_cache_version, if: :inbox_visibility_changed?
+
   def add_observation!(agent_run:, check_result_ids:)
     with_lock do
       update!(status: status == "resolved" ? "open" : status, observations: observations + [ {
@@ -27,5 +29,15 @@ class LayeredVerificationFinding < ApplicationRecord
   def records_belong_to_same_project
     errors.add(:obligation, "must belong to the same project") if obligation && obligation.project_id != project_id
     errors.add(:agent_run, "must belong to the same project") if agent_run && agent_run.project_id != project_id
+  end
+
+  def inbox_visibility_changed?
+    return status.in?(%w[open deferred]) if previously_new_record?
+
+    saved_change_to_status? && (status_before_last_save.in?(%w[open deferred]) || status.in?(%w[open deferred]))
+  end
+
+  def bump_inbox_cache_version
+    Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
   end
 end

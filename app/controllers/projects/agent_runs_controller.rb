@@ -353,15 +353,20 @@ module Projects
 
     # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-014
     def request_layered_verification_audit
-      authorize @project, :manage_issues?
-      run = LayeredVerification::Audits::Request.call(
-        project: @project, user: current_user, obligation_ids: params[:obligation_ids],
-        target_revision: params[:target_revision], budget: params[:budget] || {}, selections: params[:selections] || {}
+      result = Tools::RequestLayeredVerificationAudit.new(user: current_user, session: nil).dispatch(
+        project_id: @project.id, obligation_ids: params[:obligation_ids], target_revision: params[:target_revision],
+        budget: params[:budget] || {}, selections: params[:selections] || {},
+        confirmed: ActiveModel::Type::Boolean.new.cast(params[:confirmed])
       )
-      redirect_to project_agent_run_path(@project, run), notice: "Verification audit queued."
+      return render json: result unless result[:id]
+
+      redirect_to project_agent_run_path(@project, result[:id]), notice: "Verification audit queued."
     rescue LayeredVerification::AuditAccess::FeatureDisabledError,
            LayeredVerification::AuditAccess::UnauthorizedError,
-           LayeredVerification::Audits::Request::EmptyScopeError => error
+           LayeredVerification::Audits::Request::EmptyScopeError,
+           LayeredVerification::Audits::Request::InvalidTargetRevisionError,
+           ActiveRecord::RecordInvalid,
+           ArgumentError => error
       redirect_to project_path(@project), alert: error.message
     end
 

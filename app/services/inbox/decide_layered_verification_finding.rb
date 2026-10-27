@@ -36,15 +36,29 @@ module Inbox
     attr_reader :action, :external_revision, :finding, :reason, :user
 
     def stale?
-      external_revision != finding.obligation.reload.external_revision.to_s ||
-        external_revision != current_repository_revision
+      external_revision != recorded_target_revision ||
+        source_revision_at_audit_target != recorded_target_revision ||
+        !obligation_source_matches_evidence?
     end
 
-    def current_repository_revision
+    def recorded_target_revision
+      finding.agent_run.external_metadata.dig("layered_verification", "target_revision").to_s
+    end
+
+    # An obligation revision can be a content digest, while a repository
+    # revision is a Git SHA. Re-resolve the audit's pinned repository revision
+    # instead of incorrectly comparing those two coordinate systems to HEAD.
+    def source_revision_at_audit_target
       project = finding.project
-      project.client.ref(project.full_name, "heads/#{project.default_branch}").object.sha.to_s
+      project.client.ref(project.full_name, recorded_target_revision).object.sha.to_s
     rescue GithubClient::Error, Faraday::Error
-      raise StaleRevisionError, "The current repository revision could not be verified; try again before deciding."
+      raise StaleRevisionError, "The audit revision could not be verified; try again before deciding."
+    end
+
+    def obligation_source_matches_evidence?
+      expected = finding.obligation.reload.external_revision.to_s
+      LayeredVerificationCheckResult.where(agent_run: finding.agent_run, obligation: finding.obligation)
+        .any? { |result| result.input_revision.values.map(&:to_s).include?(expected) }
     end
 
     def recorded_decision

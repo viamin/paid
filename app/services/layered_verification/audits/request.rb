@@ -5,8 +5,20 @@ module LayeredVerification
     # @spec LAYERED-VERIFY-010 @spec LAYERED-VERIFY-013 @spec LAYERED-VERIFY-014
     class Request
       class EmptyScopeError < StandardError; end
+      class InvalidTargetRevisionError < StandardError; end
 
       def self.call(...) = new(...).call
+
+      def self.resolve_target_revision!(project:, target_revision:)
+        revision = target_revision.to_s
+        raise InvalidTargetRevisionError, "target revision is required" if revision.blank?
+        raise InvalidTargetRevisionError, "target revision must be 40 characters or fewer" if revision.length > 40
+
+        project.client.ref(project.full_name, revision).object.sha.to_s.presence ||
+          raise(InvalidTargetRevisionError, "target revision could not be resolved")
+      rescue GithubClient::Error, Faraday::Error
+        raise InvalidTargetRevisionError, "target revision could not be resolved"
+      end
 
       def initialize(project:, user:, obligation_ids:, target_revision:, budget:, selections: {})
         @project = project
@@ -20,6 +32,7 @@ module LayeredVerification
       def call
         AuditAccess.authorize!(user:, project:)
         raise EmptyScopeError, "select at least one obligation" if obligations.empty?
+        validate_target_revision!
 
         run = AgentRun.create!(run_attributes)
         ProcessRunQueueJob.perform_later
@@ -47,6 +60,10 @@ module LayeredVerification
             }
           }
         }
+      end
+
+      def validate_target_revision!
+        @target_revision = self.class.resolve_target_revision!(project:, target_revision:)
       end
     end
   end

@@ -13,4 +13,16 @@ RSpec.describe LayeredVerification::Plans::Build do
 
     expect(plan).to include("selected_checks" => [ "spec_to_code" ], "exclusions" => [ "no formal model" ])
   end
+
+  # @spec LAYERED-VERIFY-021
+  it "normalizes controller parameters at the input boundary" do
+    obligation = create(:layered_verification_obligation)
+    selections = ActionController::Parameters.new(
+      obligation.id.to_s => { selected_checks: [ "spec_to_code" ], fit: "mapped specification" }
+    )
+
+    plan = described_class.call(obligations: [ obligation ], selections:).fetch(obligation.id.to_s)
+
+    expect(plan).to include("selected_checks" => [ "spec_to_code" ], "fit" => "mapped specification")
+  end
 end

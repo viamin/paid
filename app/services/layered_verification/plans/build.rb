@@ -10,7 +10,7 @@ module LayeredVerification
 
       def initialize(obligations:, selections: {})
         @obligations = obligations
-        @selections = selections
+        @selections = selections.respond_to?(:to_unsafe_h) ? selections.to_unsafe_h : selections
       end
 
       def call
@@ -22,7 +22,7 @@ module LayeredVerification
       attr_reader :obligations, :selections
 
       def plan_for(obligation)
-        selection = selections.fetch(obligation.id, selections.fetch(obligation.id.to_s, {})).deep_stringify_keys
+        selection = selections.fetch(obligation.id.to_s, selections.fetch(obligation.id, {})).to_h.deep_stringify_keys
         {
           "selected_checks" => Array(selection["selected_checks"]),
           "fit" => selection["fit"].to_s,
