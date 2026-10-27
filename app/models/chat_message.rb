@@ -7,6 +7,7 @@ class ChatMessage < ApplicationRecord
   before_validation :set_external_id, on: :create
 
   belongs_to :chat_session
+  belongs_to :chat_turn, optional: true
   has_one :chat_diagram, dependent: :nullify
   has_many :api_usage_attempts, dependent: :nullify
 
@@ -87,6 +88,11 @@ class ChatMessage < ApplicationRecord
   # conversational "yes" can never read as an executed action.
   def pending_confirmation_notice?
     metadata.is_a?(Hash) && metadata["pending_confirmation_notice"] == true
+  end
+
+  # @spec CHAT-TURN-RECOVERY-002
+  def stalled_turn_notice?
+    metadata.is_a?(Hash) && metadata["stalled_turn_notice"] == true
   end
 
   # @spec CHAT-API-024

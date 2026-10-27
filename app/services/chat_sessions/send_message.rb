@@ -44,9 +44,14 @@ module ChatSessions
 
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
+      start_turn!
       assistant_message = run_with_fallbacks
+      chat_turn.complete!(assistant_message) if assistant_message
       update_session_activity
       assistant_message
+    rescue StandardError
+      chat_turn&.fail!(classification: "execution_error") unless chat_turn&.terminal?
+      raise
     end
 
     private
@@ -117,6 +122,19 @@ module ChatSessions
       transport_attempt_message
     end
 
+    # @spec CHAT-TURN-RECOVERY-001
+    def start_turn!
+      @chat_turn = chat_session.chat_turns.find_or_create_by!(user_message: transport_attempt_message) do |turn|
+        turn.status = "pending"
+        turn.last_activity_at = Time.current
+      end
+      @chat_turn.update!(status: "streaming", last_activity_at: Time.current) unless @chat_turn.terminal?
+    end
+
+    def chat_turn
+      @chat_turn
+    end
+
     # A restarted job retains its stream id. Reusing the original user row
     # lets its already-persisted tool results remain in the reconstructed
     # transcript instead of turning recovery into another tool dispatch.
@@ -178,7 +196,7 @@ module ChatSessions
     # second SUM query per turn. Only forward when a limit is configured; a nil
     # baseline means "unlimited" and AgentLoop re-derives nil cheaply.
     def extra_agent_loop_kwargs
-      @token_budget ? { token_budget: @token_budget } : {}
+      (@token_budget ? { token_budget: @token_budget } : {}).merge(chat_turn:)
     end
   end
 end

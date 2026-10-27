@@ -124,6 +124,7 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
         stale_run_detector: "2-59/5 * * * *",
         queue_monitor: "2-59/5 * * * *",
         docker_orphan_cleanup: "3-59/5 * * * *",
+        chat_turn_stall_sweep: "3-59/5 * * * *",
         notifications_check_runner_quotas: "3-59/5 * * * *",
         container_pool_replenishment: "4-59/5 * * * *",
         chat_idle_reaper: "4-59/5 * * * *",
@@ -147,7 +148,7 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
         knowledge_audit_retention delayed_human_feedback notifications_check_runner_quotas
         runner_quota_balance account_health_check_sweep legacy_partial_closeout_reconciliation_sweep
         claude_auth_health_check style_guide_evolution
-        agent_run_pattern_detector billing_period_management
+        agent_run_pattern_detector billing_period_management chat_turn_stall_sweep
       ]
 
       expected_jobs.each do |job_key|
