@@ -35,6 +35,11 @@ class ChatChannel < ApplicationCable::Channel
       end
 
       stream_message_id = SecureRandom.uuid
+      ChatTurn.create!(
+        chat_session: @chat_session,
+        stream_message_id: stream_message_id,
+        last_activity_at: Time.current
+      )
       broadcast_event("message_start", { message_id: stream_message_id, model: @chat_session.model })
 
       ChatSessions::ProcessMessageJob.perform_later(
