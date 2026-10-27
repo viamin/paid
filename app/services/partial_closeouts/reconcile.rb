@@ -235,15 +235,17 @@ module PartialCloseouts
 
     def reconciled_evidence_submissions(previous, occurrences)
       prior_occurrences = Array(previous&.metadata&.fetch("prerequisites", nil)).index_by { |occurrence| occurrence["identity"] }
-      current_revisions = occurrences.filter_map { |occurrence| occurrence["source_revision"] }.uniq
+      current_occurrences = occurrences.index_by { |occurrence| occurrence["identity"] }
       Array(previous&.metadata&.fetch("evidence_submissions", nil)).map do |submission|
-        reconcile_evidence_submission(submission, prior_occurrences, current_revisions)
+        reconcile_evidence_submission(submission, prior_occurrences, current_occurrences)
       end
     end
 
-    def reconcile_evidence_submission(submission, prior_occurrences, current_revisions)
+    def reconcile_evidence_submission(submission, prior_occurrences, current_occurrences)
       source_revision = submission["source_revision"] || prior_occurrences.dig(submission["prerequisite_identity"], "source_revision")
-      return submission unless source_revision.present? && !current_revisions.include?(source_revision)
+      current_occurrence = current_occurrences[submission["prerequisite_identity"]]
+      revision_current = source_revision.blank? || current_occurrence&.fetch("source_revision", nil) == source_revision
+      return submission if current_occurrence && revision_current
 
       submission.merge(
         "source_revision" => source_revision,
