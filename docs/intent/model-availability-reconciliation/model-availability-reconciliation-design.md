@@ -108,6 +108,15 @@ active catalog candidates for the same provider by tier proximity and
 recorded `unavailable` for the same context. Selection is data-driven — it
 never hardcodes a specific model id as a universal fallback.
 
+### Catalog snapshot coordination
+
+`Models::CatalogSnapshot` uses a transaction-scoped PostgreSQL advisory lock
+to publish catalog and availability changes as one observable generation.
+`ModelsSyncJob` holds the exclusive lock around seeding and reconciliation;
+catalog readers that make eligibility decisions hold a shared lock for their
+entire read. This coordinates the catalog rows and availability evidence
+without making a genuine empty or policy-ineligible provider appear usable.
+
 ### `Models::SeedKnownModels` change
 
 `active` is computed with this precedence:

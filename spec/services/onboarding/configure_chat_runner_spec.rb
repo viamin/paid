@@ -49,6 +49,24 @@ RSpec.describe Onboarding::ConfigureChatRunner do
     expect(account.onboarding_steps.find_by(step: "chat_api_key")).to be_in_progress
   end
 
+  %w[openai anthropic].each do |service_type|
+    # @spec ONBOARD-CHAT-014
+    it "rolls back a genuinely empty #{service_type} catalog with an actionable reason" do
+      LlmModel.where(provider: service_type).delete_all
+
+      expect {
+        described_class.call(account:, user:, api_service_type: service_type, api_key: "test-key")
+      }.to raise_error(ChatSessions::ModelUnavailableError) { |error|
+        expect(error.rejection_reasons).to include(:catalog_empty)
+        expect(error.message).to include("catalog is empty")
+      }
+
+      expect(user.provider_api_keys.reload).to be_empty
+      expect(user.runners.where("name LIKE ?", "%onboarding%").reload).to be_empty
+      expect(account.chat_sessions.reload).to be_empty
+    end
+  end
+
   # @spec ONBOARD-CHAT-003
   it "rejects an authentication failure before persisting a health-checkable key" do
     allow(AgentHarness).to receive(:check_provider).and_return(

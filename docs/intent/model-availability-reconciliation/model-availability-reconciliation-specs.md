@@ -53,3 +53,11 @@
   are inactive, not operator-pinned inactive, and still present upstream as
   availability drift, distinct from new-model and deprecated-model drift.
   *Code:* `Models::DetectCatalogDrift`.
+
+- [x] **MODEL-AVAILABILITY-008** — When a scheduled model sync updates the
+  catalog and availability evidence, it SHALL hold an exclusive catalog
+  snapshot through both operations. Eligibility readers SHALL hold a shared
+  snapshot while evaluating catalog, availability, verified-model, and policy
+  filters, so they cannot observe a partially refreshed provider catalog.
+  *Code:* `Models::CatalogSnapshot`, `ModelsSyncJob`,
+  `ChatSessions::CuratedModelOptions`.

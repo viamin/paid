@@ -62,3 +62,12 @@ each ships.
 - [x] **ONBOARD-CHAT-013** — When `create_runner` receives a
   `provider_api_key_id`, it SHALL reject any key that does not belong to the
   current user/account rather than attaching another tenant's credential.
+
+- [x] **ONBOARD-CHAT-014** — When onboarding resolves its initial Low-tier
+  chat model while the catalog is refreshing, it SHALL resolve against a
+  completed catalog-and-availability snapshot. When that snapshot has no
+  eligible Low-tier model, it SHALL roll back bootstrap records and report a
+  structured actionable rejection reason rather than treating the transient or
+  genuine condition as a successful setup.
+  *Code:* `Models::CatalogSnapshot`, `ChatSessions::CuratedModelOptions`,
+  `ChatSessions::ModelUnavailableError`, `Onboarding::ConfigureChatRunner`.
