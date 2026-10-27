@@ -43,10 +43,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      begin_turn!
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      finish_turn!(assistant_message)
       update_session_activity
       assistant_message
+    rescue StandardError
+      fail_turn!
+      raise
     end
 
     private
@@ -132,6 +137,27 @@ module ChatSessions
         content: content,
         metadata: { "stream_message_id" => stream_message_id }.compact
       )
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001 CHAT-TURN-RECOVERY-004
+    def begin_turn!
+      @chat_turn = chat_session.chat_turns.find_or_create_by!(initiating_message: transport_attempt_message) do |turn|
+        turn.actor = actor
+        turn.status = "streaming"
+        turn.last_activity_at = Time.current
+      end
+      @chat_turn.update!(status: "streaming", last_activity_at: Time.current) unless @chat_turn.status == "streaming"
+    end
+
+    def finish_turn!(assistant_message)
+      status = assistant_message ? "completed" : "pending"
+      @chat_turn.update!(status:, completed_at: (Time.current if assistant_message), last_activity_at: Time.current)
+    end
+
+    def fail_turn!
+      @chat_turn&.update!(status: "failed", failure_classification: "execution_error", last_activity_at: Time.current)
+    rescue ActiveRecord::ActiveRecordError
+      nil
     end
 
     # A conversational reply (e.g. "yes") is not a confirmation. When a write
