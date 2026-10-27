@@ -38,6 +38,21 @@ RSpec.describe ShadowEvaluationExecutionJob do
     expect(IntentConformance::ShadowEvaluation::CompileReport).to have_received(:call).with(evaluation: evaluation)
   end
 
+  it "makes an exhausted report compilation failure retryable without discarding runs" do
+    evaluation.update!(status: "completed", labels_frozen_at: Time.current)
+    run = create(:intent_conformance_shadow_evaluation_run, shadow_evaluation: evaluation)
+    allow(IntentConformance::ShadowEvaluation::CompileReport).to receive(:call)
+      .and_raise(StandardError, "report storage unavailable")
+    job = described_class.new(project.id, evaluation.id)
+    job.exception_executions = { "[StandardError]" => 2 }
+
+    expect { job.perform_now }.to raise_error(StandardError, "report storage unavailable")
+
+    expect(evaluation.reload).to have_attributes(status: "failed", last_failure_reason: "report storage unavailable")
+    expect(evaluation.runs).to contain_exactly(run)
+    expect(evaluation.queue_execution!).to be(true)
+  end
+
   it "converges an unsuccessful service result to a retryable terminal state" do
     evaluation.update!(status: "queued", labels_frozen_at: Time.current)
     create(:intent_conformance_shadow_evaluation_run, shadow_evaluation: evaluation)

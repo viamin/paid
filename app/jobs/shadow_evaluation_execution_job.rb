@@ -32,22 +32,27 @@ class ShadowEvaluationExecutionJob < ApplicationJob
   end
 
   def mark_interrupted(error)
+    report_compilation_failed = false
     TenantContext.with_system_access do
       evaluation = IntentConformanceShadowEvaluation.find_by(id: arguments.second)
       return unless evaluation
 
       evaluation.with_lock do
-        next if evaluation.cancelled? || evaluation.completed?
+        report_compilation_failed = evaluation.completed? && report_missing?(evaluation)
 
-        if evaluation.cancellation_requested?
-          evaluation.update!(status: "cancelled", cancelled_at: Time.current,
-            last_failure_reason: "cancelled after #{evaluated_case_count(evaluation)} evaluated case(s)")
-        else
-          status = evaluated_case_count(evaluation).positive? ? "partial" : "failed"
-          evaluation.update!(status:, last_failure_reason: failure_reason(error))
+        if report_compilation_failed
+          evaluation.update!(status: "failed", last_failure_reason: failure_reason(error))
+        elsif !evaluation.cancelled? && !evaluation.completed?
+          if evaluation.cancellation_requested?
+            evaluation.update!(status: "cancelled", cancelled_at: Time.current,
+              last_failure_reason: "cancelled after #{evaluated_case_count(evaluation)} evaluated case(s)")
+          else
+            status = evaluated_case_count(evaluation).positive? ? "partial" : "failed"
+            evaluation.update!(status:, last_failure_reason: failure_reason(error))
+          end
         end
       end
-      IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: evaluation) if evaluation.runs.exists?
+      compile_report(evaluation) unless report_compilation_failed
     end
   end
 
