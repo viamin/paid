@@ -370,6 +370,29 @@ RSpec.describe Inbox::Queue do
       expect(action_required_entry.tasks).to eq([ "Open the quality dashboard", "Resume manually or adjust thresholds" ])
     end
 
+    # @spec FACET-CONFIDENCE-022 OPERATOR-INBOX-002M
+    it "translates a facet-confidence closeout escalation into its evaluation state" do
+      issue = create(:issue, project: project, github_number: 4323, paid_state: "in_progress")
+      notification = create(:notification, :error, account: account, subject: issue, blocking: true,
+        source: "facet_confidence.closeout_evaluation",
+        title: "Remediation Required — Independent maintainers have entered and frozen the blinded reference judgments.",
+        description: "Internal workflow prose that must not be shown to the operator.",
+        metadata: { "workflow" => "facet_confidence_closeout_evaluation" })
+
+      entry = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+        .find { |candidate| candidate.record == notification }
+
+      expect(entry.guidance).to have_attributes(
+        title: "Complete the closeout evaluation",
+        action: :start,
+        action_label: "Start evaluation",
+        labeled: 0,
+        remaining: entry.guidance.total
+      )
+      expect(entry.guidance.description).to include("independently review each frozen test case")
+      expect(entry.guidance.description).not_to include("blinded reference judgments", "corpus")
+    end
+
     # @spec OPERATOR-INBOX-002B
     it "uses the notification description when remediation guidance is absent" do
       notification = create(

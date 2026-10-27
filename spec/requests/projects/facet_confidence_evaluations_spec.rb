@@ -189,6 +189,26 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response.body).to include("/inbox?kind=partial_closeout&amp;project_id=#{project.id}&amp;sort=newest")
   end
 
+  # @spec FACET-CONFIDENCE-022 OPERATOR-INBOX-002M
+  it "preserves a typed Action Required selection when entering and leaving the evaluation" do
+    notification = create(:notification, :error, account: account, subject: issue, blocking: true,
+      source: "facet_confidence.closeout_evaluation",
+      description: "Internal workflow prose.",
+      metadata: { "workflow" => "facet_confidence_closeout_evaluation" })
+    inbox_entry_id = entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+    evaluation = start_evaluation!
+
+    get project_facet_confidence_evaluation_path(project, evaluation,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_sort: "newest", inbox_entry_id: inbox_entry_id)
+
+    expect(response).to have_http_status(:ok)
+    back_link = Nokogiri::HTML(response.body).css("a").find { |link| link.text == "Back to Inbox" }
+    expect(Rack::Utils.parse_nested_query(URI.parse(back_link["href"]).query)).to include(
+      "kind" => "action_required", "project_id" => project.id.to_s,
+      "sort" => "newest", "entry_id" => inbox_entry_id
+    )
+  end
+
   it "surfaces the Start/Resume entry point on the partial-closeout Inbox item" do
     start_link = new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
       inbox_entry_id: entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue), inbox_kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)

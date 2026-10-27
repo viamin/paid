@@ -586,6 +586,7 @@ module Inbox
         next unless project
         next if project_filter_excludes?(project)
 
+        guidance = action_required_guidance(notification, issue)
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
           kind: ACTION_REQUIRED_KIND,
@@ -595,9 +596,10 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
-          action_url: notification.action_url
+          summary_text: guidance&.description || notification.metadata["recommended_action"].presence || notification.description,
+          title_text: guidance&.title || notification.title,
+          action_url: notification.action_url,
+          guidance: guidance
         )
       end
     end
@@ -1038,6 +1040,11 @@ module Inbox
       return steps if steps.any?
 
       Array(notification.metadata["recommended_action"])
+    end
+
+    # @spec FACET-CONFIDENCE-022 @spec OPERATOR-INBOX-002M
+    def action_required_guidance(notification, issue)
+      Inbox::ActionRequired::FacetConfidenceEvaluation.for(notification:, issue:)
     end
 
     def notification_context(notification)

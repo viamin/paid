@@ -223,6 +223,28 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Open the quality dashboard", "Resume manually or adjust thresholds")
   end
 
+  # @spec FACET-CONFIDENCE-022 OPERATOR-INBOX-002M
+  it "renders a closeout escalation with plain-language progress and a Start evaluation action" do
+    issue = create(:issue, project: project, github_number: 4323, paid_state: "in_progress")
+    notification = create(:notification, :error, account: account, subject: issue, blocking: true,
+      source: "facet_confidence.closeout_evaluation",
+      title: "Remediation Required — Independent maintainers have entered and frozen the blinded reference judgments.",
+      description: "Internal workflow prose that must not be shown to the operator.",
+      metadata: { "workflow" => "facet_confidence_closeout_evaluation" })
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort: "newest")
+
+    start_path = new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_sort: "newest",
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification))
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Complete the closeout evaluation", "independently review each frozen test case", "0 recorded")
+    expect(response.body).to include(start_path.gsub("&", "&amp;"), "Start evaluation")
+    expect(response.body).not_to include("blinded reference judgments", "corpus", "Internal workflow prose")
+    expect(response.body).to include("View Issue")
+  end
+
   # @spec OPERATOR-INBOX-002B
   it "renders a blocking notification description when remediation guidance is absent" do
     notification = create(

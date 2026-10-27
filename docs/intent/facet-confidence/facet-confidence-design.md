@@ -174,3 +174,14 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+Facet-confidence closeout evaluation escalations use the typed
+`facet_confidence_closeout_evaluation` workflow marker rather than exposing
+the notification producer's prose. Their Action Required detail explains that
+the closeout is waiting for an independent human review of every frozen test
+case, shows recorded and remaining judgments, and links into the authorized
+evaluation for the originating issue and project. The action is state-aware:
+it starts an absent evaluation, resumes/continues incomplete judging, offers
+freezing once all cases are judged, and opens the retained report after
+freezing. The link preserves the selected Inbox item and filters on both the
+outbound and return routes.

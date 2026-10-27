@@ -171,6 +171,12 @@ absent, the description is also the entry summary. `Notifications::Publish`
 rejects a blocking notification that has neither a non-blank description nor
 remediation guidance, so every Action Required entry has meaningful context.
 
+Typed workflow markers may replace this generic presentation when their source
+and subject are structurally valid. The facet-confidence closeout marker is
+rendered from the evaluation's persisted state, rather than the notification's
+free-form copy, so its primary action and progress stay accurate. Unknown,
+malformed, or unauthorized markers retain the generic rendering path.
+
 ### `merge_approval`
 
 Backed by the PR scanner's persisted current-head policy snapshot on `Issue`.

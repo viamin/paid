@@ -88,6 +88,17 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002M** — When an active Action Required notification
+  identifies a supported typed workflow and its related project and issue are
+  visible to the current operator, the Inbox SHALL render that workflow's
+  state-derived explanation and primary action instead of raw notification
+  prose. It SHALL retain the generic description, remediation, and safe-link
+  fallback when the marker is absent, malformed, unsupported, or cannot be
+  authorized for the typed workflow.
+  *Code:* `app/services/inbox/action_required/facet_confidence_evaluation.rb`,
+  `app/services/inbox/queue.rb`, `app/views/dashboard/_inbox_detail_action_required.html.erb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002C** — When an open pull request's review phase is
   `escalated` and its project is within the operator's authorized Inbox
   visibility (`INBOX-FOUNDATION-006` — account isolation plus owner
