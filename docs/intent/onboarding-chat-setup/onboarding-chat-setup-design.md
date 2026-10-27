@@ -122,5 +122,6 @@ therefore cannot expose an intermediate provider catalog to a new account.
 
 If the completed snapshot contains no eligible Low-tier model, bootstrap rolls
 back its credential, runner, and session and reports a typed reason: empty
-catalog, capability mismatch, unavailability, verified-model restriction,
-operator/project policy restriction, or lack of a Low-tier candidate.
+catalog, runner incompatibility, tool-capability mismatch, unavailability,
+verified-model restriction, operator/project policy restriction, or lack of a
+Low-tier candidate.

@@ -16,6 +16,7 @@ module ChatSessions
     def guidance
       case rejection_reasons.first
       when :catalog_empty then "The provider catalog is empty; refresh the catalog or contact your administrator."
+      when :runner_incompatible then "Available catalog models are not compatible with this runner's authentication mode or installed CLI."
       when :capability_mismatch then "Available catalog models do not support chat tools."
       when :unavailable then "All compatible models are currently unavailable; retry after availability checks refresh."
       when :verified_model_restriction then "Your verified-model settings exclude every compatible model."

@@ -58,6 +58,7 @@ module ChatSessions
 
     def rejection_reasons
       return [ :catalog_empty ] if catalog_models.empty?
+      return [ :runner_incompatible ] if runner_compatible_models.empty?
       return [ :capability_mismatch ] if candidate_models.empty?
 
       available_models = candidate_models.reject { |model| unavailable?(model) }
@@ -75,11 +76,15 @@ module ChatSessions
     public :rejection_reasons
 
     def candidate_models
-      @candidate_models ||= Runners::ModelOptions.call(
+      @candidate_models ||= runner_compatible_models.select(&:supports_tools?)
+    end
+
+    def runner_compatible_models
+      @runner_compatible_models ||= Runners::ModelOptions.call(
         runner_key: runner.runner_key,
         api_provider: model_provider,
         auth_type: runner.auth_type
-      ).select(&:model?).map(&:model).select(&:supports_tools?)
+      ).select(&:model?).map(&:model)
     end
 
     def catalog_models

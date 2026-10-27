@@ -67,7 +67,8 @@ each ships.
   chat model while the catalog is refreshing, it SHALL resolve against a
   completed catalog-and-availability snapshot. When that snapshot has no
   eligible Low-tier model, it SHALL roll back bootstrap records and report a
-  structured actionable rejection reason rather than treating the transient or
-  genuine condition as a successful setup.
+  structured actionable rejection reason that distinguishes runner
+  incompatibility from missing chat-tool support rather than treating the
+  transient or genuine condition as a successful setup.
   *Code:* `Models::CatalogSnapshot`, `ChatSessions::CuratedModelOptions`,
   `ChatSessions::ModelUnavailableError`, `Onboarding::ConfigureChatRunner`.

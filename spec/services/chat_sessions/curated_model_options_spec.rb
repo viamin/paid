@@ -34,4 +34,20 @@ RSpec.describe ChatSessions::CuratedModelOptions do
 
     expect(resolution.option).to have_attributes(model_id: model.model_id, tier: "low")
   end
+
+  # @spec ONBOARD-CHAT-014
+  it "reports runner incompatibility separately from missing chat-tool support" do
+    incompatible_runner = create(:runner, user:, runner_key: "codex", auth_type: "subscription")
+    create(:llm_model, :openai, model_id: "gpt-5.5-pro", tier: "low", supports_tools: true)
+
+    resolution = described_class.resolve_with_diagnostics(runner: incompatible_runner)
+    error = ChatSessions::ModelUnavailableError.new(
+      runner: incompatible_runner,
+      rejection_reasons: resolution.rejection_reasons
+    )
+
+    expect(resolution.rejection_reasons).to eq([ :runner_incompatible ])
+    expect(error.message).to include("not compatible with this runner")
+    expect(error.message).not_to include("do not support chat tools")
+  end
 end
