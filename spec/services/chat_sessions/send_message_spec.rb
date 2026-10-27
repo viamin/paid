@@ -57,6 +57,15 @@ RSpec.describe ChatSessions::SendMessage do
   end
 
   describe ".call" do
+    # @spec CHAT-TURN-RECOVERY-001
+    it "persists and completes a durable turn for the accepted user message" do
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+
+      turn = chat_session.chat_turns.last
+      expect(turn).to have_attributes(status: "completed", user_message: chat_session.messages.where(role: "user").last)
+      expect(turn.events.pluck(:event_type)).to include("started", "completed")
+    end
+
     it "persists the user message" do
       expect {
         described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)

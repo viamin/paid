@@ -33,4 +33,13 @@ FactoryBot.define do
       tool_result { { results: [] } }
     end
   end
+
+  factory :chat_turn do
+    chat_session
+    user_message { association :chat_message, chat_session: }
+    stream_message_id { SecureRandom.uuid }
+    status { "streaming" }
+    last_activity_at { Time.current }
+    metadata { {} }
+  end
 end

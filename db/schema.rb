@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_27_221212) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -886,6 +886,40 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["status"], name: "index_chat_sessions_on_status"
   end
 
+  create_table "chat_turn_events", force: :cascade do |t|
+    t.bigint "chat_turn_id", null: false
+    t.datetime "created_at", null: false
+    t.string "event_type", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.index ["chat_turn_id"], name: "index_chat_turn_events_on_chat_turn_id"
+    t.index ["event_type", "created_at"], name: "index_chat_turn_events_on_event_type_and_created_at"
+  end
+
+  create_table "chat_turns", comment: "Durable lifecycle record for one interactive chat turn (#4680)", force: :cascade do |t|
+    t.bigint "actor_id"
+    t.bigint "chat_session_id", null: false
+    t.string "classification", comment: "Why a non-terminal turn was classified stalled: never_started, ambiguous_mid_turn"
+    t.datetime "created_at", null: false
+    t.datetime "last_activity_at", null: false, comment: "Last durable checkpoint (persisted message) within this turn; drives stall detection"
+    t.datetime "last_recovery_attempted_at"
+    t.jsonb "metadata", default: {}, null: false, comment: "Audit extras: stall event history, recovery source, recovery result, user action"
+    t.datetime "recovering_at", comment: "Dedup lock: set while a recovery attempt is in flight"
+    t.integer "recovery_attempts_count", default: 0, null: false
+    t.string "recovery_outcome", comment: "auto_recovery_attempted, user_resumed, or exhausted"
+    t.boolean "side_effecting_tool_persisted", default: false, null: false, comment: "Whether a write tool call/result was persisted during this turn, for recovery-safety checks"
+    t.datetime "stalled_detected_at", comment: "When the turn was last classified as stalled"
+    t.string "status", default: "pending", null: false, comment: "Turn lifecycle: pending, streaming, completed, failed, stalled, or abandoned"
+    t.string "stream_message_id", comment: "Client stream id that started the turn; the key that lets a replay reuse the original user message row"
+    t.datetime "updated_at", null: false
+    t.bigint "user_message_id", null: false
+    t.index ["actor_id"], name: "index_chat_turns_on_actor_id"
+    t.index ["chat_session_id", "stream_message_id"], name: "index_chat_turns_on_chat_session_id_and_stream_message_id", unique: true
+    t.index ["chat_session_id"], name: "index_chat_turns_on_chat_session_id"
+    t.index ["status", "last_activity_at"], name: "index_chat_turns_on_unfinished_last_activity", where: "((status)::text = ANY ((ARRAY['pending'::character varying, 'streaming'::character varying])::text[]))"
+    t.index ["status"], name: "index_chat_turns_on_status"
+    t.index ["user_message_id"], name: "index_chat_turns_on_user_message_id", unique: true
+  end
+
   create_table "clarifying_question_progresses", comment: "Durable per-question exploration progress and attributable answer evidence.", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.text "answer", comment: "Latest draft or final human answer; nil means unresolved."
@@ -1439,7 +1473,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["resolution_actor_id"], name: "index_design_artifact_findings_on_resolution_actor_id"
     t.index ["resolution_issue_id"], name: "index_design_artifact_findings_on_resolution_issue_id"
     t.check_constraint "state::text = ANY (ARRAY['missing_tree'::character varying::text, 'partial_tree'::character varying::text, 'stale_metadata'::character varying::text, 'deferred'::character varying::text, 'unverifiable'::character varying::text])", name: "chk_design_artifact_findings_state"
-    t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'assigned'::character varying::text, 'deferred'::character varying::text, 'dismissed'::character varying::text, 'resolved'::character varying::text])", name: "chk_design_artifact_findings_status"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying, 'assigned'::character varying, 'deferred'::character varying, 'dismissed'::character varying, 'resolved'::character varying]::text[])", name: "chk_design_artifact_findings_status"
   end
 
   create_table "dispatch_circuit_breakers", comment: "Account-level dispatch circuit breaker that halts scheduling when all providers fail simultaneously", force: :cascade do |t|
@@ -4679,6 +4713,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "chat_turn_events", "chat_turns"
+  add_foreign_key "chat_turns", "chat_messages", column: "user_message_id"
+  add_foreign_key "chat_turns", "chat_sessions"
+  add_foreign_key "chat_turns", "users", column: "actor_id"
   add_foreign_key "clarifying_question_progresses", "accounts"
   add_foreign_key "clarifying_question_progresses", "chat_sessions"
   add_foreign_key "clarifying_question_progresses", "issues"
@@ -5785,27 +5823,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
       $function$
   SQL
 
-  create_function :paid_current_account_id, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
-       RETURNS bigint
-       LANGUAGE sql
-       STABLE
+  create_function :prevent_feature_intent_approval_revision_mutation, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.prevent_feature_intent_approval_revision_mutation()
+       RETURNS trigger
+       LANGUAGE plpgsql
       AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
-        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
-      $function$
-  SQL
-
-  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
-       RETURNS boolean
-       LANGUAGE sql
-       STABLE
-      AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
-        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
+      BEGIN
+        RAISE EXCEPTION 'feature_intent_approval_revisions is append-only; UPDATE and DELETE are rejected at the database layer (FEATURE-APPROVAL-020)';
+      END;
       $function$
   SQL
 
@@ -5845,14 +5870,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
       $function$
   SQL
 
-  create_function :prevent_feature_intent_approval_revision_mutation, sql_definition: <<-'SQL'
-      CREATE OR REPLACE FUNCTION public.prevent_feature_intent_approval_revision_mutation()
-       RETURNS trigger
-       LANGUAGE plpgsql
+  create_function :paid_current_account_id, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_current_account_id()
+       RETURNS bigint
+       LANGUAGE sql
+       STABLE
       AS $function$
-      BEGIN
-        RAISE EXCEPTION 'feature_intent_approval_revisions is append-only; UPDATE and DELETE are rejected at the database layer (FEATURE-APPROVAL-020)';
-      END;
+        SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
+      $function$
+  SQL
+
+  create_function :paid_tenant_bypass, sql_definition: <<-'SQL'
+      CREATE OR REPLACE FUNCTION public.paid_tenant_bypass()
+       RETURNS boolean
+       LANGUAGE sql
+       STABLE
+      AS $function$
+        SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
 
@@ -5944,10 +5978,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
   SQL
 
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
-  SQL
-
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_orchestration_strategies BEFORE INSERT OR UPDATE ON public.orchestration_strategies FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -6014,5 +6044,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 end

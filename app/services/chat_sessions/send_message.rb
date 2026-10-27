@@ -25,7 +25,10 @@ module ChatSessions
       @actor = actor
       @content = content
       @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @on_message_persisted = lambda do |message, **kwargs|
+        ChatTurns::RecordActivity.call(turn: @turn, message:) if @turn
+        on_message_persisted&.call(message, **kwargs)
+      end
       @llm_client = llm_client
       @stream_message_id = stream_message_id
     end
@@ -43,8 +46,10 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn!
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      ChatTurns::Complete.call(turn: @turn, assistant_message:) # @spec CHAT-TURN-RECOVERY-001
       update_session_activity
       assistant_message
     end
@@ -115,6 +120,12 @@ module ChatSessions
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
       transport_attempt_message
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001
+    def start_turn!
+      @stream_message_id ||= SecureRandom.uuid
+      @turn = ChatTurns::Start.call(chat_session:, stream_message_id:, user_message: transport_attempt_message, actor:)
     end
 
     # A restarted job retains its stream id. Reusing the original user row

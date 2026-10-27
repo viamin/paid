@@ -1,0 +1,8 @@
+<%# @spec CHAT-TURN-RECOVERY-002 %>
+<div class="flex justify-center" data-message-id="<%= message.id %>">
+  <article class="mx-auto max-w-2xl rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+    <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-amber-700">Chat turn needs attention</div>
+    <div class="whitespace-pre-wrap break-words leading-6"><%= message.content.to_s %></div>
+    <p class="mt-2 text-xs">Open pending confirmations or run details before retrying. Any recovery that could repeat a write action requires explicit confirmation.</p>
+  </article>
+</div>
