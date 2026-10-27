@@ -245,6 +245,18 @@ RSpec.describe Tools::Registry do
         }
       },
       {
+        tool_name: "request_layered_verification_audit",
+        denied_user: -> {
+          project
+          create(:user, :viewer, account: account)
+        },
+        arguments: -> { { project_id: project.id } },
+        ui_call: ->(user) {
+          project_record = Pundit.policy_scope!(user, Project).find(project.id)
+          authorize_record!(user, project_record, :manage_issues?, policy_class: ProjectPolicy)
+        }
+      },
+      {
         tool_name: "edit_issue",
         denied_user: -> {
           project
