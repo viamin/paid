@@ -1,0 +1,7 @@
+<section class="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950" data-chat-turn-id="<%= message.metadata["chat_turn_id"] %>">
+  <p class="font-medium">This turn needs attention</p>
+  <p class="mt-1"><%= message.content %></p>
+  <% Array(message.metadata["pending_confirmation_ids"]).each do |message_id| %>
+    <%= link_to "Review pending confirmation", "#chat-message-#{message_id}", class: "mt-2 inline-block font-medium underline" %>
+  <% end %>
+</section>

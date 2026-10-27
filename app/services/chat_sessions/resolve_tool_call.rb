@@ -50,12 +50,15 @@ module ChatSessions
       prepare_resolution!
       on_tool_call_resolved&.call(tool_call_message)
 
-      if post_dispatch_confirmation?
+      assistant_message = if post_dispatch_confirmation?
         resolve_post_dispatch_confirmation!
       else
         resolve_pending_tool_call!
         resume_loop_unless_other_pending
       end
+
+      finalize_turn!(assistant_message)
+      assistant_message
     end
 
     private
@@ -217,6 +220,19 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    # The originating user message owns the durable turn even though resolving
+    # a confirmation is a later request. Completing it here prevents a
+    # successful post-confirmation assistant response from being left as an
+    # indeterminate pending turn.
+    def finalize_turn!(assistant_message)
+      turn = ChatTurn.find_by(user_message: transport_attempt_message)
+      return unless turn
+
+      return turn.complete! if assistant_message
+
+      turn.await_confirmation! if other_pending_confirmations?
     end
   end
 end

@@ -44,9 +44,14 @@ module ChatSessions
 
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
+      start_turn!
       assistant_message = run_with_fallbacks
+      finalize_turn!(assistant_message)
       update_session_activity
       assistant_message
+    rescue AgentHarness::Error => error
+      @chat_turn&.fail!(classification: error.class.name)
+      raise
     end
 
     private
@@ -132,6 +137,16 @@ module ChatSessions
         content: content,
         metadata: { "stream_message_id" => stream_message_id }.compact
       )
+    end
+
+    def start_turn!
+      @chat_turn = ChatTurn.start!(chat_session:, user_message: transport_attempt_message)
+    end
+
+    def finalize_turn!(assistant_message)
+      return @chat_turn.complete! if assistant_message
+
+      @chat_turn.await_confirmation!
     end
 
     # A conversational reply (e.g. "yes") is not a confirmation. When a write
