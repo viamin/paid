@@ -681,9 +681,13 @@
   `#cleanup_mcp_servers`; `LocalDockerRunner` SHALL implement them as
   delegates to `Containers::McpProvisioner`, unchanged from today's stdio
   (`npx`) vs. sidecar (`docker_image`) distinction — stdio MCP servers remain
-  agent runtime configuration, not a `ServiceDeclaration`.
+  agent runtime configuration, not a `ServiceDeclaration`. The provisioner
+  SHALL be bound to the backend that owns the run's execution host, so a
+  sidecar is created on the same daemon as the agent container instead of the
+  process-global default.
   *Tests:* `spec/services/execution_runners/base_spec.rb`,
   `spec/services/execution_runners/local_docker_runner_spec.rb`,
+  `spec/services/containers/mcp_provisioner_spec.rb`,
   `spec/temporal/activities/provision_mcp_servers_activity_spec.rb`,
   `spec/temporal/activities/cleanup_mcp_servers_activity_spec.rb`.
   *Code:* `ExecutionRunners::Base`, `ExecutionRunners::LocalDockerRunner`,
