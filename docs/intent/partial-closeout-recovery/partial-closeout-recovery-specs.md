@@ -176,6 +176,24 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
   `spec/services/issues/closeout_status_spec.rb`.
 
+- [ ] **PARTIAL-CLOSEOUT-033** — Pending owner decision for #4558. If the
+  owner accepts the persisted-stall-snapshot design, the system SHALL
+  recompute an issue-scoped, account-isolated Inbox projection outside Inbox
+  rendering whenever its closeout evidence, blocking runs, continuation
+  request, explicit holds, or admission-relevant runner configuration changes.
+  Queue, Count, and Availability SHALL read that same projection and SHALL
+  not invoke `DefaultCandidateSource.eligible_scope` on an Inbox index hot
+  path. A continuation preflight, dequeue, and run-start recheck SHALL retain
+  `eligible_scope` as final live admission authority. The implementing change
+  requires an accepted RDR that defines projection freshness, invalidation,
+  failure recovery, and stale-row removal.
+  *Issue:* #4558.
+  *Proposed code:* `Issues::StalledCloseoutSnapshot`, an asynchronous
+  recomputation job, `Inbox::Queue`, `Inbox::Count`, `Inbox::Availability`.
+  *Proposed tests:* snapshot invalidation and Queue/Count/Availability
+  agreement, plus an Inbox-render query regression proving no
+  `eligible_scope` evaluation.
+
 - [x] **PARTIAL-CLOSEOUT-026** — When the Inbox evaluates multiple
   partial-closeout candidates for one project, it SHALL batch the closeout
   evidence and admission-diagnostic inputs while preserving every candidate's

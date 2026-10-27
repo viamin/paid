@@ -145,6 +145,44 @@ persisted diagnostic inputs for each project's candidates before evaluating
 individual `CloseoutStatus` values. The per-issue status still produces the
 same additive blockers; batching changes only how its inputs are read.
 
+### Admission-snapshot decision (#4558)
+
+The current authority remains live: `StalledCloseouts` asks
+`DefaultCandidateSource.partial_closeout_eligibility` at Inbox evaluation time,
+and `DefaultCandidateSource.eligible_scope` remains the canonical admission
+decision. This is intentional until an owner accepts a replacement authority;
+this design does not authorize a persistence change by itself.
+
+The live path is invoked independently by `Inbox::Queue`, `Inbox::Count`, and
+`Inbox::Availability`. For each visible project with candidate evidence,
+`partial_closeout_eligibility` evaluates the ordinary scope and, for issues it
+excluded, the scoped-continuation scope. The implementation shares inputs
+within one invocation, but not across those three Inbox consumers. Therefore
+an Inbox index render, badge calculation, or filtered availability request can
+each pay the RLS-heavy admission planning cost. The existing candidate
+prefilter and `PARTIAL-CLOSEOUT-026` prevent candidate-count query growth; they
+do not remove the project-count cost or the live admission calls.
+
+An owner decision is required before changing the authority:
+
+| Option | Result | Trade-off |
+| --- | --- | --- |
+| A — live admission | Retain the present canonical live evaluation. | No new stale-state contract, but Inbox latency remains coupled to admission complexity. |
+| B — persisted stall snapshot | A background recomputation records an issue's stalled state and diagnostic payload whenever evidence, runs, continuation requests, explicit holds, or runner/admission configuration changes. Inbox consumers read that record; dequeue continues to recheck live scoped admission. | Removes admission from the hot path and mirrors project readiness, but introduces a new durable derived authority, invalidation coverage, freshness semantics, and an RDR. |
+| C — per-project cache | Cache `StalledCloseouts` behind the account `inbox` `Dashboard::CacheVersion`, shared by Queue, Count, and Availability. | Lowest implementation cost, but cache invalidation follows the badge boundary rather than the inputs to admission, and a cold/invalidated render still evaluates live admission. |
+
+**Recommendation, pending owner approval:** choose B. The existing
+`project_setup_pending` lane demonstrates the required read-model shape:
+readiness is recorded outside Inbox polling, and Queue, Count, and Availability
+read the same persisted state. B should make the stall snapshot a display
+projection only: `eligible_scope` remains the final admission authority at
+continuation preflight, dequeue, and run start. Before implementation, add an
+RDR defining the projection's owner, recomputation triggers, freshness and
+failure behavior, stale-row removal, account isolation, and the exact shared
+read path. Publish this unresolved A/B/C choice with the above evidence as a
+blocking owner-review obligation in Paid Inbox; it remains open until the owner
+accepts an option.
+
 ### Prompt delivery
 
 The authorization is useless to the executing agent if it never reaches the
@@ -465,3 +503,11 @@ those revisions change.
 - *Persisted inbox items*: the lane derives from evidence columns like
   `retry_limited` does; only the scoped authorization and the resolution
   dismissal are persisted.
+- *Admission snapshot (Option B, #4558)*: recommended but not yet accepted.
+  If accepted, it supersedes the live-admission portion of the prior derived
+  lane decision only; it does not persist a continuation authorization or
+  replace dequeue-time admission.
+- *Inbox cache (Option C, #4558)*: not recommended. It shares the badge
+  invalidation boundary rather than the admission-input boundary, so it does
+  not establish a durable, explainable projection and still returns to the
+  expensive live path on a cold cache.
