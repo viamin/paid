@@ -3,10 +3,10 @@
 module Dashboard
   class EligibilityBreakdown
     CACHE_TTL = 15.seconds
-
     ProjectBreakdown = Struct.new(
       :project, :total_open, :eligible, :needs_input,
       :skip_label, :completed, :in_progress, :manual_review, :other_excluded,
+      :queued, :active, :paused, :unseeded, :held_issues, :diagnostic_state,
       keyword_init: true
     )
 
@@ -34,7 +34,19 @@ module Dashboard
       # owner share one resolution; resolving it per project would re-read the
       # same configuration once per repo (#4556).
       tier_feasibility = Runners::TierFeasibility.new
-      auto_pick_projects.map { |project| breakdown_for(project, tier_feasibility: tier_feasibility) }
+      projects = auto_pick_projects
+      handoff_counts = handoff_counts_by_project(projects)
+      inputs = projects.to_h { |project| [ project.id, breakdown_inputs(project, tier_feasibility) ] }
+      excluded = inputs.values.map { |input| input.fetch(:excluded) }.reduce(&:or)
+      held_issues = HeldWorkDetails.call(excluded:, projects:)
+      projects.map do |project|
+        breakdown_for(
+          project,
+          input: inputs.fetch(project.id),
+          handoff_counts: handoff_counts,
+          held_issues: held_issues.fetch(project.id, [])
+        )
+      end
     end
 
     # Preload everything the per-project gate and breakdown touch so a dashboard
@@ -54,18 +66,14 @@ module Dashboard
           auto_pick_enabled: true,
           active: true
         )
-        .select { |p| Issues::AutoPickProjectGate.call(p) }
+        .select { |p| Issues::AutoPickProjectGate.call(p) || deliberately_paused?(p) }
     end
 
-    # @spec OPERATOR-INBOX-002D
-    def breakdown_for(project, tier_feasibility:)
+    # @spec OPERATOR-INBOX-002D QUEUE-HANDOFF-001 QUEUE-HANDOFF-002 QUEUE-HANDOFF-003
+    def breakdown_inputs(project, tier_feasibility)
       open = Issue.where(project: project, github_state: "open", is_pull_request: false)
-
       eligible_scope = Automation::Strategies::AutoPick::DefaultCandidateSource
         .eligible_scope(project, tier_feasibility: tier_feasibility)
-      eligible_count = eligible_scope.count
-
-      # Count all non-eligible issues in a single conditional-aggregation query.
       excluded = open.where.not(id: eligible_scope.select(:id))
       row = excluded.pick(
         Arel.sql("COUNT(*)"),
@@ -73,13 +81,21 @@ module Dashboard
         Arel.sql("COUNT(*) FILTER (WHERE paid_state = 'completed')"),
         Arel.sql("COUNT(*) FILTER (WHERE paid_state IN ('new','planning','failed','analyzed'))")
       ) || [ 0, 0, 0, 0 ]
-      excluded_total, in_progress, completed, analyzable = row
+      { eligible_count: eligible_scope.count, excluded:, row: }
+    end
+
+    # @spec OPERATOR-INBOX-002D QUEUE-HANDOFF-001 QUEUE-HANDOFF-002 QUEUE-HANDOFF-003
+    def breakdown_for(project, input:, handoff_counts:, held_issues:)
+      eligible_count = input.fetch(:eligible_count)
+      excluded = input.fetch(:excluded)
+      excluded_total, in_progress, completed, analyzable = input.fetch(:row)
 
       needs_input = excluded.where(paid_state: "needs_input").count
       manual_review = excluded.where(paid_state: "manual_review").count
       skip_label = count_skip_labeled(excluded, analyzable, project)
       other = excluded_total - needs_input - in_progress - completed - manual_review - skip_label
-
+      queued, active, paused = handoff_counts.fetch(project.id, [ 0, 0, 0 ])
+      unseeded = eligible_count
       ProjectBreakdown.new(
         project: project,
         total_open: eligible_count + excluded_total,
@@ -87,8 +103,44 @@ module Dashboard
         needs_input: needs_input, skip_label: skip_label,
         completed: completed, in_progress: in_progress,
         manual_review: manual_review,
-        other_excluded: other
+        other_excluded: other,
+        queued: queued,
+        active: active,
+        paused: paused,
+        unseeded: unseeded,
+        held_issues: held_issues,
+        diagnostic_state: diagnostic_state(
+          project:, unseeded:, queued:, active:, paused:, total_open: eligible_count + excluded_total
+        )
       )
+    end
+
+    # Candidate eligibility is specific to open issues. Scheduler facts are
+    # deliberately broader: the queue preview also shows manual and PR runs.
+    def handoff_counts_by_project(projects)
+      counts = AgentRun.where(project_id: projects, status: %w[queued running paused])
+        .group(:project_id, :status)
+        .count
+
+      projects.to_h do |project|
+        [ project.id, [ "queued", "running", "paused" ].map { |status| counts.fetch([ project.id, status ], 0) } ]
+      end
+    end
+
+    # @spec QUEUE-HANDOFF-003
+    def diagnostic_state(project:, unseeded:, queued:, active:, paused:, total_open:)
+      return :paused if deliberately_paused?(project)
+      return :paused if paused.positive?
+      return :runnable_not_seeded if unseeded.positive?
+      return :waiting if queued.positive?
+      return :active_work if active.positive?
+      return :held if total_open.positive?
+
+      :idle
+    end
+
+    def deliberately_paused?(project)
+      project.scheduler_paused? || project.quality_paused? || project.paused? || project.account.scheduler_paused?
     end
 
     def count_skip_labeled(excluded_scope, analyzable_count, project)

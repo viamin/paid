@@ -38,9 +38,12 @@ class DashboardController < ApplicationController
     render partial: "dashboard/recent_activity_frame", locals: { activity_items: @recent_activity }
   end
 
+  # @spec QUEUE-HANDOFF-001 QUEUE-HANDOFF-003
   def eligibility_breakdown
-    @eligibility_breakdown = Dashboard::EligibilityBreakdown.call(user: current_user)
-    render partial: "dashboard/eligibility_breakdown", locals: { breakdowns: @eligibility_breakdown }
+    breakdowns = load_eligibility_breakdown
+    return render partial: "dashboard/eligibility_breakdown", locals: { breakdowns: [], unavailable: true } if breakdowns.nil?
+
+    render partial: "dashboard/eligibility_breakdown", locals: { breakdowns: breakdowns }
   end
 
   def queue_preview
@@ -152,6 +155,13 @@ class DashboardController < ApplicationController
   end
 
   private
+
+  def load_eligibility_breakdown
+    Dashboard::EligibilityBreakdown.call(user: current_user)
+  rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::ConnectionFailed, ActiveRecord::StatementInvalid => e
+    Rails.logger.warn(message: "dashboard.queue_diagnosis_unavailable", error_class: e.class.name)
+    nil
+  end
 
   def live_agent_runs
     AgentRun.excluding_synthetic.joins(:project).where(projects: { account_id: current_account.id })

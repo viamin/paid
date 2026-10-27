@@ -19,7 +19,48 @@ RSpec.describe Dashboard::EligibilityBreakdown do
 
   before { Rails.cache.clear }
 
+  def create_dependency_held_issues(project)
+    blocker = create(:issue, project:, github_state: "open", paid_state: "new")
+    issues = Array.new(Dashboard::HeldWorkDetails::MAX_HELD_ISSUES + 1) do
+      create(:issue, project:, github_state: "open", paid_state: "new") do |issue|
+        create(:issue_dependency, issue:, depends_on_issue: blocker)
+      end
+    end
+    { blocker:, issues: }
+  end
+
   describe ".call" do
+    # @spec QUEUE-HANDOFF-001 QUEUE-HANDOFF-002
+    it "reports an unseeded eligible issue even with unrelated queued and active work" do
+      unseeded = create(:issue, project: project, github_state: "open", paid_state: "new")
+      active = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :queued, :with_custom_prompt, project: project)
+      create(:agent_run, :running, project: project, issue: active)
+
+      breakdown = described_class.call(user: user).sole
+
+      # The canonical candidate scope intentionally excludes issues already
+      # claimed by queued/active work; its remaining candidate is the stalled
+      # handoff that needs seeding.
+      expect(breakdown.eligible).to eq(1)
+      expect(breakdown.queued).to eq(1)
+      expect(breakdown.active).to eq(1)
+      expect(breakdown.unseeded).to eq(1)
+      expect(breakdown.diagnostic_state).to eq(:runnable_not_seeded)
+      expect(unseeded).to be_persisted
+    end
+
+    # @spec QUEUE-HANDOFF-002
+    it "reports healthy active work without a waiting backlog" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :running, project: project, issue: issue)
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.unseeded).to eq(0)
+      expect(breakdown.diagnostic_state).to eq(:active_work)
+    end
+
     it "returns an empty array when user has no auto-pick projects" do
       project.update!(auto_pick_enabled: false)
 
@@ -86,17 +127,95 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(bd.other_excluded).to eq(0)
     end
 
-    it "counts dependency-blocked issues in other_excluded" do
+    # @spec QUEUE-HANDOFF-004
+    it "carries every dependency blocker for held issues" do
       blocker = create(:issue, project: project, github_state: "open", paid_state: "new")
-      create(:issue, project: project, github_state: "open", paid_state: "new") do |dependent|
+      second_blocker = create(:issue, project: project, github_state: "open", paid_state: "new")
+      dependent = create(:issue, project: project, github_state: "open", paid_state: "new") do |dependent|
         create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+        create(:issue_dependency, issue: dependent, depends_on_issue: second_blocker)
       end
 
       result = described_class.call(user: user)
 
       bd = result.first
-      expect(bd.eligible).to eq(1)
+      expect(bd.eligible).to eq(2)
       expect(bd.other_excluded).to eq(1)
+      expect(bd.held_issues).to contain_exactly(
+        have_attributes(
+          issue: have_attributes(github_number: dependent.github_number),
+          blockers: contain_exactly(
+            have_attributes(label: "##{blocker.github_number} #{blocker.title}", url: blocker.github_url),
+            have_attributes(label: "##{second_blocker.github_number} #{second_blocker.title}", url: second_blocker.github_url)
+          ),
+          actions: []
+        )
+      )
+    end
+
+    # @spec QUEUE-HANDOFF-004
+    it "bounds held issue selection before loading dependency provenance" do
+      first = create_dependency_held_issues(project)
+      second_project = create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true)
+      second = create_dependency_held_issues(second_project)
+
+      details_by_project = described_class.call(user: user).to_h { |breakdown| [ breakdown.project, breakdown.held_issues ] }
+
+      expect(details_by_project.fetch(project).map { |detail| detail.issue.github_number }).to eq(
+        first.fetch(:issues).first(Dashboard::HeldWorkDetails::MAX_HELD_ISSUES).map(&:github_number)
+      )
+      expect(details_by_project.fetch(second_project).map { |detail| detail.issue.github_number }).to eq(
+        second.fetch(:issues).first(Dashboard::HeldWorkDetails::MAX_HELD_ISSUES).map(&:github_number)
+      )
+      expect(details_by_project.fetch(project)).to all(have_attributes(blockers: [ have_attributes(url: first.fetch(:blocker).github_url) ]))
+      expect(details_by_project.fetch(second_project)).to all(have_attributes(blockers: [ have_attributes(url: second.fetch(:blocker).github_url) ]))
+    end
+
+    # @spec QUEUE-HANDOFF-004
+    it "carries the existing Inbox action for feature-decision holds" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      feature_intent = create(:feature_intent, project: project, status: "design_open", approved_design_revision: nil)
+      create(:feature_intent_issue, feature_intent: feature_intent, issue: issue)
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.held_issues).to contain_exactly(
+        have_attributes(
+          issue: issue,
+          blockers: [],
+          actions: contain_exactly(
+            have_attributes(
+              label: "Review feature decision: #{feature_intent.title}",
+              inbox_kind: Inbox::Queue::FEATURE_DECISION_KIND,
+              entry_id: "#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"
+            )
+          )
+        )
+      )
+    end
+
+    # @spec QUEUE-HANDOFF-004
+    it "carries every owning decision for an issue held by features and an amendment" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      feature_intents = Array.new(2) do
+        create(:feature_intent, project: project, status: "design_open", approved_design_revision: nil)
+      end
+      feature_intents.each { |feature_intent| create(:feature_intent_issue, feature_intent:, issue:) }
+      amendment = create(:design_amendment, project: project)
+      create(:design_amendment_pause, design_amendment: amendment, issue: issue)
+
+      held_issue = described_class.call(user: user).sole.held_issues.sole
+
+      expect(held_issue.actions).to contain_exactly(
+        have_attributes(label: "Review the design amendment hold in the issue", inbox_kind: nil, entry_id: nil),
+        *feature_intents.map do |feature_intent|
+          have_attributes(
+            label: "Review feature decision: #{feature_intent.title}",
+            inbox_kind: Inbox::Queue::FEATURE_DECISION_KIND,
+            entry_id: "#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"
+          )
+        end
+      )
     end
 
     it "does not double-count recoverable-completed issues in both eligible and completed" do
@@ -112,28 +231,94 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       expect(bd.total_open).to eq(1)
     end
 
-    it "excludes scheduler-paused projects" do
+    # @spec QUEUE-HANDOFF-003
+    it "reports scheduler-paused projects as deliberate pauses" do
       project.update!(scheduler_paused_at: Time.current)
 
       result = described_class.call(user: user)
 
-      expect(result).to eq([])
+      expect(result.sole.diagnostic_state).to eq(:paused)
     end
 
-    it "excludes account-level scheduler-paused projects" do
+    # @spec QUEUE-HANDOFF-003
+    it "reports account-level scheduler pauses without calling them a stall" do
       account.update!(scheduler_paused_at: Time.current)
 
       result = described_class.call(user: user)
 
-      expect(result).to eq([])
+      expect(result.sole.diagnostic_state).to eq(:paused)
     end
 
-    it "excludes quality-paused projects" do
+    # @spec QUEUE-HANDOFF-003
+    it "reports quality-paused projects as deliberate pauses" do
       project.update!(quality_paused_at: Time.current)
 
       result = described_class.call(user: user)
 
-      expect(result).to eq([])
+      expect(result.sole.diagnostic_state).to eq(:paused)
+    end
+
+    # @spec QUEUE-HANDOFF-003
+    it "reports an operator-paused project even when its automatic run is held" do
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :queued, :automatic, project: project)
+      project.pause!
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.queued).to eq(1)
+      expect(breakdown.diagnostic_state).to eq(:paused)
+    end
+
+    # @spec QUEUE-HANDOFF-002
+    it "counts queued manual, closed-issue, and pull-request runs" do
+      create(:agent_run, :queued, :with_custom_prompt, project: project)
+      create(:agent_run, :queued, project: project,
+        issue: create(:issue, project: project, github_state: "closed"))
+      create(:agent_run, :queued, :existing_pr, project: project)
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.queued).to eq(3)
+      expect(breakdown.diagnostic_state).to eq(:waiting)
+    end
+
+    # @spec QUEUE-HANDOFF-003
+    it "reports paused runs as deliberately paused work" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :paused, project: project, issue: issue)
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.paused).to eq(1)
+      expect(breakdown.diagnostic_state).to eq(:paused)
+    end
+
+    # @spec QUEUE-HANDOFF-003
+    it "reports a paused run when the project also has queued work" do
+      paused_issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :paused, project: project, issue: paused_issue)
+      create(:agent_run, :queued, :with_custom_prompt, project: project)
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.queued).to eq(1)
+      expect(breakdown.paused).to eq(1)
+      expect(breakdown.diagnostic_state).to eq(:paused)
+    end
+
+    # @spec QUEUE-HANDOFF-003
+    it "reports a paused run when the project also has active work" do
+      paused_issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      active_issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :paused, project: project, issue: paused_issue)
+      create(:agent_run, :running, project: project, issue: active_issue)
+
+      breakdown = described_class.call(user: user).sole
+
+      expect(breakdown.active).to eq(1)
+      expect(breakdown.paused).to eq(1)
+      expect(breakdown.diagnostic_state).to eq(:paused)
     end
 
     it "excludes inactive projects" do
@@ -197,6 +382,31 @@ RSpec.describe Dashboard::EligibilityBreakdown do
       queries.count { |sql| sql.match?(/FROM "runners" WHERE .*enabled_for_agent_runs/) }
     end
 
+    def handoff_count_queries(queries)
+      queries.count { |sql| sql.match?(/GROUP BY "agent_runs"\."project_id", "agent_runs"\."status"/) }
+    end
+
+    def held_work_queries(queries)
+      queries.count do |sql|
+        sql.start_with?('SELECT "issue_dependencies"') ||
+          sql.match?(/\ASELECT "design_amendment_pauses"\."issue_id".*WHERE "design_amendment_pauses"\."issue_id" IN/) ||
+          sql.start_with?('SELECT "feature_intent_issues"."issue_id", "feature_intents"."id"') ||
+          sql.match?(/\ASELECT "issues"\.\* FROM "issues" WHERE .*"issues"\."id" IN/)
+      end
+    end
+
+    def create_held_projects(count, prefix)
+      Array.new(count) do |i|
+        create(:project, account: account, created_by: user,
+          auto_pick_enabled: true, active: true, owner: "org", repo: "#{prefix}-#{i}")
+      end.each do |held_project|
+        create(:issue, project: held_project, github_state: "open", paid_state: "new") do |issue|
+          blocker = create(:issue, project: held_project, github_state: "open", paid_state: "new")
+          create(:issue_dependency, issue:, depends_on_issue: blocker)
+        end
+      end
+    end
+
     it "does not resolve tier feasibility per project (no N+1)" do
       create(:issue, project: project, github_state: "open", paid_state: "new")
       single_repo_resolutions = feasibility_resolutions(capture_queries { described_class.call(user: user) })
@@ -212,6 +422,37 @@ RSpec.describe Dashboard::EligibilityBreakdown do
 
       expect(single_repo_resolutions).to be_positive
       expect(multi_repo_resolutions).to eq(single_repo_resolutions)
+    end
+
+    it "resolves handoff counts for all visible projects in one query" do
+      create(:agent_run, :queued, project: project)
+      single_query_count = handoff_count_queries(capture_queries { described_class.call(user: user) })
+
+      Rails.cache.clear
+      Array.new(3) do |i|
+        create(:project, account: account, created_by: user,
+          auto_pick_enabled: true, active: true, owner: "org", repo: "handoff-repo-#{i}")
+      end.each { |additional_project| create(:agent_run, :queued, project: additional_project) }
+      multi_query_count = handoff_count_queries(capture_queries { described_class.call(user: user) })
+
+      expect(single_query_count).to eq(1)
+      expect(multi_query_count).to eq(single_query_count)
+    end
+
+    it "resolves held-work provenance with a project-independent query count" do
+      create(:issue, project: project, github_state: "open", paid_state: "new") do |issue|
+        blocker = create(:issue, project: project, github_state: "open", paid_state: "new")
+        create(:issue_dependency, issue:, depends_on_issue: blocker)
+      end
+      create_held_projects(3, "held-repo")
+      initial_queries = held_work_queries(capture_queries { described_class.call(user: user) })
+
+      Rails.cache.clear
+      create_held_projects(3, "more-held-repo")
+      expanded_queries = held_work_queries(capture_queries { described_class.call(user: user) })
+
+      expect(initial_queries).to be_positive
+      expect(expanded_queries).to eq(initial_queries)
     end
 
     it "includes orphaned projects for the account fallback owner" do
