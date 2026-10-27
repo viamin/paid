@@ -88,6 +88,16 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** — When an Action Required notification declares
+  a supported typed workflow, the Inbox SHALL render that workflow's
+  plain-language guidance, progress, and authorized primary action while
+  preserving the generic notification rendering as the fallback for untyped or
+  unsupported notifications. Typed workflow matching SHALL use the persisted
+  workflow identifier, never semantic matching against notification prose.
+  *Code:* `app/services/inbox/action_required_presentation.rb`,
+  `app/views/dashboard/_inbox_detail_action_required.html.erb`.
+  *Test:* `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002C** — When an open pull request's review phase is
   `escalated` and its project is within the operator's authorized Inbox
   visibility (`INBOX-FOUNDATION-006` — account isolation plus owner

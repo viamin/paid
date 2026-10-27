@@ -174,3 +174,11 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+When an Action Required prerequisite is explicitly typed as this evaluation,
+the Inbox translates it into plain language. It names the independent human
+review, shows recorded and remaining judgments, and routes a state-specific
+Start, Continue judging, Freeze judgments, or View evaluation action through
+the authorized project and originating issue route. Inbox filter and selected
+entry context travel with that route. Untyped notifications retain their
+generic remediation presentation rather than being guessed into this workflow.

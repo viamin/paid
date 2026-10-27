@@ -1,9 +1,12 @@
-<%# @spec OPERATOR-INBOX-002B %>
+<%# @spec OPERATOR-INBOX-002B FACET-CONFIDENCE-022 %>
 <div class="space-y-6">
   <% notification = entry.record %>
+  <% presentation = Inbox::ActionRequiredPresentation.for(notification) %>
   <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
-    <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
-    <% if notification.description.present? %>
+    <h3 class="text-sm font-semibold text-rose-900"><%= presentation&.title || "Remediation Required" %></h3>
+    <% if presentation %>
+      <p class="mt-1 text-sm text-rose-800"><%= presentation.explanation %></p>
+    <% elsif notification.description.present? %>
       <p class="mt-1 text-sm text-rose-800"><%= notification.description %></p>
     <% end %>
     <% if entry.summary.present? && entry.summary != notification.description %>
@@ -13,7 +16,29 @@
     <% end %>
   </div>
 
-  <% if entry.tasks.any? %>
+  <% if presentation %>
+    <% progress = presentation.progress %>
+    <div class="rounded-lg border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900">
+      <% if progress %>
+        Judgments recorded: <span class="font-semibold"><%= progress[:labeled] %>/<%= progress[:total] %></span>.
+        <%= progress[:total] - progress[:labeled] %> remaining.
+      <% else %>
+        No judgments have been recorded yet.
+      <% end %>
+    </div>
+    <% inbox_context = { inbox_kind: params[:kind].presence_in(Inbox::Queue::KINDS), inbox_sort: params[:sort].presence_in(Inbox::Queue::SORTS.keys), inbox_entry_id: entry.id }.compact %>
+    <div class="flex flex-wrap items-center gap-3">
+      <% action_path = if presentation.evaluation
+           project_facet_confidence_evaluation_path(entry.project, presentation.evaluation, **inbox_context)
+         else
+           new_project_facet_confidence_evaluation_path(entry.project, issue_id: entry.issue.id, **inbox_context)
+         end %>
+      <%= link_to presentation.action_label, action_path, data: { turbo_frame: "_top" }, class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
+      <%= link_to inbox_issue_link_label(entry.issue), entry.issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    </div>
+  <% end %>
+
+  <% if entry.tasks.any? && !presentation %>
     <div class="space-y-3">
       <h3 class="text-sm font-semibold text-gray-900">Remediation Steps</h3>
       <ol class="space-y-2 text-sm text-gray-600">
@@ -24,7 +49,7 @@
     </div>
   <% end %>
 
-  <% if entry.action_url.present? && entry.action_url != inbox_entry_path(entry) %>
+  <% if !presentation && entry.action_url.present? && entry.action_url != inbox_entry_path(entry) %>
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to "Open linked action",
             entry.action_url,
@@ -45,7 +70,7 @@
               class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
       <% end %>
     </div>
-  <% elsif entry.issue %>
+  <% elsif !presentation && entry.issue %>
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to inbox_issue_link_label(entry.issue),
             entry.issue.github_url,
@@ -53,7 +78,7 @@
             rel: "noopener noreferrer",
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
-  <% elsif notification.subject.is_a?(AgentRun) %>
+  <% elsif !presentation && notification.subject.is_a?(AgentRun) %>
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to "View Agent Run",
             project_agent_run_path(notification.subject.project, notification.subject),

@@ -9,7 +9,7 @@ module FacetConfidence
     # NEW generation, superseding the old one rather than mutating it. The
     # entry point stays blocked while the closeout records unresolved
     # blockers, and the operator who starts becomes the sole reference judge.
-    # @spec FACET-CONFIDENCE-020
+    # @spec FACET-CONFIDENCE-020 FACET-CONFIDENCE-022
     class Start
       Result = Data.define(:success, :error, :evaluation, :resumed) do
         def success? = success
@@ -29,6 +29,7 @@ module FacetConfidence
         return failure("an authenticated operator must start the evaluation") if @actor.blank?
 
         blockers = closeout_status.blockers
+        blockers = [] if evaluation_escalation_is_only_blocker?(blockers)
         return failure("the closeout entry point is blocked until its recorded prerequisites resolve: #{blockers.map(&:message).join(' ')}") if blockers.any?
 
         corpus = FacetConfidence::Corpus.new(path: CloseoutEvaluationPacket::MANIFEST_PATH)
@@ -73,6 +74,14 @@ module FacetConfidence
 
       def closeout_status
         @status || Issues::CloseoutStatus.call(@issue)
+      end
+
+      def evaluation_escalation_is_only_blocker?(blockers)
+        return false unless blockers.all? { |blocker| blocker.code == :human_prerequisite_notification }
+
+        notifications = Notification.where(account: project.account, subject: issue,
+          source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, resolved_at: nil, dismissed_at: nil)
+        notifications.one? && notifications.first.metadata["workflow"] == Inbox::ActionRequiredPresentation::FACET_CONFIDENCE_EVALUATION
       end
 
       def log_started(evaluation, resumed:)
