@@ -4,7 +4,7 @@ module FeatureIntents
   # Runs the semantic facet evaluation at a background boundary. Rails only
   # validates and persists the agent's structured result; it never derives a
   # score from counts or keywords.
-  # @spec FACET-CONFIDENCE-002 FACET-CONFIDENCE-003 FACET-CONFIDENCE-004
+  # @spec FACET-CONFIDENCE-002 FACET-CONFIDENCE-003 FACET-CONFIDENCE-004 FACET-CONFIDENCE-017
   # @spec FACET-CONFIDENCE-012 FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
   class AssessFacet
     include Llm::OutputNormalizer
@@ -20,6 +20,8 @@ module FeatureIntents
       @agent_harness = agent_harness
     end
 
+    attr_reader :cost_cents, :response_status
+
     def call
       apply(response_payload)
     rescue AgentHarness::Error => e
@@ -33,6 +35,7 @@ module FeatureIntents
     def response_payload
       response = agent_harness.send_message(prompt, provider: :claude, model: MODEL_VERSION,
         timeout: TIMEOUT, tools: :none, **Llm::TextMode.options)
+      @cost_cents = cost_cents_from(response)
       return unless response.respond_to?(:success?) && response.success?
 
       JSON.parse(strip_markdown_fence(response.output.to_s)).deep_stringify_keys
@@ -45,6 +48,7 @@ module FeatureIntents
         return supersede! unless current_evidence?
         return fail!("invalid_structured_output") unless valid_payload?(payload)
 
+        @response_status = payload.fetch("status")
         attributes = payload.slice("intent_score", "technical_score", "explanation", "inferred_fit", "evidence_references").merge(
           rubric_version: RUBRIC_VERSION, model_version: MODEL_VERSION
         )
@@ -107,6 +111,16 @@ module FeatureIntents
     def facet = direction.feature_intent_facet
     def active_references = @active_references ||= facet.evidence.where(superseded_by: nil).pluck(:source_reference)
 
+    def cost_cents_from(response)
+      return unless response.respond_to?(:input_tokens) && response.respond_to?(:output_tokens)
+
+      input_tokens = response.input_tokens
+      output_tokens = response.output_tokens
+      return unless [ input_tokens, output_tokens ].all? { |tokens| tokens.is_a?(Integer) && tokens >= 0 }
+
+      TokenUsageTracker.calculate_cost(input_tokens, output_tokens, llm_model: MODEL_VERSION)
+    end
+
     def prompt
       <<~PROMPT
         Assess the active candidate direction for this facet using rubric #{RUBRIC_VERSION}.
@@ -124,7 +138,8 @@ module FeatureIntents
     def active_evidence
       facet.evidence.where(superseded_by: nil).order(:evidence_revision).map do |evidence|
         { reference: evidence.source_reference, source_type: evidence.source_type, statement: evidence.statement,
-          occurred_at: evidence.occurred_at.iso8601, actor_id: evidence.actor_id }
+          occurred_at: evidence.occurred_at.iso8601, actor_id: evidence.actor_id,
+          actor_context: evidence.textual_context.presence }.compact
       end
     end
   end

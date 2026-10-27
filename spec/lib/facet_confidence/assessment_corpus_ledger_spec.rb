@@ -198,6 +198,35 @@ RSpec.describe FacetConfidence::AssessmentCorpusLedger, :no_db do
         .to raise_error(described_class::InvalidLedger, /re-run requires a recorded correction/)
     end
 
+    it "accepts an explicit same-revision retry after a failed provider attempt" do
+      events = complete_events
+      failed_run = events.first.merge("status" => "failed", "intent_score" => nil, "technical_score" => nil, "evidence_references" => [])
+      events[0] = failed_run
+      events << failed_run.merge(
+        "event_id" => "retry-1",
+        "recorded_at" => later_timestamp,
+        "status" => "completed",
+        "intent_score" => 79,
+        "technical_score" => 79,
+        "evidence_references" => [ "sync-sketch-statement" ],
+        "retry_of_event_id" => failed_run.fetch("event_id")
+      )
+      write_ledger!(events)
+
+      expect(described_class.validate!(corpus_path: corpus, ledger_path: ledger)).to be(true)
+    end
+
+    it "rejects a same-revision retry that does not cite the failed provider attempt" do
+      events = complete_events
+      events[0] = events.first.merge("status" => "failed", "intent_score" => nil, "technical_score" => nil, "evidence_references" => [])
+      events << events[0].merge("event_id" => "retry-1", "recorded_at" => later_timestamp, "status" => "completed",
+        "intent_score" => 79, "technical_score" => 79, "evidence_references" => [ "sync-sketch-statement" ])
+      write_ledger!(events)
+
+      expect { described_class.validate!(corpus_path: corpus, ledger_path: ledger) }
+        .to raise_error(described_class::InvalidLedger, /same-revision retry must cite the immediately preceding failed assessment run/)
+    end
+
     it "requires a re-run to cite the correction event at its input revision" do
       events = complete_events
       events << correction_event(case_id: "FC-CORPUS-01", input_revision: 3)
