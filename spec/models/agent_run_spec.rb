@@ -164,6 +164,34 @@ RSpec.describe AgentRun do
       expect(agent_run).to be_valid
     end
 
+    # @spec PARTIAL-CLOSEOUT-032
+    it "admits a technical-prerequisite validation run for an issue whose feature intent is not released" do
+      project = create(:project)
+      issue = create(:issue, project: project)
+      feature = create(:feature_intent, project: project, status: "approved_waiting_for_merge")
+      create(:feature_intent_issue, feature_intent: feature, issue: issue)
+
+      agent_run = build(:agent_run, project: project, issue: issue, goal: "technical_prerequisite_validation",
+        base_commit_sha: "a" * 40, synthetic: true)
+
+      expect(agent_run).to be_valid
+      expect(agent_run.errors[:issue]).to be_empty
+    end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    it "keeps the pinned checkout of a technical-prerequisite validation run" do
+      project = create(:project)
+      issue = create(:issue, project: project)
+      feature = create(:feature_intent, project: project, approved_design_revision: "b" * 40)
+      create(:feature_intent_issue, feature_intent: feature, issue: issue)
+
+      agent_run = create(:agent_run, project: project, issue: issue, goal: "technical_prerequisite_validation",
+        base_commit_sha: "a" * 40, synthetic: true)
+
+      expect(agent_run.base_commit_sha).to eq("a" * 40)
+      expect(agent_run.approved_design_revision).to be_nil
+    end
+
     # @spec FEATURE-APPROVAL-024
     it "snapshots a released feature's approved revision onto an implementation run" do
       project = create(:project)
@@ -470,6 +498,17 @@ RSpec.describe AgentRun do
 
         expect(described_class.claimed).to include(claimed_run)
         expect(described_class.claimed.count).to eq(1)
+      end
+    end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    describe ".unclaimed" do
+      it "never offers synthetic operational runs to the agent run queue" do
+        synthetic_run = create(:agent_run, :queued, synthetic: true)
+        queued_run = create(:agent_run, :queued)
+
+        expect(described_class.unclaimed).to include(queued_run)
+        expect(described_class.unclaimed).not_to include(synthetic_run)
       end
     end
 
@@ -4803,7 +4842,7 @@ RSpec.describe AgentRun do
     end
 
     it "defines valid GOALS" do
-      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness layered_verification_audit layered_verification_repair])
+      expect(described_class::GOALS).to eq(%w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness layered_verification_audit layered_verification_repair technical_prerequisite_validation])
     end
 
     it "defines valid TRIGGER_TYPES" do

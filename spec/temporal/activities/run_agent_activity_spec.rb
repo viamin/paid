@@ -6544,7 +6544,7 @@ expect(container_service).to receive(:execute).with(
           mcp_server_snapshot << { "name" => "fs" }
         end
         allow(Containers::Provision).to receive(:network_for).with(agent_run: agent_run).and_return("paid-network")
-        allow(Containers::McpProvisioner).to receive(:new).and_return(provisioner)
+        allow(Containers::McpProvisioner).to receive(:for).with(agent_run).and_return(provisioner)
       end
 
       it "wraps provisioning failures in RunnerExecutionError" do

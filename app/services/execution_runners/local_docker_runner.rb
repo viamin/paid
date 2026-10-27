@@ -319,12 +319,12 @@ module ExecutionRunners
 
     # @spec CONTAINER-RUNTIME-033
     def provision_mcp_servers(agent_run:, network:)
-      Containers::McpProvisioner.new.provision(agent_run, network: network)
+      mcp_provisioner_for(agent_run).provision(agent_run, network: network)
     end
 
     # @spec CONTAINER-RUNTIME-033
     def cleanup_mcp_servers(agent_run:)
-      Containers::McpProvisioner.new.cleanup(agent_run)
+      mcp_provisioner_for(agent_run).cleanup(agent_run)
     end
 
     # @spec CONTAINER-RUNTIME-034
@@ -488,6 +488,10 @@ module ExecutionRunners
     end
 
     private
+
+    def mcp_provisioner_for(agent_run)
+      Containers::McpProvisioner.for(agent_run)
+    end
 
     # Builds the provisioning-intent ledger from this runner's declared
     # capabilities (RDR-060). The runner owns the environment identifier so a

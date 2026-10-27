@@ -32,12 +32,18 @@ class AgentRun < ApplicationRecord
   REVIEW_DEPTHS = Project::REVIEW_DEPTHS
   # analyze_issue is automation-only (triggered via Automation::Decision), not exposed in the manual run form.
   # @spec LAYERED-VERIFY-013
-  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness layered_verification_audit layered_verification_repair].freeze
+  GOALS = %w[create_pr create_issue review enhance_issue analyze_issue lid_planning create_feature bootstrap_readiness layered_verification_audit layered_verification_repair technical_prerequisite_validation].freeze
   LAYERED_VERIFICATION_GOALS = %w[layered_verification_audit layered_verification_repair].freeze
+  # Report-only goal for a bounded technical-prerequisite validation. It never
+  # implements work, so it does not inherit the create_pr feature-intent
+  # admission gate; only an authorized Inbox action starts it.
+  # @spec PARTIAL-CLOSEOUT-032
+  TECHNICAL_PREREQUISITE_VALIDATION_GOAL = "technical_prerequisite_validation"
   # @spec LAYERED-VERIFY-012 — these are the only goals that generic
   # triggers and tenant defaults may select; layered verification requires
   # its dedicated, feature-gated entry points.
-  TRIGGERABLE_GOALS = (GOALS - LAYERED_VERIFICATION_GOALS).freeze
+  NON_TRIGGERABLE_GOALS = (LAYERED_VERIFICATION_GOALS + [ TECHNICAL_PREREQUISITE_VALIDATION_GOAL ]).freeze
+  TRIGGERABLE_GOALS = (GOALS - NON_TRIGGERABLE_GOALS).freeze
   # RDR-056 (Strict TDD): the run-scoped write-guard phase for projects with
   # tdd_mode != "off". nil means the run is not TDD-governed (existing
   # behavior). See Tdd::WriteGuard for the enforced allowed/forbidden matrix.
@@ -398,7 +404,11 @@ class AgentRun < ApplicationRecord
   scope :waiting, -> { queued.where(temporal_workflow_id: nil) }
   scope :claimed, -> { queued.where.not(temporal_workflow_id: nil) }
   scope :admitted_not_started, -> { running.where.not(temporal_workflow_id: nil).where(started_at: nil) }
-  scope :unclaimed, -> { waiting }
+  # Synthetic operational runs (live-preview provisioning, technical-prerequisite
+  # validation) reuse the agent-run lifecycle to drive infrastructure but never
+  # execute an agent, so the run queue must never claim them.
+  # @spec PARTIAL-CLOSEOUT-032
+  scope :unclaimed, -> { waiting.excluding_synthetic }
   scope :running, -> { where(status: "running") }
   scope :completed, -> { where(status: "completed") }
   scope :no_output, -> { where(status: "no_output") }
@@ -1831,6 +1841,14 @@ class AgentRun < ApplicationRecord
   # @spec PROJECT-READINESS-007
   def bootstrap_readiness_goal?
     goal == "bootstrap_readiness"
+  end
+
+  # True when the run collects technical-prerequisite evidence instead of
+  # implementing work. Such a run is started by an authorized Inbox action and
+  # must not inherit the create_pr implementation-admission gate.
+  # @spec PARTIAL-CLOSEOUT-032
+  def technical_prerequisite_validation_goal?
+    goal == TECHNICAL_PREREQUISITE_VALIDATION_GOAL
   end
 
   # @spec LAYERED-VERIFY-011 @spec LAYERED-VERIFY-013

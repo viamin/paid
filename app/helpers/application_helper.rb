@@ -424,6 +424,8 @@ module ApplicationHelper
       enhance_issue_context(run)
     elsif run.analyze_issue_goal?
       analyze_issue_context(run)
+    elsif run.technical_prerequisite_validation_goal?
+      enhance_issue_context(run)
     else
       { type: :placeholder }
     end
@@ -545,6 +547,8 @@ module ApplicationHelper
     "lid_planning" => "LID Planning",
     "create_feature" => "Feature Creation",
     "bootstrap_readiness" => "Bootstrap Readiness",
+    # @spec PARTIAL-CLOSEOUT-032
+    "technical_prerequisite_validation" => "Prerequisite Validation",
     # @spec LAYERED-VERIFY-013
     "layered_verification_audit" => "Layered Verification Audit",
     "layered_verification_repair" => "Layered Verification Repair"
