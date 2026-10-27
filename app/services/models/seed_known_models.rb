@@ -782,8 +782,12 @@ module Models
       }
     ].freeze
 
-    def self.call
-      new.call
+    def self.call(registry_models: RegistryModels.fetch)
+      new(registry_models:).call
+    end
+
+    def initialize(registry_models:)
+      @registry_models = registry_models
     end
 
     # @spec DIRECT-OUTBOUND-CATALOG-001
@@ -811,6 +815,8 @@ module Models
     end
 
     private
+
+    attr_reader :registry_models
 
     # @spec MODEL-AVAILABILITY-002
     # @spec MODEL-AVAILABILITY-003
@@ -877,7 +883,7 @@ module Models
     end
 
     def registry_models_by_id
-      RegistryModels.fetch.grouped_by_id
+      registry_models.grouped_by_id
     end
 
     def normalized_provider(provider)

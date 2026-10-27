@@ -3,10 +3,13 @@
 class ModelsSyncJob < ApplicationJob
   queue_as :default
 
-  # @spec MODEL-AVAILABILITY-004
+  # @spec MODEL-AVAILABILITY-004 MODEL-AVAILABILITY-008
   def perform
-    synced = Models::SeedKnownModels.call
-    checked = Models::ReconcileAvailability.refresh_known_contexts!
+    registry_models = Models::RegistryModels.fetch
+
+    synced, checked = Models::CatalogSnapshot.refresh do
+      [ Models::SeedKnownModels.call(registry_models:), Models::ReconcileAvailability.refresh_known_contexts! ]
+    end
 
     Rails.logger.info(
       message: "model_registry.availability_refreshed",
