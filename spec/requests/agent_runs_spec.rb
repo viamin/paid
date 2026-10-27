@@ -2628,6 +2628,30 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec ISSUE-REOPEN-REVIEW-007
+      it "does not turn a reopen hold into an enhancement run without a decision" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("Select a supported continuation")
+        expect(parked_issue.reload).to be_reopen_review_pending
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-007
+      it "does not queue another run while incompatible work is already active" do
+        create(:agent_run, :queued, project: project, issue: parked_issue, goal: "create_pr")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("queued or running work")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,

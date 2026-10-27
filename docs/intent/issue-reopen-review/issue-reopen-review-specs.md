@@ -30,3 +30,26 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an issue is in manual review, the
+  system SHALL classify recovery from explicit persisted provenance: dedicated
+  reopen-review state, unresolved dependency records, scanner verification
+  records, and known enhancement producers. Unknown provenance SHALL remain
+  visible and SHALL NOT be treated as an enhancement retry.
+  *Tests:* `spec/services/manual_reviews/classify_spec.rb`.
+  *Code:* `ManualReviews::Classify`.
+
+- [x] **ISSUE-REOPEN-REVIEW-006** - When an authorized operator resolves a
+  reopen-review hold, the system SHALL require a non-blank reason and current
+  issue revision, record the actor, time, reason, decision and revision, and
+  reject stale evidence.
+  *Tests:* `spec/services/manual_reviews/record_reopen_decision_spec.rb`.
+  *Code:* `ManualReviews::RecordReopenDecision`.
+
+- [x] **ISSUE-REOPEN-REVIEW-007** - When an Inbox operator resumes manual
+  review, the system SHALL use the same classification and decision service as
+  other callers, SHALL not queue a second run while queued or running work
+  exists, and SHALL leave unresolved dependencies, scanner recurrences, and
+  unknown holds visible rather than clearing them through enhancement retry.
+  *Tests:* `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Projects::AgentRunsController`, `ManualReviews::Classify`.

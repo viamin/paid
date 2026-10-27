@@ -1,9 +1,14 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec OPERATOR-INBOX-002D @spec ISSUE-REOPEN-REVIEW-007 %>
+<% cause = ManualReviews::Classify.call(issue: entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if cause.kind == :reopen_review %>
+        This issue was reopened after closure. Record an intent-validation decision before selecting a continuation.
+      <% elsif cause.kind == :dependency %>
+        Work is waiting on a dependency. Resolving or acknowledging another hold does not waive it.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
         Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
@@ -17,6 +22,34 @@
       <%= entry.summary %>
     </p>
   </div>
+
+  <% if cause.kind == :reopen_review %>
+    <div class="rounded-xl border border-purple-200 bg-white p-4">
+      <h3 class="text-sm font-semibold text-gray-900">Validate reopened intent</h3>
+      <p class="mt-1 text-sm text-gray-600">
+        Original closure: <%= entry.issue.closed_at ? "closed #{time_ago_in_words(entry.issue.closed_at)} ago" : "closure timestamp unavailable" %>.
+        Remaining scope: <%= entry.issue.reopen_reason.presence || "Review the reopened issue and its prior delivery evidence." %>
+      </p>
+      <% if policy(entry.project).run_agent? %>
+        <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project), method: :post, class: "mt-3 space-y-3", data: { turbo_frame: "_top" } do |form| %>
+          <%= form.hidden_field :issue_id, value: entry.issue.id %>
+          <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+          <%= form.hidden_field :reopen_revision, value: entry.issue.github_updated_at&.iso8601 %>
+          <%= form.select :reopen_action, [["Retry analysis", "retry_analysis"], ["Resume implementation", "resume_implementation"], ["Collect evidence", "collect_evidence"]], {}, class: "rounded-md border-gray-300 text-sm" %>
+          <%= form.text_area :reopen_reason, required: true, rows: 2, placeholder: "Why the original closure remains valid or what work remains", class: "block w-full rounded-md border-gray-300 text-sm" %>
+          <%= form.submit "Record decision and continue", class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white" %>
+        <% end %>
+      <% end %>
+    </div>
+  <% elsif cause.kind == :dependency %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      Waiting on <%= cause.details.join(", ") %>. Paid reevaluates this issue when that dependency resolves.
+    </div>
+  <% elsif cause.kind == :unknown %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      This hold has no recognized provenance. Its recorded reason remains visible; inspect it before selecting new work.
+    </div>
+  <% end %>
 
   <%# A scanner-confirmed recurrence routes through manual_review, not the
       partial_closeout lane (SecurityAlerts::VerifyRemediationAttempt#fail!
@@ -42,7 +75,7 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && %i[enhancement_questions enhancement_failure].include?(cause.kind) %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

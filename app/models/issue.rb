@@ -2,10 +2,17 @@
 
 class Issue < ApplicationRecord
   belongs_to :reopened_by, class_name: "User", optional: true
+  belongs_to :reopen_review_decided_by, class_name: "User", optional: true
 
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
   REOPEN_REVIEW_REQUIRED_REASON =
     "Issue was reopened after closure. An operator must validate its current intent before it can be completed again."
+  ENHANCEMENT_PARSE_FAILURE_REASON =
+    "Paid could not validate the enhancement agent's structured output."
+  ENHANCEMENT_ROUND_LIMIT_REASONS = [
+    "Paid reached the configured enhancement-round limit.",
+    "Paid reached the configured limit of enhancement re-evaluation rounds."
+  ].freeze
   NON_BLOCKING_OPEN_DEPENDENCY_STATES = %w[recommend_close completed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
   CONTROL_PRIORITIES = %w[P1 P2 P3].freeze

@@ -461,7 +461,9 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
-    # manual_review only clears when an explicit operator-triggered run
+    # manual_review recovery is routed through durable provenance. Reopen
+    # review first records an authorized, revision-bound decision; dependency,
+    # scanner, and unknown holds deliberately do not become enhancement runs.
     # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
     # queues a fresh manual enhance_issue run rather than just clearing state,
     # since a queued run is what actually resumes the enhancement work. The
@@ -470,7 +472,7 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec ISSUE-REOPEN-REVIEW-007
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -480,6 +482,48 @@ module Projects
         return
       end
 
+      cause = ManualReviews::Classify.call(issue: issue)
+      if cause.kind == :reopen_review
+        record_reopen_decision_and_continue(issue)
+        return
+      end
+      if cause.kind == :dependency
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Work remains blocked by #{cause.details.join(', ')}. Paid will reevaluate it when the dependency resolves."
+        return
+      end
+      if %i[scanner_recurrence unknown].include?(cause.kind)
+        redirect_to safe_return_target || dashboard_path,
+          alert: "#{cause.label} must be resolved from its evidence or recovery surface; no enhancement run was queued."
+        return
+      end
+
+      queue_manual_enhancement(issue)
+    end
+
+    def record_reopen_decision_and_continue(issue)
+      ManualReviews::RecordReopenDecision.call(
+        issue: issue,
+        actor: current_user,
+        action: params[:reopen_action],
+        reason: params[:reopen_reason],
+        revision: params[:reopen_revision]
+      )
+      refreshed_cause = ManualReviews::Classify.call(issue: issue.reload)
+      if refreshed_cause.kind == :dependency
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Reopen decision recorded. Work remains blocked by #{refreshed_cause.details.join(', ')}."
+      elsif params[:reopen_action] == "retry_analysis"
+        queue_manual_enhancement(issue)
+      else
+        redirect_to safe_return_target || dashboard_path,
+          notice: "Reopen decision recorded. Resume implementation from the project runs page after reviewing the remaining scope."
+      end
+    rescue ManualReviews::RecordReopenDecision::StaleRevisionError, ArgumentError => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
+    end
+
+    def queue_manual_enhancement(issue)
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
@@ -1688,13 +1732,15 @@ module Projects
         return
       end
 
-      # Filter out issues that already have active (unfinished) enhance_issue runs
+      # A hold can coexist with an automatic implementation or recovery run.
+      # Reusing that work is safer than clearing the hold and adding an
+      # enhancement run that races it.
       active_issue_ids = @project.agent_runs
-        .where(issue_id: issues.map(&:id), goal: "enhance_issue", status: AgentRun::UNFINISHED_STATUSES)
+        .where(issue_id: issues.map(&:id), status: AgentRun::UNFINISHED_STATUSES)
         .pluck(:issue_id)
       issues = issues.where.not(id: active_issue_ids) if active_issue_ids.any?
       if issues.empty?
-        redirect_to on_error_path, alert: "All selected issues already have active enhancement runs."
+        redirect_to on_error_path, alert: "All selected issues already have queued or running work; no second run was created."
         return
       end
 

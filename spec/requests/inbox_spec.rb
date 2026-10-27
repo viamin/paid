@@ -1064,7 +1064,7 @@ RSpec.describe "Inbox" do
     parked = create_manual_review_issue(
       title: "Parked issue",
       github_number: 509,
-      reason: "Structured output failed validation."
+      reason: Issue::ENHANCEMENT_PARSE_FAILURE_REASON
     )
 
     get inbox_entry_path(
@@ -1073,7 +1073,7 @@ RSpec.describe "Inbox" do
     )
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Structured output failed validation.", "Start enhancement run")
+    expect(response.body).to include("Why this is in your inbox", "Start enhancement run")
     document = Nokogiri::HTML(response.body)
     form = document.at_css(
       %(form[action="#{resume_manual_review_project_agent_runs_path(project, issue_id: parked.id)}"])
@@ -1084,6 +1084,26 @@ RSpec.describe "Inbox" do
     expect(form.at_css('input[name="return_to"]')["value"]).to eq(
       inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
     )
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-007
+  it "renders a revision-bound reopen decision instead of an enhancement retry" do
+    reopened = create_manual_review_issue(
+      title: "Reopened validation",
+      github_number: 512,
+      reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+      reopen_reason: "Live validation artifacts are still required.",
+      github_updated_at: Time.current
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, reopened),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response.body).to include("Validate reopened intent", "Live validation artifacts are still required.")
+    expect(response.body).to include("Record decision and continue")
+    expect(response.body).not_to include("Start enhancement run")
   end
 
   # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
