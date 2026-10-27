@@ -34,6 +34,28 @@ RSpec.describe WorkItemContinuationGrant do
     expect(grant).not_to be_valid
   end
 
+  # @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-009
+  it "requires the work item and author to belong to the grant project account" do
+    other_project = create(:project, account: create(:account))
+    outside_actor = create(:user, account: other_project.account)
+
+    wrong_work_item = build(
+      :work_item_continuation_grant,
+      project:,
+      issue: create(:issue, project: other_project),
+      created_by: user
+    )
+    wrong_actor = build(:work_item_continuation_grant, project:, issue:, created_by: outside_actor)
+    missing_actor = build(:work_item_continuation_grant, project:, issue:, created_by: nil)
+
+    expect(wrong_work_item).not_to be_valid
+    expect(wrong_work_item.errors[:issue]).to include("must belong to the grant project")
+    expect(wrong_actor).not_to be_valid
+    expect(wrong_actor.errors[:created_by]).to include("must belong to the grant project account")
+    expect(missing_actor).not_to be_valid
+    expect(missing_actor.errors[:created_by]).to include("can't be blank")
+  end
+
   describe "completion" do
     it "completes when the endpoint's work lands" do
       grant = create(:work_item_continuation_grant, project:, issue:)

@@ -124,16 +124,17 @@ module Automation
       end
 
       # Automating through merge requires permission to delegate merge; other
-      # endpoints require the ability to start work in the phase itself.
+      # endpoints require permission to run work in the project. Both checks
+      # establish account and project scope before a durable grant is created.
       # @spec AUTOMATION-PHASES-009
       def ensure_delegation_permitted!
         raise PermissionDenied, permission_message unless delegation_permitted?
       end
 
       def delegation_permitted?
-        return merge_delegation_permitted? if endpoint == Automation::Phases::MERGE
+        return false unless ProjectPolicy.new(user, project).run_agent?
 
-        true
+        endpoint != Automation::Phases::MERGE || merge_delegation_permitted?
       end
 
       def merge_delegation_permitted?
