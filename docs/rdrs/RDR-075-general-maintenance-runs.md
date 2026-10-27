@@ -15,10 +15,12 @@
   (Critical assumption 2). Recorded by [#4327](https://github.com/viamin/paid/issues/4327)'s
   [2026-10-23 audit](audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md);
   the two pending live validations are owned by
-  [#4604](https://github.com/viamin/paid/issues/4604). Its 2026-10-24
-  revalidation found no Docker client, socket, or alternate local engine, so
-  the required native-analyzer and sidecar artifacts remain uncollected and
-  must run in a Docker-capable execution environment.
+  [#4604](https://github.com/viamin/paid/issues/4604). Its 2026-10-24 and
+  2026-10-27 revalidations found no Docker client, socket, remote backend, or
+  Docker-host registry entry — the 2026-10-27 pass confirmed this through
+  Paid's own container-backend resolver, not only shell-level checks — so the
+  required native-analyzer and sidecar artifacts remain uncollected and must
+  run in a Docker-capable execution environment.
 
 ## Dependencies
 

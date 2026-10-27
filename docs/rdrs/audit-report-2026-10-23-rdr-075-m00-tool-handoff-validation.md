@@ -333,6 +333,52 @@ RDR-073 extension can be decided from an unprovisioned environment; retain
 the existing direction that an extension is filed only if a completed live
 validation identifies a checkout-dependent sidecar need.
 
+## #4604 execution-environment revalidation — 2026-10-27
+
+**Result: still not executed; checked through Paid's own backend resolver,
+not only the raw shell.** The 2026-10-24 pass checked for a `docker` client,
+`/var/run/docker.sock`/`/run/docker.sock`, and `DOCKER_*` env vars directly.
+This pass instead exercised the same resolution path
+`AgentRun#provision_execution_environment` uses
+(`config/initializers/container_backend.rb`), to confirm the shell-level
+absence isn't masking a configured alternate backend reachable through
+Paid's supported lifecycle:
+
+- `CONTAINER_BACKEND` is unset, so the resolver's `:multi` (per-host
+  registry) branch is not active and `Containers::HostRegistry` is not
+  consulted; `backend_type` defaults to `:local`.
+- `Containers::Backends::RemoteDocker.from_env` returns `nil` — no
+  `REMOTE_DOCKER_*` configuration is present — so no `:remote` backend is
+  registered.
+- The `:swarm` backend is registered but inactive (`backend_type` is
+  `:local`, not `:swarm`); its own fallback (`SWARM_MANAGER_HOST` /
+  `DOCKER_HOST`) is unset and would itself resolve to the same absent local
+  socket.
+- The active backend resolves to `Containers::Backends::LocalDocker`
+  (`Rails.application.config.x.container_backend.class` ==
+  `Containers::Backends::LocalDocker`, `#remote?` == `false`).
+- Calling that backend's own `#ping` (`Docker.ping`, with `Docker.url` ==
+  `unix:///var/run/docker.sock`) raises
+  `Excon::Error::Socket: No such file or directory - connect(2) for
+  /var/run/docker.sock (Errno::ENOENT)` — the same conclusion the raw socket
+  check reached, now confirmed through the application's own connection
+  attempt rather than inferred from file-existence checks alone.
+- `DockerHost.count` is `0` in this run's database — no account has a
+  configured remote/multi-host entry that `CONTAINER_BACKEND=multi` could
+  have selected, in this environment's data.
+
+No `CONTAINER_BACKEND`, `REMOTE_DOCKER_*`, `SWARM_*`, or
+`CONTAINER_BACKENDS_CONFIG` value was set, unset, or overridden to produce
+this result, and no Docker client/daemon was installed as a substitute. The
+two required artifacts (native analyzer invocation, sidecar interaction) were
+not attempted beyond this capability check, consistent with the instruction
+not to infer live lifecycle behavior from an unprovisioned environment.
+GitHub issue #4604 stays open; this revalidation strengthens the evidence
+that the blocker is environmental, not a false negative from checking the
+wrong signal, but does not resolve it. Move the two live validations to a
+Docker-capable Paid execution environment (local socket, or an authorized,
+configured `REMOTE_DOCKER_*`/`CONTAINER_BACKENDS_CONFIG` remote backend).
+
 ## Disposition
 
 This report resolves critical assumption 1 only. Critical assumption 2 remains
@@ -355,12 +401,16 @@ arrow entry track #4604 as the evidence owner. This report does not:
 - Determine whether an upstream RDR-073 extension is needed — that decision
   follows the required native and sidecar execution evidence.
 
-The #4604 revalidation on 2026-10-24 confirms that those two evidence
-artifacts remain blocked specifically by the absence of a Docker-capable
-execution environment. RDR-075 remains Draft, its `maintenance-runs` arrow
-remains a draft-only mapping, and implementation phases #4328–#4333 remain
-unreleased. Move the validation to a Docker-capable environment rather than
-inferring live lifecycle behavior from static tests or host-only commands.
+The #4604 revalidations on 2026-10-24 and 2026-10-27 confirm that those two
+evidence artifacts remain blocked specifically by the absence of a
+Docker-capable execution environment — the 2026-10-27 pass additionally
+confirmed this through Paid's own container-backend resolver and `DockerHost`
+registry, not only shell-level `docker`/socket checks, so the result is not
+an artifact of checking the wrong signal. RDR-075 remains Draft, its
+`maintenance-runs` arrow remains a draft-only mapping, and implementation
+phases #4328–#4333 remain unreleased. Move the validation to a Docker-capable
+environment rather than inferring live lifecycle behavior from static tests
+or host-only commands.
 
 Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
 an HLD pointer) are reviewable drafts for the same pending human-review gate,
