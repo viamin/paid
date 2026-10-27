@@ -335,7 +335,13 @@ repository investigations — focused, issue-less questions and durable,
 evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
 building a second provisioning path, and keeps investigation separate from
-any repair: a scan never mutates source code or opens a PR on its own.
+any repair: a scan never mutates source code or opens a PR on its own. A
+proposed optimization recipe family may offer an owner-elected, per-run
+automatic queue for narrowly bounded repair work only after a separate policy
+is accepted; the agent's semantic assessment is evidence, while deterministic
+authorization, budget, stale-evidence, category, and idempotency gates retain
+control-plane authority. The proposal is opt-in and off by default, and
+security repairs remain manual-only pending a distinct safety decision.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending

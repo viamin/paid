@@ -36,6 +36,13 @@ tool attachment, matching, provisioning, or sidecar hardening — that remains
 [`marketplace-tool-sidecars`](../marketplace-tool-sidecars/marketplace-tool-sidecars-design.md),
 consumed rather than duplicated.
 
+The proposed [optimization recipe policy](../optimization-recipes/optimization-recipes-design.md)
+is a child segment of this LLD. It narrows the catalog and repair-election
+contract for #4493–#4496 without changing this segment's baseline: a
+maintenance scan is report-only, and automatic repair remains unavailable
+unless that child policy is accepted and its separate implementation gates
+ship.
+
 ## Storage Contract
 
 A maintenance run is a new `AgentRun` goal (`"maintenance"`), not a new
