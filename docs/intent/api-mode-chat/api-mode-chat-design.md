@@ -186,6 +186,16 @@ What ships today:
   the configured Anthropic endpoint
 - token usage for chat turns is recorded on `token_usages` and surfaced back
   through the chat UI/API totals
+- each user-initiated turn also has a durable `ChatTurn` lifecycle. A
+  maintenance sweep marks a `pending` or `streaming` turn stalled only after
+  its durable activity threshold has elapsed. Turns awaiting human tool
+  confirmation, provider-rate-limit recovery, budget exhaustion, and known
+  provider failures have terminal or paused state and are never inferred to be
+  successful. A stalled transcript retains every persisted message and adds a
+  system notice explaining that no final response was recorded. First-release
+  recovery is deliberately conservative: the user must explicitly request it,
+  and any persisted tool activity blocks replay because arbitrary tools have
+  no universal idempotency contract.
 - `Tools::RepoReadClientResolver` resolves repo-read tool calls (`grep_repo`,
   `read_repo_file`, `list_repo_tree`, `search_issues`) against the project's
   own GitHub credential first (App installation token, or PAT when the

@@ -45,15 +45,20 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       }
     })
   rescue ArgumentError => e
+    fail_turn(chat_session_id, stream_message_id, "validation")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue NotImplementedError => e
+    fail_turn(chat_session_id, stream_message_id, "configuration")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::LlmClientConfigurationError => e
+    fail_turn(chat_session_id, stream_message_id, "configuration")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
+    fail_turn(chat_session_id, stream_message_id, "budget_exhausted")
     broadcast_error(chat_session_id, stream_message_id, e.message,
       limit_type: e.limit_type, limit: e.limit, used: e.used)
   rescue AgentHarness::RateLimitError => e
+    fail_turn(chat_session_id, stream_message_id, "rate_limited")
     # @spec CHAT-API-017
     Rails.logger.warn(
       message: "chat_process_message_job.rate_limited",
@@ -65,6 +70,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     broadcast_persisted_message(stream_name, pause_message)
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue AgentHarness::Error => e
+    fail_turn(chat_session_id, stream_message_id, "provider_error")
     Rails.logger.error(
       message: "chat_process_message_job.provider_error",
       chat_session_id: chat_session_id,
@@ -75,6 +81,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   rescue ActiveRecord::RecordNotFound
     raise
   rescue StandardError => e
+    fail_turn(chat_session_id, stream_message_id, "infrastructure")
     Rails.logger.error(
       message: "chat_process_message_job.failed",
       chat_session_id: chat_session_id,
@@ -120,6 +127,13 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       message_id: stream_message_id,
       message: error_message
     }.merge(extra.compact))
+  end
+
+  def fail_turn(chat_session_id, stream_message_id, classification)
+    ChatTurn.joins(:initiating_message).where(chat_messages: { chat_session_id: chat_session_id })
+      .where("chat_messages.metadata ->> 'stream_message_id' = ?", stream_message_id)
+      .where(status: ChatTurn::ACTIVE_STATUSES).first
+      &.update!(status: "failed", failure_classification: classification, activity_at: Time.current)
   end
 
   def tenant_account

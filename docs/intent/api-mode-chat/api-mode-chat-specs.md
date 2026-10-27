@@ -90,6 +90,29 @@
   `ChatSessions::ProcessMessageJob#perform`,
   `ChatSessions::SendMessage#call`.
 
+- [x] **CHAT-TURN-001** — When a persisted user chat message has no terminal
+  turn outcome and no durable activity beyond the configured stall threshold,
+  the system SHALL mark its `ChatTurn` as `stalled` with a detection timestamp
+  and classification; turns awaiting confirmation SHALL remain excluded.
+  *Tests:* `spec/services/chat_turns/stall_detector_spec.rb`.
+  *Code:* `ChatTurn`, `ChatTurns::StallDetector`,
+  `ChatTurns::StallSweepJob`.
+
+- [x] **CHAT-TURN-002** — When a turn is classified as stalled, the system
+  SHALL retain its existing transcript and persist an in-transcript notice that
+  says a final response was not recorded and identifies whether completed tool
+  activity might require review.
+  *Tests:* `spec/services/chat_turns/stall_detector_spec.rb`.
+  *Code:* `ChatTurns::StallDetector`, `ChatMessage#stalled_turn_notice?`,
+  `chat_messages/_stalled_turn_notice.html.erb`.
+
+- [x] **CHAT-TURN-003** — When a user explicitly requests recovery for a
+  stalled turn, the system SHALL deduplicate the request under a row lock and
+  SHALL refuse to replay any turn with persisted tool activity; the first
+  release preserves that turn as abandoned and requires a new user message.
+  *Tests:* `spec/requests/chat_turns_spec.rb`.
+  *Code:* `ChatTurnsController#resume`.
+
 - [x] **CHAT-API-022** — When a streamed ActionCable or SSE chat response
   emits text chunks, each chunk SHALL carry a positive, stream-local sequence
   number. The browser SHALL append only contiguous chunks for its active
