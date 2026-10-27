@@ -39,6 +39,20 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
       github_state: "open", paid_state: "in_progress")
   end
 
+  def human_prerequisite_notification
+    create(
+      :notification,
+      :error,
+      account: account,
+      subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+      blocking: true,
+      title: "Choose the review policy",
+      description: "Record the human adjudication and its evidence.",
+      action_url: "/inbox/action_required:2777"
+    )
+  end
+
   it "marks an issue with merged partial evidence stalled and explains the exact reason" do
     merged_partial_pr(number: 12)
 
@@ -115,23 +129,100 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     expect(status.reason).to include("backoff")
   end
 
-  it "surfaces a non-walked eligibility guard via the scoped preflight instead of the duplicate-work fallback" do
+  it "explains an open native child without requiring a duplicate dependency edge" do # @spec PARTIAL-CLOSEOUT-030
     merged_partial_pr(number: 12)
-    create(
+    child = create(
       :issue,
       project: project,
       github_state: "open",
       paid_state: "in_progress",
       parent_issue_id: issue.id,
-      github_number: 55
+      github_number: 55,
+      github_html_url: "https://github.com/acme/alpha/issues/55"
     )
 
     status = described_class.call(issue)
 
     expect(status.stalled?).to be(true)
+    expect(status.blocker_codes).to contain_exactly(:open_native_children)
+    expect(status.reason).to include("#55")
+    expect(status.blockers.first.evidence).to include(
+      "children" => [ hash_including("id" => child.id, "number" => 55, "url" => child.github_url) ]
+    )
+    expect(status.blockers.first.recovery).to include("Do not close")
+  end
+
+  it "preloads native child projects for singleton and batched diagnostics" do # @spec PARTIAL-CLOSEOUT-030
+    merged_partial_pr(number: 12)
+    3.times do |index|
+      create(:issue, project: project, github_state: "open", paid_state: "in_progress",
+        parent_issue_id: issue.id, github_number: 55 + index, github_html_url: nil)
+    end
+    project_query = /SELECT .* FROM "projects" WHERE "projects"\."id" =/
+
+    singleton_queries = []
+    batched_queries = []
+    singleton_subscriber = ->(*args) { singleton_queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+    batched_subscriber = ->(*args) { batched_queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+    ActiveSupport::Notifications.subscribed(singleton_subscriber, "sql.active_record") do
+      described_class.call(issue)
+    end
+    ActiveSupport::Notifications.subscribed(batched_subscriber, "sql.active_record") do
+      inputs = described_class.inputs_for([ issue ])
+      described_class.call(issue, eligible_issue_ids: [], continuation_eligible_issue_ids: [], inputs: inputs)
+    end
+
+    expect(singleton_queries.grep(project_query).size).to be <= 2
+    expect(batched_queries.grep(project_query).size).to be <= 2
+  end
+
+  it "uses the unavailable fallback for a genuinely unclassified admission denial" do # @spec PARTIAL-CLOSEOUT-030
+    merged_partial_pr(number: 12)
+    feature = create(:feature_intent, project: project)
+    amendment = create(:design_amendment, feature_intent: feature, project: project, status: "merged")
+    create(:design_amendment_pause, design_amendment: amendment, issue: issue, reason_code: "affected")
+
+    status = described_class.call(issue)
+
+    expect(status.stalled?).to be(true)
     expect(status.blocker_codes).to contain_exactly(:unavailable)
-    expect(status.reason).to include("unavailable")
+    expect(status.reason).to include("exact guard is unavailable")
     expect(status.blockers.first.recovery).to include("Investigate")
+  end
+
+  it "explains active partial-closeout human prerequisite notifications and every simultaneous guard" do # @spec PARTIAL-CLOSEOUT-030
+    merged_partial_pr(number: 12)
+    child = create(:issue, project: project, github_state: "open", paid_state: "in_progress", parent_issue_id: issue.id, github_number: 55)
+    notification = human_prerequisite_notification
+
+    status = described_class.call(issue)
+
+    expect(status.blocker_codes).to contain_exactly(:open_native_children, :human_prerequisite_notification)
+    notification_blocker = status.blockers.find { |blocker| blocker.code == :human_prerequisite_notification }
+    expect(notification_blocker.message).to include("##{notification.id}")
+    expect(notification_blocker.evidence.fetch("notifications").first).to include(
+      "notification_id" => notification.id,
+      "source" => PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+      "action_url" => "/inbox/action_required:2777"
+    )
+    expect(notification_blocker.recovery).to include("human decision or evidence")
+    expect(status.blockers.first.evidence.fetch("children")).to include(hash_including("id" => child.id))
+  end
+
+  it "does not cross-pair batched child and notification blockers across tenants" do # @spec PARTIAL-CLOSEOUT-030
+    other_account = create(:account)
+    other_project = create(:project, account: other_account)
+    other_issue = create(:issue, project: other_project, github_state: "open", paid_state: "in_progress")
+    foreign_child = create(:issue, project: other_project, parent_issue_id: other_issue.id,
+      github_state: "open", paid_state: "in_progress")
+    foreign_child.update_column(:project_id, project.id)
+    foreign_notification = create(:notification, :error, account: account, subject: other_issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
+
+    inputs = described_class.inputs_for([ issue, other_issue ])
+
+    expect(inputs.open_native_children_by_issue_id.fetch(other_issue.id, [])).not_to include(foreign_child)
+    expect(inputs.prerequisite_notifications_by_issue_id.fetch(other_issue.id, [])).not_to include(foreign_notification)
   end
 
   it "reports every material blocker, including scanner verification evidence, without treating a merge as a fix" do
