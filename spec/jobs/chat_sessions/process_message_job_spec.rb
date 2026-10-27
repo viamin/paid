@@ -50,6 +50,16 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
         message_id: stream_message_id,
         tokens: { input: 20, output: 10 }
       ))
+    expect(chat_session.chat_turns.last).to be_completed
+  end
+
+  # @spec CHAT-TURN-001
+  it "marks the durable turn failed when the provider raises" do
+    allow(ChatSessions::SendMessage).to receive(:call).and_raise(AgentHarness::Error, "provider unavailable")
+
+    described_class.perform_now(chat_session_id: chat_session.id, content: "Hello", stream_message_id: stream_message_id)
+
+    expect(chat_session.chat_turns.last).to be_failed
   end
 
   # @spec QUESTION-EXPLORATION-007
