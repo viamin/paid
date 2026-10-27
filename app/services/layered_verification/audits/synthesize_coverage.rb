@@ -53,7 +53,7 @@ module LayeredVerification
         ) do |record|
           record.obligation = obligation
           record.agent_run = agent_run
-          record.source_passages = contradictory.map { |result| result.evidence_summary }
+          record.source_passages = contradictory.map(&:evidence_summary)
           record.observed_behavior = { "check_results" => contradictory.map(&:id) }
           record.check_limitations = contradictory.map(&:limitations)
           record.decision = {
