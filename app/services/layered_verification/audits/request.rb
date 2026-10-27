@@ -26,7 +26,6 @@ module LayeredVerification
       def self.resolve_target_revision!(project:, target_revision:)
         revision = target_revision.to_s
         raise InvalidTargetRevisionError, "target revision is required" if revision.blank?
-        raise InvalidTargetRevisionError, "target revision must be 40 characters or fewer" if revision.length > 40
 
         project.client.commit(project.full_name, revision).sha.to_s.presence ||
           raise(InvalidTargetRevisionError, "target revision could not be resolved")

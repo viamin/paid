@@ -99,6 +99,8 @@ RSpec.describe "Layered verification audits" do
     get project_path(project)
 
     expect(response.body).to include(request_layered_verification_audit_project_agent_runs_path(project))
+    revision_input = Nokogiri::HTML5(response.body).at_css('input[name="target_revision"]')
+    expect(revision_input["maxlength"]).to be_nil
 
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(false)
 

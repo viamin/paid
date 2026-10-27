@@ -43,4 +43,23 @@ RSpec.describe LayeredVerification::Audits::Request do
       }.to raise_error(described_class::InvalidBudgetError, "budget must be between 1 and 120 minutes")
     end
   end
+
+  # @spec LAYERED-VERIFY-010
+  it "resolves branch names longer than a commit SHA" do
+    user = create(:user, :owner)
+    project = create(:project, account: user.account)
+    obligation = create(:layered_verification_obligation, project:)
+    long_revision = "feature/#{"bounded-audit-" * 4}reports"
+    allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
+    allow(project.client).to receive(:commit).with(project.full_name, long_revision)
+      .and_return(OpenStruct.new(sha: "resolved-sha"))
+
+    run = described_class.call(
+      project:, user:, obligation_ids: [ obligation.id ], target_revision: long_revision,
+      budget: { "max_minutes" => 15 },
+      selections: { obligation.id => { "selected_checks" => [ "spec_to_code" ] } }
+    )
+
+    expect(run.base_commit_sha).to eq("resolved-sha")
+  end
 end

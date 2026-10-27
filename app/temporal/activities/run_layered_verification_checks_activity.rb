@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "pathname"
+require "stringio"
 
 module Activities
   # Executes deterministic plan-selected checks in the already-provisioned
@@ -9,6 +10,7 @@ module Activities
   class RunLayeredVerificationChecksActivity < BaseActivity
     activity_name "RunLayeredVerificationChecks"
     COMMAND_TIMEOUT = 60
+    EVIDENCE_SUMMARY_MAX_LENGTH = 2_000
 
     def execute(input)
       @agent_run = AgentRun.find(input[:agent_run_id])
@@ -65,11 +67,25 @@ module Activities
       {
         obligation:, agent_run:, producer: "formal_verification",
         execution_state: outcome.fetch(:execution_state), obligation_coverage: outcome.fetch(:obligation_coverage),
-        input_revision: input_revision(obligation), evidence_summary: { "output" => outcome[:output].to_s },
+        input_revision: input_revision(obligation), evidence_ref: evidence_ref(obligation, outcome, contradicted:),
+        evidence_summary: { "output" => outcome[:output].to_s.truncate(EVIDENCE_SUMMARY_MAX_LENGTH) },
         cause_signature: ("tlc-invariant-violation" if contradicted),
         agent_reported: { "selected_check" => "formal_verification" },
         recorder_verified: { "tlc_output_parsed" => true }, cost: {}, limitations: outcome.fetch(:limitations)
       }
+    end
+
+    def evidence_ref(obligation, outcome, contradicted:)
+      return unless contradicted
+
+      key = evidence_key(obligation)
+      ArtifactStorage.new.upload_io(io: StringIO.new(outcome[:output].to_s), key:, content_type: "text/plain")
+      key
+    end
+
+    def evidence_key(obligation)
+      project = agent_run.project
+      "layered-verification/#{project.account_id}/#{project.id}/#{agent_run.id}/#{obligation.id}/tlc-output.txt"
     end
 
     def input_revision(obligation)
