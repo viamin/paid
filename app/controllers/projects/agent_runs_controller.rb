@@ -461,7 +461,7 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
-    # manual_review only clears when an explicit operator-triggered run
+    # manual_review only clears when its explicit recovery contract permits it.
     # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
     # queues a fresh manual enhance_issue run rather than just clearing state,
     # since a queued run is what actually resumes the enhancement work. The
@@ -470,13 +470,21 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002J
     def resume_manual_review
       authorize @project, :run_agent?
 
       issue = resolve_manual_review_issue
       unless issue
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = ManualReviews::Recovery.call(issue: issue)
+      return record_reopen_review(issue) if recovery.action == :record_reopen_review
+
+      unless recovery.action == :retry_enhancement
+        redirect_to safe_return_target || dashboard_path, alert: recovery.message
         return
       end
 
@@ -1079,6 +1087,43 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
+    end
+
+    def record_reopen_review(issue)
+      reason = params[:reopen_review_reason].to_s.strip
+      unless ActiveModel::Type::Boolean.new.cast(params[:reopen_review_confirmed]) && reason.present?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Confirm the reopen review and provide the validation reason."
+        return
+      end
+
+      active_runs = @project.agent_runs.where(issue:, status: AgentRun::UNFINISHED_STATUSES)
+      if active_runs.exists?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Existing queued or running work must be reconciled before resolving reopen review."
+        return
+      end
+
+      Issue.transaction do
+        issue.lock!
+        return stale_manual_review_redirect unless issue.reopen_review_pending?
+
+        issue.update!(paid_state: "new")
+        AccountActivityEvent.create!(
+          account: @project.account,
+          actor: current_user,
+          subject: issue,
+          action: "issue.reopen_review_resolved",
+          metadata: { project_id: @project.id, issue_id: issue.id, reason: reason, issue_updated_at: issue.updated_at.iso8601 }
+        )
+      end
+
+      redirect_to safe_return_target || dashboard_path,
+        notice: "Reopen review recorded. The issue is available for normal admission."
+    end
+
+    def stale_manual_review_redirect
+      redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
     end
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap

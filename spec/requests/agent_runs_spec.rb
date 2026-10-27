@@ -2628,6 +2628,37 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002J
+      it "records reopen validation instead of queuing an enhancement retry" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_confirmed: "1",
+            reopen_review_reason: "The prior closure lacks the required live validation evidence."
+          }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload.paid_state).to eq("new")
+        expect(AccountActivityEvent.last).to have_attributes(action: "issue.reopen_review_resolved", actor: user)
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002J
+      it "does not clear reopen review while incompatible work is queued" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+        create(:agent_run, project: project, issue: parked_issue, goal: "create_pr", status: "queued")
+
+        post resume_manual_review_project_agent_runs_path(project), params: {
+          issue_id: parked_issue.id,
+          reopen_review_confirmed: "1",
+          reopen_review_reason: "Validated."
+        }
+
+        expect(parked_issue.reload).to be_reopen_review_pending
+        expect(flash[:alert]).to include("Existing queued or running work")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,

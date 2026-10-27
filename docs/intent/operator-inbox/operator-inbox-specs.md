@@ -176,6 +176,17 @@
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002J** — When an Inbox manual-review item is rendered or
+  resumed, the system SHALL classify its recovery from durable provenance and
+  use the same authorized recovery service for the UI and controller. A reopen
+  review SHALL require its validation decision instead of queuing
+  `enhance_issue`; an unresolved dependency SHALL remain a wait; scanner
+  evidence SHALL remain visible; and an unknown cause SHALL be identified as
+  unknown rather than silently retried.
+  *Tests:* `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+  *Code:* `ManualReviews::Recovery`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by
   `Issue#abandon_due_to_runner_retry_cap!` after every available runner hit

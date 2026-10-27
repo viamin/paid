@@ -30,3 +30,14 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an issue is in manual review because
+  it was reopened, the Inbox SHALL identify reopen review from the persisted
+  reopen-review provenance and SHALL not offer an enhancement retry as the
+  resolution. It SHALL require an authorized operator to record a non-blank
+  validation reason before it clears that hold or starts compatible follow-up
+  work. Other manual-review causes SHALL retain their own recovery actions;
+  an unclassified cause SHALL remain visibly unclassified.
+  *Tests:* `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `ManualReviews::Recovery`, `Projects::AgentRunsController`, Inbox
+  manual-review detail.

@@ -21,9 +21,11 @@ review reason. The Inbox exposes this state to an operator, and ordinary
 automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
-An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+An operator resolves the issue from manual review only after validating whether
+the original intent remains valid and whether new work is required. Reopen
+review is a distinct manual-review cause: it records the operator's
+revision-bound validation before offering a compatible continuation, rather
+than treating the acknowledgement as an enhancement retry.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

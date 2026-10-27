@@ -292,6 +292,14 @@ the reset.
 
 ### `manual_review`
 
+Manual review is a lane, not a single recovery workflow. The Inbox derives a
+cause from durable provenance before it renders an action. Reopen-review holds
+require their dedicated validation decision; scanner recurrences retain their
+scanner evidence; unresolved dependency records remain waits; and ordinary
+enhancement stops retain the existing question-answer and enhancement retry
+paths. An unrecognized provenance is shown as unknown and is not silently
+converted into an enhancement retry.
+
 Backed by `Issue#paid_state == "manual_review"` directly, the same way
 `clarifying_questions` and `escalated_pr` derive from state rather than a
 separate notification. Before this kind existed, `manual_review` was a hard

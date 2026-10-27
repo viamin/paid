@@ -21,6 +21,7 @@ class AccountActivityEvent < ApplicationRecord
     "issue.created" => "project",
     "issue.updated" => "project",
     "issue.reopened" => "project",
+    "issue.reopen_review_resolved" => "project",
     "issue.mutation_trust_verified" => "project",
     "issue.labels_changed" => "project",
     "issue.continuation_requested" => "project",
