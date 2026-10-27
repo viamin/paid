@@ -470,7 +470,7 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002L
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -480,14 +480,7 @@ module Projects
         return
       end
 
-      create_enhance_issue_runs_and_redirect(
-        issue_ids: [ issue.id ],
-        on_error_path: safe_return_target || dashboard_path,
-        success_path: safe_return_target || dashboard_path,
-        custom_prompt: nil,
-        goal: "enhance_issue",
-        priority_tier: nil
-      )
+      resume_manual_review_issue_and_redirect(issue)
     end
 
     # Operator-driven counterpart to
@@ -1079,6 +1072,68 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
+    end
+
+    # @spec OPERATOR-INBOX-002L @spec ISSUE-REOPEN-REVIEW-005
+    def resume_manual_review_issue_and_redirect(issue)
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue)
+      return redirect_manual_review_with_alert("This issue is waiting on its dependency; resolving it will trigger reevaluation.") if recovery.action == :wait_for_dependency
+      return redirect_manual_review_with_alert("The cause of this manual-review hold is unknown. No work was queued.") if recovery.action == :investigate
+      if recovery.action == :validate_reopen_intent && !valid_reopen_review_submission?
+        return redirect_manual_review_with_alert("Confirm the reopened intent and provide a reason before resuming work.")
+      end
+
+      budget_result = CostBudgets::Check.call(@project)
+      return redirect_manual_review_with_alert("Your project's AI budget has been reached. Please adjust your budget settings or try again later.") unless budget_result[:allowed]
+
+      agent_run = nil
+      issue.with_lock do
+        issue.reload
+        return redirect_manual_review_with_alert(manual_review_issue_missing_alert) unless issue.paid_state == "manual_review"
+        return redirect_manual_review_with_alert("Existing queued or running work must finish before this hold can be resumed.") if active_issue_work?(issue)
+
+        record_reopen_review_decision(issue) if recovery.action == :validate_reopen_intent
+        agent_run = create_agent_run(issue: issue, custom_prompt: nil, goal: recovery.goal, priority_tier: nil)
+        resume_issue_from_manual_review(issue)
+      end
+
+      ProcessRunQueueJob.perform_later
+      audit_event("issue.updated", subject: issue, metadata: { issue_id: issue.id, manual_review_action: "resumed", goal: agent_run.goal, cause: recovery.causes })
+      redirect_to safe_return_target || dashboard_path, notice: manual_review_notice(recovery)
+    rescue NoRunnableRunnerError, InvalidDockerHostSelectionError => e
+      redirect_manual_review_with_alert(e.message)
+    rescue ActiveRecord::RecordNotUnique
+      redirect_manual_review_with_alert("Existing queued or running work must finish before this hold can be resumed.")
+    end
+
+    def active_issue_work?(issue)
+      @project.agent_runs.where(issue: issue, status: AgentRun::UNFINISHED_STATUSES).exists?
+    end
+
+    def valid_reopen_review_submission?
+      params[:reopen_review_confirmed] == "1" && params[:reopen_reason].to_s.strip.present?
+    end
+
+    def record_reopen_review_decision(issue)
+      Audit::RecordEvent.call(action: "issue.updated", actor: current_user, subject: issue, account: @project.account, metadata: {
+        issue_id: issue.id, github_number: issue.github_number,
+        manual_review_action: "reopen_review_validated",
+        issue_revision: issue.github_updated_at&.utc&.iso8601 || issue.updated_at.utc.iso8601,
+        reason: params[:reopen_reason].to_s.strip
+      })
+    end
+
+    def manual_review_notice(recovery)
+      return "Reopen-intent decision recorded; enhancement run queued." if recovery.action == :validate_reopen_intent
+      return "Scanner remediation run queued." if recovery.action == :resume_scanner_remediation
+      return "Analysis retry queued." if recovery.action == :retry_analysis
+      return "Implementation run queued." if recovery.action == :resume_implementation
+
+      "Enhancement run queued."
+    end
+
+    def redirect_manual_review_with_alert(message)
+      redirect_to safe_return_target || dashboard_path, alert: message
     end
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap

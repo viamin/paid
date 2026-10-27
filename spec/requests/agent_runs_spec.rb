@@ -2628,6 +2628,38 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002L
+      it "requires and records a revision-bound reopen decision before continuing" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON, github_updated_at: Time.utc(2026, 10, 27, 12))
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+        expect(flash[:alert]).to include("Confirm the reopened intent")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id, reopen_review_confirmed: "1", reopen_reason: "Validation evidence is still required"
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        event = AccountActivityEvent.where(action: "issue.updated").find { |candidate| candidate.metadata["manual_review_action"] == "reopen_review_validated" }
+        expect(event.metadata).to include("issue_revision" => "2026-10-27T12:00:00Z", "reason" => "Validation evidence is still required")
+        expect(AgentRun.last.goal).to eq("enhance_issue")
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "does not enqueue a second run when work is already queued" do
+        create(:agent_run, project: project, issue: parked_issue, status: "queued", goal: "create_pr")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("Existing queued or running work")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,

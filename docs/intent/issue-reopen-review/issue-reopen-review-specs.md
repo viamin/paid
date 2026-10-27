@@ -30,3 +30,12 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resumes a
+  reopen-review Inbox item, the system SHALL require an explicit intent
+  validation acknowledgement and non-blank reason, record that decision against
+  the current issue revision, inspect active work, and only then queue the
+  supported continuation. A simultaneous dependency or active run SHALL remain
+  a hold rather than being cleared by the acknowledgement.
+  *Tests:* `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`, `Projects::AgentRunsController`.

@@ -27,6 +27,12 @@ the issue back into active work through the existing manual-review workflow.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 
+The Inbox recovery route records an authorized operator's non-blank validation
+reason and the current GitHub revision in the account audit trail before it
+queues supported continuation work. It does not infer that validation from a
+generic retry. If dependency, scanner, or active-work provenance is also
+present, that more restrictive hold remains visible and blocks continuation.
+
 ## Chat-tool policy
 
 The chat `edit_issue` tool directs callers to `create_issue` for new work

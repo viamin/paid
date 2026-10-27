@@ -145,6 +145,21 @@
   (`Inbox::ManualReviewCommentLink`), to that enhancement comment directly, so
   an operator can read the analysis the state was derived from without
   digging through the issue thread (#3908).
+
+- [x] **OPERATOR-INBOX-002L** — When an operator opens a `manual_review`
+  Inbox item, the system SHALL classify its recovery from persisted reopen,
+  dependency, scanner, and enhancement provenance without guessing from
+  free-text explanation. Dependency waits SHALL link to their blocking work and
+  remain held until resolution; scanner recurrence SHALL offer remediation;
+  enhancement holds SHALL retain the existing answer/retry surface; and unknown
+  provenance SHALL stay visibly actionable for investigation without queuing a
+  speculative run. Before any continuation, the shared service SHALL inspect
+  queued/running work and preserve incompatible holds.
+  *Code:* `Inbox::ManualReviewRecovery`,
+  `Projects::AgentRunsController`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+  *Tests:* `spec/services/inbox/manual_review_recovery_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
   When the issue's `needs_input_questions` is present (preserved by
   `EnhanceIssueActivity` from the terminal round's parseable clarifying
   questions, and kept by `IssueEnhancements::StopForManualReview` on every
