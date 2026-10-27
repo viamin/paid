@@ -1132,6 +1132,39 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("enhancement round limit")
   end
 
+  # @spec ISSUE-REOPEN-REVIEW-005
+  it "requires a revision-bound decision before offering continuation for a reopened issue" do
+    reopened = create_manual_review_issue(
+      title: "Reopened validation",
+      github_number: 512,
+      reason: Issue::REOPEN_REVIEW_REQUIRED_REASON
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, reopened),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Review reopened issue", "Resume implementation")
+    document = Nokogiri::HTML(response.body)
+    form = document.at_css(%(form[action="#{resume_manual_review_project_agent_runs_path(project)}"]))
+    expect(form.at_css('input[name="reopen_review_revision"]')["value"]).to eq(reopened.github_updated_at.iso8601)
+    expect(form.at_css('textarea[name="reopen_reason"]')).to be_present
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-006
+  it "shows the owner of an unresolved manual-review dependency without an enhancement retry" do
+    parked = create_manual_review_issue(title: "Wait for prerequisite", github_number: 513)
+    owner = create(:issue, project:, github_number: 4321, title: "Prerequisite", github_state: "open")
+    create(:issue_dependency, issue: parked, depends_on_issue: owner)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked), kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response.body).to include("Waiting for dependency", "#4321 Prerequisite")
+    expect(response.body).not_to include("Start enhancement run")
+  end
+
   # @spec OPERATOR-INBOX-002E @spec INBOX-FOUNDATION-006
   it "lists retry-limited issues regardless of auto-pick enablement but not from other accounts' projects" do
     auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "epsilon")

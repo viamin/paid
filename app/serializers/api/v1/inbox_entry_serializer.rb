@@ -103,11 +103,28 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        { questions: entry.questions, comment_url: entry.manual_review_comment_url, recovery: manual_review_recovery_payload }
       end
 
       def manual_review_list_payload
-        { questions: entry.questions }
+        { questions: entry.questions, recovery: manual_review_recovery_payload }
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005 ISSUE-REOPEN-REVIEW-006
+      def manual_review_recovery_payload
+        recovery = Inbox::ManualReviewRecovery.for(issue: entry.issue)
+        {
+          cause: recovery.cause.to_s,
+          action: recovery.action.to_s,
+          active_run_ids: recovery.active_runs.map(&:id),
+          dependencies: recovery.dependencies.filter_map do |dependency|
+            if dependency.respond_to?(:github_number)
+              { number: dependency.github_number, title: dependency.title, url: dependency.github_url }
+            elsif dependency.respond_to?(:external_ref)
+              { reference: dependency.external_ref }
+            end
+          end
+        }
       end
 
       # entry.record is Inbox::IntentConformance::Snapshot, already carrying

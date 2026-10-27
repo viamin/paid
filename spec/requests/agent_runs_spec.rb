@@ -2609,6 +2609,55 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec ISSUE-REOPEN-REVIEW-005
+      it "requires a current revision-bound decision before resuming a reopened issue" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("Confirm the current issue revision")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_confirmed: "1",
+            reopen_review_revision: parked_issue.github_updated_at.iso8601,
+            reopen_reason: "The required live validation evidence remains uncollected."
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(parked_issue.reload.paid_state).to eq("in_progress")
+        expect(AccountActivityEvent.where(action: "issue.reopen_review_decided", subject: parked_issue)).to exist
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-006
+      it "does not clear a manual-review hold while an incompatible run is queued" do
+        create(:agent_run, project:, issue: parked_issue, goal: "create_pr", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("existing run is queued or running")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-006
+      it "keeps a dependency hold in place instead of queuing enhancement" do
+        blocker = create(:issue, project:, github_state: "open")
+        create(:issue_dependency, issue: parked_issue, depends_on_issue: blocker)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("unresolved dependency")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,

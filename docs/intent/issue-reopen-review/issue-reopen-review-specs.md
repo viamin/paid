@@ -30,3 +30,20 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an Inbox manual-review item has the
+  dedicated reopen-review provenance, the system SHALL show the prior closure
+  review requirement and SHALL require an authorized operator to submit a
+  non-blank reason and the current synchronized issue revision before recording
+  a reopen-intent decision or offering an implementation continuation.
+  *Tests:* `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`, `Projects::AgentRunsController`.
+
+- [x] **ISSUE-REOPEN-REVIEW-006** - When a manual-review item has unresolved
+  dependency provenance, scanner recurrence, enhancement provenance, or no
+  recognized provenance, the system SHALL retain that distinct cause and SHALL
+  only offer its corresponding supported action; unknown provenance SHALL stay
+  visible without an inferred enhancement retry.
+  *Tests:* `spec/services/inbox/manual_review_recovery_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`, `Inbox manual-review detail`.

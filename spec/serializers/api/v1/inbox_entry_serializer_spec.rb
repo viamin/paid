@@ -105,6 +105,18 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       )
     end
 
+    # @spec ISSUE-REOPEN-REVIEW-005
+    it "serializes the explicit reopen recovery action for API clients" do
+      issue = create(:issue, project: project, paid_state: "manual_review",
+        manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+      entry = build_entry(Inbox::Queue::MANUAL_REVIEW_KIND, issue: issue, record: issue)
+      allow(entry).to receive(:manual_review_comment_url).and_return(nil)
+
+      payload = described_class.render(entry)
+
+      expect(payload[:recovery]).to include(cause: "reopen_review", action: "record_reopen_decision")
+    end
+
     it "serializes intent_conformance with the verdict and latest decision" do
       issue = create(:issue, :pull_request, project: project)
       verdict = create(:intent_conformance_verdict, :material_drift, project: project, issue: issue)

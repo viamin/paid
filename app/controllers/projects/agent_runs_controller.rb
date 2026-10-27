@@ -437,7 +437,7 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -445,6 +445,29 @@ module Projects
       unless issue
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
         return
+      end
+
+      recovery = Inbox::ManualReviewRecovery.for(issue: issue)
+      if recovery.waiting? || recovery.action == :review_scanner_evidence || recovery.action == :none
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_recovery_alert(recovery)
+        return
+      end
+      if recovery.active?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "An existing run is queued or running for this issue; review it before resuming manual review."
+        return
+      end
+      if recovery.requires_decision?
+        unless valid_reopen_review_decision?(issue)
+          redirect_to safe_return_target || dashboard_path, alert: "Confirm the current issue revision and provide a reopen-review reason."
+          return
+        end
+
+        audit_event("issue.reopen_review_decided", subject: issue, metadata: {
+          github_updated_at: issue.github_updated_at.iso8601,
+          reason: params[:reopen_reason].to_s.strip,
+          decision: "resume_implementation"
+        })
       end
 
       create_enhance_issue_runs_and_redirect(
@@ -1084,6 +1107,26 @@ module Projects
       end
     end
 
+    def valid_reopen_review_decision?(issue)
+      params[:reopen_review_confirmed] == "1" &&
+        params[:reopen_reason].to_s.strip.present? &&
+        ActiveSupport::SecurityUtils.secure_compare(
+          params[:reopen_review_revision].to_s,
+          issue.github_updated_at.iso8601
+        )
+    end
+
+    def manual_review_recovery_alert(recovery)
+      case recovery.action
+      when :wait_for_dependency
+        "This issue is waiting for its unresolved dependency; resolve it before resuming work."
+      when :review_scanner_evidence
+        "Review the scanner recurrence evidence and authorize remediation through its supported recovery path."
+      else
+        "The cause of this manual-review hold is unknown; no automatic recovery was started."
+      end
+    end
+
     def cancel_in_flight_execution_for_resume!
       return if @agent_run.temporal_workflow_id.blank?
 
@@ -1682,7 +1725,7 @@ module Projects
     rescue InvalidDockerHostSelectionError => e
       redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordNotUnique
-      redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."
+      redirect_to on_error_path, alert: "An enhancement run is already queued or running for this issue."
     end
 
     def create_feature_run_and_redirect(feature_description:, on_error_path:, priority_tier: nil)
