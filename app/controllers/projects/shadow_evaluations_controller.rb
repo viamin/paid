@@ -96,18 +96,27 @@ module Projects
       redirect_for(result, success_notice: "Reference labels frozen. You can now execute the reviewer.")
     end
 
-    # Runs the documented end-to-end execution path — the same service as
-    # `bin/rails "intent_conformance:shadow_evaluation:execute[<id>]"`.
+    # @spec INTENT-CONFORMANCE-ROLLOUT-011
+    # Provider calls stay in the durable job, never in this HTTP request.
     def execute
       authorize @evaluation
 
-      result = IntentConformance::ShadowEvaluation::ExecuteReviewer.call(evaluation: @evaluation)
+      result = IntentConformance::ShadowEvaluation::EnqueueExecution.call(evaluation: @evaluation, actor: current_user)
       if result.success?
-        IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: @evaluation)
         redirect_to evaluation_path(@evaluation),
-          notice: "Reviewer executed: #{result.executed} evaluated, #{result.failed} not evaluated."
+          notice: result.enqueued ? "Reviewer execution queued. You can leave this page and return for progress." : "Reviewer execution is already queued or running."
       else
         redirect_to evaluation_path(@evaluation), alert: result.error
+      end
+    end
+
+    def cancel
+      authorize @evaluation, :cancel?
+
+      if @evaluation.request_cancellation!(actor: current_user)
+        redirect_to evaluation_path(@evaluation), notice: "Cancellation requested. Collected case evidence is preserved."
+      else
+        redirect_to evaluation_path(@evaluation), alert: "Only queued or running reviewer execution can be cancelled."
       end
     end
 

@@ -197,6 +197,45 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     expect(evaluation.runs.count).to eq(2)
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  it "stops between cases when an authorized cancellation is requested and preserves collected evidence" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message) do
+      evaluation.update!(cancellation_requested_at: Time.current)
+      llm_response("within_scope")
+    end
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).to be_success
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs.where.not(verdict: "not_evaluated").count).to eq(1)
+    expect(AgentHarness).to have_received(:send_message).once
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  it "preserves a cancellation requested after the final case check" do
+    prepare_frozen!
+    allow(github_client).to receive(:compare_summary).and_return(comparison)
+    allow(AgentHarness).to receive(:send_message).and_return(llm_response("within_scope"))
+    executor = described_class.new(evaluation: evaluation)
+    cancellation_checks = 0
+    allow(executor).to receive(:cancellation_requested?).and_wrap_original do |original|
+      cancellation_checks += 1
+      cancellation_requested = original.call
+      evaluation.request_cancellation!(actor: owner) if cancellation_checks == cases.length + 1
+      cancellation_requested
+    end
+    allow(described_class).to receive(:new).with(evaluation: evaluation).and_return(executor)
+
+    result = described_class.call(evaluation: evaluation)
+
+    expect(result).to be_success
+    expect(evaluation.reload).to be_cancelled
+    expect(evaluation.runs.where.not(verdict: "not_evaluated").count).to eq(cases.length)
+  end
+
   # @spec INTENT-CONFORMANCE-ROLLOUT-007 — any project operator may execute,
   # so two concurrent POSTs would both observe "no run row" for a case, both
   # invoke the paid reviewer, and the loser's write would then race the

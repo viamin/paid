@@ -167,8 +167,8 @@ class TenantSetting < ApplicationRecord
     "temporal_activity_slots" => 4,
     "temporal_poll_workflow_slots" => 20,
     "temporal_poll_activity_slots" => 10,
-    "good_job_max_threads" => 11,
-    "good_job_queues" => "default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1"
+    "good_job_max_threads" => 12,
+    "good_job_queues" => "default:3;maintenance:2;metrics:2;knowledge:3;low_priority:1;shadow_evaluation:1"
   }.freeze
   WORKER_SETTING_INTEGER_KEYS = %w[
     temporal_workflow_slots temporal_activity_slots
@@ -398,10 +398,16 @@ class TenantSetting < ApplicationRecord
     preferred_docker_host_identifier.to_s.presence
   end
 
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  # A persisted queue override wins over the deployment environment, so the
+  # platform-required queues are re-added here: without them a tenant override
+  # leaves the matching background work queued with no worker to run it.
   def effective_worker_settings
-    DEFAULT_WORKER_SETTINGS.deep_dup.merge(
+    merged = DEFAULT_WORKER_SETTINGS.deep_dup.merge(
       worker_settings.is_a?(Hash) ? worker_settings.deep_stringify_keys : {}
     )
+    merged["good_job_queues"] = WorkerSettings::GoodJobQueues.normalize(merged["good_job_queues"])
+    merged
   end
 
   def worker_setting(key)
@@ -414,13 +420,20 @@ class TenantSetting < ApplicationRecord
 
   def self.resolve_worker_setting(key, env_key:, env:, default:)
     db_val = read_worker_setting_from_db(key)
-    return db_val if db_val.present?
+    return normalize_resolved_worker_setting(key, db_val) if db_val.present?
     return Integer(env.fetch(env_key, default.to_s)) if WORKER_SETTING_INTEGER_KEYS.include?(key.to_s)
 
-    env.fetch(env_key, default.to_s)
+    normalize_resolved_worker_setting(key, env.fetch(env_key, default.to_s))
   rescue ArgumentError
     default
   end
+
+  def self.normalize_resolved_worker_setting(key, value)
+    return value unless key.to_s == "good_job_queues"
+
+    WorkerSettings::GoodJobQueues.normalize(value)
+  end
+  private_class_method :normalize_resolved_worker_setting
 
   def self.read_worker_setting_from_db(key)
     return nil unless table_exists?
@@ -767,6 +780,9 @@ class TenantSetting < ApplicationRecord
 
       WORKER_SETTING_INTEGER_KEYS.each do |key|
         normalized[key] = normalize_integer_value(normalized[key]) if normalized.key?(key)
+      end
+      if normalized["good_job_queues"].is_a?(String)
+        normalized["good_job_queues"] = WorkerSettings::GoodJobQueues.normalize(normalized["good_job_queues"])
       end
     end
   end
