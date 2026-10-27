@@ -58,6 +58,21 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(occurrences.map { |occurrence| occurrence.fetch("criterion") }).to contain_exactly("macOS acceptance", "Accessibility sign-off")
   end
 
+  it "preserves submitted evidence when reconciling the prerequisite again" do # @spec PARTIAL-CLOSEOUT-032
+    gap = { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot." }
+    described_class.call(agent_run: run, assessment: gaps([ gap ]))
+    notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    occurrence = notification.metadata.fetch("prerequisites").sole
+    actor = create(:user, account: project.account)
+    PartialCloseouts::SubmitEvidence.call(notification:, actor:, prerequisite_identity: occurrence.fetch("identity"),
+      evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached.")
+    submission = notification.reload.metadata.fetch("evidence_submissions").sole
+
+    described_class.call(agent_run: run, assessment: gaps([ gap ]))
+
+    expect(notification.reload.metadata.fetch("evidence_submissions")).to eq([ submission ])
+  end
+
   it "reconciles changed policy guidance while preserving the unresolved prerequisite" do # @spec PARTIAL-CLOSEOUT-031
     first = policy_gap(revision: "v1", next_step: "Complete the team review.")
     described_class.call(agent_run: run, assessment: gaps([ first ]))

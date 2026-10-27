@@ -30,7 +30,11 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
   end
 
   it "marks evidence stale when the prerequisite source revision changed" do # @spec PARTIAL-CLOSEOUT-032
-    notification.update!(metadata: { "prerequisites" => [ { "identity" => identity, "source_revision" => "old" } ] })
+    source_revision = Issues::CloseoutEvidence.call(issue).digest
+    create(:agent_run, :completed, project:, issue:,
+      reconciliation: { "assessment" => { "source_revision" => source_revision } })
+    notification.update!(metadata: { "prerequisites" => [ { "identity" => identity, "source_revision" => source_revision } ] })
+    create(:issue, :pull_request, project:, parent_issue: issue, github_state: "closed", pr_review_phase: "merged")
 
     result = described_class.call(notification:, actor:, prerequisite_identity: identity,
       evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached.")

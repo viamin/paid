@@ -61,8 +61,10 @@ module PartialCloseouts
 
     def source_revision_current?
       expected = occurrence.fetch("source_revision", nil)
-      expected.blank? || expected == PartialCloseouts::Assessment.call(notification.subject).source_revision
+      expected.blank? || expected == current_source_revision
     end
+
+    def current_source_revision = @current_source_revision ||= Issues::CloseoutEvidence.call(notification.subject).digest
 
     def occurrence
       @occurrence ||= Array(notification.metadata["prerequisites"]).find { |item| item["identity"] == prerequisite_identity }

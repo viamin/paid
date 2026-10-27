@@ -203,15 +203,17 @@ module PartialCloseouts
 
     # @spec PARTIAL-CLOSEOUT-031
     def prerequisite_metadata(human_gaps)
+      previous = existing_prerequisite_notification
       references = human_gaps.flat_map { |gap| Array(gap["references"]) }
       identities = human_gaps.map { |gap| prerequisite_identity(gap) }.sort_by { |identity| JSON.generate(identity) }
       identity = Digest::SHA256.hexdigest(JSON.generate(identities))
       metadata = { "prerequisite_identity" => identity, "references" => references,
                    "prerequisites" => human_gaps.map { |gap| prerequisite_occurrence(gap) } }
+      submissions = Array(previous&.metadata&.fetch("evidence_submissions", nil))
+      metadata["evidence_submissions"] = submissions if submissions.any?
       policy_selection = replacement_policy_action(human_gaps)
       metadata["policy_selection"] = policy_selection if policy_selection
 
-      previous = existing_prerequisite_notification
       superseded = Array(previous&.metadata&.fetch("superseded_references", nil))
       if previous&.metadata&.fetch("prerequisite_identity", nil) != identity
         superseded = Array(previous&.metadata&.fetch("references", nil)) + superseded
