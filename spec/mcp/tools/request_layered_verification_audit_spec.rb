@@ -58,6 +58,15 @@ RSpec.describe Tools::RequestLayeredVerificationAudit do
     }.not_to change(AgentRun, :count)
   end
 
+  # @spec LAYERED-VERIFY-012
+  it "refuses to resolve a preview when layered verification is disabled" do
+    allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(false)
+
+    expect { tool.dispatch(**audit_arguments) }
+      .to raise_error(LayeredVerification::AuditAccess::FeatureDisabledError)
+    expect(github_client).not_to have_received(:commit)
+  end
+
   # @spec LAYERED-VERIFY-014
   it "rejects an unresolvable target revision before dispatch" do
     allow(github_client).to receive(:commit).with(project.full_name, "missing")

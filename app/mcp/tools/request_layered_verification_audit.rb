@@ -39,8 +39,10 @@ module Tools
       }
     end
 
+    # @spec LAYERED-VERIFY-012
     def perform(project_id:, obligation_ids:, target_revision:, budget:, selections:)
       project = project_for(project_id)
+      LayeredVerification::AuditAccess.authorize!(user:, project:)
       obligations = project.layered_verification_obligations.where(id: obligation_ids).order(:id)
       raise ArgumentError, "select at least one obligation" if obligations.empty?
 

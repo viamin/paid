@@ -72,6 +72,17 @@ RSpec.describe "Layered verification audits" do
     expect(flash[:alert]).to eq("budget must be between 1 and 120 minutes")
   end
 
+  # @spec LAYERED-VERIFY-012
+  it "refuses the audit route before resolving a preview when the feature is disabled" do
+    allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(false)
+
+    post request_layered_verification_audit_project_agent_runs_path(project), params: request_parameters
+
+    expect(response).to redirect_to(project_path(project))
+    expect(flash[:alert]).to eq("layered verification is not enabled for this project")
+    expect(github_client).not_to have_received(:commit)
+  end
+
   # @spec LAYERED-VERIFY-021
   it "rejects a request whose selected scope has no verification checks" do
     post request_layered_verification_audit_project_agent_runs_path(project), params: {

@@ -22,7 +22,8 @@ class LayeredVerificationObligation < ApplicationRecord
     dependent: :restrict_with_exception
 
   validates :framework, inclusion: { in: FRAMEWORKS }
-  validates :external_identity, :canonical_source_path, :scope_description, presence: true
+  validates :external_identity, :scope_description, presence: true
+  validates :canonical_source_path, presence: true, if: :canonical_source_path_required?
   validates :approval_state, inclusion: { in: APPROVAL_STATES }
   validates :external_identity, uniqueness: { scope: [ :project_id, :framework, :external_identity ] }
   validate :change_intent_belongs_to_project
@@ -47,6 +48,13 @@ class LayeredVerificationObligation < ApplicationRecord
   end
 
   private
+
+  # Phase 1 rows predate this column. Keep them saveable until synchronization
+  # discovers the real repository path, while requiring and preserving paths
+  # for every obligation created after the column exists.
+  def canonical_source_path_required?
+    new_record? || canonical_source_path_in_database.present?
+  end
 
   def with_persisted_approval
     @persisting_approval = true

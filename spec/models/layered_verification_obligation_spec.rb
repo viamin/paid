@@ -14,6 +14,22 @@ RSpec.describe LayeredVerificationObligation do
   end
 
   # @spec LAYERED-VERIFY-006
+  it "allows a pre-path obligation to be updated without inventing a canonical path" do
+    obligation = create(:layered_verification_obligation)
+    obligation.update_column(:canonical_source_path, nil)
+
+    expect { obligation.update!(scope_description: "Updated bounded scope.") }.not_to raise_error
+  end
+
+  # @spec LAYERED-VERIFY-006
+  it "does not allow a known canonical path to be cleared" do
+    obligation = create(:layered_verification_obligation)
+
+    expect { obligation.update!(canonical_source_path: nil) }
+      .to raise_error(ActiveRecord::RecordInvalid, /Canonical source path can't be blank/)
+  end
+
+  # @spec LAYERED-VERIFY-006
   it "allows distinct canonical references in the same project and framework" do
     project = create(:project)
 
