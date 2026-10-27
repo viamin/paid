@@ -2615,6 +2615,54 @@ RSpec.describe "AgentRuns" do
     context "when authenticated" do
       before { sign_in user }
 
+      # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002D
+      it "requires a revision-bound reopen-review decision before queuing implementation work" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload).to be_reopen_review_pending
+        expect(flash[:alert]).to include("reopen-review decision")
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002D
+      it "records an authorized reopen-review decision and queues implementation rather than enhancement" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+        revision = (parked_issue.github_updated_at.presence || parked_issue.updated_at).to_s
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_decision: "continue",
+            reopen_review_reason: "The reopened regression needs a corrective implementation.",
+            reopen_review_revision: revision
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(AgentRun.last).to have_attributes(issue: parked_issue, goal: "create_pr", trigger_type: "manual")
+        expect(parked_issue.reload.paid_state).to eq("in_progress")
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002D
+      it "keeps the reopen hold when an incompatible run is already queued" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+        create(:agent_run, project: project, issue: parked_issue, goal: "enhance_issue", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_decision: "continue",
+            reopen_review_reason: "The reopened regression needs a corrective implementation.",
+            reopen_review_revision: (parked_issue.github_updated_at.presence || parked_issue.updated_at).to_s
+          }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload).to be_reopen_review_pending
+        expect(flash[:alert]).to include("active run")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
         expect {

@@ -461,16 +461,7 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
-    # manual_review only clears when an explicit operator-triggered run
-    # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
-    # queues a fresh manual enhance_issue run rather than just clearing state,
-    # since a queued run is what actually resumes the enhancement work. The
-    # queue-time state flip (resume_issue_from_manual_review) removes the
-    # inbox entry as soon as the run is queued, so the item leaves the lane
-    # immediately instead of surviving the whole queue wait; re-entry
-    # producers (parse failure, round limit, needs_input) bring it back if
-    # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002D
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -479,6 +470,8 @@ module Projects
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
         return
       end
+
+      return resume_reopen_review(issue) if issue.reopen_review_pending?
 
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
@@ -1079,6 +1072,73 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
+    end
+
+    # A reopen-review hold is provenance for a changed completion decision,
+    # not a failed enhancement round.  The operator must bind their decision
+    # to the revision they inspected; only then can the existing implementation
+    # run continue the work.  Do not clear the hold when another run is queued
+    # or running: that is a reconciliation decision, not a retry.
+    # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002D
+    def resume_reopen_review(issue)
+      unless valid_reopen_review_decision?(issue)
+        redirect_to safe_return_target || dashboard_path,
+          alert: "A current reopen-review decision and reason are required before work can continue."
+        return
+      end
+
+      issue.with_lock do
+        issue.reload
+        unless issue.reopen_review_pending?
+          redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+          return
+        end
+        if active_issue_run?(issue)
+          redirect_to safe_return_target || dashboard_path,
+            alert: "This issue already has active run work; reconcile it before resuming the reopen review."
+          return
+        end
+
+        ActiveRecord::Base.transaction do
+          create_agent_run(issue: issue, custom_prompt: nil, goal: "create_pr", priority_tier: nil)
+          resume_issue_from_manual_review(issue)
+          Audit::RecordEvent.call(
+            action: "issue.updated",
+            actor: current_user,
+            subject: issue,
+            metadata: {
+              reason: params[:reopen_review_reason].to_s.strip,
+              revision: params[:reopen_review_revision],
+              reopen_review_decision: "continue"
+            }
+          )
+        end
+      end
+
+      ProcessRunQueueJob.perform_later
+      redirect_to safe_return_target || dashboard_path, notice: "Reopen review recorded; implementation run queued."
+    rescue NoRunnableRunnerError, InvalidDockerHostSelectionError => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
+    rescue ActiveRecord::RecordNotUnique
+      redirect_to safe_return_target || dashboard_path,
+        alert: "This issue already has active run work; reconcile it before resuming the reopen review."
+    end
+
+    def valid_reopen_review_decision?(issue)
+      params[:reopen_review_decision] == "continue" &&
+        params[:reopen_review_reason].to_s.strip.present? &&
+        ActiveSupport::SecurityUtils.secure_compare(
+          params[:reopen_review_revision].to_s,
+          reopen_review_revision(issue)
+        )
+    end
+
+    def reopen_review_revision(issue)
+      (issue.github_updated_at.presence || issue.updated_at).to_s
+    end
+
+    def active_issue_run?(issue)
+      @project.agent_runs.where(issue: issue, status: AgentRun::UNFINISHED_STATUSES).exists?
     end
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap

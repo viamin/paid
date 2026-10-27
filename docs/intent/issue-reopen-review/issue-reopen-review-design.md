@@ -22,8 +22,15 @@ automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
 An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+the original intent remains valid and whether new work is required. The Inbox
+identifies this hold from the dedicated reopen-review reason, shows the prior
+closure context and remaining scope, and requires a non-blank decision reason
+bound to the currently synchronized GitHub revision. A recorded continuation
+queues the existing `create_pr` implementation path, not an `enhance_issue`
+retry. Before clearing the hold, the continuation checks for queued or running
+work on the issue; an existing run remains visible for explicit reconciliation
+and cannot be silently bypassed. Other manual-review causes retain their own
+recovery paths.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

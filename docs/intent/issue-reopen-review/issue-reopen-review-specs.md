@@ -30,3 +30,16 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resumes an
+  Inbox item whose manual-review provenance is the dedicated reopen-review
+  reason, the system SHALL show the prior closure context and require a
+  non-blank current-intent reason bound to the issue's current GitHub revision.
+  A valid decision SHALL be audit-recorded and queue the supported `create_pr`
+  implementation continuation rather than an `enhance_issue` retry. Before
+  clearing the hold, the system SHALL refuse to queue a second run when any
+  queued or running work already exists for the issue, leaving the hold visible
+  for reconciliation.
+  *Tests:* `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Projects::AgentRunsController`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
