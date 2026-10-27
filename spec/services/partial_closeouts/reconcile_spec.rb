@@ -55,6 +55,7 @@ RSpec.describe PartialCloseouts::Reconcile do
       "policy_selection" => { "required" => true, "next_step" => "Select team-review v2 or another approved team policy." }
     )
     described_class.call(agent_run: run, assessment: gaps([ replacement ]))
+    described_class.call(agent_run: run, assessment: gaps([ replacement ]))
 
     expect(notification.reload).to be_active
     expect(notification.description).to include("Select the replacement policy")

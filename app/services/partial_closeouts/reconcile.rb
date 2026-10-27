@@ -211,10 +211,11 @@ module PartialCloseouts
       metadata["policy_selection"] = policy_selection if policy_selection
 
       previous = active_prerequisite_notification
+      superseded = Array(previous&.metadata&.fetch("superseded_references", nil))
       if previous&.metadata&.fetch("prerequisite_identity", nil) != identity
-        superseded = Array(previous&.metadata&.fetch("references", nil)) + Array(previous&.metadata&.fetch("superseded_references", nil))
-        metadata["superseded_references"] = superseded.uniq if superseded.any?
+        superseded = Array(previous&.metadata&.fetch("references", nil)) + superseded
       end
+      metadata["superseded_references"] = superseded.uniq if superseded.any?
       metadata
     end
 
