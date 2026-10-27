@@ -377,7 +377,7 @@ module FacetConfidence
     end
 
     def ensure_not_retry!(entry, id)
-      return if entry["retry_of_event_id"].blank?
+      return if entry["retry_of_event_id"].to_s.strip.empty?
 
       raise InvalidLedger, "#{id} assessment run may only cite a failed run when retrying the same input revision"
     end
