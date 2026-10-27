@@ -333,6 +333,56 @@ RDR-073 extension can be decided from an unprovisioned environment; retain
 the existing direction that an extension is filed only if a completed live
 validation identifies a checkout-dependent sidecar need.
 
+## #4604 execution-environment revalidation — 2026-10-27
+
+**Result: not executed; the required Docker-capable execution environment is
+still unavailable.** Per the issue's 2026-10-24 reopening, an agent workspace
+without a Docker socket is not by itself proof that the platform lacks
+execution capability, so this attempt went further than the 2026-10-24 check
+and exercised Paid's own supported lifecycle code rather than only probing
+the host:
+
+- Host probe (unchanged from 2026-10-24): no `docker`, `podman`, or `nerdctl`
+  binary on `PATH`; neither `/var/run/docker.sock` nor `/run/docker.sock`
+  exists; `DOCKER_HOST`, `REMOTE_DOCKER_*`, `CONTAINER_BACKEND`,
+  `CONTAINER_BACKENDS_CONFIG`, and `SWARM_*` are all unset in this workspace.
+- Config inspection: `config/initializers/container_backend.rb` resolves
+  `CONTAINER_BACKEND` (unset here) to `:local`, registering
+  `Containers::Backends::LocalDocker.new` as the active backend — the `multi`
+  (`HostRegistry`) and `remote`/`swarm` backends are only registered when
+  `CONTAINER_BACKENDS_CONFIG`, `REMOTE_DOCKER_HOST`, or the Swarm manager env
+  vars are present, none of which are set here. There is no account-level
+  `DockerHost` registry path available in `local`/single-backend mode.
+- Live code-path evidence (new in this attempt, `RAILS_ENV=test` to clear the
+  unrelated database-runtime-role guard, not to bypass the Docker check):
+
+  ```ruby
+  backend = Containers::Backends::LocalDocker.new
+  backend.ping
+  # Docker.url = unix:///var/run/docker.sock
+  # ERROR CLASS: Excon::Error::Socket
+  # ERROR MESSAGE: No such file or directory - connect(2) for /var/run/docker.sock (Errno::ENOENT)
+  ```
+
+  This calls the same `Containers::Backends::Base#ping` contract
+  `provision_execution_environment` depends on before it would provision an
+  `AgentRun` container, through Paid's own backend resolution — not a
+  substituted host command, mock, or Docker-client installation. The
+  resulting `Excon::Error::Socket` confirms, first-hand, that the configured
+  `local` backend has no daemon to reach in this workspace.
+
+| Required artifact | Attempt disposition | Evidence still required in a Docker-capable environment |
+| --- | --- | --- |
+| Native analyzer | Not started: `Containers::Backends::LocalDocker#ping` fails with `Excon::Error::Socket` before any `AgentRun` container could be provisioned. | As recorded above: `stdout`, `stderr`, `exit_code`, pinned image/checkout identity, and run-container cleanup from a live `execute_in_execution_environment(..., stream: false)` call. |
+| Sidecar interaction | Not started: same backend-ping failure blocks provisioning the paired run and the `tool_sidecar`. | As recorded above: endpoint, response shape, exit code, and both sidecar and run-container cleanup from a live request. |
+
+No `marketplace_tool_sidecars` rollout policy was changed and no pilot
+authorization was bypassed; none was required because no sidecar was
+provisioned. GitHub issue #4604 must stay open: this attempt adds first-hand,
+code-path-level confirmation of the same blocked disposition recorded on
+2026-10-24, not a new unavailable-environment report offered in place of
+checking, and it produces neither required artifact.
+
 ## Disposition
 
 This report resolves critical assumption 1 only. Critical assumption 2 remains
@@ -355,12 +405,16 @@ arrow entry track #4604 as the evidence owner. This report does not:
 - Determine whether an upstream RDR-073 extension is needed — that decision
   follows the required native and sidecar execution evidence.
 
-The #4604 revalidation on 2026-10-24 confirms that those two evidence
-artifacts remain blocked specifically by the absence of a Docker-capable
-execution environment. RDR-075 remains Draft, its `maintenance-runs` arrow
-remains a draft-only mapping, and implementation phases #4328–#4333 remain
-unreleased. Move the validation to a Docker-capable environment rather than
-inferring live lifecycle behavior from static tests or host-only commands.
+The #4604 revalidations on 2026-10-24 and 2026-10-27 confirm that those two
+evidence artifacts remain blocked specifically by the absence of a
+Docker-capable execution environment — the 2026-10-27 attempt additionally
+confirms this first-hand through Paid's own backend code path
+(`Containers::Backends::LocalDocker#ping` raising `Excon::Error::Socket`),
+not only by host-level probing. RDR-075 remains Draft, its
+`maintenance-runs` arrow remains a draft-only mapping, and implementation
+phases #4328–#4333 remain unreleased. Move the validation to a
+Docker-capable environment rather than inferring live lifecycle behavior
+from static tests or host-only commands.
 
 Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
 an HLD pointer) are reviewable drafts for the same pending human-review gate,
