@@ -19,6 +19,16 @@ RSpec.describe Dashboard::EligibilityBreakdown do
 
   before { Rails.cache.clear }
 
+  def create_dependency_held_issues(project)
+    blocker = create(:issue, project:, github_state: "open", paid_state: "new")
+    issues = Array.new(Dashboard::HeldWorkDetails::MAX_HELD_ISSUES + 1) do
+      create(:issue, project:, github_state: "open", paid_state: "new") do |issue|
+        create(:issue_dependency, issue:, depends_on_issue: blocker)
+      end
+    end
+    { blocker:, issues: }
+  end
+
   describe ".call" do
     # @spec QUEUE-HANDOFF-001 QUEUE-HANDOFF-002
     it "reports an unseeded eligible issue even with unrelated queued and active work" do
@@ -141,6 +151,24 @@ RSpec.describe Dashboard::EligibilityBreakdown do
           actions: []
         )
       )
+    end
+
+    # @spec QUEUE-HANDOFF-004
+    it "bounds held issue selection before loading dependency provenance" do
+      first = create_dependency_held_issues(project)
+      second_project = create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true)
+      second = create_dependency_held_issues(second_project)
+
+      details_by_project = described_class.call(user: user).to_h { |breakdown| [ breakdown.project, breakdown.held_issues ] }
+
+      expect(details_by_project.fetch(project).map { |detail| detail.issue.github_number }).to eq(
+        first.fetch(:issues).first(Dashboard::HeldWorkDetails::MAX_HELD_ISSUES).map(&:github_number)
+      )
+      expect(details_by_project.fetch(second_project).map { |detail| detail.issue.github_number }).to eq(
+        second.fetch(:issues).first(Dashboard::HeldWorkDetails::MAX_HELD_ISSUES).map(&:github_number)
+      )
+      expect(details_by_project.fetch(project)).to all(have_attributes(blockers: [ have_attributes(url: first.fetch(:blocker).github_url) ]))
+      expect(details_by_project.fetch(second_project)).to all(have_attributes(blockers: [ have_attributes(url: second.fetch(:blocker).github_url) ]))
     end
 
     # @spec QUEUE-HANDOFF-004

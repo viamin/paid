@@ -21,5 +21,7 @@
 - [x] **QUEUE-HANDOFF-004** — When a visible project is `held` because an
   open issue has one or more blocking dependencies or a delivery decision
   hold, the dashboard SHALL identify the held issue, every blocking work item
-  or external dependency, and the existing supported recovery route; it SHALL
-  not infer that a summarized admission control is a human decision.
+  or external dependency, and the existing supported recovery route. It SHALL
+  select no more than 20 held issues per project before loading their
+  provenance, while retaining every blocker and action for each selected issue;
+  it SHALL not infer that a summarized admission control is a human decision.

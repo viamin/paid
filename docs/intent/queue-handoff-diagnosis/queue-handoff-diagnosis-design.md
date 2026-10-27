@@ -48,10 +48,12 @@ not converted into retries.
 
 For a dependency-held issue, the diagnostic preserves every currently blocking
 local or external dependency so the operator can inspect the blocked issue and
-each owning prerequisite. For a decision-held issue, it preserves the owning
-feature decision or amendment hold. Feature decisions route to their existing
-Inbox action; amendment holds direct the operator to the affected issue's
-existing review context.
+each owning prerequisite. To keep a dashboard frame bounded, it selects at
+most 20 held issues per project before loading that provenance; the cap never
+truncates the blockers or actions for a selected issue. For a decision-held
+issue, it preserves the owning feature decision or amendment hold. Feature
+decisions route to their existing Inbox action; amendment holds direct the
+operator to the affected issue's existing review context.
 Other admission controls remain summarized rather than being inferred as a
 human decision or made actionable by the diagnostic.
 
