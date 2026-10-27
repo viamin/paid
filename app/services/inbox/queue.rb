@@ -88,6 +88,7 @@ module Inbox
       :action_url,
       :guidance,
       :closeout_status,
+      :action_required_presentation,
       keyword_init: true
     ) do
       def to_param
@@ -586,6 +587,7 @@ module Inbox
         next unless project
         next if project_filter_excludes?(project)
 
+        presentation = ActionRequiredPresentation.call(notification:, issue:)
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
           kind: ACTION_REQUIRED_KIND,
@@ -595,9 +597,10 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
-          action_url: notification.action_url
+          summary_text: presentation&.summary || notification.metadata["recommended_action"].presence || notification.description,
+          title_text: presentation&.title || notification.title,
+          action_url: notification.action_url,
+          action_required_presentation: presentation
         )
       end
     end
@@ -1027,9 +1030,11 @@ module Inbox
       subjects = notifications.filter_map(&:subject)
       agent_runs = subjects.select { |subject| subject.is_a?(AgentRun) }
       runners = subjects.select { |subject| subject.is_a?(Runner) }
+      issues = subjects.select { |subject| subject.is_a?(Issue) }
 
       ActiveRecord::Associations::Preloader.new(records: agent_runs, associations: :issue).call
       ActiveRecord::Associations::Preloader.new(records: runners, associations: :user).call
+      ActiveRecord::Associations::Preloader.new(records: issues, associations: { facet_confidence_evaluations: :labels }).call
       AgentRun.preload_source_pull_requests(agent_runs)
     end
 

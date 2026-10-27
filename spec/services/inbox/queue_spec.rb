@@ -370,6 +370,27 @@ RSpec.describe Inbox::Queue do
       expect(action_required_entry.tasks).to eq([ "Open the quality dashboard", "Resume manually or adjust thresholds" ])
     end
 
+    # @spec FACET-CONFIDENCE-022
+    it "translates closeout evaluation escalations into a typed action with progress" do
+      issue = create(:issue, project: project, github_number: 4323)
+      notification = create(:notification, :error, account: account, subject: issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+        title: "Remediation Required",
+        description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.")
+      evaluation = create_labeled_closeout_evaluation(issue)
+
+      entry = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+        .find { |candidate| candidate.record == notification }
+
+      expect(entry.title).to eq("Complete the closeout evaluation")
+      expect(entry.summary).to include("independently review each frozen test case")
+      expect(entry.action_required_presentation).to have_attributes(
+        action_label: "Continue judging",
+        judgments_recorded: 1,
+        judgments_remaining: evaluation.corpus.case_ids.length - 1
+      )
+    end
+
     # @spec OPERATOR-INBOX-002B
     it "uses the notification description when remediation guidance is absent" do
       notification = create(
@@ -1793,6 +1814,21 @@ RSpec.describe Inbox::Queue do
       action_url: "/runners/1/edit",
       summary_text: "Re-authenticate this runner in Runner Settings so future runs can authenticate again."
     }
+  end
+
+  def create_labeled_closeout_evaluation(issue)
+    corpus = FacetConfidence::Corpus.new(path: FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH)
+    identity = corpus.identity
+    evaluation = FacetConfidenceEvaluation.create!(project: project, issue: issue, created_by: user,
+      corpus_path: FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH, corpus_digest: corpus.content_digest,
+      corpus_version: identity.fetch("corpus_version"), rubric_version: identity.fetch("rubric_version"),
+      model_version: identity.fetch("model_version"))
+    corpus_case = evaluation.corpus.find_case(evaluation.corpus.case_ids.first)
+    FacetConfidenceEvaluationLabel.create!(facet_confidence_evaluation: evaluation, case_id: corpus_case.fetch("id"),
+      state: "labeled", recorded_by: user, recorded_at: Time.current, verdict: "completed",
+      intent_band: "at_or_above_threshold", technical_band: "at_or_above_threshold", readiness: "ready",
+      cited_evidence_reference: corpus_case.fetch("evidence").first.fetch("reference"), reason: "Recorded independently.")
+    evaluation
   end
 
   def snapshot_hash(failed:, not_evaluated:)

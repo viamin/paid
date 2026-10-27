@@ -174,3 +174,12 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+When a partial-closeout prerequisite is this evaluation, the Action Required
+Inbox entry translates the workflow for an operator. It says that the closeout
+is blocked pending an independent review of each frozen test case, displays
+recorded and remaining judgments, and links directly to Start evaluation,
+Continue judging, Freeze judgments, or the completed report as appropriate.
+The link carries the validated Inbox kind, sort, and entry identifier through
+the evaluation flow; other Action Required notifications retain their generic
+fallback presentation.
