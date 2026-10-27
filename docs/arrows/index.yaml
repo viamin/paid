@@ -306,6 +306,15 @@ arrows:
     taxonomy: chat
     status: OK
     audited: 2026-08-03
+  chat-turn-recovery:
+    title: Durable Chat Turn Recovery
+    path: docs/intent/chat-turn-recovery/chat-turn-recovery-design.md
+    specs: docs/intent/chat-turn-recovery/chat-turn-recovery-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: OK
+    audited: 2026-10-27
+    next: "Automatic replay remains disabled until tools declare idempotent checkpoint contracts."
   issue-reopen-review:
     title: Issue Reopen Review
     path: docs/intent/issue-reopen-review/issue-reopen-review-design.md

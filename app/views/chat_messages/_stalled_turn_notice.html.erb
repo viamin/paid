@@ -1,0 +1,13 @@
+<%# @spec CHAT-TURN-RECOVERY-001, CHAT-TURN-RECOVERY-003 %>
+<% turn = ChatTurn.find_by(id: message.metadata["chat_turn_id"]) %>
+<div class="flex justify-center" data-message-id="<%= message.id %>">
+  <article class="mx-auto max-w-2xl rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+    <p class="font-semibold">This turn needs attention</p>
+    <p class="mt-1 whitespace-pre-wrap break-words leading-6"><%= message.content %></p>
+    <% if turn&.recovery_safe? %>
+      <%= button_to "Retry safely", retry_chat_turn_path(turn), method: :post, class: "mt-2 text-xs font-medium text-amber-800 underline hover:text-amber-950" %>
+    <% elsif turn %>
+      <p class="mt-2 text-xs">A side-effecting tool completed. Send a new message after reviewing the tool result.</p>
+    <% end %>
+  </article>
+</div>

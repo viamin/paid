@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 Rails.application.routes.draw do
+  resources :chat_turns, only: [] do
+    post :retry, on: :member
+  end
   mount RailsPerformance::Engine, at: "rails/performance" if defined?(RailsPerformance)
   mount Dial::Engine, at: "dial" if defined?(Dial::Engine)
 

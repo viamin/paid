@@ -14,6 +14,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     chat_session = ChatSession.find(chat_session_id)
     actor = chat_session.account.users.find(actor_id || chat_session.created_by_id)
     stream_name = "chat_session:#{chat_session.id}"
+    turn = ChatTurns::Lifecycle.start!(chat_session:, stream_message_id:)
 
     chunk_sequence = 0
 
@@ -23,6 +24,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       content: content,
       stream_message_id: stream_message_id,
       on_message_persisted: ->(message, stream_message_id: nil) {
+        ChatTurns::Lifecycle.record_activity!(turn:, message:)
         broadcast_persisted_message(stream_name, message, stream_message_id: stream_message_id)
       },
       on_chunk: ->(chunk) {
@@ -44,13 +46,18 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
         output: assistant_message&.tokens_output
       }
     })
+    assistant_message ? ChatTurns::Lifecycle.complete!(turn:) : ChatTurns::Lifecycle.await_confirmation!(turn:)
   rescue ArgumentError => e
+    ChatTurns::Lifecycle.fail!(turn:, classification: "invalid_request") if turn
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue NotImplementedError => e
+    ChatTurns::Lifecycle.fail!(turn:, classification: "configuration") if turn
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::LlmClientConfigurationError => e
+    ChatTurns::Lifecycle.fail!(turn:, classification: "configuration") if turn
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
+    ChatTurns::Lifecycle.fail!(turn:, classification: "budget_exhausted") if turn
     broadcast_error(chat_session_id, stream_message_id, e.message,
       limit_type: e.limit_type, limit: e.limit, used: e.used)
   rescue AgentHarness::RateLimitError => e
@@ -62,9 +69,11 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error: e.message
     )
     pause_message = ChatSessions::MarkRateLimited.call(chat_session: chat_session, error: e)
+    ChatTurns::Lifecycle.fail!(turn:, classification: "rate_limited") if turn
     broadcast_persisted_message(stream_name, pause_message)
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue AgentHarness::Error => e
+    ChatTurns::Lifecycle.fail!(turn:, classification: "provider_error") if turn
     Rails.logger.error(
       message: "chat_process_message_job.provider_error",
       chat_session_id: chat_session_id,
@@ -75,6 +84,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   rescue ActiveRecord::RecordNotFound
     raise
   rescue StandardError => e
+    ChatTurns::Lifecycle.fail!(turn:, classification: "unexpected_error") if turn
     Rails.logger.error(
       message: "chat_process_message_job.failed",
       chat_session_id: chat_session_id,
