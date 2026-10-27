@@ -17,15 +17,18 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
 
     chunk_sequence = 0
 
+    turn_stream_id = stream_message_id
     assistant_message = ChatSessions::SendMessage.call(
       chat_session: chat_session,
       actor: actor,
       content: content,
       stream_message_id: stream_message_id,
       on_message_persisted: ->(message, stream_message_id: nil) {
+        touch_turn(chat_session, stream_message_id || turn_stream_id)
         broadcast_persisted_message(stream_name, message, stream_message_id: stream_message_id)
       },
       on_chunk: ->(chunk) {
+        touch_turn(chat_session, stream_message_id)
         chunk_sequence += 1
         ActionCable.server.broadcast(stream_name, {
           type: "message_chunk",
@@ -45,15 +48,19 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       }
     })
   rescue ArgumentError => e
+    fail_turn(chat_session_id, stream_message_id, "validation")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue NotImplementedError => e
+    fail_turn(chat_session_id, stream_message_id, "configuration_error")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::LlmClientConfigurationError => e
+    fail_turn(chat_session_id, stream_message_id, "configuration_error")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
     broadcast_error(chat_session_id, stream_message_id, e.message,
       limit_type: e.limit_type, limit: e.limit, used: e.used)
   rescue AgentHarness::RateLimitError => e
+    fail_turn(chat_session_id, stream_message_id, "rate_limited")
     # @spec CHAT-API-017
     Rails.logger.warn(
       message: "chat_process_message_job.rate_limited",
@@ -65,6 +72,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     broadcast_persisted_message(stream_name, pause_message)
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue AgentHarness::Error => e
+    fail_turn(chat_session_id, stream_message_id, "provider_error")
     Rails.logger.error(
       message: "chat_process_message_job.provider_error",
       chat_session_id: chat_session_id,
@@ -75,6 +83,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   rescue ActiveRecord::RecordNotFound
     raise
   rescue StandardError => e
+    fail_turn(chat_session_id, stream_message_id, "infrastructure_error")
     Rails.logger.error(
       message: "chat_process_message_job.failed",
       chat_session_id: chat_session_id,
@@ -120,6 +129,14 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       message_id: stream_message_id,
       message: error_message
     }.merge(extra.compact))
+  end
+
+  def touch_turn(chat_session, stream_message_id)
+    chat_session.chat_turns.find_by(stream_message_id:)&.touch_activity!("activity")
+  end
+
+  def fail_turn(chat_session_id, stream_message_id, classification)
+    ChatTurn.find_by(chat_session_id:, stream_message_id:)&.fail!(classification:)
   end
 
   def tenant_account
