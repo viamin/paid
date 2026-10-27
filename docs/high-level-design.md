@@ -341,6 +341,8 @@ any repair: a scan never mutates source code or opens a PR on its own.
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
 that acceptance.
 
+A planned operational-supervisor capability will add a disabled-by-default account delivery-health safety loop. It observes only sanitized operational statistics, sends semantic classification through `agent_harness`, and keeps all authorization, preconditions, and narrow mitigation overlays in Rails. It does not receive user, repository, or agent-produced content. See `docs/intent/operational-supervisor/` and RDR-063; this is planned intent, not enabled behavior.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the
@@ -376,6 +378,7 @@ docs/                 # Long-form docs; docs/intent/ holds the LID arrow
 | Tenant isolation | PostgreSQL row-level security on core tables | Enforced tenant scoping at the database, not just the application. |
 | Change tracking | Logidze on configuration/access/financial tables | "Who changed what and when" where it matters; not on high-volume operational tables. |
 | LLM interface | `agent_harness` for all calls | One place for provider behavior; swap models without scattered call sites. |
+| Operational supervisor | Sanitized snapshots and narrow Rails-enforced overlays | System health needs semantic classification without content access or LLM mutation authority. |
 | Agent execution | Docker + isolated workspaces + secrets proxy | Isolation and scoped credentials by default. |
 | Agent image tooling | Versions pinned from `agent_harness` contracts | Control plane and agent image stay in lockstep without separate pins. |
 | Release management | release-please + Conventional Commits | Semantic releases from conventional commit headers. |

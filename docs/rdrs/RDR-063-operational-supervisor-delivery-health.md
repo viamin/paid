@@ -1,350 +1,76 @@
 # RDR-063: Operational Supervisor for Delivery Health
 
-> Revise during planning; lock at implementation. If wrong, abandon code and iterate RDR.
+> Revise during planning; lock at implementation. This is planning, not authorization to enable or implement autonomous mitigation.
 
 ## Metadata
 
-- **Date**: 2026-08-17
-- **Status**: Draft
+- **Date**: 2026-10-27
+- **Status**: Draft — awaiting normal design review
 - **Type**: Operations + AI Safety + Automation
-- **Priority**: P1
-- **Related RDRs**: [RDR-011](RDR-011-observability.md) (Observability Stack), [RDR-015](RDR-015-end-to-end-optimization.md) (End-to-End Outcome Optimization), [RDR-023](RDR-023-automation-modularization-architecture.md) (Automation Modularization Architecture), [RDR-047](RDR-047-work-category-queue-priority.md) (Work-Category-Aware Queue Priority), [RDR-049](RDR-049-configuration-health-checks.md) (Configuration Health Checks), [RDR-051](RDR-051-lid-aware-agent-runs.md) (LID-Aware Agent Runs), [RDR-054](RDR-054-prompt-assembly-service.md) (Prompt Assembly Service)
-- **Related Intent**: TBD
-- **Related Issues**: #4341 (planning work; implementation remains subject to design and release gates)
-- **Related Tests**: TBD
+- **Priority**: P2
+- **Related RDRs**: [RDR-011](RDR-011-observability.md), [RDR-047](RDR-047-work-category-queue-priority.md), [RDR-049](RDR-049-configuration-health-checks.md), [RDR-051](RDR-051-lid-aware-agent-runs.md), [RDR-054](RDR-054-prompt-assembly-service.md)
+- **Related Intent**: [Operational supervisor](../intent/operational-supervisor/operational-supervisor-design.md) and [EARS](../intent/operational-supervisor/operational-supervisor-specs.md)
+- **Related Issues**: #4341 (planning), #4699 (held implementation epic), #4700 (incident/policy persistence), #4701 (sanitized snapshot and analysis), #4702 (incident UI and narrow mitigations), #4703 (terminal audit)
+- **Related Tests**: Planned: `spec/services/operational_supervisor/`, `spec/models/supervisor_incident_spec.rb`, `spec/jobs/operational_supervisor_job_spec.rb`, and dashboard request specs
 
-## Problem Statement
+## Problem
 
-Paid's economic model depends on delivering high-quality merged pull requests, not merely running agents. A recent failure mode produced many PR-agent follow-up loops over roughly 24 hours, generated hundreds of commits, and burned hundreds of millions of tokens without corresponding delivery progress. Existing per-run anomaly detection and notification menu alerts are too narrow for this class of operational failure:
-
-- a single run can look plausible while the issue-to-merged-PR pipeline is failing;
-- notification-menu alerts are easy to miss during active incidents;
-- deterministic thresholds catch known patterns but miss new combinations of symptoms;
-- humans should not be the only backstop for obvious runaway automation.
-
-Paid needs an operational supervisor that watches the whole delivery system, identifies anomalous or unprofitable workflow behavior from sanitized operational statistics, takes bounded autonomous mitigation actions when safe, and places urgent findings at the top of the dashboard.
-
-## Context
-
-The current control plane already has useful pieces:
-
-- GoodJob cron jobs for repeated maintenance sweeps.
-- `Notification` records with severity, dedupe by source/subject, resolution, dismissal, metadata, action URLs, and dashboard nav sections.
-- `AgentRunAnomaly` for per-run statistical outliers.
-- PR progress-state logic and follow-up caps for review/create-pr loops.
-- configuration health checks and notification rules.
-- cost, token, quality, queue, and run-state metrics.
-
-These pieces are necessary but not sufficient. The missing layer is a top-down supervisor that asks whether Paid is converting work into merged PRs efficiently and safely.
+Paid already detects individual anomalies, caps PR follow-ups, pauses projects, prioritizes PR continuation, emits notifications, records execution audits, and refreshes selected dashboard metrics. These controls are local: they do not give an operator one account-scoped, privacy-safe view of whether paid work becomes merged pull requests efficiently. A failure can therefore look normal per run while repeated follow-ups, cost, queue age, or blocked work erode delivery across a project.
 
 ## Decision
 
-Build an **Operational Supervisor** that runs on a regular schedule, analyzes sanitized operational snapshots with an LLM through `agent_harness`, creates visible dashboard incidents, and executes only allowlisted mitigation actions whose preconditions are enforced by Rails code.
-
-The supervisor's mission is:
-
-> Keep the issue-to-merged-PR pipeline healthy, economical, and trustworthy.
-
-This is not a general-purpose autonomous admin. It is a bounded operational safety loop over delivery-health statistics.
-
-## Goals
-
-- Detect runaway loops, token/cost burn, repeated phase failures, and degraded delivery throughput.
-- Watch the complete workflow: issue intake, auto-pick, agent execution, PR creation, review, CI, follow-up, escalation, and merge.
-- Surface urgent incidents at the top of the dashboard, above live metrics.
-- Autonomously stop or slow clearly harmful automation.
-- Ask for human input when the resolution is ambiguous or requires business judgment.
-- Keep all supervisor decisions auditable.
-- Never send user-authored content, repository content, comments, diffs, prompts, logs, secrets, or private client data to the supervisor LLM.
-
-## Non-Goals
-
-- Do not give the LLM direct database write access.
-- Do not let the LLM run arbitrary code or shell commands.
-- Do not let the supervisor read issue bodies, PR comments, repository files, diffs, or agent stdout.
-- Do not implement autonomous code fixes in v1.
-- Do not replace deterministic guardrails such as token limits, cost budgets, stale-run detection, or PR follow-up caps.
-- Do not depend on external notifications for incident visibility in v1.
-
-## Sanitized Snapshot
-
-The supervisor input is a compact JSON snapshot of operational facts. It may include identifiers needed to target actions, but not human-authored or repository-authored text.
-
-Allowed inputs:
-
-- account, project, issue, PR, and run IDs;
-- project/repo slugs only when already visible in the Paid UI;
-- run counts by goal/status/window;
-- token and cost totals/rates by account/project/goal/window;
-- commit counts on Paid-authored PRs;
-- PR follow-up counts and progress-state summaries;
-- stage ages for issue and PR lifecycle states;
-- queue depth and oldest queued run ages;
-- stale, paused, rate-limited, failed, and guardrail-paused run counts;
-- phase failure counts and phase names;
-- CI/review status categories as enums;
-- merge counts, merge yield, rework rates, and cost per merged PR;
-- existing notification/anomaly/incident counts and severities.
-
-Forbidden inputs:
-
-- issue titles and bodies;
-- PR titles, bodies, comments, review comments, and thread text;
-- commit messages and diffs;
-- repository file paths or file contents;
-- agent prompts, stdout, stderr, logs, summaries, and generated PR descriptions;
-- user names, email addresses, credentials, secrets, tokens, and raw provider responses;
-- arbitrary exception messages unless pre-classified and redacted.
-
-The snapshot builder must be deterministic Rails code. The LLM receives only the resulting sanitized JSON.
-
-## Supervisor Analysis
-
-Add an analysis service, tentatively `OperationalSupervisor::Analyze`, that calls `agent_harness` with:
-
-- the sanitized snapshot;
-- a fixed policy prompt;
-- the allowlisted action catalog;
-- severity definitions;
-- a required structured JSON response schema.
-
-The response must contain:
-
-```json
-{
-  "findings": [
-    {
-      "fingerprint": "stable-dedupe-key",
-      "severity": "warning|critical",
-      "category": "runaway_loop|delivery_stall|cost_burn|quality_regression|queue_starvation|supervisor_health",
-      "confidence": 0.0,
-      "summary": "short operator-facing summary",
-      "evidence": [
-        "operational fact from snapshot"
-      ],
-      "recommended_action": {
-        "type": "allowlisted_action_name",
-        "target": {},
-        "parameters": {}
-      },
-      "requires_human": false
-    }
-  ]
-}
-```
-
-Rails validates the schema, rejects unknown action types, clamps severity to known values, and ignores recommendations that fail deterministic preconditions.
-
-## Delivery Health Signals
-
-The supervisor should reason about both local incidents and top-down workflow health.
-
-### Local Operational Incidents
-
-Examples:
-
-- one PR has too many `create_pr` runs in a rolling window;
-- a Paid-authored PR has excessive commits with no merge progress;
-- token or cost burn for one project/goal spikes far above its recent baseline;
-- many runs fail in the same phase;
-- stale/paused/rate-limited runs accumulate and block queue progress.
-
-### Top-Down Delivery Health
-
-Examples:
-
-- opened PRs are not becoming merged PRs;
-- cost per merged PR is rising;
-- rework per PR is rising;
-- issues are aging in queue or in progress;
-- review and CI cycles are degrading;
-- a project is consuming capacity without client-visible output;
-- nearly-mergeable PRs are starved while new issues keep starting.
-
-Core metrics:
-
-| Metric | Why it matters |
-|---|---|
-| Issue-to-PR conversion | Measures whether picked work produces PRs |
-| PR-to-merge conversion | Measures delivery, not activity |
-| Cost per merged PR | Ties token spend to revenue-producing output |
-| Rework runs per PR | Captures churn and quality drag |
-| Commit count per Paid-authored PR | Detects thrash and runaway follow-up |
-| Stage age | Finds work stuck in queue, execution, review, CI, or merge |
-| Guardrail and escalation rate | Captures workflow trust erosion |
-| Queue starvation | Finds projects or PR continuations not receiving capacity |
-
-## Incident Model
+Add a disabled-by-default Operational Supervisor as a bounded safety loop. It builds a deterministic, sanitized account snapshot; asks `agent_harness` to classify it through a strict structured response; persists first-class incidents; and, only when explicitly enabled, applies a small Rails-enforced allowlist. The first release is limited to incidents plus `pause_pr_followups` and `pause_project_autopick`; all other recommendations are incident-only.
 
-Supervisor findings should be persisted as first-class operational incidents or as `Notification` records extended enough to serve that role. The implementation should choose the smaller option during design, but the dashboard needs incident semantics:
+The supervisor is not a general administrator, a quality scorer, or a source of repository diagnosis. Existing deterministic guards remain authoritative.
 
-- stable fingerprint;
-- severity;
-- status: open, mitigated, waiting_for_human, resolved, dismissed;
-- affected account/project/issue/PR/run IDs;
-- sanitized evidence;
-- action taken, if any;
-- human decision needed, if any;
-- timestamps for first seen, last seen, mitigated, and resolved;
-- analysis model/version and prompt version;
-- raw structured LLM output retained only if it contains sanitized fields.
+## Current evidence and selected boundary
 
-Urgent open incidents render at the top of the dashboard before live metrics. The notification menu remains secondary.
+The design reuses `AgentRunAnomaly` for per-run observations, `Notification` for existing consumer notifications, `ExecutionAuditEvent` for immutable execution audit patterns, project pause/scheduler controls, PR follow-up limits, `ProcessRunQueueJob` queue tiers, and GoodJob periodic sweeps. It does not extend `Notification` into an incident ledger: its single resolved/dismissed lifecycle and user-oriented dedupe are insufficient for immutable finding/action history, expiry, and supervisor health.
 
-## Allowlisted Actions
+`SupervisorIncident` and `SupervisorMitigation` are separate account-scoped records. An incident carries a stable fingerprint, state (`open`, `mitigated`, `waiting_for_human`, `resolved`, `dismissed`), scoped foreign keys, sanitized evidence, analysis/prompt versions, and timestamps. A mitigation records its incident, target, action, precondition receipt, expiry, reversal, and audit-event reference. A `Notification` may link to an open critical incident, but never replaces it.
 
-The LLM recommends actions; Rails executes them. Every action must have deterministic preconditions, idempotency, audit logging, and rollback or expiry behavior when applicable.
+## Data boundary and analysis
 
-Good v1 actions:
+The snapshot builder is deterministic Rails code. It may send only bounded numeric aggregates, enum categories, timestamps/ages, and Paid-local numeric account/project/issue/PR/run identifiers. Allowed measures are run/state/goal counts; token and cost totals and rates; follow-up and Paid-authored commit counts; lifecycle ages; queue depth; phase failure-category counts; CI/review enums; merged-PR yield; rework counts; cost per merged PR; and existing anomaly/incident severity counts. Missing or insufficient observations are explicitly `unavailable`, never zero.
 
-| Action | Preconditions | Effect |
-|---|---|---|
-| `pause_pr_followups` | PR has repeated automatic follow-ups or exceeds cap | Stop queuing further `create_pr` runs for that PR until human reset or fresh meaningful progress |
-| `escalate_pr` | PR is open and stuck/degraded | Mark PR/issue escalated with supervisor reason |
-| `pause_project_autopick` | project-level burn/stall exceeds critical threshold | Stop starting new issue work while allowing PR continuation/recovery |
-| `reduce_project_followup_cap` | loop risk is high and current cap is above safe floor | Temporarily lower follow-up cap with expiry |
-| `prioritize_pr_continuation` | nearly-mergeable PRs are aging while new work starts | Bias queue toward existing PR completion |
-| `enqueue_recovery_job` | stale/parked/queue recovery signal is present | Enqueue existing recovery job |
-| `open_incident_only` | action is ambiguous | Create dashboard incident and require human input |
+The snapshot must never contain user or repository text, names, emails, issue or PR titles/bodies/comments, commit messages/diffs, paths or file content, prompts, agent logs/stdout/stderr/summaries, credentials, secrets, raw provider responses, or raw exception text. Candidate selection and size caps are mechanical pagination/ranking by published numeric measures; they make no quality or semantic judgment.
 
-Unsafe for v1:
+`OperationalSupervisor::Analyze` uses `agent_harness` only, with a fixed versioned prompt, JSON-schema response transport, and an allowlist supplied as data. Rails validates schema, enumerations, target membership in the snapshot, dedupe, authorization state, and current preconditions immediately before a write. Invalid output writes a low-noise supervisor-health incident and makes no mitigation.
 
-- arbitrary settings changes;
-- deleting branches or closing PRs;
-- force-pushing, reverting, or committing code;
-- changing credentials, billing settings, or RBAC;
-- contacting external systems beyond existing notification sinks;
-- starting autonomous implementation work without human approval.
+## Actions, authorization, expiry, and recovery
 
-## Human Interaction
+| Action | Deterministic preconditions | Effect and recovery |
+| --- | --- | --- |
+| `pause_pr_followups` | Target is an open Paid PR in the snapshot; automatic follow-ups are active; no active mitigation exists. | Adds a supervisor-specific PR follow-up admission block. It expires after a configured bounded interval; expiry reverses only that block and records the reversal. |
+| `pause_project_autopick` | Target project is active and in the snapshot; auto-pick is enabled; no active mitigation exists. | Adds a supervisor-specific fresh-issue admission block while preserving manual work and existing PR recovery/continuation. It has the same bounded-expiry reversal. |
+| `open_incident_only` | Valid finding. | Persists no mitigation and requires a human decision. |
 
-Some findings should ask for a human decision instead of acting:
+The implementation must not repurpose `Project#pause!`, alter a configured follow-up cap, change queue priority, terminate runs, mutate credentials/RBAC, or contact external systems. Those are distinct future decisions. No action may be inferred from semantic text or a hard-coded quality score: numeric thresholds are mechanical admission/expense policy stored as versioned, operator-configured data, while the LLM supplies semantic classification.
 
-- high spend but unclear business priority;
-- possible client deadline risk;
-- repeated quality failures that need product judgment;
-- action would pause a large project or account;
-- the LLM confidence is below the configured threshold;
-- deterministic preconditions disagree with the recommendation.
+The account owner enables the supervisor explicitly; it is off for all accounts and projects by default. Autonomous mitigation additionally requires an account-owned policy record and the target project's opt-in. A project admin may dismiss/resume a project or PR mitigation within that project; account admins own account policy changes. Every mutation locks and rechecks the target, is idempotent on incident/action/target, and records an audit event. Expiry is a mechanical timeout, not a claim that meaningful progress occurred; human resolution remains visible after reversal.
 
-Dashboard incident cards should show the evidence, the proposed action, and explicit buttons for allowed human decisions such as resume, keep paused, lower cap, dismiss, or create follow-up issue.
+## Delivery-health measures
 
-## Safety Invariants
+The initial reporting window exposes issue-to-PR conversion, PR-to-merge conversion, merged-PR count, cost per merged PR, rework runs per PR, follow-up count, Paid-authored commit count, stage ages, queue depth/oldest age, phase failure-category count, guardrail rate, and continuation starvation. Each measure declares its observation window, denominator, source relation, and availability condition. The supervisor preserves unknown denominators and does not substitute accepted or open PRs for merged PRs. Long-running-client work is reported separately as in-flight inventory, not delivery success.
 
-- The supervisor LLM receives sanitized statistics only.
-- All LLM calls go through `agent_harness`.
-- The LLM cannot execute actions directly.
-- Rails rejects any action outside the catalog.
-- Rails rechecks current database state immediately before applying an action.
-- Actions are idempotent by incident fingerprint and target.
-- Actions that reduce automation should prefer narrow scope first: PR, then project, then account.
-- Every autonomous action produces an audit record and a dashboard incident.
-- The supervisor fails closed: invalid LLM output creates a low-noise supervisor-health incident and no mutation.
-- The supervisor has its own health check so operators know if it stops running.
+## Rollout Guard
 
-## Proposed Architecture
+`operational_supervisor_enabled` is an account-owned feature flag, default `false`, with a separately persisted project opt-in. Migration and read-only shadow snapshots may ship while the flag remains false; they create neither LLM calls nor mitigations. Enablement proceeds through test-account shadow mode, then reviewed account opt-in, then project opt-in. Rollback disables the account flag, prevents new analysis/actions, and reverses only active supervisor-owned mitigations. Cleanup removes expired mitigations and retains sanitized incident/audit records under the normal retention policy. External notifications are excluded until a later accepted RDR decision.
 
-```text
-OperationalSupervisorJob
-  -> OperationalSupervisor::Snapshot
-  -> OperationalSupervisor::Analyze
-  -> OperationalSupervisor::ValidateFindings
-  -> OperationalSupervisor::ApplyAction
-  -> OperationalSupervisor::PublishIncident
-  -> dashboard top incidents
-```
+## Measurable acceptance
 
-### Snapshot
+- A fixture with repeated automatic PR follow-ups, increased commits and token cost produces one deduplicated critical incident; an unrelated project has no mitigation.
+- Snapshot contract tests prove every forbidden field is absent and every LLM call is made through `agent_harness` with schema-constrained output.
+- Unknown, malformed, stale, unauthorized, or precondition-failing output persists no mitigation and records the appropriate incident/health outcome.
+- An enabled and opted-in PR or project action is idempotent, audit-recorded, narrowly scoped, visible above dashboard metrics, and reverses only its own overlay at expiry.
+- Disabled accounts perform no supervisor LLM call or mitigation; the release can be rolled back by disabling the flag and no external notification is required for dashboard visibility.
 
-Build one account-scoped snapshot per run. Keep it small enough for predictable cost and latency. For large accounts, include aggregate rollups plus the top N anomalous projects/PRs by deterministic scoring.
+## Implementation tree and holds
 
-### Analyze
+The filed implementation tree is #4699 → #4700/#4701 → #4702 → #4703. Every implementation issue remains under the `planning` hold, uses no priority above P2, and is blocked by the merged design artifact in #4341. The terminal audit uses non-closing `Tracks #4699` language and validates runtime behavior, tests, documentation, flag posture, and retained evidence rather than inferring completion from closed children.
 
-Use `agent_harness` with a low-temperature model setting and strict JSON output. Include the action catalog in the prompt. Do not include examples containing user data.
+## Deferred decisions
 
-### Validate
-
-Reject:
-
-- malformed JSON;
-- unknown categories, severities, or actions;
-- findings without evidence;
-- target IDs not present in the snapshot;
-- actions whose deterministic preconditions fail;
-- findings that would duplicate an already-open incident without new evidence.
-
-### Apply
-
-Execute only allowlisted service objects. Each action writes an audit entry before and after execution.
-
-### Publish
-
-Create or update an incident with sanitized evidence. Broadcast dashboard updates so urgent incidents appear without a page refresh.
-
-## Dashboard Placement
-
-Render open `critical` and `warning` supervisor incidents immediately below the dashboard heading and above live metrics. Each card should show:
-
-- severity;
-- short summary;
-- affected project/PR/run counts;
-- evidence;
-- action already taken;
-- requested human decision, if any;
-- links to filtered runs, project, or PR.
-
-This must not rely on scrolling or on the notification menu.
-
-## External Notifications
-
-External notifications are useful but should follow the incident model rather than precede it. Slack, email, webhook, PagerDuty, or issue-filing integrations can subscribe to supervisor incidents once internal incident semantics are stable.
-
-## Implementation Plan
-
-1. Add intent docs and EARS specs for the supervisor data boundary, action allowlist, incident lifecycle, and dashboard placement.
-2. Add the supervisor incident/action persistence model or extend `Notification` if it can carry the required state cleanly.
-3. Implement deterministic snapshot generation.
-4. Implement `agent_harness` analysis with strict structured output.
-5. Implement validation and allowlisted action application.
-6. Add the GoodJob cron job and supervisor-health signal.
-7. Render unresolved urgent incidents at the top of the dashboard.
-8. Add external notification subscribers after internal incidents are working.
-
-## Acceptance Criteria
-
-- A PR follow-up loop with excessive commits/runs/tokens produces a top-of-dashboard critical incident.
-- The supervisor can pause further follow-up runs for the affected PR without pausing unrelated work.
-- The supervisor can identify project-level delivery degradation, such as high cost per merged PR or rising rework rate.
-- The LLM prompt receives no user-authored content, repository content, comments, logs, diffs, prompts, secrets, or raw exception text.
-- Unknown or malformed LLM output cannot mutate application state.
-- Every autonomous action is allowlisted, precondition-checked, idempotent, audited, and visible on the incident card.
-- Operators can see when the supervisor last ran and whether it failed.
-- External notifications are not required for urgent dashboard visibility.
-
-## Open Questions
-
-- Should v1 extend `Notification`, or should supervisor incidents get their own table with richer lifecycle fields?
-- What default thresholds should deterministic pre-scoring use before involving the LLM?
-- Which actions require account-admin approval versus project-admin approval?
-- Should temporary mitigations auto-expire after a fixed window, after fresh meaningful progress, or only after human reset?
-- Which delivery-health metrics should count only merged PRs versus accepted/open PRs in long-running client projects?
-
-## Consequences
-
-Positive:
-
-- Paid gains a system-level safety loop for runaway cost and degraded delivery.
-- Operators see urgent issues where they work, not hidden in a menu.
-- The LLM adds pattern recognition without receiving client data or direct mutation power.
-- Autonomous mitigation can stop obvious harm before a human notices.
-
-Negative:
-
-- Adds another scheduled operational component that must be monitored.
-- Requires careful prompt/version/audit discipline.
-- Bad thresholds can create noisy incidents or over-conservative pauses.
-- Sanitized snapshots may omit context that would help diagnosis, so ambiguous cases still need humans.
-
-## Recommendation
-
-Proceed with the Operational Supervisor as a P1 planning track. Start with narrow, high-confidence mitigation for runaway PR follow-up loops and top-of-dashboard incidents, then expand into broader delivery-health actions once the incident history proves the supervisor is accurate.
+- The exact retention duration and whether sanctioned incident exports need a separate redaction review.
+- Whether external notification subscribers are warranted after internal incident semantics have production evidence.
+- Whether future account-wide mitigation needs a distinct authority model.
