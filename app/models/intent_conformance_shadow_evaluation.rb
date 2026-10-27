@@ -3,14 +3,15 @@
 # Solo-maintainer RDR-067 shadow evaluation session (#4594). One row per
 # evidence generation (project, purpose, frozen corpus manifest digest):
 # repeated Start/Resume clicks reuse the same evaluation. The labeling
-# lifecycle is labeling → frozen → executing → completed | failed; reference
+# lifecycle is labeling → frozen → queued → running → partial | failed |
+# cancelled | completed; reference
 # labels and reviewer runs live on the association records and answers stay
 # hidden from the labeling surface until `labels_frozen_at` is set.
 #
 # @spec INTENT-CONFORMANCE-ROLLOUT-005
 # @spec INTENT-CONFORMANCE-ROLLOUT-006
 class IntentConformanceShadowEvaluation < ApplicationRecord
-  STATUSES = %w[labeling frozen executing completed failed].freeze
+  STATUSES = %w[labeling frozen queued running partial failed cancelled completed].freeze
   POLICIES = IntentConformance::ShadowEvaluationPolicy::POLICIES
   OUTCOMES = IntentConformance::ShadowEvaluationPolicy::LABELS
 
@@ -31,10 +32,15 @@ class IntentConformanceShadowEvaluation < ApplicationRecord
   scope :latest_first, -> { order(created_at: :desc, id: :desc) }
 
   def labeling? = status == "labeling"
-  def frozen? = %w[frozen executing completed failed].include?(status)
-  def executing? = status == "executing"
+  def frozen? = !labeling?
+  def queued? = status == "queued"
+  def running? = status == "running"
+  def partial? = status == "partial"
+  def cancelled? = status == "cancelled"
+  def executing? = queued? || running?
   def completed? = status == "completed"
   def failed? = status == "failed"
+  def cancellation_requested? = cancellation_requested_at.present?
 
   def answers_visible? = labels_frozen_at.present?
 
@@ -56,5 +62,33 @@ class IntentConformanceShadowEvaluation < ApplicationRecord
 
   def corpus_case_ids
     corpus.case_ids
+  end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  # The row lock makes repeated HTTP/API submissions idempotent before a job
+  # can be enqueued. Completed cases stay intact for a retry/resume.
+  def queue_execution!
+    with_lock do
+      return false if queued? || running? || completed?
+
+      update!(status: "queued", execution_enqueued_at: Time.current,
+        cancellation_requested_at: nil, cancelled_at: nil, last_failure_reason: nil)
+      true
+    end
+  end
+
+  # Cancellation is cooperative: a running LLM call is allowed to finish,
+  # then ExecuteReviewer stops before spending on the next case.
+  def request_cancellation!
+    with_lock do
+      return false unless queued? || running?
+
+      if queued?
+        update!(status: "cancelled", cancellation_requested_at: Time.current, cancelled_at: Time.current)
+      else
+        update!(cancellation_requested_at: Time.current)
+      end
+      true
+    end
   end
 end

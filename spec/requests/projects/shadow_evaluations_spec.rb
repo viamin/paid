@@ -149,7 +149,8 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("intentionally_drifted")
   end
 
-  it "executes the real reviewer through agent_harness, records failures as not evaluated, and shows the report" do
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  it "queues reviewer execution promptly, then the worker records failures and its report" do
     evaluation = start_evaluation_from_committed_corpus!
     label_all!(evaluation)
     freeze!(evaluation)
@@ -157,10 +158,15 @@ RSpec.describe "Projects::ShadowEvaluations" do
     # Corpus cases reference a repository outside this project, so every
     # reviewer attempt fails closed and is recorded as not evaluated —
     # prerequisite validation is never presented as execution.
-    post execute_project_shadow_evaluation_path(project, evaluation)
+    expect { post execute_project_shadow_evaluation_path(project, evaluation) }
+      .to have_enqueued_job(ShadowEvaluationExecutionJob).with(project.id, evaluation.id)
     follow_redirect!
 
-    expect(response.body).to include("not evaluated")
+    expect(evaluation.reload).to be_queued
+    expect(response.body).to include("Reviewer execution queued")
+
+    ShadowEvaluationExecutionJob.perform_now(project.id, evaluation.id)
+
     expect(evaluation.reload).to be_failed
     evaluation.runs.each do |run|
       expect(run).to be_not_evaluated

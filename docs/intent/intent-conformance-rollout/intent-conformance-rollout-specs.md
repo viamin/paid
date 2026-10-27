@@ -140,3 +140,7 @@
   `app/views/projects/shadow_evaluations/_labeling.html.erb`.
   *Test:* `spec/services/intent_conformance/shadow_evaluation/evidence_spec.rb`,
   `spec/requests/projects/shadow_evaluations_spec.rb`.
+
+- [x] **INTENT-CONFORMANCE-ROLLOUT-011** — After a frozen evaluation is authorized for execution, the system SHALL enqueue an idempotent background operation and return the request promptly. It SHALL expose queued, running, partial, failed, cancelled, and completed state with per-case progress and cost; authorized cancellation and resume SHALL preserve evidence and only retry cases without an evaluated verdict. Bounded job recovery SHALL converge interruption to a retryable terminal state rather than leaving an evaluation running indefinitely.
+  *Code:* `app/jobs/shadow_evaluation_execution_job.rb`, `app/services/intent_conformance/shadow_evaluation/enqueue_execution.rb`, `app/services/intent_conformance/shadow_evaluation/execute_reviewer.rb`.
+  *Test:* `spec/requests/projects/shadow_evaluations_spec.rb`, `spec/jobs/shadow_evaluation_execution_job_spec.rb`.
