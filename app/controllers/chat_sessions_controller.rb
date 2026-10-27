@@ -8,7 +8,7 @@ class ChatSessionsController < ApplicationController
   SIDEBAR_PAGE_SIZE = 50
 
   skip_after_action :verify_authorized, only: %i[index sidebar_page]
-  before_action :set_chat_session, only: %i[show update destroy archive unarchive reopen clone_project older_messages recent_messages]
+  before_action :set_chat_session, only: %i[show update destroy archive unarchive reopen clone_project older_messages recent_messages recover_turn]
   before_action :reject_archived_chat_session, only: %i[update destroy archive clone_project]
   before_action :enforce_create_rate_limit, only: :create
   before_action :default_request_format_to_json, only: %i[index create show update destroy archive unarchive]
@@ -213,6 +213,16 @@ class ChatSessionsController < ApplicationController
       end
       format.json { head :no_content }
     end
+  end
+
+  # @spec CHAT-TURN-004
+  def recover_turn
+    authorize @chat_session, :update?
+    turn = @chat_session.chat_turns.find(params.require(:turn_id))
+    ChatTurns::RequestRecovery.call(chat_turn: turn, actor: current_user)
+    redirect_to chat_session_path(@chat_session), notice: "Safe recovery requested. Stored tools will not be replayed automatically."
+  rescue ChatTurns::RecoveryConflictError => error
+    redirect_to chat_session_path(@chat_session), alert: error.message
   end
 
   def archive

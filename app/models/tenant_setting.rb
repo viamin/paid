@@ -30,6 +30,7 @@ class TenantSetting < ApplicationRecord
     "chat_session_token_limit" => 100_000,
     "chat_monthly_token_limit" => nil,
     "chat_max_tool_iterations" => 50,
+    "chat_stall_timeout_seconds" => 600,
     "chat_max_cloned_repos" => 5,
     "chat_clone_timeout" => 120,
     "chat_shell_enabled" => false,
@@ -343,6 +344,10 @@ class TenantSetting < ApplicationRecord
     effective_chat_settings["chat_max_tool_iterations"]
   end
 
+  def chat_stall_timeout_seconds
+    effective_chat_settings["chat_stall_timeout_seconds"]
+  end
+
   def chat_max_cloned_repos
     effective_chat_settings["chat_max_cloned_repos"]
   end
@@ -539,6 +544,13 @@ class TenantSetting < ApplicationRecord
       val = chat["chat_max_tool_iterations"]
       unless val.is_a?(Integer) && val >= 1 && val <= 200
         errors.add(:features, "chat_settings.chat_max_tool_iterations must be an integer between 1 and 200")
+      end
+    end
+
+    if chat.key?("chat_stall_timeout_seconds") && chat["chat_stall_timeout_seconds"].present?
+      val = chat["chat_stall_timeout_seconds"]
+      unless val.is_a?(Integer) && val.between?(60, 86_400)
+        errors.add(:features, "chat_settings.chat_stall_timeout_seconds must be an integer between 60 and 86400")
       end
     end
 
@@ -763,7 +775,7 @@ class TenantSetting < ApplicationRecord
     normalize_hash(value).slice(*DEFAULT_CHAT_SETTINGS.keys).tap do |normalized|
       next unless normalized.is_a?(Hash)
 
-      %w[chat_session_token_limit chat_monthly_token_limit chat_max_tool_iterations chat_max_cloned_repos chat_clone_timeout].each do |key|
+      %w[chat_session_token_limit chat_monthly_token_limit chat_max_tool_iterations chat_max_cloned_repos chat_clone_timeout chat_stall_timeout_seconds].each do |key|
         normalized[key] = normalize_integer_value(normalized[key]) if normalized.key?(key)
       end
       normalized["chat_shell_enabled"] = ActiveModel::Type::Boolean.new.cast(normalized["chat_shell_enabled"]) if normalized.key?("chat_shell_enabled")

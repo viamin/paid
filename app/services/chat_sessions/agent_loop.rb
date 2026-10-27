@@ -24,7 +24,7 @@ module ChatSessions
       :created_message_ids
 
     def initialize(chat_session:, actor: chat_session.created_by, llm_client:, on_chunk: nil, on_message_persisted: nil, stream_message_id: nil,
-      token_budget: nil)
+      token_budget: nil, chat_turn: nil)
       @chat_session = chat_session
       @actor = actor
       @llm_client = llm_client
@@ -33,6 +33,7 @@ module ChatSessions
       @stream_message_id = stream_message_id
       @created_message_ids = []
       @token_budget_override = token_budget
+      @chat_turn = chat_turn
     end
 
     # @return [ChatMessage, nil] the final assistant message, or +nil+ when the
@@ -40,9 +41,11 @@ module ChatSessions
     def run
       # @spec CHAT-API-003
       # @spec API-CONVERSATION-DELEGATION-004
+      start_streaming_turn
       conversation = build_conversation
       final_assistant_message = run_loop(conversation)
       finalize_token_usage(final_assistant_message) if final_assistant_message
+      finalize_turn(final_assistant_message)
       final_assistant_message
     end
 
@@ -222,6 +225,7 @@ module ChatSessions
 
       tool_result = dispatch_tool(name: tool_call[:name], arguments: parse_tool_arguments(tool_call))
       persist_tool_result_message(tool_call, tool_result)
+      current_turn&.touch_activity!
       tool_result
     end
 
@@ -373,6 +377,7 @@ module ChatSessions
     end
 
     def call_llm(conversation, exclude_tools: false)
+      current_turn&.touch_activity!
       chunk_streamed = false
       chunk_callback = lambda do |chunk|
         next if chunk.blank?
@@ -388,6 +393,32 @@ module ChatSessions
       else
         raise NotImplementedError, "agent-harness chat transport not yet integrated"
       end
+    end
+
+    def finalize_turn(final_assistant_message)
+      return unless current_turn
+      return if current_turn.status != "streaming"
+
+      if final_assistant_message
+        current_turn.transition_to!("completed")
+      elsif current_turn.pending_confirmation?
+        current_turn.transition_to!("pending", classification: "awaiting_confirmation")
+      end
+    end
+
+    def start_streaming_turn
+      return unless current_turn&.status == "pending"
+      return if current_turn.pending_confirmation?
+
+      current_turn.transition_to!("streaming")
+    end
+
+    def current_turn
+      return @chat_turn if @chat_turn
+      return @current_turn if defined?(@current_turn)
+
+      user_message = chat_session.messages.where(role: "user").order(id: :desc).first
+      @current_turn = user_message&.chat_turn
     end
 
     def invoke_llm_client(conversation, chunk_callback, exclude_tools: false)

@@ -43,6 +43,7 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
       update_session_activity
@@ -132,6 +133,12 @@ module ChatSessions
         content: content,
         metadata: { "stream_message_id" => stream_message_id }.compact
       )
+    end
+
+    # @spec CHAT-TURN-001
+    def start_turn
+      @chat_turn = ChatTurns::Start.call(chat_session:, user_message: transport_attempt_message)
+      @chat_turn.transition_to!("streaming") if @chat_turn.status == "pending"
     end
 
     # A conversational reply (e.g. "yes") is not a confirmation. When a write

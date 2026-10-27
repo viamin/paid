@@ -521,6 +521,7 @@ Rails.application.routes.draw do
     patch :archive, on: :member
     patch :unarchive, on: :member
     patch :reopen, on: :member
+    post :recover_turn, on: :member
     post :clone_project, on: :member
     collection do
       get :sidebar_page
