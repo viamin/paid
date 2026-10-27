@@ -991,8 +991,8 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("Other account issue")
   end
 
-  # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
-  it "renders manual_review detail with the reason and the inbox-scoped resume action" do
+  # @spec MANUAL-REVIEW-RECOVERY-004 @spec MANUAL-REVIEW-RECOVERY-007
+  it "renders technical enhancement recovery with the reason and the inbox-scoped retry action" do
     parked = create_manual_review_issue(
       title: "Parked issue",
       github_number: 509,
@@ -1005,20 +1005,20 @@ RSpec.describe "Inbox" do
     )
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Structured output failed validation.", "Start enhancement run")
+    expect(response.body).to include("Structured output failed validation.", "Retry enhancement analysis", "retries analysis")
     document = Nokogiri::HTML(response.body)
-    form = document.at_css(
-      %(form[action="#{resume_manual_review_project_agent_runs_path(project, issue_id: parked.id)}"])
-    )
+    form = document.css("form").find do |candidate|
+      candidate["action"].to_s.start_with?(resume_manual_review_project_agent_runs_path(project))
+    end
 
     expect(form).to be_present
-    expect(form["data-turbo-frame"]).to eq("_top")
+    expect(form["action"]).to include("manual_review_action=retry_enhancement")
     expect(form.at_css('input[name="return_to"]')["value"]).to eq(
       inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
     )
   end
 
-  # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
+  # @spec MANUAL-REVIEW-RECOVERY-004
   it "renders the clarifying-questions answer form for a manual_review issue with preserved terminal-round questions" do
     parked = create_manual_review_issue(
       title: "Parked with questions",
@@ -1033,7 +1033,7 @@ RSpec.describe "Inbox" do
     )
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Which events should be recorded?", "Submit Answers", "Start enhancement run")
+    expect(response.body).to include("Which events should be recorded?", "Submit Answers", "Retry enhancement analysis")
     document = Nokogiri::HTML(response.body)
     form = document.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, parked)}"]))
 

@@ -1,60 +1,77 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec MANUAL-REVIEW-RECOVERY-001 @spec MANUAL-REVIEW-RECOVERY-002
+    @spec MANUAL-REVIEW-RECOVERY-003 @spec MANUAL-REVIEW-RECOVERY-004
+    @spec MANUAL-REVIEW-RECOVERY-005 @spec MANUAL-REVIEW-RECOVERY-007 %>
+<% classification = entry.manual_review_classification %>
+<% primary = classification.primary %>
+<% return_to = inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
-    <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
-    <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
-        Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
-      <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
-      <% end %>
-    </p>
+    <h3 class="text-sm font-semibold text-purple-900">Manual review: <%= primary.kind.humanize %></h3>
+    <p class="mt-1 text-sm text-purple-800"><%= primary.summary %></p>
+    <% if classification.simultaneous.any? %>
+      <p class="mt-2 text-sm text-purple-800">Also waiting on: <%= classification.simultaneous.map { |cause| cause.kind.humanize }.to_sentence %>.</p>
+    <% end %>
   </div>
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
-    <p class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
-      <%= entry.summary %>
-    </p>
+    <p class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600"><%= entry.summary %></p>
   </div>
 
-  <%# A scanner-confirmed recurrence routes through manual_review, not the
-      partial_closeout lane (SecurityAlerts::VerifyRemediationAttempt#fail!
-      moves the issue here) — surface the same alert/evidence/recovery here
-      so that path is not reduced to the generic reason text alone (#4188). %>
-  <% scanner_blockers = Issues::CloseoutStatus.scanner_verification_blockers(entry.issue) %>
-  <% if scanner_blockers.any? %>
-    <div class="rounded-xl border border-violet-200 bg-violet-50 p-4">
-      <h3 class="text-sm font-semibold text-violet-900">Scanner verification evidence</h3>
-      <%= render "dashboard/inbox_closeout_blockers", blockers: scanner_blockers %>
+  <% if classification.reopen_review? %>
+    <% evidence = classification.causes.find { |cause| cause.kind == Issues::ManualReviewCause::REOPEN_REVIEW }.evidence %>
+    <div class="rounded-xl border border-violet-200 bg-violet-50 p-4 text-sm text-violet-950">
+      <h3 class="font-semibold">Closure and remaining scope</h3>
+      <p class="mt-2">Closed: <%= evidence.dig("closure", "closed_at") || "not recorded" %>. Reopened: <%= evidence.dig("closure", "reopened_at") || "not recorded" %>.</p>
+      <p class="mt-1">Merged PRs: <%= evidence.dig("closure", "merged_prs").map { |pr| "##{pr["number"]}" }.to_sentence.presence || "none recorded" %>.</p>
+      <p class="mt-1">Current scope: <%= evidence.dig("remaining_scope", "title") %></p>
     </div>
   <% end %>
 
-  <%# @spec ISSUE-ENHANCEMENT-011
-      The terminal round's preserved clarifying questions ARE the manual
-      review this state asks for: render the same answer form the
-      clarifying_questions lane uses, submitting to the same endpoint. %>
-  <% if entry.questions.any? %>
-    <%= render "dashboard/inbox_clarifying_answer_form",
-          entry: entry,
-          scoped_project: scoped_project,
-          selected_kind: selected_kind %>
+  <% if classification.dependency_wait? %>
+    <% dependencies = classification.causes.find { |cause| cause.kind == Issues::ManualReviewCause::DEPENDENCY_WAIT }.evidence.fetch("dependencies") %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+      <h3 class="font-semibold">Unresolved dependencies</h3>
+      <% dependencies.each do |dependency| %>
+        <p class="mt-2"><% if dependency["url"].present? %><%= link_to dependency["reference"], dependency["url"], target: "_blank", rel: "noopener noreferrer", class: "underline" %><% else %><%= dependency["reference"] %><% end %> — <%= dependency["owner"] %>: <%= dependency["action"] %></p>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if classification.scanner_recurrence? %>
+    <div class="rounded-xl border border-violet-200 bg-violet-50 p-4">
+      <h3 class="text-sm font-semibold text-violet-900">Scanner verification evidence</h3>
+      <%= render "dashboard/inbox_closeout_blockers", blockers: Issues::CloseoutStatus.scanner_verification_blockers(entry.issue) %>
+    </div>
+  <% end %>
+
+  <% if classification.enhancement? && entry.questions.any? %>
+    <%= render "dashboard/inbox_clarifying_answer_form", entry:, scoped_project:, selected_kind: %>
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
     <% if policy(entry.project).run_agent? %>
-      <%= button_to "Start enhancement run",
-            resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
-            method: :post,
-            params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
-            class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500",
-            form: { data: { turbo_confirm: "Queue a manual enhancement run for #{entry.project.full_name}##{entry.issue.github_number}?", turbo_frame: "_top" } } %>
+      <% if classification.reopen_review? %>
+        <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project), method: :post, class: "flex flex-wrap items-center gap-2" do |form| %>
+          <%= hidden_field_tag :issue_id, entry.issue.id %>
+          <%= hidden_field_tag :manual_review_action, "record_intent_validation" %>
+          <%= hidden_field_tag :return_to, return_to %>
+          <%= form.select :decision, [["Intent remains valid", "intent_valid"], ["Intent changed", "intent_changed"]], {}, class: "rounded-md border-gray-300 text-sm" %>
+          <%= form.text_field :reason, required: true, placeholder: "Validation reason", class: "rounded-md border-gray-300 text-sm" %>
+          <%= form.submit "Record intent validation", class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+        <% end %>
+      <% elsif classification.dependency_wait? %>
+        <%= button_to "Re-evaluate dependency", resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id, manual_review_action: "reevaluate_dependency"), method: :post, params: { return_to: }, class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+      <% elsif classification.scanner_recurrence? %>
+        <%= button_to "Authorize new remediation", resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id, manual_review_action: "authorize_scanner_remediation"), method: :post, params: { return_to: }, class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+      <% elsif classification.partial_closeout? %>
+        <%= button_to "Request continuation", resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id, manual_review_action: "request_continuation"), method: :post, params: { return_to:, reason: "Continue the remaining documented scope." }, class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+      <% elsif classification.enhancement? || !entry.questions.any? %>
+        <%= button_to "Retry enhancement analysis", resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id, manual_review_action: "retry_enhancement"), method: :post, params: { return_to: }, class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+      <% end %>
+      <span class="text-xs text-gray-500"><%= primary.effect %></span>
     <% end %>
-    <%= link_to inbox_issue_link_label(entry.issue),
-          entry.issue.github_url,
-          target: "_blank",
-          rel: "noopener noreferrer",
-          class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    <%= link_to inbox_issue_link_label(entry.issue), entry.issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
     <%= render "inbox/supplement_content", entry: entry %>
   </div>
 </div>

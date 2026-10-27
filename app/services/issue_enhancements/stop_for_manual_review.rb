@@ -27,7 +27,11 @@ module IssueEnhancements
       # (EnhanceIssueActivity#sync_needs_input_questions).
       should_post = issue.with_lock do
         newly_stopped = issue.paid_state != "manual_review"
-        issue.update!(paid_state: "manual_review", manual_review_reason: reason)
+        issue.update!(
+          paid_state: "manual_review",
+          manual_review_reason: reason,
+          manual_review_cause: Issues::ManualReviewCause::ENHANCEMENT
+        )
         newly_stopped
       end
       remove_needs_input_label

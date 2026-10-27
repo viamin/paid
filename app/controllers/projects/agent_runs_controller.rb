@@ -401,16 +401,7 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
-    # manual_review only clears when an explicit operator-triggered run
-    # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
-    # queues a fresh manual enhance_issue run rather than just clearing state,
-    # since a queued run is what actually resumes the enhancement work. The
-    # queue-time state flip (resume_issue_from_manual_review) removes the
-    # inbox entry as soon as the run is queued, so the item leaves the lane
-    # immediately instead of surviving the whole queue wait; re-entry
-    # producers (parse failure, round limit, needs_input) bring it back if
-    # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec MANUAL-REVIEW-RECOVERY-007 @spec MANUAL-REVIEW-RECOVERY-008
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -420,14 +411,18 @@ module Projects
         return
       end
 
-      create_enhance_issue_runs_and_redirect(
-        issue_ids: [ issue.id ],
-        on_error_path: safe_return_target || dashboard_path,
-        success_path: safe_return_target || dashboard_path,
-        custom_prompt: nil,
-        goal: "enhance_issue",
-        priority_tier: nil
+      result = Issues::ManualReviewRecovery.call(
+        issue: issue,
+        actor: current_user,
+        # The old Inbox button submitted no action. Treat that request as the
+        # only backward-compatible recovery it represented: an enhancement
+        # analysis retry. The service still refuses it for every other cause.
+        action: params[:manual_review_action].presence || "retry_enhancement",
+        decision: params[:decision],
+        reason: params[:reason]
       )
+
+      redirect_to safe_return_target || dashboard_path, **manual_review_flash(result)
     end
 
     # Operator-driven counterpart to
@@ -1049,6 +1044,10 @@ module Projects
       else
         "This issue is no longer waiting for manual review."
       end
+    end
+
+    def manual_review_flash(result)
+      result.success? ? { notice: result.message } : { alert: result.message }
     end
 
     def cancel_in_flight_execution_for_resume!

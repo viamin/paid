@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_26_194943) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_27_093100) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2596,6 +2596,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_26_194943) do
     t.datetime "last_pr_scan_at"
     t.string "last_scanned_head_sha", limit: 40, comment: "PR HEAD commit SHA recorded by the most recent PR scan pass. Lets scan-time and Inbox-time consumers (e.g. intent-conformance verdict lookups) identify the current HEAD without an extra GitHub API call outside the scan cycle."
     t.datetime "last_scanner_reconciled_at", comment: "Timestamp of the most recent SecurityAlerts::ProcessCodeScanningAlerts pass that reconciled this synthetic code-scanning issue against the live alert list. Used to tell a merged remediation PR (not yet verified) from a scanner-confirmed still-open/recurrent alert (#4052)."
+    t.string "manual_review_cause", comment: "Why the issue is parked in manual_review: reopen_review, enhancement, dependency_wait, scanner_recurrence, or partial_closeout. NULL for rows parked before this column existed."
     t.text "manual_review_reason", comment: "Why automation stopped and parked this issue in manual_review, surfaced in the operator inbox."
     t.datetime "manual_review_started_at", comment: "Timestamp when this issue entered paid_state: manual_review. Falls back to updated_at for legacy rows predating this column."
     t.datetime "merge_permission_rejected_at", comment: "When non-null, the most recent auto-merge attempt was rejected by GitHub because the App installation token lacks a required permission (e.g. `workflows` for a change under .github/workflows/). Such rejections are permanent until the App's permissions change, so this timestamp gates a retry cooldown instead of re-attempting every poll cycle."
@@ -2958,6 +2959,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_26_194943) do
     t.index ["integration_credential_id"], name: "index_login_sessions_on_integration_credential_id"
     t.index ["runner_credential_id"], name: "index_login_sessions_on_runner_credential_id"
     t.index ["session_token"], name: "index_login_sessions_on_session_token", unique: true
+  end
+
+  create_table "manual_review_decisions", force: :cascade do |t|
+    t.bigint "actor_id", null: false
+    t.string "cause", null: false
+    t.datetime "created_at", null: false
+    t.string "decision", null: false
+    t.bigint "issue_id", null: false
+    t.bigint "project_id", null: false
+    t.text "reason", null: false
+    t.string "revision_digest", null: false
+    t.datetime "updated_at", null: false
+    t.index ["actor_id"], name: "index_manual_review_decisions_on_actor_id"
+    t.index ["issue_id", "revision_digest"], name: "index_manual_review_decisions_on_issue_and_revision", unique: true
+    t.index ["issue_id"], name: "index_manual_review_decisions_on_issue_id"
+    t.index ["project_id"], name: "index_manual_review_decisions_on_project_id"
   end
 
   create_table "marketplace_entries", comment: "Team-shareable agent enhancements that can be attached to agent runs", force: :cascade do |t|
@@ -4870,6 +4887,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_26_194943) do
   add_foreign_key "login_sessions", "integration_credentials"
   add_foreign_key "login_sessions", "runner_credentials"
   add_foreign_key "login_sessions", "users", column: "created_by_id"
+  add_foreign_key "manual_review_decisions", "issues"
+  add_foreign_key "manual_review_decisions", "projects"
+  add_foreign_key "manual_review_decisions", "users", column: "actor_id"
   add_foreign_key "marketplace_entries", "accounts"
   add_foreign_key "marketplace_entries", "marketplace_entry_versions", column: "current_version_id", on_delete: :nullify
   add_foreign_key "marketplace_entry_rules", "marketplace_entries"

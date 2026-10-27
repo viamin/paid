@@ -93,6 +93,7 @@ class Issue < ApplicationRecord
   has_many :intent_conformance_verdicts, dependent: :destroy
   has_many :intent_conformance_decisions, dependent: :destroy
   has_many :clarifying_question_progresses, dependent: :destroy
+  has_many :manual_review_decisions, dependent: :destroy
 
   # @spec INTENT-AMENDMENT-003 — feature intent linkage. An issue may serve
   # several designs (the join's issue_id index is not unique), so this
@@ -325,7 +326,11 @@ class Issue < ApplicationRecord
   def require_reopen_review!
     with_lock do
       reload
-      update!(paid_state: "manual_review", manual_review_reason: REOPEN_REVIEW_REQUIRED_REASON)
+      update!(
+        paid_state: "manual_review",
+        manual_review_reason: REOPEN_REVIEW_REQUIRED_REASON,
+        manual_review_cause: Issues::ManualReviewCause::REOPEN_REVIEW
+      )
     end
   end
 
@@ -350,7 +355,8 @@ class Issue < ApplicationRecord
       partial_completion_pr_number: pull_request_number,
       partial_completion_reason: reason,
       paid_state: "manual_review",
-      manual_review_reason: reason
+      manual_review_reason: reason,
+      manual_review_cause: Issues::ManualReviewCause::PARTIAL_CLOSEOUT
     )
   end
 

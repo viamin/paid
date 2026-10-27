@@ -1157,7 +1157,11 @@ module Activities
       issues.each do |issue|
         reason = dependency_blocked_reason(issue)
         parked_at = Time.current
-        issue.update!(paid_state: "manual_review", manual_review_reason: reason)
+        issue.update!(
+          paid_state: "manual_review",
+          manual_review_reason: reason,
+          manual_review_cause: Issues::ManualReviewCause::DEPENDENCY_WAIT
+        )
 
         merged_pr_number = merged_source_pull_request_number(issue)
         next unless merged_pr_number

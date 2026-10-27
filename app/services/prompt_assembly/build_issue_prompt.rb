@@ -194,7 +194,11 @@ class PromptAssembly::BuildIssuePrompt
   def block_remediation!(reason)
     return unless issue.respond_to?(:persisted?) && issue.persisted?
 
-    issue.update!(paid_state: "manual_review", manual_review_reason: reason)
+    issue.update!(
+      paid_state: "manual_review",
+      manual_review_reason: reason,
+      manual_review_cause: Issues::ManualReviewCause::ENHANCEMENT
+    )
   end
 
   def transient_error?(error)

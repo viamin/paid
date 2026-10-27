@@ -245,6 +245,13 @@ module Inbox
         @manual_review_comment_url = manual_review? ? manual_review_comment_link : nil
       end
 
+      # @spec MANUAL-REVIEW-RECOVERY-001
+      def manual_review_classification
+        return unless manual_review? && issue
+
+        @manual_review_classification ||= Issues::ManualReviewCause.call(issue)
+      end
+
       private
 
       def context_loader

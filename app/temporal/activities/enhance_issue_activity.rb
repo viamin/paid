@@ -457,7 +457,7 @@ module Activities
       if stop_marker_comment?(existing_comment) && agent_run.automatic?
         removed = labels_removed(client, project, issue, [ project.enhance_issue_needs_input_label_name ])
         merge_local_labels(issue, remove: removed)
-        attrs = { paid_state: "manual_review" }
+        attrs = { paid_state: "manual_review", manual_review_cause: Issues::ManualReviewCause::ENHANCEMENT }
         attrs[:manual_review_reason] = max_rounds_reason(project) if issue.manual_review_reason.blank?
         issue.update!(attrs)
         return { applied: nil, max_rounds_reached: true, sufficient_context: false }
