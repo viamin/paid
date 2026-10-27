@@ -8,7 +8,7 @@ module TechnicalPrerequisites
   # this projection is the canonical closeout-assessment input and is
   # intentionally one record per source run so retries cannot grow it without
   # bound.
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   class Evidence
     RECONCILIATION_KEY = "technical_prerequisite_evidence"
 

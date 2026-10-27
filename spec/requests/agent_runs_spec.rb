@@ -2323,7 +2323,7 @@ RSpec.describe "AgentRuns" do
         end
       end
 
-      # @spec PARTIAL-CLOSEOUT-030
+      # @spec PARTIAL-CLOSEOUT-032
       it "does not use the generic manual retry path for technical-prerequisite validations" do
         validation = create(:agent_run, :failed, project: project,
           goal: "technical_prerequisite_validation", synthetic: true)

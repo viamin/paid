@@ -69,7 +69,7 @@ RSpec.describe StaleRunDetectorJob do
       expect(stale_run.issue.reload.paid_state).to eq("completed")
     end
 
-    # @spec PARTIAL-CLOSEOUT-030
+    # @spec PARTIAL-CLOSEOUT-032
     it "leaves the issue paid_state alone for a stale report-only validation run" do
       issue = create(:issue, :in_progress, project: create(:project))
       stale_run = create(:agent_run, :running, project: issue.project, issue: issue,

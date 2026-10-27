@@ -10,7 +10,7 @@ RSpec.describe "Technical prerequisite validations" do
   let(:source_run) { create(:agent_run, :completed, project:, issue:, base_commit_sha: "a" * 40) }
   let(:requirement) { create(:pre_commit_requirement, project:, account:, command: "bin/audit") }
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "queues an authorized validation from the Inbox action" do
     sign_in user
 
@@ -25,7 +25,7 @@ RSpec.describe "Technical prerequisite validations" do
     expect(TechnicalPrerequisiteValidationJob).to have_been_enqueued.with(validation_run.id)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "queues a validation run that never enters the agent execution queue" do
     sign_in user
 
@@ -38,7 +38,7 @@ RSpec.describe "Technical prerequisite validations" do
     expect(AgentRun.unclaimed).not_to include(validation_run)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "opens the validation run page for progress and cancellation" do
     sign_in user
 
@@ -52,7 +52,7 @@ RSpec.describe "Technical prerequisite validations" do
     expect(response).to have_http_status(:ok)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "refuses a recipe outside the effective project configuration" do
     sign_in user
     other_project = create(:project, account:, created_by: user)
@@ -68,7 +68,7 @@ RSpec.describe "Technical prerequisite validations" do
     expect(response).to redirect_to(dashboard_path)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "surfaces a refused validation as an actionable message instead of an error page" do
     sign_in user
     invalid_run = AgentRun.new(project:)

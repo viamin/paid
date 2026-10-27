@@ -12,7 +12,7 @@ module TechnicalPrerequisites
   # attached tool is exercised by provisioning it and publishing its endpoint
   # to the analyzer. The run's verification_result is the durable,
   # revision-bound evidence record consumed by closeout assessment.
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   class ValidateExecution
     MAX_OUTPUT_BYTES = 20_000
     COMMAND_TIMEOUT = 5.minutes

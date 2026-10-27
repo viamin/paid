@@ -17,14 +17,14 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
     TechnicalPrerequisites::ValidateExecution::Result.new(status:, evidence:, setup_action: nil)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "uses a bounded low-priority worker for isolated network and container execution" do
     expect(described_class.queue_name).to eq("low_priority")
     expect(described_class.perform_timeout).to eq(20.minutes.to_i)
     expect(TechnicalPrerequisites::ValidateExecution::COMMAND_TIMEOUT).to eq(5.minutes)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "completes the run when the validation succeeds" do
     expect(TechnicalPrerequisites::ValidateExecution).to receive(:call) do
       expect(Current.account).to eq(project.account)
@@ -38,7 +38,7 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
     expect(agent_run.error_message).to be_nil
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "marks the run failed with the recorded validation error" do
     allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
       .and_return(validation_result("failed", { "error" => "analyzer exited 3" }))
@@ -49,7 +49,7 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
     expect(agent_run.error_message).to eq("analyzer exited 3")
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "does not overwrite a run the operator cancelled while the validation ran" do
     agent_run.update!(status: "cancelled", completed_at: Time.current)
     allow(TechnicalPrerequisites::ValidateExecution).to receive(:call).and_return(validation_result("completed"))
@@ -59,7 +59,7 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
     expect(agent_run.reload.status).to eq("cancelled")
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "does not re-execute a run that already reached a terminal state" do
     agent_run.update!(status: "failed", completed_at: Time.current)
     allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
@@ -69,7 +69,7 @@ RSpec.describe TechnicalPrerequisiteValidationJob do
     expect(TechnicalPrerequisites::ValidateExecution).not_to have_received(:call)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "records the failure and re-raises when the validation raises" do
     allow(TechnicalPrerequisites::ValidateExecution).to receive(:call)
       .and_raise(Containers::Provision::Error, "no container provisioned")

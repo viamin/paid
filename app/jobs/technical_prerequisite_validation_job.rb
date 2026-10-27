@@ -6,7 +6,7 @@ class TechnicalPrerequisiteValidationJob < ApplicationJob
 
   discard_on ActiveRecord::RecordNotFound
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   def perform(agent_run_id)
     agent_run = AgentRun.find(agent_run_id)
     return unless start!(agent_run)

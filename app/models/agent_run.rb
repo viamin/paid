@@ -37,7 +37,7 @@ class AgentRun < ApplicationRecord
   # Report-only goal for a bounded technical-prerequisite validation. It never
   # implements work, so it does not inherit the create_pr feature-intent
   # admission gate; only an authorized Inbox action starts it.
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   TECHNICAL_PREREQUISITE_VALIDATION_GOAL = "technical_prerequisite_validation"
   # @spec LAYERED-VERIFY-012 — these are the only goals that generic
   # triggers and tenant defaults may select; layered verification requires
@@ -407,7 +407,7 @@ class AgentRun < ApplicationRecord
   # Synthetic operational runs (live-preview provisioning, technical-prerequisite
   # validation) reuse the agent-run lifecycle to drive infrastructure but never
   # execute an agent, so the run queue must never claim them.
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   scope :unclaimed, -> { waiting.excluding_synthetic }
   scope :running, -> { where(status: "running") }
   scope :completed, -> { where(status: "completed") }
@@ -1846,7 +1846,7 @@ class AgentRun < ApplicationRecord
   # True when the run collects technical-prerequisite evidence instead of
   # implementing work. Such a run is started by an authorized Inbox action and
   # must not inherit the create_pr implementation-admission gate.
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   def technical_prerequisite_validation_goal?
     goal == TECHNICAL_PREREQUISITE_VALIDATION_GOAL
   end

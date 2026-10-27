@@ -353,7 +353,7 @@ module Projects
 
     # Starts a reviewed recipe against a fresh pinned run; the resulting run
     # detail provides progress and cancellation, and this action provides retry.
-    # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
     def validate_technical_prerequisite
       authorize @project, :run_agent?
 

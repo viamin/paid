@@ -69,7 +69,7 @@ RSpec.describe PartialCloseouts::Assessment do
     expect(result.next_action.fetch("kind")).to eq("wait_for_owner")
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "marks an assessment stale when its source run records validation evidence" do
     pull_request
     run = create(:agent_run, :completed, project:, issue:, pull_request_number: pull_request.github_number)

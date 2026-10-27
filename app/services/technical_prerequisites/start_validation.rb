@@ -3,7 +3,7 @@
 module TechnicalPrerequisites
   # Creates the fresh, pinned operational run used by an authorized Inbox
   # validation. Commands come only from persisted reviewed requirements.
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   class StartValidation
     Result = Data.define(:status, :agent_run, :message) do
       def success? = status == :queued

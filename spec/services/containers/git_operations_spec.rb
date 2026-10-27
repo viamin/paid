@@ -364,7 +364,7 @@ RSpec.describe Containers::GitOperations do
     end
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   describe "#clone_and_checkout_pinned_commit" do
     let(:pinned_sha) { "abc123def456789012345678901234567890abcd" }
     let(:not_a_repo_result) { Containers::Provision::Result.failure(error: "not a git repo", stdout: "", stderr: "fatal: not a git repository", exit_code: 128) }

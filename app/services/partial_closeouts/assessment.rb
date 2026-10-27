@@ -7,7 +7,7 @@ module PartialCloseouts
   # deterministic evidence. It deliberately never reassesses on an Inbox read:
   # stale means the operator can see that a bounded audit is needed, not that
   # current implementation or a closed child completed a criterion.
-  # @spec PARTIAL-CLOSEOUT-023 PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-023 PARTIAL-CLOSEOUT-032
   class Assessment
     Result = Data.define(:assessment, :criteria, :source_revision, :intent_revision, :assessed_at, :stale, :next_action) do
       def stale? = stale

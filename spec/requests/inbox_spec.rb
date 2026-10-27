@@ -518,7 +518,7 @@ RSpec.describe "Inbox" do
       expect(response.body).to include(link_prerequisite_project_agent_runs_path(project))
     end
 
-    # @spec PARTIAL-CLOSEOUT-030
+    # @spec PARTIAL-CLOSEOUT-032
     it "shows the latest unavailable prerequisite validation action and retry control" do
       source_run = create(:agent_run, :completed, project:, issue: guided_issue, base_commit_sha: "a" * 40)
       source_run.update!(reconciliation: {

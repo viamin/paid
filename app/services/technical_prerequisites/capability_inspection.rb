@@ -4,7 +4,7 @@ module TechnicalPrerequisites
   # Projects the existing placement and rollout decisions into an actionable
   # Inbox-ready result. A missing Docker socket in the browser/control-plane
   # process is intentionally not an input to this decision.
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   class CapabilityInspection
     Result = Data.define(:host, :compatible_hosts, :failures, :requirements_error, :tool_sidecars_enabled, :setup_action) do
       def runnable? = compatible_hosts.any? && setup_action.nil?

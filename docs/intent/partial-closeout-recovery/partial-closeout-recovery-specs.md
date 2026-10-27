@@ -4,7 +4,7 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
-- [x] **PARTIAL-CLOSEOUT-030** — When an authorized technical-prerequisite
+- [x] **PARTIAL-CLOSEOUT-032** — When an authorized technical-prerequisite
       validation is prepared from a partial-closeout item, the system SHALL
       inspect compatible execution hosts through the existing backend scheduler
       rather than infer availability from the operator workspace; SHALL refuse

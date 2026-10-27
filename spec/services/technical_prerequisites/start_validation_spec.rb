@@ -3,7 +3,7 @@
 require "rails_helper"
 
 RSpec.describe TechnicalPrerequisites::StartValidation do
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "queues a fresh pinned run from an enabled reviewed recipe" do
     project = create(:project)
     actor = project.created_by
@@ -22,7 +22,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(TechnicalPrerequisiteValidationJob).to have_been_enqueued.with(result.agent_run.id)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "queues the validation for an issue whose feature intent is not released" do
     project = create(:project)
     actor = project.created_by
@@ -38,7 +38,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(result.agent_run.base_commit_sha).to eq("a" * 40)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "refuses a disabled recipe" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40)
@@ -50,7 +50,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(result.agent_run).to be_nil
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "preserves reviewed recipe shell syntax for the isolated execution environment" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:, base_commit_sha: "a" * 40)
@@ -63,7 +63,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(result.agent_run.external_metadata.dig("technical_prerequisite_validation", "command")).to eq(command)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "refuses a source run without a pinned checkout" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:)
@@ -75,7 +75,7 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(result.agent_run).to be_nil
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "refuses a prior validation as the source run" do
     project = create(:project)
     source_run = create(:agent_run, :completed, project:, goal: "technical_prerequisite_validation", base_commit_sha: "a" * 40)

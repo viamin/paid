@@ -25,7 +25,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     allow(agent_run).to receive(:tool_sidecar_endpoints).and_return(sidecar_endpoints)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "records an exact rollout approval action instead of retrying when the tool flag is off" do
     AgentRun.where(id: agent_run.id).update_all(tool_sidecar_snapshot: [ { "name" => "analyzer", "image" => "example/analyzer" } ])
     agent_run.reload
@@ -41,7 +41,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(source_run.reload.reconciliation.dig("technical_prerequisite_evidence", "status")).to eq("unavailable")
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "uses a compatible isolated host, captures command evidence, and cleans up" do
     stub_compatible_host
     stub_provisioning
@@ -65,7 +65,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(source_run.reconciliation.dig("technical_prerequisite_evidence", "cleanup")).to include("completed" => true)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "does not provision when the running validation is cancelled during capability inspection" do
     agent_run.update!(status: "running")
     allow(Containers::BackendScheduler).to receive(:call) do
@@ -82,7 +82,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(agent_run.reload.status).to eq("cancelled")
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "cleans up without executing when the running validation is cancelled before command execution" do
     agent_run.update!(status: "running")
     stub_compatible_host
@@ -101,7 +101,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(agent_run.reload.status).to eq("cancelled")
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "records a flat resolved image identity and digest" do
     agent_run.record_runtime_image_selection!(
       "requested_image" => "paid-agent:latest",
@@ -121,7 +121,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(result.evidence.fetch("image_selection")).to include("resolved_image" => "registry.example/paid-agent@sha256:abc")
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "plans the inspected host so the container lands on the host the capability decision approved" do
     stub_compatible_host
     stub_provisioning
@@ -132,7 +132,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(agent_run.reload.external_metadata["planned_container_host"]).to eq("remote")
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "provisions and cleans up sidecars through the selected execution runner" do
     stub_compatible_host
     stub_provisioning
@@ -153,7 +153,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "passes a reviewed shell recipe through unchanged" do
     stub_compatible_host
     stub_provisioning
@@ -168,7 +168,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     described_class.call(agent_run:, native_command: command, execution_runner:)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "records the attached tool identity and endpoint for a native-plus-sidecar validation" do
     AgentRun.where(id: agent_run.id).update_all(
       tool_sidecar_snapshot: [ { "name" => "analyzer", "image" => "example/analyzer", "version" => "1.2.3" } ]
@@ -189,7 +189,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(result.evidence["tool_endpoints"]).to contain_exactly(include("url" => "http://analyzer:8080"))
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "records the provisioner's rejection when the attached tool image is not allowed" do
     AgentRun.where(id: agent_run.id).update_all(
       tool_sidecar_snapshot: [ { "name" => "analyzer", "image" => "example/denied" } ]
@@ -208,7 +208,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(result.evidence["checkout"]).to eq("b" * 40)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "cleans up resources when provisioning fails before it records a container" do
     stub_compatible_host
     allow(agent_run).to receive(:provision_execution_environment)
@@ -223,7 +223,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
       .to include("attempted" => true, "completed" => true)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "records a failed outcome with the analyzer output when the command exits non-zero" do
     stub_compatible_host
     stub_provisioning
@@ -235,7 +235,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(result.evidence["native"]).to include("stdout" => "boom", "stderr" => "missing tool", "exit_code" => 3)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "records no compatible backend as unavailable without running an unchanged validation" do
     allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler_result([]))
     allow(agent_run).to receive(:provision_execution_environment)
@@ -247,7 +247,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(agent_run).not_to have_received(:provision_execution_environment)
   end
 
-  # @spec PARTIAL-CLOSEOUT-030
+  # @spec PARTIAL-CLOSEOUT-032
   it "preserves a capability-requirements failure as the unavailable setup action" do
     error = 'Runtime image reference "retired" is deprecated'
     allow(Containers::BackendScheduler).to receive(:call).and_return(scheduler_result([], requirements_error: error))

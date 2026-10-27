@@ -164,7 +164,7 @@ RSpec.describe AgentRun do
       expect(agent_run).to be_valid
     end
 
-    # @spec PARTIAL-CLOSEOUT-030
+    # @spec PARTIAL-CLOSEOUT-032
     it "admits a technical-prerequisite validation run for an issue whose feature intent is not released" do
       project = create(:project)
       issue = create(:issue, project: project)
@@ -178,7 +178,7 @@ RSpec.describe AgentRun do
       expect(agent_run.errors[:issue]).to be_empty
     end
 
-    # @spec PARTIAL-CLOSEOUT-030
+    # @spec PARTIAL-CLOSEOUT-032
     it "keeps the pinned checkout of a technical-prerequisite validation run" do
       project = create(:project)
       issue = create(:issue, project: project)
@@ -501,7 +501,7 @@ RSpec.describe AgentRun do
       end
     end
 
-    # @spec PARTIAL-CLOSEOUT-030
+    # @spec PARTIAL-CLOSEOUT-032
     describe ".unclaimed" do
       it "never offers synthetic operational runs to the agent run queue" do
         synthetic_run = create(:agent_run, :queued, synthetic: true)
