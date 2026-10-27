@@ -29,6 +29,27 @@ RSpec.describe Onboarding::ConfigureChatRunner do
     end
   end
 
+  RunnerSupport::API_SERVICE_TYPES.keys.excluding("openrouter").each do |service_type|
+    # @spec ONBOARD-CHAT-014 MODEL-AVAILABILITY-008
+    it "rolls back #{service_type} onboarding with an actionable catalog reason when no Low model is eligible" do
+      LlmModel.find_by!(model_id: onboarding_model_id(service_type)).update!(tier: "mid")
+
+      expect {
+        described_class.call(
+          account: account,
+          user: user,
+          api_service_type: service_type,
+          api_key: "test-key-#{service_type}"
+        )
+      }.to raise_error(ChatSessions::Create::NoCompatibleModelError, /catalog_empty/)
+
+      expect(user.provider_api_keys.reload).to be_empty
+      expect(user.runners.reload.where("name LIKE ?", "%onboarding%")).to be_empty
+      expect(account.chat_sessions.reload).to be_empty
+      expect(account.onboarding_steps.find_by(step: "chat_api_key")).to be_in_progress
+    end
+  end
+
   # @spec ONBOARD-CHAT-002
   it "uses OpenRouter's free model policy" do
     result = described_class.call(account: account, user: user, api_service_type: "openrouter", api_key: "test-key")

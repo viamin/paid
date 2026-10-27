@@ -22,6 +22,14 @@ each ships.
   `agent_harness` proxy-health check with the submitted key before persisting
   service types with a checkable fixed runner, and SHALL queue the
   harness-backed runner-runtime validation for the remaining service types.
+
+- [x] **ONBOARD-CHAT-014** — When a valid onboarding provider key has at
+  least one current Low-tier model permitted by catalog capability,
+  availability, verified-model, and operator-policy rules, Paid SHALL create
+  the welcome chat against a completed catalog snapshot even if a catalog sync
+  is in progress. When no model is eligible in that completed snapshot, it
+  SHALL roll back the onboarding records and surface the structured rejection
+  reason needed to recover the provider configuration.
 - [x] **ONBOARD-CHAT-004** — When an onboarding chat session is active and
   setup is incomplete, `ChatSessions::BuildSystemPrompt` SHALL inject a
   setup-interview persona that asks what tools the user uses (agent-run

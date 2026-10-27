@@ -80,7 +80,11 @@ Tracked under the umbrella (#4280):
   the credential, runner, welcome chat, and shared step metadata in one
   transaction. It rejects authentication failures from synchronous
   proxy-health checks before writing records and queues the same harness-backed
-  check for providers that require a runner runtime.
+  check for providers that require a runner runtime. The welcome-chat model
+  resolver reads catalog and availability eligibility through the catalog
+  snapshot boundary, so a concurrent refresh cannot expose a transiently empty
+  Low tier; a completed-snapshot rejection identifies the filtering category
+  and rolls the bootstrap transaction back.
 - **Phases 1–3 — onboarding chat tools and persona** (#4282): read tools
   (`get_onboarding_status`, `list_runners`, `get_account_capabilities`), write
   tools (`create_runner`, `create_tracker_configuration`, `create_project`,

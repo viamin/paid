@@ -100,6 +100,19 @@ last check" — independent of the global catalog `active` flag.
   It never deactivates the `LlmModel` globally and never touches auth
   configuration — those remain policy decisions for the caller (or #3943/#3944).
 
+### Catalog snapshot boundary
+
+`ModelsSyncJob` holds a transaction-scoped PostgreSQL advisory lock while it
+seeds catalog rows and reconciles availability. `ChatSessions::CuratedModelOptions`
+acquires that same lock while it reads catalog rows, compatibility, scoped
+availability evidence, verified-model access, and project policy. A resolver
+therefore waits for an in-flight refresh and evaluates one completed catalog
+generation rather than treating a transient empty tier as a provider setup
+failure. Its resolution result records whether an actual empty Low tier was
+caused by catalog, tool capability, availability, verified-model, or operator
+policy filtering; `ChatSessions::Create` exposes those reasons in its actionable
+bootstrap error while preserving its enclosing transaction rollback.
+
 ### `Models::PolicyEligibleReplacement`
 
 Given a rejected model + runner/auth/account context, ranks the remaining

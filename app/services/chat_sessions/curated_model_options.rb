@@ -2,7 +2,7 @@
 
 module ChatSessions
   # @spec CHAT-SESSION-PREFERENCES-003
-  # @spec CHAT-API-026
+  # @spec CHAT-API-026 MODEL-AVAILABILITY-008
   class CuratedModelOptions
     TIERS = {
       "low" => "Low",
@@ -14,13 +14,18 @@ module ChatSessions
       "mid" => "gpt-5.6-terra",
       "high" => "gpt-5.6-sol"
     }.freeze
+    Resolution = Data.define(:option, :rejection_reasons)
 
     def self.for_runner(runner, projects: [])
       new(runner, projects: projects).options
     end
 
     def self.resolve(runner:, tier: "low", projects: [])
-      for_runner(runner, projects: projects).find { |option| option.tier == tier.to_s }
+      resolve_with_reasons(runner:, tier:, projects:).option
+    end
+
+    def self.resolve_with_reasons(runner:, tier: "low", projects: [])
+      new(runner, projects: projects).resolve(tier:)
     end
 
     def initialize(runner, projects: [])
@@ -29,12 +34,11 @@ module ChatSessions
     end
 
     def options
-      compatible_models.group_by(&:tier).filter_map do |tier, models|
-        next unless TIERS.key?(tier)
+      Models::CatalogSnapshot.read { options_from_snapshot }
+    end
 
-        model = preferred_model(tier, models)
-        Option.new(tier:, model_id: model.model_id, label: "#{TIERS.fetch(tier)}: #{model.model_id}") if model
-      end.sort_by { |option| TIERS.keys.index(option.tier) }
+    def resolve(tier: "low")
+      Models::CatalogSnapshot.read { resolution_from_snapshot(tier.to_s) }
     end
 
     private
@@ -43,8 +47,39 @@ module ChatSessions
 
     Option = Data.define(:tier, :model_id, :label)
 
+    def options_from_snapshot
+      compatible_models.group_by(&:tier).filter_map do |tier, models|
+        next unless TIERS.key?(tier)
+
+        model = preferred_model(tier, models)
+        Option.new(tier:, model_id: model.model_id, label: "#{TIERS.fetch(tier)}: #{model.model_id}") if model
+      end.sort_by { |option| TIERS.keys.index(option.tier) }
+    end
+
+    def resolution_from_snapshot(tier)
+      Resolution.new(options_from_snapshot.find { |option| option.tier == tier }, rejection_reasons_for(tier))
+    end
+
     def compatible_models
       candidate_models.reject { |model| unavailable?(model) }.select { |model| permitted?(model) }
+    end
+
+    def rejection_reasons_for(tier)
+      tier_candidates = candidate_models.select { |model| model.tier == tier }
+      return [ :catalog_empty ] if tier_candidates.empty?
+
+      tool_capable = tier_candidates.select(&:supports_tools?)
+      return [ :capability_mismatch ] if tool_capable.empty?
+
+      available = tool_capable.reject { |model| unavailable?(model) }
+      return [ :unavailable ] if available.empty?
+
+      verified = available.select { |model| verified_permitted?(model) }
+      return [ :verified_model_restriction ] if verified.empty?
+
+      return [ :operator_policy ] if verified.none? { |model| policy_permitted?(model) }
+
+      []
     end
 
     def candidate_models
@@ -74,11 +109,18 @@ module ChatSessions
     end
 
     def permitted?(model)
+      verified_permitted?(model) && policy_permitted?(model)
+    end
+
+    def verified_permitted?(model)
       return false unless verified_models.permitted?(model.model_id, model: model)
 
+      projects.all? { |project| verified_models.permitted?(model.model_id, model: model, project: project) }
+    end
+
+    def policy_permitted?(model)
       projects.all? do |project|
-        verified_models.permitted?(model.model_id, model: model, project: project) &&
-          PolicyControls::Evaluate.call(project: project, runner: runner, model: model).violations.empty?
+        PolicyControls::Evaluate.call(project: project, runner: runner, model: model).violations.empty?
       end
     end
 

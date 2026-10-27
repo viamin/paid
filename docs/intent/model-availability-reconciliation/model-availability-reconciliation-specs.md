@@ -53,3 +53,15 @@
   are inactive, not operator-pinned inactive, and still present upstream as
   availability drift, distinct from new-model and deprecated-model drift.
   *Code:* `Models::DetectCatalogDrift`.
+
+- [x] **MODEL-AVAILABILITY-008** — When catalog-backed chat model resolution
+  runs concurrently with scheduled catalog synchronization, the system SHALL
+  resolve catalog rows and scoped availability evidence under the same
+  transaction-scoped catalog snapshot boundary used by synchronization, so it
+  observes either the preceding or completed catalog generation, never a
+  partially seeded or reconciled generation. When no Low-tier candidate is
+  eligible in a completed snapshot, it SHALL report structured rejection
+  reasons for catalog, capability, availability, verified-model, or operator
+  policy filtering.
+  *Code:* `Models::CatalogSnapshot`, `ModelsSyncJob`,
+  `ChatSessions::CuratedModelOptions`, `ChatSessions::Create`.

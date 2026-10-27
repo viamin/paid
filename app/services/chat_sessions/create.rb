@@ -195,9 +195,11 @@ module ChatSessions
     end
 
     def curated_model_for(runner)
-      # @spec CHAT-API-026
-      CuratedModelOptions.resolve(runner:, projects: policy_projects) ||
-        raise(ArgumentError, "No compatible Low chat model is available for #{runner.display_name}. Check the catalog, API availability, and operator policy.")
+      # @spec CHAT-API-026 MODEL-AVAILABILITY-008
+      resolution = CuratedModelOptions.resolve_with_reasons(runner:, projects: policy_projects)
+      return resolution.option if resolution.option
+
+      raise NoCompatibleModelError.new(runner:, rejection_reasons: resolution.rejection_reasons)
     end
 
     def policy_projects
@@ -206,6 +208,15 @@ module ChatSessions
 
     def default_runner_for_user
       Runner.first_configured_chat_enabled_for_owner(user)
+    end
+
+    class NoCompatibleModelError < ArgumentError
+      attr_reader :rejection_reasons
+
+      def initialize(runner:, rejection_reasons:)
+        @rejection_reasons = rejection_reasons
+        super("No compatible Low chat model is available for #{runner.display_name}: #{rejection_reasons.join(', ')}. Check the catalog, API availability, verified-model access, and operator policy.")
+      end
     end
   end
 end
