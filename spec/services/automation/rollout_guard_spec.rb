@@ -24,6 +24,16 @@ RSpec.describe Automation::RolloutGuard do
     expect(described_class.enabled?(project)).to be(true)
   end
 
+  it "blocks project rollback while continuation grants are active" do
+    FeatureFlags.enable!(described_class::FLAG, project:)
+    issue = create(:issue, project:)
+    create(:work_item_continuation_grant, project:, issue:)
+
+    expect { FeatureFlags.disable!(described_class::FLAG, project:) }
+      .to raise_error(described_class::ActiveGrantsError, /active continuation grants/)
+    expect(described_class.enabled?(project)).to be(true)
+  end
+
   it "reads through FeatureFlags so tenant overrides still apply" do
     create(:tenant_setting, account:, features: { "automation_phases" => true })
 
