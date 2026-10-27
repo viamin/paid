@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec FACET-CONFIDENCE-002 FACET-CONFIDENCE-003 FACET-CONFIDENCE-004
+# @spec FACET-CONFIDENCE-002 FACET-CONFIDENCE-003 FACET-CONFIDENCE-004 FACET-CONFIDENCE-017
 # @spec FACET-CONFIDENCE-012 FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
 RSpec.describe FeatureIntents::AssessFacet do
   before { configure_llm_routing(project: facet.feature_intent.project) }
@@ -40,6 +40,28 @@ RSpec.describe FeatureIntents::AssessFacet do
     expect(AgentHarness.conductor).to have_received(:execute_direct).with(a_string_including("human_statement"), hash_including(tools: :none))
   end
 
+  it "exposes attributable evidence context and derives cost from the configured runner response usage" do
+    evidence.update!(textual_context: "Corpus actor role: collaborator.")
+    response_with_cost = AgentHarness::Response.new(
+      output: response.output,
+      exit_code: 0,
+      duration: 0.1,
+      provider: :claude,
+      model: described_class::MODEL_VERSION,
+      tokens: { input: 1_200, output: 800 },
+      metadata: { transport: :http, headers: {} }
+    )
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response_with_cost)
+
+    assessor = described_class.new(assessment:)
+    assessor.call
+
+    expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+      a_string_including("actor_context", "collaborator"), anything
+    )
+    expect(assessor.cost_cents).to eq(TokenUsageTracker.calculate_cost(1_200, 800, llm_model: described_class::MODEL_VERSION))
+  end
+
   it "fails closed for malformed agent output" do
     allow(AgentHarness.conductor).to receive(:execute_direct).and_return(double(success?: true, output: "not json"))
 
@@ -69,6 +91,19 @@ RSpec.describe FeatureIntents::AssessFacet do
 
     expect(result).to have_attributes(status: "unknown", intent_score: nil, technical_score: 80)
     expect(result.explanation).to include("Clarification needed")
+  end
+
+  it "retains the validated rubric verdict when persistence maps clarification to unknown" do
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(double(success?: true, output: JSON.generate(
+      "status" => "clarification_needed", "intent_score" => nil, "technical_score" => 80,
+      "inferred_fit" => nil, "explanation" => "Collaborators disagree.",
+      "evidence_references" => [ evidence.source_reference ]
+    )))
+
+    assessor = described_class.new(assessment:)
+    assessor.call
+
+    expect(assessor.response_status).to eq("clarification_needed")
   end
 
   [

@@ -119,7 +119,10 @@ and model `claude-sonnet-4-6`, including the 79/80 threshold-boundary shape.
 `lib/facet_confidence/assessment_corpus_ledger.rb` validates the corpus,
 binds every recorded assessment run to the corpus version/digest, rubric
 version, model version, and input evidence revision, and rejects replays of
-identical case input. It locks validation and append as one operation, and a
+identical case input except an explicit retry of the immediately preceding
+failed operational attempt. The runner holds the ledger lock while checking
+coverage, dispatching an uncovered case, validating, and appending, so concurrent
+invocations cannot spend a provider call on an already-covered case. A
 re-run after a correction must cite that correction event as its evidence.
 `lib/facet_confidence/assessment_outcome_report.rb`
 computes false readiness, unnecessary clarification, human corrections,
@@ -161,6 +164,9 @@ case — verdict status, intent band, technical band, readiness, one cited
 evidence reference, and a reason — while the case shape, selection rationale,
 and frozen expectations stay hidden from the labeling surface; a judgment's
 readiness must follow from its judged bands (no averaging across axes).
+After unblinding, the sole judge may append a reasoned correction for a frozen
+case. The original blinded judgment and compiled report remain unchanged; each
+correction has its own actor, timestamp, full judgment, citation, and reason.
 Freezing requires every case labeled (skips block), re-checks the corpus
 digest, and compiles the reproducible report comparing the frozen judgments
 with the frozen expected bands, including citation compliance for cases that

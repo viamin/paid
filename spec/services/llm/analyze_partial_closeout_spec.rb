@@ -226,8 +226,60 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       expect(result.dig("gaps", 0, "next_step")).to eq("Run the approved macOS pilot.")
     end
 
+    it "accepts durable policy references and an explicit replacement-policy action" do # @spec PARTIAL-CLOSEOUT-031
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      gap = {
+        criterion: "review policy", kind: "human", next_step: "Record the selected policy and evidence.",
+        references: [ { kind: "policy", key: "team-review", revision: "v2", label: "Team review v2" } ],
+        policy_selection: { required: true, next_step: "Select an approved team policy." }
+      }
+      allow(llm_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.dig("gaps", 0, "references", 0)).to include("key" => "team-review", "revision" => "v2")
+      expect(result.dig("gaps", 0, "policy_selection", "next_step")).to eq("Select an approved team policy.")
+    end
+
+    it "ignores unused references on agent gaps" do # @spec PARTIAL-CLOSEOUT-031
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      gap = {
+        criterion: "dispatch", kind: "agent", title: "Finish dispatch",
+        references: [ { kind: "policy", key: "team-review", label: "Team review" } ]
+      }
+      allow(llm_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.dig("gaps", 0, "criterion")).to eq("dispatch")
+    end
+
+    it "rejects replacement-policy requirements without an explicit action" do # @spec PARTIAL-CLOSEOUT-031
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      gap = {
+        criterion: "review policy", kind: "human", next_step: "Replace the stale policy.",
+        policy_selection: { required: true }
+      }
+      allow(llm_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
+
+      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+    end
+
+    it "requires an advertised policy-selection action when selection is required" do # @spec PARTIAL-CLOSEOUT-031
+      branches = described_class::RESPONSE_SCHEMA.dig(
+        :properties, :gaps, :items, :properties, :policy_selection, :oneOf
+      )
+
+      expect(branches).to include(hash_including(required: %w[required next_step]))
+    end
+
     # @spec NO-OUTPUT-ISSUE-007 — parsed JSON must satisfy the contract
-    # before it is persisted or passed to Inbox renderers.
+    # before it is persisted or passed to Inbox renderers. The legacy text parser
+    # path does not get
+    # the schema transport's structural enforcement, so `valid_assessment?`
+    # must mirror the schema constraints here. A bare-string `next_action`
+    # would otherwise be persisted via `to_h` into `reconciliation.assessment`
+    # and crash `PartialCloseouts::Assessment#next_action` on Inbox render.
     context "when a response violates the next_action contract" do
       it "raises when next_action is a plain string instead of a Hash" do
         allow(llm_response).to receive(:output).and_return(

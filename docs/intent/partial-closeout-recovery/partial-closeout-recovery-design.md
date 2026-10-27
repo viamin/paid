@@ -115,7 +115,10 @@ paid_state edit and never a blanket guard lift:
   the unmet prerequisites explained to the user. A targeted blocker walk
   (`CloseoutStatus.admission_blockers`) returns structured, additive reasons
   from persisted admission-guard evidence, including scanner attempt, analysis,
-  and alert links for synthetic findings; a residual preflight then settles admission with the
+  and alert links for synthetic findings. It also identifies open native children
+  and active human-prerequisite notifications without requiring duplicate
+  dependency edges, preserving the notification's policy and evidence until an
+  operator explicitly satisfies or revises it; a residual preflight then settles admission with the
   exact scoped `eligible_for_dequeue?` decision the dequeue recheck enforces
   (evaluated from one shared set of project inputs per `StalledCloseouts`
   project batch), so a request the walk
@@ -123,6 +126,15 @@ paid_state edit and never a blanket guard lift:
   than a guessed guard, and is refused up front instead of queueing a run dequeue would
   cancel and supersede — the walk explains the authority, it never
   substitutes for it.
+
+Human prerequisites carry structured policy and evidence references with stable
+keys and revisions. The prerequisite publisher derives a durable identity from
+that structured record. When a later assessment changes the referenced identity
+or guidance, it updates the existing unresolved notification, retains the prior
+references as superseded history, and exposes the explicit replacement-policy
+step when operator selection is required. Reconciliation never resolves the
+prerequisite, discards valid human evidence, or substitutes solo review for a
+team policy; free-text notification content is not used to infer policy changes.
 
 For Inbox lane construction, `StalledCloseouts` batch-loads the evidence and
 persisted diagnostic inputs for each project's candidates before evaluating

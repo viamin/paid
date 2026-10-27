@@ -2,27 +2,33 @@
 
 require "rails_helper"
 require Rails.root.join("db/migrate/20261024205417_create_facet_confidence_evaluations")
+require Rails.root.join("db/migrate/20261026194943_create_facet_confidence_evaluation_label_revisions")
 
 RSpec.describe CreateFacetConfidenceEvaluations, :aggregate_failures do
   # @spec FACET-CONFIDENCE-020 @spec FACET-CONFIDENCE-021
   self.use_transactional_tests = false
 
   let(:migration) { described_class.new }
+  let(:revision_migration) { CreateFacetConfidenceEvaluationLabelRevisions.new }
   let(:connection) { ActiveRecord::Base.connection }
 
   around do |example|
     tables_existed = facet_confidence_tables.to_h { |table| [ table, connection.table_exists?(table) ] }
+    revisions_existed = connection.table_exists?(revision_table)
 
+    teardown_revision_table!
     teardown_facet_confidence_tables!
     clear_schema_metadata!
 
     example.run
   ensure
+    teardown_revision_table!
     teardown_facet_confidence_tables!
 
     if tables_existed.any? { |_table, existed| existed }
       migration.up
     end
+    revision_migration.up if revisions_existed
     clear_schema_metadata!
   end
 
@@ -53,14 +59,21 @@ RSpec.describe CreateFacetConfidenceEvaluations, :aggregate_failures do
 
   def clear_schema_metadata!
     connection.schema_cache.clear!
-    facet_confidence_tables.each { |table| connection.schema_cache.clear_data_source_cache!(table) }
+    (facet_confidence_tables + [ revision_table ]).each { |table| connection.schema_cache.clear_data_source_cache!(table) }
     FacetConfidenceEvaluation.reset_column_information
     FacetConfidenceEvaluationLabel.reset_column_information
+    FacetConfidenceEvaluationLabelRevision.reset_column_information
   end
+
+  def revision_table = :facet_confidence_evaluation_label_revisions
 
   # The list is parent-first; children must drop before their parent.
   def teardown_facet_confidence_tables!
     facet_confidence_tables.reverse_each { |table| connection.drop_table(table, if_exists: true) }
+  end
+
+  def teardown_revision_table!
+    connection.drop_table(revision_table, if_exists: true)
   end
 
   def expect_schema

@@ -18,10 +18,36 @@
               <span class="text-xs text-gray-400"><%= pluralize(bd.total_open, "open issue") %></span>
             </div>
             <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
-              <% if bd.eligible.positive? %>
-                <span class="inline-flex items-center gap-1 text-green-700">
+              <% if bd.diagnostic_state == :runnable_not_seeded %>
+                <span class="inline-flex items-center gap-1 text-amber-700" title="Eligible work has not reached the scheduler queue yet. The bounded eligibility sweep will retry normal seeding without bypassing project policy.">
+                  <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+                  <%= bd.unseeded %> eligible but not queued
+                </span>
+              <% elsif bd.diagnostic_state == :paused %>
+                <span class="inline-flex items-center gap-1 text-amber-700" title="This work is deliberately paused by project, account, or run policy; no recovery action will override it.">
+                  <span class="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
+                  <%= bd.paused.positive? ? pluralize(bd.paused, "paused run") : "Paused by project policy" %>
+                </span>
+              <% elsif bd.diagnostic_state == :active_work %>
+                <span class="inline-flex items-center gap-1 text-blue-700" title="All currently eligible work is already active.">
+                  <span class="h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                  Active work; no waiting backlog
+                </span>
+              <% elsif bd.diagnostic_state == :waiting %>
+                <span class="inline-flex items-center gap-1 text-blue-700">
+                  <span class="h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                  <%= pluralize(bd.queued, "queued run") %>
+                </span>
+              <% elsif bd.diagnostic_state == :held %>
+                <span class="inline-flex items-center gap-1 text-gray-600">
+                  <span class="h-1.5 w-1.5 rounded-full bg-gray-400"></span>
+                  Work is held by current admission controls
+                </span>
+              <% end %>
+              <% if bd.eligible.positive? && bd.diagnostic_state != :runnable_not_seeded %>
+                <span class="inline-flex items-center gap-1 text-green-700" title="Eligible work has not yet been claimed by queued, running, or paused work.">
                   <span class="h-1.5 w-1.5 rounded-full bg-green-500"></span>
-                  <%= bd.eligible %> eligible
+                  <%= bd.unseeded.positive? ? "#{bd.unseeded} eligible but not queued" : "#{bd.eligible} eligible" %>
                 </span>
               <% end %>
               <% if bd.needs_input.positive? %>
@@ -70,9 +96,48 @@
                 <span class="text-gray-400">No eligible issues</span>
               <% end %>
             </div>
+            <% if bd.held_issues.any? %>
+              <ul class="mt-3 space-y-2 text-xs text-gray-600">
+                <% bd.held_issues.each do |held| %>
+                  <li class="rounded-md bg-gray-50 px-3 py-2" data-testid="held-issue-<%= held.issue.id %>">
+                    <%= link_to "##{held.issue.github_number} #{held.issue.title}", held.issue.github_url,
+                          target: "_blank", rel: "noopener noreferrer",
+                          class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+                    <% if held.blockers.any? %>
+                      <span class="text-gray-500">is blocked by</span>
+                      <% held.blockers.each_with_index do |blocker, index| %>
+                        <%= "," if index.positive? %>
+                        <%= link_to blocker.label, blocker.url, target: "_blank", rel: "noopener noreferrer",
+                              class: "text-indigo-600 hover:text-indigo-500" %>
+                      <% end %>.
+                    <% end %>
+                    <% held.actions.each do |action| %>
+                      <% if action.inbox_kind %>
+                        <%= link_to action.label,
+                              inbox_path(project_id: bd.project.id, kind: action.inbox_kind, entry_id: action.entry_id),
+                              class: "ml-2 font-medium text-indigo-600 hover:text-indigo-500",
+                              data: { turbo_frame: "_top" } %>
+                      <% else %>
+                        <span class="ml-2"><%= action.label %>.</span>
+                      <% end %>
+                    <% end %>
+                    <% if held.actions.empty? && held.blockers.any? %>
+                      <span class="ml-2">Resolve the listed blockers to resume automatic work.</span>
+                    <% end %>
+                  </li>
+                <% end %>
+              </ul>
+            <% end %>
           </div>
         <% end %>
       </div>
+    </div>
+  <% elsif local_assigns[:unavailable] %>
+    <div class="rounded-lg border border-amber-200 bg-amber-50 p-6 shadow-sm" role="status">
+      <h3 class="text-base font-semibold text-amber-900">Queue diagnosis unavailable</h3>
+      <p class="mt-1 text-sm text-amber-800">Paid could not confirm eligibility coverage. This does not mean there is no work.</p>
+      <%= link_to "Refresh diagnosis", dashboard_eligibility_breakdown_path,
+        class: "mt-3 inline-block text-sm font-medium text-amber-900 underline" %>
     </div>
   <% end %>
 <% end %>

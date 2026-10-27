@@ -28,6 +28,7 @@ RSpec.describe ExceptionHandler::IssueFiler do
     ServiceContainerMetric.delete_all
     ProjectServiceContainer.delete_all
     ServiceContainer.delete_all
+    FeatureIntent.delete_all
     Project.delete_all
     GithubToken.delete_all
     Runner.delete_all

@@ -4,6 +4,7 @@ module PartialCloseouts
   # Turns a validated semantic assessment into durable, replay-safe work owners.
   class Reconcile
     MAX_GAPS = 10
+    VALID_REFERENCE_KINDS = %w[policy evidence].freeze
 
     def self.call(...)
       new(...).call
@@ -40,7 +41,25 @@ module PartialCloseouts
         # operator next step reaches the Inbox notification; a generic
         # fallback would leave the prerequisite unactionable (#4119).
         raise ArgumentError, "human gap next_step is required" if human_gap?(gap) && gap["next_step"].to_s.strip.blank?
+        validate_human_references!(gap) if human_gap?(gap)
       end
+    end
+
+    def validate_human_references!(gap)
+      Array(gap["references"]).each do |reference|
+        valid = reference.is_a?(Hash) && reference["kind"].in?(VALID_REFERENCE_KINDS) &&
+          %w[key revision label].all? { |field| reference[field].to_s.strip.present? }
+        raise ArgumentError, "human gap reference identity is invalid" unless valid
+      end
+      selection = gap["policy_selection"]
+      return if selection.nil?
+
+      valid_selection = selection.is_a?(Hash) && [ true, false ].include?(selection["required"])
+      raise ArgumentError, "replacement policy selection is invalid" unless valid_selection
+      return unless selection["required"]
+      return if selection["next_step"].to_s.strip.present?
+
+      raise ArgumentError, "replacement policy next_step is required"
     end
 
     def human_gap?(gap)
@@ -177,7 +196,59 @@ module PartialCloseouts
         account: agent_run.project.account, subject: agent_run.issue,
         source: PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
         title: operator_prerequisite_title(human_gaps),
-        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n")
+        description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n"),
+        metadata: prerequisite_metadata(human_gaps)
+      )
+    end
+
+    # @spec PARTIAL-CLOSEOUT-031
+    def prerequisite_metadata(human_gaps)
+      references = human_gaps.flat_map { |gap| Array(gap["references"]) }
+      identities = human_gaps.map { |gap| prerequisite_identity(gap) }.sort_by { |identity| JSON.generate(identity) }
+      identity = Digest::SHA256.hexdigest(JSON.generate(identities))
+      metadata = { "prerequisite_identity" => identity, "references" => references }
+      policy_selection = replacement_policy_action(human_gaps)
+      metadata["policy_selection"] = policy_selection if policy_selection
+
+      previous = existing_prerequisite_notification
+      superseded = Array(previous&.metadata&.fetch("superseded_references", nil))
+      if previous&.metadata&.fetch("prerequisite_identity", nil) != identity
+        superseded = Array(previous&.metadata&.fetch("references", nil)) + superseded
+      end
+      metadata["superseded_references"] = superseded.uniq if superseded.any?
+      metadata
+    end
+
+    def prerequisite_identity(gap)
+      identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection"))
+      identity["references"] = Array(gap["references"])
+        .map { |reference| canonicalize(reference) }
+        .sort_by { |reference| JSON.generate(reference) }
+      identity
+    end
+
+    def canonicalize(value)
+      case value
+      when Hash
+        value.sort.to_h.transform_values { |nested| canonicalize(nested) }
+      when Array
+        value.map { |nested| canonicalize(nested) }
+      else
+        value
+      end
+    end
+
+    def replacement_policy_action(human_gaps)
+      steps = human_gaps.filter_map do |gap|
+        gap.dig("policy_selection", "next_step") if gap.dig("policy_selection", "required")
+      end.uniq
+      { "required" => true, "next_step" => steps.join(" ") } if steps.any?
+    end
+
+    def existing_prerequisite_notification
+      Notification.find_by(
+        account: agent_run.project.account, subject: agent_run.issue,
+        source: PREREQUISITE_NOTIFICATION_SOURCE
       )
     end
 

@@ -1013,6 +1013,103 @@ RSpec.describe "Dashboard" do
       expect(link.text).to include("1 needs input")
       expect(link["data-turbo-frame"]).to eq("_top")
     end
+
+    # @spec QUEUE-HANDOFF-004
+    it "makes every dependency blocker for held work inspectable" do
+      blocker = create(:issue, project: project, github_state: "open", paid_state: "new")
+      second_blocker = create(:issue, project: project, github_state: "open", paid_state: "new")
+      dependent = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:issue_dependency, issue: dependent, depends_on_issue: blocker)
+      create(:issue_dependency, issue: dependent, depends_on_issue: second_blocker)
+
+      get dashboard_eligibility_breakdown_path
+
+      document = Nokogiri::HTML(response.body)
+      held_issue = document.at_css("[data-testid='held-issue-#{dependent.id}']")
+
+      expect(held_issue).to be_present
+      expect(held_issue.at_css(%(a[href="#{dependent.github_url}"])).text).to include("##{dependent.github_number}")
+      expect(held_issue.at_css(%(a[href="#{blocker.github_url}"])).text).to include("##{blocker.github_number}")
+      expect(held_issue.at_css(%(a[href="#{second_blocker.github_url}"])).text).to include("##{second_blocker.github_number}")
+    end
+
+    # @spec QUEUE-HANDOFF-004
+    it "renders every owning recovery action for decision-held work" do
+      issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      feature_intents = Array.new(2) do
+        create(:feature_intent, project: project, status: "design_open", approved_design_revision: nil)
+      end
+      feature_intents.each { |feature_intent| create(:feature_intent_issue, feature_intent:, issue:) }
+      amendment = create(:design_amendment, project: project)
+      create(:design_amendment_pause, design_amendment: amendment, issue: issue)
+
+      get dashboard_eligibility_breakdown_path
+
+      held_issue = Nokogiri::HTML(response.body).at_css("[data-testid='held-issue-#{issue.id}']")
+      feature_intents.each do |feature_intent|
+        href = inbox_path(
+          project_id: project.id,
+          kind: Inbox::Queue::FEATURE_DECISION_KIND,
+          entry_id: "#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"
+        )
+        expect(held_issue.at_css(%(a[href="#{href}"])).text).to eq("Review feature decision: #{feature_intent.title}")
+      end
+      expect(held_issue.text).to include("Review the design amendment hold in the issue")
+    end
+
+    # @spec QUEUE-HANDOFF-001
+    it "explains eligible work that has not reached the scheduler queue" do
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+
+      get dashboard_eligibility_breakdown_path
+
+      expect(response.body).to include("eligible but not queued")
+      expect(Nokogiri::HTML(response.body).css("span").count { |span| span.text.strip == "1 eligible but not queued" }).to eq(1)
+    end
+
+    # @spec QUEUE-HANDOFF-003
+    it "shows a paused run when the project also has queued work" do
+      paused_issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :paused, project: project, issue: paused_issue)
+      create(:agent_run, :queued, :with_custom_prompt, project: project)
+
+      get dashboard_eligibility_breakdown_path
+
+      expect(response.body).to include("1 paused run")
+      expect(response.body).not_to include("1 queued run")
+    end
+
+    # @spec QUEUE-HANDOFF-003
+    it "shows a paused run when the project also has active work" do
+      paused_issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      active_issue = create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:agent_run, :paused, project: project, issue: paused_issue)
+      create(:agent_run, :running, project: project, issue: active_issue)
+
+      get dashboard_eligibility_breakdown_path
+
+      expect(response.body).to include("1 paused run")
+      expect(response.body).not_to include("Active work; no waiting backlog")
+    end
+
+    # @spec QUEUE-HANDOFF-003
+    it "reports unknown coverage when the diagnostic query is unavailable" do
+      allow(Dashboard::EligibilityBreakdown).to receive(:call).and_raise(ActiveRecord::ConnectionNotEstablished)
+
+      get dashboard_eligibility_breakdown_path
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Queue diagnosis unavailable")
+      expect(response.body).to include("This does not mean there is no work.")
+    end
+
+    it "does not represent unexpected Active Record errors as unavailable coverage" do
+      allow(Dashboard::EligibilityBreakdown).to receive(:call).and_raise(ActiveRecord::RecordNotFound)
+
+      get dashboard_eligibility_breakdown_path
+
+      expect(response).to have_http_status(:not_found)
+    end
   end
 
   describe "GET /dashboard/needs_input" do

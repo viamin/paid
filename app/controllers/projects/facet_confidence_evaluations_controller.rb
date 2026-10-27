@@ -41,6 +41,7 @@ module Projects
       @next_case_id = requested_case_id || FacetConfidence::CloseoutEvaluation::CaseView.next_pending_case_id(@evaluation)
       @case_view = FacetConfidence::CloseoutEvaluation::CaseView.new(evaluation: @evaluation, case_id: @next_case_id.to_s, actor: current_user)
       @corpus_changed = @evaluation.answers_visible? && !@evaluation.corpus.matches_recorded_digest?
+      @labels = @evaluation.labels.includes(revisions: :recorded_by).index_by(&:case_id) if @evaluation.answers_visible?
       @inbox_context = inbox_context
     end
 
@@ -73,6 +74,15 @@ module Projects
 
       result = FacetConfidence::CloseoutEvaluation::FreezeLabels.call(evaluation: @evaluation, actor: current_user)
       redirect_for(result, success_notice: "Reference set frozen. The compiled report is ready to return to the Inbox item.")
+    end
+
+    def revise
+      authorize @evaluation
+
+      result = FacetConfidence::CloseoutEvaluation::ReviseLabel.call(
+        evaluation: @evaluation, actor: current_user, case_id: params[:case_id].to_s, judgment: judgment_params
+      )
+      redirect_for(result, success_notice: "Correction appended; the frozen judgment and report are preserved.")
     end
 
     private
