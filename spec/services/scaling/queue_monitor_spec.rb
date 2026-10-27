@@ -25,7 +25,7 @@ RSpec.describe Scaling::QueueMonitor do
 
       good_job_depths = result.queue_depths.select { |d| d.type == :good_job }
       expect(good_job_depths.map(&:name)).to match_array(
-        %w[default maintenance metrics knowledge low_priority]
+        %w[default maintenance metrics knowledge low_priority shadow_evaluation]
       )
     end
 

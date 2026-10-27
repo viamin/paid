@@ -65,11 +65,11 @@ servers:
         WORKER_READINESS_FILE: /tmp/paid-worker-ready-jobs
         # Preserve startup bootstrap jobs when GoodJob runs out-of-process via bin/jobs.
         GOOD_JOB_BOOTSTRAP_ON_START: true
-        # GoodJob worker thread pool size (default: 11). Must not exceed DB_POOL.
-        GOOD_JOB_MAX_THREADS: 10
+        # GoodJob worker thread pool size (default: 12). Must not exceed DB_POOL.
+        GOOD_JOB_MAX_THREADS: 11
         # Per-queue thread caps (semicolons create independent pools).
         # Sums to GOOD_JOB_MAX_THREADS so no queue can starve another.
-        GOOD_JOB_QUEUES: default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1
+        GOOD_JOB_QUEUES: default:3;maintenance:2;metrics:2;knowledge:2;low_priority:1;shadow_evaluation:1
         # CRON SAFETY: GoodJob 4.x already prevents duplicate cron scheduling
         # across hosts — each cron enqueue writes (cron_key, cron_at) through a
         # unique index, so a second host firing the same tick enqueues nothing.

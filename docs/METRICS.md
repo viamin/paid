@@ -28,7 +28,7 @@ The checked-in observability stack assets use that split explicitly:
 
 | Metric | Type | Labels | Description |
 |--------|------|--------|-------------|
-| `paid_goodjob_queue_depth` | gauge | `queue` | Unfinished jobs per queue (default, maintenance, metrics, knowledge, low_priority) |
+| `paid_goodjob_queue_depth` | gauge | `queue` | Unfinished jobs per queue (default, maintenance, metrics, knowledge, low_priority, shadow_evaluation) |
 | `paid_goodjob_jobs_unfinished` | gauge | — | Total unfinished GoodJob jobs across all queues |
 | `paid_goodjob_jobs_running` | gauge | — | Jobs currently being executed |
 | `paid_goodjob_jobs_errored` | gauge | — | Jobs in error state (will be retried) |

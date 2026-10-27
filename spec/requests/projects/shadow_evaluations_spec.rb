@@ -66,6 +66,17 @@ RSpec.describe "Projects::ShadowEvaluations" do
     post freeze_project_shadow_evaluation_path(project, evaluation)
   end
 
+  def expect_execution_queued_log(evaluation)
+    expect(Rails.logger).to have_received(:info).with(
+      hash_including(
+        message: "intent_conformance.shadow_evaluation_execution_queued",
+        project_id: project.id,
+        shadow_evaluation_id: evaluation.id,
+        actor_user_id: owner.id
+      )
+    )
+  end
+
   it "starts from the Inbox entry point and resumes the same evaluation on repeated clicks" do
     evaluation = start_evaluation!
     expect(evaluation).to have_attributes(policy: "solo", status: "labeling", solo_maintainer: owner)
@@ -149,7 +160,8 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("intentionally_drifted")
   end
 
-  it "executes the real reviewer through agent_harness, records failures as not evaluated, and shows the report" do
+  # @spec INTENT-CONFORMANCE-ROLLOUT-011
+  it "queues reviewer execution promptly, then the worker records failures and its report" do
     evaluation = start_evaluation_from_committed_corpus!
     label_all!(evaluation)
     freeze!(evaluation)
@@ -157,10 +169,17 @@ RSpec.describe "Projects::ShadowEvaluations" do
     # Corpus cases reference a repository outside this project, so every
     # reviewer attempt fails closed and is recorded as not evaluated —
     # prerequisite validation is never presented as execution.
-    post execute_project_shadow_evaluation_path(project, evaluation)
+    allow(Rails.logger).to receive(:info)
+    expect { post execute_project_shadow_evaluation_path(project, evaluation) }
+      .to have_enqueued_job(ShadowEvaluationExecutionJob).with(project.id, evaluation.id)
     follow_redirect!
 
-    expect(response.body).to include("not evaluated")
+    expect(evaluation.reload).to be_queued
+    expect(response.body).to include("Reviewer execution queued")
+    expect_execution_queued_log(evaluation)
+
+    ShadowEvaluationExecutionJob.perform_now(project.id, evaluation.id)
+
     expect(evaluation.reload).to be_failed
     evaluation.runs.each do |run|
       expect(run).to be_not_evaluated
@@ -171,6 +190,28 @@ RSpec.describe "Projects::ShadowEvaluations" do
 
     expect(response.body).to include("Reproducible report")
     expect(response.body).to include("solo")
+  end
+
+  it "re-establishes the background job for a durably queued evaluation" do
+    evaluation = start_evaluation_from_committed_corpus!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    evaluation.update!(status: "queued", execution_enqueued_at: 1.minute.ago)
+
+    expect { post execute_project_shadow_evaluation_path(project, evaluation) }
+      .to have_enqueued_job(ShadowEvaluationExecutionJob).with(project.id, evaluation.id)
+  end
+
+  it "does not offer a retry action after execution completed" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    evaluation.update!(status: "completed", completed_at: Time.current)
+
+    get project_shadow_evaluation_path(project, evaluation)
+
+    expect(response.body).not_to include("Retry remaining reviewer cases")
+    expect(response.body).not_to include("Execute reviewer now")
   end
 
   it "appends post-result revisions without overwriting the original blinded label" do

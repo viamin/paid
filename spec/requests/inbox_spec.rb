@@ -86,7 +86,6 @@ RSpec.describe "Inbox" do
       get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
         headers: { "Turbo-Frame" => "inbox-detail" }
     end
-
     expect(response).to have_http_status(:ok)
     expect(response.body).to include('id="inbox-detail"', "Selected question")
     expect(response.body).not_to include("Other question", "Filters and sort", 'id="inbox-list"')
@@ -405,6 +404,24 @@ RSpec.describe "Inbox" do
         description: "Pilot latency results: attach the measured p95 to the follow-up comment and link it here")
     end
 
+    def create_evidence_notification
+      Notification.find_by!(account: account, subject: guided_issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE).update!(
+        title: "Evidence submission", description: "Evidence submission is awaiting validation",
+        metadata: {
+          "prerequisites" => [
+            { "identity" => "pilot-results", "criterion" => "Pilot results" },
+            { "identity" => "accessibility-review", "criterion" => "Accessibility review" }
+          ],
+          "evidence_submissions" => [
+            { "prerequisite_identity" => "pilot-results", "evidence_url" => "https://evidence.example.test/pilot",
+              "explanation" => "The pilot report is attached.", "actor_id" => user.id,
+              "submitted_at" => "2026-10-27T00:00:00Z", "outcome" => "pending_validation",
+              "reason" => "Evidence was recorded for validation. A link alone does not satisfy acceptance." }
+          ]
+        })
+    end
+
     def render_guided_pane
       get inbox_entry_path(
         entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, guided_issue),
@@ -457,6 +474,32 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("who must supply it")
       expect(response.body).to include("resumes automatically")
       expect(response.body).to include("deliberate continuation")
+    end
+
+    it "renders recorded evidence and unique fields for every prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-033
+      create_evidence_notification
+      render_guided_pane
+
+      document = Nokogiri::HTML(response.body)
+      expect(document.css("#prerequisite_pilot-results_evidence_url").size).to eq(1)
+      expect(document.css("#prerequisite_accessibility-review_evidence_url").size).to eq(1)
+      expect(response.body).to include("https://evidence.example.test/pilot", "The pilot report is attached.",
+        "Submitted by user ##{user.id}", "pending_validation")
+    end
+
+    it "renders an evidence form for a legacy prerequisite notification" do # @spec PARTIAL-CLOSEOUT-033
+      notification = Notification.find_by!(account: account, subject: guided_issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+      notification.update!(metadata: {
+        "prerequisite_identity" => "legacy-pilot-results",
+        "references" => [ { "kind" => "artifact", "label" => "Pilot report", "revision" => "v1" } ]
+      })
+
+      render_guided_pane
+
+      document = Nokogiri::HTML(response.body)
+      expect(document.css("#prerequisite_legacy-pilot-results_evidence_url").size).to eq(1)
+      expect(response.body).to include("Submit for validation")
     end
 
     # @spec PARTIAL-CLOSEOUT-023

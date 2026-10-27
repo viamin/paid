@@ -390,6 +390,7 @@ module Screenshots
       "projects/issue_merge_subscriptions_controller.rb" => [ :project_show ],
       "projects/issues_controller.rb" => [ :project_show ],
       "projects/apple_verifications_controller.rb" => [ :project_show ],
+      "projects/closeout_evidence_controller.rb" => [ :dashboard ],
       "projects/intent_conformance_decisions_controller.rb" => [ :dashboard ],
       "projects/interop_settings_controller.rb" => [ :project_edit ],
       "projects/interoperability_imports_controller.rb" => [ :project_edit ],

@@ -99,6 +99,9 @@ RSpec.describe ApplicationJob, :no_db do
         LiveDashboardBroadcastJob
         LlmOutputMetricFeedbackCollectionJob
         TechnicalPrerequisiteValidationJob
+      ],
+      shadow_evaluation: %w[
+        ShadowEvaluationExecutionJob
       ]
     }
   end
