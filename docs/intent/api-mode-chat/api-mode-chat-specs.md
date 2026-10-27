@@ -588,3 +588,28 @@
   `app/views/chat_messages/_tool_call_group.html.erb`,
   `app/javascript/controllers/chat_controller.js#appendToolCard`,
   `#mergeResolvedCardIntoAdjacentRun`.
+
+- [x] **CHAT-API-027** — When an API-mode user message is accepted, Paid SHALL
+  create a durable chat-turn checkpoint with a lifecycle of `pending`,
+  `streaming`, `completed`, `failed`, `stalled`, or `abandoned`, linked to the
+  originating user message. Durable messages and tool activity SHALL advance
+  the checkpoint. A terminal assistant response SHALL complete the turn; a
+  turn awaiting an explicit tool confirmation SHALL remain pending rather than
+  be treated as stalled or successful.
+  *Tests:* `spec/models/chat_turn_spec.rb`,
+  `spec/services/chat_sessions/send_message_spec.rb`,
+  `spec/jobs/chat_sessions/process_message_job_spec.rb`.
+  *Code:* `ChatTurn`, `ChatSessions::SendMessage`,
+  `ChatSessions::ProcessMessageJob`.
+
+- [x] **CHAT-API-028** — When a non-terminal chat turn has no durable activity
+  beyond the configurable stall threshold, and it is not awaiting a tool
+  confirmation or an owned rate-limit recovery, Paid SHALL atomically mark it
+  `stalled`, record its classification and detection time, and persist a
+  visible transcript notice describing the preserved partial state and that
+  completion remains unknown. Repeated sweeps SHALL not create duplicate
+  notices or recovery state. The initial release SHALL not automatically replay
+  a stalled turn or any tool call.
+  *Tests:* `spec/jobs/chat_sessions/detect_stalled_turns_job_spec.rb`,
+  `spec/models/chat_message_spec.rb`.
+  *Code:* `ChatSessions::DetectStalledTurnsJob`, `ChatTurn`, `ChatMessage`.

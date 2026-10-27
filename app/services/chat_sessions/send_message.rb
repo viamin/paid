@@ -43,8 +43,11 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
+      @chat_turn.mark_streaming!
       assistant_message = run_with_fallbacks
+      conclude_turn(assistant_message)
       update_session_activity
       assistant_message
     end
@@ -132,6 +135,21 @@ module ChatSessions
         content: content,
         metadata: { "stream_message_id" => stream_message_id }.compact
       )
+    end
+
+    # @spec CHAT-API-027
+    def start_turn
+      @chat_turn = ChatTurn.find_or_create_by!(chat_session: chat_session, user_message: transport_attempt_message) do |turn|
+        turn.status = "pending"
+        turn.last_activity_at = Time.current
+      end
+    end
+
+    attr_reader :chat_turn
+
+    def conclude_turn(assistant_message)
+      return @chat_turn.complete! if assistant_message
+      @chat_turn.await_confirmation! if chat_session.messages.pending_tool_confirmations.exists?
     end
 
     # A conversational reply (e.g. "yes") is not a confirmation. When a write

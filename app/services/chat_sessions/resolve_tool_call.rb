@@ -50,12 +50,15 @@ module ChatSessions
       prepare_resolution!
       on_tool_call_resolved&.call(tool_call_message)
 
-      if post_dispatch_confirmation?
+      assistant_message = if post_dispatch_confirmation?
         resolve_post_dispatch_confirmation!
       else
         resolve_pending_tool_call!
         resume_loop_unless_other_pending
       end
+
+      conclude_turn(assistant_message)
+      assistant_message
     end
 
     private
@@ -217,6 +220,15 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    def chat_turn
+      @chat_turn ||= ChatTurn.find_by(user_message: transport_attempt_message)
+    end
+
+    def conclude_turn(assistant_message)
+      return chat_turn&.complete! if assistant_message
+      chat_turn&.await_confirmation! if chat_session.messages.pending_tool_confirmations.exists?
     end
   end
 end

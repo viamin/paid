@@ -330,6 +330,17 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
       .with(hash_including(type: "error", message: "An unexpected error occurred"))
   end
 
+  # @spec CHAT-API-027
+  it "marks the durable turn failed for a known provider error" do
+    user_message = create(:chat_message, chat_session: chat_session, metadata: { "stream_message_id" => stream_message_id })
+    turn = create(:chat_turn, chat_session: chat_session, user_message: user_message, status: "streaming")
+    allow(ChatSessions::SendMessage).to receive(:call).and_raise(AgentHarness::Error, "provider unavailable")
+
+    described_class.perform_now(chat_session_id: chat_session.id, content: "Hello", stream_message_id: stream_message_id)
+
+    expect(turn.reload).to have_attributes(status: "failed", failure_classification: "provider_error")
+  end
+
   # Exercises the REAL SendMessage service (not mocked) through the job with a
   # streaming LLM client, asserting the complete broadcast contract a
   # ChatChannel subscriber depends on to render a reply. This is the path the

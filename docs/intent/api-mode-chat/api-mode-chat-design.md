@@ -160,6 +160,20 @@ What ships today:
   mutations
 - `ChatSessions::ResolveToolCall` atomically resolves pending confirmations and
   resumes the loop only when the final pending confirmation has been settled
+- Each submitted user message has a durable `ChatTurn` checkpoint. A turn is
+  `pending` while dispatch has not begun or is waiting for a human tool
+  confirmation, `streaming` while the server-side loop is active, and
+  `completed`, `failed`, `stalled`, or `abandoned` only after its durable
+  conclusion. The checkpoint records its last durable activity and any tool
+  activity, so browser disconnect state is never used as the server's source
+  of truth.
+- A maintenance sweep classifies only expired `pending`/`streaming` turns that
+  have no pending confirmation, rate-limit recovery, or known long-running
+  operation. It records the classification and detection time, marks the turn
+  `stalled`, and persists a non-collapsed transcript notice. The notice names
+  the preserved partial state and deliberately offers review rather than
+  replaying a tool call. A stalled turn is never represented as a completed
+  assistant response.
 - rate-limited sessions are resumed by a maintenance sweep after their recorded
   reset time; a renewed rate limit records the new reset time, while another
   provider error creates a durable transcript notice and requires a user to
@@ -225,3 +239,6 @@ What ships today:
   tool segments such as `chat-tool-confirmation`.
 - **Not unrestricted cross-project execution.** Every chat/tool path remains
   account-scoped and Pundit-checked.
+- **Not automatic replay of arbitrary chat tools.** A future recovery action
+  must resume from a checkpoint and prove an idempotency contract before it can
+  run without a new human confirmation.

@@ -848,6 +848,19 @@ RSpec.describe ChatSessions::SendMessage do
         )
       end
     end
+
+    # @spec CHAT-API-027
+    it "completes the durable turn after persisting the assistant response" do
+      assistant = described_class.call(
+        chat_session: chat_session,
+        content: "Hello",
+        llm_client: build_stateful_llm_client([ final_response(content: "Hi", tokens_input: 1, tokens_output: 1) ])
+      )
+
+      turn = ChatTurn.find_by!(user_message_id: chat_session.messages.where(role: "user").last.id)
+      expect(turn).to have_attributes(status: "completed", completed_at: be_present)
+      expect(assistant.content).to eq("Hi")
+    end
   end
 
   def expect_follow_up_tool_round_trip(conversation)
