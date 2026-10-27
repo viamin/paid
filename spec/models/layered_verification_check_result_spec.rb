@@ -11,6 +11,7 @@ RSpec.describe LayeredVerificationCheckResult do
       producer: "formal_verification",
       execution_state: "completed",
       obligation_coverage: "contradicted",
+      cause_signature: "bounded-counterexample",
       input_revision: { "intent" => "abc123" },
       limitations: "bounded state space"
     }

@@ -72,6 +72,8 @@ Rails.application.routes.draw do
   # RDR-077: personal removal is presentation-only and per user.
   post "inbox/:entry_id/remove", to: "inbox#remove_entry", as: :inbox_entry_remove
   post "inbox/:entry_id/restore", to: "inbox#restore_entry", as: :inbox_entry_restore
+  post "inbox/:entry_id/layered-verification-decision", to: "inbox#decide_layered_verification_finding",
+    as: :inbox_layered_verification_finding_decision
   get "inbox/:entry_id/supplement", to: "inbox#supplement", as: :inbox_entry_supplement
   get "inbox/:entry_id", to: "inbox#show", as: :inbox_entry
   get "dashboard/inbox", to: "legacy_inbox_redirects#index", as: :dashboard_inbox
@@ -308,6 +310,7 @@ Rails.application.routes.draw do
     resources :agent_runs, only: [ :index, :show, :new, :create ], controller: "projects/agent_runs" do
       post :request_continuation, on: :collection
       post :request_acceptance_audit, on: :collection
+      post :request_layered_verification_audit, on: :collection
       post :validate_technical_prerequisite, on: :collection
       post :resolve_closeout, on: :collection
       post :link_prerequisite, on: :collection

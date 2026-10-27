@@ -22,6 +22,7 @@ RSpec.describe Tools::Registry do
       cancel_agent_run
       request_issue_continuation
       request_acceptance_audit
+      request_layered_verification_audit
       resolve_issue_closeout
       record_change_intent
       invite_account_member

@@ -146,6 +146,7 @@ module Workflows
           Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT
         )
         max_execution_seconds = agent_run_result[:max_execution_seconds]
+        audit_timeout_seconds = agent_run_result[:audit_timeout_seconds]
         tdd_phase = agent_run_result[:tdd_phase]
         runner_id = agent_run_result[:runner_id]
 
@@ -322,10 +323,13 @@ module Workflows
           execution_limit = max_execution_seconds + 300
           activity_timeout = [ activity_timeout, execution_limit ].min
         end
+        activity_timeout = [ activity_timeout, audit_timeout_seconds ].min if audit_timeout_seconds
+        audit_deadline = Temporalio::Workflow.now + audit_timeout_seconds if audit_timeout_seconds
         runner_step_reached = true
         agent_result = run_activity(Activities::RunAgentActivity,
           { agent_run_id: agent_run_id },
           start_to_close_timeout: activity_timeout,
+          **(audit_timeout_seconds ? { schedule_to_close_timeout: activity_timeout } : {}),
           heartbeat_timeout: 120,
           retry_policy: RUN_AGENT_RETRY_POLICY)
 
@@ -341,6 +345,24 @@ module Workflows
         end
 
         agent_step_succeeded = true
+
+        if goal == "layered_verification_audit" && Temporalio::Workflow.patched("layered-verification-audit-completion-v1")
+          if Temporalio::Workflow.patched("layered-verification-audit-result-ingestion-v1")
+            if Temporalio::Workflow.patched("layered-verification-formal-checks-v1")
+              remaining_audit_seconds = audit_deadline && [ (audit_deadline - Temporalio::Workflow.now).ceil, 0 ].max
+              if remaining_audit_seconds.nil? || remaining_audit_seconds.positive?
+                run_activity(Activities::RunLayeredVerificationChecksActivity,
+                  { agent_run_id: agent_run_id }, timeout: remaining_audit_seconds || 30, retry_policy: NO_RETRY)
+              end
+            end
+            run_activity(Activities::RecordLayeredVerificationResultsActivity,
+              { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
+          end
+          audit_result = run_activity(Activities::CompleteLayeredVerificationAuditActivity,
+            { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
+
+          return { success: true, agent_run_id: agent_run_id, coverage: audit_result[:coverage] }
+        end
 
         # @spec ISSUE-ENHANCEMENT-006 ISSUE-ENHANCEMENT-014
         if goal == "enhance_issue"

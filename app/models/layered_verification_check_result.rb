@@ -23,6 +23,8 @@ class LayeredVerificationCheckResult < ApplicationRecord
   validates :execution_state, inclusion: { in: EXECUTION_STATES }
   validates :obligation_coverage, inclusion: { in: OBLIGATION_COVERAGES }
   validates :limitations, presence: true
+  validates :cause_signature, presence: true, if: -> { obligation_coverage == "contradicted" }
+  validates :cause_signature, format: { with: /\A[a-z0-9]+(?:-[a-z0-9]+)*\z/ }, allow_nil: true
   validate :correspondence_claim_belongs_to_obligation, if: -> { correspondence_claim.present? }
   validate :agent_run_belongs_to_same_project, if: -> { agent_run.present? }
 

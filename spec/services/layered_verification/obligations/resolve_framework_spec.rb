@@ -24,6 +24,7 @@ RSpec.describe LayeredVerification::Obligations::ResolveFramework do
 
       expect(result.framework).to eq("okf")
       expect(result.external_identity).to eq(".okf/checkout.md")
+      expect(result.canonical_source_path).to eq(".okf/checkout.md")
       expect(result.external_revision).to be_present
     end
   end

@@ -101,7 +101,7 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   before do
     captured_owner = owner
     view.define_singleton_method(:current_user) { captured_owner }
-    allow(view).to receive_messages(inbox_query_params: { project_id: project.id, kind: nil, sort: nil }, inbox_path: "/inbox", inbox_interactive_chat_path: "/inbox/chat", project_agent_run_path: "/projects/1/agent_runs/1", project_agent_runs_path: "/projects/1/agent_runs", project_intent_conformance_decisions_path: "/projects/1/intent_conformance_decisions", project_issue_clarifying_questions_chat_path: "/projects/1/issues/1/clarifying_questions/chat", project_issue_clarifying_questions_path: "/projects/1/issues/1/clarifying_questions", request_changes_project_change_intent_path: "/projects/1/change_intents/1/request_changes", approve_project_change_intent_path: "/projects/1/change_intents/1/approve", discard_project_change_intent_path: "/projects/1/change_intents/1/discard", cancel_feature_intent_path: "/feature_intents/1/cancel", approve_feature_intent_path: "/feature_intents/1/approve", approve_plan_review_path: "/plan_reviews/1/approve", reject_plan_review_path: "/plan_reviews/1/reject", revise_plan_review_path: "/plan_reviews/1/revise", link_prerequisite_project_agent_runs_path: "/projects/1/agent_runs/link_prerequisite", resolve_closeout_project_agent_runs_path: "/projects/1/agent_runs/resolve_closeout", request_continuation_project_agent_runs_path: "/projects/1/agent_runs/request_continuation", resume_manual_review_project_agent_runs_path: "/projects/1/agent_runs/resume_manual_review", unblock_escalation_project_agent_runs_path: "/projects/1/agent_runs/unblock_escalation", clear_retry_abandonment_project_agent_runs_path: "/projects/1/agent_runs/clear_retry_abandonment", bootstrap_readiness_project_agent_runs_path: "/projects/1/agent_runs/bootstrap_readiness", partial_closeout_guide_path: "/inbox/partial-closeout-guide", edit_project_path: "/projects/1/edit", inbox_safe_return_target: "/inbox", inbox_entry_path: "/inbox/entry")
+    allow(view).to receive_messages(inbox_query_params: { project_id: project.id, kind: nil, sort: nil }, inbox_path: "/inbox", inbox_interactive_chat_path: "/inbox/chat", project_agent_run_path: "/projects/1/agent_runs/1", project_agent_runs_path: "/projects/1/agent_runs", project_intent_conformance_decisions_path: "/projects/1/intent_conformance_decisions", project_issue_clarifying_questions_chat_path: "/projects/1/issues/1/clarifying_questions/chat", project_issue_clarifying_questions_path: "/projects/1/issues/1/clarifying_questions", request_changes_project_change_intent_path: "/projects/1/change_intents/1/request_changes", approve_project_change_intent_path: "/projects/1/change_intents/1/approve", discard_project_change_intent_path: "/projects/1/change_intents/1/discard", cancel_feature_intent_path: "/feature_intents/1/cancel", approve_feature_intent_path: "/feature_intents/1/approve", approve_plan_review_path: "/plan_reviews/1/approve", reject_plan_review_path: "/plan_reviews/1/reject", revise_plan_review_path: "/plan_reviews/1/revise", link_prerequisite_project_agent_runs_path: "/projects/1/agent_runs/link_prerequisite", resolve_closeout_project_agent_runs_path: "/projects/1/agent_runs/resolve_closeout", request_continuation_project_agent_runs_path: "/projects/1/agent_runs/request_continuation", resume_manual_review_project_agent_runs_path: "/projects/1/agent_runs/resume_manual_review", unblock_escalation_project_agent_runs_path: "/projects/1/agent_runs/unblock_escalation", clear_retry_abandonment_project_agent_runs_path: "/projects/1/agent_runs/clear_retry_abandonment", bootstrap_readiness_project_agent_runs_path: "/projects/1/agent_runs/bootstrap_readiness", partial_closeout_guide_path: "/inbox/partial-closeout-guide", edit_project_path: "/projects/1/edit", inbox_safe_return_target: "/inbox", inbox_entry_path: "/inbox/entry", inbox_layered_verification_finding_decision_path: "/inbox/layered-verification-findings/1/decision")
     # Pundit policy double — `policy(record).<predicate>?` returns true for
     # every predicate the navigation-relevant partials consult.
     policy_double = Struct.new(:run_agent?, :update?, :approve?).new(true, true, true)
@@ -619,6 +619,28 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
     it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent" do
       fragment = render_detail_partial(entry)
       assert_navigation_intent!(fragment, kind: "traceability_gap")
+    end
+  end
+
+  # @spec LAYERED-VERIFY-015 LAYERED-VERIFY-016
+  describe "layered_verification_finding" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND
+
+    let(:finding) do
+      TenantContext.with_system_access do
+        create(:layered_verification_finding, project: project).tap do |record|
+          record.agent_run.update!(external_metadata: { "layered_verification" => { "target_revision" => "abc123" } })
+        end
+      end
+    end
+    let(:entry) do
+      build_entry.call(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND,
+        record: finding, issue: nil, title_text: "Verification finding")
+    end
+
+    it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent" do
+      fragment = render_detail_partial(entry)
+      assert_navigation_intent!(fragment, kind: "layered_verification_finding")
     end
   end
 
