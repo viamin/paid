@@ -333,6 +333,35 @@ RDR-073 extension can be decided from an unprovisioned environment; retain
 the existing direction that an extension is filed only if a completed live
 validation identifies a checkout-dependent sidecar need.
 
+## #4604 execution-environment capability check — 2026-10-27
+
+**Result: not executed; this is still not a Docker-capable execution
+environment.** Before attempting either scenario, this follow-up checked the
+supported lifecycle's available backends. `docker`, `podman`, and `nerdctl`
+are absent; neither `/var/run/docker.sock` nor `/run/docker.sock` is a socket;
+and no `DOCKER_*`, `REMOTE_DOCKER_*`, or Swarm endpoint configuration is
+present. `Containers.backend` defaults to the local backend when
+`CONTAINER_BACKEND` is absent, so there is no configured authorized remote
+backend through which this workspace can provision the required `AgentRun`.
+
+No host command, mock, Docker-client installation, or rollout-flag change was
+substituted for the required live lifecycle. In particular,
+`marketplace_tool_sidecars` remains default-off; a future live sidecar attempt
+must obtain any required pilot authorization through its existing enablement
+surface. This check created neither acceptance artifact and does not change
+the two criteria below.
+
+| Required artifact | 2026-10-27 disposition | Recovery in a Docker-capable Paid environment |
+| --- | --- | --- |
+| Native analyzer | Not started: the supported local backend has no available engine. | Provision a fresh pinned `AgentRun`, invoke a bounded read-only native analyzer through `execute_in_execution_environment(..., stream: false)`, retain returned `stdout`, `stderr`, `exit_code`, image/checkout identity, and verify run-container cleanup. |
+| Sidecar interaction | Not started: neither a paired run nor an allowlisted sidecar can be provisioned. | With the authorized sidecar pilot enabled if required, provision an allowlisted `tool_sidecar`, call its documented health/API endpoint from the paired run through `execute_in_execution_environment`, retain endpoint/response shape/exit code, and verify sidecar and run-container cleanup. |
+
+The only supported recovery is to run these scenarios through Paid's normal
+run/tool lifecycle in an environment with a local socket or a configured,
+authorized remote Docker backend. A later successful sidecar interaction
+decides whether an upstream RDR-073 checkout-access extension is needed; this
+unprovisioned check cannot make that decision.
+
 ## Disposition
 
 This report resolves critical assumption 1 only. Critical assumption 2 remains
@@ -355,12 +384,13 @@ arrow entry track #4604 as the evidence owner. This report does not:
 - Determine whether an upstream RDR-073 extension is needed — that decision
   follows the required native and sidecar execution evidence.
 
-The #4604 revalidation on 2026-10-24 confirms that those two evidence
-artifacts remain blocked specifically by the absence of a Docker-capable
-execution environment. RDR-075 remains Draft, its `maintenance-runs` arrow
-remains a draft-only mapping, and implementation phases #4328–#4333 remain
-unreleased. Move the validation to a Docker-capable environment rather than
-inferring live lifecycle behavior from static tests or host-only commands.
+The #4604 capability checks on 2026-10-24 and 2026-10-27 confirm that those
+two evidence artifacts remain blocked specifically by the absence of a
+Docker-capable execution environment. RDR-075 remains Draft, its
+`maintenance-runs` arrow remains a draft-only mapping, and implementation
+phases #4328–#4333 remain unreleased. Move the validation to a Docker-capable
+environment rather than inferring live lifecycle behavior from static tests or
+host-only commands.
 
 Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
 an HLD pointer) are reviewable drafts for the same pending human-review gate,
