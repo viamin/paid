@@ -244,7 +244,52 @@ RSpec.describe "Inbox" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("The configured review method could not complete its check.")
+    expect(response.body).to include("Review the requested remediation below")
     expect(response.body).not_to include("A human action is required before work can continue.")
+  end
+
+  # @spec FACET-CONFIDENCE-022 OPERATOR-INBOX-002L
+  it "routes a typed closeout-evaluation escalation into the evaluation with plain-language progress" do
+    issue = create(:issue, project: project, github_number: 4323, paid_state: "in_progress")
+    create(:issue, :pull_request, project: project, github_number: 4324, github_state: "closed",
+      pr_review_phase: "merged", parent_issue: issue, created_at: 2.days.ago)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: FacetConfidence::CloseoutEvaluationEscalation::NOTIFICATION_SOURCE,
+      blocking: true,
+      title: "Remediation Required",
+      description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification), project_id: project.id,
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort: "newest")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Review frozen test cases and record judgments")
+    expect(response.body).to include("0 recorded", "8 remaining", "Start evaluation")
+    expect(response.body).to include(new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_sort: "newest",
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)).gsub("&", "&amp;"))
+    expect(response.body).not_to include("blinded reference judgments", "corpus")
+  end
+
+  # @spec FACET-CONFIDENCE-022
+  it "uses continue and freeze actions for an in-progress typed closeout evaluation" do
+    issue = create(:issue, project: project, github_number: 4662, paid_state: "in_progress")
+    create(:issue, :pull_request, project: project, github_number: 4663, github_state: "closed",
+      pr_review_phase: "merged", parent_issue: issue, created_at: 2.days.ago)
+    evaluation = FacetConfidence::CloseoutEvaluation::Start.call(project: project, issue: issue, actor: user).evaluation
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: FacetConfidence::CloseoutEvaluationEscalation::NOTIFICATION_SOURCE,
+      blocking: true, title: "Evaluation required", description: "Internal closeout note")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification), project_id: project.id,
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+    expect(response.body).to include("Continue judging", "0 recorded", "8 remaining")
+
+    record_all_facet_judgments!(evaluation)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification), project_id: project.id,
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+    expect(response.body).to include("Freeze judgments", "8 recorded", "0 remaining")
   end
 
   # @spec OPERATOR-INBOX-002B
@@ -2047,6 +2092,22 @@ RSpec.describe "Inbox" do
         "remediation_steps" => [ "Open the quality dashboard", "Resume manually or adjust thresholds" ]
       }
     )
+  end
+
+  def record_all_facet_judgments!(evaluation)
+    evaluation.corpus.cases.each do |corpus_case|
+      expected = corpus_case.fetch("expected")
+      FacetConfidence::CloseoutEvaluation::RecordLabel.call(evaluation: evaluation, actor: user,
+        case_id: corpus_case.fetch("id"), judgment: expected_judgment(corpus_case, expected))
+    end
+  end
+
+  def expected_judgment(corpus_case, expected)
+    {
+      verdict: expected.fetch("status"), intent_band: expected.fetch("intent_band"),
+      technical_band: expected.fetch("technical_band"), readiness: expected.fetch("readiness"),
+      cited_evidence_reference: corpus_case.fetch("evidence").first.fetch("reference"), reason: "Reviewed independently."
+    }
   end
 
   def stale_approval_snapshot

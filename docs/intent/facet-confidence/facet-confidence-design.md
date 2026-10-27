@@ -155,6 +155,17 @@ assessments rather than calibrated probabilities, and that a completed
 evaluation neither closes the source issue nor enables delivery or changes the
 default 80/80 thresholds.
 
+An Action Required notification may explicitly identify this closeout
+evaluation through its typed source or workflow metadata. Its Inbox detail
+then replaces internal workflow wording with a plain-language explanation:
+one maintainer independently reviews each frozen test case, records a judgment
+with cited evidence, and freezes the completed set. The primary action is the
+authorized state-specific evaluation route — start, continue judging, freeze,
+or view the completed evaluation — and includes the originating Inbox context.
+The detail reports recorded and remaining judgments. Notifications without the
+typed contract retain the generic Action Required presentation and next-step
+guidance; the Inbox never infers an evaluation from notification prose.
+
 Start/Resume begins one persisted evaluation per originating closeout, pinned
 to the frozen corpus digest: repeated clicks resume the same evaluation, and a
 changed corpus digest is a new evidence generation that supersedes the old

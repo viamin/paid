@@ -1,30 +1,92 @@
 <%# @spec OPERATOR-INBOX-002B %>
 <div class="space-y-6">
   <% notification = entry.record %>
-  <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
-    <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
-    <% if notification.description.present? %>
-      <p class="mt-1 text-sm text-rose-800"><%= notification.description %></p>
-    <% end %>
-    <% if entry.summary.present? && entry.summary != notification.description %>
-      <p class="mt-2 text-sm text-rose-800"><%= entry.summary %></p>
-    <% elsif notification.description.blank? %>
-      <p class="mt-1 text-sm text-rose-800">A human action is required before work can continue.</p>
-    <% end %>
-  </div>
+  <% evaluation_escalation = FacetConfidence::CloseoutEvaluationEscalation.for(notification) %>
+  <% inbox_context = {
+       inbox_kind: params[:kind].presence_in(Inbox::Queue::KINDS),
+       inbox_sort: params[:sort].presence_in(Inbox::Queue::SORTS.keys),
+       inbox_entry_id: entry.id
+     }.compact %>
 
-  <% if entry.tasks.any? %>
-    <div class="space-y-3">
-      <h3 class="text-sm font-semibold text-gray-900">Remediation Steps</h3>
-      <ol class="space-y-2 text-sm text-gray-600">
-        <% entry.tasks.each do |step| %>
-          <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3"><%= step %></li>
+  <% if evaluation_escalation %>
+    <%# This typed card deliberately translates the evaluation contract rather
+        than exposing the notification's internal audit wording.
+        @spec FACET-CONFIDENCE-022 OPERATOR-INBOX-002L %>
+    <div class="space-y-4 rounded-xl border border-indigo-200 bg-indigo-50 p-4" data-facet-confidence-evaluation-escalation>
+      <div>
+        <h3 class="text-sm font-semibold text-indigo-900">Review frozen test cases and record judgments</h3>
+        <p class="mt-1 text-sm text-indigo-800">
+          This closeout is waiting for an independent human review. Review each frozen test case, record a judgment
+          with cited evidence, then freeze the completed set. This creates the human reference needed before the
+          closeout can proceed.
+        </p>
+      </div>
+      <p class="text-sm text-indigo-900">
+        <span class="font-medium"><%= evaluation_escalation.recorded %> recorded</span> ·
+        <span class="font-medium"><%= evaluation_escalation.remaining %> remaining</span>
+        <% if evaluation_escalation.progress[:skipped].positive? %>
+          · <%= evaluation_escalation.progress[:skipped] %> skipped and still need judgment
         <% end %>
-      </ol>
-    </div>
-  <% end %>
+      </p>
 
-  <% if entry.action_url.present? && entry.action_url != inbox_entry_path(entry) %>
+      <% if evaluation_escalation.ready? %>
+        <div class="flex flex-wrap items-center gap-3">
+          <% case evaluation_escalation.action %>
+          <% when :start %>
+            <%= link_to "Start evaluation",
+                  new_project_facet_confidence_evaluation_path(entry.project, issue_id: evaluation_escalation.issue.id, **inbox_context),
+                  data: { turbo_frame: "_top" },
+                  class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+          <% when :continue %>
+            <%= link_to "Continue judging",
+                  project_facet_confidence_evaluation_path(entry.project, evaluation_escalation.evaluation, **inbox_context),
+                  data: { turbo_frame: "_top" },
+                  class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+          <% when :freeze %>
+            <%= link_to "Freeze judgments",
+                  project_facet_confidence_evaluation_path(entry.project, evaluation_escalation.evaluation, **inbox_context),
+                  data: { turbo_frame: "_top" },
+                  class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+          <% when :completed %>
+            <%= link_to "View completed evaluation",
+                  project_facet_confidence_evaluation_path(entry.project, evaluation_escalation.evaluation, **inbox_context),
+                  data: { turbo_frame: "_top" },
+                  class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+          <% end %>
+          <%= link_to inbox_issue_link_label(evaluation_escalation.issue), evaluation_escalation.issue.github_url,
+                target: "_blank", rel: "noopener noreferrer",
+                class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+        </div>
+      <% else %>
+        <p class="text-sm text-indigo-900">Resolve the recorded closeout prerequisites before starting this evaluation.</p>
+      <% end %>
+    </div>
+  <% else %>
+    <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
+      <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
+      <% if notification.description.present? %>
+        <p class="mt-1 text-sm text-rose-800"><%= notification.description %></p>
+      <% end %>
+      <% if entry.summary.present? && entry.summary != notification.description %>
+        <p class="mt-2 text-sm text-rose-800"><%= entry.summary %></p>
+      <% elsif notification.description.blank? %>
+        <p class="mt-1 text-sm text-rose-800">A human action is required before work can continue.</p>
+      <% end %>
+      <p class="mt-2 text-sm text-rose-800">Review the requested remediation below, then use the available action or issue link to take the next step.</p>
+    </div>
+
+    <% if entry.tasks.any? %>
+      <div class="space-y-3">
+        <h3 class="text-sm font-semibold text-gray-900">Remediation Steps</h3>
+        <ol class="space-y-2 text-sm text-gray-600">
+          <% entry.tasks.each do |step| %>
+            <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3"><%= step %></li>
+          <% end %>
+        </ol>
+      </div>
+    <% end %>
+
+    <% if entry.action_url.present? && entry.action_url != inbox_entry_path(entry) %>
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to "Open linked action",
             entry.action_url,
@@ -45,7 +107,7 @@
               class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
       <% end %>
     </div>
-  <% elsif entry.issue %>
+    <% elsif entry.issue %>
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to inbox_issue_link_label(entry.issue),
             entry.issue.github_url,
@@ -53,12 +115,13 @@
             rel: "noopener noreferrer",
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
-  <% elsif notification.subject.is_a?(AgentRun) %>
+    <% elsif notification.subject.is_a?(AgentRun) %>
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to "View Agent Run",
             project_agent_run_path(notification.subject.project, notification.subject),
             data: { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
+    <% end %>
   <% end %>
 </div>

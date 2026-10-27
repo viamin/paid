@@ -586,6 +586,8 @@ module Inbox
         next unless project
         next if project_filter_excludes?(project)
 
+        content = action_required_content(notification)
+
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
           kind: ACTION_REQUIRED_KIND,
@@ -594,9 +596,9 @@ module Inbox
           record: notification,
           waiting_since: notification.created_at,
           questions: [],
-          tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
+          tasks: content.tasks,
+          summary_text: content.summary,
+          title_text: content.title,
           action_url: notification.action_url
         )
       end
@@ -1038,6 +1040,30 @@ module Inbox
       return steps if steps.any?
 
       Array(notification.metadata["recommended_action"])
+    end
+
+    # A typed workflow owns its operator language. Keep the raw notification
+    # description out of both the row and detail so an internal audit note
+    # cannot leak back in through the list summary.
+    # @spec FACET-CONFIDENCE-022
+    ActionRequiredContent = Data.define(:title, :summary, :tasks)
+
+    def action_required_content(notification)
+      return facet_confidence_evaluation_content if FacetConfidence::CloseoutEvaluationEscalation.typed_notification?(notification)
+
+      ActionRequiredContent.new(
+        title: notification.title,
+        summary: notification.metadata["recommended_action"].presence || notification.description,
+        tasks: remediation_steps_for(notification)
+      )
+    end
+
+    def facet_confidence_evaluation_content
+      ActionRequiredContent.new(
+        title: "Review frozen test cases and record judgments",
+        summary: "An independent human review is needed before this closeout can proceed.",
+        tasks: []
+      )
     end
 
     def notification_context(notification)

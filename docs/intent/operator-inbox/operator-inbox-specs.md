@@ -88,6 +88,15 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** — When an Action Required notification carries
+  a typed in-product workflow contract, the detail pane SHALL render that
+  workflow's primary action and progress instead of treating a linked issue as
+  the only meaningful action. The contract SHALL be structural (source or
+  metadata), never inferred from notification title or description; entries
+  without it SHALL continue to render generic remediation safely.
+  *Code:* `app/views/dashboard/_inbox_detail_action_required.html.erb`.
+  *Test:* `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002C** — When an open pull request's review phase is
   `escalated` and its project is within the operator's authorized Inbox
   visibility (`INBOX-FOUNDATION-006` — account isolation plus owner
