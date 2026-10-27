@@ -336,6 +336,15 @@ evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
 building a second provisioning path, and keeps investigation separate from
 any repair: a scan never mutates source code or opens a PR on its own.
+The proposed optimization recipe family is a cataloged extension of that
+report-only capability, not a second maintenance workflow. A later,
+separately accepted policy may permit a project user to elect bounded repair
+queueing for one optimization run; that election is off by default and never
+extends to security findings. Semantic assessment and evidence interpretation
+remain agent_harness work, while authorization, budget, revision,
+idempotency, and rollout gates remain deterministic control-plane checks.
+The proposed policy is not runtime authority or rollout approval while its
+owner-acceptance Inbox decision remains open.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending

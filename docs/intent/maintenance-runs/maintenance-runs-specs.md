@@ -10,6 +10,11 @@
 > merges — see `docs/rdrs/RDR-075-general-maintenance-runs.md` §Implementation
 > Plan step 1. Implementation phases are tracked at
 > [#4328](https://github.com/viamin/paid/issues/4328)–[#4333](https://github.com/viamin/paid/issues/4333).
+> MAINT-080–097 below are a preparation-only, pending-acceptance optimization
+> policy. They `Track` [#4636](https://github.com/viamin/paid/issues/4636) and
+> [#4492](https://github.com/viamin/paid/issues/4492); neither tracking issue
+> is an executable deliverable or authorization to implement, auto-queue, or
+> roll out repairs.
 
 ## Admission and Rollout Guard
 
@@ -157,5 +162,92 @@
 - [ ] **MAINT-072**: The system shall link every repair issue/PR-creation run
       back to its source maintenance report and finding.
 - [ ] **MAINT-073**: The system shall never create a repair issue or
-      PR-creation run as a direct side effect of a maintenance scan without
-      an explicit user selection.
+      PR-creation run as a direct side effect of a report-only maintenance
+      scan without an explicit user selection; the only proposed exception is
+      an owner-accepted MAINT-087–094 auto-queue election.
+
+## Optimization Recipe Catalog and Bounded Repair Policy
+
+### Catalog and selection — #4493
+
+- [ ] **MAINT-080**: The system shall represent each optimization type as a
+      code-defined catalog/recipe entry with a stable key, display text,
+      investigation instructions, evidence-collector applicability,
+      validation guidance, and metric hints, so adding a type does not require
+      an enum migration.
+- [ ] **MAINT-081**: The system shall provide Performance, Design /
+      Architecture, Code Duplication, Security Hardening, Cost / Resource
+      Efficiency, Maintainability / Readability, and Test Coverage & Quality
+      as the initial optimization catalog entries.
+- [ ] **MAINT-082**: The system shall offer optional optimization-type
+      selection with equivalent project-scoped authorization through the UI,
+      authenticated API, and MCP surfaces; it shall continue to admit a
+      free-text maintenance objective without a selection.
+- [ ] **MAINT-083**: When an optimization type is selected, the system shall
+      snapshot its key and entry version with the run and retain it on retries;
+      when a supplied type is not cataloged, the system shall retain it as a
+      custom objective rather than rejecting the run.
+
+### First recipes and honest assessment — #4494
+
+- [ ] **MAINT-084**: The system shall define Code Duplication,
+      Maintainability / Readability, and Performance recipes using the
+      catalog contract, and shall preserve tool/version provenance whenever an
+      evidence collector contributes to a finding.
+- [ ] **MAINT-085**: Where an optimization recipe has no credible applicable
+      evidence collector, the system shall complete it as a prompt-first
+      investigation and shall disclose that coverage basis in its report.
+- [ ] **MAINT-086**: The system shall obtain semantic finding assessment,
+      evidence/counterevidence consideration, verification disposition, and
+      policy-requested confidence through `agent_harness`; application code
+      shall not infer recommendation eligibility from keywords, raw tool
+      output, or a locally calibrated confidence formula.
+
+### Opt-in bounded auto-queue — #4495
+
+- [ ] **MAINT-087**: The system shall default optimization maintenance runs
+      to report-only and shall allow an authorized user to elect auto-queueing
+      only at run start, with an explicit confidence threshold and per-repair
+      cost/time budgets snapshotted through equivalent UI, authenticated API,
+      and MCP contracts.
+- [ ] **MAINT-088**: When the report completes, the system shall leave all
+      findings visible and shall consider auto-queueing only findings whose
+      structured agent assessment satisfies the stored run-start selection
+      policy; the system shall treat that threshold as a deterministic policy
+      gate, not as proof that confidence is calibrated or semantically
+      sufficient by itself.
+- [ ] **MAINT-089**: The system shall dispatch an auto-queued repair only
+      through the existing MAINT-070 authorized repair pathway, preserving its
+      report/finding provenance, finding-bounded scope, and explicit
+      per-repair budgets.
+- [ ] **MAINT-090**: The system shall require MAINT-071 revalidation before
+      an auto-queued repair may apply a recommendation to a checkout whose
+      revision differs from the source report's pinned revision.
+- [ ] **MAINT-091**: The system shall enforce auto-queue idempotency by
+      refusing to create duplicate repair work for the same source
+      report/finding identity lineage.
+- [ ] **MAINT-092**: The system shall surface a stale, unavailable,
+      unauthorized, idempotently suppressed, or budget-exhausted auto-queue
+      gate outcome without silently dropping it, broadening scope, or
+      bypassing the gate.
+- [ ] **MAINT-093**: Where `maintenance_runs` is disabled, the system shall
+      admit no new optimization auto-queue election or repair dispatch while
+      preserving reports and without cancelling already-active repair runs.
+- [ ] **MAINT-094**: The system shall preserve evidence collected by an
+      auto-queued repair that exhausts its explicit cost or time budget and
+      shall report that exhaustion through the existing maintenance outcome
+      contract.
+
+### Staged follow-ons and security boundary — #4496
+
+- [ ] **MAINT-095**: The system shall keep Security Hardening findings
+      report-only and available for manual MAINT-070 selection, and shall
+      exclude them from auto-queue until a separately accepted safety and
+      accuracy policy explicitly authorizes them.
+- [ ] **MAINT-096**: The system shall treat Cost / Resource Efficiency,
+      Design / Architecture, and Test Coverage & Quality as staged catalog
+      recipes, each using the MAINT-084–086 evidence and honest-coverage
+      contract.
+- [ ] **MAINT-097**: Before defining the Test Coverage & Quality recipe, the
+      system shall reconcile it with RDR-075's planned test-quality objective
+      so the two do not create duplicate maintenance behaviors.

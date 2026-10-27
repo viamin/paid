@@ -36,6 +36,85 @@ tool attachment, matching, provisioning, or sidecar hardening — that remains
 [`marketplace-tool-sidecars`](../marketplace-tool-sidecars/marketplace-tool-sidecars-design.md),
 consumed rather than duplicated.
 
+## Optimization Recipe Family and Pending Repair Policy
+
+The optimization family is a set of cataloged maintenance recipes, not a new
+run type, tool lifecycle, or authorization pathway. Issue [#4492](https://github.com/viamin/paid/issues/4492)
+is a tracking umbrella only; it authorizes no executable deliverable. The
+concrete delivery boundaries are [#4493](https://github.com/viamin/paid/issues/4493)
+(catalog and selection), [#4494](https://github.com/viamin/paid/issues/4494)
+(first recipes), [#4495](https://github.com/viamin/paid/issues/4495)
+(bounded auto-queue policy), and [#4496](https://github.com/viamin/paid/issues/4496)
+(staged follow-ons).
+
+The code-defined catalog starts with Performance, Design / Architecture, Code
+Duplication, Security Hardening, Cost / Resource Efficiency, Maintainability /
+Readability, and Test Coverage & Quality. An entry supplies a stable key,
+display text, investigation instructions, evidence-collector applicability,
+validation guidance, and metric hints. Adding a type is a catalog/recipe
+entry, not an enum migration. A selection absent from the catalog is retained
+as a custom objective rather than rejected. The UI, authenticated API, and MCP
+surface expose the same optional selection and authorization contract; the
+selection composes with free-text guidance and scope and is snapshotted with
+the run. This paragraph and **MAINT-080–083** map to #4493.
+
+Recipes may use tool evidence where the base RDR permits it, or be prompt-first
+where no credible collector applies. Code Duplication, Maintainability /
+Readability, and Performance are the first proposed recipes. A prompt-first
+result must disclose that coverage honestly; no absence of tool output proves
+absence of a problem. The assessor considers evidence, counterevidence,
+repository intent, framework entry points, and deliberate independence before
+forming a finding. This policy and **MAINT-084–086** map to #4494.
+
+Assessment is semantic work: an `agent_harness` call returns a structured
+finding assessment, evidence/counterevidence, verification disposition, and
+the confidence value requested by the selected policy. Application code may
+validate that response's shape and deterministically enforce a stored policy;
+it must not derive eligibility from keywords, tool output, or a home-grown
+confidence formula. A configured confidence threshold is a project user's
+pre-authorized selection gate, not a claim that the number is calibrated,
+portable, or an independent proof of correctness. The full report remains
+visible regardless of queue eligibility.
+
+The #4495 proposal is deliberately narrower than the base repair handoff. At
+run start an authorized user may elect auto-queueing and snapshot a confidence
+threshold plus explicit per-repair cost and time budgets. Omission is
+report-only. On terminal report completion, code may create a repair only when
+all deterministic gates pass: `maintenance_runs` remains enabled; the
+run-start election and budget snapshot exist; the structured assessment meets
+the stored selection rule; the category is not Security Hardening; the finding
+identity has no repair already queued or created for that report/finding
+lineage; and the existing M04 authorization path admits the repair. The new
+repair retains provenance to the source report and finding, its finding-bounded
+scope, and the explicit budgets. If the repair checkout is not the report's
+pinned revision, M04 revalidation is required before the recommendation may
+apply. A failed, unavailable, stale, unauthorized, or exhausted gate is
+visible as a non-queue outcome; it never silently expands scope or retries
+around policy. These policy claims and **MAINT-087–094** map to #4495.
+
+Security Hardening remains report-only with manual selection until a distinct
+accepted safety and accuracy policy authorizes otherwise. Cost / Resource
+Efficiency, Design / Architecture, and Test Coverage & Quality are staged
+recipes; the test-quality recipe must reconcile with, not duplicate, the base
+RDR's future test-quality objective. These claims and **MAINT-095–097** map to
+#4496.
+
+### Acceptance hold
+
+The preceding optimization policy reconciles the owner decisions recorded in
+#4495 into reviewable draft intent. It is not accepted merely because that
+issue records agreement. Before any #4493–#4496 implementation or rollout,
+the authorized owner must make and record this concrete Inbox decision:
+
+> Accept or reject the exact MAINT-080–097 catalog, assessment, and bounded
+> auto-queue policy revisions, including the default-off election, explicit
+> budgets, stale-finding revalidation, idempotency, and manual-only Security
+> Hardening exclusion.
+
+Until that decision and the canonical artifacts merge, this work `Tracks`
+#4636 and #4492; it does not close either issue, enable `maintenance_runs`, or
+authorize a repair.
+
 ## Storage Contract
 
 A maintenance run is a new `AgentRun` goal (`"maintenance"`), not a new
@@ -52,6 +131,10 @@ model. Each run persists, immutably once started:
   analyzer version string captured at invocation time).
 - `cost_limit`/`time_limit` snapshots, consistent with existing run budget
   fields.
+- For an optimization selection, the catalog key and entry version; for the
+  pending auto-queue proposal, only the explicit run-start election, stored
+  selection threshold, and per-repair cost/time limits. These values are
+  absent for report-only runs and cannot be introduced after the run starts.
 
 A maintenance run produces exactly one `MaintenanceReport`, associated
 1:1 with the run (reports are not retried in place — a retry or a new
@@ -208,6 +291,8 @@ shipped code in
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
 | Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Optimization type representation | Code-defined catalog entries with custom-objective fallback | Enum/migration per type; a mandatory selection | The catalog can grow without changing the run contract, while free-text questions remain first-class (#4493). |
+| Optimization auto-queue | Pending, per-run opt-in policy with deterministic gates and manual-only security findings | Tenant-wide default; scan-side repair; auto-queue security repairs | This preserves RDR-075's report-only default and M04 repair boundary while making any future delegation explicit, bounded, attributable, and revocable (#4495/#4496). |
 
 ## Open Questions & Future Decisions
 
@@ -236,6 +321,9 @@ shipped code in
    live execution-environment artifact before an implementation uses this
    candidate path. The handoff audit's host-only commands are not evidence for
    this decision.
+6. Owner acceptance of MAINT-080–097 through the concrete Inbox decision in
+   the Acceptance hold above. #4495's recorded agreement is evidence for that
+   review, not a substitute for it.
 
 ## What This Is Not
 
@@ -244,6 +332,9 @@ shipped code in
 - Not an automatic-repair mechanism — a scan never deletes source code or
   opens a PR as a side effect; repair is a separate, explicitly authorized
   run.
+- Not approval to auto-queue repairs: the #4495 policy remains pending until
+  the explicit owner acceptance and canonical merge described above. Security
+  Hardening repairs remain manual-only even if that policy is accepted.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.
