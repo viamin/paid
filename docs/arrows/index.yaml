@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-24
+last_updated: 2026-10-27
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,16 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  operational-supervisor:
+    title: Operational Supervisor
+    path: docs/intent/operational-supervisor/operational-supervisor-design.md
+    specs: docs/intent/operational-supervisor/operational-supervisor-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: MAPPED
+    audited: 2026-10-27
+    blockedBy: [notification-severity, auto-pick-queue]
+    next: "RDR-063 is draft: merge the planning arrow (#4341), then implement only disabled-by-default shadow observation (#4709–#4712). Any mitigation remains held under #4713."
   dependency-declarations:
     title: Dependency Declarations
     path: docs/intent/dependency-declarations/dependency-declarations-design.md

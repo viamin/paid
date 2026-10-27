@@ -213,6 +213,15 @@ lets the control plane swap models and providers without scattered call sites.
 The secrets proxy forwards authenticated requests from containers; it is
 infrastructure, not an application-level LLM interface.
 
+The planned operational-supervisor capability follows the same boundary. It
+may ask an `agent_harness` model to interpret a deliberately sanitized,
+account-scoped delivery-health snapshot, but Rails retains all policy,
+authorization, validation, persistence, and mutation authority. Its initial
+rollout is disabled-by-default shadow observation; no LLM or supervisor may
+receive user or repository content, logs, prompts, raw exception text,
+credentials, or secrets. See [RDR-063](rdrs/RDR-063-operational-supervisor-delivery-health.md)
+and `docs/intent/operational-supervisor/`.
+
 ## Tenets
 
 The operating principles that tie the approaches above to day-to-day work:
