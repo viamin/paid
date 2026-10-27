@@ -73,6 +73,16 @@ RSpec.describe ChatMessage do
     end
   end
 
+  describe "#stalled_turn_notice?" do
+    # @spec CHAT-TURN-RECOVERY-002
+    it "is true for a system message flagged as a stalled turn notice" do
+      message = build(:chat_message, :system, metadata: { "stalled_turn_notice" => true })
+
+      expect(message.stalled_turn_notice?).to be true
+      expect(message.transcript_notice?).to be true
+    end
+  end
+
   describe "#display_content" do
     # @spec CHAT-API-016
     it "hides a leading reasoning block while keeping the answer and stored content" do

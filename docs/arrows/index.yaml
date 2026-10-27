@@ -322,6 +322,14 @@ arrows:
     taxonomy: chat
     status: OK
     audited: 2026-08-04
+  chat-turn-recovery:
+    title: Durable Chat Turn Recovery
+    path: docs/intent/chat-turn-recovery/chat-turn-recovery-design.md
+    specs: docs/intent/chat-turn-recovery/chat-turn-recovery-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: PARTIAL
+    next: "Detection and durable transcript notice ship first; idempotent automatic recovery remains deliberately unarmed."
   chat-scroll:
     title: Chat Transcript Navigation
     path: docs/intent/chat-scroll/chat-scroll-design.md

@@ -51,11 +51,13 @@ module ChatSessions
       on_tool_call_resolved&.call(tool_call_message)
 
       if post_dispatch_confirmation?
-        resolve_post_dispatch_confirmation!
+        final_message = resolve_post_dispatch_confirmation!
       else
         resolve_pending_tool_call!
-        resume_loop_unless_other_pending
+        final_message = resume_loop_unless_other_pending
       end
+      final_message ? chat_turn&.complete! : chat_turn&.mark_pending!
+      final_message
     end
 
     private
@@ -192,6 +194,7 @@ module ChatSessions
     def persist_tool_result(result)
       message = chat_session.messages.create!(
         role: "tool",
+        chat_turn: chat_turn,
         content: result.to_json,
         tool_result: result,
         tool_call_id: tool_call_message.tool_call_id,
@@ -211,6 +214,14 @@ module ChatSessions
 
     def other_pending_confirmations?
       chat_session.messages.pending_tool_confirmations.exists?
+    end
+
+    def chat_turn
+      tool_call_message.chat_turn
+    end
+
+    def extra_agent_loop_kwargs
+      chat_turn ? { chat_turn: } : {}
     end
 
     def update_session_activity

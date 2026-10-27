@@ -1,0 +1,8 @@
+<%# @spec CHAT-TURN-RECOVERY-002 %>
+<div class="flex justify-center" data-message-id="<%= message.id %>">
+  <article class="mx-auto max-w-2xl rounded-md bg-red-50 px-4 py-3 text-sm text-red-900 ring-1 ring-red-200">
+    <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-red-700">Turn needs attention</div>
+    <div class="whitespace-pre-wrap break-words leading-6"><%= message.content.to_s %></div>
+    <a href="#chat-message-form" class="mt-2 inline-block text-xs font-medium text-red-800 underline hover:text-red-950">Resume with a new message</a>
+  </article>
+</div>

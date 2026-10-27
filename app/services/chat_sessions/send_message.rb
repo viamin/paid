@@ -16,7 +16,7 @@ module ChatSessions
     include FallbackLoop
 
     attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
-      :transport_attempt_message
+      :transport_attempt_message, :chat_turn
 
     MAX_CONTENT_LENGTH = 12_000
 
@@ -37,6 +37,7 @@ module ChatSessions
     def call
       # @spec CHAT-API-002
       # @spec CHAT-API-005
+      # @spec CHAT-TURN-RECOVERY-001
       validate_content!
       validate_session_state!
       check_token_limit!
@@ -46,7 +47,14 @@ module ChatSessions
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
       update_session_activity
+      assistant_message ? chat_turn.complete! : chat_turn.mark_pending!
       assistant_message
+    rescue AgentHarness::RateLimitError
+      chat_turn&.mark_pending!(classification: "rate_limited")
+      raise
+    rescue StandardError => error
+      chat_turn&.fail!(classification: error.class.name)
+      raise
     end
 
     private
@@ -111,6 +119,8 @@ module ChatSessions
 
     def persist_user_message
       @transport_attempt_message = existing_user_message || create_user_message
+      @chat_turn = transport_attempt_message.chat_turn || create_turn_for(transport_attempt_message)
+      @chat_turn.mark_streaming!
 
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
@@ -127,11 +137,19 @@ module ChatSessions
     end
 
     def create_user_message
+      @chat_turn = chat_session.chat_turns.create!(status: "pending", last_activity_at: Time.current)
       chat_session.messages.create!(
         role: "user",
         content: content,
+        chat_turn: @chat_turn,
         metadata: { "stream_message_id" => stream_message_id }.compact
       )
+    end
+
+    def create_turn_for(message)
+      chat_session.chat_turns.create!(status: "pending", last_activity_at: Time.current).tap do |turn|
+        message.update!(chat_turn: turn)
+      end
     end
 
     # A conversational reply (e.g. "yes") is not a confirmation. When a write
@@ -178,7 +196,7 @@ module ChatSessions
     # second SUM query per turn. Only forward when a limit is configured; a nil
     # baseline means "unlimited" and AgentLoop re-derives nil cheaply.
     def extra_agent_loop_kwargs
-      @token_budget ? { token_budget: @token_budget } : {}
+      { chat_turn: chat_turn }.merge(@token_budget ? { token_budget: @token_budget } : {})
     end
   end
 end
