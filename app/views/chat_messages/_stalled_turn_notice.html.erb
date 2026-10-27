@@ -1,0 +1,10 @@
+<%# @spec CHAT-TURN-RECOVERY-003 %>
+<div class="flex justify-center" data-message-id="<%= message.id %>">
+  <article class="mx-auto max-w-2xl rounded-md bg-red-50 px-4 py-3 text-sm text-red-900 ring-1 ring-red-200">
+    <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-red-700">Chat turn needs attention</div>
+    <div class="whitespace-pre-wrap break-words leading-6"><%= message.content.to_s %></div>
+    <% if message.metadata["side_effecting_tools_completed"] %>
+      <p class="mt-2 text-xs">Review completed tool cards and any pending confirmations before retrying; the system did not replay them.</p>
+    <% end %>
+  </article>
+</div>

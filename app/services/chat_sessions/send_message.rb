@@ -24,8 +24,13 @@ module ChatSessions
       @chat_session = chat_session
       @actor = actor
       @content = content
-      @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @external_on_chunk = on_chunk
+      @external_on_message_persisted = on_message_persisted
+      @on_chunk = ->(chunk) { record_turn_activity; @external_on_chunk&.call(chunk) }
+      @on_message_persisted = ->(message, stream_message_id: nil) {
+        record_turn_activity(message:)
+        @external_on_message_persisted&.call(message, stream_message_id:)
+      }
       @llm_client = llm_client
       @stream_message_id = stream_message_id
     end
@@ -43,10 +48,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      @chat_turn.complete!
       update_session_activity
       assistant_message
+    rescue StandardError => error
+      @chat_turn&.fail!(classification: failure_classification(error)) if @chat_turn&.status.in?(%w[pending streaming])
+      raise
     end
 
     private
@@ -117,6 +127,22 @@ module ChatSessions
       transport_attempt_message
     end
 
+    # @spec CHAT-TURN-RECOVERY-001
+    def start_turn
+      @chat_turn = transport_attempt_message.initiated_turn || chat_session.chat_turns.create!(
+        account: chat_session.account,
+        initiating_message: transport_attempt_message,
+        status: "streaming",
+        last_activity_at: Time.current
+      )
+      if @chat_turn.events.empty?
+        @chat_turn.record_event!("started")
+      else
+        @chat_turn.record_activity!
+        @chat_turn.record_event!("restarted")
+      end
+    end
+
     # A restarted job retains its stream id. Reusing the original user row
     # lets its already-persisted tool results remain in the reconstructed
     # transcript instead of turning recovery into another tool dispatch.
@@ -172,6 +198,23 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    def record_turn_activity(message: nil)
+      return unless @chat_turn
+
+      @chat_turn.record_activity!(side_effecting_tool_completed: completed_side_effecting_tool?(message))
+    end
+
+    def completed_side_effecting_tool?(message)
+      message&.role == "tool" && Tools::Registry.write_tool?(message.tool_name)
+    end
+
+    def failure_classification(error)
+      return "provider" if error.is_a?(AgentHarness::Error)
+      return "budget" if error.is_a?(TokenLimitExceededError)
+
+      "application"
     end
 
     # Reuse the pre-loop budget baseline so the mid-loop guard does not issue a

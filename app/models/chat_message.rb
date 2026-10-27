@@ -9,6 +9,7 @@ class ChatMessage < ApplicationRecord
   belongs_to :chat_session
   has_one :chat_diagram, dependent: :nullify
   has_many :api_usage_attempts, dependent: :nullify
+  has_one :initiated_turn, class_name: "ChatTurn", foreign_key: :initiating_message_id, dependent: :destroy
 
   validates :role, inclusion: { in: ROLES }
   validates :content, presence: true, unless: -> { tool_result_message? || tool_name.present? }
@@ -89,13 +90,18 @@ class ChatMessage < ApplicationRecord
     metadata.is_a?(Hash) && metadata["pending_confirmation_notice"] == true
   end
 
+  # @spec CHAT-TURN-RECOVERY-003
+  def stalled_turn_notice?
+    metadata.is_a?(Hash) && metadata["chat_turn_stalled"] == true
+  end
+
   # @spec CHAT-API-024
   def groupable_tool?
     (tool_name.present? || role == "tool") && !pending_confirmation? && !transcript_notice?
   end
 
   def transcript_notice?
-    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice?
+    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice? || stalled_turn_notice?
   end
 
   private
