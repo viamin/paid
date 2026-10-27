@@ -162,6 +162,22 @@ RSpec.describe Inbox::ChatContext do
     expect(assessment.fetch(:criteria)).to include(hash_including("state" => "unknown", "prerequisite" => "Pilot report"))
   end
 
+  it "exposes the manual-review cause and its supported actions to the inbox chat" do
+    # @spec MANUAL-REVIEW-RECOVERY-006
+    issue.update!(paid_state: "manual_review", manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+    chat_session.update!(
+      inbox_item_key: "manual_review:#{issue.id}",
+      inbox_item_metadata: { "kind" => "manual_review", "issue_id" => issue.id }
+    )
+
+    context = described_class.call(chat_session:, user:, sections: [ :record ])
+
+    cause = context.fetch("record").fetch(:cause)
+    expect(cause).to include(code: "reopen_review", label: "Reopened after closure")
+    expect(cause.fetch(:actions)).to include(hash_including(kind: "record_intent_validation", semantics: "records_decision"))
+    expect(cause.fetch(:revision)).to be_present
+  end
+
   def github_comment(id:, login:, body:)
     user = Struct.new(:login).new(login)
     Struct.new(:id, :user, :body, :created_at).new(id, user, body, Time.current)

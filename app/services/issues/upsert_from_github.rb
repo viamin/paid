@@ -41,6 +41,7 @@ module Issues
       deliver_completion_notifications(issue, github_issue: github_issue, was_open: was_open)
       require_reopen_review(issue, was_closed: was_closed)
       maybe_unpark_recommend_close_dependents(issue, was_open: was_open)
+      release_dependency_blocked_dependents(issue, was_open: was_open)
       maybe_clear_recommend_close(issue, project: project, previous_labels: previous_labels, new_labels: new_labels)
       sync_priority_labels_to_pull_request(issue, project: project, previous_labels: previous_labels, new_labels: new_labels)
       issue
@@ -185,6 +186,18 @@ module Issues
       end
     end
     private_class_method :maybe_unpark_recommend_close_dependents
+
+    # A dependency that closes resolves the hold it placed on the issues
+    # that were blocked on it. Those issues are re-evaluated instead of
+    # waiting for a human to notice the hold (#4640).
+    # @spec MANUAL-REVIEW-RECOVERY-003
+    def self.release_dependency_blocked_dependents(issue, was_open:)
+      return unless was_open
+      return unless issue.github_state == "closed"
+
+      Issues::ReleaseDependencyBlockedDependents.call(dependency_issue: issue)
+    end
+    private_class_method :release_dependency_blocked_dependents
 
     def self.remove_recommend_close_label(issue)
       label = recommend_close_label(issue.project)

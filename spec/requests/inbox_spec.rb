@@ -1132,6 +1132,156 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("enhancement round limit")
   end
 
+  # @spec MANUAL-REVIEW-RECOVERY-001 @spec MANUAL-REVIEW-RECOVERY-002
+  it "renders the reopen-review cause with the original closure and the remaining scope" do
+    parked = create_manual_review_issue(
+      title: "Reopened issue",
+      github_number: 521,
+      reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+      body: "Record the analyzer stdout, stderr and exit code.",
+      closed_at: 2.days.ago
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Reopened after closure", "Original closure and remaining scope")
+    expect(response.body).to include("Record the analyzer stdout, stderr and exit code.")
+    expect(response.body).to include("Records a decision")
+  end
+
+  # @spec MANUAL-REVIEW-RECOVERY-002
+  it "renders the intent-validation form bound to the reviewed scope revision" do
+    parked = create_manual_review_issue(
+      title: "Reopened issue",
+      github_number: 525,
+      reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+      body: "Record the analyzer stdout, stderr and exit code."
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    form = Nokogiri::HTML(response.body).at_css(
+      %(form[action="#{resolve_reopen_review_project_agent_runs_path(project)}"])
+    )
+
+    expect(form).to be_present
+    expect(form.at_css('input[name="revision"]')["value"]).to eq(
+      Issue.reopen_review_revision_for(title: parked.title, body: parked.body)
+    )
+    expect(form.at_css('textarea[name="reason"]')).to be_present
+  end
+
+  # @spec MANUAL-REVIEW-RECOVERY-003
+  it "links the blocking work for a dependency wait instead of offering an enhancement retry" do
+    dependency = create(:issue, project: project, github_number: 4321, title: "Ship the API")
+    parked = create_manual_review_issue(
+      title: "Blocked issue",
+      github_number: 522,
+      reason: "blocked on an unresolved dependency"
+    )
+    create(:issue_dependency, issue: parked, depends_on_issue: dependency)
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Waiting on a dependency", "Collects evidence")
+    expect(response.body).to include(dependency.github_url)
+    expect(response.body).not_to include("Start enhancement run")
+  end
+
+  # @spec MANUAL-REVIEW-RECOVERY-001
+  it "keeps an unclassified cause visible in the pane" do
+    parked = create_manual_review_issue(
+      title: "Unclassified issue",
+      github_number: 523,
+      reason: "CI repair required."
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Unclassified manual review")
+    expect(response.body).to include("could not be classified")
+  end
+
+  # @spec MANUAL-REVIEW-RECOVERY-004
+  it "explains that the enhancement retry re-runs the analysis" do
+    parked = create_manual_review_issue(
+      title: "Enhancement issue",
+      github_number: 524,
+      reason: "Paid reached the configured limit of 3 enhancement re-evaluation rounds."
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Retries analysis", "Start enhancement run")
+  end
+
+  # @spec MANUAL-REVIEW-RECOVERY-002 @spec MANUAL-REVIEW-RECOVERY-006
+  it "carries a reopened issue from the Inbox item through the validation to a refreshed lane" do
+    parked = create_manual_review_issue(
+      title: "Reopened journey issue",
+      github_number: 527,
+      reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+      body: "Record the analyzer stdout, stderr and exit code."
+    )
+    entry_path = inbox_entry_path(
+      entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND
+    )
+
+    get entry_path
+
+    expect(response.body).to include("Reopened after closure", "Record intent validation")
+
+    post resolve_reopen_review_project_agent_runs_path(project), params: {
+      issue_id: parked.id,
+      decision: "intent_valid",
+      reason: "The validation artifacts are still required.",
+      revision: Issue.reopen_review_revision_for(title: parked.title, body: parked.body),
+      return_to: inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+    }
+
+    expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND))
+    expect(parked.reload.reopen_review_decision).to eq("intent_valid")
+
+    get entry_path
+
+    expect(response.body).to include("Start implementation run", "Resumes implementation")
+
+    expect {
+      post resume_manual_review_project_agent_runs_path(project), params: {
+        issue_id: parked.id,
+        goal: "create_pr",
+        return_to: inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+      }
+    }.to change(AgentRun, :count).by(1)
+
+    expect(AgentRun.last.goal).to eq("create_pr")
+    expect(parked.reload.paid_state).to eq("in_progress")
+
+    get inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response.body).not_to include("Reopened journey issue")
+  end
+
   # @spec OPERATOR-INBOX-002E @spec INBOX-FOUNDATION-006
   it "lists retry-limited issues regardless of auto-pick enablement but not from other accounts' projects" do
     auto_pick_off_project = create(:project, account: account, created_by: user, auto_pick_enabled: false, active: true, owner: "acme", repo: "epsilon")

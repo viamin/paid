@@ -102,9 +102,32 @@ module Api
         }
       end
 
-      def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
-      end
+    def manual_review_payload
+      {
+        questions: entry.questions,
+        comment_url: entry.manual_review_comment_url,
+        cause: manual_review_cause_payload
+      }
+    end
+
+    # The manual-review lane has several causes, and each one supports a
+    # different recovery. The payload carries the classification and the
+    # supported actions so an API client never has to guess whether an
+    # enhancement retry is the right move (#4640).
+    # @spec MANUAL-REVIEW-RECOVERY-006
+    def manual_review_cause_payload
+      cause = Inbox::ManualReviewCause.call(issue: entry.issue, questions: entry.questions)
+      {
+        code: cause.code,
+        label: cause.label,
+        summary: cause.summary,
+        revision: cause.revision,
+        holds: cause.holds.map { |hold| { code: hold.code, message: hold.message, recovery: hold.recovery, links: hold.links } },
+        actions: cause.actions.map do |action|
+          { kind: action.kind, label: action.label, semantics: action.semantics, description: action.description, goal: action.goal }
+        end
+      }
+    end
 
       def manual_review_list_payload
         { questions: entry.questions }

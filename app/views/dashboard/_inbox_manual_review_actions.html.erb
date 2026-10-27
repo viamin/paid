@@ -1,0 +1,60 @@
+<%# @spec MANUAL-REVIEW-RECOVERY-002 @spec MANUAL-REVIEW-RECOVERY-003
+    @spec MANUAL-REVIEW-RECOVERY-004 @spec MANUAL-REVIEW-RECOVERY-006 %>
+<div class="space-y-3">
+  <h3 class="text-sm font-semibold text-gray-900">How to resume</h3>
+  <% cause.actions.each do |action| %>
+    <div class="space-y-2 rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="manual-review-action-<%= action.kind %>">
+      <p class="text-sm font-medium text-gray-900">
+        <%= action.label %>
+        <span class="text-xs font-normal text-gray-500">(<%= Inbox::ManualReviewCause::SEMANTICS.fetch(action.semantics, action.semantics) %>)</span>
+      </p>
+      <p class="text-xs text-gray-600"><%= action.description %></p>
+
+      <% if action.kind == Inbox::ManualReviewCause::RECORD_INTENT_VALIDATION %>
+        <%= form_with url: resolve_reopen_review_project_agent_runs_path(entry.project),
+              method: :post,
+              data: { turbo_frame: "_top" },
+              class: "space-y-2" do |form| %>
+          <%= form.hidden_field :issue_id, value: entry.issue.id %>
+          <%= form.hidden_field :revision, value: cause.revision %>
+          <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+          <div class="flex flex-col gap-1">
+            <%= form.label :decision, "Intent validation", for: "reopen_review_decision_#{entry.issue.id}", class: "text-sm font-medium text-gray-700" %>
+            <%= form.select :decision,
+                  [ [ "The original intent still applies", Issues::ResolveReopenReview::VALID ],
+                    [ "The original intent no longer applies", Issues::ResolveReopenReview::SUPERSEDED ] ], {},
+                  id: "reopen_review_decision_#{entry.issue.id}",
+                  class: "block w-full rounded-md border-gray-300 text-sm shadow-sm" %>
+          </div>
+          <div class="flex flex-col gap-1">
+            <%= form.label :reason, "Reason", for: "reopen_review_reason_#{entry.issue.id}", class: "text-sm font-medium text-gray-700" %>
+            <%= form.text_area :reason,
+                  id: "reopen_review_reason_#{entry.issue.id}",
+                  required: true,
+                  rows: 3,
+                  class: "block w-full rounded-md border-gray-300 text-sm shadow-sm" %>
+          </div>
+          <p class="text-xs text-gray-500">
+            The decision is bound to the scope revision
+            <code><%= cause.revision[0, 12] %></code>. Editing the issue invalidates it and asks for a fresh validation.
+          </p>
+          <%= form.submit "Record intent validation",
+                class: "inline-flex items-center rounded-md bg-purple-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+        <% end %>
+      <% elsif action.goal.present? && policy(entry.project).run_agent? %>
+        <%= button_to action.label,
+              resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
+              method: :post,
+              params: { goal: action.goal, return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
+              class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500",
+              form: { data: { turbo_confirm: "#{action.label} for #{entry.project.full_name}##{entry.issue.github_number}?", turbo_frame: "_top" } } %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if cause.actions.empty? %>
+    <p class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
+      No further work is authorized for this issue. Close the GitHub issue to clear this entry.
+    </p>
+  <% end %>
+</div>

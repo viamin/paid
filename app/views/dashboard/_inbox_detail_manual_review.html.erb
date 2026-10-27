@@ -1,14 +1,17 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec OPERATOR-INBOX-002D @spec MANUAL-REVIEW-RECOVERY-001 %>
+<% cause = Inbox::ManualReviewCause.call(issue: entry.issue, questions: entry.questions) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
-    <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
-    <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
-        Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
-      <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
-      <% end %>
-    </p>
+    <div class="flex flex-wrap items-center gap-2">
+      <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
+      <span class="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-800" data-testid="manual-review-cause"><%= cause.label %></span>
+    </div>
+    <p class="mt-1 text-sm text-purple-800"><%= cause.summary %></p>
+    <% if entry.questions.any? %>
+      <p class="mt-1 text-sm text-purple-800">
+        Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume.
+      </p>
+    <% end %>
   </div>
 
   <div class="space-y-3">
@@ -16,6 +19,28 @@
     <p class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
       <%= entry.summary %>
     </p>
+  </div>
+
+  <%# Every recorded hold is listed, including the ones that are not the
+      primary cause: a reopen validation never waives an unresolved
+      dependency, and a queued run must be reconciled before another one
+      starts (#4640). %>
+  <div class="space-y-3">
+    <h3 class="text-sm font-semibold text-gray-900">What is holding this issue</h3>
+    <ul class="space-y-2 text-sm text-gray-700">
+      <% cause.holds.each do |hold| %>
+        <li class="rounded-lg border border-gray-200 bg-white px-4 py-3" data-testid="manual-review-hold-<%= hold.code %>">
+          <p class="font-medium text-gray-900"><%= hold.message %></p>
+          <% if hold.recovery.present? %>
+            <p class="mt-1 text-xs text-gray-600">Next step: <%= hold.recovery %></p>
+          <% end %>
+          <% Array(hold.links).each do |link| %>
+            <%= link_to link["label"], link["url"], target: "_blank", rel: "noopener noreferrer",
+                  class: "mt-1 inline-block text-xs font-medium text-indigo-600 hover:text-indigo-900" %>
+          <% end %>
+        </li>
+      <% end %>
+    </ul>
   </div>
 
   <%# A scanner-confirmed recurrence routes through manual_review, not the
@@ -30,6 +55,15 @@
     </div>
   <% end %>
 
+  <%# The closure the operator is validating, and the scope that remains. %>
+  <% if cause.scope %>
+    <div class="space-y-3 rounded-xl border border-gray-200 bg-white p-4">
+      <h3 class="text-sm font-semibold text-gray-900">Original closure and remaining scope</h3>
+      <p class="text-sm text-gray-700"><%= cause.scope.closure %></p>
+      <div class="whitespace-pre-line rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700"><%= cause.scope.remaining %></div>
+    </div>
+  <% end %>
+
   <%# @spec ISSUE-ENHANCEMENT-011
       The terminal round's preserved clarifying questions ARE the manual
       review this state asks for: render the same answer form the
@@ -41,15 +75,20 @@
           selected_kind: selected_kind %>
   <% end %>
 
+  <% if cause.reopen_review? && entry.issue.reopen_review_stale? %>
+    <p class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      The scope changed after the recorded validation, so that validation no longer describes this issue.
+      Record a fresh validation before resuming the work.
+    </p>
+  <% end %>
+
+  <%= render "dashboard/inbox_manual_review_actions",
+        entry: entry,
+        cause: cause,
+        scoped_project: scoped_project,
+        selected_kind: selected_kind %>
+
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
-      <%= button_to "Start enhancement run",
-            resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
-            method: :post,
-            params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
-            class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500",
-            form: { data: { turbo_confirm: "Queue a manual enhancement run for #{entry.project.full_name}##{entry.issue.github_number}?", turbo_frame: "_top" } } %>
-    <% end %>
     <%= link_to inbox_issue_link_label(entry.issue),
           entry.issue.github_url,
           target: "_blank",

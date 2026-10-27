@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_26_194943) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_27_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2627,6 +2627,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_26_194943) do
     t.datetime "reconciled_at", comment: "When this issue was last verified via reconciliation; null = never reconciled"
     t.datetime "relationships_parsed_at"
     t.text "reopen_reason", comment: "Reason supplied when this closed issue was last reopened through chat."
+    t.datetime "reopen_review_decided_at", comment: "When the reopen-review intent-validation decision was recorded."
+    t.bigint "reopen_review_decided_by_id", comment: "Operator (users.id) who recorded the reopen-review decision."
+    t.string "reopen_review_decision", comment: "Operator intent-validation decision for a reopened issue (intent_valid or intent_superseded). Blank while the reopen review is still awaiting a decision."
+    t.text "reopen_review_reason", comment: "Operator rationale recorded with the reopen-review decision."
+    t.string "reopen_review_revision", limit: 64, comment: "Digest of the issue scope (title and body) the reopen-review decision was validated against."
     t.datetime "reopened_at", comment: "When a closed issue was last reopened through chat."
     t.bigint "reopened_by_id", comment: "Paid user who last reopened this issue through chat."
     t.integer "review_goal_retry_count", default: 0, null: false

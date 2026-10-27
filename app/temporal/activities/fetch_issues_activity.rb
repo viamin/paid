@@ -1196,7 +1196,7 @@ module Activities
       blockers = local_numbers.map { |number| "##{number}" } + external_refs
 
       "Paid's agent run completed and opened a pull request, but this issue remains open and is " \
-        "blocked on an unresolved dependency: #{blockers.join(', ')}. This issue stays pending until " \
+        "#{Issue::DEPENDENCY_BLOCKED_REASON_MARKER}: #{blockers.join(', ')}. This issue stays pending until " \
         "the dependency resolves or a human intervenes."
     end
 

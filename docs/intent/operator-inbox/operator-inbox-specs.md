@@ -124,7 +124,13 @@
   `ISSUE-ENHANCEMENT-012`). The entry SHALL offer an operator-triggered manual
   `enhance_issue` run as its clearing action, since automatic picking excludes
   `manual_review` and only an explicit operator-triggered run resumes work
-  (`ISSUE-ENHANCEMENT-011`). Queuing that run SHALL transition the issue out
+  (`ISSUE-ENHANCEMENT-011`). The recovery offered SHALL depend on the cause
+  the entry was parked for: a reopen review is released by a recorded
+  intent-validation decision and then a supported work continuation, a
+  dependency wait names the blocking work instead of asking for an
+  enhancement, a scanner-confirmed recurrence routes to its remediation
+  action, and an unclassified cause stays visible as such
+  (`MANUAL-REVIEW-RECOVERY-001`–`007`). Queuing that run SHALL transition the issue out
   of `manual_review` in the same request — inside the same transaction that
   creates the run — so the entry clears from the queue and the badge at queue
   time rather than when the workflow eventually starts the run (#3853); a

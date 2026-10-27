@@ -2730,6 +2730,138 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND))
       end
+
+      # @spec MANUAL-REVIEW-RECOVERY-003
+      it "refuses to queue an enhancement run for an issue waiting on a dependency" do
+        dependency = create(:issue, project: project, github_number: 4321)
+        parked = create(:issue, project: project, github_number: 93, paid_state: "manual_review",
+          manual_review_reason: "blocked on an unresolved dependency")
+        create(:issue_dependency, issue: parked, depends_on_issue: dependency)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("#4321")
+        expect(parked.reload.paid_state).to eq("manual_review")
+      end
+
+      # @spec MANUAL-REVIEW-RECOVERY-002
+      it "refuses to resume a reopen review before the intent validation is recorded" do
+        reopened = create(:issue, project: project, github_number: 94, paid_state: "manual_review",
+          manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: reopened.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("reopen-review validation")
+        expect(reopened.reload.paid_state).to eq("manual_review")
+      end
+
+      # @spec MANUAL-REVIEW-RECOVERY-002
+      it "queues the supported continuation once the reopen review is validated" do
+        reopened = create(:issue, project: project, github_number: 95, paid_state: "manual_review",
+          manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+          reopen_review_decision: "intent_valid", reopen_review_decided_at: Time.current)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project),
+            params: { issue_id: reopened.id, goal: "create_pr" }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(AgentRun.last.goal).to eq("create_pr")
+        expect(reopened.reload.paid_state).to eq("in_progress")
+      end
+
+      # @spec MANUAL-REVIEW-RECOVERY-005
+      it "refuses to clear the hold while an incompatible run is queued" do
+        parked_issue
+        queued = create(:agent_run, project: project, issue: parked_issue, goal: "create_pr", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("##{queued.id}")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+      end
+    end
+  end
+
+  describe "POST /projects/:project_id/agent_runs/resolve_reopen_review" do
+    let(:reopened) do
+      create(:issue,
+        project: project,
+        github_number: 96,
+        title: "Collect the live validation artifacts",
+        body: "Record the analyzer stdout, stderr and exit code.",
+        paid_state: "manual_review",
+        manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+    end
+    let(:revision) { Issue.reopen_review_revision_for(title: reopened.title, body: reopened.body) }
+
+    context "when not authenticated" do
+      # @spec MANUAL-REVIEW-RECOVERY-002
+      it "redirects to the sign in page" do
+        post resolve_reopen_review_project_agent_runs_path(project), params: { issue_id: reopened.id }
+
+        expect(response).to redirect_to(new_user_session_path)
+        expect(reopened.reload.reopen_review_decision).to be_nil
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      # @spec MANUAL-REVIEW-RECOVERY-002
+      it "records the intent-validation decision with the operator's reason" do
+        post resolve_reopen_review_project_agent_runs_path(project),
+          params: { issue_id: reopened.id, decision: "intent_valid", reason: "The artifacts are still required.", revision: revision }
+
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:notice]).to eq("Reopen review recorded.")
+        expect(reopened.reload).to have_attributes(
+          reopen_review_decision: "intent_valid",
+          reopen_review_reason: "The artifacts are still required.",
+          reopen_review_decided_by_id: user.id
+        )
+      end
+
+      # @spec MANUAL-REVIEW-RECOVERY-002
+      it "refuses a decision made against a different revision of the scope" do
+        reviewed_revision = revision
+        reopened.update!(body: "The scope changed after the review was opened.")
+
+        post resolve_reopen_review_project_agent_runs_path(project),
+          params: { issue_id: reopened.id, decision: "intent_valid", reason: "Still required.", revision: reviewed_revision }
+
+        expect(flash[:alert]).to include("changed since the review was opened")
+        expect(reopened.reload.reopen_review_decision).to be_nil
+      end
+
+      # @spec MANUAL-REVIEW-RECOVERY-007
+      it "refuses a repeated submission" do
+        post resolve_reopen_review_project_agent_runs_path(project),
+          params: { issue_id: reopened.id, decision: "intent_valid", reason: "Still required.", revision: revision }
+        post resolve_reopen_review_project_agent_runs_path(project),
+          params: { issue_id: reopened.id, decision: "intent_superseded", reason: "Changed my mind.", revision: revision }
+
+        expect(flash[:alert]).to include("already decided")
+        expect(reopened.reload.reopen_review_decision).to eq("intent_valid")
+      end
+
+      # @spec MANUAL-REVIEW-RECOVERY-007
+      it "refuses an actor without permission to run agents" do
+        outsider = create(:user)
+        sign_in outsider
+
+        post resolve_reopen_review_project_agent_runs_path(project),
+          params: { issue_id: reopened.id, decision: "intent_valid", reason: "Still required.", revision: revision }
+
+        expect(response).not_to have_http_status(:ok)
+        expect(reopened.reload.reopen_review_decision).to be_nil
+      end
     end
   end
 

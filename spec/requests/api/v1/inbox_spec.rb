@@ -106,6 +106,23 @@ RSpec.describe "Mobile inbox API" do
     expect(response.parsed_body.dig("error", "code")).to eq("not_found")
   end
 
+  # @spec MANUAL-REVIEW-RECOVERY-006
+  it "exposes the manual-review cause and its supported actions" do
+    parked = create(:issue, project:, paid_state: "manual_review",
+      manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+    stub_github_comments
+
+    get "/api/v1/inbox/entries/manual_review:#{parked.id}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    cause = response.parsed_body.fetch("entry").fetch("cause")
+    expect(cause).to include("code" => "reopen_review", "label" => "Reopened after closure")
+    expect(cause.fetch("revision")).to be_present
+    expect(cause.fetch("actions")).to include(
+      hash_including("kind" => "record_intent_validation", "semantics" => "records_decision")
+    )
+  end
+
   # @spec QUESTION-EXPLORATION-012 QUESTION-EXPLORATION-018
   it "opens the same linked conversation the Inbox detail pane opens, attributed to the bearer" do
     issue

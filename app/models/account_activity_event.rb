@@ -26,6 +26,8 @@ class AccountActivityEvent < ApplicationRecord
     "issue.continuation_requested" => "project",
     "issue.closeout_resolved" => "project",
     "issue.prerequisite_linked" => "project",
+    "issue.reopen_review_decided" => "project",
+    "issue.manual_review_resumed" => "project",
     "runner.created" => "runner",
     "runner.updated" => "runner",
     "runner.deleted" => "runner",

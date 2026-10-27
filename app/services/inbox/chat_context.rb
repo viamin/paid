@@ -112,6 +112,7 @@ module Inbox
       when Queue::FEATURE_DECISION_KIND then feature_intent_context
       when Queue::CHANGE_INTENT_DRAFT_KIND then change_intent_context
       when Queue::PARTIAL_CLOSEOUT_KIND then partial_closeout
+      when Queue::MANUAL_REVIEW_KIND then manual_review
       when Queue::MERGE_APPROVAL_KIND, Queue::ESCALATED_PR_KIND then pull_request_context
       else work_item
       end
@@ -155,6 +156,29 @@ module Inbox
       return @issue if defined?(@issue)
 
       @issue = chat_session.project.issues.find_by(id: chat_session.inbox_item_metadata["issue_id"])
+    end
+
+    # The manual-review lane has several causes, and each one supports a
+    # different recovery. The chat sees the same classification and the same
+    # supported actions the Inbox pane offers (#4640).
+    # @spec MANUAL-REVIEW-RECOVERY-006
+    def manual_review
+      return {} unless issue
+
+      cause = Inbox::ManualReviewCause.call(issue:, questions: Inbox::Queue.questions_for(issue))
+      {
+        issue: work_item,
+        cause: {
+          code: cause.code,
+          label: cause.label,
+          summary: cause.summary,
+          revision: cause.revision,
+          holds: cause.holds.map { |hold| { code: hold.code, message: hold.message, recovery: hold.recovery } },
+          actions: cause.actions.map do |action|
+            { kind: action.kind, label: action.label, semantics: action.semantics, description: action.description, goal: action.goal }
+          end
+        }
+      }
     end
 
     def inbox_kind

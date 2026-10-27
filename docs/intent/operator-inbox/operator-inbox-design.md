@@ -567,11 +567,15 @@ predicate the same way `saved_change_to_needs_input_since?` already does.
   the lane via `clear_runner_retry_abandonment!` and the
   runner-retry-cap / push-permission abandonment producers.
 - `spec/requests/inbox_spec.rb` covers `manual_review` detail rendering (reason,
-  age, and the `resume_manual_review` action).
+  age, the classified cause, and the `resume_manual_review` action).
 - `spec/requests/agent_runs_spec.rb` covers `resume_manual_review` queuing a
   manual `enhance_issue` run, its inbox-aware redirect, the queue-time
   `manual_review` → `in_progress` transition (state/lanes/badge on success,
   state preserved on budget/no-runner failure, graceful stale re-click), and
   the same flip through the bulk enhance form.
+- `spec/services/inbox/manual_review_cause_spec.rb`,
+  `spec/services/issues/resume_manual_review_spec.rb` and
+  `spec/services/issues/resolve_reopen_review_spec.rb` cover the
+  cause-specific recovery routing (`MANUAL-REVIEW-RECOVERY-001`–`007`).
 - `spec/services/dashboard/eligibility_breakdown_spec.rb` covers the named
   `manual_review` bucket.

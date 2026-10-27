@@ -437,7 +437,13 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
+    #
+    # The recovery is routed by the recorded cause (#4640): an enhancement
+    # retry for an enhancement stop, an implementation continuation for a
+    # validated reopen review or a scanner recurrence, and a refusal when the
+    # issue waits on something the operator must resolve first.
     # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec MANUAL-REVIEW-RECOVERY-004 @spec MANUAL-REVIEW-RECOVERY-005
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -447,14 +453,36 @@ module Projects
         return
       end
 
-      create_enhance_issue_runs_and_redirect(
-        issue_ids: [ issue.id ],
-        on_error_path: safe_return_target || dashboard_path,
-        success_path: safe_return_target || dashboard_path,
-        custom_prompt: nil,
-        goal: "enhance_issue",
-        priority_tier: nil
+      result = Issues::ResumeManualReview.call(
+        issue: issue,
+        actor: current_user,
+        goal: params[:goal].presence,
+        create_run: ->(goal) { create_manual_review_run(issue, goal) }
       )
+      redirect_to safe_return_target || dashboard_path, **manual_review_flash(result)
+    end
+
+    # Records the operator's intent-validation decision for a reopened issue.
+    # The decision is bound to the issue revision the operator reviewed, so a
+    # decision made against a different scope is refused (#4640).
+    # @spec MANUAL-REVIEW-RECOVERY-002
+    def resolve_reopen_review
+      authorize @project, :run_agent?
+
+      issue = resolve_manual_review_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      result = Issues::ResolveReopenReview.call(
+        issue: issue,
+        actor: current_user,
+        decision: params[:decision],
+        reason: params[:reason],
+        revision: params[:revision]
+      )
+      redirect_to safe_return_target || dashboard_path, **manual_review_flash(result, "Reopen review recorded.")
     end
 
     # Operator-driven counterpart to
@@ -1082,6 +1110,23 @@ module Projects
       else
         "This issue is no longer waiting for manual review."
       end
+    end
+
+    # The run factory the manual-review recovery uses: the same run creation
+    # every other manual run uses, with its runner selection and activation
+    # rules. Failures become the service's typed error so the operator sees
+    # the reason instead of a 500.
+    # @spec MANUAL-REVIEW-RECOVERY-005
+    def create_manual_review_run(issue, goal)
+      create_agent_run(issue: issue, goal: goal)
+    rescue NoRunnableRunnerError, InvalidDockerHostSelectionError => e
+      raise Issues::ResumeManualReview::RunCreationFailed, e.message
+    end
+
+    def manual_review_flash(result, success_message = nil)
+      return { notice: success_message || result.message } if result.success?
+
+      { alert: result.message }
     end
 
     def cancel_in_flight_execution_for_resume!

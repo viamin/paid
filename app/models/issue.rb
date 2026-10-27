@@ -2,10 +2,15 @@
 
 class Issue < ApplicationRecord
   belongs_to :reopened_by, class_name: "User", optional: true
+  belongs_to :reopen_review_decided_by, class_name: "User", optional: true
 
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
   REOPEN_REVIEW_REQUIRED_REASON =
     "Issue was reopened after closure. An operator must validate its current intent before it can be completed again."
+  # The marker Paid writes into the dependency-blocked parking reason. It is
+  # the explicit provenance the Inbox reads to tell a dependency wait apart
+  # from an enhancement stop (#4640).
+  DEPENDENCY_BLOCKED_REASON_MARKER = "blocked on an unresolved dependency"
   NON_BLOCKING_OPEN_DEPENDENCY_STATES = %w[recommend_close completed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
   CONTROL_PRIORITIES = %w[P1 P2 P3].freeze
@@ -316,16 +321,51 @@ class Issue < ApplicationRecord
     end
   end
 
-  # @spec ISSUE-REOPEN-REVIEW-001
+  # The reopen review holds completion and issue closure until an authorized
+  # operator records an intent-validation decision (#4640). A recorded
+  # decision releases the gate: the operator has validated whether the
+  # original intent still applies.
+  # @spec ISSUE-REOPEN-REVIEW-001 @spec MANUAL-REVIEW-RECOVERY-002
   def reopen_review_pending?
-    paid_state == "manual_review" && manual_review_reason == REOPEN_REVIEW_REQUIRED_REASON
+    paid_state == "manual_review" && manual_review_reason == REOPEN_REVIEW_REQUIRED_REASON &&
+      reopen_review_decision.blank?
   end
 
-  # @spec ISSUE-REOPEN-REVIEW-001
+  # @spec MANUAL-REVIEW-RECOVERY-002
+  def reopen_review_decided?
+    reopen_review_decision.present?
+  end
+
+  # The scope the operator validated. Editing the title or body after the
+  # decision invalidates it: the decision no longer describes the issue.
+  # @spec MANUAL-REVIEW-RECOVERY-002
+  def reopen_review_stale?
+    return false unless reopen_review_decided?
+    return false if reopen_review_revision.blank?
+
+    reopen_review_revision != self.class.reopen_review_revision_for(title:, body:)
+  end
+
+  # @spec MANUAL-REVIEW-RECOVERY-002
+  def self.reopen_review_revision_for(title:, body:)
+    Digest::SHA256.hexdigest("#{title}\n#{body}")
+  end
+
+  # A new reopen cycle starts a fresh review: the previous decision described
+  # the earlier scope, so it is cleared with the new gate.
+  # @spec ISSUE-REOPEN-REVIEW-001 @spec MANUAL-REVIEW-RECOVERY-002
   def require_reopen_review!
     with_lock do
       reload
-      update!(paid_state: "manual_review", manual_review_reason: REOPEN_REVIEW_REQUIRED_REASON)
+      update!(
+        paid_state: "manual_review",
+        manual_review_reason: REOPEN_REVIEW_REQUIRED_REASON,
+        reopen_review_decision: nil,
+        reopen_review_reason: nil,
+        reopen_review_decided_at: nil,
+        reopen_review_decided_by_id: nil,
+        reopen_review_revision: nil
+      )
     end
   end
 

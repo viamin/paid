@@ -1766,6 +1766,54 @@ RSpec.describe Issue do
     end
   end
 
+  # @spec MANUAL-REVIEW-RECOVERY-002
+  describe "reopen review gate" do
+    let(:project) { create(:project) }
+    let(:issue) do
+      create(:issue, project: project, paid_state: "manual_review",
+        manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON, title: "Scope", body: "Body")
+    end
+
+    it "is pending while no decision has been recorded" do
+      expect(issue).to be_reopen_review_pending
+    end
+
+    it "is released once an intent-validation decision is recorded" do
+      issue.update!(reopen_review_decision: "intent_valid", reopen_review_decided_at: Time.current)
+
+      expect(issue.reload).not_to be_reopen_review_pending
+      expect(issue).to be_reopen_review_decided
+    end
+
+    it "marks a decision stale when the scope changes after it was recorded" do
+      issue.update!(
+        reopen_review_decision: "intent_valid",
+        reopen_review_decided_at: Time.current,
+        reopen_review_revision: described_class.reopen_review_revision_for(title: issue.title, body: issue.body)
+      )
+
+      expect(issue.reload).not_to be_reopen_review_stale
+
+      issue.update!(body: "A different scope")
+
+      expect(issue.reload).to be_reopen_review_stale
+    end
+
+    it "clears an earlier decision when a new reopen cycle starts" do
+      issue.update!(reopen_review_decision: "intent_valid", reopen_review_decided_at: Time.current)
+
+      issue.require_reopen_review!
+
+      expect(issue.reload).to have_attributes(
+        reopen_review_decision: nil,
+        reopen_review_reason: nil,
+        reopen_review_decided_at: nil,
+        reopen_review_decided_by_id: nil,
+        reopen_review_revision: nil
+      )
+    end
+  end
+
   # @spec OPERATOR-INBOX-010
   describe "inbox count cache invalidation" do
     let(:account) { create(:account) }
