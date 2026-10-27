@@ -40,6 +40,27 @@ RSpec.describe LayeredVerification::Audits::SynthesizeCoverage do
     expect(finding.observations.last.fetch("check_result_ids")).to eq([ next_result.id ])
   end
 
+  # @spec LAYERED-VERIFY-017
+  it "deduplicates by external identity after an obligation row is replaced" do
+    first_audit = create(:agent_run, goal: "layered_verification_audit")
+    original = create(:layered_verification_obligation, project: first_audit.project)
+    create(:layered_verification_check_result, obligation: original, agent_run: first_audit,
+      obligation_coverage: "contradicted", cause_signature: "missing-idempotency-guard",
+      limitations: "bounded input")
+    described_class.call(agent_run: first_audit, obligations: [ original ])
+
+    replacement = create(:layered_verification_obligation, project: first_audit.project,
+      framework: "okf", external_identity: original.external_identity)
+    next_audit = create(:agent_run, goal: "layered_verification_audit", project: first_audit.project)
+    create(:layered_verification_check_result, obligation: replacement, agent_run: next_audit,
+      obligation_coverage: "contradicted", cause_signature: "missing-idempotency-guard",
+      limitations: "bounded input")
+
+    expect { described_class.call(agent_run: next_audit, obligations: [ replacement ]) }
+      .not_to change(LayeredVerificationFinding, :count)
+    expect(LayeredVerificationFinding.last.obligation).to eq(replacement)
+  end
+
   # @spec LAYERED-VERIFY-017 LAYERED-VERIFY-024
   it "keeps distinct claim conflicts separate within one obligation" do
     audit = create(:agent_run, goal: "layered_verification_audit")

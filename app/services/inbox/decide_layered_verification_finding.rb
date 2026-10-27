@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+require "digest"
+
 module Inbox
   # Records the operator's assessment-only Inbox choice. Repair and canonical
   # clarification persistence remain separately authorized operations.
@@ -37,7 +39,7 @@ module Inbox
 
     def stale?
       external_revision != recorded_target_revision ||
-        source_revision_at_audit_target != recorded_target_revision ||
+        current_obligation_revision != finding.obligation.external_revision.to_s ||
         !obligation_source_matches_evidence?
     end
 
@@ -45,14 +47,30 @@ module Inbox
       finding.agent_run.external_metadata.dig("layered_verification", "target_revision").to_s
     end
 
-    # An obligation revision can be a content digest, while a repository
-    # revision is a Git SHA. Re-resolve the audit's pinned repository revision
-    # instead of incorrectly comparing those two coordinate systems to HEAD.
-    def source_revision_at_audit_target
-      project = finding.project
-      project.client.ref(project.full_name, recorded_target_revision).object.sha.to_s
+    def current_obligation_revision
+      return current_project_revision if git_revision?(finding.obligation.external_revision)
+
+      Digest::SHA256.hexdigest(current_obligation_source)
     rescue GithubClient::Error, Faraday::Error
-      raise StaleRevisionError, "The audit revision could not be verified; try again before deciding."
+      raise StaleRevisionError, "The obligation source could not be verified; try again before deciding."
+    end
+
+    def current_project_revision
+      @current_project_revision ||= project.client.ref(project.full_name, "heads/#{project.default_branch}").object.sha.to_s
+    end
+
+    def current_obligation_source
+      project.client.file_content(
+        project.full_name, path: finding.obligation.external_identity, ref: current_project_revision
+      ).presence || raise(StaleRevisionError, "The obligation source could not be verified; try again before deciding.")
+    end
+
+    def git_revision?(revision)
+      revision.to_s.match?(/\A[0-9a-f]{40}\z/i)
+    end
+
+    def project
+      finding.project
     end
 
     def obligation_source_matches_evidence?

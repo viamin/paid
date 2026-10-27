@@ -11,6 +11,8 @@ RSpec.describe LayeredVerification::Audits::Request do
     project = create(:project, account: user.account)
     obligation = create(:layered_verification_obligation, project:)
     allow(FeatureFlags).to receive(:enabled?).with(:layered_verification_add_on, project:).and_return(true)
+    allow(project.client).to receive(:ref).with(project.full_name, "abc123")
+      .and_return(OpenStruct.new(object: OpenStruct.new(sha: "resolved-sha")))
 
     run = nil
     expect {
@@ -22,6 +24,7 @@ RSpec.describe LayeredVerification::Audits::Request do
     }.to have_enqueued_job(ProcessRunQueueJob)
 
     expect(run).to have_attributes(goal: "layered_verification_audit", issue: nil, status: "queued")
-    expect(run.effective_prompt).to include("Layered-verification audit", "abc123", "spec_to_code")
+    expect(run).to have_attributes(base_commit_sha: "resolved-sha")
+    expect(run.effective_prompt).to include("Layered-verification audit", "resolved-sha", "spec_to_code")
   end
 end

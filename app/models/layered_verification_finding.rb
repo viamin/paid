@@ -8,7 +8,9 @@ class LayeredVerificationFinding < ApplicationRecord
   belongs_to :obligation, class_name: "LayeredVerificationObligation"
   belongs_to :agent_run
 
-  validates :correspondence_claim_type, :cause_signature, presence: true
+  before_validation :copy_obligation_external_identity
+
+  validates :obligation_external_identity, :correspondence_claim_type, :cause_signature, presence: true
   validates :status, inclusion: { in: STATUSES }
   validate :records_belong_to_same_project
 
@@ -25,6 +27,10 @@ class LayeredVerificationFinding < ApplicationRecord
   end
 
   private
+
+  def copy_obligation_external_identity
+    self.obligation_external_identity = obligation.external_identity if obligation
+  end
 
   def records_belong_to_same_project
     errors.add(:obligation, "must belong to the same project") if obligation && obligation.project_id != project_id

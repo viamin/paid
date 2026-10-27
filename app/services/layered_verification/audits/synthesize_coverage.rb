@@ -48,8 +48,10 @@ module LayeredVerification
         correspondence_claim_type = claim_type(contradictory.first)
         cause_signature = contradictory.first.cause_signature
         finding = LayeredVerificationFinding.find_or_create_by!(
-          project: agent_run.project, obligation:, correspondence_claim_type:, cause_signature:
+          project: agent_run.project, obligation_external_identity: obligation.external_identity,
+          correspondence_claim_type:, cause_signature:
         ) do |record|
+          record.obligation = obligation
           record.agent_run = agent_run
           record.source_passages = contradictory.map { |result| result.evidence_summary }
           record.observed_behavior = { "check_results" => contradictory.map(&:id) }
@@ -60,6 +62,7 @@ module LayeredVerification
             "consequences" => [ "Repair requires separate authorization; this decision does not start one." ]
           }
         end
+        finding.update!(obligation:, agent_run:) unless finding.obligation == obligation
         finding.add_observation!(agent_run:, check_result_ids: contradictory.map(&:id))
       end
 

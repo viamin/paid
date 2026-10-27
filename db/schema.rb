@@ -2840,6 +2840,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090001) do
     t.string "correspondence_claim_type", null: false
     t.datetime "created_at", null: false
     t.jsonb "decision", default: {}, null: false
+    t.string "obligation_external_identity", null: false
     t.bigint "obligation_id", null: false
     t.jsonb "observations", default: [], null: false
     t.jsonb "observed_behavior", default: {}, null: false
@@ -2849,7 +2850,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090001) do
     t.datetime "updated_at", null: false
     t.index ["agent_run_id"], name: "index_layered_verification_findings_on_agent_run_id"
     t.index ["obligation_id"], name: "index_layered_verification_findings_on_obligation_id"
-    t.index ["project_id", "obligation_id", "correspondence_claim_type", "cause_signature"], name: "index_layered_verification_findings_identity", unique: true
+    t.index ["project_id", "obligation_external_identity", "correspondence_claim_type", "cause_signature"], name: "index_layered_verification_findings_identity", unique: true
     t.index ["project_id"], name: "index_layered_verification_findings_on_project_id"
   end
 
@@ -4879,7 +4880,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090001) do
   add_foreign_key "layered_verification_check_results", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
   add_foreign_key "layered_verification_correspondence_claims", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
   add_foreign_key "layered_verification_findings", "agent_runs"
-  add_foreign_key "layered_verification_findings", "layered_verification_obligations", column: "obligation_id", on_delete: :cascade
+  add_foreign_key "layered_verification_findings", "layered_verification_obligations", column: "obligation_id", on_delete: :restrict
   add_foreign_key "layered_verification_findings", "projects", on_delete: :cascade
   add_foreign_key "layered_verification_obligations", "change_intents", on_delete: :nullify
   add_foreign_key "layered_verification_obligations", "layered_verification_obligations", column: "superseded_by_id", on_delete: :nullify
