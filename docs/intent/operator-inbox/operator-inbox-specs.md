@@ -162,6 +162,14 @@
   auto-pick skips until the run completes. An entry with no preserved
   questions renders the state + "Start
   enhancement run" button only, as before.
+  The recovery action SHALL be classified from durable provenance before work
+  is queued: the dedicated reopen marker requires the reopen-intent validation
+  decision; current dependency links remain a wait and are not waived by an
+  acknowledgement; scanner recurrence retains its scanner-evidence recovery;
+  known enhancement provenance retains the question-answer and enhancement
+  retry flows; and unknown provenance remains visibly investigable without
+  starting a guessed run. The service and Inbox use the same classification so
+  a double submit or incompatible queued work cannot silently clear a hold.
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
   `app/services/inbox/manual_review_comment_link.rb`,
   `app/services/dashboard/eligibility_breakdown.rb`, `app/models/issue.rb`,

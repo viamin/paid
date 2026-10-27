@@ -22,8 +22,14 @@ automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
 An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+the original intent remains valid and whether new work is required. The Inbox
+requires an explicit acknowledgement and a non-blank decision reason, records
+the authenticated operator and decision time, then offers the supported
+continuation. `ManualReviews::Recovery` identifies this path from the dedicated
+reopen marker before considering any generic enhancement provenance, so an
+unrelated manual-review hold cannot be cleared by an acknowledgement. This
+moves the issue back into active work through the existing manual-review
+workflow.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

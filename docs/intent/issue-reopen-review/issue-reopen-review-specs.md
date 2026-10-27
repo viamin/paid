@@ -30,3 +30,10 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resumes a
+  reopen-review Inbox item, the system SHALL require an explicit current-intent
+  validation acknowledgement and non-blank decision reason before it records
+  the actor and decision time and starts supported continuation work. It SHALL
+  not apply the enhancement recovery path to another manual-review cause.
+  *Code:* `ManualReviews::Recovery`, `Projects::AgentRunsController`.

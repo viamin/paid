@@ -470,13 +470,35 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
       issue = resolve_manual_review_issue
       unless issue
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = ManualReviews::Recovery.call(issue: issue)
+      active_run = @project.agent_runs.where(issue: issue, status: AgentRun::UNFINISHED_STATUSES)
+        .order(created_at: :desc, id: :desc).first
+      if active_run
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Existing #{active_run.goal} work is already #{active_run.status}; reconcile that run before resuming manual review."
+        return
+      end
+      if recovery.dependency?
+        redirect_to safe_return_target || dashboard_path, alert: recovery.message
+        return
+      end
+      if recovery.scanner? || recovery.cause == :unknown
+        redirect_to safe_return_target || dashboard_path, alert: recovery.message
+        return
+      end
+      if recovery.reopen? && !record_reopen_review_decision(issue)
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Confirm the reopen-intent validation and provide a reason before continuing."
         return
       end
 
@@ -1117,6 +1139,15 @@ module Projects
       return unless issue.paid_state == "manual_review"
 
       issue.update!(paid_state: "in_progress")
+    end
+
+    def record_reopen_review_decision(issue)
+      return false unless ActiveModel::Type::Boolean.new.cast(params[:reopen_review_confirmed])
+      return false if params[:reopen_review_reason].to_s.strip.blank?
+
+      issue.update!(reopened_by: current_user, reopened_at: Time.current,
+        reopen_reason: params[:reopen_review_reason].to_s.strip)
+      true
     end
 
     # A stale page can still render the "Start enhancement run" button after
