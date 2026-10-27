@@ -22,7 +22,9 @@ class ShadowEvaluationExecutionJob < ApplicationJob
     return if evaluation.cancelled? || evaluation.completed?
 
     result = IntentConformance::ShadowEvaluation::ExecuteReviewer.call(evaluation: evaluation)
-    IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: evaluation) if result.success? && evaluation.runs.exists?
+    return mark_interrupted(result.error) unless result.success?
+
+    IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: evaluation) if evaluation.runs.exists?
   end
 
   def mark_interrupted(error)
@@ -31,12 +33,16 @@ class ShadowEvaluationExecutionJob < ApplicationJob
       return unless evaluation
 
       status = evaluation.runs.where.not(verdict: "not_evaluated").exists? ? "partial" : "failed"
-      evaluation.update!(status:, last_failure_reason: error.message) unless evaluation.cancelled? || evaluation.completed?
+      evaluation.update!(status:, last_failure_reason: failure_reason(error)) unless evaluation.cancelled? || evaluation.completed?
       IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: evaluation) if evaluation.runs.exists?
     end
   end
 
   private
+
+  def failure_reason(error)
+    error.respond_to?(:message) ? error.message : error.to_s
+  end
 
   def tenant_account
     TenantContext.with_system_access { Project.find_by(id: arguments.first)&.account }
