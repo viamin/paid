@@ -43,8 +43,10 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      assistant_message ? @chat_turn.complete! : @chat_turn.await_confirmation!
       update_session_activity
       assistant_message
     end
@@ -132,6 +134,18 @@ module ChatSessions
         content: content,
         metadata: { "stream_message_id" => stream_message_id }.compact
       )
+    end
+
+    # A job retry reuses the durable user row and therefore its original turn.
+    # This makes a replay observable without creating a second logical turn.
+    # @spec CHAT-TURN-001
+    def start_turn
+      @chat_turn = ChatTurn.find_or_create_by!(user_message: transport_attempt_message) do |turn|
+        turn.chat_session = chat_session
+        turn.actor = actor
+        turn.last_activity_at = Time.current
+      end
+      @chat_turn.start!
     end
 
     # A conversational reply (e.g. "yes") is not a confirmation. When a write

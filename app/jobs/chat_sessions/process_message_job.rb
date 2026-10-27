@@ -23,6 +23,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       content: content,
       stream_message_id: stream_message_id,
       on_message_persisted: ->(message, stream_message_id: nil) {
+        record_turn_activity(chat_session, stream_message_id)
         broadcast_persisted_message(stream_name, message, stream_message_id: stream_message_id)
       },
       on_chunk: ->(chunk) {
@@ -45,12 +46,16 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       }
     })
   rescue ArgumentError => e
+    fail_turn(chat_session_id, stream_message_id, e.class.name)
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue NotImplementedError => e
+    fail_turn(chat_session_id, stream_message_id, e.class.name)
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::LlmClientConfigurationError => e
+    fail_turn(chat_session_id, stream_message_id, e.class.name)
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
+    fail_turn(chat_session_id, stream_message_id, e.class.name)
     broadcast_error(chat_session_id, stream_message_id, e.message,
       limit_type: e.limit_type, limit: e.limit, used: e.used)
   rescue AgentHarness::RateLimitError => e
@@ -62,9 +67,11 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error: e.message
     )
     pause_message = ChatSessions::MarkRateLimited.call(chat_session: chat_session, error: e)
+    fail_turn(chat_session_id, stream_message_id, e.class.name)
     broadcast_persisted_message(stream_name, pause_message)
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue AgentHarness::Error => e
+    fail_turn(chat_session_id, stream_message_id, e.class.name)
     Rails.logger.error(
       message: "chat_process_message_job.provider_error",
       chat_session_id: chat_session_id,
@@ -75,6 +82,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   rescue ActiveRecord::RecordNotFound
     raise
   rescue StandardError => e
+    fail_turn(chat_session_id, stream_message_id, e.class.name)
     Rails.logger.error(
       message: "chat_process_message_job.failed",
       chat_session_id: chat_session_id,
@@ -126,5 +134,22 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     TenantContext.with_system_access do
       ChatSession.find_by(id: arguments.first&.dig(:chat_session_id))&.account
     end
+  end
+
+  def record_turn_activity(chat_session, stream_message_id)
+    turn_for(chat_session.id, stream_message_id)&.record_activity!
+  end
+
+  def fail_turn(chat_session_id, stream_message_id, classification)
+    return unless chat_session_id && stream_message_id
+
+    TenantContext.with_system_access do
+      turn_for(chat_session_id, stream_message_id)&.fail!(classification: classification)
+    end
+  end
+
+  def turn_for(chat_session_id, stream_message_id)
+    ChatTurn.joins(:user_message).find_by(chat_session_id: chat_session_id,
+      chat_messages: { metadata: { "stream_message_id" => stream_message_id } })
   end
 end

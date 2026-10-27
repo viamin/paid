@@ -177,6 +177,12 @@ Rails.application.configure do
       class: "ProcessRunQueueJob",
       description: "Process queued agent runs"
     },
+    detect_stalled_chat_turns: {
+      cron: "*/5 * * * *",
+      class: "ChatSessions::DetectStalledTurnsJob",
+      queue: "maintenance",
+      description: "Classify inactive chat turns and persist a transcript notice"
+    },
     auto_pick_queue_backfill: {
       cron: "0 * * * *",
       class: "AutoPickQueueBackfillJob",
