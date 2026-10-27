@@ -40,10 +40,16 @@ module ChatSessions
         chat_session: chat_session,
         actor: actor,
         llm_client: llm_client,
-        on_chunk: on_chunk,
+        on_chunk: ->(chunk) { touch_streaming_turn; on_chunk&.call(chunk) },
         on_message_persisted: on_message_persisted,
         stream_message_id: stream_message_id
       }.merge(extra_agent_loop_kwargs)
+    end
+
+    def touch_streaming_turn
+      return unless transport_attempt_message
+
+      ChatTurn.where(user_message: transport_attempt_message, state: "streaming").update_all(last_activity_at: Time.current)
     end
 
     # Hosts may override to pass additional kwargs into AgentLoop (e.g. a
