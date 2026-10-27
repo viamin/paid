@@ -47,7 +47,7 @@ RSpec.describe FeatureIntents::AssessFacet do
       exit_code: 0,
       duration: 0.1,
       provider: :claude,
-      model: described_class::MODEL_VERSION,
+      model: "configured-mid",
       tokens: { input: 1_200, output: 800 },
       metadata: { transport: :http, headers: {} }
     )
@@ -59,7 +59,8 @@ RSpec.describe FeatureIntents::AssessFacet do
     expect(AgentHarness.conductor).to have_received(:execute_direct).with(
       a_string_including("actor_context", "collaborator"), anything
     )
-    expect(assessor.cost_cents).to eq(TokenUsageTracker.calculate_cost(1_200, 800, llm_model: described_class::MODEL_VERSION))
+    expect(assessment.reload.model_version).to eq("configured-mid")
+    expect(assessor.cost_cents).to eq(TokenUsageTracker.calculate_cost(1_200, 800, llm_model: "configured-mid"))
   end
 
   it "fails closed for malformed agent output" do
