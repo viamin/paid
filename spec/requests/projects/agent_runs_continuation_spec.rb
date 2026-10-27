@@ -159,6 +159,26 @@ RSpec.describe "Project agent run continuation" do
     expect(flash[:alert]).to eq("You do not have permission to delegate merging for this project.")
   end
 
+  it "returns unauthorized coding delegation to the form without creating a run" do
+    member = create(:user, :member, account:)
+    sign_in member
+    get new_project_agent_run_path(project, goal: "create_pr")
+    signature = rendered_signature
+
+    expect {
+      post project_agent_runs_path(project), params: {
+        goal: "create_pr",
+        issue_id: issue.id,
+        continuation_authorized: "1",
+        continuation_endpoint: "coding",
+        continuation_notice_signature: signature
+      }
+    }.not_to change(AgentRun, :count)
+
+    expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr"))
+    expect(flash[:alert]).to eq("You do not have permission to delegate automation for this project.")
+  end
+
   it "returns a changed project policy to the form for review" do
     get new_project_agent_run_path(project, goal: "create_pr")
     signature = rendered_signature
