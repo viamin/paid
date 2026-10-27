@@ -19,7 +19,9 @@
       without exposing host shell or Docker-socket access. The validation run
       SHALL be report-only: it SHALL NOT inherit the implementation-admission
       gate of an implementation goal, and it SHALL NOT be dispatched through
-      the agent execution queue.
+      the agent execution queue. When an operator cancels a running validation,
+      execution SHALL stop cooperatively before the next provisioning or
+      command boundary and SHALL clean up any environment already provisioned.
       *Code:* `app/services/technical_prerequisites/capability_inspection.rb`,
       `app/services/technical_prerequisites/start_validation.rb`,
       `app/services/technical_prerequisites/validate_execution.rb`,

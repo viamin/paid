@@ -36,6 +36,8 @@ module TechnicalPrerequisites
       execute_validation(inspection)
     rescue Containers::Provision::Error, Containers::GitOperations::Error,
       ExecutionRunners::Error, Containers::McpProvisioner::Error => error
+      return cancelled_result if cancelled?
+
       persist_terminal("failed", error: error.message)
     ensure
       cleanup
@@ -47,16 +49,30 @@ module TechnicalPrerequisites
 
     def execute_validation(inspection)
       persist_planned_host(inspection.host)
+      return cancelled_result if cancelled?
+
       # Provisioning can create the named workspace volume before a container
       # identifier is persisted. Mark cleanup required first so its safety-net
       # volume removal runs even if provisioning raises partway through.
       @environment_provisioned = true
       agent_run.provision_execution_environment(container_host: inspection.host)
+      return cancelled_result if cancelled?
+
       evidence["checkout"] = prepare_checkout
+      return cancelled_result if cancelled?
+
       provision_sidecars
       record_tool_evidence
+      return cancelled_result if cancelled?
+
       native = capture(native_command, env: command_environment)
       persist_terminal(status_for(native), native:)
+    end
+
+    def cancelled? = agent_run.reload.status == "cancelled"
+
+    def cancelled_result
+      Result.new(status: "cancelled", evidence: evidence.stringify_keys, setup_action: nil)
     end
 
     # The inspected host must also be the host the container is created on.

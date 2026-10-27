@@ -58,6 +58,42 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
   end
 
   # @spec PARTIAL-CLOSEOUT-030
+  it "does not provision when the running validation is cancelled during capability inspection" do
+    agent_run.update!(status: "running")
+    allow(Containers::BackendScheduler).to receive(:call) do
+      agent_run.update!(status: "cancelled", completed_at: Time.current)
+      scheduler_result([ "remote" ])
+    end
+    allow(FeatureFlags).to receive(:enabled?).with(:marketplace_tool_sidecars, project:).and_return(true)
+    allow(agent_run).to receive(:provision_execution_environment)
+
+    result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+
+    expect(result.status).to eq("cancelled")
+    expect(agent_run).not_to have_received(:provision_execution_environment)
+    expect(agent_run.reload.status).to eq("cancelled")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "cleans up without executing when the running validation is cancelled before command execution" do
+    agent_run.update!(status: "running")
+    stub_compatible_host
+    stub_provisioning
+    allow(execution_runner).to receive(:provision_mcp_servers) do
+      agent_run.update!(status: "cancelled", completed_at: Time.current)
+    end
+    allow(agent_run).to receive(:execute_in_execution_environment)
+
+    result = described_class.call(agent_run:, native_command: [ "analyzer", "--version" ], execution_runner:)
+
+    expect(result.status).to eq("cancelled")
+    expect(agent_run).not_to have_received(:execute_in_execution_environment)
+    expect(execution_runner).to have_received(:cleanup_mcp_servers).with(agent_run:)
+    expect(agent_run).to have_received(:cleanup_execution_environment).with(force: true)
+    expect(agent_run.reload.status).to eq("cancelled")
+  end
+
+  # @spec PARTIAL-CLOSEOUT-030
   it "records a flat resolved image identity and digest" do
     agent_run.record_runtime_image_selection!(
       "requested_image" => "paid-agent:latest",

@@ -357,7 +357,10 @@ inherits the implementation-admission gate of an implementation goal — a
 stalled issue whose feature intent is not released can still collect evidence
 — and it is a synthetic operational run, so the agent execution queue never
 dispatches it. Its lifecycle is the job that owns it: queued, running, then a
-terminal state that a cancelled or failed run never overwrites.
+terminal state that a cancelled or failed run never overwrites. The executor
+reloads that lifecycle state around provisioning and before command execution,
+so cancellation stops work at the next external-operation boundary; its ensure
+path still removes any workspace, container, or sidecar already provisioned.
 
 Missing prerequisites are terminal evidence, not a retry cue. No compatible
 backend yields a backend setup action. A disabled `marketplace_tool_sidecars`
