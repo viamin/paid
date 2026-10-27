@@ -155,6 +155,14 @@ assessments rather than calibrated probabilities, and that a completed
 evaluation neither closes the source issue nor enables delivery or changes the
 default 80/80 thresholds.
 
+An Action Required notification may identify this workflow with the stable
+`facet_confidence_closeout_evaluation` key. When it does, the Inbox detail
+uses the same Start/Resume route as the partial-closeout surface and carries
+the selected Inbox context into and back from evaluation. The escalation is
+written for an operator: it states that each frozen test case needs an
+independent recorded judgment before the set can be frozen, shows progress,
+and never describes an unfinished set as frozen.
+
 Start/Resume begins one persisted evaluation per originating closeout, pinned
 to the frozen corpus digest: repeated clicks resume the same evaluation, and a
 changed corpus digest is a new evidence generation that supersedes the old

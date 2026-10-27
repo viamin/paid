@@ -573,11 +573,14 @@ module Inbox
     end
 
     # @spec OPERATOR-INBOX-002B
+    # @spec OPERATOR-INBOX-002L
     def action_required_entries
       visible_blocking_notifications.filter_map do |notification|
         project, issue = notification_context(notification)
         next unless project
         next if project_filter_excludes?(project)
+
+        guidance = facet_confidence_evaluation_escalation(notification, issue)
 
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
@@ -588,9 +591,10 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
-          action_url: notification.action_url
+          summary_text: guidance&.explanation || notification.metadata["recommended_action"].presence || notification.description,
+          title_text: guidance&.title || notification.title,
+          action_url: notification.action_url,
+          guidance: guidance
         )
       end
     end
@@ -1018,6 +1022,23 @@ module Inbox
       return steps if steps.any?
 
       Array(notification.metadata["recommended_action"])
+    end
+
+    def facet_confidence_evaluation_escalation(notification, issue)
+      FacetConfidenceEvaluationEscalation.for(
+        notification: notification,
+        issue: issue,
+        evaluation: facet_confidence_evaluations_by_issue_id[issue&.id]
+      )
+    end
+
+    def facet_confidence_evaluations_by_issue_id
+      @facet_confidence_evaluations_by_issue_id ||= begin
+        issue_ids = visible_blocking_notifications.filter_map do |notification|
+          notification.subject.id if notification.metadata["workflow"] == FacetConfidenceEvaluationEscalation::WORKFLOW && notification.subject.is_a?(Issue)
+        end
+        FacetConfidenceEvaluation.where(issue_id: issue_ids).latest_first.to_a.index_by(&:issue_id)
+      end
     end
 
     def notification_context(notification)

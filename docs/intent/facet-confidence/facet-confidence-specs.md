@@ -69,3 +69,14 @@ blinded reference-judgment flow over the frozen corpus.
   After unblinding, Paid SHALL preserve every frozen judgment and compiled report while allowing that same judge to append an attributable, reasoned correction with its own complete judgment and cited evidence.
   *Tests:* `spec/services/facet_confidence/closeout_evaluation/record_label_spec.rb`, `spec/services/facet_confidence/closeout_evaluation/freeze_labels_spec.rb`, `spec/requests/projects/facet_confidence_evaluations_spec.rb`.
   *Code:* `app/services/facet_confidence/closeout_evaluation/`, `app/controllers/projects/facet_confidence_evaluations_controller.rb`, `app/views/projects/facet_confidence_evaluations/`.
+
+- [x] **FACET-CONFIDENCE-022** — When the originating issue has a typed
+  facet-confidence evaluation escalation, Paid SHALL expose the existing
+  authorized Start/Resume evaluation workflow from its Action Required Inbox
+  detail, preserve Inbox context through that workflow, and describe the
+  operator's independent per-test-case judgment and freeze responsibility in
+  plain language without claiming unfinished judgments are frozen.
+  *Code:* `app/services/inbox/facet_confidence_evaluation_escalation.rb`,
+  `app/views/dashboard/_inbox_detail_action_required.html.erb`.
+  *Test:* `spec/requests/inbox_spec.rb`,
+  `spec/requests/projects/facet_confidence_evaluations_spec.rb`.

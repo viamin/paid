@@ -243,6 +243,54 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec OPERATOR-INBOX-002L FACET-CONFIDENCE-022
+  it "translates a typed facet-confidence escalation and routes it into the evaluation with Inbox context" do
+    issue = create(:issue, project: project, github_number: 4323, title: "Closeout evaluation")
+    notification = create_facet_confidence_evaluation_escalation(issue)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort: "newest")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Independent evaluation needed", "Start evaluation", "No judgments have been recorded yet")
+    expect(response.body).to include("Review each frozen test case independently")
+    expect(response.body).not_to include("blinded reference judgments", "Internal workflow prose")
+    expect(response.body).to include(new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_sort: "newest",
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)).gsub("&", "&amp;"))
+  end
+
+  # @spec OPERATOR-INBOX-002L FACET-CONFIDENCE-022
+  it "shows typed evaluation progress and the remaining state-specific action" do
+    issue = create(:issue, project: project, github_number: 4662)
+    corpus = FacetConfidence::Corpus.new(path: FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH)
+    evaluation = FacetConfidenceEvaluation.create!(project: project, issue: issue, created_by: user,
+      corpus_path: FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH, corpus_digest: corpus.content_digest,
+      corpus_version: corpus.identity.fetch("corpus_version"), rubric_version: corpus.identity.fetch("rubric_version"),
+      model_version: corpus.identity.fetch("model_version"))
+    create(:notification, :error, account: account, subject: issue, source: "closeout_evaluation_escalation",
+      blocking: true, title: "Remediation Required", description: "Opaque workflow wording.",
+      metadata: { "workflow" => Inbox::FacetConfidenceEvaluationEscalation::WORKFLOW })
+
+    get inbox_path(project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Continue judging", "Progress: 0 judgments recorded out of", "remaining")
+    expect(response.body).not_to include("frozen. Review the completed")
+    expect(response.body).to include(project_facet_confidence_evaluation_path(project, evaluation))
+  end
+
+  # @spec OPERATOR-INBOX-002L
+  it "keeps untyped Action Required notifications on the generic fallback" do
+    notification = create_action_required_notification
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response.body).to include("Remediation Required", "The quality pause could not be automatically resumed.")
+    expect(response.body).not_to include("Independent evaluation needed")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a
@@ -1941,6 +1989,20 @@ RSpec.describe "Inbox" do
       awaiting_approval_since: 2.days.ago,
       auto_merge_evaluated_at: Time.current,
       auto_merge_blockers: snapshot
+    )
+  end
+
+  def create_facet_confidence_evaluation_escalation(issue)
+    create(
+      :notification,
+      :error,
+      account: account,
+      subject: issue,
+      source: "closeout_evaluation_escalation",
+      blocking: true,
+      title: "Remediation Required — Independent maintainers have entered and frozen the blinded reference judgments.",
+      description: "Internal workflow prose that must not be shown to the operator.",
+      metadata: { "workflow" => Inbox::FacetConfidenceEvaluationEscalation::WORKFLOW }
     )
   end
 

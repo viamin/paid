@@ -171,6 +171,17 @@ absent, the description is also the entry summary. `Notifications::Publish`
 rejects a blocking notification that has neither a non-blank description nor
 remediation guidance, so every Action Required entry has meaningful context.
 
+Some Action Required notifications declare a typed in-product workflow. A
+facet-confidence closeout-evaluation escalation is identified by the stable
+`facet_confidence_closeout_evaluation` workflow key, not by matching its
+human-facing prose. Its detail translates the stop into the operator's work:
+independently review every frozen test case, record a judgment, then freeze
+the completed set. It shows recorded and remaining judgments and uses the
+existing authorized evaluation route with the current Inbox selection carried
+as validated context. Its state determines the primary action: start,
+continue judging, freeze, or inspect the completed report. Untyped or invalid
+typed notifications remain on the generic safe rendering path.
+
 ### `merge_approval`
 
 Backed by the PR scanner's persisted current-head policy snapshot on `Issue`.

@@ -88,6 +88,21 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** — When an active Action Required notification
+  declares the `facet_confidence_closeout_evaluation` workflow for its
+  originating issue, the Inbox SHALL replace opaque workflow prose with a
+  plain-language explanation of the independent review required, show the
+  recorded and remaining judgments, and provide the state-specific authorized
+  evaluation route (`Start evaluation`, `Continue judging`, `Freeze
+  judgments`, or report). The route SHALL preserve the validated Inbox
+  selection. Untyped notifications and typed notifications without a valid
+  originating issue SHALL retain safe generic Action Required rendering.
+  *Code:* `app/services/inbox/facet_confidence_evaluation_escalation.rb`,
+  `app/services/inbox/queue.rb`,
+  `app/views/dashboard/_inbox_detail_action_required.html.erb`.
+  *Test:* `spec/requests/inbox_spec.rb`,
+  `spec/requests/projects/facet_confidence_evaluations_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002C** — When an open pull request's review phase is
   `escalated` and its project is within the operator's authorized Inbox
   visibility (`INBOX-FOUNDATION-006` — account isolation plus owner
