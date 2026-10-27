@@ -9,6 +9,7 @@ class ChatMessage < ApplicationRecord
   belongs_to :chat_session
   has_one :chat_diagram, dependent: :nullify
   has_many :api_usage_attempts, dependent: :nullify
+  has_one :initiated_chat_turn, class_name: "ChatTurn", foreign_key: :initiating_message_id, dependent: :destroy
 
   validates :role, inclusion: { in: ROLES }
   validates :content, presence: true, unless: -> { tool_result_message? || tool_name.present? }
@@ -95,8 +96,10 @@ class ChatMessage < ApplicationRecord
   end
 
   def transcript_notice?
-    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice?
+    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice? || stalled_turn_notice?
   end
+
+  def stalled_turn_notice? = metadata.is_a?(Hash) && metadata["stalled_turn_notice"] == true
 
   private
 

@@ -37,16 +37,23 @@ module ChatSessions
     def call
       # @spec CHAT-API-002
       # @spec CHAT-API-005
+      # @spec CHAT-API-027
       validate_content!
       validate_session_state!
       check_token_limit!
       resume_session_if_needed!
 
       persist_user_message
+      @chat_turn = ChatTurn.create!(chat_session:, initiating_message: transport_attempt_message, last_activity_at: Time.current)
+      @chat_turn.start!
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      @chat_turn.complete! unless assistant_message.nil? || chat_session.messages.pending_tool_confirmations.exists?
       update_session_activity
       assistant_message
+    rescue StandardError => error
+      @chat_turn&.fail!(error)
+      raise
     end
 
     private

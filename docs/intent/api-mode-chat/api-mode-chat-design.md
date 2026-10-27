@@ -165,6 +165,12 @@ What ships today:
   provider error creates a durable transcript notice and requires a user to
   correct the runner configuration or resend rather than retrying a permanent
   authentication or configuration failure indefinitely
+- every submitted turn has a durable `ChatTurn` lifecycle. A maintenance sweep
+  marks a turn stalled only after its inactivity window and never while a
+  confirmation or recorded rate-limit pause explains the wait. The persisted
+  notice keeps partial transcript evidence visible and explicitly prevents
+  automatic tool replay; a later recovery mechanism must prove its checkpoint
+  and idempotency contract before it can opt in.
 - `ChatSessions::BuildLlmClient` raises the OpenAI-compatible transport
   `max_tokens` cap to 16,384 for direct-provider z.ai chat runners so GLM
   responses are not truncated by the transport default

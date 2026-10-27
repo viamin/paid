@@ -62,6 +62,16 @@
 > Testable claims for the shipped API-mode portion of interactive chat. Status
 > markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 
+- [x] **CHAT-API-027** — When a pending or streaming API chat turn has no
+  durable activity for the configured stall window, Paid SHALL mark it
+  `stalled` and persist a transcript notice that preserves partial evidence and
+  states that tools will not be replayed automatically. A turn awaiting an
+  explicit write-tool confirmation or a recorded rate-limit pause SHALL not be
+  classified as stalled.
+  *Tests:* `spec/services/chat_sessions/detect_stalled_turn_spec.rb`.
+  *Code:* `ChatTurn`, `ChatSessions::DetectStalledTurn`,
+  `ChatSessions::DetectStalledTurnsJob`.
+
 - [x] **CHAT-API-001** — When a user creates or opens an API-mode chat session,
   the system SHALL persist and expose an active inline chat session with a
   system prompt and session/message routes, defaulting to
