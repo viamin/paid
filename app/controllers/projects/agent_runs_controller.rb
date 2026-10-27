@@ -358,7 +358,18 @@ module Projects
         budget: params[:budget] || {}, selections: params[:selections] || {},
         confirmed: ActiveModel::Type::Boolean.new.cast(params[:confirmed])
       )
-      return render json: result unless result[:id]
+      unless result[:id]
+        respond_to do |format|
+          format.html do
+            @audit_preview = result
+            @audit_obligations = @project.layered_verification_obligations
+              .where(id: result.fetch("obligation_ids")).order(:external_identity).load
+            render :request_layered_verification_audit
+          end
+          format.json { render json: result }
+        end
+        return
+      end
 
       redirect_to project_agent_run_path(@project, result[:id]), notice: "Verification audit queued."
     rescue LayeredVerification::AuditAccess::FeatureDisabledError,

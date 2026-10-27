@@ -1,0 +1,40 @@
+<% content_for(:title) { "Verification audit preview - #{@project.name} - Paid" } %>
+
+<div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 lg:px-8">
+  <%= link_to "Back to #{@project.name}", project_path(@project), class: "text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
+  <div class="mt-4 rounded-lg bg-white p-6 shadow">
+    <h1 class="text-xl font-semibold text-gray-900">Verification audit preview</h1>
+    <p class="mt-2 text-sm text-gray-600">Confirm this bounded, assessment-only audit. It will record evidence and findings, but will not start repair.</p>
+
+    <dl class="mt-6 divide-y divide-gray-200">
+      <div class="py-3">
+        <dt class="text-sm font-medium text-gray-500">Target revision</dt>
+        <dd class="mt-1 break-all font-mono text-sm text-gray-900"><%= @audit_preview.fetch("target_revision") %></dd>
+      </div>
+      <div class="py-3">
+        <dt class="text-sm font-medium text-gray-500">Budget</dt>
+        <dd class="mt-1 text-sm text-gray-900"><%= @audit_preview.fetch("budget").to_h["max_minutes"] || @audit_preview.fetch("budget").to_h[:max_minutes] || "Not specified" %> minutes</dd>
+      </div>
+      <div class="py-3">
+        <dt class="text-sm font-medium text-gray-500">Scope</dt>
+        <dd class="mt-1 space-y-2 text-sm text-gray-900">
+          <% @audit_obligations.each do |obligation| %>
+            <p><span class="font-medium"><%= obligation.scope_description %></span><br><span class="text-gray-500"><%= obligation.external_identity %></span></p>
+          <% end %>
+        </dd>
+      </div>
+    </dl>
+
+    <%= form_with url: request_layered_verification_audit_project_agent_runs_path(@project), method: :post, local: true, class: "mt-6" do %>
+      <% @audit_preview.fetch("obligation_ids").each do |id| %>
+        <%= hidden_field_tag "obligation_ids[]", id %>
+      <% end %>
+      <%= hidden_field_tag :target_revision, @audit_preview.fetch("target_revision") %>
+      <% @audit_preview.fetch("budget").to_h.each do |key, value| %>
+        <%= hidden_field_tag "budget[#{key}]", value %>
+      <% end %>
+      <%= hidden_field_tag :confirmed, true %>
+      <%= submit_tag "Confirm and queue audit", class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+    <% end %>
+  </div>
+</div>

@@ -23,6 +23,11 @@ module Tools
       project.present? && available_for_project?(user:, project:)
     end
 
+    def self.available_for_project?(user:, project:)
+      FeatureFlags.enabled?(:layered_verification_add_on, project:) &&
+        policy_allows?(user:, record: project, query: :manage_issues?, policy_class: ProjectPolicy)
+    end
+
     def self.input_schema
       {
         type: "object",
@@ -54,11 +59,6 @@ module Tools
     end
 
     private
-
-    def self.available_for_project?(user:, project:)
-      FeatureFlags.enabled?(:layered_verification_add_on, project:) &&
-        policy_allows?(user:, record: project, query: :manage_issues?, policy_class: ProjectPolicy)
-    end
 
     def project_for(id) = policy_scope(Project).find(id)
 
