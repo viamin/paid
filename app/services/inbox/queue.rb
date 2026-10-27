@@ -597,7 +597,8 @@ module Inbox
           tasks: remediation_steps_for(notification),
           summary_text: notification.metadata["recommended_action"].presence || notification.description,
           title_text: notification.title,
-          action_url: notification.action_url
+          action_url: notification.action_url,
+          guidance: action_required_guidance(notification)
         )
       end
     end
@@ -1038,6 +1039,14 @@ module Inbox
       return steps if steps.any?
 
       Array(notification.metadata["recommended_action"])
+    end
+
+    # A publisher, not display copy, selects an in-product recovery workflow.
+    # Keeping this as a closed typed value means arbitrary notification prose
+    # cannot accidentally gain authority to launch a privileged flow.
+    # @spec FACET-CONFIDENCE-022
+    def action_required_guidance(notification)
+      notification.metadata["workflow"] if notification.metadata["workflow"] == "facet_confidence_closeout_evaluation"
     end
 
     def notification_context(notification)

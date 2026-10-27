@@ -174,3 +174,13 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+When a blocking Inbox escalation explicitly identifies this evaluation as its
+recovery workflow, the Inbox translates it into operator language. It explains
+that one maintainer must independently review each frozen test case, record a
+judgment, and freeze the completed set; it does not expose internal corpus or
+blinded-judgment terminology as the instruction. The action is state-specific
+(start, resume, continue judging, freeze, or view the frozen report), shows
+recorded and remaining judgments, and preserves the validated Inbox selection
+through the evaluation and back. Other blocking notifications continue to show
+their supplied remediation guidance unchanged.

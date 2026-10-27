@@ -247,6 +247,37 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  it "translates a typed facet-confidence escalation into a stateful evaluation action" do # @spec FACET-CONFIDENCE-022
+    issue = create(:issue, project: project, github_number: 4678, paid_state: "in_progress")
+    create(:issue, :pull_request, project: project, parent_issue: issue, github_number: 4679,
+      github_state: "closed", pr_review_phase: "merged")
+    notification = create(:notification, :error, account: account, subject: issue, source: "facet_confidence.closeout",
+      blocking: true, title: "Remediation Required", description: "Independent maintainers have entered and frozen the blinded reference judgments.",
+      metadata: { "workflow" => "facet_confidence_closeout_evaluation" })
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification), kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response).to have_http_status(:ok)
+    detail = Nokogiri::HTML(response.body).at_css("[data-facet-confidence-escalation]").text
+    expect(response.body).to include("Complete the closeout evaluation", "Start evaluation", "No judgments have been recorded yet.")
+    expect(detail).to include("independently reviews each frozen test case")
+    expect(detail).not_to include("blinded reference judgments")
+    expect(response.body).to include(new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)).gsub("&", "&amp;"))
+
+    post project_facet_confidence_evaluations_path(project,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)), params: { issue_id: issue.id }
+
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project,
+      issue.facet_confidence_evaluations.sole,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)))
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification), kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+    expect(response.body).to include("Resume evaluation", "0 judgments recorded")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a

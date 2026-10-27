@@ -1,6 +1,43 @@
 <%# @spec OPERATOR-INBOX-002B %>
 <div class="space-y-6">
   <% notification = entry.record %>
+  <% if entry.guidance == "facet_confidence_closeout_evaluation" && entry.issue %>
+    <% evaluation = entry.issue.facet_confidence_evaluations.latest_first.first %>
+    <% progress = evaluation&.progress %>
+    <% remaining = progress && progress[:total] - progress[:labeled] %>
+    <% inbox_context = { inbox_kind: params[:kind].presence_in(Inbox::Queue::KINDS), inbox_sort: params[:sort].presence_in(Inbox::Queue::SORTS.keys), inbox_entry_id: entry.id }.compact %>
+    <div class="rounded-xl border border-rose-200 bg-rose-50 p-4" data-facet-confidence-escalation>
+      <h3 class="text-sm font-semibold text-rose-900">Complete the closeout evaluation</h3>
+      <p class="mt-1 text-sm text-rose-800">
+        This issue is blocked until a maintainer independently reviews each frozen test case, records a judgment for each one, and freezes the completed set.
+      </p>
+      <% if progress %>
+        <p class="mt-2 text-sm text-rose-800" data-evaluation-progress>
+          <%= progress[:labeled] %> judgments recorded · <%= remaining %> remaining.
+          <% if evaluation.frozen? %>The completed set is frozen and the report is ready to review.<% elsif progress[:skipped].positive? %>Skipped cases still need judgments before the set can be frozen.<% end %>
+        </p>
+      <% else %>
+        <p class="mt-2 text-sm text-rose-800">No judgments have been recorded yet.</p>
+      <% end %>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <% if evaluation %>
+        <% label = if evaluation.frozen?
+             "View evaluation report"
+           elsif progress[:labeled] == progress[:total] && progress[:skipped].zero?
+             "Freeze judgments"
+           elsif progress[:labeled].positive?
+             "Continue judging"
+           else
+             "Resume evaluation"
+           end %>
+        <%= link_to label, project_facet_confidence_evaluation_path(entry.project, evaluation, **inbox_context), data: { turbo_frame: "_top" }, class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
+      <% else %>
+        <%= link_to "Start evaluation", new_project_facet_confidence_evaluation_path(entry.project, issue_id: entry.issue.id, **inbox_context), data: { turbo_frame: "_top" }, class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
+      <% end %>
+      <%= link_to inbox_issue_link_label(entry.issue), entry.issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    </div>
+  <% else %>
   <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
     <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
     <% if notification.description.present? %>
@@ -60,5 +97,6 @@
             data: { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
+  <% end %>
   <% end %>
 </div>
