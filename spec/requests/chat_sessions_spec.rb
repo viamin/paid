@@ -1050,7 +1050,7 @@ RSpec.describe "ChatSessions" do
         expect(response.body).to include("Keep Chat Open")
         expect(response.body).to include('data-action="chat-popup#toggleKeepOpen"')
         expect(response.body).to include("New Chat")
-        expect(response.body).to include("Open page")
+        expect(response.body).to include("Open full chat")
         expect(response.body).to include("Projects - Paid")
         expect(response.body).not_to include("turbo-frame")
       end
