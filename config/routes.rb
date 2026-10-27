@@ -69,6 +69,7 @@ Rails.application.routes.draw do
   post "design_artifact_findings/:id/repair_document_links", to: "design_artifact_findings#repair_document_links", as: :repair_document_links_design_artifact_finding
   post "design_artifact_findings/:id/recheck", to: "design_artifact_findings#recheck", as: :recheck_design_artifact_finding
   post "inbox/:entry_id/interactive_chat", to: "inbox#open_chat", as: :inbox_interactive_chat
+  post "chat_turns/:id/recover", to: "chat_turns#recover", as: :recover_chat_turn
   # RDR-077: personal removal is presentation-only and per user.
   post "inbox/:entry_id/remove", to: "inbox#remove_entry", as: :inbox_entry_remove
   post "inbox/:entry_id/restore", to: "inbox#restore_entry", as: :inbox_entry_restore

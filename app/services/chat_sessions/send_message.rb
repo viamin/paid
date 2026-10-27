@@ -20,7 +20,7 @@ module ChatSessions
 
     MAX_CONTENT_LENGTH = 12_000
 
-    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
+    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil, user_message: nil)
       @chat_session = chat_session
       @actor = actor
       @content = content
@@ -28,6 +28,7 @@ module ChatSessions
       @on_message_persisted = on_message_persisted
       @llm_client = llm_client
       @stream_message_id = stream_message_id
+      @user_message = user_message
     end
 
     def self.call(...)
@@ -35,7 +36,7 @@ module ChatSessions
     end
 
     def call
-      # @spec CHAT-API-002
+      # @spec CHAT-API-002 CHAT-API-027
       # @spec CHAT-API-005
       validate_content!
       validate_session_state!
@@ -43,10 +44,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn!
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      complete_turn!(assistant_message)
       update_session_activity
       assistant_message
+    rescue StandardError
+      fail_turn!
+      raise
     end
 
     private
@@ -110,11 +116,30 @@ module ChatSessions
     end
 
     def persist_user_message
-      @transport_attempt_message = existing_user_message || create_user_message
+      @transport_attempt_message = @user_message || existing_user_message || create_user_message
 
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
       transport_attempt_message
+    end
+
+    def start_turn!
+      @chat_turn = chat_session.chat_turns.find_or_create_by!(user_message: transport_attempt_message) do |turn|
+        turn.state = "pending"
+        turn.activity_at = Time.current
+      end
+      @chat_turn.mark_streaming! unless @chat_turn.awaiting_confirmation?
+    end
+
+    def complete_turn!(assistant_message)
+      return @chat_turn.await_confirmation! if assistant_message.nil? && chat_session.messages.pending_tool_confirmations.exists?
+      return unless assistant_message
+
+      @chat_turn.complete!
+    end
+
+    def fail_turn!
+      @chat_turn&.fail!(classification: "execution_error") unless @chat_turn&.completed?
     end
 
     # A restarted job retains its stream id. Reusing the original user row
@@ -172,6 +197,10 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    def persist_turn_activity
+      @chat_turn&.touch_activity!
     end
 
     # Reuse the pre-loop budget baseline so the mid-loop guard does not issue a

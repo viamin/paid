@@ -160,6 +160,13 @@ What ships today:
   mutations
 - `ChatSessions::ResolveToolCall` atomically resolves pending confirmations and
   resumes the loop only when the final pending confirmation has been settled
+- Each user message owns a durable `ChatTurn`. A five-minute server sweep marks
+  only inactive `pending` or `streaming` turns as stalled; pending confirmations,
+  rate-limit pauses, completed turns, and failed turns are not stalls. A stalled
+  turn receives a transcript notice that preserves the available evidence and
+  requires an explicit user retry. Recovery is lock-claimed and records its
+  attempt; it never auto-replays tools, so a recovered request remains subject
+  to ordinary confirmation and authorization checks.
 - rate-limited sessions are resumed by a maintenance sweep after their recorded
   reset time; a renewed rate limit records the new reset time, while another
   provider error creates a durable transcript notice and requires a user to

@@ -1,5 +1,22 @@
 # EARS Specs: API-Mode Interactive Chat
 
+- [x] **CHAT-API-027** — When an API chat user message is accepted, the system
+  SHALL persist a durable turn lifecycle record. A maintenance sweep SHALL mark
+  an inactive `pending` or `streaming` turn as `stalled` after the configured
+  threshold, but SHALL NOT classify pending confirmation, rate-limited, failed,
+  or completed work as stalled.
+  *Tests:* `spec/models/chat_turn_spec.rb`, `spec/services/chat_turns/detect_stalled_spec.rb`.
+  *Code:* `ChatTurn`, `ChatTurns::DetectStalled`, `ChatTurns::DetectStalledJob`.
+
+- [x] **CHAT-API-028** — When a chat turn is classified stalled, the system
+  SHALL preserve the transcript, persist an in-transcript notice stating that
+  no unfinished action was treated as successful, and offer an explicit,
+  authorization-checked retry. Concurrent retries SHALL be lock-deduplicated;
+  no stalled turn retry SHALL automatically approve a side-effecting tool.
+  *Tests:* `spec/services/chat_turns/detect_stalled_spec.rb`.
+  *Code:* `ChatTurns::Recover`, `ChatTurnsController`,
+  `app/views/chat_messages/_stalled_turn_notice.html.erb`.
+
 - [x] **CHAT-API-026** — When non-free-policy API-key chat creates a session,
   executes a legacy Automatic session, or switches to a fallback runner, Paid
   SHALL use the same curated Low/Medium/High resolver. It SHALL default new and

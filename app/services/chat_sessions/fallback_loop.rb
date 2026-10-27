@@ -41,7 +41,10 @@ module ChatSessions
         actor: actor,
         llm_client: llm_client,
         on_chunk: on_chunk,
-        on_message_persisted: on_message_persisted,
+        on_message_persisted: ->(message, **kwargs) {
+          persist_turn_activity if respond_to?(:persist_turn_activity, true)
+          on_message_persisted&.call(message, **kwargs)
+        },
         stream_message_id: stream_message_id
       }.merge(extra_agent_loop_kwargs)
     end
