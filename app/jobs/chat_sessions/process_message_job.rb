@@ -71,6 +71,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error_class: e.class.name,
       error: e.message
     )
+    ChatTurns::AutomaticRecover.call(chat_session: chat_session, stream_message_id: stream_message_id, actor: actor)
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue ActiveRecord::RecordNotFound
     raise

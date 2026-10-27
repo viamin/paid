@@ -42,7 +42,8 @@ module ChatSessions
         llm_client: llm_client,
         on_chunk: on_chunk,
         on_message_persisted: on_message_persisted,
-        stream_message_id: stream_message_id
+        stream_message_id: stream_message_id,
+        chat_turn: chat_turn
       }.merge(extra_agent_loop_kwargs)
     end
 

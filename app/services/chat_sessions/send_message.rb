@@ -16,7 +16,7 @@ module ChatSessions
     include FallbackLoop
 
     attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
-      :transport_attempt_message
+      :transport_attempt_message, :chat_turn
 
     MAX_CONTENT_LENGTH = 12_000
 
@@ -43,10 +43,18 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      assistant_message ? chat_turn.complete! : chat_turn.await_confirmation!
       update_session_activity
       assistant_message
+    rescue AgentHarness::Error => e
+      chat_turn&.fail!(classification: "infrastructure")
+      raise e
+    rescue StandardError => e
+      chat_turn&.fail!(classification: "unexpected")
+      raise e
     end
 
     private
@@ -132,6 +140,19 @@ module ChatSessions
         content: content,
         metadata: { "stream_message_id" => stream_message_id }.compact
       )
+    end
+
+    # @spec CHAT-API-025
+    def start_turn
+      @chat_turn = ChatTurn.find_or_create_by!(user_message: transport_attempt_message) do |turn|
+        turn.chat_session = chat_session
+        turn.actor = actor
+        turn.status = "streaming"
+        turn.last_activity_at = Time.current
+        turn.checkpoint = { "stream_message_id" => stream_message_id, "user_message_id" => transport_attempt_message.id }
+      end
+      transport_attempt_message.update!(chat_turn: chat_turn) unless transport_attempt_message.chat_turn_id == chat_turn.id
+      chat_turn.touch_activity!
     end
 
     # A conversational reply (e.g. "yes") is not a confirmation. When a write

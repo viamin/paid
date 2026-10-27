@@ -548,6 +548,29 @@
   `testMessageChunkForTheTrackedStreamLeavesTrackingUnchanged`),
   `spec/requests/chat_sessions_spec.rb` (`GET /chat/:id/recent_messages`),
   `spec/jobs/chat_sessions/process_message_job_spec.rb`
+
+- [x] **CHAT-API-025** — When an API chat user message starts processing, the
+  system SHALL persist one durable turn lifecycle record and shall attach every
+  assistant and tool message produced by that turn to it. When the turn reaches
+  an assistant conclusion it SHALL be completed; when it pauses for a write-tool
+  confirmation it SHALL be pending confirmation; and when a classified error is
+  raised it SHALL be failed. A turn with partial activity SHALL never be
+  represented as completed merely because its browser stream disconnected.
+
+- [x] **CHAT-API-026** — When a streaming chat turn has no durable activity for
+  the configured stall threshold, the detector SHALL atomically classify it as
+  stalled unless it has a terminal outcome, awaits user confirmation, has an
+  active known-operation lease, or is within a recorded provider rate-limit
+  window. Classification SHALL persist a transcript notice describing the
+  preserved partial state and SHALL record a queryable audit event.
+
+- [x] **CHAT-API-027** — When a stalled chat turn has no completed tool calls,
+  one classified infrastructure recovery may resume from its persisted user
+  message checkpoint. When recovery is ambiguous or any side-effecting tool
+  completed, the system SHALL require an explicit, authorized user Resume
+  action and SHALL not automatically replay the tool. Recovery claims SHALL be
+  revision-aware and atomically deduplicated; every request, duplicate claim,
+  and outcome SHALL be auditable.
   (`broadcasts message_complete with nil tokens when a write tool pauses`).
   *Code:* `app/javascript/controllers/chat_controller.js#removePendingAssistantMessage`,
   `#handleMessageComplete`, `#handleMessageToolConfirmation`, `#handleError`,

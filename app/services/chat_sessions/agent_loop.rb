@@ -21,16 +21,17 @@ module ChatSessions
     TOKEN_BUDGET_SOFT_STOP_FALLBACK_MESSAGE = "I've reached the token budget for this chat session. Please increase the session token limit or start a new chat to continue."
 
     attr_reader :chat_session, :actor, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id,
-      :created_message_ids
+      :created_message_ids, :chat_turn
 
     def initialize(chat_session:, actor: chat_session.created_by, llm_client:, on_chunk: nil, on_message_persisted: nil, stream_message_id: nil,
-      token_budget: nil)
+      token_budget: nil, chat_turn: nil)
       @chat_session = chat_session
       @actor = actor
       @llm_client = llm_client
       @on_chunk = on_chunk
       @on_message_persisted = on_message_persisted
       @stream_message_id = stream_message_id
+      @chat_turn = chat_turn
       @created_message_ids = []
       @token_budget_override = token_budget
     end
@@ -220,9 +221,12 @@ module ChatSessions
     def process_tool_call(tool_call, provider_state: nil, tool_call_batch_id: nil)
       persist_tool_call_message(tool_call, provider_state:, tool_call_batch_id:)
 
+      chat_turn&.begin_operation!(tool_name: tool_call[:name])
       tool_result = dispatch_tool(name: tool_call[:name], arguments: parse_tool_arguments(tool_call))
       persist_tool_result_message(tool_call, tool_result)
       tool_result
+    ensure
+      chat_turn&.finish_operation!
     end
 
     def pending_write_tool?(tool_calls)
@@ -456,6 +460,7 @@ module ChatSessions
 
     def create_assistant_message(response)
       message = chat_session.messages.create!(
+        chat_turn: chat_turn,
         role: "assistant",
         content: response[:content],
         model: response[:model],
@@ -493,6 +498,7 @@ module ChatSessions
 
     def persist_tool_call_message(tool_call, status: nil, tool_result: nil, provider_state: nil, tool_call_batch_id: nil)
       tool_call_message = chat_session.messages.create!(
+        chat_turn: chat_turn,
         role: "assistant",
         content: nil,
         tool_name: tool_call[:name],
@@ -518,6 +524,7 @@ module ChatSessions
 
     def persist_tool_result_message(tool_call, tool_result)
       tool_result_message = chat_session.messages.create!(
+        chat_turn: chat_turn,
         role: "tool",
         content: tool_result.to_json,
         tool_result: tool_result,
@@ -548,6 +555,7 @@ module ChatSessions
     # since neither SendMessage nor ResolveToolCall locks the session.
     def track_created_message(message)
       @created_message_ids << message.id
+      chat_turn&.touch_activity!(checkpoint: { "last_message_id" => message.id })
       message
     end
 

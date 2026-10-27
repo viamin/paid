@@ -533,6 +533,11 @@ Rails.application.routes.draw do
       get :older_messages
       get :recent_messages
     end
+    resources :chat_turns, only: [] do
+      member do
+        post :recover
+      end
+    end
     resources :chat_messages, path: "messages", only: %i[index create] do
       member do
         post :resolve

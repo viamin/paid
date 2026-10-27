@@ -26,6 +26,7 @@ path:
 - tool-call orchestration for read-only and write tools
 - token usage attribution and surfaced totals
 - write-tool pause/resume behavior in the chat loop
+- durable turn lifecycle, stall detection, and recovery for API chat
 
 ## Scope Boundary
 
@@ -67,6 +68,30 @@ The implemented behavior builds on:
 - per-request token accounting in `TokenUsageTracker`
 
 ## Current State
+
+### Durable turn conclusion
+
+Each submitted user message owns one `ChatTurn`.  The turn records its current
+state (`streaming`, `completed`, `failed`, `stalled`, `abandoned`, or
+`pending_confirmation`), last durable activity, and an immutable event trail.
+Messages and tool activity are attached to that turn so a reconnect is never
+used as evidence that server-side work completed.
+
+A scheduled detector classifies a turn as stalled only after its configured
+quiet threshold and only when it is not awaiting a human confirmation, a known
+long-running tool lease, a recorded rate-limit window, or a terminal outcome.
+Classification appends an in-transcript system notice; it never fabricates an
+assistant answer or changes the preserved partial transcript into success.
+
+Recovery resumes from the persisted user-message checkpoint.  It is claimed
+under the turn row lock and revision, so repeated clicks and concurrent workers
+cannot schedule duplicate recovery.  Automatic recovery is deliberately
+limited to one infrastructure failure before any tool activity, where replay is
+safe.  A turn with model ambiguity or completed side-effecting tools instead
+requires the user to explicitly choose Resume from its notice.  The notice
+names any completed side-effecting tools and links to their existing cards.
+Every detection, user recovery request, recovery result, and duplicate claim is
+persisted as a `ChatTurnEvent` for operational queries.
 
 ### Managed free-model chat pool
 
