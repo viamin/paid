@@ -2596,6 +2596,30 @@ RSpec.describe "AgentRuns" do
     context "when authenticated" do
       before { sign_in user }
 
+      # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002L
+      it "refuses to restart enhancement before a reopened issue has a revision-bound validation decision" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("Validate the reopen review")
+        expect(parked_issue.reload).to be_reopen_review_pending
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "does not create a second run while another manual-review recovery run is queued" do
+        create(:agent_run, project:, issue: parked_issue, goal: "analyze_issue", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("already queued")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
         expect {
@@ -2730,6 +2754,30 @@ RSpec.describe "AgentRuns" do
 
         expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND))
       end
+    end
+  end
+
+  describe "POST /projects/:project_id/agent_runs/validate_reopen_review" do
+    let(:reopened_issue) do
+      create(:issue, project: project, paid_state: "manual_review",
+        manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+    end
+
+    before { sign_in user }
+
+    # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002L
+    it "records the authorized revision-bound validation without starting a run" do
+      expect {
+        post validate_reopen_review_project_agent_runs_path(project), params: {
+          issue_id: reopened_issue.id,
+          reason: "The original closure did not cover the remaining regression.",
+          github_revision: reopened_issue.github_updated_at.iso8601
+        }
+      }.not_to change(AgentRun, :count)
+
+      expect(response).to redirect_to(dashboard_path)
+      expect(reopened_issue.reload.manual_review_reason).to eq(Issue::REOPEN_REVIEW_VALIDATED_REASON)
+      expect(AccountActivityEvent.where(action: "issue.reopen_review_validated", subject: reopened_issue)).to exist
     end
   end
 

@@ -121,10 +121,11 @@
   a `manual_review` inbox entry showing why
   automation stopped (`manual_review_reason`) and how long it has been stopped
   (`manual_review_started_at`, falling back to `updated_at` for legacy rows —
-  `ISSUE-ENHANCEMENT-012`). The entry SHALL offer an operator-triggered manual
-  `enhance_issue` run as its clearing action, since automatic picking excludes
-  `manual_review` and only an explicit operator-triggered run resumes work
-  (`ISSUE-ENHANCEMENT-011`). Queuing that run SHALL transition the issue out
+  `ISSUE-ENHANCEMENT-012`). For an enhancement-originated stop, the entry SHALL
+  offer an operator-triggered manual `enhance_issue` run as its clearing
+  action, since automatic picking excludes `manual_review` and only an
+  explicit operator-triggered run resumes that work (`ISSUE-ENHANCEMENT-011`).
+  Queuing that run SHALL transition the issue out
   of `manual_review` in the same request — inside the same transaction that
   creates the run — so the entry clears from the queue and the badge at queue
   time rather than when the workflow eventually starts the run (#3853); a
@@ -175,6 +176,22 @@
   `spec/services/dashboard/eligibility_breakdown_spec.rb`,
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`.
+
+- [x] **OPERATOR-INBOX-002L** — When an issue is in `manual_review`, the
+  Inbox, API, chat context, and recovery endpoint SHALL classify recovery from
+  persisted reopen-gate state, live dependency records, scanner provenance, or
+  run provenance; an unclassifiable record SHALL remain visibly unknown.
+  Reopen review SHALL collect a revision-bound decision before continuation;
+  an unresolved dependency SHALL link to its blocking owner and remain held;
+  scanner recurrence SHALL retain its evidence; enhancement stops SHALL retain
+  their existing questions and retry controls. Before any continuation, the
+  system SHALL surface and reuse or reconcile unfinished work rather than
+  silently clearing a hold or creating a duplicate run.
+  *Tests:* `spec/services/inbox/manual_review_recovery_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`, `Inbox::Queue`,
+  `Api::V1::InboxEntrySerializer`, `Projects::AgentRunsController`.
 
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by

@@ -103,7 +103,17 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        recovery = entry.manual_review_recovery
+        {
+          questions: entry.questions,
+          comment_url: entry.manual_review_comment_url,
+          recovery: {
+            cause: recovery.cause,
+            action: recovery.action,
+            active_run_id: recovery.active_run&.id,
+            blockers: recovery.blockers.map { |blocker| { label: blocker.label, url: blocker.url } }
+          }
+        }
       end
 
       def manual_review_list_payload

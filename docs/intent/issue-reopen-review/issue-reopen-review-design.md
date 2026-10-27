@@ -21,9 +21,20 @@ review reason. The Inbox exposes this state to an operator, and ordinary
 automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
-An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+An operator validates a reopened issue before selecting any continuation. The
+validation is bound to the GitHub revision observed in the Inbox, records the
+authorized actor and an operator-authored reason in the account audit trail,
+and refuses a stale revision. The Inbox shows the original closure/reopen
+scope and then offers only a supported continuation. Existing queued or
+running work is shown and reconciled instead of creating a second run.
+
+Manual-review recovery is cause-specific. A reopen gate records a validation
+decision; a currently unresolved dependency remains held and links to its
+owner; scanner recurrence retains its verification evidence; an
+enhancement-originated stop retains its question and retry flow. A cause which
+cannot be established from persisted state, dependency records, scanner
+provenance, or run provenance remains visibly unknown and is not resumed by a
+generic retry.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

@@ -30,3 +30,12 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator validates a
+  reopened issue from Inbox, the system SHALL require a non-blank reason and
+  the revision displayed by Inbox, record the actor, reason, decision and
+  revision in the account audit trail, and only then offer a supported
+  continuation. A changed revision or existing unfinished work SHALL remain
+  visible and SHALL NOT create another run.
+  *Tests:* `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`, `Projects::AgentRunsController`.

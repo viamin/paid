@@ -6,6 +6,8 @@ class Issue < ApplicationRecord
   PAID_STATES = %w[new planning in_progress completed failed needs_input manual_review recommend_close analyzed].freeze
   REOPEN_REVIEW_REQUIRED_REASON =
     "Issue was reopened after closure. An operator must validate its current intent before it can be completed again."
+  REOPEN_REVIEW_VALIDATED_REASON =
+    "Reopen review was validated by an authorized operator; select a supported continuation."
   NON_BLOCKING_OPEN_DEPENDENCY_STATES = %w[recommend_close completed].freeze
   PR_REVIEW_PHASES = %w[draft restarted ready merged escalated].freeze
   CONTROL_PRIORITIES = %w[P1 P2 P3].freeze

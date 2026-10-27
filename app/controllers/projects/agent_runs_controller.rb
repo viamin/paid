@@ -437,13 +437,24 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D OPERATOR-INBOX-002L
     def resume_manual_review
       authorize @project, :run_agent?
 
       issue = resolve_manual_review_issue
       unless issue
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue)
+      if recovery.active?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Recovery work is already queued or running (run ##{recovery.active_run.id}); reconcile that work before resuming."
+        return
+      end
+      unless recovery.action == :retry_enhancement
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_recovery_alert(recovery)
         return
       end
 
@@ -455,6 +466,24 @@ module Projects
         goal: "enhance_issue",
         priority_tier: nil
       )
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002L
+    def validate_reopen_review
+      authorize @project, :run_agent?
+      issue = resolve_manual_review_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      result = Issues::ValidateReopenReview.call(
+        issue: issue,
+        actor: current_user,
+        reason: params[:reason],
+        github_revision: params[:github_revision]
+      )
+      redirect_to safe_return_target || dashboard_path, **(result.success? ? { notice: result.message } : { alert: result.message })
     end
 
     # Operator-driven counterpart to
@@ -1081,6 +1110,15 @@ module Projects
         "Please select an issue."
       else
         "This issue is no longer waiting for manual review."
+      end
+    end
+
+    def manual_review_recovery_alert(recovery)
+      case recovery.action
+      when :record_reopen_validation then "Validate the reopen review before selecting a continuation."
+      when :wait_for_dependency then "This issue is waiting for its unresolved dependency; no enhancement run was queued."
+      when :collect_scanner_evidence then "This scanner recurrence requires verification evidence; no enhancement run was queued."
+      else "This manual-review cause is unknown and cannot be resumed automatically."
       end
     end
 
