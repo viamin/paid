@@ -14,11 +14,14 @@ PONYTAIL_NPM_PACKAGE="${PONYTAIL_NPM_PACKAGE:-@dietrichgebert/ponytail}"
 PONYTAIL_OMP_TARGET="${PONYTAIL_OMP_TARGET:-git:github.com/DietrichGebert/ponytail}"
 STEP_TIMEOUT="${PONYTAIL_STEP_TIMEOUT:-180}"
 
+# Pipe output through cat so agent CLIs never see the lifecycle TTY; under a
+# terminal they can finish their work yet never exit, burning the full timeout.
+# pipefail keeps the step's own exit status.
 run_step() {
   local desc="$1"
   shift
 
-  if ! timeout -k 10 "$STEP_TIMEOUT" "$@" </dev/null; then
+  if ! timeout -k 10 "$STEP_TIMEOUT" "$@" </dev/null 2>&1 | cat; then
     echo "WARNING: ${desc} failed or timed out (${STEP_TIMEOUT}s); skipping." >&2
     return 1
   fi
