@@ -12,6 +12,8 @@
 <% prerequisite_source_run = issue.agent_runs.where.not(base_commit_sha: [nil, ""])
      .where.not(goal: AgentRun::TECHNICAL_PREREQUISITE_VALIDATION_GOAL).order(created_at: :desc).first %>
 <% prerequisite_recipes = PreCommitRequirement.resolve(project: entry.project, user: current_user) %>
+<% technical_validation = status.technical_evidence.select { |record| record.is_a?(Hash) }
+     .max_by { |record| record["recorded_at"].to_s } %>
 <div class="space-y-6">
   <div class="rounded-xl border border-violet-200 bg-violet-50 p-4">
     <h3 class="text-sm font-semibold text-violet-900">
@@ -241,6 +243,18 @@
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Prerequisites</h3>
+    <% if technical_validation %>
+      <div class="space-y-2 rounded-lg border border-indigo-200 bg-indigo-50 p-3" data-technical-prerequisite-validation>
+        <h4 class="text-sm font-semibold text-indigo-900">Latest technical prerequisite validation</h4>
+        <p class="text-sm text-indigo-900">
+          Status: <span class="font-medium"><%= technical_validation["status"].to_s.humanize.presence || "Unknown" %></span>.
+        </p>
+        <% if technical_validation["setup_action"].present? %>
+          <p class="text-sm text-indigo-900"><%= technical_validation["setup_action"] %></p>
+        <% end %>
+      </div>
+    <% end %>
+
     <% if status.unresolved_prerequisites.any? %>
       <p class="text-sm text-gray-600">
         <%= status.unresolved_prerequisites.join(", ") %> — create or link the prerequisite work before
@@ -266,7 +280,7 @@
             <code><%= prerequisite_source_run.base_commit_sha %></code>. The run page shows progress and allows cancellation;
             submit again to retry with fresh evidence.
           </p>
-          <%= form.submit "Run prerequisite validation",
+          <%= form.submit technical_validation ? "Retry prerequisite validation" : "Run prerequisite validation",
                 class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
         <% end %>
       <% end %>

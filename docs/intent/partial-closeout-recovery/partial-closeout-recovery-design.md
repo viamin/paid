@@ -374,6 +374,12 @@ assessment's evidence, so a terminal validation invalidates stale criteria
 without treating the result itself as acceptance. A changed checkout, image,
 tool snapshot, or scope requires a fresh validation.
 
+When a validation record is present, the partial-closeout Inbox pane shows its
+latest outcome and exact setup action alongside the reviewed-recipe retry
+control. The operator can therefore resolve an unavailable backend or rollout
+authorization before rerunning it, rather than inferring remediation from a
+stale acceptance assessment.
+
 Pending chat write-tool confirmations visibly distinguish proposed/awaiting
 confirmation, queued, refused, and completed actions, link a completed action
 to the run it created, and a conversational message sent while a confirmation

@@ -25,16 +25,21 @@
       the agent execution queue. When an operator cancels a running validation,
       execution SHALL stop cooperatively before the next provisioning or
       command boundary and SHALL clean up any environment already provisioned.
+      When the partial-closeout Inbox pane has a validation record, it SHALL
+      render the latest outcome and its exact setup action alongside the
+      reviewed-recipe retry control.
       *Code:* `app/services/technical_prerequisites/capability_inspection.rb`,
       `app/services/technical_prerequisites/start_validation.rb`,
       `app/services/technical_prerequisites/validate_execution.rb`,
       `app/jobs/technical_prerequisite_validation_job.rb`,
       `app/controllers/projects/agent_runs_controller.rb`,
-      `app/models/agent_run.rb`.
+      `app/models/agent_run.rb`,
+      `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
       *Test:* `spec/services/technical_prerequisites/validate_execution_spec.rb`,
       `spec/services/technical_prerequisites/start_validation_spec.rb`,
       `spec/jobs/technical_prerequisite_validation_job_spec.rb`,
-      `spec/requests/projects/technical_prerequisite_validations_spec.rb`.
+      `spec/requests/projects/technical_prerequisite_validations_spec.rb`,
+      `spec/requests/inbox_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue
   pull-request body, it SHALL use a persisted source-closure disposition derived
