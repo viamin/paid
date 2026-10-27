@@ -21,12 +21,14 @@ class ShadowEvaluationExecutionJob < ApplicationJob
   def perform(project_id, evaluation_id)
     evaluation = IntentConformanceShadowEvaluation.find(evaluation_id)
     return unless evaluation.project_id == project_id
-    return if evaluation.cancelled? || evaluation.completed?
+    return if evaluation.cancelled?
+    return compile_report(evaluation) if evaluation.completed? && report_missing?(evaluation)
+    return if evaluation.completed?
 
     result = IntentConformance::ShadowEvaluation::ExecuteReviewer.call(evaluation: evaluation)
     return mark_interrupted(result.error) unless result.success?
 
-    IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: evaluation) if evaluation.runs.exists?
+    compile_report(evaluation)
   end
 
   def mark_interrupted(error)
@@ -45,6 +47,14 @@ class ShadowEvaluationExecutionJob < ApplicationJob
   end
 
   private
+
+  def compile_report(evaluation)
+    IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: evaluation) if evaluation.runs.exists?
+  end
+
+  def report_missing?(evaluation)
+    evaluation.report.blank? || evaluation.report_markdown.blank?
+  end
 
   def failure_reason(error)
     error.respond_to?(:message) ? error.message : error.to_s

@@ -58,6 +58,14 @@ RSpec.describe IntentConformanceShadowEvaluation do
       expect(evaluation.reload).to be_running
     end
 
+    it "allows a queued execution to re-establish its background job" do
+      evaluation = create(:intent_conformance_shadow_evaluation, status: "queued",
+        labels_frozen_at: Time.current, execution_enqueued_at: 1.minute.ago)
+
+      expect(evaluation.queue_execution!).to be(true)
+      expect(evaluation.reload).to have_attributes(status: "queued", execution_enqueued_at: be_present)
+    end
+
     it "cancels a stale running execution immediately" do
       evaluation = create(:intent_conformance_shadow_evaluation, status: "running",
         labels_frozen_at: Time.current, execute_started_at: 16.minutes.ago)

@@ -26,6 +26,18 @@ RSpec.describe ShadowEvaluationExecutionJob do
     expect(IntentConformance::ShadowEvaluation::ExecuteReviewer).to have_received(:call).with(evaluation: evaluation)
   end
 
+  it "compiles a missing report when execution completed before a retry" do
+    evaluation.update!(status: "completed", labels_frozen_at: Time.current)
+    create(:intent_conformance_shadow_evaluation_run, shadow_evaluation: evaluation)
+    allow(IntentConformance::ShadowEvaluation::CompileReport).to receive(:call)
+
+    expect(IntentConformance::ShadowEvaluation::ExecuteReviewer).not_to receive(:call)
+
+    described_class.perform_now(project.id, evaluation.id)
+
+    expect(IntentConformance::ShadowEvaluation::CompileReport).to have_received(:call).with(evaluation: evaluation)
+  end
+
   it "converges an unsuccessful service result to a retryable terminal state" do
     evaluation.update!(status: "queued", labels_frozen_at: Time.current)
     create(:intent_conformance_shadow_evaluation_run, shadow_evaluation: evaluation)

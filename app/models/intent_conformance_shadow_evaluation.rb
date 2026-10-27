@@ -70,7 +70,8 @@ class IntentConformanceShadowEvaluation < ApplicationRecord
   # can be enqueued. Completed cases stay intact for a retry/resume.
   def queue_execution!
     with_lock do
-      return false if queued? || active_execution? || completed?
+      return true if queued?
+      return false if active_execution? || completed?
 
       update!(status: "queued", execution_enqueued_at: Time.current,
         execute_started_at: nil, cancellation_requested_at: nil,

@@ -66,6 +66,17 @@ RSpec.describe "Projects::ShadowEvaluations" do
     post freeze_project_shadow_evaluation_path(project, evaluation)
   end
 
+  def expect_execution_queued_log(evaluation)
+    expect(Rails.logger).to have_received(:info).with(
+      hash_including(
+        message: "intent_conformance.shadow_evaluation_execution_queued",
+        project_id: project.id,
+        shadow_evaluation_id: evaluation.id,
+        actor_user_id: owner.id
+      )
+    )
+  end
+
   it "starts from the Inbox entry point and resumes the same evaluation on repeated clicks" do
     evaluation = start_evaluation!
     expect(evaluation).to have_attributes(policy: "solo", status: "labeling", solo_maintainer: owner)
@@ -165,14 +176,7 @@ RSpec.describe "Projects::ShadowEvaluations" do
 
     expect(evaluation.reload).to be_queued
     expect(response.body).to include("Reviewer execution queued")
-    expect(Rails.logger).to have_received(:info).with(
-      hash_including(
-        message: "intent_conformance.shadow_evaluation_execution_queued",
-        project_id: project.id,
-        shadow_evaluation_id: evaluation.id,
-        actor_user_id: owner.id
-      )
-    )
+    expect_execution_queued_log(evaluation)
 
     ShadowEvaluationExecutionJob.perform_now(project.id, evaluation.id)
 
@@ -188,6 +192,15 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("solo")
   end
 
+  it "re-establishes the background job for a durably queued evaluation" do
+    evaluation = start_evaluation_from_committed_corpus!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    evaluation.update!(status: "queued", execution_enqueued_at: 1.minute.ago)
+
+    expect { post execute_project_shadow_evaluation_path(project, evaluation) }
+      .to have_enqueued_job(ShadowEvaluationExecutionJob).with(project.id, evaluation.id)
+  end
 
   it "does not offer a retry action after execution completed" do
     evaluation = start_evaluation!
