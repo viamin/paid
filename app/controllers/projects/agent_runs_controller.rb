@@ -470,13 +470,40 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
       issue = resolve_manual_review_issue
       unless issue
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue)
+      if recovery.action == :record_reopen_decision
+        record_reopen_review_decision(issue)
+        return
+      end
+      if recovery.action == :reuse_run
+        redirect_to safe_return_target || dashboard_path,
+          notice: "Existing #{recovery.active_run.goal.tr('_', ' ')} run ##{recovery.active_run.id} is already #{recovery.active_run.status}; no second run was created."
+        return
+      end
+      if recovery.action == :wait_for_dependency
+        redirect_to safe_return_target || dashboard_path, alert: "This issue is still blocked by a dependency. Resolve it before resuming work."
+        return
+      end
+      if recovery.action == :collect_scanner_evidence
+        redirect_to safe_return_target || dashboard_path, alert: "Scanner recurrence requires current verification evidence; enhancement was not restarted."
+        return
+      end
+      if recovery.action == :retry_failed_run
+        redirect_to safe_return_target || dashboard_path, alert: "Technical recovery must retry the failed analysis or transport work; enhancement was not restarted."
+        return
+      end
+      if recovery.action == :investigate
+        redirect_to safe_return_target || dashboard_path, alert: "Manual-review cause is unknown. Review the issue and run history before choosing work."
         return
       end
 
@@ -1079,6 +1106,19 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
+    end
+
+    def record_reopen_review_decision(issue)
+      Inbox::ManualReviewRecovery.record_reopen_decision!(
+        issue: issue,
+        actor: current_user,
+        reason: params[:reopen_review_reason],
+        revision: params[:reopen_review_revision]
+      )
+      redirect_to safe_return_target || dashboard_path,
+        notice: "Reopen review decision recorded for the current revision. You can now choose the supported continuation."
+    rescue ArgumentError => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
     end
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap

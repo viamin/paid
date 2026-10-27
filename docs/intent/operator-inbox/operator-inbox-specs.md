@@ -176,6 +176,13 @@
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`.
 
+  Manual-review recovery SHALL be classified from retained provenance: a pending
+  reopen review records revision-bound intent validation; unresolved
+  dependencies remain linked waits; scanner recurrence collects scanner
+  evidence; active work is reused; enhancement questions retain their answer
+  form; and an unknown cause remains visible for investigation. The Inbox and
+  its mutation endpoint SHALL use the same classifier.
+
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by
   `Issue#abandon_due_to_runner_retry_cap!` after every available runner hit

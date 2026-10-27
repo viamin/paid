@@ -21,9 +21,11 @@ review reason. The Inbox exposes this state to an operator, and ordinary
 automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
-An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+An operator first records an authorized, non-blank validation decision against
+the GitHub revision displayed in Inbox. The audit record binds the actor,
+reason, issue, and revision; a changed revision requires a fresh validation.
+Only then does Inbox offer a supported continuation. Existing queued or running
+work is reused rather than superseded.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

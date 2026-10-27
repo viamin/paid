@@ -30,3 +30,11 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - While a reopened issue is in manual
+  review, the Inbox SHALL require an authorized actor to record a non-blank
+  intent-validation reason bound to the currently displayed GitHub revision
+  before offering work continuation, and SHALL reuse queued or running work.
+  *Code:* `Inbox::ManualReviewRecovery`, `Projects::AgentRunsController`.
+  *Test:* `spec/services/inbox/manual_review_recovery_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.

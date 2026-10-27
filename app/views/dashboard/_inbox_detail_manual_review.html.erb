@@ -1,12 +1,21 @@
 <%# @spec OPERATOR-INBOX-002D %>
 <div class="space-y-6">
+  <% recovery = Inbox::ManualReviewRecovery.call(issue: entry.issue) %>
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
       <% if entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
+      <% elsif recovery.cause == :reopen_review %>
+        This issue was reopened after closure. Validate the original closure and the remaining scope before choosing further work.
+      <% elsif recovery.cause == :dependency %>
+        Work is waiting on an unresolved dependency. Resolving or acknowledging this pane does not waive that dependency.
+      <% elsif recovery.cause == :scanner_recurrence %>
+        A scanner confirmed that remediation did not hold. Collect current scanner evidence before deciding on implementation.
+      <% elsif recovery.cause == :active_work %>
+        Paid already has work queued or running for this issue. This pane reuses that work instead of creating a second run.
       <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+        Automatic picking skips issues in manual review. The supported action is shown below.
       <% end %>
     </p>
   </div>
@@ -41,8 +50,41 @@
           selected_kind: selected_kind %>
   <% end %>
 
+  <% if recovery.cause == :reopen_review %>
+    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Validate reopened intent</h3>
+      <p class="mt-1 text-sm text-amber-800">Original closure is no longer authoritative. Confirm the remaining scope for revision <%= entry.issue.github_updated_at&.iso8601 || "unknown" %>; this records a decision, not an implementation retry.</p>
+      <% if policy(entry.project).run_agent? %>
+        <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project), method: :post, class: "mt-3 space-y-3" do |form| %>
+          <%= form.hidden_field :issue_id, value: entry.issue.id %>
+          <%= form.hidden_field :reopen_review_revision, value: entry.issue.github_updated_at&.iso8601 %>
+          <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+          <%= form.label :reopen_review_reason, "Decision and remaining scope", class: "block text-sm font-medium text-amber-900" %>
+          <%= form.text_area :reopen_review_reason, required: true, rows: 3, class: "mt-1 block w-full rounded-md border-gray-300" %>
+          <%= form.submit "Record intent validation", class: "inline-flex rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white" %>
+        <% end %>
+      <% end %>
+    </div>
+  <% elsif recovery.cause == :dependency %>
+    <div class="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <h3 class="font-semibold">Waiting for dependency</h3>
+      <% recovery.dependencies.each do |dependency| %>
+        <% target = dependency.respond_to?(:depends_on_issue) ? dependency.depends_on_issue : dependency %>
+        <% if target %><p class="mt-1"><%= link_to "#{target.project.full_name}##{target.github_number}", target.github_url, target: "_blank", rel: "noopener noreferrer", class: "underline" %></p><% end %>
+      <% end %>
+    </div>
+  <% elsif recovery.cause == :active_work %>
+    <div class="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">Reusing <%= link_to "run ##{recovery.active_run.id}", project_agent_run_path(entry.project, recovery.active_run), data: { turbo_frame: "_top" }, class: "underline" %> (<%= recovery.active_run.status %>).</div>
+  <% elsif recovery.cause == :scanner_recurrence %>
+    <div class="rounded-lg border border-violet-200 bg-violet-50 p-4 text-sm text-violet-900">The supported action is evidence collection and scanner re-verification; no enhancement retry has been queued.</div>
+  <% elsif recovery.cause == :technical_failure %>
+    <div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-900">This is a technical parser or transport failure. Retry the failed analysis from run history; no enhancement retry has been queued.</div>
+  <% elsif recovery.cause == :unknown %>
+    <div class="rounded-lg border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700">Cause is unknown from retained provenance. Review the issue and run history before selecting a recovery action.</div>
+  <% end %>
+
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && recovery.action == :retry_enhancement %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,
