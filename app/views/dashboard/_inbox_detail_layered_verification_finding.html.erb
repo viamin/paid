@@ -1,0 +1,22 @@
+<%# @spec LAYERED-VERIFY-015 LAYERED-VERIFY-016 %>
+<% finding = entry.record %>
+<dl class="space-y-4 text-sm">
+  <div><dt class="font-medium text-gray-900">Obligation</dt><dd class="mt-1"><%= finding.obligation.external_identity %> — <%= finding.obligation.scope_description %></dd></div>
+  <div><dt class="font-medium text-gray-900">Source revision</dt><dd class="mt-1 font-mono text-xs"><%= finding.obligation.external_revision.presence || "Unresolved" %></dd></div>
+  <div><dt class="font-medium text-gray-900">Conflicting source passages or claims</dt><dd class="mt-1"><%= safe_join(Array(finding.source_passages).map { |passage| tag.p(passage.is_a?(String) ? passage : passage.to_json) }, tag.br) %></dd></div>
+  <div><dt class="font-medium text-gray-900">Observed behavior</dt><dd class="mt-1"><%= finding.observed_behavior.is_a?(String) ? finding.observed_behavior : finding.observed_behavior.to_json %></dd></div>
+  <div><dt class="font-medium text-gray-900">Check limitations</dt><dd class="mt-1"><ul class="list-disc pl-5"><% Array(finding.check_limitations).each do |limitation| %><li><%= limitation %></li><% end %></ul></dd></div>
+  <div><dt class="font-medium text-gray-900">Decision needed</dt><dd class="mt-1"><%= finding.decision["question"] %></dd></div>
+  <div><dt class="font-medium text-gray-900">Consequences</dt><dd class="mt-1"><ul class="list-disc pl-5"><% Array(finding.decision["consequences"]).each do |consequence| %><li><%= consequence %></li><% end %></ul></dd></div>
+</dl>
+
+<%= form_with url: inbox_layered_verification_finding_decision_path(entry.id), data: { turbo_frame: "_top" }, class: "mt-6 space-y-3" do |form| %>
+  <%= hidden_field_tag "decision[external_revision]", finding.obligation.external_revision %>
+  <div><%= form.label :reason, "Decision reason", class: "block text-sm font-medium text-gray-900" %><%= form.text_area :reason, name: "decision[reason]", required: true, rows: 3, class: "mt-1 w-full rounded-md border-gray-300" %></div>
+  <div class="flex flex-wrap gap-2">
+    <%= form.button "Request a separately authorized repair", name: "decision[action]", value: "request_repair", class: "rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white" %>
+    <%= form.button "Approve a clarification for persistence", name: "decision[action]", value: "approve_clarification", class: "rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300" %>
+    <%= form.button "Defer", name: "decision[action]", value: "defer", class: "rounded-md bg-white px-3 py-2 text-sm font-medium text-gray-700 ring-1 ring-inset ring-gray-300" %>
+  </div>
+  <p class="text-xs text-gray-500">This records an Inbox decision only. It does not modify project artifacts or start repair.</p>
+<% end %>

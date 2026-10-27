@@ -2023,4 +2023,39 @@ RSpec.describe "Inbox" do
       kind: Inbox::Queue::MERGE_APPROVAL_KIND
     )
   end
+
+  # @spec LAYERED-VERIFY-015 LAYERED-VERIFY-016
+  it "renders finding evidence and records a decision without plan-review actions" do
+    finding = create_layered_verification_finding
+    key = entry_id(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND, finding)
+
+    get inbox_entry_path(key), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response.body).to include("PAYMENTS-017", "Two captures occur after retry.",
+      "Only the retry path was exercised.", "Request a separately authorized repair")
+    expect(response.body).not_to include("Approve plan", "Reject plan", "Revise plan")
+
+    post inbox_layered_verification_finding_decision_path(key), params: {
+      decision: { action: "defer", reason: "Awaiting a business-owner answer.", external_revision: "abc123" }
+    }
+
+    expect(response).to redirect_to(inbox_entry_path(key))
+    expect(finding.reload).to have_attributes(status: "deferred")
+    expect(finding.decision).to include("selected_action" => "defer", "reason" => "Awaiting a business-owner answer.")
+    expect(AgentRun.where(goal: "layered_verification_repair", project:)).to be_empty
+  end
+
+  def create_layered_verification_finding
+    obligation = create(:layered_verification_obligation, project:, external_identity: "PAYMENTS-017",
+      scope_description: "Retry a charge without duplicating it.", external_revision: "abc123")
+    LayeredVerificationFinding.create!(project:, obligation:,
+      agent_run: create(:agent_run, project:, goal: "layered_verification_audit"),
+      correspondence_claim_type: "spec_to_code", cause_signature: "missing-idempotency-guard",
+      source_passages: [ "PAYMENTS-017 requires one captured charge." ],
+      observed_behavior: { "summary" => "Two captures occur after retry." },
+      check_limitations: [ "Only the retry path was exercised." ],
+      decision: { "question" => "How should this discrepancy be handled?",
+                  "options" => %w[request_repair approve_clarification defer],
+                  "consequences" => [ "Repair requires separate authorization." ] })
+  end
 end

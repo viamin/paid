@@ -3861,10 +3861,13 @@ class AgentRun < ApplicationRecord
   # @spec LAYERED-VERIFY-010 LAYERED-VERIFY-013 LAYERED-VERIFY-024
   def prompt_for_layered_verification_audit
     audit = external_metadata.fetch("layered_verification")
-    obligations = project.layered_verification_obligations.where(id: audit.fetch("obligation_ids")).order(:id)
+    obligations = project.layered_verification_obligations.includes(:correspondence_claims)
+      .where(id: audit.fetch("obligation_ids")).order(:id)
     scope = obligations.map do |obligation|
       plan = audit.fetch("plan", {}).fetch(obligation.id.to_s, {})
-      "- #{obligation.external_identity}: #{obligation.scope_description}\n  Plan: #{plan.to_json}"
+      claims = obligation.correspondence_claims.map { |claim| { id: claim.id, claim_type: claim.claim_type } }
+      "- #{obligation.external_identity} (obligation_id: #{obligation.id}): #{obligation.scope_description}\n" \
+        "  Correspondence claims: #{claims.to_json}\n  Plan: #{plan.to_json}"
     end.join("\n")
 
     <<~PROMPT
@@ -3877,6 +3880,13 @@ class AgentRun < ApplicationRecord
       Execute the selected checks within the declared budget #{audit.fetch("budget").to_json}.
       Record evidence, limitations, and supported, contradicted, or unresolved coverage for every obligation.
       A selected check that cannot run must be reported as not_run, incomplete, or non_applicable with a limitation.
+
+      Finish by emitting exactly one JSON object between lines containing `paid-layered-verification-output`.
+      The object must contain `check_results`, one entry per selected check outcome. Each entry must include
+      obligation_id, selected_check, producer, execution_state, obligation_coverage, input_revision,
+      evidence_summary, limitations, and, for contradicted coverage, a stable kebab-case cause_signature
+      describing the underlying discrepancy rather than an artifact path. Include correspondence_claim_id,
+      evidence_ref, agent_reported, recorder_verified, and cost when available.
 
       Obligations and plans:
       #{scope}

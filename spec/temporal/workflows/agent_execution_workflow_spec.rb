@@ -466,6 +466,8 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
             agent_timeout_seconds: 3600, issue_goal_timeout_seconds: 600 }
         when "Activities::RunAgentActivity"
           { agent_run_id: 42, success: true, has_changes: false }
+        when "Activities::RecordLayeredVerificationResultsActivity"
+          { agent_run_id: 42, check_result_count: 1 }
         when "Activities::CompleteLayeredVerificationAuditActivity"
           { agent_run_id: 42, success: true, coverage: {} }
         else {}
@@ -479,11 +481,17 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
 
       expect(result).to eq(success: true, agent_run_id: 42, coverage: {})
       expect(workflow).to have_received(:run_activity).with(
+        Activities::RecordLayeredVerificationResultsActivity,
+        { agent_run_id: 42 },
+        timeout: 30,
+        retry_policy: described_class::NO_RETRY
+      ).ordered
+      expect(workflow).to have_received(:run_activity).with(
         Activities::CompleteLayeredVerificationAuditActivity,
         { agent_run_id: 42 },
         timeout: 30,
         retry_policy: described_class::NO_RETRY
-      )
+      ).ordered
       expect(workflow).not_to have_received(:run_activity)
         .with(Activities::MarkAgentRunCompleteActivity, anything, any_args)
       expect(workflow).not_to have_received(:run_activity)

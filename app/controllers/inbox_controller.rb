@@ -79,6 +79,19 @@ class InboxController < ApplicationController
     redirect_back_to_inbox(notice: "Restored to your inbox.")
   end
 
+  # @spec LAYERED-VERIFY-015 LAYERED-VERIFY-016
+  def decide_layered_verification_finding
+    entry = Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id])
+    return redirect_to(inbox_path, alert: "That verification finding is no longer available.") unless entry&.layered_verification_finding?
+
+    authorize entry.project, :manage_issues?
+    decision = params.require(:decision).permit(:action, :reason, :external_revision)
+    Inbox::DecideLayeredVerificationFinding.call(finding: entry.record, user: current_user, **decision.to_h.symbolize_keys)
+    redirect_to inbox_entry_path(entry.id), notice: "Verification finding decision recorded. No repair was started."
+  rescue Inbox::DecideLayeredVerificationFinding::StaleRevisionError, ArgumentError => error
+    redirect_to inbox_entry_path(params[:entry_id]), alert: error.message
+  end
+
   private
 
   # Direct links resolve in any scope, so an item moved out of the default list

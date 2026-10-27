@@ -10,6 +10,7 @@ module Activities
       return result(agent_run, stored_coverage(agent_run)) if agent_run.finished?
 
       track_phase(agent_run_id: agent_run.id, phase_key: "complete_layered_verification_audit", phase_group: "post", agent_run:) do
+        LayeredVerification::Audits::IngestResults.call(agent_run:)
         coverage = coverage_for(agent_run)
         store_coverage!(agent_run, coverage)
         completed = agent_run.complete!

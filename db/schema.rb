@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_27_090001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2802,6 +2802,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090000) do
   create_table "layered_verification_check_results", force: :cascade do |t|
     t.jsonb "agent_reported", default: {}, null: false
     t.bigint "agent_run_id"
+    t.string "cause_signature", comment: "Stable detector-provided identity for the underlying discrepancy; evidence locations are observation-specific."
     t.bigint "correspondence_claim_id"
     t.jsonb "cost", default: {}, null: false
     t.datetime "created_at", null: false

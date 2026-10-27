@@ -343,6 +343,10 @@ module Workflows
         agent_step_succeeded = true
 
         if goal == "layered_verification_audit" && Temporalio::Workflow.patched("layered-verification-audit-completion-v1")
+          if Temporalio::Workflow.patched("layered-verification-audit-result-ingestion-v1")
+            run_activity(Activities::RecordLayeredVerificationResultsActivity,
+              { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
+          end
           audit_result = run_activity(Activities::CompleteLayeredVerificationAuditActivity,
             { agent_run_id: agent_run_id }, timeout: 30, retry_policy: NO_RETRY)
 

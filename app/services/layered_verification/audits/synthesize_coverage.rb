@@ -39,21 +39,32 @@ module LayeredVerification
 
       def finding_for(obligation, results)
         contradictory = results.select { |result| result.obligation_coverage == "contradicted" }
-        cause_signature = contradictory.map { |result| [ result.producer, result.evidence_ref ].join(":") }.sort.join("|")
+        contradictory.group_by { |result| [ claim_type(result), result.cause_signature ] }.each_value do |conflict_results|
+          persist_finding(obligation, conflict_results)
+        end
+      end
+
+      def persist_finding(obligation, contradictory)
+        correspondence_claim_type = claim_type(contradictory.first)
+        cause_signature = contradictory.first.cause_signature
         finding = LayeredVerificationFinding.find_or_create_by!(
-          project: agent_run.project, obligation:, correspondence_claim_type: claim_type(contradictory), cause_signature:
+          project: agent_run.project, obligation:, correspondence_claim_type:, cause_signature:
         ) do |record|
           record.agent_run = agent_run
           record.source_passages = contradictory.map { |result| result.evidence_summary }
           record.observed_behavior = { "check_results" => contradictory.map(&:id) }
           record.check_limitations = contradictory.map(&:limitations)
-          record.decision = { "question" => "Resolve the discrepancy before requesting repair.", "options" => [], "consequences" => [] }
+          record.decision = {
+            "question" => "How should this discrepancy be handled?",
+            "options" => %w[request_repair approve_clarification defer],
+            "consequences" => [ "Repair requires separate authorization; this decision does not start one." ]
+          }
         end
         finding.add_observation!(agent_run:, check_result_ids: contradictory.map(&:id))
       end
 
-      def claim_type(results)
-        results.filter_map { |result| result.correspondence_claim&.claim_type }.first || "unscoped"
+      def claim_type(result)
+        result.correspondence_claim&.claim_type || "unscoped"
       end
     end
   end
