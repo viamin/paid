@@ -2,14 +2,15 @@
 <%# @spec PARTIAL-CLOSEOUT-022 @spec PARTIAL-CLOSEOUT-014 @spec PARTIAL-CLOSEOUT-015 @spec PARTIAL-CLOSEOUT-016 %>
 <% issue = entry.issue %>
 <% status = entry.closeout_status || Issues::CloseoutStatus.call(issue) %>
-<% assessment = PartialCloseouts::Assessment.call(issue, evidence: status.evidence) %>
+<% assessment = PartialCloseouts::Assessment.call(issue, evidence: status.evidence, technical_evidence: status.technical_evidence) %>
 <% human_prerequisite = entry.project.account.notifications.where(
       source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
       subject: issue,
       resolved_at: nil,
       dismissed_at: nil
     ).order(created_at: :desc).first %>
-<% prerequisite_source_run = issue.agent_runs.where.not(base_commit_sha: [nil, ""]).order(created_at: :desc).first %>
+<% prerequisite_source_run = issue.agent_runs.where.not(base_commit_sha: [nil, ""])
+     .where.not(goal: AgentRun::TECHNICAL_PREREQUISITE_VALIDATION_GOAL).order(created_at: :desc).first %>
 <% prerequisite_recipes = PreCommitRequirement.resolve(project: entry.project, user: current_user) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-violet-200 bg-violet-50 p-4">

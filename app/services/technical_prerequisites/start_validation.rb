@@ -19,6 +19,7 @@ module TechnicalPrerequisites
 
     def call
       return failure("Select a run with a pinned checkout.") if source_run.base_commit_sha.blank?
+      return failure("Select the original implementation run, not a prior validation.") if source_run.technical_prerequisite_validation_goal?
       return failure("Select an enabled validation recipe for this project.") unless allowed_requirement?
       return failure("The selected validation recipe has an invalid command.") unless reviewed_command
 

@@ -4,8 +4,13 @@ require "rails_helper"
 
 RSpec.describe TechnicalPrerequisites::ValidateExecution do
   let(:project) { create(:project) }
+  let(:issue) { create(:issue, project:) }
+  let(:source_run) { create(:agent_run, :completed, project:, issue:) }
   let(:agent_run) do
-    create(:agent_run, :queued, project:, base_commit_sha: "a" * 40, branch_name: "prerequisite-validation-abc")
+    create(:agent_run, :queued, project:, issue:, base_commit_sha: "a" * 40,
+      branch_name: "prerequisite-validation-abc", external_metadata: {
+        TechnicalPrerequisites::RECIPE_KEY => { "source_run_id" => source_run.id }
+      })
   end
   let(:execution_runner) { instance_double(ExecutionRunners::Base, provision_mcp_servers: {}, cleanup_mcp_servers: nil) }
   let(:execution_environment) { instance_double(Containers::Provision) }
@@ -33,6 +38,7 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(result.setup_action).to include("marketplace_tool_sidecars")
     expect(agent_run).not_to have_received(:provision_execution_environment)
     expect(agent_run.reload.verification_result.dig("technical_prerequisite_validation", "cleanup")).to include("attempted" => false)
+    expect(source_run.reload.reconciliation.dig("technical_prerequisite_evidence", "status")).to eq("unavailable")
   end
 
   # @spec PARTIAL-CLOSEOUT-030
@@ -55,6 +61,8 @@ RSpec.describe TechnicalPrerequisites::ValidateExecution do
     expect(agent_run.verification_result.dig("technical_prerequisite_validation", "tool_endpoints"))
       .to contain_exactly(include("name" => "analyzer"))
     expect(agent_run.reload.verification_result.dig("technical_prerequisite_validation", "cleanup")).to include("completed" => true)
+    expect(source_run.reload.reconciliation.dig("technical_prerequisite_evidence", "validation_run_id")).to eq(agent_run.id)
+    expect(source_run.reconciliation.dig("technical_prerequisite_evidence", "cleanup")).to include("completed" => true)
   end
 
   # @spec PARTIAL-CLOSEOUT-030

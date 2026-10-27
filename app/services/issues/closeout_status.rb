@@ -16,7 +16,7 @@ module Issues
   # @spec PARTIAL-CLOSEOUT-002 @spec PARTIAL-CLOSEOUT-004 @spec PARTIAL-CLOSEOUT-012
   class CloseoutStatus
     Blocker = Struct.new(:code, :message, :evidence, :recovery, keyword_init: true)
-    Inputs = Struct.new(:evidence_by_issue_id, :prerequisites_by_issue_id,
+    Inputs = Struct.new(:evidence_by_issue_id, :technical_evidence_by_issue_id, :prerequisites_by_issue_id,
       :open_requests_by_issue_id, :active_run_issue_ids, :feature_links_by_issue_id,
       :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id,
       :open_native_children_by_issue_id, :prerequisite_notifications_by_issue_id, keyword_init: true)
@@ -33,6 +33,7 @@ module Issues
       :resolved_current_generation,
       :outcome,
       :unresolved_prerequisites,
+      :technical_evidence,
       keyword_init: true
     ) do
       def stalled?
@@ -83,7 +84,8 @@ module Issues
         open_request: inputs ? inputs.open_requests_by_issue_id[issue.id] : IssueContinuationRequest.open_for_issue(issue),
         resolved_current_generation: issue.closeout_resolved? && issue.closeout_resolution_digest == evidence.digest,
         outcome: outcome_label(issue, evidence),
-        unresolved_prerequisites: prerequisites
+        unresolved_prerequisites: prerequisites,
+        technical_evidence: inputs&.technical_evidence_by_issue_id&.fetch(issue.id, [])
       )
     end
 
@@ -105,6 +107,7 @@ module Issues
       end
       Inputs.new(
         evidence_by_issue_id: CloseoutEvidence.results_for(issues),
+        technical_evidence_by_issue_id: TechnicalPrerequisites::Evidence.records_for_issues(issues),
         prerequisites_by_issue_id: prerequisite_labels_for(issues),
         open_requests_by_issue_id: IssueContinuationRequest.open.where(issue_id: issue_ids).order(:id).to_a.index_by(&:issue_id),
         active_run_issue_ids: AgentRun.where(issue_id: issue_ids, status: AgentRun::AUTO_PICK_BLOCKING_STATUSES).distinct.pluck(:issue_id).to_set,

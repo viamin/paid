@@ -154,6 +154,7 @@ module TechnicalPrerequisites
         .merge(evidence.stringify_keys).merge(attributes.compact.stringify_keys)
       record["error"] = error.to_s if error
       agent_run.update!(verification_result: agent_run.verification_result.merge(EVIDENCE_KEY => record))
+      Evidence.record!(agent_run:, record:)
       Result.new(status:, evidence: record, setup_action: record["setup_action"])
     end
 
@@ -210,6 +211,7 @@ module TechnicalPrerequisites
       agent_run.update!(verification_result: agent_run.verification_result.merge(
         EVIDENCE_KEY => record.merge("cleanup" => cleanup)
       ))
+      Evidence.record!(agent_run:, record: record.merge("cleanup" => cleanup))
     end
 
     def validate_command!(command)

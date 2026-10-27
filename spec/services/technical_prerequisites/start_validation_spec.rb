@@ -74,4 +74,16 @@ RSpec.describe TechnicalPrerequisites::StartValidation do
     expect(result).not_to be_success
     expect(result.agent_run).to be_nil
   end
+
+  # @spec PARTIAL-CLOSEOUT-030
+  it "refuses a prior validation as the source run" do
+    project = create(:project)
+    source_run = create(:agent_run, :completed, project:, goal: "technical_prerequisite_validation", base_commit_sha: "a" * 40)
+    requirement = create(:pre_commit_requirement, project:, account: project.account)
+
+    result = described_class.call(source_run:, requirement:, actor: project.created_by)
+
+    expect(result).not_to be_success
+    expect(result.message).to include("original implementation run")
+  end
 end

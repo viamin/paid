@@ -16,7 +16,10 @@
       before executing it, SHALL retain bounded stdout, stderr, exit status,
       pinned checkout/image/tool identity, sidecar endpoint, and cleanup
       evidence, and SHALL report `unavailable`, `failed`, or `completed`
-      without exposing host shell or Docker-socket access. The validation run
+      without exposing host shell or Docker-socket access. Each terminal
+      record SHALL update the originating run's bounded reconciliation evidence
+      and invalidate the closeout assessment source revision so a subsequent
+      bounded assessment uses the collected record. The validation run
       SHALL be report-only: it SHALL NOT inherit the implementation-admission
       gate of an implementation goal, and it SHALL NOT be dispatched through
       the agent execution queue. When an operator cancels a running validation,

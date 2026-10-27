@@ -367,9 +367,12 @@ backend yields a backend setup action. A disabled `marketplace_tool_sidecars`
 flag yields the exact scoped pilot-authorization action; it is never enabled
 by the validation. Denied images and missing credentials similarly retain the
 provisioner's explicit rejection. Results are `unavailable`, `failed`, or
-`completed` and are stored on the run's verification evidence for the
-originating prerequisite assessment; a changed checkout, image, tool snapshot,
-or scope requires a fresh validation.
+`completed` and are stored on the synthetic run plus a bounded latest-record
+projection on its originating run's reconciliation data. That projection is
+included in the closeout assessment source revision and in the next bounded
+assessment's evidence, so a terminal validation invalidates stale criteria
+without treating the result itself as acceptance. A changed checkout, image,
+tool snapshot, or scope requires a fresh validation.
 
 Pending chat write-tool confirmations visibly distinguish proposed/awaiting
 confirmation, queued, refused, and completed actions, link a completed action
