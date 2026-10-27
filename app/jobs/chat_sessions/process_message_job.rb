@@ -45,10 +45,13 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       }
     })
   rescue ArgumentError => e
+    mark_turn_failed(chat_session_id, stream_message_id, "invalid_request")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue NotImplementedError => e
+    mark_turn_failed(chat_session_id, stream_message_id, "unsupported_operation")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::LlmClientConfigurationError => e
+    mark_turn_failed(chat_session_id, stream_message_id, "configuration_error")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
     broadcast_error(chat_session_id, stream_message_id, e.message,
@@ -71,6 +74,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error_class: e.class.name,
       error: e.message
     )
+    mark_turn_failed(chat_session_id, stream_message_id, "provider_error")
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue ActiveRecord::RecordNotFound
     raise
@@ -81,6 +85,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error_class: e.class.name,
       error: e.message
     )
+    mark_turn_failed(chat_session_id, stream_message_id, "unexpected_error")
     broadcast_error(chat_session_id, stream_message_id, "An unexpected error occurred")
   end
 
@@ -120,6 +125,18 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       message_id: stream_message_id,
       message: error_message
     }.merge(extra.compact))
+  end
+
+  def mark_turn_failed(chat_session_id, stream_message_id, classification)
+    user_message = ChatMessage.find_by(
+      chat_session_id: chat_session_id,
+      role: "user",
+      metadata: { "stream_message_id" => stream_message_id }
+    )
+    return unless user_message
+
+    ChatTurn.where(user_message: user_message, status: %w[pending streaming])
+      .update_all(status: "failed", failure_classification: classification, updated_at: Time.current)
   end
 
   def tenant_account
