@@ -189,21 +189,32 @@ module PartialCloseouts
       owner if owner && owner.id != agent_run.issue.id
     end
 
+    # @spec PARTIAL-CLOSEOUT-032
     def publish_operator_prerequisites!(human_gaps)
       return if human_gaps.empty?
 
+      agent_run.issue.with_lock do
+        previous = existing_prerequisite_notification
+        if previous
+          previous.with_lock { publish_prerequisite_notification!(human_gaps, previous:) }
+        else
+          publish_prerequisite_notification!(human_gaps, previous: nil)
+        end
+      end
+    end
+
+    def publish_prerequisite_notification!(human_gaps, previous:)
       Notifications::Publish.call(
         account: agent_run.project.account, subject: agent_run.issue,
         source: PREREQUISITE_NOTIFICATION_SOURCE, severity: :error, blocking: true,
         title: operator_prerequisite_title(human_gaps),
         description: human_gaps.map { |gap| operator_prerequisite_step(gap) }.join("\n"),
-        metadata: prerequisite_metadata(human_gaps)
+        metadata: prerequisite_metadata(human_gaps, previous:)
       )
     end
 
     # @spec PARTIAL-CLOSEOUT-031
-    def prerequisite_metadata(human_gaps)
-      previous = existing_prerequisite_notification
+    def prerequisite_metadata(human_gaps, previous:)
       references = human_gaps.flat_map { |gap| Array(gap["references"]) }
       identities = human_gaps.map { |gap| prerequisite_identity(gap) }.sort_by { |identity| JSON.generate(identity) }
       identity = Digest::SHA256.hexdigest(JSON.generate(identities))
