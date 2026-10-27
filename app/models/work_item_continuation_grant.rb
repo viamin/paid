@@ -17,6 +17,7 @@ class WorkItemContinuationGrant < ApplicationRecord
   validates :start_phase, presence: true, inclusion: { in: Automation::Phases::ALL }
   validates :endpoint, presence: true, inclusion: { in: Automation::Phases::CONTINUATION_ENDPOINTS }
   validates :source, presence: true, inclusion: { in: SOURCES }
+  validate :issue_belongs_to_project
   validate :endpoint_follows_start_phase
 
   scope :active, -> { where(revoked_at: nil, completed_at: nil) }
@@ -63,6 +64,17 @@ class WorkItemContinuationGrant < ApplicationRecord
   end
 
   private
+
+  # A continuation grant is account-scoped through its project. Keep that
+  # boundary at the durable authorization record, rather than relying only on
+  # controller query scoping, so service callers cannot persist cross-project
+  # authority.
+  # @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-009
+  def issue_belongs_to_project
+    return if issue.blank? || project.blank? || issue.project_id == project.id
+
+    errors.add(:issue, "must belong to the grant project")
+  end
 
   def endpoint_follows_start_phase
     return if start_phase.blank? || endpoint.blank?
