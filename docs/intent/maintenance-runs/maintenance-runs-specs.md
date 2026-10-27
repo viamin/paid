@@ -32,7 +32,8 @@
       UI, the authenticated API, and the MCP surface, applying the same
       project-scoped start authorization on every surface.
 - [ ] **MAINT-011**: The system shall accept an optional recipe objective, an
-      optional scope (paths or symbols), and optional free-text guidance when
+      optional scope (paths, symbols, or a free-form natural-language target),
+      and optional free-text guidance when
       starting a maintenance run, and shall require at least one recipe
       objective or nonblank free-text guidance; scope alone shall not admit a
       run.
@@ -158,4 +159,6 @@
       back to its source maintenance report and finding.
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
-      an explicit user selection.
+      an explicit user selection; an explicit election captured at run start
+      counts as such a selection and is never a tenant, project, or recipe
+      default.

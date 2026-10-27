@@ -45,8 +45,9 @@ model. Each run persists, immutably once started:
   investigated, and `issue_id` (nullable — issue-less manual runs are
   first-class).
 - `objective` (the recipe key, or `nil` for a free-text user question),
-  `scope` (optional paths/symbols the user named), and `guidance` (free-text
-  instructions), captured verbatim at run start.
+  `scope` (optional paths/symbols or a free-form natural-language target the
+  user named), and `guidance` (free-text instructions), captured verbatim at
+  run start.
 - `recipe_version` and the resolved tool versions/configuration actually
   used, for provenance (RDR-073 attachment metadata plus any native-CLI
   analyzer version string captured at invocation time).
@@ -132,6 +133,8 @@ PR-creation pathway:
   become a bounded issue or PR-creation run through existing authorized
   pathways — this create path is a new run/issue through existing creation
   goals, not a new side-effecting action hung off the maintenance report.
+  A run may instead carry an explicit election captured at start under a
+  separately approved automatic-repair policy; it is never a standing default.
 
 All three surfaces are gated by the `maintenance_runs` guard (below); none
 of the three may admit a maintenance run while the guard is off for the
