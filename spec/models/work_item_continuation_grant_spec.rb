@@ -34,6 +34,15 @@ RSpec.describe WorkItemContinuationGrant do
     expect(grant).not_to be_valid
   end
 
+  it "rejects a grant whose work item belongs to another project" do
+    other_project = create(:project, account:)
+    other_issue = create(:issue, project: other_project)
+    grant = build(:work_item_continuation_grant, project:, issue: other_issue)
+
+    expect(grant).not_to be_valid
+    expect(grant.errors[:issue]).to include("must belong to the grant project")
+  end
+
   describe "completion" do
     it "completes when the endpoint's work lands" do
       grant = create(:work_item_continuation_grant, project:, issue:)
