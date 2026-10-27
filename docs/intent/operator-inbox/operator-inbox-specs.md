@@ -122,7 +122,7 @@
   automation stopped (`manual_review_reason`) and how long it has been stopped
   (`manual_review_started_at`, falling back to `updated_at` for legacy rows —
   `ISSUE-ENHANCEMENT-012`). The entry SHALL offer an operator-triggered manual
-  `enhance_issue` run as its clearing action, since automatic picking excludes
+  `enhance_issue` run only for enhancement provenance, since automatic picking excludes
   `manual_review` and only an explicit operator-triggered run resumes work
   (`ISSUE-ENHANCEMENT-011`). Queuing that run SHALL transition the issue out
   of `manual_review` in the same request — inside the same transaction that

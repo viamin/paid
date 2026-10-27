@@ -30,3 +30,12 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an operator resumes a pending reopen
+  review from the Inbox, the system SHALL require an authorized,
+  revision-bound acknowledgement of the original closure and a non-blank
+  remaining-scope reason, record that decision, and only then queue supported
+  continuation work. The system SHALL not create another continuation while
+  queued or running work remains for that issue.
+  *Tests:* `spec/requests/agent_runs_spec.rb`.
+  *Code:* `ManualReviews::Classify`, `Projects::AgentRunsController`.

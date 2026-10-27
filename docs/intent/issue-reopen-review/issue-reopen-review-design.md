@@ -24,6 +24,11 @@ review is resolved.
 An operator resumes the issue from manual review only after validating whether
 the original intent remains valid and whether new work is required. This moves
 the issue back into active work through the existing manual-review workflow.
+The Inbox binds that validation to the current synchronized GitHub revision,
+requires an authorized operator's explicit acknowledgement and reason, records
+the decision in the account audit trail, and only then offers implementation
+continuation. A queued or running run remains visible and must be reconciled
+before any continuation is created.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

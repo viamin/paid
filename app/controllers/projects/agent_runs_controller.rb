@@ -480,6 +480,21 @@ module Projects
         return
       end
 
+      recovery = ManualReviews::Classify.call(issue: issue)
+      if recovery.active_runs.any?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Work is already queued or running for this issue; reconcile that run before resuming."
+        return
+      end
+
+      unless recovery.enhancement? || reopen_review_ready?(recovery)
+        redirect_to safe_return_target || dashboard_path,
+          alert: manual_review_recovery_alert(recovery)
+        return
+      end
+
+      record_reopen_review_validation(issue) if recovery.reopen_review?
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
@@ -1079,6 +1094,46 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
+    end
+
+    # The reopen decision is bound to the GitHub revision displayed in the
+    # Inbox.  The account audit event is the durable record because the issue
+    # state changes to in_progress in the same transaction as the continuation.
+    # @spec ISSUE-REOPEN-REVIEW-005
+    def reopen_review_ready?(recovery)
+      return true unless recovery.reopen_review?
+      return false unless params[:reopen_review_confirmed] == "1" && params[:reopen_review_reason].present?
+
+      ActiveSupport::SecurityUtils.secure_compare(
+        params[:reopen_review_revision].to_s,
+        issue_revision(recovery)
+      )
+    end
+
+    def issue_revision(_recovery)
+      @project.issues.find(params[:issue_id]).github_updated_at.iso8601
+    end
+
+    def record_reopen_review_validation(issue)
+      audit_event(
+        "issue.reopen_review_validated",
+        subject: issue,
+        account: @project.account,
+        metadata: {
+          issue_id: issue.id,
+          github_number: issue.github_number,
+          github_updated_at: issue.github_updated_at.iso8601,
+          reason: params[:reopen_review_reason].to_s
+        }
+      )
+    end
+
+    def manual_review_recovery_alert(recovery)
+      return "Confirm the reopened issue's current intent and provide a reason before resuming work." if recovery.reopen_review?
+      return "This issue is waiting on its recorded dependency. Resolve or update that dependency before resuming." if recovery.dependency?
+      return "This issue needs scanner verification recovery; review the scanner evidence before starting implementation." if recovery.scanner_recurrence?
+
+      "Paid cannot identify this manual-review cause. Investigate the recorded stop before resuming."
     end
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap

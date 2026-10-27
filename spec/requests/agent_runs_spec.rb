@@ -2628,6 +2628,51 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec ISSUE-REOPEN-REVIEW-005
+      it "requires a revision-bound validation before continuing a reopened issue" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("Confirm the reopened issue")
+        expect(parked_issue.reload).to be_reopen_review_pending
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005
+      it "records a validated reopen decision and queues its continuation once" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_confirmed: "1",
+            reopen_review_reason: "The missing live validation artifacts remain in scope.",
+            reopen_review_revision: parked_issue.github_updated_at.iso8601
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(parked_issue.reload.paid_state).to eq("in_progress")
+        expect(account.account_activity_events.where(action: "issue.reopen_review_validated").last.metadata).to include(
+          "issue_id" => parked_issue.id,
+          "github_updated_at" => parked_issue.github_updated_at.iso8601
+        )
+        expect(response).to redirect_to(dashboard_path)
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      it "does not clear a manual hold or queue duplicate work while a run is active" do
+        create(:agent_run, project: project, issue: parked_issue, goal: "create_pr", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("already queued or running")
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,

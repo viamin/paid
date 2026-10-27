@@ -1,12 +1,21 @@
 <%# @spec OPERATOR-INBOX-002D %>
 <div class="space-y-6">
+  <% recovery = ManualReviews::Classify.call(issue: entry.issue) %>
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.reopen_review? %>
+        Validate the original closure and the remaining scope at this GitHub revision. This records an intent-validation decision, then resumes implementation.
+      <% elsif recovery.dependency? %>
+        This is waiting on recorded prerequisite work. An acknowledgement does not waive that dependency; the Inbox will reevaluate it when the dependency resolves.
+      <% elsif recovery.scanner_recurrence? %>
+        Scanner evidence found a recurrence. Review and collect the required verification evidence before resuming implementation.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
+      <% elsif recovery.enhancement? %>
+        This is an enhancement recovery. Starting a new enhancement run retries the analysis.
       <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+        The recorded provenance does not identify a safe recovery action. Investigate the stop before resuming work.
       <% end %>
     </p>
   </div>
@@ -43,12 +52,23 @@
 
   <div class="flex flex-wrap items-center gap-3">
     <% if policy(entry.project).run_agent? %>
-      <%= button_to "Start enhancement run",
+      <% if recovery.reopen_review? %>
+        <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project), method: :post, class: "contents" do |form| %>
+          <%= form.hidden_field :issue_id, value: entry.issue.id %>
+          <%= form.hidden_field :reopen_review_revision, value: entry.issue.github_updated_at.iso8601 %>
+          <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+          <%= form.text_field :reopen_review_reason, required: true, placeholder: "Why the remaining scope needs work", class: "rounded-md border-gray-300 text-sm" %>
+          <label class="inline-flex items-center gap-2 text-sm text-gray-700"><%= form.check_box :reopen_review_confirmed, { required: true }, "1", "0" %> I validated the original closure and current intent</label>
+          <%= form.submit "Record validation and resume implementation", class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+        <% end %>
+      <% elsif recovery.enhancement? %>
+        <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,
             params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
             class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500",
             form: { data: { turbo_confirm: "Queue a manual enhancement run for #{entry.project.full_name}##{entry.issue.github_number}?", turbo_frame: "_top" } } %>
+      <% end %>
     <% end %>
     <%= link_to inbox_issue_link_label(entry.issue),
           entry.issue.github_url,
