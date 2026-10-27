@@ -117,7 +117,7 @@ module Issues
     end
 
     def self.open_native_children_for(issues)
-      Issue.joins(<<~SQL.squish)
+      Issue.preload(:project).joins(<<~SQL.squish)
         INNER JOIN issues closeout_parents
           ON closeout_parents.id = issues.parent_issue_id
          AND closeout_parents.project_id = issues.project_id
@@ -375,7 +375,7 @@ module Issues
     end
 
     def self.open_native_children(issue)
-      Issue.where(project: issue.project, parent_issue_id: issue.id, is_pull_request: false, github_state: "open")
+      Issue.preload(:project).where(project: issue.project, parent_issue_id: issue.id, is_pull_request: false, github_state: "open")
         .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES).order(:github_number, :id).to_a
     end
     private_class_method :open_native_children

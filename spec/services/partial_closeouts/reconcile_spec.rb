@@ -70,6 +70,35 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(blocker.recovery).to include("Replacement policy action: Select team-review v2")
   end
 
+  it "preserves superseded references after the prior notification was dismissed" do # @spec PARTIAL-CLOSEOUT-031
+    described_class.call(agent_run: run, assessment: gaps([ policy_gap(revision: "v1", next_step: "Complete the team review.") ]))
+    notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    notification.update!(dismissed_at: Time.current)
+
+    described_class.call(agent_run: run, assessment: gaps([ policy_gap(revision: "v2", next_step: "Complete the revised team review.") ]))
+
+    expect(notification.reload.metadata.fetch("superseded_references"))
+      .to contain_exactly(hash_including("revision" => "v1"))
+  end
+
+  it "uses one prerequisite identity for semantically identical nested hashes" do # @spec PARTIAL-CLOSEOUT-031
+    first = policy_gap(revision: "v1", next_step: "Complete the team review.").merge(
+      "policy_selection" => { "required" => true, "next_step" => "Select a policy." }
+    )
+    described_class.call(agent_run: run, assessment: gaps([ first ]))
+    notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    first_identity = notification.metadata.fetch("prerequisite_identity")
+
+    reordered = first.merge(
+      "policy_selection" => { "next_step" => "Select a policy.", "required" => true },
+      "references" => first.fetch("references").map { |reference| reference.to_a.reverse.to_h }
+    )
+    described_class.call(agent_run: run, assessment: gaps([ reordered ]))
+
+    expect(notification.reload.metadata.fetch("prerequisite_identity")).to eq(first_identity)
+    expect(notification.metadata).not_to have_key("superseded_references")
+  end
+
   # @spec NO-OUTPUT-ISSUE-007
   it "labels a created owner issue for automation and generated routing" do
     created = OpenStruct.new(number: 445, html_url: "https://example.test/issues/445", id: 445, title: "Finish dispatch", body: "")

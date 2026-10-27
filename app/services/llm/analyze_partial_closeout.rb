@@ -36,7 +36,11 @@ module Llm
               },
               policy_selection: {
                 type: "object", properties: { required: { type: "boolean" }, next_step: { type: "string" } },
-                required: %w[required], additionalProperties: false
+                oneOf: [
+                  { properties: { required: { const: true } }, required: %w[required next_step] },
+                  { properties: { required: { const: false } }, required: %w[required] }
+                ],
+                additionalProperties: false
               }
             }, required: %w[criterion kind], additionalProperties: false
           }
@@ -98,12 +102,11 @@ module Llm
     end
 
     def valid_gap?(gap)
-      gap.is_a?(Hash) &&
-        gap["criterion"].present? &&
-        VALID_KINDS.include?(gap["kind"]) &&
-        owner_resolvable?(gap) &&
-        valid_references?(gap["references"]) &&
-        valid_policy_selection?(gap["policy_selection"])
+      return false unless gap.is_a?(Hash) && gap["criterion"].present? && VALID_KINDS.include?(gap["kind"])
+      return false unless owner_resolvable?(gap)
+      return true unless gap["kind"] == "human"
+
+      valid_references?(gap["references"]) && valid_policy_selection?(gap["policy_selection"])
     end
 
     def valid_references?(references)

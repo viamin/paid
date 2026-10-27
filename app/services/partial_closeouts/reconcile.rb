@@ -210,7 +210,7 @@ module PartialCloseouts
       policy_selection = replacement_policy_action(human_gaps)
       metadata["policy_selection"] = policy_selection if policy_selection
 
-      previous = active_prerequisite_notification
+      previous = existing_prerequisite_notification
       superseded = Array(previous&.metadata&.fetch("superseded_references", nil))
       if previous&.metadata&.fetch("prerequisite_identity", nil) != identity
         superseded = Array(previous&.metadata&.fetch("references", nil)) + superseded
@@ -220,9 +220,22 @@ module PartialCloseouts
     end
 
     def prerequisite_identity(gap)
-      identity = gap.slice("criterion", "next_step", "policy_selection")
-      identity["references"] = Array(gap["references"]).sort_by { |reference| reference.values_at("kind", "key", "revision") }
+      identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection"))
+      identity["references"] = Array(gap["references"])
+        .map { |reference| canonicalize(reference) }
+        .sort_by { |reference| JSON.generate(reference) }
       identity
+    end
+
+    def canonicalize(value)
+      case value
+      when Hash
+        value.sort.to_h.transform_values { |nested| canonicalize(nested) }
+      when Array
+        value.map { |nested| canonicalize(nested) }
+      else
+        value
+      end
     end
 
     def replacement_policy_action(human_gaps)
@@ -232,10 +245,10 @@ module PartialCloseouts
       { "required" => true, "next_step" => steps.join(" ") } if steps.any?
     end
 
-    def active_prerequisite_notification
+    def existing_prerequisite_notification
       Notification.find_by(
         account: agent_run.project.account, subject: agent_run.issue,
-        source: PREREQUISITE_NOTIFICATION_SOURCE, resolved_at: nil, dismissed_at: nil
+        source: PREREQUISITE_NOTIFICATION_SOURCE
       )
     end
 

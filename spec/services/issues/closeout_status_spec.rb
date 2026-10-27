@@ -152,6 +152,30 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     expect(status.blockers.first.recovery).to include("Do not close")
   end
 
+  it "preloads native child projects for singleton and batched diagnostics" do # @spec PARTIAL-CLOSEOUT-030
+    merged_partial_pr(number: 12)
+    3.times do |index|
+      create(:issue, project: project, github_state: "open", paid_state: "in_progress",
+        parent_issue_id: issue.id, github_number: 55 + index, github_html_url: nil)
+    end
+    project_query = /SELECT .* FROM "projects" WHERE "projects"\."id" =/
+
+    singleton_queries = []
+    batched_queries = []
+    singleton_subscriber = ->(*args) { singleton_queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+    batched_subscriber = ->(*args) { batched_queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+    ActiveSupport::Notifications.subscribed(singleton_subscriber, "sql.active_record") do
+      described_class.call(issue)
+    end
+    ActiveSupport::Notifications.subscribed(batched_subscriber, "sql.active_record") do
+      inputs = described_class.inputs_for([ issue ])
+      described_class.call(issue, eligible_issue_ids: [], continuation_eligible_issue_ids: [], inputs: inputs)
+    end
+
+    expect(singleton_queries.grep(project_query).size).to be <= 2
+    expect(batched_queries.grep(project_query).size).to be <= 2
+  end
+
   it "uses the unavailable fallback for a genuinely unclassified admission denial" do # @spec PARTIAL-CLOSEOUT-030
     merged_partial_pr(number: 12)
     feature = create(:feature_intent, project: project)

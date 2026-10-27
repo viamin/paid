@@ -156,6 +156,19 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       expect(result.dig("gaps", 0, "policy_selection", "next_step")).to eq("Select an approved team policy.")
     end
 
+    it "ignores unused references on agent gaps" do # @spec PARTIAL-CLOSEOUT-031
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      gap = {
+        criterion: "dispatch", kind: "agent", title: "Finish dispatch",
+        references: [ { kind: "policy", key: "team-review", label: "Team review" } ]
+      }
+      allow(legacy_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.dig("gaps", 0, "criterion")).to eq("dispatch")
+    end
+
     it "rejects replacement-policy requirements without an explicit action" do # @spec PARTIAL-CLOSEOUT-031
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
       gap = {
@@ -178,6 +191,14 @@ RSpec.describe Llm::AnalyzePartialCloseout do
         stub_const("ENV", ENV.to_hash.merge("ANTHROPIC_API_KEY" => "  sk-ant-test-key  "))
         allow(Llm::TextMode).to receive(:enabled?).and_return(true)
         allow(AgentHarness::Api::ChatTransport).to receive(:new).and_return(chat_transport)
+      end
+
+      it "requires an advertised policy-selection action when selection is required" do # @spec PARTIAL-CLOSEOUT-031
+        branches = described_class::RESPONSE_SCHEMA.dig(
+          :properties, :gaps, :items, :properties, :policy_selection, :oneOf
+        )
+
+        expect(branches).to include(hash_including(required: %w[required next_step]))
       end
 
       it "routes through the schema-constrained ChatTransport with the stripped key" do
