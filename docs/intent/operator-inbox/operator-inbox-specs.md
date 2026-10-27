@@ -726,3 +726,17 @@
   `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
   `spec/requests/inbox_spec.rb`,
   `spec/requests/api/v1/design_artifact_findings_spec.rb`.
+
+- [x] **OPERATOR-INBOX-002K** — When an issue is in `manual_review`, the
+  Inbox SHALL classify its recovery from durable provenance rather than treating
+  every stop as enhancement retry: reopen review requires a reasoned operator
+  decision before implementation; unresolved dependencies remain linked waits;
+  scanner recurrence resumes implementation; enhancement provenance retains the
+  existing retry and answer forms; and unknown provenance remains visible with
+  no guessed action. Before a recovery clears the hold, the system SHALL reject
+  it when any work for the issue is queued or running.
+  *Code:* `app/services/inbox/manual_review_recovery.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+  *Test:* `spec/services/inbox/manual_review_recovery_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.

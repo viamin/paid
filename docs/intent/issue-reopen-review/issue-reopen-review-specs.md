@@ -30,3 +30,11 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When a reopen-review issue appears in the
+  Inbox, the system SHALL require an authorized, reasoned intent-validation
+  decision before it queues implementation, shall record the decision with the
+  prior completion revision when available, and shall not use an enhancement
+  retry as a substitute for that decision.
+  *Tests:* `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`, `Projects::AgentRunsController`.

@@ -480,12 +480,27 @@ module Projects
         return
       end
 
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue)
+      return manual_review_waiting_for_dependency(recovery) if recovery.action == :wait
+      return manual_review_unknown_provenance if recovery.action == :none
+
+      if recovery.action == :record_decision
+        return reopen_review_decision_required unless params[:reopen_review_decision] == "resume_implementation" && params[:reopen_review_reason].present?
+
+        audit_event("issue.reopen_review_validated", subject: issue, account: @project.account, metadata: {
+          issue_id: issue.id, github_number: issue.github_number,
+          decision: params[:reopen_review_decision], reason: params[:reopen_review_reason],
+          prior_result_commit_sha: issue.agent_runs.completed.order(completed_at: :desc, id: :desc).pick(:result_commit_sha)
+        })
+      end
+
+      goal = recovery.action == :retry_enhancement ? "enhance_issue" : "create_pr"
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
         success_path: safe_return_target || dashboard_path,
         custom_prompt: nil,
-        goal: "enhance_issue",
+        goal: goal,
         priority_tier: nil
       )
     end
@@ -1132,6 +1147,21 @@ module Projects
       end
     end
 
+    def manual_review_waiting_for_dependency(recovery)
+      refs = recovery.blockers.map { |blocker| "##{blocker.github_number}" }.join(", ")
+      redirect_to safe_return_target || dashboard_path, alert: "Work remains blocked by #{refs}. Resolve that dependency before resuming this issue."
+    end
+
+    def manual_review_unknown_provenance
+      redirect_to safe_return_target || dashboard_path,
+        alert: "Manual-review provenance is unknown. Review the issue evidence before choosing a recovery action."
+    end
+
+    def reopen_review_decision_required
+      redirect_to safe_return_target || dashboard_path,
+        alert: "Record a reopen-review decision and reason before resuming implementation."
+    end
+
     def cancel_in_flight_execution_for_resume!
       return if @agent_run.temporal_workflow_id.blank?
 
@@ -1688,13 +1718,13 @@ module Projects
         return
       end
 
-      # Filter out issues that already have active (unfinished) enhance_issue runs
+      # Reconcile every active run before clearing a manual-review hold.
       active_issue_ids = @project.agent_runs
-        .where(issue_id: issues.map(&:id), goal: "enhance_issue", status: AgentRun::UNFINISHED_STATUSES)
+        .where(issue_id: issues.map(&:id), status: AgentRun::UNFINISHED_STATUSES)
         .pluck(:issue_id)
       issues = issues.where.not(id: active_issue_ids) if active_issue_ids.any?
       if issues.empty?
-        redirect_to on_error_path, alert: "All selected issues already have active enhancement runs."
+        redirect_to on_error_path, alert: "This issue already has queued or running work; reconcile that run before resuming manual review."
         return
       end
 
@@ -1719,10 +1749,11 @@ module Projects
 
       ProcessRunQueueJob.perform_later
 
+      action_name = goal == "enhance_issue" ? "enhancement analysis" : "implementation"
       notice = if issues.size == 1
-        "Agent run queued for issue enhancement."
+        "Agent run queued for #{action_name}."
       else
-        "#{issues.size} agent runs queued for issue enhancement."
+        "#{issues.size} agent runs queued for #{action_name}."
       end
       redirect_to success_path, notice: notice
     rescue NoRunnableRunnerError => e

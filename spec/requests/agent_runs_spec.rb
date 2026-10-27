@@ -2615,6 +2615,38 @@ RSpec.describe "AgentRuns" do
     context "when authenticated" do
       before { sign_in user }
 
+      # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002K
+      it "requires and records a reopen decision before queuing implementation" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+        expect(parked_issue.reload).to be_reopen_review_pending
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id, reopen_review_decision: "resume_implementation",
+            reopen_review_reason: "Live validation artifacts remain required."
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(AgentRun.last.goal).to eq("create_pr")
+      end
+
+      # @spec OPERATOR-INBOX-002K
+      it "does not clear manual review when an unresolved dependency owns the wait" do
+        blocker = create(:issue, project: project, github_state: "open")
+        create(:issue_dependency, issue: parked_issue, depends_on_issue: blocker)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+        expect(flash[:alert]).to include("##{blocker.github_number}")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
         expect {
