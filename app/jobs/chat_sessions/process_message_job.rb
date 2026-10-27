@@ -27,6 +27,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       },
       on_chunk: ->(chunk) {
         chunk_sequence += 1
+        touch_turn(chat_session, stream_message_id)
         ActionCable.server.broadcast(stream_name, {
           type: "message_chunk",
           message_id: stream_message_id,
@@ -45,12 +46,16 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       }
     })
   rescue ArgumentError => e
+    fail_turn(chat_session_id, stream_message_id, "validation")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue NotImplementedError => e
+    fail_turn(chat_session_id, stream_message_id, "configuration")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::LlmClientConfigurationError => e
+    fail_turn(chat_session_id, stream_message_id, "configuration")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
+    fail_turn(chat_session_id, stream_message_id, "budget_exhausted")
     broadcast_error(chat_session_id, stream_message_id, e.message,
       limit_type: e.limit_type, limit: e.limit, used: e.used)
   rescue AgentHarness::RateLimitError => e
@@ -62,9 +67,11 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error: e.message
     )
     pause_message = ChatSessions::MarkRateLimited.call(chat_session: chat_session, error: e)
+    fail_turn(chat_session_id, stream_message_id, "rate_limited")
     broadcast_persisted_message(stream_name, pause_message)
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue AgentHarness::Error => e
+    fail_turn(chat_session_id, stream_message_id, "provider_error")
     Rails.logger.error(
       message: "chat_process_message_job.provider_error",
       chat_session_id: chat_session_id,
@@ -75,6 +82,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   rescue ActiveRecord::RecordNotFound
     raise
   rescue StandardError => e
+    fail_turn(chat_session_id, stream_message_id, "unexpected")
     Rails.logger.error(
       message: "chat_process_message_job.failed",
       chat_session_id: chat_session_id,
@@ -120,6 +128,14 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       message_id: stream_message_id,
       message: error_message
     }.merge(extra.compact))
+  end
+
+  def touch_turn(chat_session, stream_message_id)
+    chat_session.chat_turns.find_by(stream_message_id: stream_message_id)&.touch_activity!
+  end
+
+  def fail_turn(chat_session_id, stream_message_id, classification)
+    ChatTurn.find_by(chat_session_id:, stream_message_id:)&.fail!(classification: classification)
   end
 
   def tenant_account

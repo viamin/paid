@@ -1,0 +1,11 @@
+<div id="chat-message-<%= message.id %>" class="rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="status">
+  <p class="font-semibold">This turn needs attention</p>
+  <p class="mt-1"><%= message.content %></p>
+  <p class="mt-2">
+    <% if message.chat_turn&.side_effecting_tools_completed? %>
+      Completed tool activity is preserved above. Confirm its outcome before sending a follow-up.
+    <% else %>
+      You can safely send a follow-up to continue from the preserved transcript.
+    <% end %>
+  </p>
+</div>

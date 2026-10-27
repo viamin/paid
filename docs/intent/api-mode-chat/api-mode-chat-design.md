@@ -26,6 +26,7 @@ path:
 - tool-call orchestration for read-only and write tools
 - token usage attribution and surfaced totals
 - write-tool pause/resume behavior in the chat loop
+- durable turn lifecycle and stalled-turn detection
 
 ## Scope Boundary
 
@@ -104,6 +105,25 @@ mutation behavior are owned by the RDR-037 chat segments.
 
 The API-mode chat surface is implemented and exposed across both HTML and API
 entry points.
+
+### Durable turn lifecycle
+
+Each user-initiated send has a `ChatTurn` record keyed by its session and
+stream ID. A turn moves from `pending` to `streaming`, and then to `completed`,
+`failed`, `stalled`, or `abandoned`. Persisted transcript rows are attached to
+the turn, so its last durable activity and whether a write tool completed are
+auditable independently of transient browser events.
+
+The maintenance sweep classifies only an unfinished turn that has exceeded the
+configured inactivity threshold. It excludes pending human confirmations and
+known runner rate-limit pauses, which are deliberate waits. Classification
+creates a non-collapsed transcript notice that says the final response is
+unknown and preserves the existing tool evidence. The first release never
+automatically replays a stalled turn: a tool result can represent a side
+effect, and recovery requires an explicit follow-up after the user reviews the
+preserved state. The row's status, classification, timestamps, tool-completion
+flag, and recovery counter are queryable audit evidence for a later bounded
+recovery slice.
 
 ### Curated paid chat tiers
 

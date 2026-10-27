@@ -62,6 +62,20 @@
 > Testable claims for the shipped API-mode portion of interactive chat. Status
 > markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 
+- [x] **CHAT-API-027** — When an unfinished chat turn has no durable activity
+  past the configured inactivity threshold, Paid SHALL record a `stalled`
+  lifecycle outcome and render a durable transcript notice stating that the
+  final response is unknown and that preserved tool activity must be reviewed
+  before retrying. Pending human confirmations and known rate-limit pauses
+  SHALL remain intentional waits rather than stalls. A sweep overlap SHALL not
+  create duplicate notices. The initial release SHALL not automatically replay
+  a stalled turn or any tool call; the turn record SHALL retain queryable
+  classification, timestamps, recovery counter, and completed-side-effect flag
+  for an explicit, idempotent recovery slice.
+  *Tests:* `spec/services/chat_turns/detect_stalled_spec.rb`.
+  *Code:* `ChatTurn`, `ChatTurns::DetectStalled`,
+  `ChatTurns::DetectStalledJob`, `ChatSessions::SendMessage`.
+
 - [x] **CHAT-API-001** — When a user creates or opens an API-mode chat session,
   the system SHALL persist and expose an active inline chat session with a
   system prompt and session/message routes, defaulting to

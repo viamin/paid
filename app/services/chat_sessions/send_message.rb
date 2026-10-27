@@ -42,11 +42,16 @@ module ChatSessions
       check_token_limit!
       resume_session_if_needed!
 
+      prepare_turn!
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
       update_session_activity
+      turn.complete!
       assistant_message
+    rescue StandardError => error
+      turn&.fail!(classification: error.class.name.underscore) if defined?(@turn)
+      raise
     end
 
     private
@@ -112,8 +117,11 @@ module ChatSessions
     def persist_user_message
       @transport_attempt_message = existing_user_message || create_user_message
 
+      @transport_attempt_message.update!(chat_turn: turn)
+      turn.update!(user_message: @transport_attempt_message)
+
       chat_session.generate_title_from_content!
-      on_message_persisted&.call(transport_attempt_message)
+      persist_turn_message(transport_attempt_message)
       transport_attempt_message
     end
 
@@ -132,6 +140,35 @@ module ChatSessions
         content: content,
         metadata: { "stream_message_id" => stream_message_id }.compact
       )
+    end
+
+    # A retry of the same queued delivery reuses the stream id and therefore
+    # the same durable turn. New sends always get a fresh stream id, including
+    # synchronous JSON callers that do not otherwise stream to a browser.
+    # @spec CHAT-API-027
+    def prepare_turn!
+      @stream_message_id ||= SecureRandom.uuid
+      @turn = chat_session.chat_turns.find_or_create_by!(stream_message_id: stream_message_id) do |record|
+        record.actor = actor
+        record.last_activity_at = Time.current
+      end
+      @original_on_message_persisted = @on_message_persisted
+    end
+
+    def turn
+      @turn
+    end
+
+    def persist_turn_message(message, stream_message_id: nil)
+      message.update!(chat_turn: turn) unless message.chat_turn_id == turn.id
+      turn.touch_activity!(message: message)
+      @original_on_message_persisted&.call(message, stream_message_id: stream_message_id)
+    end
+
+    def on_message_persisted
+      return @on_message_persisted unless defined?(@original_on_message_persisted)
+
+      ->(message, stream_message_id: nil) { persist_turn_message(message, stream_message_id:) }
     end
 
     # A conversational reply (e.g. "yes") is not a confirmation. When a write
