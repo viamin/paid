@@ -889,7 +889,7 @@ module Activities
 
         next if previous_snapshot == Array(agent_run.mcp_server_snapshot) && agent_run.mcp_provisioned_servers.present?
 
-        Containers::McpProvisioner.new.provision(
+        Containers::McpProvisioner.for(agent_run).provision(
           agent_run,
           network: Containers::Provision.network_for(agent_run: agent_run)
         )

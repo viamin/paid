@@ -323,6 +323,26 @@ module Containers
       record_restored_base_commit(base_commit_sha)
     end
 
+    # Clones the repository and restores a pinned historical commit onto a
+    # fresh branch. The clone is shallow (`--depth 1`), so it only carries the
+    # default-branch tip: a commit pinned by an earlier run is absent from the
+    # object store and must be fetched before it can be checked out.
+    #
+    # @param branch_name [String] the branch to create for the restored commit
+    # @param base_commit_sha [String] the pinned commit to restore
+    # @return [String] the restored commit SHA
+    # @raise [CloneError] when the clone, the fetch, or the checkout fails
+    # @spec PARTIAL-CLOSEOUT-032
+    def clone_and_checkout_pinned_commit(branch_name:, base_commit_sha:)
+      raise Error, "A pinned commit is required to restore the checkout" if base_commit_sha.blank?
+
+      clone_repo
+      configure_git_identity!
+      checkout_pinned_commit(base_commit_sha)
+      checkout_new_branch(branch_name)
+      base_commit_sha
+    end
+
     # Pushes the agent's branch to the remote.
     #
     # Uses --force-with-lease for existing PR branches to safely handle
@@ -1036,6 +1056,38 @@ module Containers
 
       result = execute_git("checkout", "-b", branch_name)
       raise Error, "Branch restore failed: #{error_with_stderr(result)}" if result.failure?
+    end
+
+    # Checks out a pinned commit, fetching it first when the shallow clone does
+    # not already carry it. The clone only contains the default-branch tip, so
+    # a commit pinned by an earlier run is otherwise missing and `git checkout`
+    # fails.
+    # @param base_commit_sha [String] the pinned commit
+    # @return [void]
+    # @raise [Error] when the commit cannot be fetched or checked out
+    # @spec PARTIAL-CLOSEOUT-032
+    def checkout_pinned_commit(base_commit_sha)
+      fetch_pinned_commit(base_commit_sha) unless commit_present?(base_commit_sha)
+
+      result = execute_git("checkout", base_commit_sha)
+      raise Error, "Base commit checkout failed: #{error_with_stderr(result)}" if result.failure?
+    end
+
+    def checkout_new_branch(branch_name)
+      result = execute_git("checkout", "-b", branch_name)
+      raise Error, "Branch restore failed: #{error_with_stderr(result)}" if result.failure?
+    end
+
+    def commit_present?(commit_sha)
+      execute_git("cat-file", "-e", "#{commit_sha}^{commit}").success?
+    end
+
+    # Fetches a single pinned commit into the shallow clone. GitHub serves
+    # commits that are reachable from an advertised ref, so a pinned default
+    # branch revision can always be restored this way.
+    def fetch_pinned_commit(commit_sha)
+      result = execute_network_git("fetch", "--depth", "1", "origin", commit_sha)
+      raise Error, "Failed to fetch pinned commit #{commit_sha}: #{error_with_stderr(result)}" if result.failure?
     end
 
     def record_restored_base_commit(base_commit_sha)
