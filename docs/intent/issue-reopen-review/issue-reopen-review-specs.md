@@ -30,3 +30,10 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When a reopen-review Inbox item is acted
+  on, the system SHALL show the reopening provenance and revision, require an
+  authorized acknowledgement and reason, record that decision, and only then
+  resume implementation when no queued or running issue work exists.
+  *Tests:* `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Issues::ManualReviewRecovery`, `Projects::AgentRunsController`.

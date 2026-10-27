@@ -12,6 +12,16 @@
   *Code:* `app/services/inbox/queue.rb`, `app/controllers/inbox_controller.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** - When an issue is in manual review, the Inbox
+  SHALL classify its recovery from durable reopen, dependency, scanner, run,
+  and question provenance rather than reason text. It SHALL retain unknown
+  holds visibly, link unresolved dependencies without clearing them, reconcile
+  queued/running work before a new run, and route enhancement retries and
+  scanner remediation to their respective supported continuations.
+  *Tests:* `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Issues::ManualReviewRecovery`, `Projects::AgentRunsController`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+
 - [x] **OPERATOR-INBOX-002** — When a planning workflow records an open
   `plan_pending_review` decomposition decision and the user can manage the
   project, the system SHALL expose that pending review as a `plan_review`

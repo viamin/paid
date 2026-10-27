@@ -2615,6 +2615,38 @@ RSpec.describe "AgentRuns" do
     context "when authenticated" do
       before { sign_in user }
 
+      # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002L
+      it "records a revision-bound reopen decision before resuming implementation" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_intent_validated: "1",
+            reason: "The regression remains outside the prior closure.",
+            return_to: inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(AgentRun.last).to have_attributes(issue: parked_issue, goal: "create_pr")
+        expect(parked_issue.reload.paid_state).to eq("in_progress")
+        expect(AccountActivityEvent.where(action: "issue.reopen_review_validated").last.metadata)
+          .to include("reason" => "The regression remains outside the prior closure.")
+        expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND))
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "reconciles queued work instead of creating another manual-review run" do
+        create(:agent_run, project: project, issue: parked_issue, goal: "create_pr", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+        expect(flash[:alert]).to include("already queued")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
         expect {

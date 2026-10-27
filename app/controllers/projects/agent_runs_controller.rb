@@ -470,7 +470,7 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002L
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -480,14 +480,21 @@ module Projects
         return
       end
 
-      create_enhance_issue_runs_and_redirect(
-        issue_ids: [ issue.id ],
-        on_error_path: safe_return_target || dashboard_path,
-        success_path: safe_return_target || dashboard_path,
-        custom_prompt: nil,
-        goal: "enhance_issue",
-        priority_tier: nil
-      )
+      recovery = Issues::ManualReviewRecovery.for(issue)
+      return redirect_to(safe_return_target || dashboard_path, alert: recovery.message) unless recovery.actionable?
+
+      case recovery.action
+      when :validate_reopen
+        resume_reopened_issue(issue, recovery)
+      when :start_implementation
+        create_manual_review_implementation_run(issue, recovery)
+      else
+        create_enhance_issue_runs_and_redirect(
+          issue_ids: [ issue.id ], on_error_path: safe_return_target || dashboard_path,
+          success_path: safe_return_target || dashboard_path, custom_prompt: nil,
+          goal: "enhance_issue", priority_tier: nil
+        )
+      end
     end
 
     # Operator-driven counterpart to
@@ -1381,7 +1388,7 @@ module Projects
       end
     end
 
-    def create_run_and_redirect(on_error_path:, **attrs)
+    def create_run_and_redirect(on_error_path:, success_path: project_path(@project), resume_manual_review: false, **attrs)
       budget_result = CostBudgets::Check.call(@project)
       unless budget_result[:allowed]
         Rails.logger.info(
@@ -1401,6 +1408,7 @@ module Projects
       github_sync_args = nil
       ActiveRecord::Base.transaction do
         agent_run = create_agent_run(**attrs)
+        resume_issue_from_manual_review(issue) if resume_manual_review && issue
         github_sync_args = apply_priority_label(issue, priority_tier) if issue && priority_tier
       end
 
@@ -1421,7 +1429,7 @@ module Projects
         "Agent run queued. It will start automatically when a slot opens."
       end
 
-      redirect_to project_path(@project), notice: notice
+      redirect_to success_path, notice: notice
     rescue NoRunnableRunnerError => e
       redirect_to on_error_path, alert: e.message
     rescue InvalidDockerHostSelectionError => e
@@ -1435,6 +1443,29 @@ module Projects
         "An agent run is already queued or in progress."
       end
       redirect_to on_error_path, alert: alert
+    end
+
+    def resume_reopened_issue(issue, recovery)
+      unless ActiveModel::Type::Boolean.new.cast(params[:reopen_intent_validated]) && params[:reason].to_s.strip.present?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Confirm the revision-bound intent validation and provide a reason before continuing reopened work."
+        return
+      end
+
+      AccountActivityEvent.create!(
+        account: @project.account, actor: current_user, subject: issue, action: "issue.reopen_review_validated",
+        metadata: { reason: params[:reason].to_s.strip, github_updated_at: issue.github_updated_at&.iso8601, cause: recovery.cause }
+      )
+      create_manual_review_implementation_run(issue, recovery)
+    end
+
+    def create_manual_review_implementation_run(issue, _recovery)
+      create_run_and_redirect(
+        on_error_path: safe_return_target || dashboard_path, issue: issue,
+        custom_prompt: nil, source_pull_request_number: nil, goal: "create_pr",
+        priority_tier: nil, blocked_by_issue_ids: [], plan_docs: [], resume_manual_review: true,
+        success_path: safe_return_target || dashboard_path
+      )
     end
 
     def runner_key_to_agent_type(runner_key)
