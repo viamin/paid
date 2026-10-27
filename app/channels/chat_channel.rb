@@ -35,6 +35,9 @@ class ChatChannel < ApplicationCable::Channel
       end
 
       stream_message_id = SecureRandom.uuid
+      user_message = @chat_session.messages.create!(role: "user", content: content,
+        metadata: { "stream_message_id" => stream_message_id })
+      ChatTurn.start_for!(chat_session: @chat_session, user_message:, stream_message_id:)
       broadcast_event("message_start", { message_id: stream_message_id, model: @chat_session.model })
 
       ChatSessions::ProcessMessageJob.perform_later(
@@ -75,6 +78,21 @@ class ChatChannel < ApplicationCable::Channel
   rescue StandardError => e
     Rails.logger.error(message: "chat_channel.resolve_tool_call_failed", session_id: @chat_session&.id, error: e.message)
     transmit_event("error", { message: "An unexpected error occurred" })
+  end
+
+  def recover_stalled_turn(data)
+    return unless @chat_session
+
+    TenantContext.with_system_access do
+      turn = @chat_session.chat_turns.find_by(id: data["turn_id"])
+      return transmit_event("error", { message: "Stalled chat turn not found" }) unless turn
+      return transmit_event("error", { message: "You are not authorized to recover this chat turn" }) unless authorized_to_send_messages?
+
+      ChatSessions::RecoverStalledTurn.call(turn: turn)
+      broadcast_event("message_start", { message_id: turn.stream_message_id, model: @chat_session.model })
+    end
+  rescue ChatSessions::RecoverStalledTurn::RecoveryConflictError, ChatSessions::RecoverStalledTurn::UnsafeRecoveryError => e
+    transmit_event("error", { message: e.message })
   end
 
   private

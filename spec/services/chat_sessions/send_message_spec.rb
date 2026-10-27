@@ -5,6 +5,7 @@ require "rails_helper"
 RSpec.describe ChatSessions::SendMessage do
   # @spec CHAT-API-002
   # @spec CHAT-API-005
+  # @spec CHAT-TURN-RECOVERY-001
   let(:account) { create(:account) }
   let(:user) { create(:user, account: account) }
   let(:chat_session) { create(:chat_session, account: account, created_by: user) }
@@ -61,6 +62,12 @@ RSpec.describe ChatSessions::SendMessage do
       expect {
         described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
       }.to change { chat_session.messages.where(role: "user").count }.by(1)
+    end
+
+    it "records a completed durable turn for a completed response" do
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+
+      expect(chat_session.chat_turns.last).to be_completed
     end
 
     # @spec PARTIAL-CLOSEOUT-017 — a conversational "yes" must never be

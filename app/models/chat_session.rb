@@ -65,6 +65,7 @@ class ChatSession < ApplicationRecord
   belongs_to :created_by, class_name: "User", optional: true
 
   has_many :messages, class_name: "ChatMessage", dependent: :destroy
+  has_many :chat_turns, dependent: :destroy
   has_many :token_usages, dependent: :destroy
   has_many :api_usage_attempts, dependent: :destroy
   has_many :change_intents, dependent: :nullify

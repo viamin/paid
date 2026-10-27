@@ -25,7 +25,8 @@ module ChatSessions
       @actor = actor
       @content = content
       @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @message_persisted_callback = on_message_persisted
+      @on_message_persisted = ->(message, **kwargs) { record_turn_activity; @message_persisted_callback&.call(message, **kwargs) }
       @llm_client = llm_client
       @stream_message_id = stream_message_id
     end
@@ -43,10 +44,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn!
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      assistant_message ? @chat_turn.completed! : record_turn_activity
       update_session_activity
       assistant_message
+    rescue AgentHarness::Error, NotImplementedError, ChatSessions::LlmClientConfigurationError
+      @chat_turn&.failed!(classification: "provider_error")
+      raise
     end
 
     private
@@ -115,6 +121,20 @@ module ChatSessions
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
       transport_attempt_message
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001
+    def start_turn!
+      @chat_turn = ChatTurn.find_by(user_message: transport_attempt_message) || ChatTurn.start_for!(
+        chat_session: chat_session,
+        user_message: transport_attempt_message,
+        stream_message_id: stream_message_id || SecureRandom.uuid
+      )
+      @chat_turn.streaming!
+    end
+
+    def record_turn_activity
+      @chat_turn&.update_column(:activity_at, Time.current)
     end
 
     # A restarted job retains its stream id. Reusing the original user row

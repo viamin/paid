@@ -167,6 +167,16 @@ export default class extends Controller {
     this.subscription.perform("send_message", { content })
   }
 
+  // @spec CHAT-TURN-RECOVERY-003
+  recoverStalledTurn(event) {
+    const turnId = event.currentTarget.dataset.chatTurnId
+    if (!turnId || this.streaming) return
+
+    this.setBusy(true)
+    this.setStatus("Resuming preserved chat checkpoint…")
+    this.subscription.perform("recover_stalled_turn", { turn_id: turnId })
+  }
+
   // @spec CHAT-API-025
   navigate(event) {
     const url = this.navigationUrl(event)
