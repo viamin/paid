@@ -60,6 +60,16 @@ RSpec.describe ChatMessage do
     end
   end
 
+  describe "#stall_notice?" do
+    # @spec CHAT-TURN-LIFECYCLE-005
+    it "identifies a durable stalled-turn notice as a transcript notice" do
+      message = build(:chat_message, :system, metadata: { "stall_notice" => true })
+
+      expect(message).to be_stall_notice
+      expect(message).to be_transcript_notice
+    end
+  end
+
   describe "#provider_error_notice?" do
     # @spec CHAT-API-017
     it "is true for a system message flagged as a provider-error notice" do

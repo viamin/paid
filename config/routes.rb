@@ -28,6 +28,10 @@ Rails.application.routes.draw do
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
   # Notifications
+  resources :chat_turns, only: [] do
+    post :recover, on: :member
+  end
+
   resources :notifications, only: [ :index ] do
     patch :read, on: :member
     patch :dismiss, on: :member

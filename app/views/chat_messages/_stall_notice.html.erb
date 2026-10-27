@@ -1,0 +1,7 @@
+<div class="mx-auto rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900" data-chat-turn-id="<%= message.chat_turn_id %>">
+  <p class="font-medium">This chat turn needs attention</p>
+  <p class="mt-1"><%= message.content %></p>
+  <% if message.chat_turn_id %>
+    <%= button_to "Resume safely", recover_chat_turn_path(message.chat_turn_id), params: { confirmed: true }, class: "mt-2 rounded bg-amber-700 px-3 py-1 text-xs font-medium text-white" %>
+  <% end %>
+</div>

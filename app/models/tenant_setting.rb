@@ -40,7 +40,8 @@ class TenantSetting < ApplicationRecord
     # When true (default), a chat session paused by a runner rate limit
     # (CHAT-API-017) is automatically resumed — the message that hit the
     # rate limit is resent — once the runner's rate limit window clears.
-    "chat_auto_resume_rate_limited" => true
+    "chat_auto_resume_rate_limited" => true,
+    "chat_turn_stall_threshold_seconds" => 15.minutes.to_i
   }.freeze
   DEFAULT_QUALITY_THRESHOLDS = Project::DEFAULT_QUALITY_GATE_SETTINGS.freeze
   DEFAULT_AGENT_SETTINGS = {
@@ -341,6 +342,10 @@ class TenantSetting < ApplicationRecord
 
   def chat_max_tool_iterations
     effective_chat_settings["chat_max_tool_iterations"]
+  end
+
+  def chat_turn_stall_threshold_seconds
+    effective_chat_settings["chat_turn_stall_threshold_seconds"]
   end
 
   def chat_max_cloned_repos

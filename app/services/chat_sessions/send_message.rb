@@ -43,10 +43,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      conclude_turn(assistant_message)
       update_session_activity
       assistant_message
+    rescue StandardError => error
+      fail_turn(error) if @chat_turn
+      raise
     end
 
     private
@@ -117,6 +122,29 @@ module ChatSessions
       transport_attempt_message
     end
 
+    # @spec CHAT-TURN-LIFECYCLE-001
+    def start_turn
+      @chat_turn = ChatTurns::Start.call(chat_session: chat_session, user_message: transport_attempt_message)
+      @chat_turn.mark_streaming!
+    end
+
+    def conclude_turn(assistant_message)
+      return @chat_turn.update!(status: "awaiting_confirmation") unless assistant_message
+
+      @chat_turn.mark_completed!(assistant_message)
+    end
+
+    def fail_turn(error)
+      @chat_turn.mark_failed!(classification: failure_classification(error))
+    end
+
+    def failure_classification(error)
+      return "budget_exhausted" if error.is_a?(TokenLimitExceededError)
+      return "provider_rate_limited" if error.is_a?(AgentHarness::RateLimitError)
+
+      "infrastructure_failure"
+    end
+
     # A restarted job retains its stream id. Reusing the original user row
     # lets its already-persisted tool results remain in the reconstructed
     # transcript instead of turning recovery into another tool dispatch.
@@ -178,7 +206,8 @@ module ChatSessions
     # second SUM query per turn. Only forward when a limit is configured; a nil
     # baseline means "unlimited" and AgentLoop re-derives nil cheaply.
     def extra_agent_loop_kwargs
-      @token_budget ? { token_budget: @token_budget } : {}
+      kwargs = { chat_turn: @chat_turn }
+      @token_budget ? kwargs.merge(token_budget: @token_budget) : kwargs
     end
   end
 end
