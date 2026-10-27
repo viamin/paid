@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-008
+# @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-008 @spec AUTOMATION-PHASES-019
 RSpec.describe WorkItemContinuationGrant do
   let(:account) { create(:account) }
   let(:user) { create(:user, account:) }
@@ -32,6 +32,73 @@ RSpec.describe WorkItemContinuationGrant do
     grant = build(:work_item_continuation_grant, source: "deployment_engine")
 
     expect(grant).not_to be_valid
+  end
+
+  # @spec AUTOMATION-PHASES-019
+  describe "scope" do
+    it "rejects a work item that belongs to another project" do
+      other_project = create(:project, account: create(:account))
+      other_issue = create(:issue, project: other_project)
+
+      grant = build(:work_item_continuation_grant, project:, issue: other_issue)
+
+      expect(grant).not_to be_valid
+      expect(grant.errors[:issue]).to be_present
+    end
+
+    it "requires the author who delegated the grant" do
+      grant = build(:work_item_continuation_grant, project:, issue:, created_by: nil)
+
+      expect(grant).not_to be_valid
+      expect(grant.errors[:created_by]).to be_present
+    end
+
+    it "rejects an author from another account" do
+      other_user = create(:user, account: create(:account))
+      grant = build(:work_item_continuation_grant, project:, issue:, created_by: other_user)
+
+      expect(grant).not_to be_valid
+      expect(grant.errors[:created_by]).to be_present
+    end
+  end
+
+  # @spec AUTOMATION-PHASES-019
+  describe "audit trail" do
+    it "records an account activity event when the grant is created" do
+      grant = create(:work_item_continuation_grant, project:, issue:, created_by: user)
+
+      event = account.account_activity_events.find_by(action: "continuation_grant.created")
+
+      expect(event).to be_present
+      expect(event.actor).to eq(user)
+      expect(event.subject).to eq(grant)
+      expect(event.metadata).to include(
+        "work_item_continuation_grant_id" => grant.id,
+        "issue_id" => issue.id,
+        "start_phase" => "coding",
+        "endpoint" => "merge"
+      )
+    end
+
+    it "records an account activity event when the grant is revoked" do
+      grant = create(:work_item_continuation_grant, project:, issue:, created_by: user)
+
+      grant.revoke!(user:)
+
+      event = account.account_activity_events.find_by(action: "continuation_grant.revoked")
+
+      expect(event).to be_present
+      expect(event.actor).to eq(user)
+      expect(event.metadata).to include("work_item_continuation_grant_id" => grant.id, "endpoint" => "merge")
+    end
+
+    it "does not record a revocation event for a grant that completes" do
+      grant = create(:work_item_continuation_grant, project:, issue:, created_by: user)
+
+      grant.complete!
+
+      expect(account.account_activity_events.where(action: "continuation_grant.revoked")).to be_empty
+    end
   end
 
   describe "completion" do

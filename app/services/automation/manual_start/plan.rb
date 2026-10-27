@@ -18,6 +18,9 @@ module Automation
       class EndpointNotApplicable < Error; end
       # Continuation must attach to a durable issue or pull-request work item.
       class WorkItemRequired < Error; end
+      # The work item belongs to another project, so it cannot carry this
+      # project's grant.
+      class WorkItemNotInProject < Error; end
 
       attr_reader :continuation_selected, :endpoint, :goal, :phase, :project, :user
 
@@ -87,6 +90,7 @@ module Automation
       def build_grant(issue:, start_phase: phase)
         return nil unless continuation_selected
         raise WorkItemRequired, "Select an issue or pull request to authorize automatic continuation." unless issue
+        raise WorkItemNotInProject, "Only work in this project can carry automatic continuation." unless issue_in_project?(issue)
 
         ensure_delegation_permitted!
 
@@ -101,6 +105,10 @@ module Automation
       end
 
       private
+
+      def issue_in_project?(issue)
+        issue.project_id == project.id
+      end
 
       def notices
         endpoints.index_with { |endpoint| notice_for(endpoint) }
@@ -123,21 +131,21 @@ module Automation
         raise EndpointNotApplicable, "Choose a continuation endpoint offered for this action."
       end
 
-      # Automating through merge requires permission to delegate merge; other
-      # endpoints require the ability to start work in the phase itself.
+      # Automating through merge requires permission to delegate merge; every
+      # other endpoint delegates work the actor must already be allowed to
+      # start. The plan enforces this itself, so a caller that is not a
+      # controller cannot skip the check.
       # @spec AUTOMATION-PHASES-009
       def ensure_delegation_permitted!
         raise PermissionDenied, permission_message unless delegation_permitted?
       end
 
       def delegation_permitted?
-        return merge_delegation_permitted? if endpoint == Automation::Phases::MERGE
+        policy = ProjectPolicy.new(user, project)
 
-        true
-      end
+        return policy.delegate_merge? if endpoint == Automation::Phases::MERGE
 
-      def merge_delegation_permitted?
-        ProjectPolicy.new(user, project).delegate_merge?
+        policy.run_agent?
       end
 
       def permission_message

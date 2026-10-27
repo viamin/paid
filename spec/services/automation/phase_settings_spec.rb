@@ -87,6 +87,30 @@ RSpec.describe Automation::PhaseSettings do
     end
   end
 
+  # The phase switch grants standing authorization for a phase; the existing
+  # capability settings still decide which actions inside it are eligible, so
+  # automatic entry into coding and continued coding stay separate controls.
+  # @spec AUTOMATION-PHASES-002
+  describe "coding entry and continuation" do
+    it "keeps auto-pick entry off while coding continuation stays on" do
+      project.update!(auto_pick_enabled: false, auto_scan_prs: true)
+      configure(phases: { "coding" => true })
+
+      expect(settings.phase_enabled?("coding")).to be(true)
+      expect(Automation::Configuration::AutoPick.from_project(project).enabled?).to be(false)
+      expect(Automation::Configuration::AutoContinue.from_project(project).enabled?).to be(true)
+    end
+
+    it "keeps coding continuation off while auto-pick entry stays on" do
+      project.update!(auto_pick_enabled: true, auto_scan_prs: false)
+      configure(phases: { "coding" => true })
+
+      expect(settings.phase_enabled?("coding")).to be(true)
+      expect(Automation::Configuration::AutoPick.from_project(project).enabled?).to be(true)
+      expect(Automation::Configuration::AutoContinue.from_project(project).enabled?).to be(false)
+    end
+  end
+
   describe "automation phases settings update" do
     it "reports only phases that transitioned from disabled to enabled" do
       configure(phases: { "coding" => true, "merge" => false })

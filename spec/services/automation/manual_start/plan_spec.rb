@@ -3,7 +3,7 @@
 require "rails_helper"
 
 # @spec AUTOMATION-PHASES-004 @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-009
-# @spec AUTOMATION-PHASES-012
+# @spec AUTOMATION-PHASES-012 @spec AUTOMATION-PHASES-019
 RSpec.describe Automation::ManualStart::Plan do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account:) }
@@ -101,6 +101,23 @@ RSpec.describe Automation::ManualStart::Plan do
 
     it "permits a non-merge continuation for a user who can start work" do
       expect { plan(user: member, continuation: true, endpoint: "coding").build_grant(issue:) }.not_to raise_error
+    end
+
+    # @spec AUTOMATION-PHASES-009
+    it "refuses a continuation for an actor who may not start work in the project" do
+      outsider = create(:user, account: create(:account))
+
+      expect { plan(user: outsider, continuation: true, endpoint: "coding").build_grant(issue:) }
+        .to raise_error(described_class::PermissionDenied, /permission to delegate this action/)
+    end
+
+    # @spec AUTOMATION-PHASES-019
+    it "refuses a grant for a work item outside the project" do
+      other_project = create(:project, account: create(:account))
+      other_issue = create(:issue, project: other_project)
+
+      expect { plan(continuation: true, endpoint: "merge").build_grant(issue: other_issue) }
+        .to raise_error(described_class::WorkItemNotInProject)
     end
   end
 end

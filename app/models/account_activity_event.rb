@@ -62,6 +62,8 @@ class AccountActivityEvent < ApplicationRecord
     "egress_allowlist.project_entry_created" => "egress_allowlist",
     "egress_allowlist.project_entry_updated" => "egress_allowlist",
     "egress_allowlist.project_entry_removed" => "egress_allowlist",
+    "continuation_grant.created" => "project",
+    "continuation_grant.revoked" => "project",
     "auth.sign_in" => "auth",
     "auth.password_changed" => "auth"
   }.freeze
@@ -203,6 +205,10 @@ class AccountActivityEvent < ApplicationRecord
       "Updated project egress allowlist entry for #{metadata_value('host_pattern')}"
     when "egress_allowlist.project_entry_removed"
       "Removed project egress allowlist entry for #{metadata_value('host_pattern')}"
+    when "continuation_grant.created"
+      "Granted automatic continuation through #{metadata_value('endpoint')}"
+    when "continuation_grant.revoked"
+      "Revoked automatic continuation through #{metadata_value('endpoint')}"
     when "auth.sign_in"
       "Signed in"
     when "auth.password_changed"

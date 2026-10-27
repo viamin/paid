@@ -69,7 +69,8 @@
 - [x] **AUTOMATION-PHASES-009** — The system SHALL require permission to
   delegate the actions a grant covers, so automating through merge requires
   permission to delegate merge, and SHALL reject unauthorized grant requests.
-  *Tests:* `spec/requests/projects/agent_runs_continuation_spec.rb`
+  *Tests:* `spec/requests/projects/agent_runs_continuation_spec.rb`,
+  `spec/services/automation/manual_start/plan_spec.rb`
   *Code:* `Automation::ManualStart::Plan`, `ProjectPolicy`
 
 - [x] **AUTOMATION-PHASES-010** — Every manual-start surface SHALL explain
@@ -142,3 +143,13 @@
   *Tests:* `spec/services/automation/operations/contract_catalog_spec.rb`
   *Code:* `Automation::Operations::ContractCatalog`,
   `docs/intent/automation-phases/operations-ownership.md`
+
+- [x] **AUTOMATION-PHASES-019** — The system SHALL persist every continuation
+  grant against exactly one project and one work item of that project, SHALL
+  require the grant to name an author from that project's account who delegated
+  it, and SHALL record an account-scoped audit event for each grant creation
+  and revocation naming the actor, the work item, the starting phase, and the
+  endpoint.
+  *Tests:* `spec/models/work_item_continuation_grant_spec.rb`,
+  `spec/services/automation/manual_start/plan_spec.rb`
+  *Code:* `WorkItemContinuationGrant`, `Automation::ManualStart::Plan`
