@@ -206,7 +206,8 @@ module PartialCloseouts
       references = human_gaps.flat_map { |gap| Array(gap["references"]) }
       identities = human_gaps.map { |gap| prerequisite_identity(gap) }.sort_by { |identity| JSON.generate(identity) }
       identity = Digest::SHA256.hexdigest(JSON.generate(identities))
-      metadata = { "prerequisite_identity" => identity, "references" => references }
+      metadata = { "prerequisite_identity" => identity, "references" => references,
+                   "prerequisites" => human_gaps.map { |gap| prerequisite_occurrence(gap) } }
       policy_selection = replacement_policy_action(human_gaps)
       metadata["policy_selection"] = policy_selection if policy_selection
 
@@ -225,6 +226,12 @@ module PartialCloseouts
         .map { |reference| canonicalize(reference) }
         .sort_by { |reference| JSON.generate(reference) }
       identity
+    end
+
+    def prerequisite_occurrence(gap)
+      { "identity" => Digest::SHA256.hexdigest(JSON.generate(prerequisite_identity(gap))),
+        "criterion" => gap["criterion"], "references" => Array(gap["references"]),
+        "source_revision" => PartialCloseouts::Assessment.call(agent_run.issue).source_revision }
     end
 
     def canonicalize(value)

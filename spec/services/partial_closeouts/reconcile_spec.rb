@@ -46,6 +46,18 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(run.reload.reconciliation.fetch("status")).to eq("awaiting_operator")
   end
 
+  it "publishes a stable identity for each human prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-032
+    described_class.call(agent_run: run, assessment: gaps([
+      { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot." },
+      { "criterion" => "Accessibility sign-off", "kind" => "human", "next_step" => "Record the review." }
+    ]))
+
+    occurrences = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+      .metadata.fetch("prerequisites")
+    expect(occurrences.map { |occurrence| occurrence.fetch("identity") }).to all(match(/\A[0-9a-f]{64}\z/))
+    expect(occurrences.map { |occurrence| occurrence.fetch("criterion") }).to contain_exactly("macOS acceptance", "Accessibility sign-off")
+  end
+
   it "reconciles changed policy guidance while preserving the unresolved prerequisite" do # @spec PARTIAL-CLOSEOUT-031
     first = policy_gap(revision: "v1", next_step: "Complete the team review.")
     described_class.call(agent_run: run, assessment: gaps([ first ]))

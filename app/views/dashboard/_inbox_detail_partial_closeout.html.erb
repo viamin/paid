@@ -313,13 +313,20 @@
         <div class="space-y-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
           <h4 class="text-sm font-semibold text-amber-900">Human evidence requested</h4>
           <p class="whitespace-pre-line text-sm text-amber-900"><%= human_prerequisite.description %></p>
-          <p class="text-xs text-amber-800">
-            Each line names the requested evidence, who must supply it, and the exact step. Submit the evidence
-            where the step says (usually a comment or linked artifact on the prerequisite), then link that work
-            here. When an agent-owned prerequisite closes, scheduling resumes automatically; supplied human
-            evidence never retries an agent by itself — afterwards, request a deliberate continuation and say
-            what the run should do with the evidence.
-          </p>
+          <p class="text-xs text-amber-800">Evidence is submitted for validation; it does not dismiss this blocker, attest acceptance, or retry work.</p>
+          <% if policy(entry.project).run_agent? %>
+            <% Array(human_prerequisite.metadata["prerequisites"]).each do |prerequisite| %>
+              <%= form_with url: project_closeout_evidence_index_path(entry.project), method: :post, class: "space-y-2" do |form| %>
+                <%= hidden_field_tag :notification_id, human_prerequisite.id %>
+                <%= hidden_field_tag :prerequisite_identity, prerequisite["identity"] %>
+                <%= hidden_field_tag :inbox_entry_id, entry.id %>
+                <p class="text-xs font-medium text-amber-900"><%= prerequisite["criterion"] %></p>
+                <%= form.url_field :evidence_url, required: true, placeholder: "https://artifact.example", class: "block w-full rounded border-gray-300 text-sm" %>
+                <%= form.text_area :explanation, required: true, rows: 2, placeholder: "Why this evidence applies", class: "block w-full rounded border-gray-300 text-sm" %>
+                <%= form.submit "Submit for validation", class: "rounded bg-amber-700 px-3 py-2 text-sm font-semibold text-white" %>
+              <% end %>
+            <% end %>
+          <% end %>
         </div>
     <% end %>
   </div>

@@ -123,6 +123,18 @@ step when operator selection is required. Reconciliation never resolves the
 prerequisite, discards valid human evidence, or substitutes solo review for a
 team policy; free-text notification content is not used to infer policy changes.
 
+### Submitted prerequisite evidence
+
+Each human prerequisite occurrence has a stable identity beneath the aggregate
+notification. An authorized operator can submit an HTTP(S) artifact and an
+explanation against that exact identity. The durable submission records actor,
+timestamp, identity, and a disposition (`pending_validation`, `sufficient`,
+`insufficient`, `stale`, or `unavailable`). A submission begins pending: a
+URL, comment, upload, green run, or dismissed alert is never acceptance proof.
+A changed source revision makes the submission stale. Only a current,
+explicitly sufficient assessment may release that occurrence; personal
+dismissal remains a distinct scheduling action, never evidence satisfaction.
+
 For Inbox lane construction, `StalledCloseouts` batch-loads the evidence and
 persisted diagnostic inputs for each project's candidates before evaluating
 individual `CloseoutStatus` values. The per-issue status still produces the
