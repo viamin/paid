@@ -43,10 +43,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      conclude_turn(assistant_message)
       update_session_activity
       assistant_message
+    rescue StandardError
+      @chat_turn&.transition!("failed", failure_classification: "infrastructure_interruption")
+      raise
     end
 
     private
@@ -172,6 +177,17 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001
+    def start_turn
+      @chat_turn = ChatTurns::Start.call(chat_session:, user_message: transport_attempt_message,
+        actor:, stream_message_id:)
+    end
+
+    def conclude_turn(assistant_message)
+      status = assistant_message ? "completed" : "awaiting_confirmation"
+      @chat_turn.transition!(status)
     end
 
     # Reuse the pre-loop budget baseline so the mid-loop guard does not issue a

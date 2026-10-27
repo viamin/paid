@@ -95,7 +95,11 @@ class ChatMessage < ApplicationRecord
   end
 
   def transcript_notice?
-    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice?
+    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice? || chat_turn_stalled?
+  end
+
+  def chat_turn_stalled?
+    metadata.is_a?(Hash) && metadata["chat_turn_stalled"] == true
   end
 
   private
