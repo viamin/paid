@@ -165,15 +165,14 @@ RSpec.describe Inbox::Availability do
       expect(availability.kind_counts[Inbox::Queue::TRACEABILITY_GAP_KIND]).to eq(1)
     end
 
-    # @spec OPERATOR-INBOX-002A
-    it "counts merge-approval candidates via the shared signal check" do
+    # @spec OPERATOR-INBOX-002A INBOX-FOUNDATION-021
+    it "counts a held draft PR via the shared merge-approval candidate scope" do
       create(
         :issue, :pull_request, project: project_a,
-        auto_merge_evaluated_at: Time.current, awaiting_approval_since: 2.hours.ago,
-        auto_merge_blockers: {
-          "failed" => [ { "signal" => "owner_approved", "status" => "failed" } ],
-          "not_evaluated" => []
-        }
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
       )
 
       availability = described_class.call(user: user)
