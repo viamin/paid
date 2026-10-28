@@ -3,6 +3,10 @@
 module Inbox
   class MergeApproval
     APPROVAL_SIGNALS = %w[owner_approved reviews_fresh].freeze
+    # A rate-limited run has a scheduled recovery window, so it remains
+    # responsible work rather than an Inbox reconciliation request.
+    UNFINISHED_RUN_STATUSES = %w[queued running paused rate_limited].freeze
+    TERMINAL_RUN_STATUSES = AgentRun::FINISHED_STATUSES.freeze
 
     def self.call(issue, phase_authorized: nil)
       new(issue, phase_authorized:).call
@@ -11,19 +15,20 @@ module Inbox
     # Narrows to rows that could plausibly need an operator before falling back
     # to Ruby for the full `call` signal check (`APPROVAL_SIGNALS`), so
     # counting/listing stays a bounded scan instead of one Issue
-    # instantiation per open, ready PR on the account. Shared by
+    # instantiation per open PR on the account. A structured review hold is an
+    # explicit human request, so it must survive stale local phase state.
+    # Shared by
     # `Inbox::Count` and `Inbox::Availability` so the candidate definition
     # can't drift between the badge, the filters dialog, and the queue.
-    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-004
+    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 INBOX-FOUNDATION-012 OPERATOR-INBOX-002K LABEL-CONTROL-004
     def self.candidates(project_ids)
       Issue
         .joins(:project)
-        .includes(:project)
+        .includes(:project, parent_issue: :agent_runs)
         .where(
           project_id: project_ids,
           is_pull_request: true,
           github_state: "open",
-          pr_review_phase: "ready",
           merge_permission_rejected_at: nil
         )
         .where(candidate_conditions)
@@ -33,10 +38,19 @@ module Inbox
       Issue.sanitize_sql_array([
         "(projects.label_integration_mode <> 'ignored' AND issues.labels @> :hold_label::jsonb) OR " \
           "(projects.label_integration_mode = 'ignored' AND issues.hold_for_review = TRUE) OR (" \
-          "issues.auto_merge_evaluated_at IS NOT NULL AND " \
+          "issues.pr_review_phase = 'ready' AND issues.auto_merge_evaluated_at IS NOT NULL AND " \
           "issues.auto_merge_blockers IS NOT NULL AND (" \
-          "projects.auto_merge_mode = 'off' OR projects.owner_reviewer_login IS NOT NULL))",
-        hold_label: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ].to_json
+          "projects.auto_merge_mode = 'off' OR projects.owner_reviewer_login IS NOT NULL)) OR " \
+          "(projects.auto_add_labels_enabled = TRUE AND projects.pr_target <> 'upstream' AND " \
+          "issues.parent_issue_id IS NOT NULL AND EXISTS (SELECT 1 FROM agent_runs terminal_runs " \
+          "WHERE terminal_runs.project_id = issues.project_id AND terminal_runs.issue_id = issues.parent_issue_id " \
+          "AND terminal_runs.goal = 'create_pr' AND terminal_runs.pull_request_number IS NULL " \
+          "AND terminal_runs.status IN (:terminal_statuses)) AND NOT EXISTS (SELECT 1 FROM agent_runs active_runs " \
+          "WHERE active_runs.project_id = issues.project_id AND active_runs.issue_id = issues.parent_issue_id " \
+          "AND active_runs.status IN (:unfinished_statuses)))",
+        hold_label: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ].to_json,
+        terminal_statuses: TERMINAL_RUN_STATUSES,
+        unfinished_statuses: UNFINISHED_RUN_STATUSES
       ])
     end
     private_class_method :candidate_conditions
@@ -49,20 +63,22 @@ module Inbox
     def call
       return unless candidate?
 
-      Snapshot.new(issue:, blockers: failed_blockers, phase_authorized:)
+      Snapshot.new(issue:, blockers: failed_blockers, phase_authorized:, stalled_run: stalled_run)
     end
 
     class Snapshot
-      attr_reader :blockers, :issue, :phase_authorized
+      attr_reader :blockers, :issue, :phase_authorized, :stalled_run
 
-      def initialize(issue:, blockers:, phase_authorized: nil)
+      def initialize(issue:, blockers:, phase_authorized: nil, stalled_run: nil)
         @issue = issue
         @blockers = blockers
         @phase_authorized = phase_authorized
+        @stalled_run = stalled_run
       end
 
       def summary
         return "Human review requested before merging" if held_for_review?
+        return "Automation stopped after opening this pull request" if stalled_execution?
         return "Approval is stale for the current revision" if stale_approval?
         return "Human review required before manual merge" if manual_merge? && approval_required?
         return "Manual merge decision required" if manual_merge?
@@ -84,6 +100,8 @@ module Inbox
           heading: guidance_heading,
           instruction: guidance_instruction,
           automatic_merge_active: automatic_merge_active?,
+          stalled_run_id: stalled_run&.id,
+          source_issue_number: issue.parent_issue&.github_number,
           stale_approval: stale_approval?,
           approval_evidence: approval_evidence,
           blockers: display_blockers
@@ -94,6 +112,10 @@ module Inbox
 
       def stale_approval?
         blockers.any? { |blocker| blocker["signal"] == "reviews_fresh" }
+      end
+
+      def stalled_execution?
+        stalled_run.present?
       end
 
       def held_for_review?
@@ -118,6 +140,7 @@ module Inbox
 
       def guidance_heading
         return "Human review is on hold" if held_for_review?
+        return "Automation reconciliation needed" if stalled_execution?
         return "Approval is stale for the current revision" if stale_approval?
         return "Manual merge decision on GitHub" if manual_merge?
 
@@ -126,6 +149,7 @@ module Inbox
 
       def guidance_instruction
         return held_review_instruction if held_for_review?
+        return "Paid's creating workflow ended without reconciling this pull request. Review the linked source and run, then restart or reconcile automation. This does not mean the pull request is ready to merge." if stalled_execution?
         return stale_approval_instruction if stale_approval?
         return "Review the current changes and make the manual merge decision on GitHub. Paid will not merge this pull request automatically." if manual_merge?
 
@@ -211,24 +235,57 @@ module Inbox
     attr_reader :issue, :phase_authorized
 
     def candidate?
-      # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-004
-      return false unless reviewable_pr?
+      # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 INBOX-FOUNDATION-012 OPERATOR-INBOX-002K LABEL-CONTROL-004
+      return false unless open_pull_request?
       return true if held_for_review?
+      return true if stalled_execution?
+      return false unless reviewable_pr?
       return false if manual_merge? && automatic_merge_active?
 
       manual_merge? ? manual_action_required? : approval_only_blockers?
     end
 
     def reviewable_pr?
-      issue.is_pull_request? &&
-        issue.github_state == "open" &&
+      open_pull_request? &&
         issue.pr_review_phase == "ready" &&
         (manual_merge? || automatic_merge_configured?) &&
         !issue.merge_permission_rejected?
     end
 
+    def open_pull_request?
+      issue.is_pull_request? && issue.github_state == "open" && !issue.merge_permission_rejected?
+    end
+
     def held_for_review?
       issue.held_for_review?
+    end
+
+    def stalled_execution?
+      stalled_run.present?
+    end
+
+    def stalled_run
+      return @stalled_run if defined?(@stalled_run)
+
+      @stalled_run = terminal_unlinked_create_pr_runs.max_by(&:updated_at) unless source_workflow_active?
+    end
+
+    def terminal_unlinked_create_pr_runs
+      return [] unless automation_owned_pull_request?
+
+      source_runs.select { |run| run.goal == "create_pr" && run.pull_request_number.nil? && run.finished? }
+    end
+
+    def source_workflow_active?
+      source_runs.any? { |run| run.status.in?(UNFINISHED_RUN_STATUSES) }
+    end
+
+    def source_runs
+      issue.parent_issue&.agent_runs&.to_a || []
+    end
+
+    def automation_owned_pull_request?
+      issue.parent_issue_id.present? && issue.project.auto_add_labels_enabled? && !issue.project.upstream_pr_target?
     end
 
     def approval_only_blockers?

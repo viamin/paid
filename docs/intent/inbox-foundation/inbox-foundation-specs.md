@@ -89,10 +89,26 @@
   *Tests:* `spec/services/dashboard/needs_input_queue_spec.rb`.
   *Code:* `app/services/dashboard/needs_input_queue.rb`.
 
-- [x] **INBOX-FOUNDATION-008** — When an open ready pull request has the
-  structured `paid-hold-review` label, `Inbox::Queue` SHALL return it as a
-  `merge_approval` entry with a human-review summary even if its ordinary
-  auto-merge blocker snapshot is absent or has other blockers.
+- [x] **INBOX-FOUNDATION-008** — When an open pull request has the structured
+  `paid-hold-review` label, `Inbox::Queue` SHALL return it as a
+  `merge_approval` entry with a human-review summary even if its internal
+  review phase is stale or uninitialized, its ordinary auto-merge blocker
+  snapshot is absent or has other blockers, or post-processing did not add
+  automation labels. In label-integration ignored mode, the persisted local
+  review hold is the equivalent signal. Visibility SHALL NOT promote the
+  internal review phase or authorize a merge.
+  *Tests:* `spec/services/inbox/queue_spec.rb`.
+  *Code:* `app/services/inbox/merge_approval.rb`.
+
+- [x] **INBOX-FOUNDATION-012** — When an open pull request is linked to a
+  source issue in a Paid-automated own-repository project, a terminal
+  `create_pr` run for that source ended without recording the PR, and no
+  unfinished workflow remains responsible for that source, `Inbox::Queue`
+  SHALL surface one `merge_approval` entry that identifies stalled automation
+  and directs the operator to reconcile or restart it. This is bounded to the
+  existing project/PR/source-run relationships; it SHALL not change review
+  phase, restore labels, claim merge readiness, or surface while a queued,
+  running, paused, or rate-limited source workflow is still responsible.
   *Tests:* `spec/services/inbox/queue_spec.rb`.
   *Code:* `app/services/inbox/merge_approval.rb`.
 

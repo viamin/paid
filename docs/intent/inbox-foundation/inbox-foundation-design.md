@@ -87,8 +87,22 @@ Today three kinds exist:
   activity timestamp instead of `needs_input_since`, so PRs do not need to
   enter `paid_state: "needs_input"` just to become visible. An open ready PR
   with `paid-hold-review` is also a `:merge_approval` entry, irrespective of
-  its ordinary blocker snapshot, because the label is an explicit request for
-  human action.
+  its ordinary blocker snapshot or its locally persisted review phase, because
+  the label is an explicit request for human action. In ignored label mode the
+  persisted local hold is the equivalent signal. This visibility path never
+  changes phase or merge authorization: a stale `draft` phase remains stale
+  and the hold continues to prevent automatic merge.
+
+An open own-repository PR linked to a source issue is also surfaced when its
+source's `create_pr` workflow has ended terminally without a recorded PR and
+no unfinished source workflow remains. This is a reconciliation request, not
+an approval or readiness signal: its shared merge-approval surface identifies
+the stalled execution and directs the operator to reconcile or restart it.
+The source link and the persisted run lifecycle are trusted local evidence;
+the path deliberately does not infer ownership from prose, recreate labels, or
+change the PR phase. A queued, running, paused, or rate-limited source
+workflow suppresses the request, preventing ordinary active or intentionally
+waiting work from becoming a human task.
 
 Future kinds (`:paused_run_decision`)
 plug in by registering an entry-finder that contributes rows to the same

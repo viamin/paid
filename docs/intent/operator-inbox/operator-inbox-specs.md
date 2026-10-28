@@ -19,13 +19,19 @@
   *Code:* `app/services/inbox/queue.rb`, `app/models/decomposition_decision.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`.
 
-- [x] **OPERATOR-INBOX-002A** — When an open PR's persisted auto-merge blocker
+- [x] **OPERATOR-INBOX-002A** — When an open ready PR's persisted auto-merge blocker
   snapshot reduces to approval-only failures (`owner_approved` and/or
   `reviews_fresh`) with no other failed or not-evaluated blockers, the system
   SHALL expose that PR as a `merge_approval` inbox entry until a later PR scan
   records a non-approval blocker, a fresh approval, or a merge/close outcome.
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/merge_approval.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
+
+  An open PR with an explicit structured review hold remains a
+  `merge_approval` entry even when its local review phase is stale or
+  uninitialized. That exception is solely an explicit-human-request path; it
+  neither represents the PR as merge-ready nor changes its phase or merge
+  authority (`INBOX-FOUNDATION-008`).
 
 - [x] **OPERATOR-INBOX-002K** — When an open ready PR belongs to an authorized
   project with auto-merge off, the system SHALL surface the same
