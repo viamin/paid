@@ -5,12 +5,13 @@ require "rails_helper"
 # @spec INTENT-CONFORMANCE-ROLLOUT-006
 # @spec INTENT-CONFORMANCE-ROLLOUT-007
 RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
-  before { configure_llm_routing(project: project)
-allow(project).to receive(:client).and_return(github_client)
+  before do
+    configure_llm_routing(project: project)
+    allow(project).to receive(:client).and_return(github_client)
     allow(project).to receive_messages(full_name: "acme/widgets", client: github_client)
     allow(github_client).to receive(:file_content).with("acme/widgets", path: "docs/rdrs/RDR-999-example.md", ref: "c" * 40)
       .and_return("# RDR-999\n\nThe widget SHALL always be blue.")
-   }
+  end
 
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account: account) }
