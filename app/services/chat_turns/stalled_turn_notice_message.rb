@@ -44,7 +44,9 @@ module ChatTurns
     end
 
     def guidance
-      if chat_turn.status == "failed"
+      if chat_turn.status == "completed"
+        "The recovery completed successfully."
+      elsif chat_turn.status == "failed"
         "The recovery attempt failed. Send a new message to continue."
       elsif automatic_recovery_attempted
         "An automatic recovery attempt is in progress."
@@ -63,6 +65,7 @@ module ChatTurns
         "recovery_attempts" => chat_turn.recovery_attempts,
         "max_recovery_attempts" => ChatTurn::MAX_RECOVERY_ATTEMPTS,
         "automatic_recovery_attempted" => automatic_recovery_attempted,
+        "recovery_completed" => chat_turn.status == "completed",
         "recovery_failed" => chat_turn.status == "failed",
         "recovery_exhausted" => chat_turn.recovery_exhausted?
       }

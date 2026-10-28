@@ -60,6 +60,8 @@ module ChatTurns
         message_id: stream_message_id,
         tokens: { input: assistant_message&.tokens_input, output: assistant_message&.tokens_output }
       })
+      notice = ChatTurns::PersistStallNotice.refresh_after_recovery_success!(chat_turn: chat_turn)
+      broadcast_persisted_message(stream_name, notice) if notice
 
       Rails.logger.info(
         message: "chat_turns.recovered",

@@ -18,13 +18,47 @@ RSpec.describe ChatTurns::RecoverStalledTurnJob do
 
   describe "#perform" do
     # @spec CHAT-TURN-RECOVERY-004
-    it "resumes the turn and broadcasts the completion" do
+    it "settles and broadcasts an automatic recovery notice on success" do
+      notice = ChatTurns::PersistStallNotice.call(
+        chat_turn: chat_turn,
+        automatic_recovery_attempted: true
+      )
+
       expect {
         described_class.perform_now(chat_turn_id: chat_turn.id, triggered_by: "automatic")
       }.to have_broadcasted_to("chat_session:#{chat_session.id}")
         .with(hash_including(type: "message_start"))
+        .and have_broadcasted_to("chat_session:#{chat_session.id}")
+          .with(hash_including(type: "message_created", message_id: notice.id))
 
       expect(chat_turn.reload.status).to eq("completed")
+      expect(notice.reload.content).to include("recovery completed")
+      expect(notice.metadata).to include(
+        "automatic_recovery_attempted" => false,
+        "recovery_completed" => true
+      )
+      expect(rendered_notice(notice)).not_to include("Resume")
+      expect(rendered_notice(notice)).not_to include("in progress")
+    end
+
+    # @spec CHAT-TURN-RECOVERY-004 @spec CHAT-TURN-RECOVERY-005
+    it "settles and broadcasts a manual recovery notice on success" do
+      notice = ChatTurns::PersistStallNotice.call(
+        chat_turn: chat_turn,
+        automatic_recovery_attempted: false
+      )
+
+      expect {
+        described_class.perform_now(chat_turn_id: chat_turn.id, triggered_by: "manual", actor_id: user.id)
+      }.to have_broadcasted_to("chat_session:#{chat_session.id}")
+        .with(hash_including(type: "message_created", message_id: notice.id))
+
+      expect(notice.reload.content).to include("recovery completed")
+      expect(notice.metadata).to include(
+        "automatic_recovery_attempted" => false,
+        "recovery_completed" => true
+      )
+      expect(rendered_notice(notice)).not_to include("Resume")
     end
 
     # @spec CHAT-TURN-RECOVERY-004
@@ -48,5 +82,9 @@ RSpec.describe ChatTurns::RecoverStalledTurnJob do
         "recovery_failed" => true
       )
     end
+  end
+
+  def rendered_notice(notice)
+    ApplicationController.render(partial: "chat_messages/message", locals: { message: notice })
   end
 end
