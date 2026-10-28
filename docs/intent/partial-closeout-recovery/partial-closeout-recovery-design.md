@@ -79,6 +79,35 @@ PR/run links, the recorded completion outcome, unresolved prerequisites
 (blocking dependencies), and the exact reason automatic continuation cannot
 proceed.
 
+### Admission evaluation: live authority
+
+The lane continues to read the current admission decision from
+`DefaultCandidateSource.partial_closeout_eligibility`; it does not persist a
+stalled-closeout snapshot and does not cache that decision behind
+`Dashboard::CacheVersion`. `StalledCloseouts` narrows to evidence-bearing
+candidates, then performs one batched admission evaluation per project. That
+evaluation deliberately runs the ordinary and scoped-continuation eligibility
+scopes from shared project inputs, so Inbox visibility remains consistent with
+the dequeue recheck.
+
+This is Option A. It preserves the existing admission authority while the
+companion eligibility-query work reduces its cost. An Inbox index builds the
+queue once and passes those entries to Availability; the lazy nav badge and
+independently filtered views may each evaluate the lane separately. This
+bounded duplication is preferable to introducing a second authority without a
+complete invalidation contract.
+
+A project cache behind `Dashboard::CacheVersion` is not selected. The current
+Inbox version is account-wide and is bumped by unrelated Inbox transitions, so
+a cache miss would still synchronously invoke the live eligibility SQL and
+would not provide a durable hot-path boundary. A persisted snapshot is not
+selected. It would require an accepted design that specifies the snapshot's
+authority, every invalidating input (closeout evidence, runs, continuation
+requests, holds, labels, feature/revision gates, budgets, dependencies, and
+runner configuration), repair/reconciliation, and staleness semantics. The
+dequeue-time `eligible_for_dequeue?` check remains the final admission gate in
+any future snapshot design.
+
 ### Recovery: `IssueContinuationRequest` (scoped authorization)
 
 A deliberate continuation is a persisted, auditable authorization — never a
@@ -462,6 +491,11 @@ those revisions change.
   deliberately state-independent (#3432/#3588 review follow-up).
 - *Blanket "clear blocker" action*: rejected by the issue; recovery actions are
   scoped (one continuation per request against one evidence generation).
-- *Persisted inbox items*: the lane derives from evidence columns like
-  `retry_limited` does; only the scoped authorization and the resolution
-  dismissal are persisted.
+- *Persisted stalled-closeout snapshot (Option B)*: rejected for now. It would
+  create a second, asynchronously maintained admission projection and therefore
+  needs a separate accepted authority and invalidation design; the dequeue
+  recheck alone does not make stale Inbox visibility explainable.
+- *Project cache keyed by `Dashboard::CacheVersion` (Option C)*: rejected. The
+  account-wide version is bumped by many unrelated Inbox changes, so it cannot
+  guarantee a cache-warm rendering path and would retain live admission on
+  every invalidation.
