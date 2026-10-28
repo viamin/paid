@@ -163,6 +163,15 @@
   `app/views/inbox/index.html.erb`,
   `app/javascript/controllers/inbox_filters_controller.js`.
 
+- [x] **INBOX-FOUNDATION-012** — Issue-backed Inbox lanes that join `projects`
+  for predicates or stable ordering SHALL preload project records separately,
+  so project audit history is not selected repeatedly in each issue result row.
+  This SHALL preserve authorized visibility, lane membership, and deterministic
+  ordering.
+  *Tests:* `spec/services/inbox/queue_spec.rb`.
+  *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/merge_approval.rb`,
+  `app/services/inbox/intent_conformance.rb`.
+
 - [x] **INBOX-FOUNDATION-011** — When a filtered Inbox URL (a `kind` and/or
   `project_id` parameter) matches zero entries while at least one item is
   waiting under a different combination, the system SHALL NOT render the

@@ -131,6 +131,15 @@ closes it and Enter submits its GET form. Type deliberately remains
 single-select: that preserves the established `kind` URL contract while the
 team gathers evidence that combined kinds are needed.
 
+### Project loading
+
+Issue-backed lanes retain their `projects` joins for predicates and stable
+ordering, but preload project records separately. An eager-load join would
+repeat a project's `log_data` in every matching issue row, making audit history
+an Inbox-list memory multiplier. Merge-approval and intent-conformance
+candidate scopes follow the same rule, preserving visibility and ordering
+without selecting project payloads into per-issue result rows.
+
 ### Filter availability and empty-combination fallback (#4276)
 
 The dialog only offers options that cannot yield an empty list. An

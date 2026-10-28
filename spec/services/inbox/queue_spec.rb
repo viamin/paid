@@ -1380,6 +1380,18 @@ RSpec.describe Inbox::Queue do
   end
 
   describe "ordering" do
+    # @spec INBOX-FOUNDATION-012
+    it "preloads projects separately from ordered issue rows" do
+      create_needs_input(github_number: 10, body: questions_body)
+
+      sql = capture_sql do
+        described_class.call(user: user, project: project, kind: described_class::CLARIFYING_QUESTIONS_KIND)
+      end.find { |statement| statement.match?(/FROM \"issues\"/) }
+
+      expect(sql).to include('INNER JOIN "projects"')
+      expect(sql).not_to include('"projects".*')
+    end
+
     # @spec INBOX-FOUNDATION-004
     it "orders clarifying-question entries oldest-waiting-first by needs_input_since, NULLS LAST" do
       newest = create_needs_input(github_number: 30, body: questions_body)
@@ -1849,6 +1861,15 @@ RSpec.describe Inbox::Queue do
     )
     expect(approval_entry.summary).to eq("Waiting for owner approval")
   end
+
+  def capture_sql
+    queries = []
+    callback = ->(_name, _start, _finish, _id, payload) { queries << payload[:sql] unless payload[:name] == "SCHEMA" }
+
+    ActiveSupport::Notifications.subscribed(callback, "sql.active_record") { yield }
+    queries
+  end
+
   describe "project setup pending Inbox lane" do
     # @spec PROJECT-READINESS-005
     it "shows a strict-TDD project with its persisted gaps even when auto-pick is disabled" do
