@@ -115,7 +115,8 @@ module FreeModels
 
     # @spec DIRECT-OUTBOUND-CATALOG-004
     def deactivate_missing_models!(synced_ids)
-      LlmModel.openrouter_synced_free.where.not(model_id: synced_ids).update_all(active: false, updated_at: Time.current)
+      LlmModel.openrouter_synced_free.where.not("metadata ? 'openrouter_zdr_catalog_only'")
+        .where.not(model_id: synced_ids).update_all(active: false, updated_at: Time.current)
     end
 
     def log_summary(result)

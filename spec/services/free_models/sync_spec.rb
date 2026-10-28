@@ -23,6 +23,16 @@ RSpec.describe FreeModels::Sync do
         active: true)
     end
 
+    let!(:zdr_catalog_only) do
+      create(:llm_model,
+        model_id: "openai/zdr-only-free",
+        provider: "openai",
+        pricing_tier: "free",
+        catalog_source: "openrouter_sync",
+        metadata: { "openrouter_zdr_catalog_only" => true },
+        active: true)
+    end
+
     let(:free_payloads) do
       [
         {
@@ -78,6 +88,7 @@ RSpec.describe FreeModels::Sync do
       expect_synced_model(synced)
       expect_low_quality_model(low_quality)
       expect(disappeared.reload.active).to be(false)
+      expect(zdr_catalog_only.reload.active).to be(true)
       expect(LlmModel.find_by(model_id: "anthropic/not-free")).to be_nil
     end
 

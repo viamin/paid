@@ -14,9 +14,9 @@ application must fetch OpenRouter's live free-model list, classify the
 models into Paid's existing tier semantics, and keep the catalog current as
 models appear, expire, or disappear.
 
-This segment covers the daily synchronization path only. Runner execution,
-rotation, and data-classification routing remain covered by their existing code
-paths and RDRs.
+This segment covers catalog synchronization only. Runner execution, rotation,
+and request-time data-classification routing remain covered by their existing
+code paths and RDRs.
 
 ## Goals
 
@@ -29,6 +29,9 @@ paths and RDRs.
 - Preserve weak-quality models in the catalog, but mark them so default runner
   selection can avoid them.
 - Keep the sync idempotent and mark no-longer-listed synced models inactive.
+- Maintain a separate catalog of OpenRouter model IDs with at least one
+  advertised zero-data-retention (ZDR) inference endpoint, including paid and
+  free models.
 
 ## Design
 
@@ -89,6 +92,42 @@ The sync service:
 
 The sync owns only rows with `catalog_source: "openrouter_sync"`. It must never
 mutate unrelated seeded or manual catalog entries.
+
+### `OpenrouterZdr::Sync`
+
+The ZDR sync consumes `GET /api/v1/endpoints/zdr`, whose records describe
+eligible *endpoints*, not an inferred provider or model-wide privacy policy.
+It groups records by their concrete `model_id`; a model is a catalog candidate
+when at least one advertised endpoint maps to that ID. The sync stores the
+endpoint records as eligibility evidence and updates the matching `LlmModel`
+row's explicit ZDR eligibility flag. It creates a catalog row when no existing
+row describes an eligible paid or free model, preserving existing model
+metadata when the row already belongs to another catalog owner.
+
+Free rows created only from the ZDR endpoint feed are marked as ZDR-catalog
+rows. `FreeModels::Sync` leaves those rows outside its free-list withdrawal
+scope until the general OpenRouter models feed has itself synced the row. This
+keeps the existing free-catalog ownership and deactivation lifecycle intact.
+
+Successful refreshes are authoritative, including a valid empty endpoint list:
+they clear eligibility withdrawn from the feed and record the successful
+timestamp. Invalid payloads and transport failures do not clear existing
+eligibility. Instead, they record the failed attempt and an unavailability
+reason while preserving the last successful timestamp and last-known catalog.
+
+`OpenrouterZdr::EligibleModels` is the query interface for runner setup. It
+returns only active, currently advertised-eligible catalog rows and applies the
+existing project provider permission and `Runners::ModelCompatibility` checks.
+Its `freshness` query exposes the latest successful and attempted refresh plus
+any unavailability reason, so consumers can distinguish last-known data from a
+newly verified catalog.
+The catalog is advisory: request-time `provider.zdr` enforcement remains the
+authority for inference routing.
+
+### `OpenrouterZdr::SyncJob`
+
+The ZDR endpoint catalog refresh runs daily on the maintenance queue with
+single-flight concurrency, independently from the existing free-model sync.
 
 ### `FreeModels::SyncJob`
 

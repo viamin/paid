@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_172422) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2912,6 +2912,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.integer "max_output_tokens"
     t.jsonb "metadata", default: {}, null: false
     t.string "model_id", null: false
+    t.boolean "openrouter_zdr_eligible", default: false, null: false, comment: "Whether OpenRouter currently advertises at least one ZDR endpoint for this model."
+    t.jsonb "openrouter_zdr_endpoint_metadata", default: {}, null: false, comment: "Latest advertised OpenRouter ZDR endpoint records grouped by model."
     t.boolean "operator_active_override", comment: "Explicit operator active/inactive decision. When set, scheduled catalog sync must preserve this value instead of reapplying the snapshot default."
     t.decimal "output_cost_per_million", precision: 10, scale: 4
     t.string "pricing_tier", default: "paid", null: false, comment: "Pricing availability for this model: paid, free, or freemium."
@@ -2925,6 +2927,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["category"], name: "index_llm_models_on_category"
     t.index ["free_variant_of_id"], name: "index_llm_models_on_free_variant_of_id"
     t.index ["model_id"], name: "index_llm_models_on_model_id", unique: true
+    t.index ["openrouter_zdr_eligible"], name: "index_llm_models_on_openrouter_zdr_eligible"
     t.index ["provider", "active"], name: "index_llm_models_on_provider_and_active"
     t.index ["provider"], name: "index_llm_models_on_provider"
     t.index ["tier"], name: "index_llm_models_on_tier"
@@ -3163,6 +3166,16 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["account_id", "position"], name: "index_onboarding_steps_on_account_id_and_position"
     t.index ["account_id", "step"], name: "index_onboarding_steps_on_account_id_and_step", unique: true
     t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
+  end
+
+  create_table "openrouter_zdr_catalog_refreshes", force: :cascade do |t|
+    t.string "catalog_key"
+    t.datetime "created_at", null: false
+    t.datetime "last_attempted_at"
+    t.text "last_error"
+    t.datetime "last_successful_at"
+    t.datetime "updated_at", null: false
+    t.index ["catalog_key"], name: "index_openrouter_zdr_catalog_refreshes_on_catalog_key", unique: true
   end
 
   create_table "orchestration_decisions", comment: "Structured log of orchestration decisions for later workflow analysis and learning.", force: :cascade do |t|

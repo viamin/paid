@@ -44,6 +44,7 @@ class LlmModel < ApplicationRecord
   scope :paid, -> { by_pricing_tier("paid") }
   scope :openrouter_synced, -> { where(catalog_source: "openrouter_sync") }
   scope :openrouter_synced_free, -> { free.openrouter_synced }
+  scope :openrouter_zdr_eligible, -> { where(openrouter_zdr_eligible: true) }
   # Catalog rows that are NOT OpenRouter-synced free variants. First-party
   # drift detection compares the seeded catalog against the RubyLLM registry;
   # OpenRouter free models are sourced and lifecycle-managed by FreeModels::Sync
