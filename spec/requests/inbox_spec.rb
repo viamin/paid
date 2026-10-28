@@ -192,6 +192,26 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("Closed question")
   end
 
+  # @spec INBOX-FOUNDATION-008
+  it "renders an explicit hold with a stale local review phase in the Inbox detail" do
+    pull_request = create(
+      :issue,
+      :pull_request,
+      project: project,
+      title: "Held while finalization failed",
+      pr_review_phase: "draft",
+      labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+      auto_merge_evaluated_at: nil,
+      auto_merge_blockers: nil
+    )
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MERGE_APPROVAL_KIND, pull_request))
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Held while finalization failed", "Human review requested before merging")
+    expect(pull_request.reload.pr_review_phase).to eq("draft")
+  end
+
   it "renders compact URL-driven filters with the selected project, kind, and sort" do
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 

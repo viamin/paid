@@ -169,11 +169,10 @@ RSpec.describe Inbox::Availability do
     it "counts merge-approval candidates via the shared signal check" do
       create(
         :issue, :pull_request, project: project_a,
-        auto_merge_evaluated_at: Time.current, awaiting_approval_since: 2.hours.ago,
-        auto_merge_blockers: {
-          "failed" => [ { "signal" => "owner_approved", "status" => "failed" } ],
-          "not_evaluated" => []
-        }
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
       )
 
       availability = described_class.call(user: user)
