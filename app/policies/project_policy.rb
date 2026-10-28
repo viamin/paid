@@ -26,6 +26,13 @@ class ProjectPolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin, :member) || has_project_role?
   end
 
+  # RDR-077 §3: continuation grants delegate future project work, so even a
+  # non-merge grant requires the same tenant-scoped authority as starting work.
+  # @spec AUTOMATION-PHASES-009
+  def delegate_automation?
+    run_agent?
+  end
+
   # @spec APPLE-VERIFY-002
   # @spec APPLE-VERIFY-003
   # RDR-077 §3: only users who may delegate the covered actions may create a
