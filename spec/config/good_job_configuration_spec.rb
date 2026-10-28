@@ -122,6 +122,7 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
         service_container_reconciliation: "1-59/5 * * * *",
         dispatch_circuit_breaker_recovery: "1-59/5 * * * *",
         stale_run_detector: "2-59/5 * * * *",
+        chat_turn_stall_detection: "4-59/5 * * * *",
         queue_monitor: "2-59/5 * * * *",
         docker_orphan_cleanup: "3-59/5 * * * *",
         notifications_check_runner_quotas: "3-59/5 * * * *",
@@ -138,7 +139,7 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
 
     it "defines expected cron jobs" do # @spec TEMPORAL-ORCHESTRATION-003
       expected_jobs = %i[
-        worktree_cleanup poll_workflow_health_check stale_run_detector
+        worktree_cleanup poll_workflow_health_check stale_run_detector chat_turn_stall_detection
         docker_orphan_cleanup recover_missing_pull_request_labels models_sync
         free_models_sync
         ab_test_analysis process_run_queue auto_pick_queue_backfill
