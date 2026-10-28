@@ -336,6 +336,18 @@ evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
 building a second provisioning path, and keeps investigation separate from
 any repair: a scan never mutates source code or opens a PR on its own.
+Its proposed optimization recipe family is a catalog, not a new run type: a
+curated selection records the recipe and its evidence plan on the same
+maintenance-run snapshot, while a free-text question remains available for an
+unmapped objective. Semantic findings and their confidence assessment come
+from `agent_harness`; deterministic code enforces the elected recipe,
+authorization, revision, budget, and duplicate-work gates. A proposed
+per-run, off-by-default auto-queue election may hand qualifying non-security
+findings to the existing bounded repair pathway only after report completion;
+it must retain the report, revalidate stale evidence, preserve explicit repair
+budgets, and never broaden the finding's scope. The election is draft policy,
+not runtime authority; security repairs remain manual-only until separately
+authorized.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending

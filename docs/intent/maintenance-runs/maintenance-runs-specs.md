@@ -61,6 +61,38 @@
       MCP surface, applying the same project-scoped selection authorization
       on every surface and the existing authorization of the selected repair
       creation pathway.
+- [ ] **MAINT-019**: The system shall expose the same optimization recipe
+      selection and bounded auto-queue election fields on the UI, authenticated
+      API, and MCP start surfaces, subject to the same project-scoped
+      authorization; omitting the election shall produce report-only behavior.
+
+## Optimization Recipes and Semantic Assessment
+
+- [ ] **MAINT-030**: The system shall represent optimization types as catalog
+      entries with display name, objective, investigation instructions,
+      evidence collectors, validation guidance, and optional metric hints,
+      so adding a type does not require an enum migration.
+- [ ] **MAINT-031**: The system shall provide catalog entries for performance,
+      design / architecture, code duplication, security hardening, cost /
+      resource efficiency, maintainability / readability, and test coverage &
+      quality, while allowing an unmapped selection to continue as a
+      custom-objective maintenance run.
+- [ ] **MAINT-032**: The system shall persist the selected catalog entry and
+      its version with the maintenance-run snapshot and retain it across a
+      retry as provenance.
+- [ ] **MAINT-033**: The system shall obtain each optimization finding's
+      actionable assessment, recommendation, counterevidence, and confidence
+      assessment from `agent_harness` through a structured response schema;
+      it shall not treat raw tool confidence or code-derived text heuristics as
+      that semantic assessment.
+- [ ] **MAINT-034**: Where an elected auto-queue threshold is evaluated, the
+      system shall compare it only with an `agent_harness` confidence assessment
+      bearing the same persisted rubric revision, and shall reject a missing or
+      mismatched assessment rather than inventing calibrated numerical meaning.
+- [ ] **MAINT-035**: The system shall report prompt-only and unavailable-tool
+      recipe coverage honestly: a missing planned collector shall make the
+      report partial, while a recipe with no planned collector may complete
+      prompt-only under the normal report-outcome contract.
 
 ## Reports and Findings
 
@@ -158,4 +190,26 @@
       back to its source maintenance report and finding.
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
-      an explicit user selection.
+      an explicit user selection or a persisted elected auto-queue policy.
+- [ ] **MAINT-074**: When an authorized user elects auto-queue at optimization
+      run start, the system shall persist an off-by-default election with its
+      confidence threshold, rubric revision, and explicit per-repair cost/time
+      limits; no tenant-wide or recipe-default setting shall imply that election.
+- [ ] **MAINT-075**: After an elected optimization report completes, the
+      system shall auto-queue a qualifying finding only through the existing
+      bounded selected-finding repair pathway after deterministically verifying
+      authorization, `maintenance_runs` admission, matching rubric, threshold,
+      open status, preserved finding scope, explicit repair budget, and absence
+      of an existing repair lineage for that canonical finding identity.
+- [ ] **MAINT-076**: If an auto-queued repair target revision differs from the
+      source report revision, the system shall require visible revalidation
+      before applying the recommendation; a failed revalidation or exhausted
+      repair budget shall retain evidence and shall not silently drop, broaden,
+      or duplicate the repair work.
+- [ ] **MAINT-077**: The system shall exclude security-category findings from
+      optimization auto-queue and shall expose them only for report inspection
+      and manual repair selection until a separately accepted security-repair
+      policy authorizes another path.
+- [ ] **MAINT-078**: When `maintenance_runs` is disabled, the system shall
+      stop admitting new optimization auto-queue elections while preserving
+      reports and without cancelling already-active repair runs.

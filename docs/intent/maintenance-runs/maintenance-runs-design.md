@@ -137,6 +137,87 @@ All three surfaces are gated by the `maintenance_runs` guard (below); none
 of the three may admit a maintenance run while the guard is off for the
 project's tenant.
 
+## Optimization Recipe Catalog and Bounded Repair Election
+
+The optimization family extends the existing recipe mechanism; it does not add
+an enum, a second run type, or a parallel repair workflow. The initial catalog
+contains performance, design / architecture, code duplication, security
+hardening, cost / resource efficiency, maintainability / readability, and test
+coverage & quality. A catalog entry declares its display name, objective,
+investigation instructions, evidence collectors, validation guidance, and
+optional metric hints. Adding a type is a catalog change. An unknown or
+unmapped selected value becomes a custom-objective run, preserving the
+free-text route rather than rejecting an otherwise valid investigation.
+
+The UI, authenticated API, and MCP start contracts expose the same catalog
+selection and record it in the immutable maintenance-run snapshot. Selection
+composes with optional scope and guidance; it does not make scope an objective
+or loosen the existing start authorization. #4493 owns that catalog/menu
+delivery. #4494 owns the first executable recipes — code duplication,
+maintainability/readability, and prompt-first performance — and #4496 owns the
+staged security, cost/resource, design/architecture, and test-quality recipes.
+#4492 is tracking and acceptance coordination only, not an implementation
+prerequisite or a source of runtime authorization.
+
+Recipe execution retains the report contract. Evidence collectors may identify
+structural candidates, but semantic judgments — including whether a candidate
+is actionable, its recommendation, counterevidence, and confidence assessment
+— are requested through `agent_harness` with a structured response schema.
+Tool confidence is provenance, not semantic authorization. Code may validate
+the response schema and rubric revision, persist evidence, calculate budgets,
+and apply policy gates; it must not derive semantic confidence from text,
+keywords, counts, or raw tool scores. The policy deliberately leaves confidence
+calibration and any numeric scale undefined: the elected threshold and the
+agent response use the same versioned rubric, and deterministic comparison is
+valid only within that rubric revision.
+
+An authorized user may elect the #4495 bounded auto-queue policy when starting
+one optimization run. The election is opt-in and off by default; omission is
+exactly report-only behavior. It captures the selected threshold, rubric
+revision, and explicit per-repair cost/time caps alongside the run snapshot.
+After report completion, code may submit only a qualifying, non-security,
+open finding through the existing #4331 selected-finding repair pathway. Before
+submission it deterministically confirms: the guard still permits new work;
+the election and calling principal are authorized; the report/finding identity
+and rubric match the snapshot; the assessment meets the elected threshold;
+the approved finding scope has not expanded; the per-repair budget is present;
+and no repair lineage already exists for that canonical finding identity.
+
+Every auto-queued repair records source report and finding provenance. It uses
+the normal repair-checkout revalidation contract; a changed target revision
+blocks application of the recommendation until revalidation succeeds. A failed
+or exhausted revalidation/repair is visible with retained evidence, never
+silently discarded or retried without the existing bounded policy. Security
+findings are always report-only plus manual selection until a separately
+accepted security-repair policy says otherwise. Disabling `maintenance_runs`
+prevents future auto-queue admissions but neither deletes reports nor cancels
+already-active repair runs.
+
+### Preparation and acceptance boundary
+
+This is a preparation artifact tracked by [#4636](https://github.com/viamin/paid/issues/4636).
+It reconciles the owner decisions recorded by [#4495](https://github.com/viamin/paid/issues/4495)
+without treating that issue agreement as acceptance of this revised LID arrow.
+The precise HLD/LLD/EARS revisions require owner acceptance and merge before
+any child implementation proceeds. Until then, the preparation PR must use a
+`Tracks #4636` reference and #4636 remains open with an Inbox decision asking
+the owner to accept or amend this policy; no rollout follows from preparation.
+
+### Delivery mapping
+
+| Scoped claim | EARS claims | Executable delivery |
+| --- | --- | --- |
+| Extensible catalog, seven curated types, equivalent entry surfaces, snapshot retention | MAINT-019, MAINT-030–032 | [#4493](https://github.com/viamin/paid/issues/4493) |
+| Duplication, maintainability/readability, and prompt-first performance recipes with evidence and coverage truth | MAINT-033, MAINT-035 | [#4494](https://github.com/viamin/paid/issues/4494) |
+| Per-run opt-in election, same-rubric assessment, deterministic gates, revalidation, budget, and idempotency | MAINT-034, MAINT-074–076, MAINT-078 | [#4495](https://github.com/viamin/paid/issues/4495) |
+| Security default-deny and the staged cost/resource, design/architecture, and test-quality recipes | MAINT-031, MAINT-033, MAINT-035, MAINT-077 | [#4496](https://github.com/viamin/paid/issues/4496) |
+
+[#4492](https://github.com/viamin/paid/issues/4492) is the tracking umbrella
+and final acceptance audit only. It neither implements these claims nor
+authorizes them. All four executable deliveries remain independently blocked
+on this accepted preparation (#4636), base RDR-075 acceptance, and the
+existing RDR-075 dependencies.
+
 ## Run-Outcome Contract
 
 A maintenance run's terminal report outcome is one of exactly five values,
@@ -208,6 +289,9 @@ shipped code in
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
 | Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Optimization recipe extension | Data catalog on the existing maintenance recipe contract | New run goal or enum-backed type list | Recipes differ in objective and evidence plan, not lifecycle. A catalog preserves custom questions and makes new types additive (#4493). |
+| Auto-queue confidence policy | `agent_harness` structured assessment plus a same-rubric deterministic threshold gate | Tool score threshold; code-derived semantic score; fixed calibrated number | Semantic confidence is an AI assessment under ZFC. Code can enforce declared policy without pretending that analyzer output or an invented number establishes meaning (#4495). |
+| Security repair automation | Manual selection only | Include security in the optimization auto-queue election | Security repair authority needs a dedicated accepted policy; default deny preserves the base report-only boundary (#4495, #4496). |
 
 ## Open Questions & Future Decisions
 
@@ -236,6 +320,10 @@ shipped code in
    live execution-environment artifact before an implementation uses this
    candidate path. The handoff audit's host-only commands are not evidence for
    this decision.
+6. Owner acceptance of the optimization catalog and bounded auto-queue policy
+   revision — #4636 remains open until the canonical HLD/LLD/EARS revision is
+   accepted and merged; record the resulting Inbox decision before any
+   implementation issue proceeds.
 
 ## What This Is Not
 
@@ -251,6 +339,13 @@ shipped code in
 ## References
 
 - [RDR-075 draft (PR #4308)](https://github.com/viamin/paid/pull/4308)
+- [#4636](https://github.com/viamin/paid/issues/4636) — optimization recipe
+  and bounded-repair policy preparation / owner acceptance
+- [#4492](https://github.com/viamin/paid/issues/4492) — tracking umbrella
+  (not an executable prerequisite), with [#4493](https://github.com/viamin/paid/issues/4493),
+  [#4494](https://github.com/viamin/paid/issues/4494),
+  [#4495](https://github.com/viamin/paid/issues/4495), and
+  [#4496](https://github.com/viamin/paid/issues/4496) as the mapped deliveries
 - [RDR-073: Marketplace Tool Sidecars](../../rdrs/RDR-073-marketplace-tool-sidecars.md)
   and its [LLD](../marketplace-tool-sidecars/marketplace-tool-sidecars-design.md)
 - [layered-verification LLD](../layered-verification/layered-verification-design.md)

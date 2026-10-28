@@ -249,6 +249,50 @@ links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
 outside the initial scope and requires a separately approved policy.
 
+### Optimization recipes and proposed bounded auto-queue policy
+
+The optimization family is a maintenance-recipe catalog, not a distinct
+maintenance lifecycle. Its initial curated entries are performance, design /
+architecture, code duplication, security hardening, cost / resource
+efficiency, maintainability / readability, and test coverage & quality. Each
+entry supplies its objective, investigation instructions, evidence collectors,
+validation guidance, and optional metric hints. A selection is persisted with
+the existing objective/scope/guidance/revision snapshot; an unmapped selection
+remains a valid custom-objective investigation rather than an admission error.
+
+The first executable recipe deliverables are code duplication,
+maintainability/readability, and prompt-first performance. The remaining
+security, cost/resource, design/architecture, and test-quality entries are
+staged follow-ons. Tool evidence and prompt-only paths have the same honest
+coverage contract: a missing planned check is visible as partial coverage, and
+the absence of a credible tool is recorded rather than represented as tool
+verification.
+
+The owner-recorded policy proposal for this family is deliberately narrower
+than a general automatic-repair authority. A user may elect auto-queue on one
+run at admission; it is off by default and is neither a tenant-wide nor a
+recipe default. The election captures a confidence threshold and explicit
+per-repair cost/time limits. `agent_harness` performs the semantic assessment
+and returns a structured confidence assessment with its rubric revision;
+application code does not infer confidence from text, tool scores, or
+keywords. It deterministically verifies the response shape and rubric,
+compares the assessment with the elected threshold, enforces authorization,
+budgets, idempotency, category exclusion, and revision revalidation, then
+uses the existing selected-finding repair pathway. This does not define a
+calibrated numeric confidence scale or substitute tool confidence for the
+agent's assessment.
+
+An elected auto-queue may create at most one bounded repair lineage for a
+canonical finding identity and only after the report is complete. It preserves
+the source report/finding provenance and the approved finding scope. A moved
+repair target requires revalidation before a recommendation is applied;
+revalidation failure or budget exhaustion remains visible and does not silently
+drop or expand the work. Security-category findings are manual-selection-only
+and default-denied from auto-queue until a dedicated policy is accepted. This
+proposal remains documentation-only, behind the existing `maintenance_runs`
+guard when implemented, and does not authorize rollout or alter the base
+report-only contract.
+
 ### PR integration
 
 The evidence and verification components should be reusable for PR audits.
@@ -349,6 +393,17 @@ language; only its final audit closes it.
 - [#4332](https://github.com/viamin/paid/issues/4332): Schedule opt-in recurring maintenance with budgets and overlap prevention
 - [#4333](https://github.com/viamin/paid/issues/4333): Reuse maintenance evidence for advisory PR audits
 - [#4334](https://github.com/viamin/paid/issues/4334): Validate and close out general maintenance runs
+- [#4492](https://github.com/viamin/paid/issues/4492): Tracking umbrella for
+  optimization recipes and optional bounded auto-queue; not an executable
+  prerequisite
+- [#4493](https://github.com/viamin/paid/issues/4493): Optimization recipe
+  catalog and curated type menu
+- [#4494](https://github.com/viamin/paid/issues/4494): First optimization
+  recipes (duplication, maintainability, performance)
+- [#4495](https://github.com/viamin/paid/issues/4495): Opt-in auto-queue
+  policy for bounded repair runs
+- [#4496](https://github.com/viamin/paid/issues/4496): Staged follow-on
+  optimization recipes
 
 ## Validation
 
