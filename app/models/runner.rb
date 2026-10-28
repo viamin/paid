@@ -261,6 +261,20 @@ class Runner < ApplicationRecord
       .transform_values { |v| Integer(v, exception: false) || v }
   end
 
+  # @spec RUNNER-ZDR-001 RUNNER-ZDR-003 RUNNER-ZDR-004 RUNNER-ZDR-005
+  def zdr_configuration
+    {
+      "enabled" => zdr_enabled?,
+      "provenance" => zdr_provenance
+    }
+  end
+
+  def zdr_provenance
+    return "not_requested" unless zdr_enabled?
+
+    openrouter_provider_routed? ? "openrouter_enforced" : "user_declared"
+  end
+
   # --- Time-window restrictions (@spec RUNNER-SCHED-001..010) ---
 
   def time_window_check(now: Time.current)
@@ -1933,7 +1947,7 @@ class Runner < ApplicationRecord
     end
 
     if project.present? && api_config[:service_type] == OPENROUTER_FREE_MODEL_PROVIDER
-      provider_metadata["openrouter"] = provider_metadata.fetch("openrouter", {}).merge(build_provider_routing(project))
+      provider_metadata["openrouter"] = provider_metadata.fetch("openrouter", {}).merge(build_provider_routing(project, runner: self))
     end
 
     provider_metadata.any? ? { "provider" => provider_metadata } : {}

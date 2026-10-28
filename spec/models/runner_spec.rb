@@ -4,6 +4,39 @@ require "rails_helper"
 require "securerandom"
 
 RSpec.describe Runner do
+  describe "#zdr_configuration" do
+    # @spec RUNNER-ZDR-001
+    it "defaults to a disabled declaration" do
+      runner = build(:runner)
+
+      expect(runner.zdr_configuration).to eq("enabled" => false, "provenance" => "not_requested")
+    end
+
+    # @spec RUNNER-ZDR-002, RUNNER-ZDR-004
+    it "allows and identifies a user declaration for a non-OpenRouter runner" do
+      runner = build(:runner, zdr_enabled: true)
+
+      expect(runner).to be_valid
+      expect(runner.zdr_configuration).to eq("enabled" => true, "provenance" => "user_declared")
+    end
+
+    # @spec RUNNER-ZDR-003, RUNNER-ZDR-005
+    it "derives provenance from the current credential rather than persisting it" do
+      user = create(:user)
+      openrouter_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      anthropic_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
+      runner = build(:runner, user: user, runner_key: "opencode", auth_type: "api_key",
+        provider_api_key: openrouter_key, zdr_enabled: true,
+        config: { "opencode" => { "model" => "claude-sonnet" } })
+
+      expect(runner.zdr_configuration).to eq("enabled" => true, "provenance" => "openrouter_enforced")
+
+      runner.provider_api_key = anthropic_key
+
+      expect(runner.zdr_configuration).to eq("enabled" => true, "provenance" => "user_declared")
+    end
+  end
+
   describe ".update_fallback_flags" do
     let(:user) { create(:user) }
 
@@ -1924,6 +1957,18 @@ RSpec.describe Runner do
         "GEMINI_CLI_CUSTOM_HEADERS"
       )
       expect(runtime.metadata[:config]).not_to have_key("provider")
+    end
+
+    # @spec RUNNER-ZDR-003
+    it "serializes an enabled OpenRouter ZDR declaration into request routing metadata" do
+      runner.update!(zdr_enabled: true)
+      project = create(:project, account: user.account, data_classification: "internal")
+
+      runtime = runner.agent_harness_runner_runtime(project: project)
+
+      expect(runtime.metadata[:config]["provider"]).to eq(
+        "openrouter" => { data_collection: "allow", zdr: true }
+      )
     end
 
     it "extends opencode's built-in zai-coding-plan provider with the configured glm model" do

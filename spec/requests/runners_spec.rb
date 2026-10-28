@@ -198,6 +198,16 @@ RSpec.describe "Runners" do
         expect(response.body).to include("Chat")
       end
 
+      # @spec RUNNER-ZDR-006
+      it "shows ZDR provenance and provider-agreement guidance" do
+        user.runners.create!(runner_key: "cursor", zdr_enabled: true)
+
+        get runners_path
+
+        expect(response.body).to include("User-declared ZDR")
+        expect(response.body).to include("You are responsible for verifying this provider's zero data retention agreement and configuration.")
+      end
+
       # @spec RUNNER-USAGE-011
       it "does not offer runners disabled for agent runs in the fallback order list" do
         allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
@@ -807,6 +817,20 @@ RSpec.describe "Runners" do
 
       expect(response).to redirect_to(runners_path)
       expect(user.runners.find_by(runner_key: "cursor")).to have_attributes(enabled_for_chat: false)
+    end
+
+    # @spec RUNNER-ZDR-002, RUNNER-ZDR-006
+    it "persists an authorized runner ZDR declaration and records its audit configuration" do
+      allow(RunnerSupport).to receive(:addable_runner_key?).and_call_original
+      allow(RunnerSupport).to receive(:addable_runner_key?).with("cursor").and_return(true)
+
+      post runners_path, params: { runner: { runner_key: "cursor", zdr_enabled: true } }
+
+      runner = user.runners.find_by!(runner_key: "cursor")
+      expect(runner.zdr_configuration).to eq("enabled" => true, "provenance" => "user_declared")
+      expect(user.account.account_activity_events.order(:id).last.metadata).to include(
+        "zdr_configuration" => { "enabled" => true, "provenance" => "user_declared" }
+      )
     end
 
     it "keeps a literal legacy OpenCode model id of custom when the catalog form flag is off" do
@@ -1542,6 +1566,26 @@ RSpec.describe "Runners" do
       expect(response).to redirect_to(runners_path)
       expect(runner.reload.enabled_for_agent_runs).to be(false)
       expect(runner.reload.enabled_for_chat).to be(false)
+    end
+
+    # @spec RUNNER-ZDR-002, RUNNER-ZDR-006
+    it "updates ZDR only through the runner owner's authorized endpoint" do
+      runner = user.runners.create!(runner_key: "cursor")
+
+      patch runner_path(runner), params: { runner: { zdr_enabled: true } }
+
+      expect(response).to redirect_to(runners_path)
+      expect(runner.reload.zdr_enabled?).to be(true)
+    end
+
+    # @spec RUNNER-ZDR-006
+    it "rejects a ZDR update for another user's runner" do
+      runner = create(:runner, user: create(:user), runner_key: "cursor")
+
+      patch runner_path(runner), params: { runner: { zdr_enabled: true } }
+
+      expect(response).to have_http_status(:not_found)
+      expect(runner.reload.zdr_enabled?).to be(false)
     end
 
     it "persists the agent_co_author_trailer on update" do

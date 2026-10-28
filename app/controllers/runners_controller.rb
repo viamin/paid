@@ -91,7 +91,7 @@ class RunnersController < ApplicationController
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
-      audit_event("runner.created", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
+      audit_event("runner.created", metadata: runner_audit_metadata)
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_created_notice
       else
@@ -119,7 +119,7 @@ class RunnersController < ApplicationController
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
-      audit_event("runner.updated", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
+      audit_event("runner.updated", metadata: runner_audit_metadata)
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_updated_notice
       else
@@ -211,6 +211,14 @@ class RunnersController < ApplicationController
 
   private
 
+  def runner_audit_metadata
+    {
+      runner_name: @runner.display_name,
+      runner_key: @runner.runner_key,
+      zdr_configuration: @runner.zdr_configuration
+    }
+  end
+
   # Validates auth_type against the allowlist, defaulting to "subscription".
   # Extracted to make it clear to static analyzers (CodeQL) that the raw
   # query param is never used directly — only the sanitized value propagates.
@@ -234,6 +242,7 @@ class RunnersController < ApplicationController
       :agent_co_author_trailer,
       :monthly_token_budget,
       :weight,
+      :zdr_enabled,
       :model_selection_choice,
       :custom_model_id
     ]

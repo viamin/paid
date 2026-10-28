@@ -204,6 +204,17 @@
     <p class="mt-1 text-xs text-gray-500">Set a monthly token budget for automatic weight balancing. Leave empty for unlimited (quota balancing will be disabled for this runner).</p>
   </div>
 
+  <div class="rounded-lg border border-sky-200 bg-sky-50 p-4">
+    <div class="flex items-start gap-3">
+      <%= form.check_box :zdr_enabled, class: "mt-1 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+      <div>
+        <%= form.label :zdr_enabled, "Require zero data retention (ZDR)", class: "block text-sm font-medium text-gray-900" %>
+        <p class="mt-1 text-xs text-gray-600">OpenRouter sends this as request-time routing metadata. Other providers are recorded as your declaration only.</p>
+        <p class="mt-1 text-xs text-gray-600">You are responsible for verifying this provider's zero data retention agreement and configuration.</p>
+      </div>
+    </div>
+  </div>
+
   <% if runner_model_policy_form_enabled %>
     <div data-runner-form-target="modelSettings" <% unless feature_flagged_model_form && is_api_key %>hidden<% end %>>
       <% feature_flagged_model_form_runner_keys.each do |runner_key| %>

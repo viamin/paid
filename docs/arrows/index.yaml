@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-24
+last_updated: 2026-10-28
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,14 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  runner-zdr:
+    title: Runner Zero Data Retention
+    path: docs/intent/runner-zdr/runner-zdr-design.md
+    specs: docs/intent/runner-zdr/runner-zdr-specs.md
+    parent: PAID
+    taxonomy: configuration
+    status: OK
+    next: "Keep provider provenance derived from the active runner credential as execution integrations expand."
   dependency-declarations:
     title: Dependency Declarations
     path: docs/intent/dependency-declarations/dependency-declarations-design.md

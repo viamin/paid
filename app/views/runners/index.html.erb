@@ -41,6 +41,9 @@
     <div class="mb-4 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600">
       Test Runner uses the same configured runner auth path as normal execution, so results here should match real run behavior.
     </div>
+    <div class="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900">
+      ZDR status describes inference-provider retention, not Paid run-data retention. You are responsible for verifying this provider's zero data retention agreement and configuration.
+    </div>
   <% end %>
 
   <div class="overflow-x-auto rounded-lg bg-white shadow">
@@ -50,6 +53,7 @@
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Runner</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Auth</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">ZDR</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Agent Runs</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Chat</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500" title="Fallback applies only to the uses enabled for each runner (agent runs, chat). It never enables a use on its own.">Fallback</th>
@@ -98,6 +102,16 @@
                 <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Subscription</span>
               <% else %>
                 <span class="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">API Key</span>
+              <% end %>
+            </td>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              <% case runner.zdr_provenance %>
+              <% when "openrouter_enforced" %>
+                <span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">OpenRouter-enforced ZDR</span>
+              <% when "user_declared" %>
+                <span class="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">User-declared ZDR</span>
+              <% else %>
+                <span class="text-gray-400">—</span>
               <% end %>
             </td>
             <td class="px-4 py-3 text-sm text-gray-700">
