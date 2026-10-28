@@ -46,3 +46,8 @@
   `Runners::ModelOptions` model entries (highest-capability compatible entry
   per tier) so tier defaults and dropdown options cannot diverge.
   *Code:* `Runners::DefaultTierModelIds`.
+
+- [x] **RUNNER-MODEL-OPTIONS-007** — When an OpenRouter caller requests
+  `zdr_only: true`, the system SHALL retain only active
+  `openrouter_zdr_eligible` catalog rows and SHALL still apply the existing
+  runner compatibility filter and custom-model sentinel.

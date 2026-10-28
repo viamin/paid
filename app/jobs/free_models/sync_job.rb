@@ -15,6 +15,7 @@ module FreeModels
     # @spec FREE-MODEL-SYNC-008
     def perform
       FreeModels::Sync.call
+      OpenrouterZdr::Sync.call
     end
   end
 end

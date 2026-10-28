@@ -7,10 +7,12 @@ RSpec.describe FreeModels::SyncJob do
   describe "#perform" do
     it "delegates to the sync service" do
       allow(FreeModels::Sync).to receive(:call)
+      allow(OpenrouterZdr::Sync).to receive(:call)
 
       described_class.perform_now
 
       expect(FreeModels::Sync).to have_received(:call)
+      expect(OpenrouterZdr::Sync).to have_received(:call)
     end
   end
 

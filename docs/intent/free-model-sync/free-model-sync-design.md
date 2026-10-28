@@ -29,6 +29,8 @@ paths and RDRs.
 - Preserve weak-quality models in the catalog, but mark them so default runner
   selection can avoid them.
 - Keep the sync idempotent and mark no-longer-listed synced models inactive.
+- Maintain a separately refreshable OpenRouter ZDR candidate catalog from the
+  advertised endpoint list, including both paid and free model ids.
 
 ## Design
 
@@ -98,6 +100,37 @@ The job is a daily GoodJob cron entry. It:
 - enforces single-flight concurrency
 - delegates its business work entirely to `FreeModels::Sync`
 
+### `OpenrouterZdr::Sync`
+
+The endpoint-derived ZDR catalog is deliberately independent of the free
+catalog. `OpenrouterZdr::Client` fetches `GET /api/v1/endpoints/zdr` and
+requires its top-level `data` value to be an array. Each response item is an
+advertised eligible endpoint; `Sync` groups them by `model_id`, then upserts
+the concrete model catalog rows and stores representative endpoint metadata.
+It does not infer eligibility from a model price, vendor, or provider-wide
+policy.
+
+Rows receive `openrouter_zdr_eligible: true` only after a successful endpoint
+refresh and retain their ordinary model metadata. New paid candidates are
+owned as `catalog_source: "openrouter_zdr_sync"`; an existing free-catalog,
+seeded, or manual row retains its owner while receiving the ZDR overlay.
+On a successful refresh, absent ids have their eligibility withdrawn and
+ZDR-owned rows are deactivated. The free sync's ownership and deactivation
+rules remain unchanged.
+
+`OpenrouterZdrCatalogState` records the latest attempt, latest successful
+refresh, and an explicit unavailable error. A malformed or failed response
+sets that unavailable state without modifying candidates or the last-success
+timestamp. Therefore a successful empty `data` array withdraws all eligibility
+while a failed request preserves last-known candidates and reports them as
+unavailable, never newly verified.
+
+`OpenrouterZdr::EligibleModels` exposes the eligible rows together with that
+freshness state. `Runners::ModelOptions` can request a ZDR-only OpenRouter
+option list; it applies the same active, runner-compatibility, capability, and
+normal catalog restrictions as ordinary options. This catalog is a setup hint:
+OpenRouter request-time `provider.zdr` routing remains the authority.
+
 ## Trace Notes
 
 - The provider stored on synced free rows is the upstream model-id prefix (for
@@ -105,3 +138,5 @@ The job is a daily GoodJob cron entry. It:
 - Catalog queries that mean “OpenRouter-synced free models” must therefore key
   off `catalog_source: "openrouter_sync"` plus `pricing_tier: "free"`, not a
   hard-coded provider string.
+- ZDR eligibility is endpoint-level and says nothing about Paid's own run-data
+  retention or an automatic model-selection profile.

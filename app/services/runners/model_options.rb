@@ -25,8 +25,8 @@ module Runners
     FREE_POLICY_RUNNER_KEYS = Runner::DIRECT_OUTBOUND_FREE_POLICY_RUNNER_KEYS
     FREE_POLICY_API_PROVIDER = "openrouter"
 
-    def self.call(runner_key:, api_provider:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE)
-      new(runner_key: runner_key, api_provider: api_provider, auth_type: auth_type).call
+    def self.call(runner_key:, api_provider:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE, zdr_only: false)
+      new(runner_key: runner_key, api_provider: api_provider, auth_type: auth_type, zdr_only:).call
     end
 
     # Batched sibling of .call for rendering every service type's dropdown for
@@ -34,18 +34,19 @@ module Runners
     # once for all +api_providers+ instead of once per provider, then reuses
     # the preloaded rows for each provider's ModelCompatibility pass.
     # @spec RUNNER-MODEL-OPTIONS-006
-    def self.call_by_provider(runner_key:, api_providers:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE)
+    def self.call_by_provider(runner_key:, api_providers:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE, zdr_only: false)
       providers = api_providers.map(&:to_s)
-      rows_by_provider = catalog_rows_by_provider(providers)
+      rows_by_provider = catalog_rows_by_provider(providers, zdr_only:)
       providers.index_with do |api_provider|
         new(runner_key: runner_key, api_provider: api_provider, auth_type: auth_type,
-          catalog_rows: rows_by_provider.fetch(api_provider, [])).call
+          catalog_rows: rows_by_provider.fetch(api_provider, []), zdr_only:).call
       end
     end
 
-    def self.catalog_rows_by_provider(api_providers) # @spec RUNNER-MODEL-OPTIONS-006
+    def self.catalog_rows_by_provider(api_providers, zdr_only: false) # @spec RUNNER-MODEL-OPTIONS-006
       relation = LlmModel.active.where(provider: api_providers)
       relation = relation.or(LlmModel.active.openrouter_synced) if api_providers.include?(FREE_POLICY_API_PROVIDER)
+      relation = relation.openrouter_zdr_eligible if zdr_only && api_providers.include?(FREE_POLICY_API_PROVIDER)
       rows = relation.order(Arel.sql("family ASC NULLS LAST")).by_capability.to_a
 
       api_providers.index_with { |api_provider| rows_for_provider(rows, api_provider) }
@@ -59,11 +60,12 @@ module Runners
     end
     private_class_method :rows_for_provider
 
-    def initialize(runner_key:, api_provider:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE, catalog_rows: nil)
+    def initialize(runner_key:, api_provider:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE, catalog_rows: nil, zdr_only: false)
       @runner_key = runner_key.to_s
       @api_provider = api_provider.to_s
       @auth_type = auth_type.to_s.presence || DefaultTierModelIds::DEFAULT_AUTH_TYPE
       @preloaded_catalog_rows = catalog_rows
+      @zdr_only = zdr_only
     end
 
     def call
@@ -75,6 +77,7 @@ module Runners
     attr_reader :runner_key, :api_provider, :auth_type
 
     def free_policy_entry # @spec RUNNER-MODEL-OPTIONS-004
+      return if @zdr_only
       return unless FREE_POLICY_RUNNER_KEYS.include?(runner_key) && api_provider == FREE_POLICY_API_PROVIDER
 
       Entry.new(value: FREE_POLICY_VALUE, label: FREE_POLICY_LABEL, kind: :free_policy)
@@ -98,7 +101,7 @@ module Runners
       Entry.new(value: LlmModel::CUSTOM_MODEL_OPTION, label: CUSTOM_MODEL_LABEL, kind: :custom)
     end
 
-    def catalog_rows # @spec RUNNER-MODEL-OPTIONS-003
+    def catalog_rows # @spec RUNNER-MODEL-OPTIONS-003 @spec RUNNER-MODEL-OPTIONS-007
       return @preloaded_catalog_rows if @preloaded_catalog_rows
 
       # Synced free models carry the upstream vendor slug in `provider` but
@@ -106,6 +109,7 @@ module Runners
       # dropdown alongside provider-scoped rows (e.g. the Pareto row).
       relation = LlmModel.active.by_provider(api_provider)
       relation = relation.or(LlmModel.active.openrouter_synced) if api_provider == FREE_POLICY_API_PROVIDER
+      relation = relation.openrouter_zdr_eligible if @zdr_only && api_provider == FREE_POLICY_API_PROVIDER
       relation.order(Arel.sql("family ASC NULLS LAST")).by_capability
     end
 

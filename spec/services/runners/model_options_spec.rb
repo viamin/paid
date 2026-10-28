@@ -122,6 +122,16 @@ RSpec.describe Runners::ModelOptions do
           %w[openrouter/pareto-code qwen/qwen3-coder deepseek/deepseek-chat-v3]
         )
       end
+
+      it "limits an explicit ZDR search to endpoint-eligible compatible rows" do # @spec RUNNER-MODEL-OPTIONS-007
+        eligible = LlmModel.find_by!(model_id: "qwen/qwen3-coder")
+        eligible.update!(openrouter_zdr_eligible: true)
+
+        result = described_class.call(runner_key: runner_key, api_provider: api_provider, auth_type: auth_type, zdr_only: true)
+
+        expect(result.select(&:model?).map(&:value)).to eq([ "qwen/qwen3-coder" ])
+        expect(result.last).to be_custom
+      end
     end
 
     context "with the free policy entry" do
