@@ -45,7 +45,9 @@ module ChatSessions
       persist_user_message
       # @spec CHAT-TURN-RECOVERY-001
       @chat_turn = ChatTurn.start!(chat_session: chat_session, user_message: transport_attempt_message)
-      raise ChatTurn::RecoveryRequiredError, "This turn already has durable activity and requires recovery." unless chat_turn.status == "pending"
+      unless chat_turn.claim_initial_attempt!
+        raise ChatTurn::RecoveryRequiredError, "This turn already has durable activity and requires recovery."
+      end
 
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks

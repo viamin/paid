@@ -83,11 +83,16 @@ This wrapping is the entire integration surface: `AgentLoop` and
 same wrapping technique.
 
 An at-least-once delivery retry for `ChatSessions::ProcessMessageJob` cannot
-bypass this contract: when it finds a turn for the same stream/user message
-that has moved beyond `pending`, `ChatSessions::SendMessage` raises
-`ChatTurn::RecoveryRequiredError` instead of rerunning the agent loop. A
-crash before any post-user-message activity leaves the turn `pending` and is
-safe to resume; all later retries use the claimed recovery path.
+bypass this contract: `ChatSessions::SendMessage` atomically claims the
+turn's initial `pending` state before entering the agent loop. Only the
+delivery whose compare-and-swap transitions the row to `streaming` may run;
+every overlapping or later delivery raises `ChatTurn::RecoveryRequiredError`.
+A later execution of the same GoodJob job that encounters this gate is a
+positive infrastructure-interruption signal: the prior execution ended
+without completing its claimed turn. The job durably classifies that turn as
+an infrastructure failure so the stalled-turn detector can use the bounded
+recovery path. A separate duplicate job on its first execution does not carry
+that evidence and cannot classify the turn.
 
 ## Detection
 
@@ -103,11 +108,11 @@ is skipped):
 
 ### Exemptions (AC2 — not falsely marked stalled)
 
-- **Pending confirmation** — `ChatTurn#awaiting_confirmation?` checks
-  `chat_session.messages.pending_tool_confirmations.exists?`. A write tool
-  awaiting a human's Approve/Deny is `AgentLoop`'s deliberate pause state
-  (RDR-028), not a hang — mirrors `AgentRun.awaiting_human_clarification`'s
-  exemption from `StaleRunDetectorJob`.
+- **Pending confirmation** — `ChatTurn#awaiting_confirmation?` checks pending
+  tool calls between this turn's triggering user message and the next user
+  message. A write tool awaiting a human's Approve/Deny is `AgentLoop`'s
+  deliberate pause state (RDR-028), not a hang; an older turn's still-pending
+  confirmation cannot exempt a newer turn from stall detection.
 - **Already resolved** — re-checking `last_activity_at` under the lock
   catches a turn that completed/failed in the gap between the scope read and
   the lock.
@@ -163,8 +168,10 @@ is deliberately conservative about this:
   ordinary in-flight turn and an ambiguous silent/model stop remain
   unclassified and are never retried automatically. The checkpoint may only
   be written after a failure boundary has positively classified the failure
-  as replay-safe infrastructure loss; entering the provider loop is not such
-  evidence. **No current tool
+  as replay-safe infrastructure loss. A repeated execution of the same
+  `ProcessMessageJob` encountering the already-claimed turn is the current
+  production signal; entering the provider loop or a separate first-delivery
+  duplicate is not such evidence. **No current tool
   opts in** to broader automatic replay safety, so any turn that touched a
   write tool always falls through to the manual path below. A future tool that
   wants to participate in automatic recovery for turns it touched must declare

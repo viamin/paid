@@ -36,18 +36,24 @@ class ChatTurn < ApplicationRecord
   end
 
   def self.start!(chat_session:, user_message:)
-    turn = find_by(user_message_id: user_message.id)
-    return turn if turn
-
     now = Time.current
-    create!(
-      chat_session: chat_session,
-      user_message: user_message,
-      status: "pending",
-      started_at: now,
-      last_activity_at: now,
-      attempt_heartbeat_at: now
+    create_or_find_by!(user_message: user_message) do |turn|
+      turn.chat_session = chat_session
+      turn.status = "pending"
+      turn.started_at = now
+      turn.last_activity_at = now
+      turn.attempt_heartbeat_at = now
+    end
+  end
+
+  # @spec CHAT-TURN-RECOVERY-001
+  def claim_initial_attempt!
+    rows = self.class.where(id: id, status: "pending").update_all(
+      status: "streaming",
+      attempt_heartbeat_at: Time.current
     )
+    reload
+    rows.positive?
   end
 
   def record_activity!(message)
@@ -79,7 +85,10 @@ class ChatTurn < ApplicationRecord
 
   # @spec CHAT-TURN-RECOVERY-004
   def classify_replay_safe_infrastructure_failure!
-    update!(metadata: metadata.merge("recovery_classification" => "infrastructure_failure"))
+    with_lock do
+      reload
+      update!(metadata: metadata.merge("recovery_classification" => "infrastructure_failure"))
+    end
   end
 
   def complete!(assistant_message)
@@ -159,7 +168,10 @@ class ChatTurn < ApplicationRecord
   end
 
   def awaiting_confirmation?
-    chat_session.messages.pending_tool_confirmations.exists?
+    confirmations = chat_session.messages.pending_tool_confirmations.where("chat_messages.id > ?", user_message_id)
+    next_user_message_id = chat_session.messages.where(role: "user").where("id > ?", user_message_id).minimum(:id)
+    confirmations = confirmations.where("chat_messages.id < ?", next_user_message_id) if next_user_message_id
+    confirmations.exists?
   end
 
   def expected_long_running?

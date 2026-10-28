@@ -49,6 +49,18 @@ RSpec.describe ChatTurns::StallDetectorJob do
       expect(turn.reload.status).to eq("streaming")
     end
 
+    it "marks a newer stale turn when only an older turn awaits confirmation" do
+      create(:chat_message, chat_session: chat_session, role: "user")
+      create(:chat_message, :tool_call, chat_session: chat_session, tool_status: "pending")
+      newer_user_message = create(:chat_message, chat_session: chat_session, role: "user")
+      turn = create(:chat_turn, :write_tool_dispatched, chat_session: chat_session,
+        user_message: newer_user_message, last_activity_at: (threshold + 60).seconds.ago)
+
+      described_class.perform_now
+
+      expect(turn.reload.status).to eq("stalled")
+    end
+
     it "does not mark a turn as stalled during its documented long-running window" do
       turn = create(:chat_turn, chat_session: chat_session,
         last_activity_at: (threshold + 60).seconds.ago,

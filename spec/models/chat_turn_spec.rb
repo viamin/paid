@@ -31,6 +31,18 @@ RSpec.describe ChatTurn do
     end
   end
 
+  describe "#claim_initial_attempt!" do
+    # @spec CHAT-TURN-RECOVERY-001
+    it "allows only one caller to claim a pending turn" do
+      turn = described_class.start!(chat_session: chat_session, user_message: user_message)
+      competing_copy = described_class.find(turn.id)
+
+      expect(turn.claim_initial_attempt!).to be(true)
+      expect(competing_copy.claim_initial_attempt!).to be(false)
+      expect(turn.reload.status).to eq("streaming")
+    end
+  end
+
   describe "#record_activity!" do
     let(:turn) { described_class.start!(chat_session: chat_session, user_message: user_message) }
 
@@ -166,12 +178,24 @@ RSpec.describe ChatTurn do
   end
 
   describe "#awaiting_confirmation?" do
-    let(:turn) { create(:chat_turn, chat_session: chat_session) }
+    let(:turn) { create(:chat_turn, chat_session: chat_session, user_message: user_message) }
 
-    it "is true when the session has a pending tool confirmation" do
+    # @spec CHAT-TURN-RECOVERY-002
+    it "is true when this turn has a pending tool confirmation" do
+      turn
       create(:chat_message, :tool_call, chat_session: chat_session, tool_status: "pending")
 
       expect(turn.awaiting_confirmation?).to be(true)
+    end
+
+    it "is false when only an older turn has a pending tool confirmation" do
+      older_user_message = create(:chat_message, chat_session: chat_session, role: "user")
+      create(:chat_message, :tool_call, chat_session: chat_session, tool_status: "pending")
+      newer_user_message = create(:chat_message, chat_session: chat_session, role: "user")
+      newer_turn = create(:chat_turn, chat_session: chat_session, user_message: newer_user_message)
+
+      expect(older_user_message.id).to be < newer_user_message.id
+      expect(newer_turn.awaiting_confirmation?).to be(false)
     end
 
     it "is false otherwise" do

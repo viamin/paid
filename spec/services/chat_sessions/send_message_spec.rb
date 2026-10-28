@@ -77,6 +77,20 @@ RSpec.describe ChatSessions::SendMessage do
       }.to raise_error(ChatTurn::RecoveryRequiredError)
     end
 
+    # @spec CHAT-TURN-RECOVERY-001
+    it "does not enter the agent loop when another delivery claimed the pending turn" do
+      user_message = create(:chat_message, chat_session: chat_session,
+        role: "user", content: "Hello", metadata: { "stream_message_id" => "overlap-1" })
+      create(:chat_turn, chat_session: chat_session, user_message: user_message)
+
+      expect(llm_client).not_to receive(:call)
+
+      expect {
+        described_class.call(chat_session: chat_session, content: "Hello",
+          stream_message_id: "overlap-1", llm_client: llm_client)
+      }.to raise_error(ChatTurn::RecoveryRequiredError)
+    end
+
     # @spec PARTIAL-CLOSEOUT-017 — a conversational "yes" must never be
     # treated, displayed, or replayed as approval of a pending write tool.
     describe "with a pending write-tool confirmation" do

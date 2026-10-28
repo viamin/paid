@@ -13,8 +13,11 @@
   subsequently persisted message (user, assistant, tool call, or tool
   result) for that turn; an unpersisted streaming chunk SHALL instead refresh
   a separate, throttled durable attempt heartbeat without becoming a
-  transcript checkpoint.
-  *Code:* `ChatTurn.start!`, `ChatTurn#record_activity!`, `ChatTurn#heartbeat!`,
+  transcript checkpoint; before entering the agent loop, the system SHALL
+  atomically claim the turn's initial `pending` state so only one overlapping
+  delivery can execute it.
+  *Code:* `ChatTurn.start!`, `ChatTurn#claim_initial_attempt!`,
+  `ChatTurn#record_activity!`, `ChatTurn#heartbeat!`,
   `ChatSessions::SendMessage#on_message_persisted`,
   `ChatSessions::ResolveToolCall#on_message_persisted`.
   *Test:* `spec/models/chat_turn_spec.rb`,
@@ -27,8 +30,9 @@
   active-attempt heartbeat are older than the configured threshold
   (`CHAT_TURN_STALL_THRESHOLD_SECONDS`), and
   SHALL NOT mark it stalled — and SHALL NOT represent it as `completed` —
-  while a write-tool confirmation on its session is still pending
-  (`ChatTurn#awaiting_confirmation?`).
+  while a write-tool confirmation belonging to that turn is still pending
+  (`ChatTurn#awaiting_confirmation?`); a confirmation belonging to an older
+  turn SHALL NOT exempt a newer stale turn.
   *Code:* `ChatTurns::StallDetectorJob#recover_or_notify`.
   *Test:* `spec/jobs/chat_turns/stall_detector_job_spec.rb`.
 
@@ -56,10 +60,13 @@
   rather than replaying the triggering message; the system SHALL durably write
   that infrastructure classification only after positively identifying a
   replay-safe infrastructure failure (never merely because a provider loop
-  started), and a
+  started); a repeated execution of the same `ProcessMessageJob` that
+  encounters its already-claimed turn SHALL write this classification, while
+  a separate first-execution duplicate SHALL NOT, and a
   failed recovery SHALL terminate the client stream and replace any in-progress
   recovery notice with a durable failure notice.
   *Code:* `ChatTurn#eligible_for_automatic_recovery?`,
+  `ChatSessions::ProcessMessageJob`,
   `ChatTurns::StallDetectorJob#attempt_automatic_recovery`,
   `ChatTurns::Resume`, `ChatTurns::RecoverStalledTurnJob`.
   *Test:* `spec/models/chat_turn_spec.rb`,
