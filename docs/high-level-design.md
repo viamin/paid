@@ -213,6 +213,23 @@ lets the control plane swap models and providers without scattered call sites.
 The secrets proxy forwards authenticated requests from containers; it is
 infrastructure, not an application-level LLM interface.
 
+## Approach: Delivery-health Supervision Is Observation Before Authority
+
+Paid may assemble account-scoped delivery health from sanitized factual
+statistics and ask an LLM, through `agent_harness`, to identify semantic
+patterns local rules miss. The snapshot excludes user/repository content,
+logs, prompts, raw errors, credentials, and secrets. Code owns aggregation,
+validation, authorization, freshness, idempotency, and policy; the LLM owns
+semantic classification and recommendations.
+
+The initial supervisor is default-off and observation-only. Findings become
+durable operator incidents, not direct mutations. Any autonomous action needs
+a later reviewed decision, explicit owner grant, narrow live preconditions,
+audit, expiry/recovery, and rollback. Existing guardrails, queue priority,
+admission, and recovery components remain authoritative. See
+[`docs/intent/operational-supervisor/`](intent/operational-supervisor/) and
+[RDR-063](rdrs/RDR-063-operational-supervisor-delivery-health.md).
+
 ## Tenets
 
 The operating principles that tie the approaches above to day-to-day work:
