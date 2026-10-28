@@ -14,9 +14,9 @@ application must fetch OpenRouter's live free-model list, classify the
 models into Paid's existing tier semantics, and keep the catalog current as
 models appear, expire, or disappear.
 
-This segment covers the daily synchronization path only. Runner execution,
-rotation, and data-classification routing remain covered by their existing code
-paths and RDRs.
+This segment covers the daily synchronization paths only. Runner execution,
+rotation, and request-time data-classification routing remain covered by their
+existing code paths and RDRs.
 
 ## Goals
 
@@ -29,6 +29,8 @@ paths and RDRs.
 - Preserve weak-quality models in the catalog, but mark them so default runner
   selection can avoid them.
 - Keep the sync idempotent and mark no-longer-listed synced models inactive.
+- Maintain a separate snapshot of the OpenRouter endpoint-level ZDR catalog,
+  including both paid and free model IDs, for an explicit setup-time query.
 
 ## Design
 
@@ -97,6 +99,36 @@ The job is a daily GoodJob cron entry. It:
 - runs on the maintenance queue
 - enforces single-flight concurrency
 - delegates its business work entirely to `FreeModels::Sync`
+
+### `OpenRouter::ZdrSync`
+
+OpenRouter's `GET /api/v1/endpoints/zdr` response is an endpoint catalog, not
+a model catalog: several advertised ZDR endpoints can map to the same
+`model_id`. `OpenRouter::ZdrSync` groups the response by that concrete model
+ID, stores every advertised endpoint as entry metadata, and materializes a
+catalog row only when no existing `LlmModel` owns that ID. The materialized row
+uses `catalog_source: "openrouter_zdr_sync"`; existing seeded and free-sync
+rows remain owned by their respective synchronizers.
+
+An eligibility entry links each eligible model to the singleton ZDR catalog
+snapshot. A successful refresh atomically replaces those entries and records a
+success timestamp, including when the response is a valid empty array. It
+deactivates only materialized ZDR rows whose eligibility was withdrawn. An
+unavailable, malformed, or failed refresh instead records the failed attempt
+and error, preserves the previous entries, and marks the snapshot unavailable.
+
+`OpenRouterZdrCatalog#eligible_models` is the query interface for setup code.
+It returns active catalog rows with advertised eligibility and exposes the
+snapshot freshness fields alongside them. Consumers retain their normal
+compatibility, capability, and project-policy filtering; the catalog is only a
+candidate list. `provider.zdr` remains the request-time authority.
+
+### Boundaries
+
+ZDR classifies OpenRouter inference endpoints only. It neither asserts Paid's
+own retention behavior nor creates an automatic ZDR runner profile. Pricing is
+stored as endpoint metadata and can label a materialized model for display,
+but never determines ZDR eligibility.
 
 ## Trace Notes
 

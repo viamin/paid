@@ -122,6 +122,22 @@ RSpec.describe Runners::ModelOptions do
           %w[openrouter/pareto-code qwen/qwen3-coder deepseek/deepseek-chat-v3]
         )
       end
+
+      # @spec FREE-MODEL-SYNC-013
+      it "can limit OpenRouter choices to the advertised ZDR catalog before applying compatibility" do
+        catalog = OpenRouterZdrCatalog.current
+        eligible = LlmModel.find_by!(model_id: "qwen/qwen3-coder")
+        catalog.entries.create!(llm_model: eligible, endpoint_count: 1, metadata: {})
+
+        result = described_class.call(
+          runner_key: runner_key,
+          api_provider: api_provider,
+          auth_type: auth_type,
+          zdr_eligible: true
+        )
+
+        expect(result.select(&:model?).map(&:value)).to eq([ "qwen/qwen3-coder" ])
+      end
     end
 
     context "with the free policy entry" do

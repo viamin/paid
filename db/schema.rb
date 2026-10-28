@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_120808) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2898,7 +2898,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   create_table "llm_models", force: :cascade do |t|
     t.boolean "active", default: true, null: false
     t.decimal "capability_score", precision: 4, scale: 2
-    t.string "catalog_source", default: "seeded", null: false, comment: "How this model entered the catalog: seeded, openrouter_sync, or manual."
+    t.string "catalog_source", default: "seeded", null: false, comment: "How this model entered the catalog: seeded, openrouter_sync, openrouter_zdr_sync, or manual."
     t.string "category", limit: 50, default: "general", null: false
     t.integer "context_window"
     t.datetime "created_at", null: false
@@ -3163,6 +3163,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["account_id", "position"], name: "index_onboarding_steps_on_account_id_and_position"
     t.index ["account_id", "step"], name: "index_onboarding_steps_on_account_id_and_step", unique: true
     t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
+  end
+
+  create_table "open_router_zdr_catalog_entries", comment: "Advertised OpenRouter ZDR endpoint eligibility mapped to catalog models.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "endpoint_count", default: 0, null: false
+    t.bigint "llm_model_id", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.bigint "open_router_zdr_catalog_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["llm_model_id"], name: "index_open_router_zdr_catalog_entries_on_llm_model_id", unique: true
+    t.index ["open_router_zdr_catalog_id"], name: "idx_on_open_router_zdr_catalog_id_31e5bd74d6"
+  end
+
+  create_table "open_router_zdr_catalogs", comment: "Freshness state for the OpenRouter advertised ZDR endpoint catalog.", force: :cascade do |t|
+    t.boolean "available", default: false, null: false, comment: "Whether the most recent refresh was successful."
+    t.datetime "created_at", null: false
+    t.datetime "last_attempted_at", comment: "When a ZDR endpoint catalog refresh was last attempted."
+    t.string "last_error", comment: "Failure summary for the most recent unsuccessful refresh."
+    t.datetime "last_successful_at", comment: "When OpenRouter last returned a valid ZDR endpoint catalog."
+    t.datetime "updated_at", null: false
   end
 
   create_table "orchestration_decisions", comment: "Structured log of orchestration decisions for later workflow analysis and learning.", force: :cascade do |t|
@@ -4912,6 +4932,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   add_foreign_key "notifications", "accounts"
   add_foreign_key "notifications", "users", on_delete: :nullify
   add_foreign_key "onboarding_steps", "accounts"
+  add_foreign_key "open_router_zdr_catalog_entries", "llm_models"
+  add_foreign_key "open_router_zdr_catalog_entries", "open_router_zdr_catalogs"
   add_foreign_key "orchestration_decisions", "agent_runs", on_delete: :nullify
   add_foreign_key "orchestration_decisions", "projects", on_delete: :cascade
   add_foreign_key "orchestration_decisions", "strategy_versions", on_delete: :nullify

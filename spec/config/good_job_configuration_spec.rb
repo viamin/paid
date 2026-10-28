@@ -140,7 +140,7 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
       expected_jobs = %i[
         worktree_cleanup poll_workflow_health_check stale_run_detector
         docker_orphan_cleanup recover_missing_pull_request_labels models_sync
-        free_models_sync
+        free_models_sync openrouter_zdr_sync
         ab_test_analysis process_run_queue auto_pick_queue_backfill
         auto_pick_eligibility_sweep service_container_reconciliation execution_resource_reconciliation screenshot_cleanup
         apple_verification_recovery apple_verification_bundle_retention_sweep
