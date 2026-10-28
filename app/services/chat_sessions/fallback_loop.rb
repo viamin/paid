@@ -41,7 +41,7 @@ module ChatSessions
         actor: actor,
         llm_client: llm_client,
         on_chunk: on_chunk,
-        on_message_persisted: on_message_persisted,
+        on_message_persisted: respond_to?(:persist_message, true) ? method(:persist_message) : on_message_persisted,
         stream_message_id: stream_message_id
       }.merge(extra_agent_loop_kwargs)
     end

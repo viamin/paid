@@ -43,10 +43,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      @chat_turn.complete!(outcome: assistant_message ? "assistant_response" : "pending_confirmation")
       update_session_activity
       assistant_message
+    rescue StandardError => error
+      @chat_turn&.fail!(classification: error.is_a?(AgentHarness::Error) ? "provider_error" : "application_error")
+      raise
     end
 
     private
@@ -105,7 +110,7 @@ module ChatSessions
         used: result[:used_tokens]
       )
       message = chat_session.messages.create!(role: "system", content: built.content, metadata: built.metadata)
-      on_message_persisted&.call(message)
+      persist_message(message)
       message
     end
 
@@ -113,8 +118,19 @@ module ChatSessions
       @transport_attempt_message = existing_user_message || create_user_message
 
       chat_session.generate_title_from_content!
-      on_message_persisted&.call(transport_attempt_message)
+      persist_message(transport_attempt_message)
       transport_attempt_message
+    end
+
+    # @spec CHAT-TURN-001
+    def start_turn
+      @chat_turn = chat_session.chat_turns.create!(user_message: transport_attempt_message, activity_at: Time.current)
+      @chat_turn.start!
+    end
+
+    def persist_message(message, **kwargs)
+      @chat_turn&.checkpoint!
+      on_message_persisted&.call(message, **kwargs)
     end
 
     # A restarted job retains its stream id. Reusing the original user row
@@ -156,7 +172,7 @@ module ChatSessions
           "pending_message_ids" => pending.map(&:id)
         }
       )
-      on_message_persisted&.call(message)
+      persist_message(message)
       message
     end
 
