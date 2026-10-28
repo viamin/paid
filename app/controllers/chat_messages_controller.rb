@@ -5,7 +5,7 @@ class ChatMessagesController < ApplicationController
 
   skip_after_action :verify_authorized, only: :index
   before_action :set_chat_session
-  before_action :reject_archived_chat_session, only: %i[create resolve]
+  before_action :reject_archived_chat_session, only: %i[create resolve resume]
 
   rate_limit to: ChatMessages::RateLimit::MAX_REQUESTS, within: ChatMessages::RateLimit::PERIOD,
     by: -> { ChatMessages::RateLimit.identifier(user_id: current_user&.id, chat_session_id: params[:chat_session_id]) },
@@ -63,6 +63,19 @@ class ChatMessagesController < ApplicationController
       # @spec CHAT-API-004
       json_resolve_response(tool_call_message, decision)
     end
+  end
+
+  # @spec CHAT-TURN-004
+  def resume
+    notice = @chat_session.messages.find(params[:id])
+    authorize notice, :resolve?, policy_class: ChatMessagePolicy
+    raise ActionController::BadRequest, "Explicit recovery confirmation is required." unless params[:confirm_recovery] == "true"
+
+    turn = ChatTurn.find(notice.metadata.fetch("chat_turn_id"))
+    ChatTurns::Resume.call(turn:, actor: current_user)
+    redirect_to chat_session_path(@chat_session), notice: "Recovery started from the last durable checkpoint."
+  rescue ActiveRecord::RecordNotFound, KeyError, ChatTurns::Resume::UnsafeRecoveryError => error
+    redirect_to chat_session_path(@chat_session), alert: error.message
   end
 
   private

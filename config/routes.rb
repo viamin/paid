@@ -536,6 +536,7 @@ Rails.application.routes.draw do
     resources :chat_messages, path: "messages", only: %i[index create] do
       member do
         post :resolve
+        post :resume
       end
     end
     resources :chat_diagrams, only: [] do
