@@ -295,10 +295,19 @@ RSpec.describe "RDR-075 live execution-environment validation" do
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 25
       loop do
         container = tool_sidecar_container(validation_run)
-        address = container_ip(container) if container
-        if address.present?
-          write_hosts_entry(container_name(container), address)
-          break
+        if container
+          state = container.info["State"] || {}
+          address = container_ip(container)
+          puts "RDR075_DIAG sidecar name=#{container_name(container)} id=#{container.id} " \
+               "running=#{state["Running"]} status=#{state["Status"]} exit=#{state["ExitCode"]} " \
+               "error=#{state["Error"].inspect} ip=#{address.inspect}"
+
+          if address.present?
+            write_hosts_entry(container_name(container), address)
+            puts "RDR075_DIAG resolution=#{resolve_address(container_name(container))} " \
+                 "port_probe=#{probe_port(address)}"
+            break
+          end
         end
 
         break if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
@@ -306,6 +315,19 @@ RSpec.describe "RDR-075 live execution-environment validation" do
         sleep 0.2
       end
     end
+  end
+
+  def resolve_address(hostname)
+    Socket.getaddrinfo(hostname, nil).map(&:ip_address).uniq.join(",")
+  rescue StandardError => e
+    "unresolved (#{e.class})"
+  end
+
+  def probe_port(address)
+    Socket.tcp(address, SIDECAR_PORT, connect_timeout: 2).close
+    "open"
+  rescue StandardError => e
+    "closed (#{e.class})"
   end
 
   def tool_sidecar_container(validation_run)
@@ -330,11 +352,17 @@ RSpec.describe "RDR-075 live execution-environment validation" do
   end
 
   def write_hosts_entry(hostname, address)
-    entry = "#{address} #{hostname}\n"
-    File.open("/etc/hosts", "a") { |file| file.write(entry) }
-  rescue SystemCallError => e
-    Rails.logger.warn(message: "rdr075.hosts_write_failed", error: e.message)
-    system("sudo", "sh", "-c", "echo '#{entry.strip}' >> /etc/hosts")
+    entry = "#{address} #{hostname}"
+    begin
+      File.open("/etc/hosts", "a") { |file| file.puts(entry) }
+      puts "RDR075_DIAG hosts_entry_written=direct entry=#{entry}"
+      true
+    rescue SystemCallError => e
+      puts "RDR075_DIAG hosts_entry_direct_failed=#{e.class}"
+      written = system("sudo", "sh", "-c", "echo '#{entry}' >> /etc/hosts")
+      puts "RDR075_DIAG hosts_entry_written=sudo status=#{written.inspect}"
+      written
+    end
   end
 
   def run_validation(validation_run)
