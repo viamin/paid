@@ -40,7 +40,8 @@
   precedence and no automatic merge is enabled by visibility alone. A trusted
   per-PR auto-merge activation excludes the PR from this manual-action lane even
   when the project mode is `off`, because it authorizes the scanner's automatic
-  merge path; a structured hold remains visible and blocks that path.
+  merge path; a structured hold remains visible and blocks that path, including
+  when its persisted review phase is draft, stale, or uninitialized.
   Guidance SHALL be derived from the structured hold, approval freshness,
   remaining blockers, and effective per-PR auto-merge activation state — never
   from a rendered summary. When a recorded approval is stale, the Inbox SHALL

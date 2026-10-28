@@ -192,6 +192,18 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("Closed question")
   end
 
+  # @spec INBOX-FOUNDATION-008 OPERATOR-INBOX-002K
+  it "renders a held draft PR in the merge-approval Inbox lane" do
+    pull_request = create(:issue, :pull_request, project: project, title: "Held draft PR",
+      pr_review_phase: "draft", labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ])
+
+    get inbox_path(kind: Inbox::Queue::MERGE_APPROVAL_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Held draft PR", "Human review requested before merging")
+    expect(pull_request.reload.pr_review_phase).to eq("draft")
+  end
+
   it "renders compact URL-driven filters with the selected project, kind, and sort" do
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
 
