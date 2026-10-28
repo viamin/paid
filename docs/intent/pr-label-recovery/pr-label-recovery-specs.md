@@ -17,3 +17,15 @@
   *Code:* `RecoverMissingPullRequestLabelsJob#missing_labels`.
   *Test:* `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`
   ("preserves manual opt-out").
+
+- [x] **PR-LABEL-RECOVERY-003** — When a terminal `create_pr` run from the
+  bounded recovery window failed, timed out, or was cancelled after opening a
+  pull request, the recovery job SHALL recover missing labels. If the run has
+  no recorded PR identity but has a branch, it SHALL repair that identity only
+  when GitHub returns exactly one open PR for the run's repository-qualified
+  branch; repeated sweeps SHALL be idempotent. It SHALL not infer an identity
+  from PR prose or restore an automation label when the generated-label
+  opt-out marker is present.
+  *Code:* `RecoverMissingPullRequestLabelsJob#candidate_runs`,
+  `RecoverMissingPullRequestLabelsJob#recover_pull_request_identity`.
+  *Test:* `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`.

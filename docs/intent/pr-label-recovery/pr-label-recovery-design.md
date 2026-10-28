@@ -12,12 +12,17 @@ When that call fails transiently (GitHub API error), the PR is left without
 ## Design
 
 `RecoverMissingPullRequestLabelsJob` (GoodJob cron, hourly) re-applies missing
-labels to PRs created by completed `create_pr` agent runs:
+labels to PRs created by terminal `create_pr` agent runs, including runs that
+failed, timed out, or were cancelled after GitHub accepted the PR:
 
-- **Candidate window**: runs **completed** in the last 24 hours. PRs are
-  opened at run completion, so the window must track `completed_at`, not
-  `created_at` — a multi-day run would otherwise age out of the window before
-  its PR ever exists.
+- **Candidate window**: terminal runs updated in the last 30 days. The bounded
+  sweep covers post-publication failures while avoiding an unbounded historical
+  scan.
+- **Missing linkage**: when a terminal run has no recorded PR number but has a
+  branch, the job looks up an open PR for that exact repository-qualified head.
+  Exactly one match repairs the run's number and URL before normal local sync
+  and label recovery; zero or ambiguous matches are left untouched. This is
+  mechanical branch evidence, not a title/body heuristic.
 - **Opt-out preserved**: if the PR still has the generated label but is
   missing the automation label, assume a human removed it intentionally and
   do not re-add.
