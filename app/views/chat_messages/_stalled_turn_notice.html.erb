@@ -1,0 +1,5 @@
+<div class="mx-auto max-w-2xl rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="status">
+  <p class="font-semibold">This turn needs attention</p>
+  <p class="mt-1"><%= message.content %></p>
+  <p class="mt-2"><a class="underline" href="#chat-message-<%= message.metadata['user_message_id'] %>">Review the original request</a> before sending a new message or approving any pending action.</p>
+</div>

@@ -43,10 +43,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      finish_turn(assistant_message)
       update_session_activity
       assistant_message
+    rescue StandardError => e
+      @chat_turn&.fail!(e)
+      raise
     end
 
     private
@@ -134,6 +139,21 @@ module ChatSessions
       )
     end
 
+    # @spec CHAT-TURN-RECOVERY-001
+    def start_turn
+      @chat_turn = ChatTurn.find_or_create_by!(user_message: transport_attempt_message) do |turn|
+        turn.chat_session = chat_session
+        turn.activity_at = Time.current
+      end
+      @chat_turn.touch_activity! unless @chat_turn.status == "streaming"
+    end
+
+    def finish_turn(assistant_message)
+      return @chat_turn.complete! if assistant_message
+
+      @chat_turn.pause_for_confirmation!
+    end
+
     # A conversational reply (e.g. "yes") is not a confirmation. When a write
     # tool still awaits explicit approval, persist a durable notice stating
     # that this message is not an approval, naming the pending action(s), and
@@ -178,7 +198,7 @@ module ChatSessions
     # second SUM query per turn. Only forward when a limit is configured; a nil
     # baseline means "unlimited" and AgentLoop re-derives nil cheaply.
     def extra_agent_loop_kwargs
-      @token_budget ? { token_budget: @token_budget } : {}
+      { chat_turn: @chat_turn, token_budget: @token_budget }.compact
     end
   end
 end
