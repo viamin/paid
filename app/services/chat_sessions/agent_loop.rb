@@ -21,10 +21,10 @@ module ChatSessions
     TOKEN_BUDGET_SOFT_STOP_FALLBACK_MESSAGE = "I've reached the token budget for this chat session. Please increase the session token limit or start a new chat to continue."
 
     attr_reader :chat_session, :actor, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id,
-      :created_message_ids
+      :created_message_ids, :chat_turn
 
     def initialize(chat_session:, actor: chat_session.created_by, llm_client:, on_chunk: nil, on_message_persisted: nil, stream_message_id: nil,
-      token_budget: nil)
+      token_budget: nil, chat_turn: nil)
       @chat_session = chat_session
       @actor = actor
       @llm_client = llm_client
@@ -33,6 +33,7 @@ module ChatSessions
       @stream_message_id = stream_message_id
       @created_message_ids = []
       @token_budget_override = token_budget
+      @chat_turn = chat_turn
     end
 
     # @return [ChatMessage, nil] the final assistant message, or +nil+ when the
@@ -373,6 +374,7 @@ module ChatSessions
     end
 
     def call_llm(conversation, exclude_tools: false)
+      chat_turn&.touch_activity!
       chunk_streamed = false
       chunk_callback = lambda do |chunk|
         next if chunk.blank?
@@ -460,8 +462,11 @@ module ChatSessions
         content: response[:content],
         model: response[:model],
         tokens_input: response[:tokens_input],
-        tokens_output: response[:tokens_output]
+        tokens_output: response[:tokens_output],
+        chat_turn: chat_turn
       )
+
+      chat_turn&.touch_activity!
 
       track_created_message(message)
       on_message_persisted&.call(message, stream_message_id: stream_message_id)
@@ -500,7 +505,8 @@ module ChatSessions
         tool_call_id: tool_call[:id],
         tool_status: status,
         tool_result: tool_result,
-        metadata: provider_state ? { "provider_state" => provider_state, "tool_call_batch_id" => tool_call_batch_id } : {}
+        metadata: provider_state ? { "provider_state" => provider_state, "tool_call_batch_id" => tool_call_batch_id } : {},
+        chat_turn: chat_turn
       )
 
       track_created_message(tool_call_message)
@@ -522,8 +528,12 @@ module ChatSessions
         content: tool_result.to_json,
         tool_result: tool_result,
         tool_call_id: tool_call[:id],
-        tool_name: tool_call[:name]
+        tool_name: tool_call[:name],
+        chat_turn: chat_turn
       )
+
+      chat_turn&.note_side_effecting_tool! if Tools::Registry.write_tool?(tool_call[:name]) && tool_result_value(tool_result, :status) != "error"
+      chat_turn&.touch_activity!
 
       ChatDiagrams::AttachToMessage.call(message: tool_result_message)
       track_created_message(tool_result_message)

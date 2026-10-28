@@ -16,7 +16,7 @@ module ChatSessions
     include FallbackLoop
 
     attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
-      :transport_attempt_message
+      :transport_attempt_message, :chat_turn
 
     MAX_CONTENT_LENGTH = 12_000
 
@@ -27,7 +27,7 @@ module ChatSessions
       @on_chunk = on_chunk
       @on_message_persisted = on_message_persisted
       @llm_client = llm_client
-      @stream_message_id = stream_message_id
+      @stream_message_id = stream_message_id || SecureRandom.uuid
     end
 
     def self.call(...)
@@ -43,8 +43,10 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      chat_turn.start!(user_message: transport_attempt_message)
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      chat_turn.complete!
       update_session_activity
       assistant_message
     end
@@ -134,6 +136,10 @@ module ChatSessions
       )
     end
 
+    def chat_turn
+      @chat_turn ||= ChatTurn.find_or_start!(chat_session:, stream_message_id:)
+    end
+
     # A conversational reply (e.g. "yes") is not a confirmation. When a write
     # tool still awaits explicit approval, persist a durable notice stating
     # that this message is not an approval, naming the pending action(s), and
@@ -178,7 +184,7 @@ module ChatSessions
     # second SUM query per turn. Only forward when a limit is configured; a nil
     # baseline means "unlimited" and AgentLoop re-derives nil cheaply.
     def extra_agent_loop_kwargs
-      @token_budget ? { token_budget: @token_budget } : {}
+      (@token_budget ? { token_budget: @token_budget } : {}).merge(chat_turn: chat_turn)
     end
   end
 end

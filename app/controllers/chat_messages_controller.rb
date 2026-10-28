@@ -65,6 +65,18 @@ class ChatMessagesController < ApplicationController
     end
   end
 
+  def recover
+    turn = @chat_session.chat_turns.find(params[:turn_id])
+    authorize ChatMessage.new(chat_session: @chat_session), policy_class: ChatMessagePolicy
+    raise ArgumentError, "Turn has no resumable user message" unless turn.user_message
+    turn.begin_recovery!
+    ChatSessions::ProcessMessageJob.perform_later(chat_session_id: @chat_session.id, content: turn.user_message.content,
+      stream_message_id: turn.stream_message_id, actor_id: current_user.id)
+    render json: { status: "recovering", turn_id: turn.id }, status: :accepted
+  rescue ArgumentError => e
+    render json: { error: e.message }, status: :unprocessable_content
+  end
+
   private
 
   def set_chat_session
