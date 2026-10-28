@@ -7,6 +7,7 @@ RSpec.describe ChatMessage do
 
   describe "associations" do
     it { is_expected.to belong_to(:chat_session) }
+    it { is_expected.to have_one(:chat_turn).dependent(:destroy) }
   end
 
   describe "validations" do
@@ -70,6 +71,13 @@ RSpec.describe ChatMessage do
     it "is false for a regular system message" do
       message = build(:chat_message, :system)
       expect(message.provider_error_notice?).to be false
+    end
+  end
+
+  describe "#stalled_turn_notice?" do
+    # @spec CHAT-TURN-RECOVERY-003
+    it "is true for a durable stalled-turn notice" do
+      expect(build(:chat_message, :system, metadata: { "stalled_turn_notice" => true }).stalled_turn_notice?).to be true
     end
   end
 

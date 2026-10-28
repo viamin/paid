@@ -1,0 +1,7 @@
+<div class="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900" role="alert">
+  <p class="font-medium">This chat turn needs attention</p>
+  <p class="mt-1"><%= message.content %></p>
+  <% if (pending_id = message.metadata["pending_confirmation_id"]) %>
+    <%= link_to "Review pending confirmation", "#chat-message-#{pending_id}", class: "mt-2 inline-block font-medium underline" %>
+  <% end %>
+</div>

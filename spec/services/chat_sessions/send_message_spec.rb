@@ -63,6 +63,36 @@ RSpec.describe ChatSessions::SendMessage do
       }.to change { chat_session.messages.where(role: "user").count }.by(1)
     end
 
+    # @spec CHAT-TURN-RECOVERY-001
+    it "records a completed durable turn for the persisted user message" do
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+
+      turn = ChatTurn.find_by!(user_message: chat_session.messages.where(role: "user").last)
+      expect(turn).to have_attributes(chat_session: chat_session, state: "completed")
+    end
+
+    # @spec CHAT-TURN-RECOVERY-002
+    it "records a provider failure as terminal instead of leaving it eligible for stall detection" do
+      allow(llm_client).to receive(:call).and_raise(AgentHarness::Error, "provider unavailable")
+
+      expect {
+        described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+      }.to raise_error(AgentHarness::Error)
+
+      expect(ChatTurn.last).to have_attributes(state: "failed", failure_classification: "provider_error")
+    end
+
+    # @spec CHAT-TURN-RECOVERY-002
+    it "records a rate limit as a paused state rather than a stall" do
+      allow(llm_client).to receive(:call).and_raise(AgentHarness::RateLimitError, "rate limited")
+
+      expect {
+        described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+      }.to raise_error(AgentHarness::RateLimitError)
+
+      expect(ChatTurn.last).to have_attributes(state: "rate_limited", failure_classification: "rate_limited")
+    end
+
     # @spec PARTIAL-CLOSEOUT-017 — a conversational "yes" must never be
     # treated, displayed, or replayed as approval of a pending write tool.
     describe "with a pending write-tool confirmation" do

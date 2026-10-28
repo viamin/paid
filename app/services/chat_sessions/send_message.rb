@@ -44,9 +44,18 @@ module ChatSessions
 
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
-      assistant_message = run_with_fallbacks
+      turn = ChatTurn.for_user_message!(transport_attempt_message)
+      turn.streaming!
+      assistant_message = run_with_turn_activity(turn)
+      assistant_message ? turn.completed! : turn.awaiting_confirmation!
       update_session_activity
       assistant_message
+    rescue AgentHarness::RateLimitError
+      turn&.rate_limited!
+      raise
+    rescue AgentHarness::Error
+      turn&.failed!("provider_error")
+      raise
     end
 
     private
@@ -179,6 +188,17 @@ module ChatSessions
     # baseline means "unlimited" and AgentLoop re-derives nil cheaply.
     def extra_agent_loop_kwargs
       @token_budget ? { token_budget: @token_budget } : {}
+    end
+
+    def run_with_turn_activity(turn)
+      original_callback = @on_message_persisted
+      @on_message_persisted = ->(message, **kwargs) {
+        turn.record_activity!
+        original_callback&.call(message, **kwargs)
+      }
+      run_with_fallbacks
+    ensure
+      @on_message_persisted = original_callback
     end
   end
 end
