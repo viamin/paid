@@ -38,6 +38,14 @@ class ProjectPolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin) || user.has_role?(:project_admin, record)
   end
 
+  # A continuation grant delegates automatic work beyond the selected manual
+  # action, so it requires the same scoped authority as starting that work.
+  # Merge remains stricter through {#delegate_merge?}.
+  # @spec AUTOMATION-PHASES-009
+  def delegate_continuation?
+    run_agent?
+  end
+
   def manage_apple_verifications?
     return false unless user_in_account?
 
