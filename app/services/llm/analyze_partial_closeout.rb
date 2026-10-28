@@ -5,6 +5,24 @@ module Llm
   class AnalyzePartialCloseout
     include OutputNormalizer
 
+    # Carries bounded transport or structural diagnostics to the persistence
+    # boundary without retaining model output or credential material.
+    class AssessmentFailure < AgentHarness::Error
+      attr_reader :failure_metadata
+
+      def initialize(message, category:, provider:, model:, request_id:, attempt_id: nil, details: {})
+        @failure_metadata = {
+          "category" => category,
+          "provider" => provider.to_s,
+          "model" => model,
+          "request_id" => request_id,
+          "attempt_id" => attempt_id,
+          "details" => details.presence
+        }.compact
+        super(message)
+      end
+    end
+
     DEFAULT_MODEL = "claude-sonnet-4-6"
     DEFAULT_PROVIDER = :claude
     TIMEOUT = 30
@@ -68,19 +86,25 @@ module Llm
 
     def initialize(agent_run:)
       @agent_run = agent_run
+      @request_id = SecureRandom.uuid
+      @attempt_id = SecureRandom.uuid
     end
 
-    def call
+    def call # @spec PARTIAL-CLOSEOUT-034
       parsed = schema_capable_request? ? schema_constrained_parse : legacy_text_parse
       parsed = parsed.deep_stringify_keys if parsed.is_a?(Hash)
-      raise AgentHarness::Error, "partial closeout assessment failed" unless valid_assessment?(parsed)
+      invalid_fields = invalid_assessment_fields(parsed)
+      raise_failure!("invalid_assessment", "partial closeout assessment failed: invalid structure",
+        details: { "invalid_fields" => invalid_fields }) if invalid_fields.present?
 
       parsed
+    rescue AgentHarness::AuthenticationError => e
+      raise_failure!("authentication_required", "partial closeout assessment failed: host-side Claude authentication is required; restore the configured Claude CLI login or configure an authorized API key", cause: e)
     end
 
     private
 
-    attr_reader :agent_run
+    attr_reader :agent_run, :request_id, :attempt_id
 
     # Mirrors the full PartialCloseouts::Reconcile#validate! contract so an
     # assessment that parses but violates the reconciler's per-gap rules is
@@ -93,24 +117,37 @@ module Llm
     # (`PartialCloseouts::Assessment#next_action` calls
     # `assessment["next_action"].to_h` and `Present_criterion#merge` would
     # raise NoMethodError on render).
-    def valid_assessment?(parsed)
-      return false unless parsed.is_a?(Hash)
+    def invalid_assessment_fields(parsed)
+      return [ invalid_field("$", "object", parsed) ] unless parsed.is_a?(Hash)
 
-      gaps = parsed["gaps"]
-      gaps.is_a?(Array) && gaps.size <= MAX_GAPS && gaps.all? { |gap| valid_gap?(gap) } &&
-        valid_criteria?(parsed["criteria"]) && valid_next_action?(parsed["next_action"])
+      invalid_gap_fields(parsed["gaps"]) + invalid_criteria_fields(parsed["criteria"]) + invalid_next_action_fields(parsed["next_action"])
     end
 
-    def valid_gap?(gap)
-      return false unless gap.is_a?(Hash) && gap["criterion"].present? && VALID_KINDS.include?(gap["kind"])
-      return false unless owner_resolvable?(gap)
-      return true unless gap["kind"] == "human"
+    def invalid_gap_fields(gaps)
+      return [ invalid_field("gaps", "array (at most #{MAX_GAPS} items)", gaps) ] unless gaps.is_a?(Array) && gaps.size <= MAX_GAPS
 
-      valid_references?(gap["references"]) && valid_policy_selection?(gap["policy_selection"])
+      gaps.each_with_index.flat_map { |gap, index| invalid_gap_fields_for(gap, "gaps[#{index}]") }
     end
 
-    def valid_references?(references)
-      references.nil? || (references.is_a?(Array) && references.all? { |reference| valid_reference?(reference) })
+    def invalid_gap_fields_for(gap, path)
+      return [ invalid_field(path, "object", gap) ] unless gap.is_a?(Hash)
+      return [ invalid_field("#{path}.criterion", "present value", gap["criterion"]) ] unless gap["criterion"].present?
+      return [ invalid_field("#{path}.kind", "one of #{VALID_KINDS.join(', ')}", gap["kind"]) ] unless VALID_KINDS.include?(gap["kind"])
+      return [ invalid_field(path, "resolvable owner", gap) ] unless owner_resolvable?(gap)
+      return [] unless gap["kind"] == "human"
+
+      invalid_reference_fields(gap["references"], "#{path}.references") + invalid_policy_selection_fields(gap["policy_selection"], "#{path}.policy_selection")
+    end
+
+    def invalid_reference_fields(references, path)
+      return [] if references.nil?
+      return [ invalid_field(path, "array", references) ] unless references.is_a?(Array)
+
+      references.each_with_index.filter_map do |reference, index|
+        next if valid_reference?(reference)
+
+        invalid_field("#{path}[#{index}]", "reference object with kind, key, revision, and label", reference)
+      end
     end
 
     def valid_reference?(reference)
@@ -119,11 +156,13 @@ module Llm
         (reference["url"].nil? || reference["url"].is_a?(String))
     end
 
-    def valid_policy_selection?(selection)
-      return true if selection.nil?
-      return false unless selection.is_a?(Hash) && [ true, false ].include?(selection["required"])
+    def invalid_policy_selection_fields(selection, path)
+      return [] if selection.nil?
+      return [ invalid_field(path, "object with boolean required", selection) ] unless selection.is_a?(Hash) && [ true, false ].include?(selection["required"])
 
-      !selection["required"] || selection["next_step"].to_s.strip.present?
+      return [] unless selection["required"] && selection["next_step"].to_s.strip.blank?
+
+      [ invalid_field("#{path}.next_step", "present value when required", selection["next_step"]) ]
     end
 
     # An agent gap needs a title (for focused issue creation) or an existing
@@ -141,8 +180,15 @@ module Llm
     # A criteria entry that is not a Hash (or one that omits `criterion`)
     # cannot be rendered or merged, so reject the whole assessment rather
     # than persist a partial shape that crashes `present_criterion`.
-    def valid_criteria?(criteria)
-      criteria.nil? || (criteria.is_a?(Array) && criteria.size <= MAX_GAPS && criteria.all? { |criterion| valid_criterion?(criterion) })
+    def invalid_criteria_fields(criteria)
+      return [] if criteria.nil?
+      return [ invalid_field("criteria", "array (at most #{MAX_GAPS} items)", criteria) ] unless criteria.is_a?(Array) && criteria.size <= MAX_GAPS
+
+      criteria.each_with_index.filter_map do |criterion, index|
+        next if valid_criterion?(criterion)
+
+        invalid_field("criteria[#{index}]", "criterion object with valid evidence", criterion)
+      end
     end
 
     def valid_criterion?(criterion)
@@ -168,9 +214,10 @@ module Llm
     # read via `assessment["next_action"].to_h`. A String here would
     # NoMethodError on `.to_h`, and a Hash missing `kind`/`explanation`
     # would silently drop actionability.
-    def valid_next_action?(next_action)
-      next_action.nil? ||
-        (next_action.is_a?(Hash) && next_action["kind"].present? && next_action["explanation"].present?)
+    def invalid_next_action_fields(next_action)
+      return [] if next_action.nil? || (next_action.is_a?(Hash) && next_action["kind"].present? && next_action["explanation"].present?)
+
+      [ invalid_field("next_action", "object with kind and explanation", next_action) ]
     end
 
     # Schema-constrained responses require API-key authentication because
@@ -187,9 +234,11 @@ module Llm
 
     def schema_constrained_parse
       result = AgentHarness::Api::ChatTransport.new.call(request)
-      return nil unless result&.dig(:status) == :succeeded
+      return result[:parsed] if result&.dig(:status) == :succeeded
 
-      result[:parsed]
+      @attempt_id = result&.dig(:attempts, -1, :attempt_id) || attempt_id
+      raise_failure!("transport_unsuccessful", "partial closeout assessment failed: transport was unsuccessful",
+        details: { "transport" => "schema", "status" => result&.dig(:status).to_s.presence })
     end
 
     def legacy_text_parse
@@ -201,7 +250,10 @@ module Llm
         tools: :none,
         **Llm::TextMode.options
       )
-      return nil if response.respond_to?(:success?) && !response.success?
+      if response.respond_to?(:success?) && !response.success?
+        raise_failure!("transport_unsuccessful", "partial closeout assessment failed: transport was unsuccessful",
+          details: transport_details(response))
+      end
 
       output = response.respond_to?(:output) ? response.output : response.to_s
       JSON.parse(strip_markdown_fence(output.to_s.strip))
@@ -211,12 +263,13 @@ module Llm
         agent_run_id: agent_run.id,
         error: e.message
       )
-      nil
+      raise_failure!("unparseable_response", "partial closeout assessment failed: response was not valid JSON",
+        details: { "transport" => "text", "output_bytes" => output.to_s.bytesize }, cause: e)
     end
 
     def request
       {
-        request_id: SecureRandom.uuid, operation: :schema, schema_name: "partial_closeout_assessment",
+        request_id: request_id, operation: :schema, schema_name: "partial_closeout_assessment",
         schema: RESPONSE_SCHEMA, schema_mode: :json_schema, timeout: { read_seconds: TIMEOUT },
         candidates: [ { provider: :anthropic, model: DEFAULT_MODEL, protocol: :messages,
           authentication_mode: :api_key, credentials: { api_key: api_key } } ],
@@ -228,6 +281,28 @@ module Llm
       ENV["ANTHROPIC_API_KEY"].to_s.strip.presence || raise(
         AgentHarness::ConfigurationError, "ANTHROPIC_API_KEY is required for schema-mode partial closeout assessment"
       )
+    end
+
+    def transport_details(response)
+      metadata = response.respond_to?(:metadata) ? response.metadata.to_h : {}
+      {
+        "transport" => "text",
+        "response_success" => false,
+        "output_bytes" => response.respond_to?(:output) ? response.output.to_s.bytesize : 0,
+        "provider_request_id" => metadata[:request_id].to_s.presence
+      }.compact
+    end
+
+    def invalid_field(path, expected, actual)
+      { "path" => path, "expected" => expected, "actual_type" => actual.class.name }
+    end
+
+    def raise_failure!(category, message, details: {}, cause: nil)
+      error = AssessmentFailure.new(message, category:, provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL,
+        request_id:, attempt_id:, details:)
+      raise error if cause.nil?
+
+      raise error, cause: cause
     end
 
     def prompt

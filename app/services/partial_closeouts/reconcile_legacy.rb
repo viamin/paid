@@ -363,9 +363,16 @@ module PartialCloseouts
       reconciliation = reconciliation.except("assessment") if reconciliation["gaps"].blank?
       agent_run.update!(
         reconciliation: reconciliation.merge(
-          "status" => "retryable_failure", "error" => error.message, "failed_at" => Time.current.iso8601
-        )
+          "status" => "retryable_failure", "error" => error.message, "failed_at" => Time.current.iso8601,
+          "failure" => closeout_failure_metadata(error)
+        ).compact
       )
+    end
+
+    def closeout_failure_metadata(error)
+      return unless error.respond_to?(:failure_metadata)
+
+      error.failure_metadata
     end
 
     # Two flavors of "already done":

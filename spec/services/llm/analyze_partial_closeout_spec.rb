@@ -57,11 +57,31 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       expect(result.dig("gaps", 0, "criterion")).to eq("dispatch")
     end
 
-    it "raises when no transport produced a parseable assessment" do
+    # @spec PARTIAL-CLOSEOUT-034
+    it "classifies an unsuccessful empty CLI response without retaining its content" do
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
-      allow(legacy_response).to receive(:success?).and_return(false)
+      allow(legacy_response).to receive_messages(success?: false, output: "")
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure, /transport was unsuccessful/) { |error|
+          expect(error.failure_metadata).to include(
+            "category" => "transport_unsuccessful", "provider" => "claude", "model" => described_class::DEFAULT_MODEL
+          )
+          expect(error.failure_metadata.fetch("details")).to include("response_success" => false, "output_bytes" => 0)
+        }
+    end
+
+    # @spec PARTIAL-CLOSEOUT-034
+    it "surfaces Claude authentication with host-side recovery guidance" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      allow(AgentHarness).to receive(:send_message)
+        .and_raise(AgentHarness::AuthenticationError.new("Not logged in · Please run /login", provider: :claude))
+
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure, /restore the configured Claude CLI login/) { |error|
+          expect(error.failure_metadata).to include("category" => "authentication_required", "provider" => "claude")
+          expect(error.failure_metadata).to include("request_id" => a_string_matching(/\A[0-9a-f-]{36}\z/))
+        }
     end
 
     it "caps the gaps array at the reconciler's bound in the response schema" do
@@ -77,11 +97,16 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
     end
 
-    it "raises when a gap entry is not an object" do
+    # @spec PARTIAL-CLOSEOUT-034
+    it "records invalid field paths and types for structural assessment failures" do
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
       allow(legacy_response).to receive(:output).and_return({ gaps: [ "wire dispatch" ] }.to_json)
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure, /invalid structure/) { |error|
+          expect(error.failure_metadata.dig("details", "invalid_fields"))
+            .to include(a_hash_including("path" => "gaps[0]", "actual_type" => "String"))
+        }
     end
 
     it "raises when a gap omits its criterion" do

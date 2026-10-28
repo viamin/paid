@@ -4,7 +4,7 @@ module Activities
   class ReconcilePartialCloseoutActivity < BaseActivity
     activity_name "ReconcilePartialCloseout"
 
-    def execute(input) # @spec NO-OUTPUT-ISSUE-007
+    def execute(input) # @spec NO-OUTPUT-ISSUE-007 PARTIAL-CLOSEOUT-034
       agent_run = AgentRun.find(input.fetch(:agent_run_id))
       track_phase(agent_run_id: agent_run.id, phase_key: "reconcile_partial_closeout",
         phase_group: "post", agent_run: agent_run) do
@@ -21,7 +21,10 @@ module Activities
           gaps_remain: gaps_remain?(agent_run) }
       end
     rescue StandardError => e
-      agent_run&.update!(reconciliation: agent_run.reconciliation.merge("status" => "retryable_failure", "error" => e.message))
+      agent_run&.update!(reconciliation: agent_run.reconciliation.merge(
+        "status" => "retryable_failure", "error" => e.message,
+        "failure" => closeout_failure_metadata(e)
+      ).compact)
       raise
     end
 
@@ -47,6 +50,12 @@ module Activities
           agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => assessment))
         end
       end
+    end
+
+    def closeout_failure_metadata(error)
+      return unless error.respond_to?(:failure_metadata)
+
+      error.failure_metadata
     end
   end
 end

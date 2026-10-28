@@ -389,6 +389,24 @@
   *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
   `spec/services/partial_closeouts/reconcile_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-034** — When a partial-closeout assessment cannot
+  obtain a valid result, Paid SHALL distinguish an unsuccessful transport,
+  authentication-required response, unparseable response, and structurally
+  invalid assessment without weakening acceptance validation. It SHALL persist
+  a bounded failure category, provider, model, request identity, and attempt
+  identity on the originating run; transport failures MAY include only success
+  state and output byte count, and structural failures SHALL include invalid
+  field paths and value types. It SHALL NOT persist response content or
+  credentials. An authentication-required failure SHALL retain the configured
+  billing route and state actionable host-side Claude login or deliberately
+  authorized API-key recovery, then re-raise so the existing workflow retry
+  and follow-up path remains authoritative.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/temporal/activities/reconcile_partial_closeout_activity.rb`,
+  `app/services/partial_closeouts/reconcile_legacy.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-019** — When `PartialCloseouts::ReconcileLegacy`
   processes a legacy partial closeout, the system SHALL ground the assessment
   in current shipped behavior and intent: a gap whose criterion is already

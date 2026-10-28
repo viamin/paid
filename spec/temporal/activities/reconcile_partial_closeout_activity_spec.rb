@@ -87,5 +87,27 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
         phase_key: "reconcile_partial_closeout", phase_group: "post", status: "failed"
       )
     end
+
+    # @spec PARTIAL-CLOSEOUT-034
+    it "persists bounded closeout transport diagnostics and re-raises for workflow retry" do
+      failure = Llm::AnalyzePartialCloseout::AssessmentFailure.new(
+        "partial closeout assessment failed: host-side Claude authentication is required",
+        category: "authentication_required", provider: :claude,
+        model: Llm::AnalyzePartialCloseout::DEFAULT_MODEL,
+        request_id: "request-123", attempt_id: "attempt-456"
+      )
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(failure)
+
+      expect { activity.execute(agent_run_id: run.id) }.to raise_error(failure)
+
+      expect(run.reload.reconciliation).to include(
+        "status" => "retryable_failure",
+        "failure" => {
+          "category" => "authentication_required", "provider" => "claude",
+          "model" => Llm::AnalyzePartialCloseout::DEFAULT_MODEL,
+          "request_id" => "request-123", "attempt_id" => "attempt-456"
+        }
+      )
+    end
   end
 end

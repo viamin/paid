@@ -418,6 +418,18 @@ records a classification (`awaiting_final_audit`, `blocked_implementation`,
 that explains when open ownership makes another run duplicate work. A fresh
 semantic assessment remains a bounded explicit `agent_harness` operation.
 
+Assessment transport failures are distinct from invalid assessments. The
+closeout boundary records a bounded failure category, provider, model, and
+generated request/attempt identities on the originating run; unsuccessful
+responses additionally record only transport shape (success flag and output
+byte count), while invalid data records field paths and value types. It never
+persists response content or credentials. Missing host-side Claude CLI
+authentication is an actionable unavailable result directing the operator to
+restore the configured login or deliberately configure authorized API-key
+access; it does not silently switch subscription-backed CLI requests to
+API-metered transport. All failed assessments remain fail-closed and are
+re-raised to preserve the workflow retry/follow-up path.
+
 ### Report-only acceptance audits (#4595)
 
 When an assessment is missing or stale, Inbox offers a distinct **Run
