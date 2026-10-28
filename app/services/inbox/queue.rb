@@ -17,6 +17,7 @@ module Inbox
     PROJECT_SETUP_PENDING_KIND = "project_setup_pending"
     TRACEABILITY_GAP_KIND = "traceability_gap"
     LAYERED_VERIFICATION_FINDING_KIND = "layered_verification_finding"
+    FACET_CONFIDENCE_CLOSEOUT_EVALUATION_WORKFLOW = "facet_confidence_closeout_evaluation"
     DEFAULT_SORT = "oldest"
     # RDR-077 §5 scopes: the default actionable list, the requests held back by
     # a disabled phase, and the requests this user personally removed.
@@ -108,6 +109,15 @@ module Inbox
 
       def action_required?
         kind == ACTION_REQUIRED_KIND
+      end
+
+      # This persisted workflow marker selects the first-class evaluation flow,
+      # so routing does not
+      # infer workflow meaning from notification copy.
+      # @spec OPERATOR-INBOX-002L
+      def facet_confidence_closeout_evaluation?
+        action_required? && issue.present? && record.respond_to?(:metadata) &&
+          record.metadata["workflow"] == FACET_CONFIDENCE_CLOSEOUT_EVALUATION_WORKFLOW
       end
 
       def escalated_pr?
@@ -595,8 +605,8 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
+          summary_text: action_required_summary(notification, issue),
+          title_text: action_required_title(notification, issue),
           action_url: notification.action_url
         )
       end
@@ -1038,6 +1048,20 @@ module Inbox
       return steps if steps.any?
 
       Array(notification.metadata["recommended_action"])
+    end
+
+    # @spec OPERATOR-INBOX-002L
+    def action_required_title(notification, issue)
+      return notification.title unless issue && notification.metadata["workflow"] == FACET_CONFIDENCE_CLOSEOUT_EVALUATION_WORKFLOW
+
+      "Human evaluation needed"
+    end
+
+    # @spec OPERATOR-INBOX-002L
+    def action_required_summary(notification, issue)
+      return notification.metadata["recommended_action"].presence || notification.description unless issue && notification.metadata["workflow"] == FACET_CONFIDENCE_CLOSEOUT_EVALUATION_WORKFLOW
+
+      "Review every test case independently, record each judgment, and freeze the completed set."
     end
 
     def notification_context(notification)

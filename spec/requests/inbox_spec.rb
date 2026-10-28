@@ -247,6 +247,26 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec OPERATOR-INBOX-002L FACET-CONFIDENCE-020 FACET-CONFIDENCE-021
+  it "routes a facet-confidence closeout escalation to the evaluation with plain-language progress" do
+    issue = create(:issue, project: project, github_number: 30, paid_state: "in_progress")
+    create(:issue, :pull_request, project: project, github_number: 31, github_state: "closed",
+      pr_review_phase: "merged", parent_issue_id: issue.id, created_at: 2.days.ago)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: "facet_confidence.closeout_evaluation", blocking: true,
+      title: "Remediation Required — Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.",
+      description: "Internal closeout workflow status.",
+      metadata: { "workflow" => Inbox::Queue::FACET_CONFIDENCE_CLOSEOUT_EVALUATION_WORKFLOW })
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort: "newest")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Evaluation needed", "0 of", "judgments recorded", "remaining", "Start evaluation")
+    expect(response.body).to include("inbox_kind=action_required", "inbox_entry_id=action_required%3A#{notification.id}")
+    expect(response.body).not_to include("blinded reference judgments", "facet-confidence corpus", "Internal closeout workflow status.")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a

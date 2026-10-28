@@ -88,6 +88,19 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** — When an active notification marked with the
+  `facet_confidence_closeout_evaluation` workflow has an originating issue eligible for facet-confidence closeout
+  evaluation, the Action Required detail SHALL present a plain-language
+  evaluation requirement, recorded and remaining judgment counts, and a
+  state-specific in-product primary action. The action SHALL preserve the
+  authorized project, originating issue, and Inbox context; a GitHub issue
+  link remains secondary. Other Action Required notification sources SHALL
+  retain the generic fallback without assuming an evaluation workflow.
+  *Code:* `app/services/inbox/queue.rb`,
+  `app/views/dashboard/_inbox_detail_action_required.html.erb`,
+  `app/views/dashboard/_inbox_detail_action_required_facet_confidence.html.erb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002C** — When an open pull request's review phase is
   `escalated` and its project is within the operator's authorized Inbox
   visibility (`INBOX-FOUNDATION-006` — account isolation plus owner

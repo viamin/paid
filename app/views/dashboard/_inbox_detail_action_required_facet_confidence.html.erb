@@ -1,0 +1,60 @@
+<%# @spec OPERATOR-INBOX-002L FACET-CONFIDENCE-020 FACET-CONFIDENCE-021 %>
+<% issue = entry.issue %>
+<% status = Issues::CloseoutStatus.call(issue) %>
+<% packet = FacetConfidence::CloseoutEvaluationPacket.call(issue:, status:) %>
+<% evaluation = issue.facet_confidence_evaluations.where(corpus_digest: packet.corpus_digest).latest_first.first %>
+<% inbox_context = {
+     inbox_kind: params[:kind].presence_in(Inbox::Queue::KINDS),
+     inbox_sort: params[:sort].presence_in(Inbox::Queue::SORTS.keys),
+     inbox_entry_id: entry.id
+   }.compact %>
+<% progress = evaluation&.progress || { total: packet.input_revisions.size, labeled: 0, skipped: 0 } %>
+<% remaining = progress[:total] - progress[:labeled] %>
+<% action_label, action_path, title, explanation = if evaluation&.frozen?
+  [ "View evaluation report", project_facet_confidence_evaluation_path(entry.project, evaluation, **inbox_context),
+    "Evaluation completed", "Every test case has been judged and the completed set is frozen. You can review the report attached to this closeout." ]
+elsif evaluation && progress[:labeled] == progress[:total]
+  [ "Freeze judgments", project_facet_confidence_evaluation_path(entry.project, evaluation, **inbox_context),
+    "Judgments ready to freeze", "Every test case has a recorded judgment. Freeze the completed set to finish this evaluation." ]
+elsif evaluation
+  [ progress[:labeled].zero? ? "Start evaluation" : "Continue judging", project_facet_confidence_evaluation_path(entry.project, evaluation, **inbox_context),
+    "Evaluation in progress", "Review each remaining test case independently, record a judgment, and freeze the completed set when every case is finished." ]
+elsif packet.ready?
+  [ "Start evaluation", new_project_facet_confidence_evaluation_path(entry.project, issue_id: issue.id, **inbox_context),
+    "Evaluation needed", "This closeout is blocked until a human independently reviews each test case, records a judgment, and freezes the completed set." ]
+else
+  [ nil, nil, "Evaluation cannot start yet", "Resolve the recorded closeout prerequisite before an operator can review the test cases." ]
+end %>
+
+<div class="space-y-6" data-facet-confidence-action-required>
+  <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
+    <h3 class="text-sm font-semibold text-rose-900"><%= title %></h3>
+    <p class="mt-1 text-sm text-rose-800"><%= explanation %></p>
+    <p class="mt-2 text-sm text-rose-800">
+      Progress: <strong><%= progress[:labeled] %> of <%= progress[:total] %> judgments recorded</strong>; <%= remaining %> remaining.
+      <% if progress[:skipped].positive? %> <%= progress[:skipped] %> skipped case(s) still need a judgment before freezing.<% end %>
+    </p>
+  </div>
+
+  <% unless packet.ready? %>
+    <div class="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <p class="font-medium">What to do first</p>
+      <ul class="space-y-1">
+        <% packet.blockers.each do |blocker| %>
+          <li><%= blocker[:message] %> <span class="text-amber-800"><%= blocker[:recovery] %></span></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <% if action_label %>
+      <%= link_to action_label, action_path,
+            data: { turbo_frame: "_top" },
+            class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
+    <% end %>
+    <%= link_to inbox_issue_link_label(issue), issue.github_url,
+          target: "_blank", rel: "noopener noreferrer",
+          class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+  </div>
+</div>

@@ -1,4 +1,8 @@
 <%# @spec OPERATOR-INBOX-002B %>
+<%# @spec OPERATOR-INBOX-002B OPERATOR-INBOX-002L %>
+<% if entry.facet_confidence_closeout_evaluation? %>
+  <%= render "dashboard/inbox_detail_action_required_facet_confidence", entry: entry %>
+<% else %>
 <div class="space-y-6">
   <% notification = entry.record %>
   <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
@@ -62,3 +66,4 @@
     </div>
   <% end %>
 </div>
+<% end %>

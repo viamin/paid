@@ -389,6 +389,22 @@ RSpec.describe Inbox::Queue do
       expect(entry.summary).to eq("The configured review method could not complete its check.")
     end
 
+    # @spec OPERATOR-INBOX-002L
+    it "gives a partial-closeout evaluation escalation a plain-language title" do
+      issue = create(:issue, project: project, github_number: 30)
+      notification = create(:notification, :error, account: account, subject: issue,
+        source: "facet_confidence.closeout_evaluation", blocking: true,
+        title: "Independent maintainers have frozen the blinded reference judgments",
+        metadata: { "workflow" => described_class::FACET_CONFIDENCE_CLOSEOUT_EVALUATION_WORKFLOW })
+
+      entry = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+        .find { |candidate| candidate.record == notification }
+
+      expect(entry.title).to eq("Human evaluation needed")
+      expect(entry.summary).to eq("Review every test case independently, record each judgment, and freeze the completed set.")
+      expect(entry).to be_facet_confidence_closeout_evaluation
+    end
+
     # @spec NOTIFICATION-SEVERITY-011
     it "projects runner-scoped blocking notifications into action_required using the owner's visible project" do
       project

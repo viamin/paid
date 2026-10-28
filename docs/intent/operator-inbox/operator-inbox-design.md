@@ -171,6 +171,14 @@ absent, the description is also the entry summary. `Notifications::Publish`
 rejects a blocking notification that has neither a non-blank description nor
 remediation guidance, so every Action Required entry has meaningful context.
 
+The `facet_confidence_closeout_evaluation` workflow marker is a typed Action
+Required workflow, not generic notification prose. When it concerns a closeout that requires a
+facet-confidence evaluation, the detail pane translates the blocking state
+into plain language, shows judgment progress, and makes the state-specific
+evaluation route the primary action. It preserves the originating Inbox entry
+and filters in that route. Notification sources without that marker retain the
+generic, safe fallback and explain their available remediation guidance.
+
 ### `merge_approval`
 
 Backed by the PR scanner's persisted current-head policy snapshot on `Issue`.
