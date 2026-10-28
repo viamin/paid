@@ -63,6 +63,24 @@ RSpec.describe ChatSessions::SendMessage do
       }.to change { chat_session.messages.where(role: "user").count }.by(1)
     end
 
+    # @spec CHAT-API-027
+    it "records a completed durable turn for the user message" do
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+
+      turn = chat_session.chat_turns.sole
+      expect(turn).to have_attributes(state: "completed", user_message: chat_session.messages.find_by!(role: "user"))
+      expect(turn.metadata).to include("completion_reason" => "assistant_response")
+    end
+
+    it "does not process the same streaming turn twice" do
+      stream_message_id = SecureRandom.uuid
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client, stream_message_id: stream_message_id)
+
+      expect {
+        described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client, stream_message_id: stream_message_id)
+      }.to raise_error(ChatSessions::TurnInProgressError, /already finished/)
+    end
+
     # @spec PARTIAL-CLOSEOUT-017 — a conversational "yes" must never be
     # treated, displayed, or replayed as approval of a pending write tool.
     describe "with a pending write-tool confirmation" do

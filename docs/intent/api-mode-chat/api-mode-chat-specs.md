@@ -1,5 +1,19 @@
 # EARS Specs: API-Mode Interactive Chat
 
+- [x] **CHAT-API-027** — When Paid starts an API-mode chat turn, it SHALL persist
+  a durable lifecycle attempt keyed to the transport stream ID and shall record
+  every terminal completion or failure explicitly. When an active turn has no
+  durable activity for the configurable stall timeout, Paid SHALL mark it
+  `stalled`, preserve the transcript, and render an actionable system notice
+  identifying that completed tool activity is preserved while remaining work is
+  unknown. A pending write-tool confirmation or an explicitly classified
+  failure SHALL become a non-stalled terminal state. Repeated detector runs
+  SHALL create at most one stalled notice per turn.
+  *Tests:* `spec/services/chat_sessions/send_message_spec.rb`,
+  `spec/services/chat_sessions/detect_stalled_turns_spec.rb`.
+  *Code:* `ChatTurn`, `ChatSessions::SendMessage`,
+  `ChatSessions::DetectStalledTurns`, `ChatSessions::DetectStalledTurnsJob`.
+
 - [x] **CHAT-API-026** — When non-free-policy API-key chat creates a session,
   executes a legacy Automatic session, or switches to a fallback runner, Paid
   SHALL use the same curated Low/Medium/High resolver. It SHALL default new and

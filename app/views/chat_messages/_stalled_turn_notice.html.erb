@@ -1,0 +1,7 @@
+<div class="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="status">
+  <p class="font-medium">This chat turn needs attention</p>
+  <p class="mt-1"><%= message.content %></p>
+  <% if (user_message_id = message.metadata["user_message_id"]).present? %>
+    <p class="mt-2"><a class="underline" href="#chat-message-<%= user_message_id %>">Review the original request</a> before retrying.</p>
+  <% end %>
+</div>

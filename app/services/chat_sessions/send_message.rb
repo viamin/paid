@@ -27,7 +27,7 @@ module ChatSessions
       @on_chunk = on_chunk
       @on_message_persisted = on_message_persisted
       @llm_client = llm_client
-      @stream_message_id = stream_message_id
+      @stream_message_id = stream_message_id || SecureRandom.uuid
     end
 
     def self.call(...)
@@ -42,11 +42,16 @@ module ChatSessions
       check_token_limit!
       resume_session_if_needed!
 
+      prepare_turn
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      chat_turn.complete!(reason: assistant_message ? "assistant_response" : "awaiting_confirmation")
       update_session_activity
       assistant_message
+    rescue StandardError => error
+      chat_turn&.fail!(classification: failure_classification(error)) if chat_turn&.state.in?(ChatTurn::ACTIVE_STATES)
+      raise
     end
 
     private
@@ -113,6 +118,8 @@ module ChatSessions
       @transport_attempt_message = existing_user_message || create_user_message
 
       chat_session.generate_title_from_content!
+      chat_turn.update!(user_message: transport_attempt_message)
+      chat_turn.record_activity!
       on_message_persisted&.call(transport_attempt_message)
       transport_attempt_message
     end
@@ -172,6 +179,44 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    # @spec CHAT-API-027
+    def prepare_turn
+      @chat_turn = chat_session.chat_turns.find_or_create_by!(stream_message_id: stream_message_id) do |turn|
+        turn.state = "pending"
+        turn.last_activity_at = Time.current
+      end
+      @chat_turn.with_lock do
+        raise TurnInProgressError, "This chat turn is already being processed" if @chat_turn.state == "streaming"
+        raise TurnInProgressError, "This chat turn has already finished" unless @chat_turn.state == "pending"
+
+        @chat_turn.record_activity!
+      end
+      wrap_progress_callbacks
+    end
+
+    attr_reader :chat_turn
+
+    def wrap_progress_callbacks
+      message_callback = on_message_persisted
+      chunk_callback = on_chunk
+      @on_message_persisted = ->(message, **kwargs) {
+        chat_turn.record_activity!
+        message_callback&.call(message, **kwargs)
+      }
+      @on_chunk = ->(chunk) {
+        chat_turn.record_activity!
+        chunk_callback&.call(chunk)
+      }
+    end
+
+    def failure_classification(error)
+      return "rate_limited" if error.is_a?(AgentHarness::RateLimitError)
+      return "provider_error" if error.is_a?(AgentHarness::Error)
+      return "token_limit" if error.is_a?(ChatSessions::TokenLimitExceededError)
+
+      "execution_error"
     end
 
     # Reuse the pre-loop budget baseline so the mid-loop guard does not issue a
