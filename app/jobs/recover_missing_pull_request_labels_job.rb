@@ -21,6 +21,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
   )
 
   CANDIDATE_WINDOW = 30.days
+  IDENTITY_RECOVERY_BACKOFF = 24.hours
 
   def perform
     recovered = 0
@@ -105,6 +106,12 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       .where(status: AgentRun::FINISHED_STATUSES)
       .where("COALESCE(agent_runs.completed_at, agent_runs.updated_at) >= ?", CANDIDATE_WINDOW.ago)
       .where("agent_runs.pull_request_number IS NOT NULL OR NULLIF(agent_runs.branch_name, '') IS NOT NULL")
+      .where(
+        "agent_runs.pull_request_number IS NOT NULL OR " \
+          "agent_runs.pr_identity_recovery_attempted_at IS NULL OR " \
+          "agent_runs.pr_identity_recovery_attempted_at <= ?",
+        IDENTITY_RECOVERY_BACKOFF.ago
+      )
       .where.not(projects: { pr_target: "upstream" })
       .select("DISTINCT ON (project_id, COALESCE(pull_request_number, 0), COALESCE(branch_name, '')) agent_runs.*")
       .order(Arel.sql("project_id, COALESCE(pull_request_number, 0), COALESCE(branch_name, ''), id DESC"))
@@ -196,7 +203,10 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       state: "open",
       head: "#{agent_run.project.owner}:#{agent_run.branch_name}"
     )
-    return unless matches.one?
+    unless matches.one?
+      mark_branch_identity_recovery_attempted(agent_run)
+      return
+    end
 
     pull_request = matches.first
     agent_run.update!(pull_request_number: pull_request.number, pull_request_url: pull_request.html_url)
@@ -209,6 +219,14 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       error: e.message
     )
     nil
+  end
+
+  def mark_branch_identity_recovery_attempted(agent_run)
+    AgentRun.where(
+      project_id: agent_run.project_id,
+      branch_name: agent_run.branch_name,
+      pull_request_number: nil
+    ).update_all(pr_identity_recovery_attempted_at: Time.current)
   end
 
   def inheritable_priority_labels(project, agent_run)

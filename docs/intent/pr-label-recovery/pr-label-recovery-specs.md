@@ -23,9 +23,10 @@
   pull request, the recovery job SHALL recover missing labels. If the run has
   no recorded PR identity but has a branch, it SHALL repair that identity only
   when GitHub returns exactly one open PR for the run's repository-qualified
-  branch; repeated sweeps SHALL be idempotent. It SHALL not infer an identity
-  from PR prose or restore an automation label when the generated-label
-  opt-out marker is present.
+  branch. After a zero or ambiguous result, it SHALL wait at least 24 hours
+  before querying that branch again. Repeated sweeps SHALL be idempotent. It
+  SHALL not infer an identity from PR prose or restore an automation label when
+  the generated-label opt-out marker is present.
   *Code:* `RecoverMissingPullRequestLabelsJob#candidate_runs`,
   `RecoverMissingPullRequestLabelsJob#recover_pull_request_identity`.
   *Test:* `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`.

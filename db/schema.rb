@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_201853) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -337,6 +337,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
     t.string "plan_doc_source", limit: 1000, comment: "User-named plan document (RDR/ADR/design doc path or URL) the lid_planning run treats as authored intent. Only set for lid_planning runs."
+    t.datetime "pr_identity_recovery_attempted_at", comment: "Last successful GitHub lookup that found zero or ambiguous open PRs for the run branch."
     t.string "priority_tier", limit: 10
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"

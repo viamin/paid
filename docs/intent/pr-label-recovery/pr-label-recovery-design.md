@@ -21,8 +21,10 @@ failed, timed out, or were cancelled after GitHub accepted the PR:
 - **Missing linkage**: when a terminal run has no recorded PR number but has a
   branch, the job looks up an open PR for that exact repository-qualified head.
   Exactly one match repairs the run's number and URL before normal local sync
-  and label recovery; zero or ambiguous matches are left untouched. This is
-  mechanical branch evidence, not a title/body heuristic.
+  and label recovery. Zero or ambiguous matches record an attempt and are
+  retried no more than once per day, bounding GitHub API use for branches that
+  never produced an open PR. This is mechanical branch evidence, not a
+  title/body heuristic.
 - **Opt-out preserved**: if the PR still has the generated label but is
   missing the automation label, assume a human removed it intentionally and
   do not re-add.

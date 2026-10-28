@@ -70,6 +70,33 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
       expect(pull_request.reload.labels).to include("paid-generated", "paid-automation")
     end
 
+    # @spec PR-LABEL-RECOVERY-003
+    it "backs off branch lookups after GitHub returns no matching PR" do
+      run = create_timed_out_run
+      older_run = create_timed_out_run(completed_at: 2.hours.ago)
+
+      described_class.perform_now
+
+      expect(run.reload.pr_identity_recovery_attempted_at).to be_within(1.second).of(Time.current)
+      expect(older_run.reload.pr_identity_recovery_attempted_at).to be_within(1.second).of(Time.current)
+      expect(github_client).to have_received(:pull_requests).once
+
+      described_class.perform_now
+
+      expect(github_client).to have_received(:pull_requests).once
+    end
+
+    # @spec PR-LABEL-RECOVERY-003
+    it "retries an unmatched branch after the identity recovery backoff" do
+      run = create_timed_out_run
+      run.update!(pr_identity_recovery_attempted_at: 25.hours.ago)
+
+      described_class.perform_now
+
+      expect(github_client).to have_received(:pull_requests).once
+      expect(run.reload.pr_identity_recovery_attempted_at).to be_within(1.second).of(Time.current)
+    end
+
     context "when the generated label is already present" do
       it "skips recovery" do
         create(:agent_run, :completed,
@@ -334,7 +361,7 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
       expect(github_client).to have_received(:add_labels_to_issue).once
     end
 
-    def create_timed_out_run
+    def create_timed_out_run(**attributes)
       create(:agent_run,
         project: project,
         issue: nil,
@@ -344,7 +371,8 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
         completed_at: 1.hour.ago,
         branch_name: "agent/fix-inbox",
         pull_request_number: nil,
-        pull_request_url: nil)
+        pull_request_url: nil,
+        **attributes)
     end
   end
 end
