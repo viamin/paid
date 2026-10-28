@@ -84,3 +84,13 @@
   to phase-owned requests.
   *Tests:* `spec/services/inbox/removals_spec.rb`
   *Code:* `Inbox::Removals::RestoreOnPhaseEnablement`, `Inbox::PhaseRelevance`
+
+- [x] **INBOX-PERFORMANCE-001** — When an Inbox badge is computed while phase
+  rollout is off and the user has active personal removals, the system SHALL
+  validate only the removed request identities and SHALL NOT construct the
+  unfiltered Inbox queue. Ordered issue lanes SHALL retain project predicates
+  and ordering while preloading shared projects separately, so project audit
+  history is not repeated in per-issue result rows.
+  *Tests:* `spec/services/inbox/count_spec.rb`, `spec/services/inbox/queue_spec.rb`
+  *Code:* `Inbox::Count`, `Inbox::Queue`, `Inbox::MergeApproval`,
+  `Inbox::IntentConformance`

@@ -40,6 +40,27 @@ RSpec.describe Inbox::Queue do
   # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-004 @spec INBOX-FOUNDATION-009
   # @spec INBOX-FOUNDATION-005 @spec INBOX-FOUNDATION-006
   describe ".call" do
+    # @spec INBOX-PERFORMANCE-001
+    it "preloads projects separately from ordered issue lanes" do
+      create_needs_input(body: questions_body)
+      create_merge_approval_pr
+      create_intent_conformance_pr
+      queries = []
+      subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |_name, _started, _finished, _id, payload|
+        queries << payload[:sql] unless payload[:name] == "SCHEMA"
+      end
+
+      described_class.call(user: user, kind: described_class::CLARIFYING_QUESTIONS_KIND)
+      described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+      described_class.call(user: user, kind: described_class::INTENT_CONFORMANCE_KIND)
+
+      issue_queries = queries.select { |query| query.include?("FROM \"issues\"") }
+      expect(issue_queries).to all(include("JOIN \"projects\""))
+      expect(issue_queries).to all(a_string_not_including("\"projects\".\"log_data\""))
+    ensure
+      ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
+    end
+
     # @spec DESIGN-RECONCILIATION-001
     it "returns open design artifact findings as traceability-gap entries" do
       finding = create(:design_artifact_finding, project:, account: account, artifact_path: "docs/rdrs/RDR-063-example.md",

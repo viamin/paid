@@ -39,8 +39,11 @@ module Inbox
     # cheap SQL approximation is unchanged.
     def compute_count
       return governed_count if phase_model_governed?
-      return governed_count if personal_removals?
 
+      [ unfiltered_count - personally_removed_count, 0 ].max
+    end
+
+    def unfiltered_count
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
         retry_limited_count + change_intent_draft_count + partial_closeout_count +
@@ -64,8 +67,29 @@ module Inbox
       end
     end
 
-    def personal_removals?
-      InboxRemoval.active.where(user: user).exists?
+    # Personal removals are normally sparse. Verify just those stable request
+    # identities in Queue's removed scope, rather than materializing every
+    # entry payload to discover which requests remain suppressed. The removed
+    # scope keeps the Queue's occurrence and phase-relevance semantics intact.
+    # @spec INBOX-PHASE-RELEVANCE-009
+    def personally_removed_count
+      active_removals.count { |removal| currently_removed?(removal) }
+    end
+
+    def active_removals
+      @active_removals ||= InboxRemoval.active.where(user: user).to_a
+    end
+
+    def currently_removed?(removal)
+      kind, record_id = removal.request_key.split(":", 2)
+      return false unless Inbox::Queue::KINDS.include?(kind) && record_id.present?
+
+      Inbox::Queue.call(
+        user: user,
+        kind: kind,
+        record_id: record_id,
+        scope: Inbox::Queue::REMOVED_SCOPE
+      ).any?
     end
 
     def needs_input_count

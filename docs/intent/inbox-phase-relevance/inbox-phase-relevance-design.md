@@ -96,3 +96,14 @@ Phase relevance is behind `FeatureFlags.enabled?(:automation_phases, project:)`;
 while the flag is off, phase-owned requests remain in the default list.
 Personal removal is an independent per-user presentation control and applies
 to the default and Removed views regardless of that rollout flag.
+
+## Bounded badge counting
+
+The nav badge retains its indexed candidate counts while phase rollout is off.
+When a user has active personal removals, it validates only each removed
+stable request identity through the queue's `removed` scope and subtracts the
+ones still suppressed. It MUST NOT construct the unfiltered queue merely
+because a removal exists. This preserves occurrence-aware suppression while
+bounding materialization to the removal set. Ordered issue lanes keep project
+joins for predicates and ordering, but preload projects in a separate query so
+large project audit histories are not repeated in each issue result row.
