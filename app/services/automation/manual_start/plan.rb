@@ -18,6 +18,8 @@ module Automation
       class EndpointNotApplicable < Error; end
       # Continuation must attach to a durable issue or pull-request work item.
       class WorkItemRequired < Error; end
+      # A grant cannot cross the project's tenant and work-item boundary.
+      class WorkItemOutOfScope < Error; end
 
       attr_reader :continuation_selected, :endpoint, :goal, :phase, :project, :user
 
@@ -89,6 +91,7 @@ module Automation
         raise WorkItemRequired, "Select an issue or pull request to authorize automatic continuation." unless issue
 
         ensure_delegation_permitted!
+        ensure_work_item_belongs_to_project!(issue)
 
         WorkItemContinuationGrant.create!(
           project: project,
@@ -133,7 +136,7 @@ module Automation
       def delegation_permitted?
         return merge_delegation_permitted? if endpoint == Automation::Phases::MERGE
 
-        true
+        ProjectPolicy.new(user, project).run_agent?
       end
 
       def merge_delegation_permitted?
@@ -146,6 +149,12 @@ module Automation
         else
           "You do not have permission to delegate this action for the project."
         end
+      end
+
+      def ensure_work_item_belongs_to_project!(issue)
+        return if issue.project_id == project.id
+
+        raise WorkItemOutOfScope, "The selected work item does not belong to this project."
       end
     end
   end
