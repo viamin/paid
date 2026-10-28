@@ -16,7 +16,7 @@ module ChatSessions
     include FallbackLoop
 
     attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
-      :transport_attempt_message
+      :transport_attempt_message, :chat_turn
 
     MAX_CONTENT_LENGTH = 12_000
 
@@ -42,11 +42,16 @@ module ChatSessions
       check_token_limit!
       resume_session_if_needed!
 
+      start_turn
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      chat_turn.complete!(message: assistant_message) if assistant_message
       update_session_activity
       assistant_message
+    rescue StandardError => error
+      chat_turn&.fail!(error)
+      raise
     end
 
     private
@@ -111,10 +116,20 @@ module ChatSessions
 
     def persist_user_message
       @transport_attempt_message = existing_user_message || create_user_message
+      chat_turn.update!(user_message: transport_attempt_message, checkpoint_message: transport_attempt_message,
+        status: "streaming", last_activity_at: Time.current)
 
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
       transport_attempt_message
+    end
+
+    def start_turn
+      return @chat_turn = ChatTurn.create!(chat_session:, last_activity_at: Time.current) if stream_message_id.blank?
+
+      @chat_turn = ChatTurn.find_or_create_by!(chat_session:, stream_message_id:) do |turn|
+        turn.last_activity_at = Time.current
+      end
     end
 
     # A restarted job retains its stream id. Reusing the original user row
@@ -178,7 +193,7 @@ module ChatSessions
     # second SUM query per turn. Only forward when a limit is configured; a nil
     # baseline means "unlimited" and AgentLoop re-derives nil cheaply.
     def extra_agent_loop_kwargs
-      @token_budget ? { token_budget: @token_budget } : {}
+      { chat_turn: }.merge(@token_budget ? { token_budget: @token_budget } : {})
     end
   end
 end
