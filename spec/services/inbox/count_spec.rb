@@ -79,6 +79,25 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(5)
     end
 
+    it "counts a held draft PR and invalidates when the local hold clears" do # @spec INBOX-FOUNDATION-008
+      project.update!(label_integration_mode: "ignored")
+      pull_request = create(
+        :issue,
+        :pull_request,
+        project: project,
+        pr_review_phase: "draft",
+        hold_for_review: true,
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      held_count = described_class.call(user: user)
+      pull_request.update!(hold_for_review: false)
+
+      expect(held_count).to eq(1)
+      expect(described_class.call(user: user)).to eq(0)
+    end
+
     # @spec OPERATOR-INBOX-002D
     it "counts open manual_review issues" do
       create(:issue, project: project, paid_state: "manual_review", manual_review_reason: "Round limit reached.")

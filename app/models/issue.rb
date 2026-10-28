@@ -1016,6 +1016,7 @@ class Issue < ApplicationRecord
       saved_change_to_awaiting_approval_since? ||
       saved_change_to_merge_permission_rejected_at? ||
       saved_change_to_pr_review_phase? ||
+      saved_change_to_hold_for_review? ||
       saved_change_to_github_state?
     )
   end

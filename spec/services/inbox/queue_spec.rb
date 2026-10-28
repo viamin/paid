@@ -168,6 +168,26 @@ RSpec.describe Inbox::Queue do
       )
     end
 
+    it "returns an explicit review hold despite a stale draft review phase" do # @spec INBOX-FOUNDATION-008
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 411,
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry).to have_attributes(
+        issue: pr,
+        summary_text: "Human review requested before merging"
+      )
+    end
+
     # @spec INBOX-PHASE-RELEVANCE-003
     it "keeps merge approvals accessible in Disabled phases when merge is disabled" do
       FeatureFlags.enable!(:automation_phases, project:)
@@ -334,6 +354,23 @@ RSpec.describe Inbox::Queue do
         summary_text: "Human review requested before merging",
         waiting_since: pr.github_updated_at
       )
+    end
+
+    it "returns an ignored-mode local review hold despite a stale draft review phase" do # @spec INBOX-FOUNDATION-008 LABEL-CONTROL-004
+      project.update!(label_integration_mode: "ignored")
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 412,
+        pr_review_phase: "draft",
+        hold_for_review: true,
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      expect(described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND))
+        .to contain_exactly(have_attributes(issue: pr))
     end
 
     it "does not use a hold label for an ignored-mode PR without a local review hold" do # @spec LABEL-CONTROL-004
