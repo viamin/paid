@@ -211,9 +211,13 @@ recording completion, so a continuation cannot dispatch after the attestation.
 ### Assessment transport diagnostics
 
 Closeout assessment remains a fail-closed Claude CLI operation. When the host
-does not have an authenticated Claude session, the request uses the owning
+does not have an authenticated Claude session, the request uses an owning
 account's active managed Claude subscription credential as a request-scoped CLI
-environment override; it never silently changes to API-key/text-mode billing.
+environment override only when the provider materializer supports its env-token
+form. Native Claude credentials remain unmodified because their refresh token
+must be materialized as the CLI credentials file; they are never reduced to a
+bare access token. The request never silently changes to API-key/text-mode
+billing.
 Failed attempts persist only a bounded category, provider/model, request and
 attempt identities, plus invalid-field paths/types for structural failures.
 They retain no provider response content or credential material, and an

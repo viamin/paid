@@ -83,6 +83,19 @@ RSpec.describe Llm::AnalyzePartialCloseout do
     end
 
     # @spec PARTIAL-CLOSEOUT-034
+    it "does not inject a native Claude credential as an OAuth environment token" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      create(:runner_credential, account: project.account, runner_key: "claude", auth_kind: "oauth_token",
+        token: JSON.generate("claudeAiOauth" => { "accessToken" => "native-access-token", "refreshToken" => "native-refresh-token" }))
+
+      described_class.call(agent_run: agent_run)
+
+      expect(AgentHarness).to have_received(:send_message) do |_prompt, options|
+        expect(options).not_to have_key(:provider_runtime)
+      end
+    end
+
+    # @spec PARTIAL-CLOSEOUT-034
     it "classifies Claude authentication errors without exposing the provider response" do
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
       allow(AgentHarness).to receive(:send_message).and_raise(

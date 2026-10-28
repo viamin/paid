@@ -6,8 +6,10 @@
 
 - [x] **PARTIAL-CLOSEOUT-034** — When a partial-closeout assessment uses the
   Claude CLI transport, Paid SHALL use the owning account's active managed
-  Claude subscription credential when one is available, without switching to
-  API-key/text-mode billing. When the request cannot obtain a valid assessment,
+  Claude subscription credential's materializer-supported environment-token
+  form when one is available, without switching to API-key/text-mode billing.
+  It SHALL NOT inject a native Claude credentials JSON payload as a bare access
+  token. When the request cannot obtain a valid assessment,
   it SHALL remain fail-closed and persist a bounded failure category,
   provider/model, request and attempt identities, and structural invalid-field
   paths/types where applicable; it SHALL not persist response content or

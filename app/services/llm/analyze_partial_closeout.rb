@@ -260,7 +260,10 @@ module Llm
     def managed_claude_oauth_token
       credential = agent_run.project.account.runner_credentials.active.for_runner("claude")
         .where(auth_kind: "oauth_token").order(created_at: :desc, id: :desc).first
-      ClaudeCredentials::Secret.parse(credential&.token).oauth_token
+      return unless credential
+
+      materialization = Runners::SubscriptionAuthProviders.for_runner("claude").materialize(secret: credential.token)
+      materialization.env["CLAUDE_CODE_OAUTH_TOKEN"]
     end
 
     def assessment_failure(category, invalid_fields = [])
