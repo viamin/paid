@@ -203,7 +203,7 @@ module Activities
       IssueEnhancements::StopForManualReview.call(
         project: project,
         issue: issue,
-        reason: "Paid reached the configured enhancement-round limit."
+        reason: IssueEnhancements::StopForManualReview::ROUND_LIMIT_REASON
       )
     end
 

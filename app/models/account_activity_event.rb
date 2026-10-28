@@ -21,6 +21,7 @@ class AccountActivityEvent < ApplicationRecord
     "issue.created" => "project",
     "issue.updated" => "project",
     "issue.reopened" => "project",
+    "issue.reopen_review_resolved" => "project",
     "issue.mutation_trust_verified" => "project",
     "issue.labels_changed" => "project",
     "issue.continuation_requested" => "project",
@@ -141,6 +142,8 @@ class AccountActivityEvent < ApplicationRecord
       "Deleted project #{metadata_value('name')}"
     when "project.settings_changed"
       "Changed project #{metadata_value('name')} settings"
+    when "issue.reopen_review_resolved"
+      "Resolved reopen review as #{humanized_metadata_value('decision')}"
     when "runner.created"
       "Added #{metadata_value('runner_name')} runner"
     when "runner.updated"

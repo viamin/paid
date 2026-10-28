@@ -3,6 +3,15 @@
 module IssueEnhancements
   class StopForManualReview
     COMMENT_MARKER = "<!-- paid:enhance-issue-manual-review -->"
+    STRUCTURED_OUTPUT_REASON = "Paid could not validate the enhancement agent's structured output."
+    ROUND_LIMIT_REASON = "Paid reached the configured enhancement-round limit."
+    ROUND_LIMIT_PREFIX = "Paid reached the configured limit of "
+    LEGACY_REASONS = [ "Round limit reached.", "Structured output failed validation." ].freeze
+
+    def self.enhancement_reason?(reason)
+      reason == STRUCTURED_OUTPUT_REASON || reason == ROUND_LIMIT_REASON ||
+        reason.to_s.start_with?(ROUND_LIMIT_PREFIX) || reason.in?(LEGACY_REASONS)
+    end
 
     def self.call(...)
       new(...).call

@@ -1086,6 +1086,34 @@ RSpec.describe "Inbox" do
     )
   end
 
+  # @spec OPERATOR-INBOX-002L @spec ISSUE-REOPEN-REVIEW-005
+  it "renders reopen intent validation instead of an enhancement retry" do
+    reopened = create_manual_review_issue(title: "Reopened work", github_number: 5_091,
+      reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+    reopened.update!(reopen_reason: "Live validation artifacts remain uncollected.")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, reopened),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response.body).to include("Reopen intent validation", "Live validation artifacts remain uncollected.",
+      "Closure remains valid", "Resume implementation")
+    expect(response.body).not_to include("Start enhancement run")
+  end
+
+  # @spec OPERATOR-INBOX-002L
+  it "links unresolved dependency work without offering a retry" do
+    dependency = create(:issue, project:, github_number: 4_321, title: "Collect prerequisite evidence")
+    parked = create_manual_review_issue(title: "Dependent work", github_number: 5_092)
+    create(:issue_dependency, issue: parked, depends_on_issue: dependency)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
+      kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response.body).to include("Unresolved prerequisites", "Collect prerequisite evidence",
+      "does not waive the dependency")
+    expect(response.body).not_to include("Start enhancement run")
+  end
+
   # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
   it "renders the clarifying-questions answer form for a manual_review issue with preserved terminal-round questions" do
     parked = create_manual_review_issue(

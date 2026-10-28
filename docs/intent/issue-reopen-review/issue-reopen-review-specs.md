@@ -30,3 +30,14 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resolves a
+  pending reopen review, the system SHALL require a non-blank reason and an
+  explicit current-intent decision, bind its audit evidence to the current
+  issue revision, and preserve the reopen provenance. A still-valid closure
+  SHALL complete the issue; remaining scope SHALL queue or reuse one normal
+  implementation run. Unresolved dependencies or incompatible unfinished work
+  SHALL refuse the transition without clearing the review hold.
+  *Tests:* `spec/services/issues/recover_manual_review_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Issues::RecoverManualReview`, `Projects::AgentRunsController`.

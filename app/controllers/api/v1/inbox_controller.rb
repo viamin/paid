@@ -6,7 +6,7 @@ module Api
       DEFAULT_LIMIT = 50
       MAX_LIMIT = 100
 
-      before_action -> { require_scope!(:inbox) }, only: %i[index count show remove_entry restore_entry]
+      before_action -> { require_scope!(:inbox) }, only: %i[index count show remove_entry restore_entry recover_manual_review]
       before_action -> { require_scope!(:chat) }, only: :chat
 
       # @spec MOBILE-API-006 MOBILE-API-010
@@ -63,6 +63,24 @@ module Api
         render json: { chat_session_id: chat_session.id }, status: :created
       rescue GithubClient::Error => e
         render_error(:bad_gateway, :github_error, "Failed to load clarifying questions: #{e.message}")
+      end
+
+      # API counterpart to the HTML action; both delegate authorization-safe
+      # mutation and active-work reconciliation to the same service.
+      # @spec OPERATOR-INBOX-002L @spec ISSUE-REOPEN-REVIEW-005
+      def recover_manual_review
+        authorize :inbox, :show?, policy_class: InboxPolicy
+        entry = entry_for_mutation
+        return render_entry_not_found unless entry&.manual_review?
+
+        authorize entry.project, :run_agent?, policy_class: ProjectPolicy
+        result = Issues::RecoverManualReview.call(issue: entry.issue, actor: current_user,
+          decision: params[:decision], reason: params[:reason])
+        if result.success?
+          render json: { recovered: true, action: result.message, agent_run_id: result.agent_run&.id }
+        else
+          render_error(:unprocessable_entity, result.code, result.message)
+        end
       end
 
       # RDR-077: removal hides the request for this user only; the request,

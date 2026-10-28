@@ -99,6 +99,20 @@ RSpec.describe "Mobile inbox API" do
     expect(response.parsed_body.fetch("chat_session_id")).to be_present
   end
 
+  # @spec OPERATOR-INBOX-002L @spec ISSUE-REOPEN-REVIEW-005
+  it "uses the shared recovery service for a reopen-review decision" do
+    reopened = create(:issue, project:, paid_state: "manual_review",
+      manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+    post "/api/v1/inbox/entries/manual_review:#{reopened.id}/recover_manual_review",
+      params: { decision: "closure_valid", reason: "The original closure remains current." },
+      headers: headers, as: :json
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("recovered" => true)
+    expect(reopened.reload.paid_state).to eq("completed")
+  end
+
   it "returns not found instead of opening a chat for an unavailable entry" do # @spec MOBILE-API-009
     post "/api/v1/inbox/entries/clarifying_questions:999999/chat", headers: headers
 

@@ -480,6 +480,17 @@ module Projects
         return
       end
 
+      cause = Inbox::ManualReviewCause.call(issue)
+      if cause.kind == :reopen_review
+        recover_reopen_review(issue)
+        return
+      end
+      unless cause.kind == :enhancement
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This manual-review cause does not support an enhancement retry. Refresh the Inbox for its recovery action."
+        return
+      end
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
@@ -488,6 +499,14 @@ module Projects
         goal: "enhance_issue",
         priority_tier: nil
       )
+    end
+
+    # @spec OPERATOR-INBOX-002L @spec ISSUE-REOPEN-REVIEW-005
+    def recover_reopen_review(issue)
+      result = Issues::RecoverManualReview.call(issue:, actor: current_user,
+        decision: params[:decision], reason: params[:reason])
+      flash = result.success? ? { notice: result.message } : { alert: result.message }
+      redirect_to safe_return_target || dashboard_path, **flash
     end
 
     # Operator-driven counterpart to

@@ -34,8 +34,6 @@ module Inbox
 
     # manual_review has several causes; the stop reason and the latest run goal
     # say which phase owns the stop.
-    ENHANCEMENT_REASONS = /enhance|clarif|question/i
-
     Ownership = Struct.new(:request_key, :entry_kind, :record_id, :project, :responsible_phase,
       :classification_state, :origin_kind, :origin_id, :stored, keyword_init: true) do
       def platform?
@@ -197,7 +195,9 @@ module Inbox
     # say which phase owns the stop.
     def phase_for_manual_review_issue(issue, latest_runs: nil)
       return nil unless issue
-      return Automation::Phases::ISSUE_PREPARATION if issue.manual_review_reason.to_s.match?(ENHANCEMENT_REASONS)
+      if IssueEnhancements::StopForManualReview.enhancement_reason?(issue.manual_review_reason)
+        return Automation::Phases::ISSUE_PREPARATION
+      end
 
       latest_run = latest_runs ? latest_runs[issue.id] : issue.agent_runs.order(created_at: :desc, id: :desc).first
       return Automation::Phases::ISSUE_PREPARATION if latest_run&.enhance_issue_goal?

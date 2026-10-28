@@ -142,6 +142,26 @@ credential, transient GitHub failure, or questions sourced from the local
 existing `View Issue` / `View PR` link remains so the operator can still
 read the comment directly on GitHub.
 
+### `manual_review`
+
+Manual review is a lane, not a recovery operation. Its detail classifies the
+cause from persisted producer evidence: the dedicated reopen-review marker,
+unresolved dependency edges, code-scanning source and remediation attempts,
+preserved enhancement questions or an enhancement run, and failed technical
+runs. Evidence that matches none of those classes remains visible as unknown
+and offers no speculative retry.
+
+Each class explains what its action does. Reopen review records a
+current-revision intent decision and reason; remaining work continues through
+the normal implementation run, while a still-valid closure records completion.
+Dependencies link to the blocking work and remain non-waivable. Enhancement
+questions keep their answer form and enhancement failures may retry analysis.
+Scanner recurrence and technical failures point to their existing evidence or
+run recovery surfaces. Before any retry or continuation, the recovery service
+inspects unfinished work under the issue lock: a compatible run is reused and
+an incompatible run is reported for reconciliation instead of creating a
+second run or clearing the hold.
+
 ### `plan_review`
 
 Backed by `DecompositionDecision.open_plan_reviews`, scoped through

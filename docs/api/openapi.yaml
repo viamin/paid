@@ -140,6 +140,42 @@ paths:
                     type: integer
         default:
           $ref: '#/components/responses/Error'
+  /inbox/entries/{entry_id}/recover_manual_review:
+    parameters:
+      - $ref: '#/components/parameters/EntryId'
+    post:
+      operationId: recoverManualReview
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decision, reason]
+              properties:
+                decision:
+                  type: string
+                  enum: [closure_valid, remaining_work]
+                reason:
+                  type: string
+                  minLength: 1
+      responses:
+        '200':
+          description: The reopen-review decision was recorded and any compatible continuation reconciled.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [recovered, action]
+                properties:
+                  recovered: {type: boolean}
+                  action: {type: string}
+                  agent_run_id: {type: [integer, 'null']}
+        default:
+          $ref: '#/components/responses/Error'
   /inbox/entries/{entry_id}/remove:
     parameters:
       - $ref: '#/components/parameters/EntryId'

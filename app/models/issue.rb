@@ -321,6 +321,14 @@ class Issue < ApplicationRecord
     paid_state == "manual_review" && manual_review_reason == REOPEN_REVIEW_REQUIRED_REASON
   end
 
+  # Stable binding for an operator's reopen-review decision. GitHub's update
+  # timestamp is the upstream revision; the body digest detects a local mirror
+  # correction that has not yet advanced that timestamp.
+  # @spec ISSUE-REOPEN-REVIEW-005
+  def reopen_review_revision
+    Digest::SHA256.hexdigest([ github_updated_at&.utc&.iso8601(6), body.to_s ].join("\0"))
+  end
+
   # @spec ISSUE-REOPEN-REVIEW-001
   def require_reopen_review!
     with_lock do

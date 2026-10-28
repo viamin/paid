@@ -104,11 +104,18 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        cause = Inbox::ManualReviewCause.call(entry.issue)
+        {
+          questions: entry.questions,
+          comment_url: entry.manual_review_comment_url,
+          cause: cause.kind,
+          dependency_urls: cause.dependencies.map(&:github_url),
+          originating_run_id: cause.latest_run&.id
+        }
       end
 
       def manual_review_list_payload
-        { questions: entry.questions }
+        { questions: entry.questions, cause: Inbox::ManualReviewCause.call(entry.issue).kind }
       end
 
       # entry.record is Inbox::IntentConformance::Snapshot, already carrying

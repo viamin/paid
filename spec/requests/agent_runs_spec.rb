@@ -2628,6 +2628,20 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec OPERATOR-INBOX-002L @spec ISSUE-REOPEN-REVIEW-005
+      it "records a reopen decision and queues implementation through the same endpoint" do
+        reopened = create(:issue, project:, github_number: 8_901, paid_state: "manual_review",
+          manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project),
+            params: { issue_id: reopened.id, decision: "remaining_work", reason: "Collect live evidence." }
+        }.to change { reopened.agent_runs.where(goal: "create_pr").count }.by(1)
+
+        expect(reopened.reload.paid_state).to eq("in_progress")
+        expect(account.account_activity_events.where(action: "issue.reopen_review_resolved")).to exist
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,

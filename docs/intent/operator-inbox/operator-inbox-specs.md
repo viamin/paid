@@ -19,6 +19,25 @@
   *Code:* `app/services/inbox/queue.rb`, `app/models/decomposition_decision.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** — When an authorized operator opens or acts on a
+  `manual_review` entry, the system SHALL classify its cause from persisted
+  reopen-review, unresolved-dependency, enhancement, scanner, and run-failure
+  provenance, and SHALL retain an explicit unknown class when that evidence is
+  insufficient. Reopen review SHALL show the recorded reopening scope, accept
+  a reasoned current-revision intent decision, and either record completion or
+  continue implementation. An unresolved dependency SHALL remain blocking and
+  link to its owner action. Enhancement questions and retries SHALL retain
+  their existing actions; scanner and technical failures SHALL point to their
+  supported evidence or run recovery. Before continuation the system SHALL
+  reuse compatible unfinished work or report incompatible unfinished work,
+  and repeated submissions SHALL not create another run. All actions SHALL
+  preserve project authorization and refresh the Inbox.
+  *Code:* `Inbox::ManualReviewCause`, `Issues::RecoverManualReview`,
+  `Projects::AgentRunsController`, manual-review Inbox detail.
+  *Test:* `spec/services/inbox/manual_review_cause_spec.rb`,
+  `spec/services/issues/recover_manual_review_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002A** — When an open PR's persisted auto-merge blocker
   snapshot reduces to approval-only failures (`owner_approved` and/or
   `reviews_fresh`) with no other failed or not-evaluated blockers, the system

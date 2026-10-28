@@ -21,9 +21,14 @@ review reason. The Inbox exposes this state to an operator, and ordinary
 automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
-An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+An operator resolves manual review only after validating whether the original
+intent remains valid and whether new work is required against the current issue
+revision. The decision records the actor, reason, revision digest, and reopening
+provenance in the account audit trail. A still-valid closure completes the
+issue; remaining work continues through the normal implementation goal. The
+same locked service inspects unresolved dependencies and unfinished runs first:
+dependencies cannot be waived, compatible work is reused, and incompatible
+work must be reconciled before the hold clears.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 
