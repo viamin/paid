@@ -25,8 +25,8 @@ module Runners
     FREE_POLICY_RUNNER_KEYS = Runner::DIRECT_OUTBOUND_FREE_POLICY_RUNNER_KEYS
     FREE_POLICY_API_PROVIDER = "openrouter"
 
-    def self.call(runner_key:, api_provider:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE)
-      new(runner_key: runner_key, api_provider: api_provider, auth_type: auth_type).call
+    def self.call(runner_key:, api_provider:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE, zdr_only: false)
+      new(runner_key: runner_key, api_provider: api_provider, auth_type: auth_type, zdr_only:).call
     end
 
     # Batched sibling of .call for rendering every service type's dropdown for
@@ -59,11 +59,12 @@ module Runners
     end
     private_class_method :rows_for_provider
 
-    def initialize(runner_key:, api_provider:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE, catalog_rows: nil)
+    def initialize(runner_key:, api_provider:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE, catalog_rows: nil, zdr_only: false)
       @runner_key = runner_key.to_s
       @api_provider = api_provider.to_s
       @auth_type = auth_type.to_s.presence || DefaultTierModelIds::DEFAULT_AUTH_TYPE
       @preloaded_catalog_rows = catalog_rows
+      @zdr_only = zdr_only
     end
 
     def call
@@ -106,6 +107,7 @@ module Runners
       # dropdown alongside provider-scoped rows (e.g. the Pareto row).
       relation = LlmModel.active.by_provider(api_provider)
       relation = relation.or(LlmModel.active.openrouter_synced) if api_provider == FREE_POLICY_API_PROVIDER
+      relation = OpenrouterZdr::EligibleModels.call.merge(relation) if @zdr_only
       relation.order(Arel.sql("family ASC NULLS LAST")).by_capability
     end
 

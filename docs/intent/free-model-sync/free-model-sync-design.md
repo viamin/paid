@@ -18,6 +18,16 @@ This segment covers the daily synchronization path only. Runner execution,
 rotation, and data-classification routing remain covered by their existing code
 paths and RDRs.
 
+OpenRouter's endpoint-level Zero Data Retention (ZDR) catalog is a separate
+input from the free catalog. It records each advertised endpoint against its
+concrete OpenRouter model id, including paid and free models, without deriving
+eligibility from price or provider identity. The ZDR sync never owns or
+deactivates free-sync rows; it keeps its own active eligibility records and
+freshness status. A failed or malformed refresh marks that status unavailable
+while preserving the last successful eligibility snapshot. Runner setup can
+query active eligible models through its existing compatibility filtering; the
+runtime provider ZDR enforcement remains authoritative.
+
 ## Goals
 
 - Pull OpenRouter's model catalog from `GET /api/v1/models`.

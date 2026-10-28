@@ -1,0 +1,13 @@
+{
+  "data": [
+    {
+      "name": "Provider A | openai/paid-zdr",
+      "model_id": "openai/paid-zdr",
+      "model_name": "OpenAI: Paid ZDR",
+      "context_length": 128000,
+      "max_completion_tokens": 16000,
+      "supported_parameters": ["tools"],
+      "pricing": { "prompt": "0.1", "completion": "0.2" }
+    }
+  ]
+}

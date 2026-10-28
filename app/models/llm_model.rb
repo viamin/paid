@@ -7,7 +7,7 @@ class LlmModel < ApplicationRecord
   TIERS = %w[low mid high].freeze
   PRICING_TIERS = %w[paid free freemium].freeze
   DATA_TRAINING_RISKS = %w[none possible unknown].freeze
-  CATALOG_SOURCES = %w[seeded openrouter_sync manual].freeze
+  CATALOG_SOURCES = %w[seeded openrouter_sync openrouter_zdr_sync manual].freeze
   # Sentinel dropdown value when a direct-outbound provider (see
   # Runner::DIRECT_OUTBOUND_API_PROVIDERS) has no active catalog rows: render
   # only this entry (e.g. labeled "Custom") so the user can still type a model

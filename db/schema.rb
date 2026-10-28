@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_085528) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3163,6 +3163,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["account_id", "position"], name: "index_onboarding_steps_on_account_id_and_position"
     t.index ["account_id", "step"], name: "index_onboarding_steps_on_account_id_and_step", unique: true
     t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
+  end
+
+  create_table "openrouter_zdr_catalog_statuses", force: :cascade do |t|
+    t.string "catalog_key", null: false
+    t.datetime "created_at", null: false
+    t.datetime "last_attempted_at"
+    t.string "last_error"
+    t.datetime "last_successful_at"
+    t.string "status", default: "unavailable", null: false
+    t.datetime "updated_at", null: false
+    t.index ["catalog_key"], name: "index_openrouter_zdr_catalog_statuses_on_catalog_key", unique: true
+  end
+
+  create_table "openrouter_zdr_eligibilities", force: :cascade do |t|
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.integer "endpoint_count", default: 0, null: false
+    t.jsonb "endpoint_metadata", default: {}, null: false
+    t.datetime "last_seen_at", null: false
+    t.string "model_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["active"], name: "index_openrouter_zdr_eligibilities_on_active"
+    t.index ["model_id"], name: "index_openrouter_zdr_eligibilities_on_model_id", unique: true
   end
 
   create_table "orchestration_decisions", comment: "Structured log of orchestration decisions for later workflow analysis and learning.", force: :cascade do |t|

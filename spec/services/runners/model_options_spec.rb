@@ -122,6 +122,14 @@ RSpec.describe Runners::ModelOptions do
           %w[openrouter/pareto-code qwen/qwen3-coder deepseek/deepseek-chat-v3]
         )
       end
+
+      it "can limit options to advertised ZDR eligible models without bypassing compatibility" do # @spec OPENROUTER-ZDR-CATALOG-005
+        create(:openrouter_zdr_eligibility, model_id: "qwen/qwen3-coder")
+
+        values = described_class.call(runner_key:, api_provider:, auth_type:, zdr_only: true).select(&:model?).map(&:value)
+
+        expect(values).to eq([ "qwen/qwen3-coder" ])
+      end
     end
 
     context "with the free policy entry" do
