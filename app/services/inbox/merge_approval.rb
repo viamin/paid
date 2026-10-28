@@ -23,7 +23,6 @@ module Inbox
           project_id: project_ids,
           is_pull_request: true,
           github_state: "open",
-          pr_review_phase: "ready",
           merge_permission_rejected_at: nil
         )
         .where(candidate_conditions)
@@ -212,8 +211,8 @@ module Inbox
 
     def candidate?
       # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-004
+      return true if held_open_pr?
       return false unless reviewable_pr?
-      return true if held_for_review?
       return false if manual_merge? && automatic_merge_active?
 
       manual_merge? ? manual_action_required? : approval_only_blockers?
@@ -224,6 +223,13 @@ module Inbox
         issue.github_state == "open" &&
         issue.pr_review_phase == "ready" &&
         (manual_merge? || automatic_merge_configured?) &&
+        !issue.merge_permission_rejected?
+    end
+
+    def held_open_pr?
+      issue.is_pull_request? &&
+        issue.github_state == "open" &&
+        held_for_review? &&
         !issue.merge_permission_rejected?
     end
 

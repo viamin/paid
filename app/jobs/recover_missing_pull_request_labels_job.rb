@@ -28,7 +28,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
     failed = 0
     not_synced = 0
 
-    runs = candidate_runs.to_a
+    runs = (candidate_runs.to_a + recovered_unlinked_runs).uniq { |run| [ run.project_id, run.pull_request_number ] }
     synced_prs = prefetch_synced_prs(runs)
 
     runs.each do |agent_run|
@@ -102,6 +102,53 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       .select("DISTINCT ON (project_id, pull_request_number) agent_runs.*")
       .order(:project_id, :pull_request_number, id: :desc)
       .preload(:issue, project: :github_token)
+  end
+
+  # A PR can be published before run finalization records its identity. Use
+  # the persisted branch as bounded, repository-qualified evidence and refuse
+  # ambiguous matches. @spec PR-LABEL-RECOVERY-003
+  def recovered_unlinked_runs
+    candidate_unlinked_runs.filter_map { |agent_run| recover_pull_request_identity(agent_run) }
+  end
+
+  def candidate_unlinked_runs
+    AgentRun.finished.joins(:project)
+      .where(goal: "create_pr", pull_request_number: nil)
+      .where.not(branch_name: [ nil, "" ])
+      .where("agent_runs.completed_at >= ?", CANDIDATE_WINDOW.ago)
+      .where.not(projects: { pr_target: "upstream" })
+      .order(completed_at: :desc, id: :desc)
+      .preload(:issue, project: :github_token)
+  end
+
+  def recover_pull_request_identity(agent_run)
+    matches = open_branch_pull_requests(agent_run)
+    return unless matches.one?
+
+    pull_request = matches.sole
+    agent_run.update!(
+      pull_request_number: pull_request.number,
+      pull_request_url: pull_request.html_url
+    )
+    backfill_synced_pr(agent_run)
+    agent_run
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "agent_execution.pr_identity_recovery_failed",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      error: e.message
+    )
+    nil
+  end
+
+  def open_branch_pull_requests(agent_run)
+    project = agent_run.project
+    project.client.pull_requests(
+      project.full_name,
+      state: "open",
+      head: "#{project.owner}:#{agent_run.branch_name}"
+    )
   end
 
   # Batch-loads synced Issue records for all candidate runs, keyed by

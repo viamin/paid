@@ -181,7 +181,10 @@ approval-only result (`owner_approved` and/or `reviews_fresh`) with no
 projects, it also surfaces a fully clear assessment as a manual merge decision,
 unless the pull request has a trusted per-PR auto-merge activation: that PR is
 automatically managed and must not race or misdirect an operator with a manual
-decision. The structured `paid-hold-review` lane still takes precedence.
+decision. The structured `paid-hold-review` lane still takes precedence and
+does not depend on the internal review phase: the hold is already an explicit
+human request, while visibility neither promotes the phase nor authorizes a
+merge.
 Red or pending CI, merge conflicts, unresolved review threads, dependencies,
 or policy checks remain machine/blocker state rather than Inbox noise. The
 detail pane reuses the standard PR badge and GitHub-link conventions and

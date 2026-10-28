@@ -6,8 +6,10 @@
 ## Problem
 
 `CreatePullRequestActivity` labels newly created pull requests best-effort.
-When that call fails transiently (GitHub API error), the PR is left without
-`paid-generated` / `paid-automation`, which drops it out of Paid automation.
+When post-processing fails or is interrupted after the agent opened the PR,
+the run can also terminate without its PR number. Either failure leaves the PR
+without `paid-generated` / `paid-automation`, which drops it out of Paid
+automation.
 
 ## Design
 
@@ -23,6 +25,11 @@ labels to PRs created by completed `create_pr` agent runs:
   do not re-add.
 - **Priority inheritance**: missing priority labels are backfilled even when
   auto-add labels is disabled.
+- **Interrupted publication**: terminal create-PR runs in the same bounded
+  window that have no PR number are matched by their persisted branch against
+  open PRs in the project's own repository. Exactly one match restores the
+  run identity and local PR/source link before normal label recovery; zero or
+  multiple matches remain untouched rather than guessing.
 
 ## Code
 

@@ -36,8 +36,10 @@
   unevaluated policy signals SHALL keep the PR out of the actionable lane
   rather than implying merge readiness. The queue, badge, filter availability,
   API serializer, and supported GitHub action SHALL share that predicate;
-  test-review, escalation, and structured hold lanes retain their existing
-  precedence and no automatic merge is enabled by visibility alone. A trusted
+  test-review and escalation lanes retain their existing precedence. A
+  structured hold on any open PR SHALL remain visible despite a stale internal
+  review phase, without changing that phase, and no automatic merge is enabled
+  by visibility alone. A trusted
   per-PR auto-merge activation excludes the PR from this manual-action lane even
   when the project mode is `off`, because it authorizes the scanner's automatic
   merge path; a structured hold remains visible and blocks that path.

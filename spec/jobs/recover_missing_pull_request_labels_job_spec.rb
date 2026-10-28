@@ -11,20 +11,57 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
     before do
       allow(GithubClient).to receive(:new).and_return(github_client)
       allow(github_client).to receive(:add_labels_to_issue)
-      allow(github_client).to receive(:issue).and_return(
-        OpenStruct.new(
+      allow(github_client).to receive_messages(
+        pull_requests: [],
+        issue: OpenStruct.new(
           id: 9001,
           number: 416,
           title: "Recovered PR",
           body: "Recovered body",
           state: "open",
           labels: [],
+          html_url: "https://github.com/viamin/paid/pull/416",
           pull_request: OpenStruct.new(html_url: "https://github.com/viamin/paid/pull/416"),
           user: OpenStruct.new(login: "viamin"),
           created_at: 1.day.ago,
           updated_at: Time.current
         )
       )
+    end
+
+    # @spec PR-LABEL-RECOVERY-003
+    it "recovers an unlinked PR from a failed run's unambiguous branch" do
+      run = create_unlinked_run(status: "failed", branch_name: "paid/4716-fix")
+      match = OpenStruct.new(number: 416, html_url: "https://github.com/viamin/paid/pull/416")
+      allow(github_client).to receive(:pull_requests)
+        .with("viamin/paid", state: "open", head: "viamin:paid/4716-fix")
+        .and_return([ match ])
+
+      described_class.perform_now
+
+      expect(run.reload).to have_attributes(
+        pull_request_number: 416,
+        pull_request_url: "https://github.com/viamin/paid/pull/416"
+      )
+      expect(github_client).to have_received(:add_labels_to_issue)
+        .with("viamin/paid", 416, [ "paid-generated", "paid-automation" ])
+      expect(Issue.find_by(project: project, github_number: 416)).to have_attributes(
+        parent_issue_id: run.issue_id
+      )
+    end
+
+    # @spec PR-LABEL-RECOVERY-003
+    it "does not guess when a failed run's branch matches multiple open PRs" do
+      run = create_unlinked_run(status: "timeout", branch_name: "paid/ambiguous")
+      allow(github_client).to receive(:pull_requests).and_return([
+        OpenStruct.new(number: 416, html_url: "https://github.com/viamin/paid/pull/416"),
+        OpenStruct.new(number: 417, html_url: "https://github.com/viamin/paid/pull/417")
+      ])
+
+      described_class.perform_now
+
+      expect(run.reload.pull_request_number).to be_nil
+      expect(github_client).not_to have_received(:add_labels_to_issue)
     end
 
     it "reapplies the generated and automation labels when both are missing" do
@@ -310,5 +347,17 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
 
       expect(github_client).to have_received(:add_labels_to_issue).once
     end
+  end
+
+  def create_unlinked_run(status:, branch_name:)
+    create(:agent_run,
+      project: project,
+      issue: create(:issue, project: project),
+      goal: "create_pr",
+      status: status,
+      completed_at: 1.hour.ago,
+      branch_name: branch_name,
+      pull_request_number: nil,
+      pull_request_url: nil)
   end
 end
