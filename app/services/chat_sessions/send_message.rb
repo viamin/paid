@@ -24,8 +24,8 @@ module ChatSessions
       @chat_session = chat_session
       @actor = actor
       @content = content
-      @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @on_chunk = ->(chunk) { record_turn_activity; on_chunk&.call(chunk) }
+      @on_message_persisted = ->(message, **kwargs) { record_turn_activity; on_message_persisted&.call(message, **kwargs) }
       @llm_client = llm_client
       @stream_message_id = stream_message_id
     end
@@ -42,11 +42,17 @@ module ChatSessions
       check_token_limit!
       resume_session_if_needed!
 
+      @turn = find_or_create_turn
+      @turn.mark_streaming!
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      @turn.complete!(awaiting_confirmation: assistant_message.nil?)
       update_session_activity
       assistant_message
+    rescue StandardError
+      @turn&.fail! unless @turn&.terminal?
+      raise
     end
 
     private
@@ -115,6 +121,22 @@ module ChatSessions
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
       transport_attempt_message
+    end
+
+    def find_or_create_turn
+      existing = chat_session.chat_turns.find_by(stream_message_id: stream_message_id) if stream_message_id
+      return existing if existing
+
+      chat_session.chat_turns.create!(
+        content: content,
+        stream_message_id: stream_message_id,
+        started_at: Time.current,
+        last_activity_at: Time.current
+      )
+    end
+
+    def record_turn_activity
+      @turn&.record_activity!
     end
 
     # A restarted job retains its stream id. Reusing the original user row
