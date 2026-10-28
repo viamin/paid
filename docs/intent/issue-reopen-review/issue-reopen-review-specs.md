@@ -30,3 +30,10 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When the Inbox renders a pending reopen
+  review, the system SHALL classify the dedicated reopen provenance instead of
+  offering an enhancement retry, and SHALL surface unfinished work for explicit
+  reconciliation rather than clearing the hold or duplicating a run.
+  *Tests:* `spec/services/issues/manual_review_recovery_spec.rb`.
+  *Code:* `Issues::ManualReviewRecovery`.

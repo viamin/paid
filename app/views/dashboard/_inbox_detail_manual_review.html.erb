@@ -1,14 +1,25 @@
 <%# @spec OPERATOR-INBOX-002D %>
 <div class="space-y-6">
+  <% recovery = Issues::ManualReviewRecovery.call(entry.issue) %>
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.active_run %>
+        Agent run #<%= recovery.active_run.id %> is already <%= recovery.active_run.status %>. Reconcile that work before starting another run.
+      <% elsif recovery.cause == :dependency_wait %>
+        This issue is waiting for its unresolved dependency; acknowledging this item does not waive that dependency.
+      <% elsif recovery.cause == :reopen_review %>
+        Review the original closure and current scope before choosing evidence collection or implementation.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+        <%= recovery.instruction %>
       <% end %>
     </p>
+  </div>
+
+  <div class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+    <span class="font-semibold">Recovery route:</span> <%= recovery.label %>
   </div>
 
   <div class="space-y-3">
@@ -41,8 +52,19 @@
           selected_kind: selected_kind %>
   <% end %>
 
+  <% if recovery.cause == :dependency_wait %>
+    <div class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+      Waiting on
+      <% recovery.dependency_numbers.each do |number| %>
+        <% dependency = entry.project.issues.find_by(github_number: number) %>
+        <%= link_to "##{number}", dependency&.github_url || entry.project.github_url, target: "_blank", rel: "noopener noreferrer", class: "underline" %>
+      <% end %>.
+      Paid reevaluates the issue when the dependency resolves.
+    </div>
+  <% end %>
+
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && recovery.resumable? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

@@ -176,6 +176,20 @@
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** — When a manual-review entry is rendered or an
+  operator requests a resume, the system SHALL classify only durable producer
+  provenance (reopen review, unresolved dependency, scanner recurrence, or an
+  enhancement stop). Unknown provenance SHALL remain visible and SHALL NOT be
+  guessed as an enhancement retry. An unresolved dependency SHALL name its
+  blocking issue and remain held until normal dependency resolution rechecks
+  it. Any queued, running, or paused issue run SHALL be surfaced for explicit
+  reconciliation and SHALL prevent a second resume from clearing the hold.
+  *Tests:* `spec/services/issues/manual_review_recovery_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Issues::ManualReviewRecovery`,
+  `Projects::AgentRunsController#resume_manual_review`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by
   `Issue#abandon_due_to_runner_retry_cap!` after every available runner hit
