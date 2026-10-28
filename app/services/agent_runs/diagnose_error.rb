@@ -9,7 +9,6 @@ module AgentRuns
   #   result.success?    # => true
   #   result.issue_url   # => "https://github.com/owner/repo/issues/42"
   class DiagnoseError
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     MAX_ERROR_INPUT = 8000
     MAX_LOG_INPUT = 8000
     TIMEOUT = 60
@@ -67,14 +66,7 @@ module AgentRuns
     end
 
     def analyze_error
-      response = AgentHarness.send_message(
-        diagnosis_prompt,
-        provider: :claude,
-        model: DEFAULT_MODEL,
-        timeout: TIMEOUT,
-        tools: :none,
-        **Llm::TextMode.options
-      )
+      response = Llm::Request.call(prompt: diagnosis_prompt, project: @agent_run.project, timeout: TIMEOUT)
       return nil unless response.success?
 
       response.output.presence

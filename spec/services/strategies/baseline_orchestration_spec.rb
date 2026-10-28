@@ -24,7 +24,7 @@ RSpec.describe Strategies::BaselineOrchestration do
 
     it "preserves the fallback LLM decomposition settings" do
       expect(content.dig("llm_fallback", "prompt_slug")).to eq(Activities::DecomposeFeatureActivity::PROMPT_SLUG)
-      expect(content.dig("llm_fallback", "model")).to eq(Activities::DecomposeFeatureActivity::DEFAULT_MODEL)
+      expect(content.dig("llm_fallback", "model_selection")).to eq("configured_runner")
       expect(content.dig("llm_fallback", "timeout_seconds")).to eq(Activities::DecomposeFeatureActivity::TIMEOUT)
       expect(content.dig("llm_fallback", "max_tasks")).to eq(Activities::DecomposeFeatureActivity::MAX_TASKS)
     end

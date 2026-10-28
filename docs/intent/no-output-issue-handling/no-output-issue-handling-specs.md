@@ -79,9 +79,9 @@
   a nonblank next step SHALL be rejected before reconciliation persists it,
   so a retry regenerates the assessment instead of publishing a generic
   prerequisite. Both API and CLI requests SHALL explicitly supply the JSON
-  response contract. CLI assessments SHALL allow 90 seconds for startup and
-  generation independently of the 30-second API read timeout; the enclosing
-  activity SHALL allow 600 seconds for harness retries and reconciliation.
+  response contract. Assessments SHALL allow 60 seconds for runner startup and
+  generation within the enclosing activity's 120-second budget, leaving time
+  for timeout cleanup and reconciliation.
   Malformed JSON SHALL fail closed without logging response excerpts.
   Unsuccessful transport responses SHALL surface a bounded, secret-redacted
   transport diagnostic distinct from invalid assessment data.

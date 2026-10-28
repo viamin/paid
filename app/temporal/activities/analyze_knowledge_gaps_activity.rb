@@ -10,7 +10,6 @@ module Activities
 
     activity_name "AnalyzeKnowledgeGaps"
 
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     LLM_TIMEOUT = 120
     COLLECTOR_TYPES = %w[route symbol dependency language_stat project_structure api_endpoint].freeze
 
@@ -21,16 +20,8 @@ module Activities
 
       project = Project.find(project_id)
       prompt = build_prompt(project, sampled_runs, artifact_usage)
-      response = with_periodic_heartbeat("analyze_knowledge_gaps", project_id: project_id, model: DEFAULT_MODEL) do
-        AgentHarness.send_message(
-          prompt,
-          provider: :claude,
-          model: DEFAULT_MODEL,
-          timeout: LLM_TIMEOUT,
-          tools: :none,
-          dangerous_mode: false,
-          **Llm::TextMode.options
-        )
+      response = with_periodic_heartbeat("analyze_knowledge_gaps", project_id: project_id) do
+        Llm::Request.call(prompt: prompt, project: project, timeout: LLM_TIMEOUT)
       end
 
       parsed = parse_response(response)

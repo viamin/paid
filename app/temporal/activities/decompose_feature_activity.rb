@@ -9,7 +9,6 @@ module Activities
 
     activity_name "DecomposeFeature"
 
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     POLICY_PROMPT_SOURCE = "policy_service"
     TIMEOUT = 60
     MAX_TASKS = 20
@@ -55,7 +54,7 @@ module Activities
       end
 
       prompt_data = render_prompt(issue, knowledge_context)
-      tasks = decompose(prompt_data[:prompt])
+      tasks = decompose(prompt_data[:prompt], project: project)
 
       logger.info(
         message: "planning.decomposition_complete",
@@ -159,16 +158,9 @@ module Activities
       [ nil, context ]
     end
 
-    def decompose(prompt)
-      response = with_periodic_heartbeat("decompose_feature.llm_request", model: DEFAULT_MODEL) do
-        AgentHarness.send_message(
-          prompt,
-          provider: :claude,
-          model: DEFAULT_MODEL,
-          timeout: TIMEOUT,
-          tools: :none,
-          **Llm::TextMode.options
-        )
+    def decompose(prompt, project:)
+      response = with_periodic_heartbeat("decompose_feature.llm_request") do
+        Llm::Request.call(prompt: prompt, project: project, timeout: TIMEOUT)
       end
 
       unless response.success?

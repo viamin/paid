@@ -91,7 +91,7 @@ module Knowledge
       when :embedding
         UserSetting::KB_EMBEDDING_RUNNERS
       when :chat, :issue_analysis
-        UserSetting::KB_CHAT_RUNNERS
+        UserSetting::KB_CHAT_RUNNERS + user_setting.user.runners.kept_only.for_chat.map(&:routing_key)
       else
         raise ArgumentError, "Unsupported knowledge runner operation: #{operation}"
       end

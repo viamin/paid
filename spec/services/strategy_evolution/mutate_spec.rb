@@ -3,6 +3,12 @@
 require "rails_helper"
 
 RSpec.describe StrategyEvolution::Mutate do
+  before { configure_llm_routing()
+allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
+   }
+
+  after { Current.user = nil }
+
   let(:strategy) do
     {
       id: 12,
@@ -40,10 +46,6 @@ RSpec.describe StrategyEvolution::Mutate do
   end
   let(:response) { instance_double(AgentHarness::Response, success?: true, output: valid_response) }
 
-  before do
-    allow(AgentHarness).to receive(:send_message).and_return(response)
-    allow(Llm::TextMode).to receive(:options).and_return({})
-  end
 
   it "returns structured mutations with provenance and diffs" do
     mutations = described_class.call(strategy: strategy, analysis: analysis, options: { mutation_count: 1 })
@@ -63,9 +65,9 @@ RSpec.describe StrategyEvolution::Mutate do
   it "passes historical analysis into the LLM prompt" do
     described_class.call(strategy: strategy, analysis: analysis)
 
-    expect(AgentHarness).to have_received(:send_message).with(
+    expect(AgentHarness.conductor).to have_received(:execute_direct).with(
       a_string_including("\"decision_count\": 12", "\"loop_detected\": 2"),
-      hash_including(provider: :claude, model: "claude-sonnet-4-6", timeout: 60, tools: :none)
+      hash_including(provider: :claude, model: "configured-mid", timeout: 60, tools: :none)
     )
   end
 

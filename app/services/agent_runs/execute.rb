@@ -53,11 +53,15 @@ module AgentRuns
     def execute_agent
       harness_runner_key = harness_runner_key_for(agent_run.agent_type)
       raise ArgumentError, "Unsupported agent type: #{agent_run.agent_type}" if harness_runner_key.nil?
+      unless agent_run.container_id.present? || agent_run.runner_handle.present?
+        raise AgentHarness::ConfigurationError, "Agent execution requires an isolated execution environment"
+      end
 
-      options = { runner: harness_runner_key.to_s, dangerous_mode: true }
+      options = { provider: harness_runner_key.to_sym, dangerous_mode: true,
+                  executor: Containers::HarnessExecutor.new(agent_run), externally_sandboxed: true }
       options[:timeout] = timeout unless timeout.nil?
 
-      AgentHarness.send_message(prompt, **options)
+      AgentHarness.conductor.execute_direct(prompt, **options)
     end
 
     def process_response(response)

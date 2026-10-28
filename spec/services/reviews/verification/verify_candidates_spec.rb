@@ -3,6 +3,9 @@
 require "rails_helper"
 
 RSpec.describe Reviews::Verification::VerifyCandidates do
+  before { configure_llm_routing(project: project) }
+  after { Current.user = nil }
+
   let(:project) { build(:project) }
   let(:head_sha) { "abc123abc123" }
   let(:candidates) do
@@ -39,7 +42,7 @@ RSpec.describe Reviews::Verification::VerifyCandidates do
       output: json,
       input_tokens: 80,
       output_tokens: 40,
-      model: "claude-sonnet-4-6"
+      model: "configured-mid"
     )
   end
 
@@ -56,7 +59,7 @@ RSpec.describe Reviews::Verification::VerifyCandidates do
   describe ".call" do
     # @spec REVIEW-VERIFY-003
     it "returns a verdict with evidence and a normalized claim key per candidate" do
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response(verdict_json(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response(verdict_json(
         verdict: "confirmed", claim_key: " Foo  NilGuard ", evidence: "Line 3 calls params[:id].strip without a guard."
       )))
 
@@ -81,7 +84,7 @@ RSpec.describe Reviews::Verification::VerifyCandidates do
           summary: "Other", triggering_condition: "t", failure_scenario: "f"
         )
       ]
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         llm_response(verdict_json(verdict: "refuted", claim_key: "other", evidence: "No such behavior."))
       )
 
@@ -90,8 +93,8 @@ RSpec.describe Reviews::Verification::VerifyCandidates do
         files: files, content_loader: content_loader
       )
 
-      expect(AgentHarness).to have_received(:send_message).twice
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).twice
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("Missing nil guard", "new line three"),
         hash_including(provider: :claude, tools: :none)
       )
@@ -99,7 +102,7 @@ RSpec.describe Reviews::Verification::VerifyCandidates do
 
     # @spec REVIEW-VERIFY-003
     it "captures a corrected location from the verifier" do
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response(verdict_json(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response(verdict_json(
         verdict: "confirmed",
         claim_key: "nil-guard",
         evidence: "Trigger lives one line below the cited one.",
@@ -117,7 +120,7 @@ RSpec.describe Reviews::Verification::VerifyCandidates do
 
     # @spec REVIEW-VERIFY-003
     it "raises on an out-of-enum verdict instead of guessing" do
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         llm_response(verdict_json(verdict: "maybe", claim_key: "k", evidence: "e"))
       )
 
@@ -131,7 +134,7 @@ RSpec.describe Reviews::Verification::VerifyCandidates do
 
     # @spec REVIEW-VERIFY-003
     it "raises when the verifier output is unparseable" do
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response("garbage"))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response("garbage"))
 
       expect {
         described_class.call(
@@ -143,7 +146,7 @@ RSpec.describe Reviews::Verification::VerifyCandidates do
 
     # @spec REVIEW-VERIFY-003
     it "raises when the content loader cannot fetch the file (never becomes clean)" do
-      allow(AgentHarness).to receive(:send_message)
+      allow(AgentHarness.conductor).to receive(:execute_direct)
 
       expect {
         described_class.call(
@@ -155,7 +158,7 @@ RSpec.describe Reviews::Verification::VerifyCandidates do
 
     # @spec REVIEW-VERIFY-009
     it "reports per-candidate token usage" do
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         llm_response(verdict_json(verdict: "plausible", claim_key: "k", evidence: "e"))
       )
       usages = []
@@ -167,7 +170,7 @@ RSpec.describe Reviews::Verification::VerifyCandidates do
       )
 
       expect(usages).to eq([
-        { tokens_input: 80, tokens_output: 40, llm_model: "claude-sonnet-4-6", operation: "verified_review.verify" }
+        { tokens_input: 80, tokens_output: 40, llm_model: "configured-mid", operation: "verified_review.verify" }
       ])
     end
   end

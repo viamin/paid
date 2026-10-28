@@ -28,11 +28,11 @@ RSpec.describe ChatSessions::BuildSystemPrompt do
       create(:feature_intent_facet_assessment, feature_intent_facet_direction: direction, account: account,
         evidence_revision: facet.evidence_revision, status: "completed", intent_score: 85, technical_score: 70,
         explanation: "An explicit requirement is clear; prototype coverage is limited.", evidence_references: [ "chat-1" ])
-      allow(AgentHarness).to receive(:send_message)
+      allow(AgentHarness.conductor).to receive(:execute_direct)
 
       expect(prompt).to include("Facet Confidence", "Intent certainty: 85/100", "Technical confidence: 70/100",
         "Expressed intent evidence: chat-1", "Inferred fit: assessment interpretation")
-      expect(AgentHarness).not_to have_received(:send_message)
+      expect(AgentHarness.conductor).not_to have_received(:execute_direct)
     end
 
     describe "base identity" do

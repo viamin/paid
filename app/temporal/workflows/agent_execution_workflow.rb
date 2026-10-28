@@ -497,10 +497,10 @@ module Workflows
               # with nondeterministic-history. Workflows started on or after
               # the patch marker take the new path; see docs/PATCH_GUARDS.md.
               if Temporalio::Workflow.patched("partial-closeout-reconciliation-v1")
-                # The harness may retry a 90-second CLI assessment three times.
-                # Leave room for those attempts plus GitHub reconciliation.
+                # The assessment has a 60-second request budget. Leave the rest
+                # of this activity budget for timeout cleanup and reconciliation.
                 reconcile_result = run_activity(Activities::ReconcilePartialCloseoutActivity,
-                  { agent_run_id: agent_run_id }, timeout: 600)
+                  { agent_run_id: agent_run_id }, timeout: 120)
 
                 # CreatePullRequestActivity marks its source run terminal before
                 # returning. Keep advancement as a separate, post-completion

@@ -11,7 +11,6 @@ module Issues
 
     Result = Data.define(:partial, :reason)
 
-    MODEL = "claude-haiku-4-5-20251001"
     TIMEOUT = 30
     PROMPT = <<~PROMPT
       Decide whether the source issue remains incomplete after its merged
@@ -36,10 +35,7 @@ module Issues
     def call
       return unless issue.trusted?
 
-      response = AgentHarness.send_message(
-        format(PROMPT, issue: issue_context, prerequisites: prerequisite_context),
-        provider: :claude, model: MODEL, timeout: TIMEOUT, tools: :none, **Llm::TextMode.options
-      )
+      response = Llm::Request.call(prompt: format(PROMPT, issue: issue_context, prerequisites: prerequisite_context), project: @issue.project, timeout: TIMEOUT)
       return unless response.success?
 
       parse(response.output)

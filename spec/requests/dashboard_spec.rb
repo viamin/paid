@@ -591,7 +591,7 @@ RSpec.describe "Dashboard" do
         get dashboard_knowledge_stats_path
 
         expect(response.body).to include("Runner Health")
-        expect(response.body).to include("Unavailable")
+        expect(response.body).to include("Degraded")
         expect(response.body).to include("LLM Pipeline Metrics (Last 30 Days)")
         expect(response.body).to include("Decision Drafting")
         expect(response.body).to include("Embedding")

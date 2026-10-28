@@ -5,6 +5,14 @@ require "rails_helper"
 # @spec INTENT-CONFORMANCE-ROLLOUT-006
 # @spec INTENT-CONFORMANCE-ROLLOUT-007
 RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
+  before do
+    configure_llm_routing(project: project)
+    allow(project).to receive(:client).and_return(github_client)
+    allow(project).to receive_messages(full_name: "acme/widgets", client: github_client)
+    allow(github_client).to receive(:file_content).with("acme/widgets", path: "docs/rdrs/RDR-999-example.md", ref: "c" * 40)
+      .and_return("# RDR-999\n\nThe widget SHALL always be blue.")
+  end
+
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account: account) }
   let(:project) { create(:project, account: account, created_by: owner) }
@@ -17,12 +25,6 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
   end
   let(:github_client) { instance_double(GithubClient) }
 
-  before do
-    allow(project).to receive(:client).and_return(github_client)
-    allow(project).to receive_messages(full_name: "acme/widgets", client: github_client)
-    allow(github_client).to receive(:file_content).with("acme/widgets", path: "docs/rdrs/RDR-999-example.md", ref: "c" * 40)
-      .and_return("# RDR-999\n\nThe widget SHALL always be blue.")
-  end
 
   after { FileUtils.remove_entry(dir) }
 
@@ -63,13 +65,13 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
   it "executes the real reviewer through agent_harness and records actual verdicts" do
     prepare_frozen!
     allow(github_client).to receive(:compare_summary).with("acme/widgets", "a" * 40, "b" * 40).and_return(comparison)
-    allow(AgentHarness).to receive(:send_message).and_return(llm_response("within_scope"))
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response("within_scope"))
 
     result = described_class.call(evaluation: evaluation)
 
     expect(result).to be_success
     expect(result.executed).to eq(2)
-    expect(AgentHarness).to have_received(:send_message).twice
+    expect(AgentHarness.conductor).to have_received(:execute_direct).twice
     expect(evaluation.reload).to be_completed
     runs = evaluation.runs.index_by(&:case_id)
     expect(runs["A-01"]).to have_attributes(verdict: "within_scope", reviewer_model: "claude-sonnet-4-6", cost_cents: 42, failure_reason: nil)
@@ -87,12 +89,12 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     label_all!(pinned_evaluation)
     freeze!(pinned_evaluation)
     allow(github_client).to receive(:compare_summary).and_return(comparison)
-    allow(AgentHarness).to receive(:send_message).and_return(llm_response("within_scope", model: "claude-opus-4-6"))
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response("within_scope", model: "claude-opus-4-6"))
 
     result = described_class.call(evaluation: pinned_evaluation)
 
     expect(result).to be_success
-    expect(AgentHarness).to have_received(:send_message).with(anything, hash_including(model: "claude-opus-4-6")).twice
+    expect(AgentHarness.conductor).to have_received(:execute_direct).with(anything, hash_including(model: "claude-opus-4-6")).twice
     expect(pinned_evaluation.runs.pluck(:reviewer_model)).to all(eq("claude-opus-4-6"))
   end
 
@@ -106,13 +108,13 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
       manifest_path: manifest_path, manifest_digest: Digest::SHA256.file(manifest_path).hexdigest)
     label_all!(pinned_evaluation)
     freeze!(pinned_evaluation)
-    allow(AgentHarness).to receive(:send_message)
+    allow(AgentHarness.conductor).to receive(:execute_direct)
 
     result = described_class.call(evaluation: pinned_evaluation)
 
     expect(result).not_to be_success
     expect(result.error).to include("prompt version")
-    expect(AgentHarness).not_to have_received(:send_message)
+    expect(AgentHarness.conductor).not_to have_received(:execute_direct)
   end
 
   it "does not count a response from a different model as an evaluated verdict" do
@@ -126,7 +128,7 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     label_all!(pinned_evaluation)
     freeze!(pinned_evaluation)
     allow(github_client).to receive(:compare_summary).and_return(comparison)
-    allow(AgentHarness).to receive(:send_message).and_return(llm_response("within_scope"))
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response("within_scope"))
 
     result = described_class.call(evaluation: pinned_evaluation)
 
@@ -137,7 +139,7 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
   it "records missing or failed reviewer output as not_evaluated, never as agreement" do
     prepare_frozen!
     allow(github_client).to receive(:compare_summary).and_return(comparison)
-    allow(AgentHarness).to receive(:send_message).and_return(instance_double(AgentHarness::Response, success?: false, model: nil, output: nil, metadata: {}))
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(instance_double(AgentHarness::Response, success?: false, model: nil, output: nil, metadata: {}))
 
     result = described_class.call(evaluation: evaluation)
 
@@ -171,7 +173,7 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     label_all!(evaluation)
     freeze!(evaluation)
     allow(github_client).to receive(:compare_summary).and_return(comparison)
-    allow(AgentHarness).to receive(:send_message).and_return(llm_response("within_scope"))
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response("within_scope"))
 
     result = described_class.call(evaluation: evaluation)
 
@@ -183,11 +185,11 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
   it "retries only cases that lack an evaluated verdict" do
     prepare_frozen!
     allow(github_client).to receive(:compare_summary).and_return(comparison)
-    allow(AgentHarness).to receive(:send_message)
+    allow(AgentHarness.conductor).to receive(:execute_direct)
       .and_return(instance_double(AgentHarness::Response, success?: false, model: nil, output: nil, metadata: {}))
     described_class.call(evaluation: evaluation)
 
-    allow(AgentHarness).to receive(:send_message).and_return(llm_response("material_drift"))
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response("material_drift"))
     result = described_class.call(evaluation: evaluation)
 
     expect(result).to be_success
@@ -201,7 +203,7 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
   it "stops between cases when an authorized cancellation is requested and preserves collected evidence" do
     prepare_frozen!
     allow(github_client).to receive(:compare_summary).and_return(comparison)
-    allow(AgentHarness).to receive(:send_message) do
+    allow(AgentHarness.conductor).to receive(:execute_direct) do
       evaluation.update!(cancellation_requested_at: Time.current)
       llm_response("within_scope")
     end
@@ -211,14 +213,14 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     expect(result).to be_success
     expect(evaluation.reload).to be_cancelled
     expect(evaluation.runs.where.not(verdict: "not_evaluated").count).to eq(1)
-    expect(AgentHarness).to have_received(:send_message).once
+    expect(AgentHarness.conductor).to have_received(:execute_direct).once
   end
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-011
   it "preserves a cancellation requested after the final case check" do
     prepare_frozen!
     allow(github_client).to receive(:compare_summary).and_return(comparison)
-    allow(AgentHarness).to receive(:send_message).and_return(llm_response("within_scope"))
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response("within_scope"))
     executor = described_class.new(evaluation: evaluation)
     cancellation_checks = 0
     allow(executor).to receive(:cancellation_requested?).and_wrap_original do |original|
@@ -248,7 +250,7 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
   # second operator's process is simulated with a raw `pg` connection.
   it "refuses to start when another invocation is already executing this evaluation" do
     prepare_frozen!
-    allow(AgentHarness).to receive(:send_message)
+    allow(AgentHarness.conductor).to receive(:execute_direct)
 
     other_session = raw_pg_session
     begin
@@ -261,7 +263,7 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
 
       expect(result).not_to be_success
       expect(result.error).to include("already in progress")
-      expect(AgentHarness).not_to have_received(:send_message)
+      expect(AgentHarness.conductor).not_to have_received(:execute_direct)
       expect(evaluation.reload).to be_frozen
       expect(evaluation.runs).to be_empty
     ensure
@@ -272,11 +274,11 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
   it "releases the execution lock when it finishes so a retry can proceed" do
     prepare_frozen!
     allow(github_client).to receive(:compare_summary).and_return(comparison)
-    allow(AgentHarness).to receive(:send_message)
+    allow(AgentHarness.conductor).to receive(:execute_direct)
       .and_return(instance_double(AgentHarness::Response, success?: false, model: nil, output: nil, metadata: {}))
     described_class.call(evaluation: evaluation)
 
-    allow(AgentHarness).to receive(:send_message).and_return(llm_response("within_scope"))
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response("within_scope"))
     second = described_class.call(evaluation: evaluation)
 
     expect(second).to be_success

@@ -7,7 +7,6 @@ module AgentRunPatterns
   class Diagnose
     include Llm::OutputNormalizer
 
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     MIN_CONFIDENCE = 0.55
     TIMEOUT = 45
     PROMPT = <<~PROMPT
@@ -142,14 +141,7 @@ module AgentRunPatterns
     attr_reader :account, :allow_llm, :pattern
 
     def diagnose_with_llm(evidence_entries)
-      response = AgentHarness.send_message(
-        prompt_for(evidence_entries),
-        provider: :claude,
-        model: DEFAULT_MODEL,
-        timeout: TIMEOUT,
-        tools: :none,
-        **Llm::TextMode.options
-      )
+      response = Llm::Request.call(prompt: prompt_for(evidence_entries), account: account, timeout: TIMEOUT)
 
       return log_and_fallback("llm_unsuccessful_response") unless response.success?
 

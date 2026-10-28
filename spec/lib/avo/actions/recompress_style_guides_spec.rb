@@ -22,10 +22,10 @@ RSpec.describe Avo::Actions::RecompressStyleGuides do
     expect(action.response[:messages]).to include(
       hash_including(type: :success, body: "Queued recompression for 1 style guide.")
     )
-    expect(enqueued_jobs.last).to include(
-      job: StyleGuideCompressionJob,
-      args: [ style_guide.id ]
-    )
+    enqueued_job = enqueued_jobs.last
+    expect(enqueued_job).to include(job: StyleGuideCompressionJob)
+    expect(enqueued_job[:args].first).to eq(style_guide.id)
+    expect(enqueued_job[:args].last).to include("initiated_by_id" => current_user.id)
     expect(logger).to have_received(:info).with(hash_including(
       message: "style_guides.compression_enqueued",
       style_guide_id: style_guide.id,

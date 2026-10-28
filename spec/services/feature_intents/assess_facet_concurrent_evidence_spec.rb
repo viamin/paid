@@ -5,6 +5,7 @@ require "rails_helper"
 # @spec FACET-CONFIDENCE-012
 RSpec.describe FeatureIntents::AssessFacet do
   self.use_transactional_tests = false
+  before { configure_llm_routing(project: project) }
 
   let(:direction) { create(:feature_intent_facet_direction) }
   let(:facet) { direction.feature_intent_facet }
@@ -16,7 +17,8 @@ RSpec.describe FeatureIntents::AssessFacet do
   end
   let(:updated) { Queue.new }
   let(:commit_now) { Queue.new }
-  let(:harness) { double(send_message: completed_response) }
+  let(:conductor) { instance_double(AgentHarness::Orchestration::Conductor, execute_direct: completed_response) }
+  let(:harness) { class_double(AgentHarness, conductor: conductor) }
   let(:completed_response) do
     double(success?: true, output: JSON.generate(
       "status" => "completed", "intent_score" => 90, "technical_score" => 75,

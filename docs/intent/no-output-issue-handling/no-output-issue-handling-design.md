@@ -135,17 +135,13 @@ one). The activity uses an agent-harness structured assessment of approved
 intent, the run/PR evidence, and current open issues (the assessment prompt
 lists the bounded open-issue set so owner reuse is grounded, not guessed from
 evidence prose). The assessment follows the same transport routing as the other
-schema-boundary services: the API-key schema transport when `Llm::TextMode` is
-enabled, the CLI transport otherwise, so a keyless deployment keeps working. Both
-paths receive the JSON response contract explicitly. CLI calls allow 90 seconds
-for process startup and assessment generation; API reads retain their 30-second
-timeout. The enclosing Temporal activity allows 600 seconds for harness retries
-and subsequent GitHub reconciliation. An unsuccessful transport response raises
-a bounded, secret-redacted transport diagnostic instead of being
-reported as an invalid assessment; malformed JSON and invalid assessment shapes
-remain fail-closed validation failures. Malformed JSON reports a fixed diagnostic
-without logging parser excerpts from the untrusted response. Host CLI
-authentication is independent of the builder container authentication. The
+schema-boundary services through the configured runner, with a JSON contract
+in the prompt and local structural validation. The request has 60 seconds within
+the activity's 120-second budget so runner startup, authentication, timeout
+cleanup, and reconciliation remain bounded. Unsuccessful responses and malformed
+or structurally invalid JSON fail closed with bounded diagnostics that retain
+configured or actual provider/model provenance without provider output or
+credentials. The
 assessment is persisted on the run on first success and reused across activity
 retries, keeping gap indices — the replay keys — stable. The deterministic
 reconciler validates that assessment, reuses only current open owners (never the

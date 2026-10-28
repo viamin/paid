@@ -18,8 +18,6 @@ module Activities
     # Used only to pin a model and opt into the HTTP text transport when the
     # resolved provider happens to be claude. The provider itself is no longer
     # forced — selection comes from the user's issue-analysis / chat runners.
-    CLAUDE_RUNNER = "claude"
-    CLAUDE_MODEL = "claude-sonnet-4-6"
     MAX_SEARCH_RESULTS = 10
     MAX_COMMENTS = 50
     # Total budget for the cycle-state digest of every admissible enhancement
@@ -259,7 +257,7 @@ module Activities
             provider: provider,
             attempt: index + 1
           ) do
-            llm_response = AgentHarness.send_message(prompt, **llm_options(provider))
+            llm_response = Llm::Request.call(prompt: prompt, project: agent_run.project, runner: provider, timeout: LLM_TIMEOUT)
             # Promote response-shaped failures to an exception so the phase
             # recorder marks this attempt as `failed` (ISSUE-ANALYSIS-012).
             # Without the raise the tracked block would return normally and
@@ -498,21 +496,6 @@ module Activities
         state.circuit_state = "closed"
         state.failure_count = 0
       end
-    end
-
-    # @spec ISSUE-ANALYSIS-002
-    def llm_options(provider)
-      options = {
-        provider: RunnerSupport.harness_runner_key_for(provider).to_sym,
-        timeout: LLM_TIMEOUT,
-        dangerous_mode: false,
-        tools: :none
-      }
-      # Pin a model and opt into text mode only for claude; other providers use
-      # their harness default model and CLI transport.
-      options[:model] = CLAUDE_MODEL if provider == CLAUDE_RUNNER
-      options.merge!(Llm::TextMode.options) if provider == CLAUDE_RUNNER
-      options
     end
 
     # @spec ISSUE-ANALYSIS-014

@@ -3,6 +3,13 @@
 require "rails_helper"
 
 RSpec.describe StyleGuides::Extract do
+  before { configure_llm_routing(project: project)
+allow(StyleGuides::CollectCodeSamples).to receive(:call).and_return(collected_samples)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response)
+   }
+
+  after { Current.user = nil }
+
   let(:project) { create(:project) }
 
   let(:ruby_samples) do
@@ -23,18 +30,11 @@ RSpec.describe StyleGuides::Extract do
       exit_code: 0,
       duration: 2.5,
       provider: :claude,
-      model: "claude-sonnet-4-6",
+      model: "configured-mid",
       tokens: { input: 500, output: 100, total: 600 }
     )
   end
 
-  before do
-    allow(StyleGuides::CollectCodeSamples).to receive(:call).and_return(collected_samples)
-    allow(AgentHarness).to receive(:send_message).and_return(llm_response)
-    # Default: preserve CLI transport so existing exact-match expectations
-    # pass. Individual specs flip this on to prove text-mode routing.
-    allow(Llm::TextMode).to receive(:options).and_return({})
-  end
 
   describe ".call" do
     it "creates style guides for each detected language" do
@@ -81,26 +81,14 @@ RSpec.describe StyleGuides::Extract do
     it "calls LLM with extraction prompt including code samples" do
       described_class.call(project: project)
 
-      expect(AgentHarness).to have_received(:send_message).with(
-        a_string_including("ruby").and(a_string_including("class User")),
-        provider: :claude,
-        model: "claude-sonnet-4-6",
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+        a_string_including("ruby").and(a_string_including("class User")), hash_including(provider: :claude,
+        model: "configured-mid",
         timeout: 120,
         dangerous_mode: false,
-        tools: :none
-      )
+        tools: :none))
     end
 
-    it "routes through agent-harness text mode when an API key is configured" do
-      allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
-
-      described_class.call(project: project)
-
-      # Extract issues one LLM call per language, so the route assertion
-      # holds for every invocation.
-      expect(AgentHarness).to have_received(:send_message)
-        .with(anything, hash_including(mode: :text)).at_least(:once)
-    end
 
     it "returns empty result when no samples are collected" do
       allow(StyleGuides::CollectCodeSamples).to receive(:call).and_return({})
@@ -130,7 +118,7 @@ RSpec.describe StyleGuides::Extract do
           exit_code: 0,
           duration: 2.5,
           provider: :claude,
-          model: "claude-sonnet-4-6",
+          model: "configured-mid",
           tokens: { input: 500, output: 0, total: 500 }
         )
       end
