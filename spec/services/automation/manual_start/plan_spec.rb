@@ -8,6 +8,7 @@ RSpec.describe Automation::ManualStart::Plan do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account:) }
   let(:member) { create(:user, :member, account:) }
+  let(:outsider) { create(:user) }
   let(:project) { create(:project, account:) }
   let(:issue) { create(:issue, project:) }
 
@@ -101,6 +102,20 @@ RSpec.describe Automation::ManualStart::Plan do
 
     it "permits a non-merge continuation for a user who can start work" do
       expect { plan(user: member, continuation: true, endpoint: "coding").build_grant(issue:) }.not_to raise_error
+    end
+
+    # @spec AUTOMATION-PHASES-009
+    it "rejects continuation from an actor who cannot delegate project work" do
+      expect { plan(user: outsider, continuation: true, endpoint: "coding").build_grant(issue:) }
+        .to raise_error(described_class::PermissionDenied, /permission to delegate this action/)
+    end
+
+    # @spec AUTOMATION-PHASES-005
+    it "rejects a work item from another project" do
+      other_issue = create(:issue, project: create(:project))
+
+      expect { plan(continuation: true, endpoint: "coding").build_grant(issue: other_issue) }
+        .to raise_error(described_class::WorkItemScopeMismatch, /belongs to this project/)
     end
   end
 end
