@@ -160,6 +160,10 @@ What ships today:
   mutations
 - `ChatSessions::ResolveToolCall` atomically resolves pending confirmations and
   resumes the loop only when the final pending confirmation has been settled
+- each submitted user message owns one durable `ChatTurn` lifecycle record;
+  maintenance detects streaming turns that have made no durable progress for
+  the configured timeout, preserves their partial transcript, and records a
+  visible stalled notice instead of inferring a successful response
 - rate-limited sessions are resumed by a maintenance sweep after their recorded
   reset time; a renewed rate limit records the new reset time, while another
   provider error creates a durable transcript notice and requires a user to

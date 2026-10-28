@@ -1,0 +1,7 @@
+<div class="flex justify-center" data-message-id="<%= message.id %>">
+  <article class="mx-auto max-w-2xl rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
+    <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-amber-600">Response needs attention</div>
+    <div class="whitespace-pre-wrap break-words leading-6"><%= message.content.to_s %></div>
+    <p class="mt-2 text-xs leading-5">Do not repeat a request that may have changed something. Review completed tool cards and any pending confirmation, then send a new message to continue safely.</p>
+  </article>
+</div>

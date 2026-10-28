@@ -43,10 +43,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      finish_turn(assistant_message)
       update_session_activity
       assistant_message
+    rescue StandardError
+      fail_turn
+      raise
     end
 
     private
@@ -131,6 +136,36 @@ module ChatSessions
         role: "user",
         content: content,
         metadata: { "stream_message_id" => stream_message_id }.compact
+      )
+    end
+
+    # @spec CHAT-API-026
+    # The user message is the immutable checkpoint for this turn. Re-delivered
+    # jobs reuse that row and therefore reuse this record rather than creating
+    # a second recovery candidate for the same request.
+    def start_turn
+      @chat_turn = ChatTurn.find_or_create_by!(user_message: transport_attempt_message) do |turn|
+        turn.chat_session = chat_session
+        turn.status = "pending"
+        turn.last_activity_at = Time.current
+      end
+      @chat_turn.update!(status: "streaming", last_activity_at: Time.current) if @chat_turn.status == "pending"
+    end
+
+    def finish_turn(assistant_message)
+      return @chat_turn.awaiting_confirmation! unless assistant_message
+
+      @chat_turn.complete!
+    end
+
+    def fail_turn
+      return unless @chat_turn&.persisted? && @chat_turn.status.in?(%w[pending streaming])
+
+      @chat_turn.update!(status: "failed", failure_classification: "infrastructure", last_activity_at: Time.current)
+      chat_session.messages.create!(
+        role: "system",
+        content: "This response could not be completed because the chat service failed. No final answer was saved; review any tool activity before trying again.",
+        metadata: { "turn_failure_notice" => true, "chat_turn_id" => @chat_turn.id, "failure_classification" => "infrastructure" }
       )
     end
 
