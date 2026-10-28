@@ -62,13 +62,16 @@ can go stale when its provider or credential changes:
 | On, every other provider or an OpenRouter runtime without ZDR request support | `user_declared` |
 
 For `openrouter_enforced`, Paid adds `zdr: true` to the OpenRouter request
-routing metadata. Non-OpenRouter declarations are permitted without Paid
-verifying an external contract and display: “You are responsible for verifying
-this provider's zero data retention agreement and configuration.” A provider
-or credential change recomputes provenance from the current runner, so no
-historical verification claim survives a routing change. Pi and OMP retain
-`user_declared` until their upstream execution integration consumes OpenRouter
-routing metadata.
+routing metadata. A non-isolated application request cannot use an
+`openrouter_enforced` API-key runner because the API chat transport does not
+consume that routing metadata; Paid fails the request rather than sending it
+without ZDR enforcement. Non-OpenRouter declarations are permitted without
+Paid verifying an external contract and display: “You are responsible for
+verifying this provider's zero data retention agreement and configuration.” A
+provider or credential change recomputes provenance from the current runner,
+so no historical verification claim survives a routing change. Pi and OMP
+retain `user_declared` until their upstream execution integration consumes
+OpenRouter routing metadata.
 
 Runner edit/details surfaces, MCP runner serialization, and runner creation /
 update audit metadata include the declaration and current provenance. They use

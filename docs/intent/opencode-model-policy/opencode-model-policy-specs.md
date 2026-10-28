@@ -61,7 +61,9 @@
   provenance: `openrouter_enforced` only when its active OpenRouter execution
   runtime can apply request routing; otherwise `user_declared`; and `disabled`
   when the declaration is off. Provider or credential changes SHALL recompute
-  that provenance without retaining an enforcement claim.
+  that provenance without retaining an enforcement claim. A non-isolated API
+  request whose transport cannot apply the OpenRouter routing SHALL fail before
+  provider execution when the selected runner reports `openrouter_enforced`.
 - [x] **MODEL-POLICY-017** — Authorized runner details and MCP serialization,
   plus runner create/update audit metadata, SHALL include the ZDR declaration
   and provenance. The edit form SHALL permit the declaration for every runner
