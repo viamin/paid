@@ -174,3 +174,10 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+When the closeout assessor identifies this evaluation as the required human
+work, it emits the typed `facet_confidence_evaluation` workflow on the human
+gap. Action Required renders that typed workflow as plain-language guidance,
+current judgment progress, and one state-specific route into the authorized
+evaluation screen. The Inbox does not infer this route from notification prose;
+unknown workflow values retain the generic Action Required rendering.

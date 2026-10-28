@@ -171,6 +171,15 @@ absent, the description is also the entry summary. `Notifications::Publish`
 rejects a blocking notification that has neither a non-blank description nor
 remediation guidance, so every Action Required entry has meaningful context.
 
+A notification may also carry an explicitly validated typed workflow. The
+facet-confidence closeout workflow uses `facet_confidence_evaluation`, emitted
+by the closeout assessor rather than inferred from notification text. Its
+detail replaces internal assessment vocabulary with plain-language independent
+review guidance, shows recorded and remaining judgments, and makes the
+state-specific evaluation route primary while retaining View Issue as
+secondary context. The route carries the fixed, validated Inbox context.
+Unknown or untyped workflows use the generic notification rendering.
+
 ### `merge_approval`
 
 Backed by the PR scanner's persisted current-head policy snapshot on `Issue`.

@@ -150,7 +150,7 @@ class InboxController < ApplicationController
 
   def selected_entry_queue
     [ Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id],
-      project: @scoped_project, kind: @selected_kind) ].compact
+      project: @scoped_project, kind: @selected_kind, sort: @selected_sort) ].compact
   end
 
   # @spec INBOX-PHASE-RELEVANCE-002

@@ -64,6 +64,21 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::Start do
     expect(issue.facet_confidence_evaluations).to be_empty
   end
 
+  # @spec FACET-CONFIDENCE-022
+  it "allows the typed evaluation notification to open its own recovery workflow" do
+    create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Evaluation required", description: "Complete the evaluation.",
+      metadata: { "prerequisites" => [ { "workflow" => "facet_confidence_evaluation" } ] })
+    blocker = Issues::CloseoutStatus::Blocker.new(code: :human_prerequisite_notification,
+      message: "Evaluation required", evidence: {}, recovery: "Complete the evaluation.")
+    status = instance_double(Issues::CloseoutStatus::Result, blockers: [ blocker ])
+
+    result = described_class.call(project: project, issue: issue, actor: owner, status: status)
+
+    expect(result).to be_success
+  end
+
   it "refuses an originating work item outside the project" do
     other_issue = create(:issue, project: create(:project, account: account), github_number: 99)
 

@@ -272,12 +272,12 @@ module Inbox
     end
 
     # @spec OPERATOR-INBOX-015
-    def self.find_entry(user:, entry_id:, project: nil, kind: nil)
+    def self.find_entry(user:, entry_id:, project: nil, kind: nil, sort: DEFAULT_SORT)
       entry_kind, record_id = entry_id.to_s.split(":", 2)
       return unless KINDS.include?(entry_kind) && record_id&.match?(/\A[0-9]+\z/)
       return if kind.present? && kind != entry_kind
 
-      new(user:, project:, kind: entry_kind, record_id:).find_entry(entry_id.to_s)
+      new(user:, project:, kind: entry_kind, sort:, record_id:).find_entry(entry_id.to_s)
     end
 
     # Questionless rows are invalid and repaired during sync, so keep them out
@@ -586,6 +586,9 @@ module Inbox
         next unless project
         next if project_filter_excludes?(project)
 
+        inbox_context = { inbox_kind: ACTION_REQUIRED_KIND, inbox_sort: sort,
+                          inbox_entry_id: "#{ACTION_REQUIRED_KIND}:#{notification.id}" }
+        guidance = ActionRequiredGuidance.call(notification:, project:, issue:, inbox_context:)
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
           kind: ACTION_REQUIRED_KIND,
@@ -597,7 +600,8 @@ module Inbox
           tasks: remediation_steps_for(notification),
           summary_text: notification.metadata["recommended_action"].presence || notification.description,
           title_text: notification.title,
-          action_url: notification.action_url
+          action_url: notification.action_url,
+          guidance: guidance
         )
       end
     end

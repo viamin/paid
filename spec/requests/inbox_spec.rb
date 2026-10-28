@@ -247,6 +247,23 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec FACET-CONFIDENCE-022 OPERATOR-INBOX-002B
+  it "routes a typed closeout escalation into the evaluation with plain-language progress" do
+    issue, notification = create_facet_confidence_action_required_notification
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort: "newest")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Complete evaluation", "Review each frozen test case independently")
+    expect(response.body).to include("0 judgments recorded", "Start evaluation")
+    guidance = Nokogiri::HTML(response.body).at_css("[data-action-required-guidance]")
+    expect(guidance.text).not_to include("blinded reference judgments", "corpus")
+    expect(response.body).to include(new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_sort: "newest",
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)).gsub("&", "&amp;"))
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a
@@ -2176,5 +2193,15 @@ RSpec.describe "Inbox" do
       decision: { "question" => "How should this discrepancy be handled?",
                   "options" => %w[request_repair approve_clarification defer],
                   "consequences" => [ "Repair requires separate authorization." ] })
+  end
+
+  def create_facet_confidence_action_required_notification
+    issue = create(:issue, project: project, github_number: 611)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Internal closeout state",
+      description: "Independent maintainers have entered and frozen the blinded reference judgments.",
+      metadata: { "prerequisites" => [ { "workflow" => "facet_confidence_evaluation" } ] })
+    [ issue, notification ]
   end
 end

@@ -28,7 +28,7 @@ module FacetConfidence
         return failure("the originating work item must belong to this project") unless @issue.project_id == @project.id
         return failure("an authenticated operator must start the evaluation") if @actor.blank?
 
-        blockers = closeout_status.blockers
+        blockers = start_blockers
         return failure("the closeout entry point is blocked until its recorded prerequisites resolve: #{blockers.map(&:message).join(' ')}") if blockers.any?
 
         corpus = FacetConfidence::Corpus.new(path: CloseoutEvaluationPacket::MANIFEST_PATH)
@@ -74,6 +74,26 @@ module FacetConfidence
       def closeout_status
         @status || Issues::CloseoutStatus.call(@issue)
       end
+
+    # The typed Action Required notification names this evaluation as its own
+    # recovery route. It must not prevent the operator from entering that
+    # route, while any unrelated prerequisite notification remains a blocker.
+    def start_blockers
+      return closeout_status.blockers unless only_evaluation_notifications?
+
+      closeout_status.blockers.reject { |blocker| blocker.code == :human_prerequisite_notification }
+    end
+
+    def only_evaluation_notifications?
+      notifications = Notification.where(account: project.account, subject: issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, resolved_at: nil, dismissed_at: nil)
+      notifications.any? && notifications.all? do |notification|
+        Array(notification.metadata["prerequisites"]).any? do |prerequisite|
+          prerequisite.is_a?(Hash) &&
+            prerequisite["workflow"] == Inbox::ActionRequiredGuidance::FACET_CONFIDENCE_EVALUATION
+        end
+      end
+    end
 
       def log_started(evaluation, resumed:)
         Rails.logger.info(

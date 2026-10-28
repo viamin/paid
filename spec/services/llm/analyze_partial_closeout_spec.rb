@@ -141,6 +141,18 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       expect(result.dig("gaps", 0, "next_step")).to eq("Run the approved macOS pilot.")
     end
 
+    # @spec FACET-CONFIDENCE-022
+    it "accepts the typed facet-confidence evaluation workflow for a human gap" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      gap = { criterion: "evaluation", kind: "human", next_step: "Complete the evaluation.",
+              workflow: "facet_confidence_evaluation" }
+      allow(legacy_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.dig("gaps", 0, "workflow")).to eq("facet_confidence_evaluation")
+    end
+
     it "accepts durable policy references and an explicit replacement-policy action" do # @spec PARTIAL-CLOSEOUT-031
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
       gap = {

@@ -265,7 +265,7 @@ module PartialCloseouts
     def prerequisite_occurrence(gap)
       { "identity" => Digest::SHA256.hexdigest(JSON.generate(prerequisite_identity(gap))),
         "criterion" => gap["criterion"], "references" => Array(gap["references"]),
-        "source_revision" => source_revision }
+        "source_revision" => source_revision, "workflow" => gap["workflow"] }.compact
     end
 
     def source_revision
