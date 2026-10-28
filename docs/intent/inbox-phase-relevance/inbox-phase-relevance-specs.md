@@ -84,3 +84,13 @@
   to phase-owned requests.
   *Tests:* `spec/services/inbox/removals_spec.rb`
   *Code:* `Inbox::Removals::RestoreOnPhaseEnablement`, `Inbox::PhaseRelevance`
+
+- [x] **INBOX-PHASE-RELEVANCE-011** — When an Inbox badge requires exact
+  phase-relevance or personal-removal handling, it SHALL use the same candidate,
+  ownership, relevance, and suppression rules as the actionable list without
+  constructing list-only entry payloads. Issue lanes that need project
+  predicates or ordering SHALL preload shared project records separately from
+  their issue result rows, so project audit history is not repeated per issue.
+  *Tests:* `spec/services/inbox/count_spec.rb`, `spec/services/inbox/queue_spec.rb`
+  *Code:* `Inbox::Count`, `Inbox::Queue`, `Inbox::MergeApproval`,
+  `Inbox::IntentConformance`

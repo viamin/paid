@@ -29,6 +29,22 @@ RSpec.describe Inbox::Count do
   end
 
   describe ".call" do
+    # @spec INBOX-PHASE-RELEVANCE-009 @spec INBOX-PHASE-RELEVANCE-011
+    it "uses the exact count projection for active removals while the phase rollout is off" do
+      allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))
+      issue = create(:issue, :needs_input, project:, github_state: "open",
+        needs_input_questions: [ "Which behavior?" ])
+      entry = Inbox::Queue.call(user:).sole
+      Inbox::Removals::Remove.call(entry:, user:)
+
+      expect(Inbox::Queue).to receive(:count).with(user:).twice.and_call_original
+      expect(described_class.call(user:)).to eq(0)
+
+      issue.update!(needs_input_since: Time.current)
+
+      expect(described_class.call(user:)).to eq(1)
+    end
+
     # @spec INBOX-PHASE-RELEVANCE-009
     it "excludes personally removed requests while the phase rollout is off" do
       allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))

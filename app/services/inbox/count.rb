@@ -49,7 +49,7 @@ module Inbox
     end
 
     def governed_count
-      [ Inbox::Queue.call(user: user).size, DISPLAY_CAP ].min
+      [ Inbox::Queue.count(user: user), DISPLAY_CAP ].min
     end
 
     def phase_model_governed?

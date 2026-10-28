@@ -64,8 +64,13 @@ platform requests (no phase) and follow the same visibility rule.
 Hiding never resolves, clears, comments, or changes readiness.
 
 `Inbox::Queue` accepts `scope:` (`actionable` default, `disabled_phases`,
-`removed`), and `Inbox::Count` / `Inbox::Availability` derive from the same
-call so lists, counts, badges, and indicators cannot disagree.
+`removed`). Its count projection shares the queue's candidate, ownership,
+relevance, and suppression work while omitting list-only payload fields. This
+keeps lists, counts, badges, and indicators aligned without making a cache-miss
+badge build render payload for every candidate. Issue lanes may join projects
+for predicates and ordering, but preload project records separately so a
+project's audit history is fetched once per project rather than repeated in
+each issue result row.
 
 ## Personal removal
 

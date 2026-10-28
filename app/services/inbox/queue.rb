@@ -271,6 +271,15 @@ module Inbox
       new(...).call
     end
 
+    # The badge needs the same candidate and visibility decisions as the list,
+    # but none of the presentation payload. Keep that exact projection here so
+    # callers cannot accidentally reintroduce full queue construction on a
+    # count cache miss.
+    # @spec INBOX-PHASE-RELEVANCE-011
+    def self.count(user:, **options)
+      new(user:, **options, count_only: true).count
+    end
+
     # @spec OPERATOR-INBOX-015
     def self.find_entry(user:, entry_id:, project: nil, kind: nil)
       entry_kind, record_id = entry_id.to_s.split(":", 2)
@@ -315,18 +324,23 @@ module Inbox
       label_gated.or(local_gated)
     end
 
-    def initialize(user:, project: nil, kind: nil, sort: DEFAULT_SORT, record_id: nil, scope: ACTIONABLE_SCOPE)
+    def initialize(user:, project: nil, kind: nil, sort: DEFAULT_SORT, record_id: nil, scope: ACTIONABLE_SCOPE, count_only: false)
       @user = user
       @project = project
       @kind = kind.to_s.presence
       @sort = SORTS.key?(sort) ? sort : DEFAULT_SORT
       @record_id = record_id
       @scope = SCOPES.include?(scope.to_s) ? scope.to_s : ACTIONABLE_SCOPE
+      @count_only = count_only
     end
 
     # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-009 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
     def call
       sort_entries(apply_scope(build_entries))
+    end
+
+    def count
+      apply_scope(build_entries).size
     end
 
     # Unfiltered source entries for read-only projections such as the phase
@@ -431,6 +445,22 @@ module Inbox
       kind.blank? || kind == entry_kind
     end
 
+    # Phase ownership, relevance, and removal suppression only require the
+    # request identity and its record context. Avoid retaining the list-only
+    # questions, summaries, tasks, and guidance while calculating a badge.
+    def entry(**attributes)
+      return Entry.new(**attributes) unless @count_only
+
+      Entry.new(
+        id: attributes[:id],
+        kind: attributes[:kind],
+        project: attributes[:project],
+        issue: attributes[:issue],
+        record: attributes[:record],
+        waiting_since: attributes[:waiting_since]
+      )
+    end
+
     def sort_entries(entries)
       entries.sort_by do |entry|
         [
@@ -454,7 +484,7 @@ module Inbox
         questions = self.class.questions_for(issue)
         next if questions.empty?
 
-        Entry.new(
+        entry(
           id: "#{CLARIFYING_QUESTIONS_KIND}:#{issue.id}",
           kind: CLARIFYING_QUESTIONS_KIND,
           project: issue.project,
@@ -484,7 +514,7 @@ module Inbox
 
         Issue
           .joins(:project)
-          .includes(:project)
+          .preload(:project)
           .where(project_id: ids, paid_state: "needs_input", github_state: "open")
           .then { |scope| only_record(scope) }
           .order(Arel.sql("issues.needs_input_since ASC NULLS LAST"))
@@ -531,7 +561,7 @@ module Inbox
       only_record(scope.open_plan_reviews).includes(:project, :issue).map do |review|
         tasks = Array(review.plan_data&.dig("tasks"))
 
-        Entry.new(
+        entry(
           id: "#{PLAN_REVIEW_KIND}:#{review.id}",
           kind: PLAN_REVIEW_KIND,
           project: review.project,
@@ -550,7 +580,7 @@ module Inbox
     # @spec OPERATOR-INBOX-002K
     def merge_approval_entries
       candidate_entries = merge_approval_issues.map do |issue|
-        Entry.new(
+        entry(
           id: "#{MERGE_APPROVAL_KIND}:#{issue.id}",
           kind: MERGE_APPROVAL_KIND,
           project: issue.project,
@@ -586,7 +616,7 @@ module Inbox
         next unless project
         next if project_filter_excludes?(project)
 
-        Entry.new(
+        entry(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
           kind: ACTION_REQUIRED_KIND,
           project: project,
@@ -617,7 +647,7 @@ module Inbox
         snapshot = Inbox::IntentConformance.call(issue)
         next unless snapshot
 
-        Entry.new(
+        entry(
           id: "#{INTENT_CONFORMANCE_KIND}:#{issue.id}",
           kind: INTENT_CONFORMANCE_KIND,
           project: issue.project,
@@ -658,7 +688,7 @@ module Inbox
     def escalated_pr_entry(blocked)
       pr = blocked.pull_request
 
-      Entry.new(
+      entry(
         id: "#{ESCALATED_PR_KIND}:#{pr.id}",
         kind: ESCALATED_PR_KIND,
         project: pr.project,
@@ -688,7 +718,7 @@ module Inbox
     # @spec OPERATOR-INBOX-002D
     def manual_review_entries
       ordered_manual_review_issues.map do |issue|
-        Entry.new(
+        entry(
           id: "#{MANUAL_REVIEW_KIND}:#{issue.id}",
           kind: MANUAL_REVIEW_KIND,
           project: issue.project,
@@ -713,7 +743,7 @@ module Inbox
 
       Issue
         .joins(:project)
-        .includes(:project)
+        .preload(:project)
         .where(project_id: ids, paid_state: "manual_review", github_state: "open")
         .then { |scope| only_record(scope) }
         .order(Arel.sql("issues.manual_review_started_at ASC NULLS LAST"))
@@ -762,7 +792,7 @@ module Inbox
     end
 
     def feature_decision_entry(feature_intent)
-      Entry.new(
+      entry(
         id: "#{FEATURE_DECISION_KIND}:#{feature_intent.id}",
         kind: FEATURE_DECISION_KIND,
         project: feature_intent.project,
@@ -788,7 +818,7 @@ module Inbox
     # @spec OPERATOR-INBOX-002E
     def retry_limited_entries
       ordered_retry_limited_issues.map do |issue|
-        Entry.new(
+        entry(
           id: "#{RETRY_LIMITED_KIND}:#{issue.id}",
           kind: RETRY_LIMITED_KIND,
           project: issue.project,
@@ -810,7 +840,7 @@ module Inbox
 
       Issue
         .joins(:project)
-        .includes(:project)
+        .preload(:project)
         .where(project_id: ids, github_state: "open")
         .where.not(runner_retry_abandoned_at: nil)
         .then { |scope| only_record(scope) }
@@ -832,7 +862,7 @@ module Inbox
     end
 
     def change_intent_draft_entry(change_intent)
-      Entry.new(
+      entry(
         id: "#{CHANGE_INTENT_DRAFT_KIND}:#{change_intent.id}",
         kind: CHANGE_INTENT_DRAFT_KIND,
         project: change_intent.project,
@@ -865,7 +895,7 @@ module Inbox
     def partial_closeout_entries
       Issues::StalledCloseouts.call(scoped_projects, issue_id: @record_id).map do |pair|
         status = pair.status
-        Entry.new(
+        entry(
           id: "#{PARTIAL_CLOSEOUT_KIND}:#{pair.issue.id}",
           kind: PARTIAL_CLOSEOUT_KIND,
           project: pair.issue.project,
@@ -895,7 +925,7 @@ module Inbox
     # @spec OPERATOR-INBOX-002J
     def test_review_pending_entries
       ordered_test_review_pending_issues.map do |issue|
-        Entry.new(
+        entry(
           id: "#{TEST_REVIEW_PENDING_KIND}:#{issue.id}",
           kind: TEST_REVIEW_PENDING_KIND,
           project: issue.project,
@@ -921,7 +951,7 @@ module Inbox
         self.class.test_review_pending_issues(ids)
           .then { |scope| only_record(scope) }
           .joins(:project)
-          .includes(:project)
+          .preload(:project)
           .order("issues.github_updated_at ASC")
           .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
       end
@@ -934,7 +964,7 @@ module Inbox
       scoped_projects.select { |candidate| !@record_id || candidate.id.to_s == @record_id.to_s }
         .select(&:readiness_blocked?).map do |candidate|
         gap_descriptions = candidate.readiness_gap_descriptions
-        Entry.new(
+        entry(
           id: "#{PROJECT_SETUP_PENDING_KIND}:#{candidate.id}",
           kind: PROJECT_SETUP_PENDING_KIND,
           project: candidate,
@@ -959,8 +989,8 @@ module Inbox
     def traceability_gap_entries
       scope = project ? project.design_artifact_findings : DesignArtifactFinding.where(project: scoped_projects)
 
-      only_record(scope.actionable_findings.includes(:project).order(:created_at, :id)).map do |finding|
-        Entry.new(
+      only_record(scope.actionable_findings.preload(:project).order(:created_at, :id)).map do |finding|
+        entry(
           id: "#{TRACEABILITY_GAP_KIND}:#{finding.id}",
           kind: TRACEABILITY_GAP_KIND,
           project: finding.project,
@@ -980,7 +1010,7 @@ module Inbox
     def layered_verification_finding_entries
       scope = project ? project.layered_verification_findings : LayeredVerificationFinding.where(project: scoped_projects)
       only_record(scope.where(status: %w[open deferred]).includes(:project, :obligation, :agent_run).order(:created_at, :id)).map do |finding|
-        Entry.new(
+        entry(
           id: "#{LAYERED_VERIFICATION_FINDING_KIND}:#{finding.id}", kind: LAYERED_VERIFICATION_FINDING_KIND,
           project: finding.project, issue: nil, record: finding, waiting_since: finding.created_at,
           questions: [], tasks: [], title_text: "Verification finding: #{finding.obligation.scope_description}",
