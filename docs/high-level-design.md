@@ -341,6 +341,8 @@ any repair: a scan never mutates source code or opens a PR on its own.
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
 that acceptance.
 
+A planned operational-supervisor capability observes aggregate delivery health for authorized account operators. Its initial RDR-063 scope is explicitly default-off shadow observation: deterministic sanitization, `agent_harness` semantic classification, and durable incidents only. It does not receive repository or user-authored content and cannot change delivery controls until a separate reviewed action contract exists. See `docs/intent/operational-supervisor/`.
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the
