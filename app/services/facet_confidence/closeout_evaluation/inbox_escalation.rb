@@ -27,7 +27,8 @@ module FacetConfidence
       end
 
       def applicable?
-        notification.source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE &&
+        %i[source subject metadata].all? { notification.respond_to?(_1) } &&
+          notification.source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE &&
           notification.subject.is_a?(Issue) && notification.metadata["workflow"] == WORKFLOW
       end
 
