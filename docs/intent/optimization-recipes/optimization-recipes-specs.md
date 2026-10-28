@@ -51,7 +51,7 @@
 
 ## Bounded Automatic Repair — [#4495](https://github.com/viamin/paid/issues/4495)
 
-- [ ] **MAINT-OPT-031**: Automatic repair shall be off by default, elected per run at start, and never tenant-, project-, or recipe-wide by default.
+- [ ] **MAINT-OPT-031**: Automatic repair shall be off by default, elected per run at start, and never tenant-, project-, or recipe-wide.
 - [ ] **MAINT-OPT-032**: Without an election, the system shall behave as report-only.
 - [ ] **MAINT-OPT-033**: UI, API, and MCP shall equivalently surface election, minimum standing, and per-repair cost/time caps.
 - [ ] **MAINT-OPT-034**: The system shall snapshot election, effective minimum standing, and per-repair caps at run start without mutation.
