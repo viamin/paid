@@ -78,10 +78,17 @@ one deduplicated finding per artifact/revision and
 reports evidence, coverage time, and an explicit state: `missing_tree`,
 `partial_tree`, `stale_metadata`, `deferred`, or `unverifiable`.
 
-Issue coverage preloads shared project records in a separate query rather than
-joining full project rows into the issue result. Project audit history must not
-be repeated for every issue: PostgreSQL results and their Ruby string copies
-would otherwise multiply that history by the synchronized issue count.
+Each reconciliation execution builds one job-scoped issue-fact snapshot for
+each account-authorized repository it actually needs. The snapshot selects only
+coverage fields, batches canonical manifests and exact backlink evaluation, and
+reuses immutable fact hashes across every RDR and design PR in that execution.
+It retains neither association graphs nor per-artifact query-cache copies and
+is discarded at job completion. It is not shared across executions or pinned
+revisions, so GitHub synchronization freshness and incomplete-coverage handling
+remain unchanged. Shared project records are separate from issue facts: project
+audit history must not be repeated for every issue, because PostgreSQL results
+and their Ruby string copies would otherwise multiply that history by the
+synchronized issue count.
 
 PR synchronization schedules repository reconciliation after a fixed 30-second
 coalescing window. Scheduling and coalescing happen after the synchronization

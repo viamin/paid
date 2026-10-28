@@ -214,6 +214,26 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     expect(DesignArtifactFinding.count).to eq(0)
   end
 
+  # @spec DESIGN-RECONCILIATION-001
+  it "reuses one minimal project issue snapshot across every RDR in a sweep" do
+    artifacts = 3.times.map do |index|
+      FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/RDR-#{index}.md", revision: "revision-#{index}", body: "Status: Draft"
+      )
+    end
+    create(:issue, project:, github_number: 101, body: "Implementation work")
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery(artifacts))
+    queries = []
+    subscriber = ->(event) { queries << event.payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.perform_now(project.id)
+    end
+
+    expect(queries.grep(/SELECT .* FROM "issues"/)).to have_attributes(size: 1)
+    expect(DesignArtifactFinding.where(state: "deferred").count).to eq(3)
+  end
+
   it "uses a stored Paid feature-intent link without requiring a document repair" do
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
     linked_issue = create(:issue, project:, github_number: 101)

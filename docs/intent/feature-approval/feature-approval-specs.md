@@ -280,8 +280,15 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   Semantic candidate assessment SHALL use `agent_harness`
   only after structural evidence is exhausted and be cached by assessed revisions;
   the existing daily sweep remains the bounded fallback for unchanged inputs.
-  Issue coverage SHALL load shared project records separately from issue rows,
-  so project audit history is not duplicated for every synchronized issue.
+  Issue coverage SHALL load a job-scoped, minimal fact snapshot once per
+  account-authorized project and reuse it for every artifact in the sweep,
+  batching exact backlinks and canonical manifests without retaining ORM
+  graphs or query-cache copies. The snapshot SHALL preserve trusted-issue
+  filtering, external repository-qualified identities, pinned revisions, and
+  incomplete-coverage behavior, and SHALL end with the reconciliation job;
+  it SHALL NOT reuse evidence across revisions or executions. Shared project
+  records SHALL remain separate from issue rows, so project audit history is
+  not duplicated for every synchronized issue.
   *Tests:* `spec/services/feature_intents/reconcile_design_artifacts_spec.rb`,
   `spec/services/feature_intents/persist_design_artifact_findings_spec.rb`,
   `spec/models/design_artifact_finding_spec.rb`,
