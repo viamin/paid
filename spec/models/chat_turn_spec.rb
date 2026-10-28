@@ -61,6 +61,21 @@ RSpec.describe ChatTurn do
     end
   end
 
+  describe "#heartbeat_callback" do
+    # @spec CHAT-TURN-RECOVERY-001 @spec CHAT-TURN-RECOVERY-002
+    it "durably refreshes attempt liveness and forwards the streamed chunk" do
+      turn = described_class.start!(chat_session: chat_session, user_message: user_message)
+      original_heartbeat = turn.attempt_heartbeat_at
+      chunks = []
+
+      travel described_class::HEARTBEAT_INTERVAL + 1.second
+      turn.heartbeat_callback(->(chunk) { chunks << chunk }).call("Still working")
+
+      expect(turn.reload.attempt_heartbeat_at).to be > original_heartbeat
+      expect(chunks).to eq([ "Still working" ])
+    end
+  end
+
   describe "#complete!" do
     it "marks the turn completed and records a lifecycle event" do
       turn = described_class.start!(chat_session: chat_session, user_message: user_message)

@@ -29,6 +29,17 @@ RSpec.describe ChatTurns::StallDetectorJob do
     end
 
     # @spec CHAT-TURN-RECOVERY-002
+    it "does not mark a turn stalled while its original attempt heartbeat is live" do
+      turn = create(:chat_turn, chat_session: chat_session,
+        last_activity_at: (threshold + 60).seconds.ago,
+        attempt_heartbeat_at: 30.seconds.ago)
+
+      described_class.perform_now
+
+      expect(turn.reload.status).to eq("streaming")
+    end
+
+    # @spec CHAT-TURN-RECOVERY-002
     it "does not mark a turn as stalled while a write-tool confirmation is pending" do
       turn = create(:chat_turn, chat_session: chat_session, last_activity_at: (threshold + 60).seconds.ago)
       create(:chat_message, :tool_call, chat_session: chat_session, tool_status: "pending")

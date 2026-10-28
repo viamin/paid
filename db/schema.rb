@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_28_202529) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -902,6 +902,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_202529) do
   end
 
   create_table "chat_turns", comment: "Durable lifecycle tracking for one chat turn (#4680), from the triggering user message to a terminal outcome or stall.", force: :cascade do |t|
+    t.datetime "attempt_heartbeat_at", comment: "Throttled durable liveness lease for the currently executing provider loop."
     t.bigint "chat_session_id", null: false
     t.datetime "completed_at"
     t.datetime "created_at", null: false

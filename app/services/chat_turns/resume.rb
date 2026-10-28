@@ -10,7 +10,7 @@ module ChatTurns
   class Resume
     include ChatSessions::FallbackLoop
 
-    attr_reader :chat_turn, :chat_session, :actor, :llm_client, :on_chunk, :stream_message_id,
+    attr_reader :chat_turn, :chat_session, :actor, :llm_client, :stream_message_id,
       :transport_attempt_message
 
     def initialize(chat_turn:, actor: nil, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
@@ -49,6 +49,11 @@ module ChatTurns
         chat_turn.record_activity!(message)
         @on_message_persisted_callback&.call(message, **kwargs)
       end
+    end
+
+    # @spec CHAT-TURN-RECOVERY-002
+    def on_chunk
+      @heartbeat_callback ||= chat_turn.heartbeat_callback(@on_chunk)
     end
 
     private

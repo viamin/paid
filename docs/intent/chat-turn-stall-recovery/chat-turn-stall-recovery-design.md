@@ -61,16 +61,18 @@ A turn is never represented as `completed` by anything other than a real,
 persisted final assistant message — a stalled or failed turn is always
 distinguishable from a successful one in the transcript and in the database.
 
-## Checkpointing (durable, not streaming-chunk-based)
+## Checkpointing and attempt liveness
 
 `ChatSessions::SendMessage` and `ChatSessions::ResolveToolCall` each wrap
 their `on_message_persisted` callback (already threaded through
 `ChatSessions::AgentLoop`/`FallbackLoop` for every persisted message — user,
 assistant, tool call, tool result) to also call `ChatTurn#record_activity!`.
-This bumps `last_activity_at` only on a **durable** persisted row, never on a
-raw streaming chunk (`on_chunk`) — a long legitimate generation that is still
-producing chunks but has not persisted anything for the full threshold *is*
-flagged, matching the issue's requirement to checkpoint on durable activity.
+This bumps `last_activity_at` only on a **durable** persisted row. Raw
+streaming chunks (`on_chunk`) do not become transcript checkpoints, but they
+do refresh a separate durable `attempt_heartbeat_at` lease at a bounded
+interval. The detector requires both timestamps to be stale, so a provider
+that is still producing chunks cannot be classified as stalled and recovered
+concurrently with its original loop.
 `record_activity!` also flips `write_tool_dispatched` to `true` the first
 time a message represents a write-tool call (`Tools::Registry.write_tool?`),
 regardless of whether the call later pauses for confirmation or auto-approves
@@ -92,8 +94,9 @@ safe to resume; all later retries use the claimed recovery path.
 `ChatTurns::StallDetectorJob` (cron, every 5 minutes, GoodJob-concurrency-
 capped to one in flight — mirrors `StaleRunDetectorJob` and the existing
 `ChatSessions::IdleReaperJob`/`AutoResumeRateLimitedSweepJob`) scans
-`ChatTurn.stale(before:)` — active (`pending`/`streaming`) turns whose
-`last_activity_at` is older than `CHAT_TURN_STALL_THRESHOLD_SECONDS`
+`ChatTurn.stale(before:)` — active (`pending`/`streaming`) turns whose durable
+checkpoint and attempt heartbeat are both older than
+`CHAT_TURN_STALL_THRESHOLD_SECONDS`
 (default 180s). For each candidate, under a row lock (re-checked after
 acquiring it, so a turn that completed between the scope query and the lock
 is skipped):
@@ -108,6 +111,8 @@ is skipped):
 - **Already resolved** — re-checking `last_activity_at` under the lock
   catches a turn that completed/failed in the gap between the scope read and
   the lock.
+- **Live original attempt** — re-checking `attempt_heartbeat_at` under the
+  lock catches a provider loop that emitted a chunk after the scope query.
 - **Known long-running operation (extension point)** — a tool that
   legitimately runs past the default threshold can extend its turn by writing
   an ISO-8601 `expected_long_running_until` timestamp into
@@ -155,11 +160,11 @@ is deliberately conservative about this:
   so there is nothing a replay could duplicate) and
   `recovery_attempts < ChatTurn::MAX_AUTOMATIC_RECOVERY_ATTEMPTS` (1). This is
   required infrastructure classification and replay-safety checkpoint: an
-  ambiguous silent stop is never retried automatically. `ChatSessions::SendMessage`
-  writes this classification immediately before entering the provider loop,
-  after the user message and turn are durable; a process loss during that
-  external-work boundary can therefore opt into recovery without treating an
-  earlier, unclassified stop as infrastructure failure. **No current tool
+  ordinary in-flight turn and an ambiguous silent/model stop remain
+  unclassified and are never retried automatically. The checkpoint may only
+  be written after a failure boundary has positively classified the failure
+  as replay-safe infrastructure loss; entering the provider loop is not such
+  evidence. **No current tool
   opts in** to broader automatic replay safety, so any turn that touched a
   write tool always falls through to the manual path below. A future tool that
   wants to participate in automatic recovery for turns it touched must declare

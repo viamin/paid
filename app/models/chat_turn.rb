@@ -19,6 +19,7 @@ class ChatTurn < ApplicationRecord
   # opts in to broader automatic replay.
   MAX_AUTOMATIC_RECOVERY_ATTEMPTS = 1
   MAX_RECOVERY_ATTEMPTS = 3
+  HEARTBEAT_INTERVAL = 30.seconds
 
   belongs_to :chat_session
   belongs_to :user_message, class_name: "ChatMessage"
@@ -28,30 +29,56 @@ class ChatTurn < ApplicationRecord
   validates :failure_classification, inclusion: { in: FAILURE_CLASSIFICATIONS }, allow_nil: true
 
   scope :active, -> { where(status: ACTIVE_STATUSES) }
-  scope :stale, ->(before:) { active.where(last_activity_at: ...before) }
+  scope :stale, ->(before:) do
+    active
+      .where(last_activity_at: ...before)
+      .where("COALESCE(attempt_heartbeat_at, last_activity_at) < ?", before)
+  end
 
   def self.start!(chat_session:, user_message:)
     turn = find_by(user_message_id: user_message.id)
     return turn if turn
 
+    now = Time.current
     create!(
       chat_session: chat_session,
       user_message: user_message,
       status: "pending",
-      started_at: Time.current,
-      last_activity_at: Time.current
+      started_at: now,
+      last_activity_at: now,
+      attempt_heartbeat_at: now
     )
   end
 
   def record_activity!(message)
-    updates = { last_activity_at: Time.current }
+    updates = { last_activity_at: Time.current, attempt_heartbeat_at: Time.current }
     updates[:status] = "streaming" if status == "pending"
     updates[:write_tool_dispatched] = true if !write_tool_dispatched && write_tool_message?(message)
     update!(updates)
   end
 
+  # A streamed chunk proves the original provider loop is alive without being
+  # a durable transcript checkpoint. The conditional update bounds write load
+  # and stays atomic if callbacks overlap.
+  def heartbeat!
+    now = Time.current
+    rows = self.class.where(id: id, status: ACTIVE_STATUSES)
+      .where(attempt_heartbeat_at: ...HEARTBEAT_INTERVAL.ago(now))
+      .update_all(attempt_heartbeat_at: now)
+    self.attempt_heartbeat_at = now if rows.positive?
+  end
+
+  def heartbeat_callback(callback)
+    return unless callback
+
+    lambda do |chunk|
+      heartbeat!
+      callback.call(chunk)
+    end
+  end
+
   # @spec CHAT-TURN-RECOVERY-004
-  def checkpoint_infrastructure_recovery!
+  def classify_replay_safe_infrastructure_failure!
     update!(metadata: metadata.merge("recovery_classification" => "infrastructure_failure"))
   end
 
@@ -105,7 +132,8 @@ class ChatTurn < ApplicationRecord
       status: "streaming",
       recovery_locked_at: Time.current,
       recovery_attempts: recovery_attempts + 1,
-      last_activity_at: Time.current
+      last_activity_at: Time.current,
+      attempt_heartbeat_at: Time.current
     )
     reload
     return reject_recovery!(triggered_by:, actor:) unless rows.positive?

@@ -15,7 +15,7 @@ module ChatSessions
   class SendMessage
     include FallbackLoop
 
-    attr_reader :chat_session, :actor, :content, :on_chunk, :llm_client, :stream_message_id,
+    attr_reader :chat_session, :actor, :content, :llm_client, :stream_message_id,
       :transport_attempt_message, :chat_turn
 
     MAX_CONTENT_LENGTH = 12_000
@@ -48,7 +48,6 @@ module ChatSessions
       raise ChatTurn::RecoveryRequiredError, "This turn already has durable activity and requires recovery." unless chat_turn.status == "pending"
 
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
-      chat_turn.checkpoint_infrastructure_recovery! # @spec CHAT-TURN-RECOVERY-004
       assistant_message = run_with_fallbacks
       chat_turn.complete!(assistant_message) if assistant_message
       update_session_activity
@@ -69,6 +68,11 @@ module ChatSessions
         chat_turn&.record_activity!(message)
         @on_message_persisted_callback&.call(message, **kwargs)
       end
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001 @spec CHAT-TURN-RECOVERY-002
+    def on_chunk
+      @heartbeat_callback ||= chat_turn&.heartbeat_callback(@on_chunk)
     end
 
     private

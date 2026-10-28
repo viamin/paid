@@ -22,7 +22,7 @@ module ChatSessions
     DENIED_RESULT = { status: "denied", message: "The requested action was not approved" }.freeze
 
     attr_reader :chat_session, :actor, :tool_call_message, :decision, :llm_client,
-      :on_chunk, :on_tool_call_resolved, :stream_message_id,
+      :on_tool_call_resolved, :stream_message_id,
       :transport_attempt_message
 
     def initialize(chat_session:, actor: chat_session.created_by, tool_call_message:, decision:, llm_client: nil, on_chunk: nil,
@@ -71,6 +71,11 @@ module ChatSessions
         chat_turn&.record_activity!(message)
         @on_message_persisted_callback&.call(message, **kwargs)
       end
+    end
+
+    # @spec CHAT-TURN-RECOVERY-002
+    def on_chunk
+      @heartbeat_callback ||= chat_turn&.heartbeat_callback(@on_chunk)
     end
 
     private

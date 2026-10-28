@@ -53,6 +53,7 @@ module ChatTurns
         turn.reload
         return false unless turn.status.in?(ChatTurn::ACTIVE_STATUSES)
         return false if turn.last_activity_at > STALL_THRESHOLD.call.ago
+        return false if turn.attempt_heartbeat_at&.> STALL_THRESHOLD.call.ago
         return false if turn.awaiting_confirmation?
         return false if turn.expected_long_running?
 

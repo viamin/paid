@@ -11,8 +11,10 @@
   retried same-message attempt, reuse) a durable `ChatTurn` row keyed to that
   message, and SHALL bump its `last_activity_at` checkpoint on every
   subsequently persisted message (user, assistant, tool call, or tool
-  result) for that turn — never on an unpersisted streaming chunk.
-  *Code:* `ChatTurn.start!`, `ChatTurn#record_activity!`,
+  result) for that turn; an unpersisted streaming chunk SHALL instead refresh
+  a separate, throttled durable attempt heartbeat without becoming a
+  transcript checkpoint.
+  *Code:* `ChatTurn.start!`, `ChatTurn#record_activity!`, `ChatTurn#heartbeat!`,
   `ChatSessions::SendMessage#on_message_persisted`,
   `ChatSessions::ResolveToolCall#on_message_persisted`.
   *Test:* `spec/models/chat_turn_spec.rb`,
@@ -21,8 +23,9 @@
 ## Detection
 
 - [x] **CHAT-TURN-RECOVERY-002** — `ChatTurns::StallDetectorJob` SHALL mark a
-  `pending`/`streaming` turn `stalled` once its `last_activity_at` is older
-  than the configured threshold (`CHAT_TURN_STALL_THRESHOLD_SECONDS`), and
+  `pending`/`streaming` turn `stalled` once both its `last_activity_at` and
+  active-attempt heartbeat are older than the configured threshold
+  (`CHAT_TURN_STALL_THRESHOLD_SECONDS`), and
   SHALL NOT mark it stalled — and SHALL NOT represent it as `completed` —
   while a write-tool confirmation on its session is still pending
   (`ChatTurn#awaiting_confirmation?`).
@@ -51,7 +54,9 @@
   not exceeded `ChatTurn::MAX_AUTOMATIC_RECOVERY_ATTEMPTS`; recovery SHALL
   resume from the turn's last durable checkpoint (the persisted conversation)
   rather than replaying the triggering message; the system SHALL durably write
-  that infrastructure classification before entering the provider loop, and a
+  that infrastructure classification only after positively identifying a
+  replay-safe infrastructure failure (never merely because a provider loop
+  started), and a
   failed recovery SHALL terminate the client stream and replace any in-progress
   recovery notice with a durable failure notice.
   *Code:* `ChatTurn#eligible_for_automatic_recovery?`,
