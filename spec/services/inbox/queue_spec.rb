@@ -32,6 +32,16 @@ RSpec.describe Inbox::Queue do
   # without hitting the network; tests that exercise context loading override
   # this to return real comment fixtures.
   let(:github_client) { instance_double(GithubClient, issue_comments: []) }
+  let(:issue_lane_kinds) do
+    [
+      described_class::CLARIFYING_QUESTIONS_KIND,
+      described_class::MANUAL_REVIEW_KIND,
+      described_class::RETRY_LIMITED_KIND,
+      described_class::TEST_REVIEW_PENDING_KIND,
+      described_class::MERGE_APPROVAL_KIND,
+      described_class::INTENT_CONFORMANCE_KIND
+    ]
+  end
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
@@ -1272,15 +1282,6 @@ RSpec.describe Inbox::Queue do
       create_tdd_test_review_pr(github_number: 223)
       create_merge_approval_pr(github_number: 224)
       create_intent_conformance_pr(github_number: 225)
-
-      issue_lane_kinds = [
-        described_class::CLARIFYING_QUESTIONS_KIND,
-        described_class::MANUAL_REVIEW_KIND,
-        described_class::RETRY_LIMITED_KIND,
-        described_class::TEST_REVIEW_PENDING_KIND,
-        described_class::MERGE_APPROVAL_KIND,
-        described_class::INTENT_CONFORMANCE_KIND
-      ]
 
       issue_lane_kinds.each do |kind|
         issue_query = capture_queries { described_class.call(user:, kind:) }
