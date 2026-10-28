@@ -30,3 +30,13 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resolves a
+  pending reopen review, the system SHALL require a non-blank intent-validation
+  reason bound to the current GitHub revision, record the actor, decision,
+  reason, and revision in the account audit trail, and return the issue to
+  normal admission without queueing an enhancement run. A stale revision or
+  queued/running work SHALL leave the reopen-review hold in place.
+  *Tests:* `spec/services/issues/resolve_reopen_review_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Issues::ResolveReopenReview`, `Projects::AgentRunsController`.

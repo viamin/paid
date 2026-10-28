@@ -2752,6 +2752,49 @@ RSpec.describe "AgentRuns" do
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/resolve_reopen_review" do
+    let(:reopened_issue) do
+      create(:issue, project: project, github_number: 4604, paid_state: "manual_review",
+        manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+        github_updated_at: Time.current.change(usec: 0))
+    end
+
+    before { sign_in user }
+
+    # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002L
+    it "records reopen validation instead of queuing enhancement work" do
+      expect {
+        post resolve_reopen_review_project_agent_runs_path(project), params: {
+          issue_id: reopened_issue.id, revision: reopened_issue.github_updated_at.iso8601,
+          reason: "The reopened scope still needs live validation evidence."
+        }
+      }.not_to change(AgentRun, :count)
+
+      expect(reopened_issue.reload.paid_state).to eq("new")
+      expect(AccountActivityEvent.last.metadata).to include("reopen_review" => "resume_work")
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002L
+    it "keeps the review hold for a stale or double-submitted decision" do
+      post resolve_reopen_review_project_agent_runs_path(project), params: {
+        issue_id: reopened_issue.id, revision: "stale", reason: "Need evidence."
+      }
+      expect(reopened_issue.reload).to be_reopen_review_pending
+
+      revision = reopened_issue.github_updated_at.iso8601
+      post resolve_reopen_review_project_agent_runs_path(project), params: {
+        issue_id: reopened_issue.id, revision:, reason: "Need evidence."
+      }
+      expect(reopened_issue.reload.paid_state).to eq("new")
+
+      expect {
+        post resolve_reopen_review_project_agent_runs_path(project), params: {
+          issue_id: reopened_issue.id, revision:, reason: "Need evidence."
+        }
+      }.not_to change(AccountActivityEvent, :count)
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/clear_retry_abandonment" do
     let(:capped_issue) do
       create(:issue,

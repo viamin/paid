@@ -470,13 +470,26 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002L
     def resume_manual_review
       authorize @project, :run_agent?
 
       issue = resolve_manual_review_issue
       unless issue
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = Inbox::ManualReviewRecovery.call(issue:)
+      unless recovery.enhancement?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This manual-review hold requires #{recovery.kind.to_s.humanize.downcase} recovery, not an enhancement retry."
+        return
+      end
+
+      if issue.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "An existing queued or running run must be reconciled before resuming this hold."
         return
       end
 
@@ -488,6 +501,22 @@ module Projects
         goal: "enhance_issue",
         priority_tier: nil
       )
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002L
+    def resolve_reopen_review
+      authorize @project, :run_agent?
+
+      issue = resolve_manual_review_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      result = Issues::ResolveReopenReview.call(
+        issue:, actor: current_user, reason: params[:reason], revision: params[:revision]
+      )
+      redirect_to safe_return_target || dashboard_path, **(result.success? ? { notice: result.message } : { alert: result.message })
     end
 
     # Operator-driven counterpart to

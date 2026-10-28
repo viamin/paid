@@ -1603,6 +1603,31 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("scanner-confirmed recurrence", "Next step:", "Evidence:")
   end
 
+  # @spec OPERATOR-INBOX-002L @spec ISSUE-REOPEN-REVIEW-005
+  it "renders a revision-bound reopen decision instead of an enhancement retry" do
+    reopened = create(:issue, project: project, github_number: 4604, paid_state: "manual_review",
+      manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+      github_updated_at: Time.current.change(usec: 0))
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, reopened), kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response.body).to include("Validate reopened intent", "Record intent validation")
+    expect(response.body).not_to include("Start enhancement run")
+    expect(response.body).to include(reopened.github_updated_at.iso8601)
+  end
+
+  # @spec OPERATOR-INBOX-002L @spec GITHUB-SYNC-016
+  it "keeps a dependency hold actionable without offering an enhancement retry" do
+    blocker = create(:issue, project: project, github_number: 4321, github_state: "open")
+    issue = create(:issue, project: project, paid_state: "manual_review", manual_review_reason: "legacy parked hold")
+    issue.issue_dependencies.create!(depends_on_issue: blocker)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, issue), kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response.body).to include("Waiting on dependency", "Open dependency #4321")
+    expect(response.body).not_to include("Start enhancement run")
+  end
+
   # @spec OPERATOR-INBOX-006
   it "renders an unknown waiting age for a legacy entry without a timestamp" do
     issue = create(:issue, :needs_input, project: project, title: "Legacy question", body: questions_body)
