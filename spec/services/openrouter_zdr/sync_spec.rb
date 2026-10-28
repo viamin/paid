@@ -44,6 +44,21 @@ RSpec.describe OpenrouterZdr::Sync do
     expect(OpenrouterZdrCatalog.current).to have_attributes(unavailable_at: nil, last_successful_at: be_present)
   end
 
+  # @spec RUNNER-MODEL-OPTIONS-007
+  it "keeps models discovered by the ZDR sync out of default model options" do
+    allow(OpenrouterZdr::Client).to receive(:call).and_return([
+      paid_endpoint.merge("model_id" => "anthropic/claude-sonnet-5.5"),
+      paid_endpoint.merge("model_id" => "openrouter/auto")
+    ])
+
+    described_class.call
+
+    anthropic = Runners::ModelOptions.call(runner_key: "opencode", api_provider: "anthropic")
+    openrouter = Runners::ModelOptions.call(runner_key: "opencode", api_provider: "openrouter")
+    expect(anthropic.select(&:model?).map(&:value)).not_to include("anthropic/claude-sonnet-5.5")
+    expect(openrouter.select(&:model?).map(&:value)).not_to include("openrouter/auto")
+  end
+
   # @spec FREE-MODEL-SYNC-011
   it "removes withdrawn eligibility only after a successful refresh" do
     withdrawn = create(:openrouter_zdr_model, model_id: "vendor/withdrawn")

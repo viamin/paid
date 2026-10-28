@@ -44,7 +44,7 @@ module Runners
     end
 
     def self.catalog_rows_by_provider(api_providers) # @spec RUNNER-MODEL-OPTIONS-006
-      relation = LlmModel.active.where(provider: api_providers)
+      relation = LlmModel.active.excluding_openrouter_zdr_synced.where(provider: api_providers)
       relation = relation.or(LlmModel.active.openrouter_synced) if api_providers.include?(FREE_POLICY_API_PROVIDER)
       rows = relation.order(Arel.sql("family ASC NULLS LAST")).by_capability.to_a
 
@@ -108,7 +108,7 @@ module Runners
       # Synced free models carry the upstream vendor slug in `provider` but
       # are OpenRouter-reachable model ids, so they belong in the OpenRouter
       # dropdown alongside provider-scoped rows (e.g. the Pareto row).
-      relation = LlmModel.active.by_provider(api_provider)
+      relation = LlmModel.active.excluding_openrouter_zdr_synced.by_provider(api_provider)
       relation = relation.or(LlmModel.active.openrouter_synced) if api_provider == FREE_POLICY_API_PROVIDER
       relation.order(Arel.sql("family ASC NULLS LAST")).by_capability
     end
