@@ -18,6 +18,11 @@ This segment covers the daily synchronization path only. Runner execution,
 rotation, and data-classification routing remain covered by their existing code
 paths and RDRs.
 
+The OpenRouter ZDR endpoint catalog is a sibling synchronization path in this
+segment. It is deliberately persisted separately from the free catalog: ZDR
+eligibility comes only from OpenRouter's endpoint response and may include paid
+models. A failed ZDR refresh never deactivates or rewrites free rows.
+
 ## Goals
 
 - Pull OpenRouter's model catalog from `GET /api/v1/models`.
@@ -97,6 +102,23 @@ The job is a daily GoodJob cron entry. It:
 - runs on the maintenance queue
 - enforces single-flight concurrency
 - delegates its business work entirely to `FreeModels::Sync`
+
+### OpenRouter ZDR endpoint catalog
+
+`OpenrouterZdr::Client` fetches `/api/v1/endpoints/zdr` and validates the
+endpoint-level `model_id` and `name` fields. `OpenrouterZdr::Sync` replaces the
+endpoint snapshot transactionally, creates missing `LlmModel` metadata rows
+under `catalog_source: "openrouter_zdr_sync"`, and records a singleton sync
+state. A model is eligible when at least one endpoint row exists; pricing,
+vendor, and provider-wide policy are not eligibility inputs.
+
+The sync state distinguishes an available successful empty snapshot from an
+unavailable failed refresh. Unavailability preserves the endpoint snapshot
+and exposes its error and last successful timestamp through
+`OpenrouterZdr::Catalog`. Successful refreshes remove withdrawn endpoint rows.
+Runner setup consumes the same active catalog rows and keeps existing runner
+compatibility and project-provider restrictions in the query path. Request-time
+`provider.zdr` enforcement remains authoritative.
 
 ## Trace Notes
 

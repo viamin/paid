@@ -117,6 +117,13 @@ RSpec.describe Runners::ModelOptions do
         expect(values).to include("openrouter/pareto-code", "deepseek/deepseek-chat-v3", "qwen/qwen3-coder")
       end
 
+      it "includes OpenRouter ZDR catalog rows" do # @spec OPENROUTER-ZDR-007
+        create(:llm_model, model_id: "openrouter/zdr-paid", display_name: "ZDR Paid", provider: "openrouter",
+          catalog_source: "openrouter_zdr_sync", capability_score: 9.5)
+
+        expect(options.map(&:value)).to include("openrouter/zdr-paid")
+      end
+
       it "orders family-backed rows before nil-family synced rows, then by capability" do
         expect(options.select(&:model?).map(&:value)).to eq(
           %w[openrouter/pareto-code qwen/qwen3-coder deepseek/deepseek-chat-v3]

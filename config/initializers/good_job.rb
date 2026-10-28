@@ -137,6 +137,12 @@ Rails.application.configure do
       queue: "maintenance",
       description: "Sync OpenRouter free models into the LlmModel catalog"
     },
+    openrouter_zdr_sync: {
+      cron: "30 0 * * *",
+      class: "OpenrouterZdr::SyncJob",
+      queue: "maintenance",
+      description: "Sync OpenRouter endpoint-level ZDR eligibility"
+    },
     model_health_check: {
       cron: "0 5 * * *",
       class: "ModelHealthCheckJob",

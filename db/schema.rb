@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3163,6 +3163,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["account_id", "position"], name: "index_onboarding_steps_on_account_id_and_position"
     t.index ["account_id", "step"], name: "index_onboarding_steps_on_account_id_and_step", unique: true
     t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
+  end
+
+  create_table "openrouter_zdr_endpoints", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "endpoint_name", null: false
+    t.datetime "last_seen_at", null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.string "model_id", null: false
+    t.string "provider_name"
+    t.datetime "updated_at", null: false
+    t.index ["model_id", "endpoint_name"], name: "idx_openrouter_zdr_endpoints_identity", unique: true
+    t.index ["model_id"], name: "index_openrouter_zdr_endpoints_on_model_id"
+  end
+
+  create_table "openrouter_zdr_syncs", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.text "error_message"
+    t.datetime "last_attempted_at"
+    t.datetime "last_successful_at"
+    t.integer "models_count", default: 0, null: false
+    t.string "status", default: "unavailable", null: false
+    t.datetime "updated_at", null: false
+    t.check_constraint "status::text = ANY (ARRAY['available'::character varying, 'unavailable'::character varying]::text[])", name: "openrouter_zdr_sync_status"
   end
 
   create_table "orchestration_decisions", comment: "Structured log of orchestration decisions for later workflow analysis and learning.", force: :cascade do |t|

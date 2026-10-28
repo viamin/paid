@@ -45,7 +45,7 @@ module Runners
 
     def self.catalog_rows_by_provider(api_providers) # @spec RUNNER-MODEL-OPTIONS-006
       relation = LlmModel.active.where(provider: api_providers)
-      relation = relation.or(LlmModel.active.openrouter_synced) if api_providers.include?(FREE_POLICY_API_PROVIDER)
+      relation = relation.or(openrouter_catalog_rows) if api_providers.include?(FREE_POLICY_API_PROVIDER)
       rows = relation.order(Arel.sql("family ASC NULLS LAST")).by_capability.to_a
 
       api_providers.index_with { |api_provider| rows_for_provider(rows, api_provider) }
@@ -55,9 +55,19 @@ module Runners
     def self.rows_for_provider(rows, api_provider)
       return rows.select { |model| model.provider == api_provider } unless api_provider == FREE_POLICY_API_PROVIDER
 
-      rows.select { |model| model.provider == FREE_POLICY_API_PROVIDER || model.catalog_source == "openrouter_sync" }
+      rows.select { |model| model.provider == FREE_POLICY_API_PROVIDER || openrouter_catalog_source?(model) }
     end
     private_class_method :rows_for_provider
+
+    def self.openrouter_catalog_rows
+      LlmModel.active.where(catalog_source: %w[openrouter_sync openrouter_zdr_sync])
+    end
+    private_class_method :openrouter_catalog_rows
+
+    def self.openrouter_catalog_source?(model)
+      %w[openrouter_sync openrouter_zdr_sync].include?(model.catalog_source)
+    end
+    private_class_method :openrouter_catalog_source?
 
     def initialize(runner_key:, api_provider:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE, catalog_rows: nil)
       @runner_key = runner_key.to_s
@@ -105,8 +115,20 @@ module Runners
       # are OpenRouter-reachable model ids, so they belong in the OpenRouter
       # dropdown alongside provider-scoped rows (e.g. the Pareto row).
       relation = LlmModel.active.by_provider(api_provider)
-      relation = relation.or(LlmModel.active.openrouter_synced) if api_provider == FREE_POLICY_API_PROVIDER
+      relation = relation.or(openrouter_catalog_relation) if api_provider == FREE_POLICY_API_PROVIDER
       relation.order(Arel.sql("family ASC NULLS LAST")).by_capability
+    end
+
+    def openrouter_catalog_rows
+      LlmModel.active.where(catalog_source: %w[openrouter_sync openrouter_zdr_sync])
+    end
+
+    def openrouter_catalog_relation
+      openrouter_catalog_rows
+    end
+
+    def openrouter_catalog_source?(model)
+      %w[openrouter_sync openrouter_zdr_sync].include?(model.catalog_source)
     end
 
     def runner_model_compatible?(model) # @spec RUNNER-MODEL-OPTIONS-002 @spec MODEL-SELECTION-005
