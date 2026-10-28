@@ -61,7 +61,7 @@ module Activities
         client = project.client
         summary = agent_run.agent_summary_with_stderr_fallback
         validate_issue_creation_attempt!(agent_run)
-        title, llm_generated_title = extract_title(summary, agent_run.custom_prompt)
+        title, llm_generated_title = extract_title(summary, agent_run.custom_prompt, agent_run: agent_run)
         body = body_override.present? ? issue_body(body_override) : issue_body(summary)
         resolved_dependencies = ProjectConventions::IssueDependencies.convention_value(project)
         body = append_dependency_text(body, upstream_issue, project: project, resolved: resolved_dependencies) if upstream_issue
@@ -108,7 +108,7 @@ module Activities
 
     # Returns [title, llm_generated] where llm_generated indicates whether
     # the title was produced by the LLM title-generation prompt.
-    def extract_title(summary, _custom_prompt = nil)
+    def extract_title(summary, _custom_prompt = nil, agent_run: nil)
       # Try first markdown heading (any level) from agent output
       if summary.present?
         heading = summary[/^#+\s+(.+)$/, 1]&.sub(/\s*#+\s*$/, "")&.strip
@@ -118,7 +118,7 @@ module Activities
       end
 
       # Fall back to LLM-generated title from agent output
-      llm_title = Llm::GenerateIssueTitle.call(summary: summary)
+      llm_title = Llm::GenerateIssueTitle.call(summary: summary, agent_run: agent_run)
       return [ llm_title, true ] if llm_title.present?
 
       # Last resort

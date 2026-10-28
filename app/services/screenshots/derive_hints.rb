@@ -18,7 +18,6 @@ module Screenshots
   class DeriveHints
     include Llm::OutputNormalizer
 
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 30
     MAX_FILES = 100
     MAX_HINT_SUMMARY = 200
@@ -81,14 +80,7 @@ module Screenshots
     private
 
     def request_hints
-      response = AgentHarness.send_message(
-        prompt,
-        provider: :claude,
-        model: DEFAULT_MODEL,
-        timeout: TIMEOUT,
-        tools: :none,
-        **Llm::TextMode.options
-      )
+      response = Llm::Request.call(prompt: prompt, agent_run: @agent_run, timeout: TIMEOUT)
       return {} unless response.success?
 
       parse_json(response.output)

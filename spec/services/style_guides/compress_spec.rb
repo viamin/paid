@@ -3,6 +3,9 @@
 require "rails_helper"
 
 RSpec.describe StyleGuides::Compress do
+  before { configure_llm_routing(project: style_guide.project, account: style_guide.account) }
+  after { Current.user = nil }
+
   let(:style_guide) { create(:style_guide, :global, raw_content: "# Ruby Style Guide\n\n" + (1..50).map { |i| "- Rule #{i}\n" }.join) }
 
   describe ".call" do
@@ -12,16 +15,13 @@ RSpec.describe StyleGuides::Compress do
         exit_code: 0,
         duration: 2.5,
         provider: :claude,
-        model: "claude-sonnet-4-6",
+        model: "configured-mid",
         tokens: { input: 500, output: 100, total: 600 }
       )
     end
 
     before do
-      allow(AgentHarness).to receive(:send_message).and_return(response)
-      # Default: preserve CLI transport so existing exact-match expectations
-      # pass. Individual specs flip this on to prove text-mode routing.
-      allow(Llm::TextMode).to receive(:options).and_return({})
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
     end
 
     it "compresses the style guide content" do
@@ -31,6 +31,7 @@ RSpec.describe StyleGuides::Compress do
       expect(style_guide.compressed_content).to eq("- snake_case for methods\n- CamelCase for classes")
     end
 
+    # @spec LLM-ROUTING-004
     it "stores compression metadata" do
       described_class.call(style_guide: style_guide)
 
@@ -48,24 +49,14 @@ RSpec.describe StyleGuides::Compress do
     it "calls AgentHarness with the compression prompt" do
       described_class.call(style_guide: style_guide)
 
-      expect(AgentHarness).to have_received(:send_message).with(
-        a_string_including("Compress the following coding style guide"),
-        provider: :claude,
-        model: "claude-sonnet-4-6",
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+        a_string_including("Compress the following coding style guide"), hash_including(provider: :claude,
+        model: "configured-mid",
         timeout: 120,
         dangerous_mode: false,
-        tools: :none
-      )
+        tools: :none))
     end
 
-    it "routes through agent-harness text mode when an API key is configured" do
-      allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
-
-      described_class.call(style_guide: style_guide)
-
-      expect(AgentHarness).to have_received(:send_message)
-        .with(anything, hash_including(mode: :text))
-    end
 
     it "returns the updated style guide" do
       result = described_class.call(style_guide: style_guide)

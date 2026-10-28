@@ -11,18 +11,18 @@ module Llm
   class GenerateIssueTitle
     include OutputNormalizer
 
-    DEFAULT_MODEL = "claude-haiku-4-5-20251001"
     MAX_TITLE_LENGTH = 255
     MAX_SUMMARY_INPUT = 4000
     TIMEOUT = 30
 
     class << self
-      def call(summary:)
-        new(summary: summary).generate
+      def call(summary:, agent_run: nil)
+        new(summary: summary, agent_run: agent_run).generate
       end
     end
 
-    def initialize(summary:)
+    def initialize(summary:, agent_run: nil)
+      @agent_run = agent_run
       @summary = summary
     end
 
@@ -43,14 +43,7 @@ module Llm
     private
 
     def request_title
-      response = AgentHarness.send_message(
-        prompt,
-        provider: :claude,
-        model: DEFAULT_MODEL,
-        timeout: TIMEOUT,
-        tools: :none,
-        **TextMode.options
-      )
+      response = Request.call(prompt: prompt, agent_run: @agent_run, timeout: TIMEOUT)
       return nil unless response.success?
 
       clean_title(response.output)

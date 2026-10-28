@@ -227,6 +227,10 @@ The operating principles that tie the approaches above to day-to-day work:
 
 - **Data over configuration.** When a behavior could be a rule or a record,
   store the record.
+- **Provider independence.** Application LLM operations use explicitly
+  configured runners and compatible models through `agent_harness`. No
+  lifecycle step requires a particular vendor, and host credentials never
+  silently override the selected runner's authentication or billing mode.
 - **Human final say.** The authority over whether a change lands rests with a
   human — exercised per-PR by default, or through explicit, revocable
   auto-merge configuration that delegates the per-merge decision under rules

@@ -28,6 +28,7 @@ module Workflows
         Activities::GenerateStyleGuideMutationsActivity,
         {
           style_guide_id: style_guide_id,
+          project_id: project_id,
           quality_metrics: sample_result[:quality_metrics],
           mutation_count: input.fetch(:mutation_count, 3),
           strategies: input[:strategies]

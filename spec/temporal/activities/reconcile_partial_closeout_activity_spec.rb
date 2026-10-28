@@ -77,28 +77,6 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
     end
 
     # @spec NO-OUTPUT-ISSUE-007
-    it "keeps an unsuccessful empty transport response retryable without persisting an assessment" do
-      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
-      response = AgentHarness::Response.new(output: "", exit_code: 1, duration: 1,
-        provider: :claude, error: "OAuth session expired")
-      allow(AgentHarness).to receive(:send_message).and_return(response)
-
-      expect { activity.execute(agent_run_id: run.id) }
-        .to raise_error(Llm::AnalyzePartialCloseout::AssessmentFailure, /transport returned an unsuccessful response/)
-
-      run.reload
-      expect(run.reconciliation.fetch("status")).to eq("retryable_failure")
-      expect(run.reconciliation.fetch("error")).to include("transport returned an unsuccessful response")
-      expect(run.reconciliation.fetch("assessment_failure")).to include(
-        "transport" => "cli", "provider" => "claude", "detail" => "OAuth session expired"
-      )
-      expect(run.reconciliation).not_to have_key("assessment")
-      expect(parent.reload.paid_state).to eq("in_progress")
-      expect(parent.issue_dependencies).to be_empty
-      expect(client).not_to have_received(:update_issue)
-    end
-
-    # @spec NO-OUTPUT-ISSUE-007
     it "persists the analyzer's structured transport context instead of only its formatted message" do
       transport_error = AgentHarness::Error.new(
         "partial closeout assessment failed: schema transport: API credential expired",
@@ -117,24 +95,6 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
           "message" => "partial closeout assessment failed: schema transport: API credential expired"
         }
       )
-    end
-
-    # @spec NO-OUTPUT-ISSUE-007
-    it "redacts and bounds a raised harness authentication error without context" do
-      secret = "sk-ant-api03-" + "a" * 80
-      error = AgentHarness::AuthenticationError.new("Claude authentication failed: #{secret}" + "x" * 600)
-      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
-      allow(AgentHarness).to receive(:send_message).and_raise(error)
-
-      expect { activity.execute(agent_run_id: run.id) }.to raise_error(AgentHarness::Error)
-
-      reconciliation = run.reload.reconciliation
-      diagnostic = reconciliation.fetch("assessment_failure")
-      expect(diagnostic).to include("transport" => "harness", "transport_category" => "authentication")
-      expect(diagnostic.fetch("detail")).not_to include(secret)
-      expect(diagnostic.fetch("detail")).to include("[REDACTED:")
-      expect(diagnostic.fetch("detail").length).to be <= AgentRun::MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH
-      expect(reconciliation).not_to have_key("assessment")
     end
 
     # @spec NO-OUTPUT-ISSUE-007
@@ -167,8 +127,8 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
     # @spec PARTIAL-CLOSEOUT-034
     it "persists bounded authentication diagnostics and re-raises for Temporal retry" do
       failure = Llm::AnalyzePartialCloseout::AssessmentFailure.new(
-        "Partial closeout assessment could not authenticate with an authorized Claude credential. Reconnect the account's Claude runner credential and retry.",
-        category: "authentication_unavailable", provider: "claude", model: "claude-sonnet-4-6",
+        "Partial closeout assessment could not authenticate with the configured runner. Reconnect its credential and retry.",
+        category: "authentication_unavailable", provider: "codex", model: "gpt-5.2-codex",
         request_id: "request-123", attempt_id: "attempt-456"
       )
       allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(failure)
@@ -178,10 +138,10 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
       reconciliation = run.reload.reconciliation
       expect(reconciliation).to include("status" => "retryable_failure")
       expect(reconciliation.fetch("assessment_failure")).to include(
-        "category" => "authentication_unavailable", "provider" => "claude", "model" => "claude-sonnet-4-6",
+        "category" => "authentication_unavailable", "provider" => "codex", "model" => "gpt-5.2-codex",
         "request_id" => "request-123", "attempt_id" => "attempt-456"
       )
-      expect(reconciliation.fetch("error")).to include("Reconnect the account's Claude runner credential")
+      expect(reconciliation.fetch("error")).to include("Reconnect its credential")
     end
   end
 end

@@ -33,15 +33,9 @@ module Activities
 
     private
 
-    # A transport failure from `Llm::AnalyzePartialCloseout` carries its
-    # failure category, provider/model, and request identity in
-    # `AgentHarness::Error#context` (see that class's `transport_failure!`)
-    # so a retryable auth/provider failure stays diagnosable and recoverable
-    # per #4655, instead of persisting only the formatted message string.
-    # Raised harness errors (including CLI authentication failures) can carry
-    # raw provider output in their message with no context at all. Sanitize
-    # every message at this persistence boundary, and only retain the known
-    # transport metadata after applying the same bounded sanitization.
+    # Raised harness errors can carry raw provider output in their message.
+    # Sanitize every message at this persistence boundary and retain only
+    # known, bounded transport metadata.
     def failure_diagnostic(error)
       message = sanitized_diagnostic(error.message)
       return message unless error.is_a?(AgentHarness::Error) && error.context.present?

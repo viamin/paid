@@ -13,7 +13,6 @@ module DesignAmendments
   class ImpactReview
     include Llm::OutputNormalizer
 
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 45
     MIN_CONFIDENCE = 0.55
     IMPACTS = %w[affected unaffected uncertain].freeze
@@ -56,14 +55,7 @@ module DesignAmendments
     end
 
     def call
-      response = AgentHarness.send_message(
-        prompt_for,
-        provider: :claude,
-        model: DEFAULT_MODEL,
-        timeout: TIMEOUT,
-        tools: :none,
-        **Llm::TextMode.options
-      )
+      response = Llm::Request.call(prompt: prompt_for, project: amendment.project, timeout: TIMEOUT)
 
       return log_failure("unsuccessful_response") unless response.success?
 

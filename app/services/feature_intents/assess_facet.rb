@@ -6,10 +6,11 @@ module FeatureIntents
   # score from counts or keywords.
   # @spec FACET-CONFIDENCE-002 FACET-CONFIDENCE-003 FACET-CONFIDENCE-004 FACET-CONFIDENCE-017
   # @spec FACET-CONFIDENCE-012 FACET-CONFIDENCE-013 FACET-CONFIDENCE-014
+  # @spec LLM-ROUTING-004
   class AssessFacet
     include Llm::OutputNormalizer
     RUBRIC_VERSION = "facet-confidence-v1"
-    MODEL_VERSION = "claude-sonnet-4-6"
+    MODEL_VERSION = "pending"
     TIMEOUT = 60
     STATUSES = %w[completed clarification_needed unknown].freeze
 
@@ -33,12 +34,13 @@ module FeatureIntents
     attr_reader :agent_harness, :assessment
 
     def response_payload
-      response = agent_harness.send_message(prompt, provider: :claude, model: MODEL_VERSION,
-        timeout: TIMEOUT, tools: :none, **Llm::TextMode.options)
-      @cost_cents = cost_cents_from(response)
+      response = Llm::Request.call(prompt: prompt, project: facet.feature_intent.project, timeout: TIMEOUT, harness: agent_harness)
+      @response_model = response.respond_to?(:model) ? response.model.presence || "unknown" : "unknown"
+      @cost_cents = cost_cents_from(response, @response_model)
       return unless response.respond_to?(:success?) && response.success?
 
-      JSON.parse(strip_markdown_fence(response.output.to_s)).deep_stringify_keys
+      parsed = JSON.parse(strip_markdown_fence(response.output.to_s))
+      parsed.deep_stringify_keys if parsed.is_a?(Hash)
     rescue JSON::ParserError
       nil
     end
@@ -50,7 +52,7 @@ module FeatureIntents
 
         @response_status = payload.fetch("status")
         attributes = payload.slice("intent_score", "technical_score", "explanation", "inferred_fit", "evidence_references").merge(
-          rubric_version: RUBRIC_VERSION, model_version: MODEL_VERSION
+          rubric_version: RUBRIC_VERSION, model_version: @response_model
         )
         if payload["status"] == "completed"
           assessment.update!(attributes.merge(status: "completed", assessed_at: Time.current))
@@ -111,14 +113,14 @@ module FeatureIntents
     def facet = direction.feature_intent_facet
     def active_references = @active_references ||= facet.evidence.where(superseded_by: nil).pluck(:source_reference)
 
-    def cost_cents_from(response)
+    def cost_cents_from(response, model)
       return unless response.respond_to?(:input_tokens) && response.respond_to?(:output_tokens)
 
       input_tokens = response.input_tokens
       output_tokens = response.output_tokens
       return unless [ input_tokens, output_tokens ].all? { |tokens| tokens.is_a?(Integer) && tokens >= 0 }
 
-      TokenUsageTracker.calculate_cost(input_tokens, output_tokens, llm_model: MODEL_VERSION)
+      TokenUsageTracker.calculate_cost(input_tokens, output_tokens, llm_model: model)
     end
 
     def prompt

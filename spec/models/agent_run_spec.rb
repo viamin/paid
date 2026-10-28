@@ -2171,7 +2171,7 @@ RSpec.describe AgentRun do
       end
 
       before do
-        allow(AgentHarness).to receive(:send_message).and_return(response)
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
       end
 
       it "delegates to AgentRuns::Execute without timeout by default" do

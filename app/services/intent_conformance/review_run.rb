@@ -24,7 +24,6 @@ module IntentConformance
   # @spec INTENT-CONFORMANCE-REVIEW-006
   # @spec INTENT-CONFORMANCE-REVIEW-007
   class ReviewRun
-    DEFAULT_MODEL = ReviewerLlm::DEFAULT_MODEL
     NOT_EVALUATED_REVIEWER_MODEL = "none"
     MAX_DESIGN_DOCS = 10
     MAX_DESIGN_DOC_LENGTH = 6_000
@@ -123,6 +122,7 @@ module IntentConformance
     # the shadow evaluation execute the exact same reviewer.
     def request_review(diff)
       ReviewerLlm.call(
+          project: project,
         repository: project.full_name,
         revision: baseline_revision,
         design_docs: design_docs,
@@ -188,7 +188,7 @@ module IntentConformance
         approved_design_revision: baseline_revision,
         outcome: validated[:outcome],
         evaluated_at: Time.current,
-        reviewer_model: result.model.presence || DEFAULT_MODEL,
+        reviewer_model: result.model.presence || "unknown",
         cited_claims: validated[:cited_design_claims].map { |claim| { "claim_text" => claim } },
         cited_diff_locations: validated[:cited_diff_locations],
         reasoning_summary: validated[:reasoning_summary]

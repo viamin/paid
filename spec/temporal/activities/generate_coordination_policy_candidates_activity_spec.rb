@@ -2,9 +2,10 @@
 
 require "rails_helper"
 
-RSpec.describe Activities::GenerateCoordinationPolicyCandidatesActivity, :no_db do
+RSpec.describe Activities::GenerateCoordinationPolicyCandidatesActivity do
+  let(:account) { create(:account) }
+
   let(:activity) { described_class.new }
-  let(:connection_pool) { instance_double(ActiveRecord::ConnectionAdapters::ConnectionPool, active_connection?: false) }
   let(:policy) do
     {
       id: 3,
@@ -12,7 +13,7 @@ RSpec.describe Activities::GenerateCoordinationPolicyCandidatesActivity, :no_db 
       policy_key: "feature_decomposition",
       name: "Feature Decomposition",
       version: 2,
-      account_id: 9,
+      account_id: account.id,
       configuration: OrchestrationStrategies::Defaults.feature_orchestration
     }
   end
@@ -25,12 +26,6 @@ RSpec.describe Activities::GenerateCoordinationPolicyCandidatesActivity, :no_db 
       diff: [ { "path" => "/decomposition/max_tasks", "from" => 20, "to" => 12 } ],
       provenance: { "source_version" => 2 }
     )
-  end
-
-  before do
-    allow(TenantContext).to receive(:with_system_access).and_yield
-    allow(TenantContext).to receive(:with).and_yield
-    allow(ActiveRecord::Base).to receive(:connection_pool).and_return(connection_pool)
   end
 
   it "serializes generated policy mutations" do

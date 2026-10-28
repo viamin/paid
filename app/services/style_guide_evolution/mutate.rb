@@ -4,7 +4,6 @@ module StyleGuideEvolution
   class Mutate
     include Llm::OutputNormalizer
 
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 60
     MAX_MUTATION_COUNT = 5
     MIN_MUTATION_COUNT = 1
@@ -18,6 +17,7 @@ module StyleGuideEvolution
     end
 
     def initialize(style_guide:, quality_metrics: [], sample_outputs: {}, options: {})
+      @routing_project = options[:project] || style_guide.project
       @style_guide = style_guide
       @quality_metrics = quality_metrics
       @sample_outputs = sample_outputs
@@ -29,14 +29,7 @@ module StyleGuideEvolution
 
     # @spec STYLE-GUIDE-EVOLUTION-007
     def mutate
-      response = AgentHarness.send_message(
-        build_prompt,
-        provider: :claude,
-        model: DEFAULT_MODEL,
-        timeout: TIMEOUT,
-        tools: :none,
-        **Llm::TextMode.options
-      )
+      response = Llm::Request.call(prompt: build_prompt, project: @routing_project, account: @style_guide.account, timeout: TIMEOUT)
       return [] unless response.success? && response.output.present?
 
       parsed = parse_mutations(response.output)

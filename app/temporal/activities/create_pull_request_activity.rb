@@ -829,6 +829,7 @@ module Activities
 
       description = Llm::GeneratePrDescription.call(
         agent_summary: summary,
+        agent_run: AgentRun.find(agent_run_id),
         issue_title: issue&.title,
         issue_body: issue&.body
       )

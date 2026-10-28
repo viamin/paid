@@ -8,8 +8,6 @@ module Knowledge
       include Llm::OutputNormalizer
 
       # @spec CONTEXT-INTAKE-004
-      DEFAULT_MODEL = "claude-sonnet-4-6"
-      DEFAULT_PROVIDER = :claude
       TIMEOUT = 60
       MAX_GENERATED_QUESTIONS = 3
       MAX_KEY_ATTEMPTS = 10
@@ -53,7 +51,7 @@ module Knowledge
       end
 
       def call
-        parsed = schema_capable_request? ? schema_constrained_parse : legacy_text_parse
+        parsed = parse_request
         return [] if parsed.nil?
 
         create_questions(parsed)
@@ -63,74 +61,18 @@ module Knowledge
           project_id: project.id,
           session_id: session.id,
           round: round,
-          error_class: e.class.name,
-          error: e.message
+          error_class: e.class.name
         )
         []
       end
 
       private
 
-      # Schema-constrained responses require API-key authentication because
-      # the verified agent-harness schema transport
-      # (AgentHarness::Api::ChatTransport#call(operation: :schema)) is
-      # API-only. CLI/subscription callers retain the legacy text path so
-      # the request does not silently switch credentials or billing.
-      def schema_capable_request?
-        Llm::TextMode.enabled?
-      end
-
-      def schema_constrained_parse
-        result = schema_constrained_request
-        return nil if result.nil?
-
-        parsed_questions(result[:parsed])
-      end
-
-      def legacy_text_parse
-        response = AgentHarness.send_message(
-          build_prompt,
-          provider: DEFAULT_PROVIDER,
-          model: DEFAULT_MODEL,
-          timeout: TIMEOUT,
-          dangerous_mode: false,
-          tools: :none,
-          **Llm::TextMode.options
-        )
+      def parse_request
+        response = Llm::Request.call(prompt: build_prompt, project: project, timeout: TIMEOUT)
         return nil unless response.success?
 
         parsed_questions(JSON.parse(cleaned_text(response.output)))
-      end
-
-      def schema_constrained_request
-        api_key = ENV["ANTHROPIC_API_KEY"].to_s.strip
-        return nil if api_key.empty?
-
-        request = {
-          request_id: SecureRandom.uuid,
-          operation: :schema,
-          schema_name: "context_intake_follow_up_questions",
-          schema: RESPONSE_SCHEMA,
-          schema_mode: :json_schema,
-          timeout: { read_seconds: TIMEOUT },
-          candidates: [
-            {
-              provider: :anthropic,
-              model: DEFAULT_MODEL,
-              protocol: :messages,
-              authentication_mode: :api_key,
-              credentials: { api_key: api_key }
-            }
-          ],
-          messages: [ { role: :user, content: build_prompt } ]
-        }
-
-        result = AgentHarness::Api::ChatTransport.new.call(request)
-        return nil if result.nil?
-        return nil unless result[:status] == :succeeded
-        return nil if result[:parsed].nil?
-
-        result
       end
 
       def build_prompt

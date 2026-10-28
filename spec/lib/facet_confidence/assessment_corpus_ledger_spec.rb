@@ -28,7 +28,7 @@ RSpec.describe FacetConfidence::AssessmentCorpusLedger, :no_db do
       expect(cases.map { |corpus_case| corpus_case.fetch("shape") }.uniq).to match_array(described_class::REQUIRED_SHAPES)
       document = YAML.safe_load_file(committed_corpus)
       expect(document.fetch("rubric").fetch("version")).to eq(FeatureIntents::AssessFacet::RUBRIC_VERSION)
-      expect(document.fetch("rubric").fetch("model")).to eq(FeatureIntents::AssessFacet::MODEL_VERSION)
+      expect(document.fetch("rubric").fetch("model")).to eq("claude-sonnet-4-6")
       expect(document.fetch("threshold_defaults")).to eq("intent" => 80, "technical" => 80)
     end
 

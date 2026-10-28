@@ -15,7 +15,11 @@ module StyleGuides
     end
 
     def call
-      StyleGuideCompressionJob.perform_later(style_guide.id)
+      if initiated_by
+        StyleGuideCompressionJob.perform_later(style_guide.id, initiated_by_id: initiated_by.id)
+      else
+        StyleGuideCompressionJob.perform_later(style_guide.id)
+      end
 
       Rails.logger.info(
         message: "style_guides.compression_enqueued",

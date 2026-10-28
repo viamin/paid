@@ -35,7 +35,7 @@ module Runners
       required = preferences["required_model_id"]
       project.llm_provider_allowed?(provider) &&
         !Array(preferences["excluded_model_ids"]).include?(model_id) &&
-        (required.blank? || required == model_id) && within_tier_bounds?(model, preferences, goal)
+        (required.blank? || required == model_id) && self.class.within_tier_bounds?(model, preferences, goal)
     end
 
     def reject!(model_id)
@@ -62,7 +62,7 @@ module Runners
 
     attr_reader :runner, :context
 
-    def within_tier_bounds?(model, preferences, goal)
+    def self.within_tier_bounds?(model, preferences, goal)
       tiers = LlmModel::TIERS
       minimum = preferences.dig("goal_min_tiers", goal) || preferences["quality_recovery_min_tier"]
       maximum = preferences["max_tier"]

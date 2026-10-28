@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe Activities::GenerateStrategyMutationsActivity do
+  let(:account) { create(:account) }
+
   let(:activity) { described_class.new }
   let(:strategy) do
     {
@@ -10,7 +12,7 @@ RSpec.describe Activities::GenerateStrategyMutationsActivity do
       strategy_type: "review_settings",
       name: "Review Settings",
       version: 2,
-      account_id: 9,
+      account_id: account.id,
       configuration: OrchestrationStrategies::Defaults.review_settings
     }
   end

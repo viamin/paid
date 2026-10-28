@@ -14,6 +14,7 @@ module Activities
           strategy: input.fetch(:strategy),
           analysis: input.slice(:performance, :sample_successes, :sample_failures, :prior_versions),
           options: {
+            account: Account.find(input[:account_id] || input.fetch(:strategy).fetch(:account_id)),
             mutation_count: input.fetch(:mutation_count, 2),
             strategies: input[:strategies]
           }.compact

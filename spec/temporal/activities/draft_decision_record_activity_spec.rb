@@ -4,6 +4,11 @@ require "rails_helper"
 
 # @spec KNOWLEDGE-010
 RSpec.describe Activities::DraftDecisionRecordActivity do
+  before { configure_llm_routing(project: project)
+allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response)
+   }
+
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
   let(:agent_run) { create(:agent_run, :completed, project: project) }
@@ -27,10 +32,6 @@ RSpec.describe Activities::DraftDecisionRecordActivity do
     response
   end
 
-  before do
-    allow(Knowledge::AnalysisRunner).to receive(:available?).and_return(false)
-    allow(AgentHarness).to receive(:send_message).and_return(llm_response)
-  end
 
   describe "#execute" do
     before do
@@ -43,7 +44,7 @@ RSpec.describe Activities::DraftDecisionRecordActivity do
       expect(result[:success]).to be true
       expect(result[:decision_record_id]).to be_present
       expect(result[:agent_run_id]).to eq(agent_run.id)
-      expect(AgentHarness).to have_received(:send_message)
+      expect(AgentHarness.conductor).to have_received(:execute_direct)
     end
 
     it "returns success with nil decision_record_id when the agent produced no output to summarize" do
@@ -71,7 +72,7 @@ RSpec.describe Activities::DraftDecisionRecordActivity do
 
       result = activity.execute(agent_run_id: agent_run.id)
 
-      expect(AgentHarness).not_to have_received(:send_message)
+      expect(AgentHarness.conductor).not_to have_received(:execute_direct)
       expect(result[:success]).to be true
       expect(result[:decision_record_id]).to eq(record.id)
     end
@@ -84,7 +85,7 @@ RSpec.describe Activities::DraftDecisionRecordActivity do
     end
 
     it "returns failure and marks the phase failed when the LLM path is exhausted (#3795)" do
-      allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::Error, "LLM timeout")
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(AgentHarness::Error, "LLM timeout")
 
       result = activity.execute(agent_run_id: agent_run.id)
 
@@ -94,7 +95,7 @@ RSpec.describe Activities::DraftDecisionRecordActivity do
     end
 
     it "returns failure without raising when an unexpected error occurs" do
-      allow(AgentHarness).to receive(:send_message).and_raise(RuntimeError, "unexpected")
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(RuntimeError, "unexpected")
 
       result = activity.execute(agent_run_id: agent_run.id)
 
@@ -103,7 +104,7 @@ RSpec.describe Activities::DraftDecisionRecordActivity do
     end
 
     it "re-raises Temporalio::Error::CanceledError instead of swallowing it" do
-      allow(AgentHarness).to receive(:send_message).and_raise(Temporalio::Error::CanceledError, "activity canceled")
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(Temporalio::Error::CanceledError, "activity canceled")
 
       expect { activity.execute(agent_run_id: agent_run.id) }.to raise_error(Temporalio::Error::CanceledError)
     end

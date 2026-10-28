@@ -80,7 +80,7 @@ module Runners
         runner_key: runner.runner_key,
         auth_type: auth_type
       )[tier]
-      return failure_result("no model configured for #{runner.runner_key} at #{tier}") if default_model_id.blank?
+      return failure_result("no model configured for #{runner.runner_key} at #{tier}", error_type: :missing_model) if default_model_id.blank?
 
       Result.new(
         model_id: default_model_id,

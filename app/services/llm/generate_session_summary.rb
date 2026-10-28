@@ -11,8 +11,6 @@ module Llm
   class GenerateSessionSummary
     include OutputNormalizer
 
-    DEFAULT_MODEL = "claude-sonnet-4-6"
-    DEFAULT_PROVIDER = :claude
     TIMEOUT = 30
     MAX_TRANSCRIPT_LENGTH = 12_000
     PROMPT_SLUG = "knowledge.session_summary.draft"
@@ -85,11 +83,7 @@ module Llm
       transcript = agent_run.agent_summary_with_stderr_fallback(limit: 400)
       return nil if transcript.blank?
 
-      if schema_capable_request?
-        parsed, raw_response = schema_constrained_parse(transcript)
-      else
-        parsed, raw_response = legacy_text_parse(transcript)
-      end
+      parsed, raw_response = parse_request(transcript)
       return nil if parsed.nil?
 
       build_result(parsed, raw_response)
@@ -97,72 +91,11 @@ module Llm
 
     private
 
-    # Schema-constrained responses require API-key authentication because
-    # the verified agent-harness schema transport
-    # (AgentHarness::Api::ChatTransport#call(operation: :schema)) is
-    # API-only. CLI/subscription callers retain the legacy text path so
-    # the request does not silently switch credentials or billing.
-    def schema_capable_request?
-      Llm::TextMode.enabled?
-    end
-
-    def schema_constrained_parse(transcript)
-      result = schema_constrained_request(transcript)
-      return [ nil, nil ] if result.nil?
-
-      [ parsed_schema_payload(result[:parsed]), result ]
-    end
-
-    def legacy_text_parse(transcript)
-      response = AgentHarness.send_message(
-        prompt(transcript),
-        provider: DEFAULT_PROVIDER,
-        model: DEFAULT_MODEL,
-        timeout: TIMEOUT,
-        tools: :none,
-        **Llm::TextMode.options
-      )
+    def parse_request(transcript)
+      response = Request.call(prompt: prompt(transcript), project: agent_run.project, timeout: TIMEOUT)
       return [ nil, nil ] if response.respond_to?(:success?) && !response.success?
 
       [ parse_legacy_response(response), response ]
-    end
-
-    def schema_constrained_request(transcript)
-      api_key = ENV["ANTHROPIC_API_KEY"].to_s.strip
-      return nil if api_key.empty?
-
-      request = {
-        request_id: SecureRandom.uuid,
-        operation: :schema,
-        schema_name: "agent_run_session_summary",
-        schema: RESPONSE_SCHEMA,
-        schema_mode: :json_schema,
-        timeout: { read_seconds: TIMEOUT },
-        candidates: [
-          {
-            provider: :anthropic,
-            model: DEFAULT_MODEL,
-            protocol: :messages,
-            authentication_mode: :api_key,
-            credentials: { api_key: api_key }
-          }
-        ],
-        messages: [ { role: :user, content: prompt(transcript) } ]
-      }
-
-      result = AgentHarness::Api::ChatTransport.new.call(request)
-      return nil if result.nil?
-      return nil unless result[:status] == :succeeded
-      return nil if result[:parsed].nil?
-
-      result
-    end
-
-    def parsed_schema_payload(parsed)
-      return nil unless parsed.is_a?(Hash)
-
-      payload = parsed.symbolize_keys
-      payload[:summary].present? ? payload : nil
     end
 
     def parse_legacy_response(response)
@@ -171,14 +104,15 @@ module Llm
 
       cleaned = strip_markdown_fence(output.to_s.strip)
       parsed = JSON.parse(cleaned, symbolize_names: true)
-      return nil if parsed[:summary].blank?
+      return nil unless parsed.is_a?(Hash) && parsed[:summary].is_a?(String) && parsed[:summary].present?
+      return nil unless ARRAY_FIELDS.all? { |field| parsed[field].nil? || (parsed[field].is_a?(Array) && parsed[field].all? { |item| item.is_a?(String) }) }
 
       parsed
     rescue JSON::ParserError => e
       Rails.logger.warn(
         message: "llm.generate_session_summary_parse_failed",
         agent_run_id: agent_run.id,
-        error: e.message
+        error_class: e.class.name
       )
       nil
     end

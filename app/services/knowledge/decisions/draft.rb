@@ -8,17 +8,8 @@ module Knowledge
     # a structured decision record, then stores it as a DecisionRecord with
     # links to the agent run, issue, and a KnowledgeArtifact for search.
     #
-    # When Docker is available, the LLM call runs inside an isolated container
-    # that authenticates to the secrets proxy via a KnowledgeRun proxy token
-    # (no API keys in container). Falls back to in-process AgentHarness when
-    # Docker is unavailable.
-    #
-    # Text-mode routing (#1147): the in-process Claude path opts into
-    # +Llm::TextMode.options+ so host-side drafting uses the HTTP text
-    # transport when +ANTHROPIC_API_KEY+ is configured. Non-Claude providers
-    # and the containerized path continue to use their existing CLI transport
-    # unchanged, because +TextTransport+ is Anthropic-only and the container
-    # already isolates +cwd+/memory concerns.
+    # Uses the owner's configured chat runners through Llm::Request. The
+    # selected runner owns its credentials and model; no vendor is required.
     #
     # @spec KNOWLEDGE-010
     # @spec KNOWLEDGE-012
@@ -33,8 +24,6 @@ module Knowledge
       DraftFailedError = Class.new(StandardError)
 
       TIMEOUT = 30
-      DEFAULT_MODEL = "claude-sonnet-4-6"
-      DEFAULT_PROVIDER = "claude"
 
       # How many existing decision records are offered to the drafting LLM as
       # supersession candidates. Bounded so the prompt stays small on projects
@@ -178,184 +167,24 @@ module Knowledge
       end
 
       def send_to_llm(prompt)
-        if Knowledge::AnalysisRunner.available?
-          send_to_llm_containerized(prompt)
-        else
-          send_to_llm_in_process(prompt)
-        end
-      end
-
-      def send_to_llm_containerized(prompt)
         success = false
-        knowledge_run = create_knowledge_run!
-        configured_providers = chat_providers
-        providers = configured_providers.select { |provider| Knowledge::AnalysisRunner.supported_provider?(provider) }
-
-        if providers.empty?
-          log_all_providers_unavailable(
-            knowledge_run,
-            reason: "no_supported_container_providers",
-            providers: configured_providers
-          )
-          return nil
-        end
-
-        runner = Knowledge::AnalysisRunner.new(
-          project: agent_run.project,
-          knowledge_run: knowledge_run
-        )
-
-        runner.with_container do |r|
-          providers.each_with_index do |provider, index|
-            knowledge_run.record_provider_attempt(provider)
-            output = r.call_llm(
-              prompt,
-              provider: provider,
-              model: model_for(provider),
-              timeout: TIMEOUT
-            )
-
-            parsed = parse_text_output(output)
-            if parsed
-              knowledge_run.update!(final_provider: provider)
-              knowledge_run.mark_provider_attempt_outcome(provider: provider, outcome: "success")
-              success = true
-              return parsed
-            end
-
-            knowledge_run.mark_provider_attempt_outcome(
-              provider: provider,
-              outcome: "unparseable_response"
-            )
-            log_provider_switch(
-              from_provider: provider,
-              to_provider: providers[index + 1],
-              reason: "unparseable_response",
-              knowledge_run: knowledge_run
-            )
-          rescue Knowledge::AnalysisRunner::Error => e
-            knowledge_run.mark_provider_attempt_outcome(
-              provider: provider,
-              outcome: "container_provider_error",
-              error_class: e.class.name,
-              error_message: e.message
-            )
-            Rails.logger.warn(
-              message: "knowledge.decisions.draft_container_provider_failed",
-              agent_run_id: agent_run.id,
-              knowledge_run_id: knowledge_run.id,
-              provider: provider,
-              error_class: e.class.name,
-              error: e.message
-            )
-            log_provider_switch(
-              from_provider: provider,
-              to_provider: providers[index + 1],
-              reason: "container_provider_failed",
-              knowledge_run: knowledge_run,
-              error: e
-            )
-          end
-        end
-
-        log_all_providers_unavailable(knowledge_run, reason: "containerized_providers_failed")
-        nil
-      rescue Knowledge::AnalysisRunner::Error => e
-        Rails.logger.warn(
-          message: "knowledge.decisions.draft_container_failed",
-          agent_run_id: agent_run.id,
-          error_class: e.class.name,
-          error: e.message
-        )
-        knowledge_run.fail!(
-          reason: "container_error",
-          error_class: e.class.name,
-          error_message: e.message
-        )
-        # The in-process fallback represents a separate attempt — clear the
-        # containerized run reference so it gets its own KnowledgeRun instead
-        # of silently overwriting a failed one.
-        @current_knowledge_run = nil
-        fallback_result = send_to_llm_in_process(prompt)
-        success = fallback_result.present?
-        fallback_result
-      ensure
-        finalize_knowledge_run!(knowledge_run, success: success)
-      end
-
-      def send_to_llm_in_process(prompt)
-        success = false
-        last_error = nil
-        setting = effective_user_setting
-
-        result = if setting
-          create_knowledge_run! unless current_knowledge_run
-
-          executor = Knowledge::ProviderExecutor.new(
-            user_setting: setting,
-            operation: :chat,
-            knowledge_run: current_knowledge_run
-          )
-
-          executor.execute do |provider|
-            begin
-              response = AgentHarness.send_message(prompt, **llm_request_options(provider))
-              parsed = parse_response(response)
-              unless parsed
-                current_knowledge_run.mark_provider_attempt_outcome(
-                  provider: provider,
-                  outcome: "unparseable_response"
-                )
-                raise AgentHarness::ProviderError.new(
-                  "Runner #{provider} returned unparseable response"
-                )
-              end
-              current_knowledge_run.mark_provider_attempt_outcome(provider: provider, outcome: "success")
-              parsed
-            rescue AgentHarness::Error => e
-              last_error = e
-              raise
-            end
-          end
-        else
-          send_to_llm_in_process_without_executor(prompt)
-        end
-
-        success = result.present?
-        result
-      rescue Knowledge::ProviderExecutor::AllProvidersExhausted => e
-        Rails.logger.warn(
-          message: "knowledge.decisions.draft_all_providers_exhausted",
-          agent_run_id: agent_run.id,
-          knowledge_run_id: current_knowledge_run&.id,
-          error: e.message
-        )
-        current_knowledge_run&.fail!(
-          reason: "all_providers_exhausted",
-          error_class: last_error&.class&.name || e.class.name,
-          error_message: last_error&.message || e.message
-        )
-        nil
-      ensure
-        finalize_knowledge_run!(current_knowledge_run, success: success)
-      end
-
-      def send_to_llm_in_process_without_executor(prompt)
         create_knowledge_run! unless current_knowledge_run
         providers = chat_providers
         last_error = nil
+        deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + TIMEOUT
 
         providers.each_with_index do |provider, index|
+          remaining = (deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)).ceil
+          break if remaining <= 0
+
           current_knowledge_run.record_provider_attempt(provider)
-          response = AgentHarness.send_message(
-            prompt,
-            **llm_request_options(provider)
-          )
+          response = Llm::Request.call(prompt: prompt, project: agent_run.project, runner: provider, timeout: remaining)
 
           parsed = parse_response(response)
           if parsed
             current_knowledge_run.update!(final_provider: provider)
             current_knowledge_run.mark_provider_attempt_outcome(provider: provider, outcome: "success")
+            success = true
             return parsed
           end
 
@@ -406,10 +235,12 @@ module Knowledge
 
         log_all_providers_unavailable(
           current_knowledge_run,
-          reason: "in_process_providers_failed",
+          reason: "all_providers_exhausted",
           error: last_error
         )
         nil
+      ensure
+        finalize_knowledge_run!(current_knowledge_run, success: success)
       end
 
       def draft_decision_record(prompt)
@@ -430,63 +261,27 @@ module Knowledge
 
       def chat_providers
         setting = effective_user_setting
-        providers = setting ? Knowledge::ProviderSelector.for_chat(user_setting: setting) : []
+        return [] unless setting
 
-        providers.presence || [ DEFAULT_PROVIDER ]
-      end
-
-      def model_for(provider)
-        DEFAULT_MODEL if provider == DEFAULT_PROVIDER
-      end
-
-      # @spec KNOWLEDGE-CREDENTIAL-001
-      def llm_request_options(provider)
-        credential = credential_selection_for(provider)
-        if credential.status == :invalid_credential
-          raise AgentHarness::AuthenticationError,
-            "Knowledge decision drafting needs a selected #{credential.service_type || provider} API key"
-        end
-        if unsupported_selected_credential?(credential)
-          raise AgentHarness::AuthenticationError,
-            "Knowledge decision drafting cannot use a selected API key with #{provider}: no supported API transport"
-        end
-
-        options = {
-          provider: RunnerSupport.harness_runner_key_for(provider).to_sym,
-          timeout: TIMEOUT,
-          dangerous_mode: false,
-          tools: :none
-        }
-        options[:provider_runtime] = AgentHarness::ProviderRuntime.new(chat_api_key: credential.api_key) if credential.status == :ready
-        options[:model] = DEFAULT_MODEL if provider == DEFAULT_PROVIDER
-        # Only route through text mode for Claude; other providers are not
-        # required to expose HTTP text transport and fall back to CLI.
-        options.merge!(Llm::TextMode.options(api_key: credential.api_key)) if provider == DEFAULT_PROVIDER
-        options
-      end
-
-      def credential_selection_for(provider)
-        Knowledge::CredentialSelection.call(
-          owner: agent_run.project.effective_owner,
-          operation: :chat,
-          runner: provider
-        )
-      end
-
-      def unsupported_selected_credential?(credential)
-        credential.status == :unsupported_transport && effective_user_setting&.kb_chat_provider_api_key_id.present?
+        Llm::RunnerSelection.available_candidates(user: setting.user).map(&:routing_key)
       end
 
       def parse_text_output(output)
         return nil if output.blank?
 
         cleaned = strip_markdown_fence(output.to_s.strip)
-        JSON.parse(cleaned, symbolize_names: true)
+        parsed = JSON.parse(cleaned, symbolize_names: true)
+        return unless parsed.is_a?(Hash)
+        return unless %i[title summary decision].all? { |key| parsed[key].is_a?(String) && parsed[key].present? }
+        return unless %i[context consequences].all? { |key| parsed[key].nil? || parsed[key].is_a?(String) }
+        return unless parsed[:tags].nil? || (parsed[:tags].is_a?(Array) && parsed[:tags].all? { |tag| tag.is_a?(String) })
+        return unless parsed[:supersedes_ids].nil? || (parsed[:supersedes_ids].is_a?(Array) && parsed[:supersedes_ids].all? { |id| id.is_a?(Integer) && id.positive? })
+
+        parsed
       rescue JSON::ParserError => e
         Rails.logger.warn(
           message: "knowledge.decisions.draft_parse_failed",
           agent_run_id: agent_run.id,
-          error: e.message,
           error_class: e.class.name
         )
         nil
