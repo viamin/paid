@@ -27,12 +27,26 @@ RSpec.describe ChatTurns::RecoverStalledTurnJob do
       expect(chat_turn.reload.status).to eq("completed")
     end
 
-    it "logs and swallows an unexpected error instead of raising" do
+    # @spec CHAT-TURN-RECOVERY-004
+    it "terminates the stream and refreshes the durable notice when recovery fails" do
+      notice = ChatTurns::PersistStallNotice.call(
+        chat_turn: chat_turn,
+        automatic_recovery_attempted: true
+      )
       allow(ChatTurns::Resume).to receive(:call).and_raise(StandardError, "boom")
 
       expect {
         described_class.perform_now(chat_turn_id: chat_turn.id, triggered_by: "automatic")
-      }.not_to raise_error
+      }.to have_broadcasted_to("chat_session:#{chat_session.id}")
+        .with(hash_including(type: "error", message: "Recovery failed. Send a new message to continue."))
+        .and have_broadcasted_to("chat_session:#{chat_session.id}")
+          .with(hash_including(type: "message_created", message_id: notice.id))
+
+      expect(notice.reload.content).to include("recovery attempt failed")
+      expect(notice.metadata).to include(
+        "automatic_recovery_attempted" => false,
+        "recovery_failed" => true
+      )
     end
   end
 end

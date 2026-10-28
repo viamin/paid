@@ -155,7 +155,11 @@ is deliberately conservative about this:
   so there is nothing a replay could duplicate) and
   `recovery_attempts < ChatTurn::MAX_AUTOMATIC_RECOVERY_ATTEMPTS` (1). This is
   required infrastructure classification and replay-safety checkpoint: an
-  ambiguous silent stop is never retried automatically. **No current tool
+  ambiguous silent stop is never retried automatically. `ChatSessions::SendMessage`
+  writes this classification immediately before entering the provider loop,
+  after the user message and turn are durable; a process loss during that
+  external-work boundary can therefore opt into recovery without treating an
+  earlier, unclassified stop as infrastructure failure. **No current tool
   opts in** to broader automatic replay safety, so any turn that touched a
   write tool always falls through to the manual path below. A future tool that
   wants to participate in automatic recovery for turns it touched must declare
@@ -181,6 +185,12 @@ Authorization: `ChatChannel#recover_stalled_turn` reuses
 in the session) and scopes the lookup through `@chat_session.chat_turns`, so
 a stalled turn can only be resumed by someone who could already act in that
 session.
+
+If a claimed recovery fails, `ChatTurns::RecoverStalledTurnJob` broadcasts a
+terminal stream error and rewrites the existing durable stall notice to state
+that recovery failed and a new message is required. A connected browser stops
+its typing state immediately, while a reload cannot continue to show the stale
+"recovery in progress" state.
 
 ## Observability
 

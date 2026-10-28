@@ -67,6 +67,20 @@ module ChatTurns
         triggered_by: triggered_by,
         recovered: assistant_message.present?
       )
+    rescue StandardError, NotImplementedError => e
+      handle_recovery_failure(chat_turn, stream_name, stream_message_id, e)
+      raise
+    end
+
+    def handle_recovery_failure(chat_turn, stream_name, stream_message_id, error)
+      ActionCable.server.broadcast(stream_name, {
+        type: "error",
+        message_id: stream_message_id,
+        message: "Recovery failed. Send a new message to continue."
+      })
+      chat_turn.fail!(error: error) unless chat_turn.status == "failed"
+      notice = ChatTurns::PersistStallNotice.refresh_after_recovery_failure!(chat_turn: chat_turn)
+      broadcast_persisted_message(stream_name, notice) if notice
     end
 
     def broadcast_persisted_message(stream_name, message, stream_message_id: nil)

@@ -50,7 +50,10 @@
   dispatched a write tool call (`write_tool_dispatched == false`), and it has
   not exceeded `ChatTurn::MAX_AUTOMATIC_RECOVERY_ATTEMPTS`; recovery SHALL
   resume from the turn's last durable checkpoint (the persisted conversation)
-  rather than replaying the triggering message.
+  rather than replaying the triggering message; the system SHALL durably write
+  that infrastructure classification before entering the provider loop, and a
+  failed recovery SHALL terminate the client stream and replace any in-progress
+  recovery notice with a durable failure notice.
   *Code:* `ChatTurn#eligible_for_automatic_recovery?`,
   `ChatTurns::StallDetectorJob#attempt_automatic_recovery`,
   `ChatTurns::Resume`, `ChatTurns::RecoverStalledTurnJob`.

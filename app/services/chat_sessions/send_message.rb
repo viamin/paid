@@ -48,6 +48,7 @@ module ChatSessions
       raise ChatTurn::RecoveryRequiredError, "This turn already has durable activity and requires recovery." unless chat_turn.status == "pending"
 
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
+      chat_turn.checkpoint_infrastructure_recovery! # @spec CHAT-TURN-RECOVERY-004
       assistant_message = run_with_fallbacks
       chat_turn.complete!(assistant_message) if assistant_message
       update_session_activity

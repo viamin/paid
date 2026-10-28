@@ -891,6 +891,19 @@ RSpec.describe ChatSessions::SendMessage do
       expect(turn.status).to eq("streaming")
     end
 
+    # @spec CHAT-TURN-RECOVERY-004
+    it "durably classifies the provider-loop checkpoint for automatic recovery" do
+      observed_turn = nil
+      inspecting_client = lambda do |_conversation, **_kwargs|
+        observed_turn = ChatTurn.find_by!(chat_session: chat_session)
+        llm_response
+      end
+
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: inspecting_client)
+
+      expect(observed_turn.metadata["recovery_classification"]).to eq("infrastructure_failure")
+    end
+
     it "fails the turn and re-raises when the loop raises an unexpected error" do
       failing_client = instance_double(Proc)
       allow(failing_client).to receive(:call).and_raise(AgentHarness::Error, "provider down")

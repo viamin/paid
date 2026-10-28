@@ -50,6 +50,11 @@ class ChatTurn < ApplicationRecord
     update!(updates)
   end
 
+  # @spec CHAT-TURN-RECOVERY-004
+  def checkpoint_infrastructure_recovery!
+    update!(metadata: metadata.merge("recovery_classification" => "infrastructure_failure"))
+  end
+
   def complete!(assistant_message)
     update!(status: "completed", completed_at: Time.current, last_activity_at: Time.current)
     ChatTurns::Lifecycle.record(
