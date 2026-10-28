@@ -30,3 +30,12 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an Inbox manual-review item has the
+  dedicated reopen-review marker, the system SHALL classify it as reopen
+  review before dependency, scanner, or enhancement provenance, SHALL retain
+  the hold for the existing authorized intent-validation decision, and SHALL
+  NOT create an enhancement run from a generic resume action.
+  *Tests:* `spec/services/manual_reviews/recovery_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
+  *Code:* `ManualReviews::Recovery`, `Projects::AgentRunsController`.

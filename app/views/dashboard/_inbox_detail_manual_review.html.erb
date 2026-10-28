@@ -1,9 +1,18 @@
 <%# @spec OPERATOR-INBOX-002D %>
+<% recovery = ManualReviews::Recovery.call(issue: entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.records_decision? %>
+        This issue was reopened after its previous closure. Review the original closure and remaining scope, then record an authorized intent-validation decision before choosing a continuation.
+      <% elsif recovery.waits_for_dependency? %>
+        This issue is waiting for recorded prerequisite work. Resolving or correcting that dependency will re-evaluate the hold; acknowledging this pane does not waive it.
+      <% elsif recovery.scanner_recurrence? %>
+        A scanner-confirmed recurrence needs a remediation decision. The scanner evidence below remains the source of truth; this is not an enhancement retry.
+      <% elsif recovery.unknown? %>
+        Paid retained this hold because its provenance is unknown. Inspect the linked issue and evidence before selecting a supported recovery path.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
         Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
@@ -30,6 +39,17 @@
     </div>
   <% end %>
 
+  <% if recovery.waits_for_dependency? %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Waiting on dependency</h3>
+      <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">
+        <% recovery.blockers.each do |blocker| %>
+          <li><%= link_to "##{blocker.github_number} #{blocker.title}", blocker.github_url, target: "_blank", rel: "noopener noreferrer", class: "underline" %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
   <%# @spec ISSUE-ENHANCEMENT-011
       The terminal round's preserved clarifying questions ARE the manual
       review this state asks for: render the same answer form the
@@ -42,7 +62,7 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && recovery.retries_enhancement? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

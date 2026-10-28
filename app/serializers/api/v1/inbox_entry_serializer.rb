@@ -104,11 +104,30 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        { questions: entry.questions, comment_url: entry.manual_review_comment_url, recovery: manual_review_recovery_payload }
       end
 
       def manual_review_list_payload
-        { questions: entry.questions }
+        { questions: entry.questions, recovery: manual_review_recovery_payload }
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      def manual_review_recovery_payload
+        recovery = ManualReviews::Recovery.call(issue: entry.issue)
+        {
+          cause: recovery.cause,
+          action: manual_review_action(recovery),
+          active_run_ids: recovery.active_runs.map(&:id)
+        }
+      end
+
+      def manual_review_action(recovery)
+        return "retry_enhancement" if recovery.retries_enhancement?
+        return "record_intent_validation" if recovery.records_decision?
+        return "resolve_dependency" if recovery.waits_for_dependency?
+        return "review_scanner_evidence" if recovery.scanner_recurrence?
+
+        "inspect_provenance"
       end
 
       # entry.record is Inbox::IntentConformance::Snapshot, already carrying

@@ -461,8 +461,8 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
-    # manual_review only clears when an explicit operator-triggered run
-    # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
+    # An enhancement stop only clears when an explicit operator-triggered run
+    # resumes enhancement work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
     # queues a fresh manual enhance_issue run rather than just clearing state,
     # since a queued run is what actually resumes the enhancement work. The
     # queue-time state flip (resume_issue_from_manual_review) removes the
@@ -477,6 +477,17 @@ module Projects
       issue = resolve_manual_review_issue
       unless issue
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = ManualReviews::Recovery.call(issue: issue)
+      unless recovery.retries_enhancement?
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_recovery_alert(recovery)
+        return
+      end
+      if recovery.active_runs.any?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Work is already #{recovery.active_runs.first.status} for this issue; reconcile that run before retrying enhancement."
         return
       end
 
@@ -1129,6 +1140,19 @@ module Projects
         "Please select an issue."
       else
         "This issue is no longer waiting for manual review."
+      end
+    end
+
+    def manual_review_recovery_alert(recovery)
+      case recovery.cause
+      when :reopen_review
+        "This reopened issue needs its intent-validation decision recorded before work can resume."
+      when :dependency_wait
+        "This issue is waiting on its recorded dependency; resolve the dependency before resuming work."
+      when :scanner_recurrence
+        "This scanner recurrence needs remediation authorization, not an enhancement retry."
+      else
+        "This manual-review hold has unknown provenance and cannot safely be resumed as enhancement."
       end
     end
 

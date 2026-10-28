@@ -2589,6 +2589,10 @@ RSpec.describe "AgentRuns" do
         manual_review_reason: "Paid reached the configured limit of enhancement re-evaluation rounds.")
     end
 
+    let!(:enhancement_provenance) do
+      create(:agent_run, project: project, issue: parked_issue, goal: "enhance_issue", status: "failed")
+    end
+
     context "when not authenticated" do
       # @spec OPERATOR-INBOX-002D
       it "redirects to the sign in page" do
@@ -2626,6 +2630,30 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.goal).to eq("enhance_issue")
         expect(agent_run.trigger_type).to eq("manual")
         expect(response).to redirect_to(dashboard_path)
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005
+      it "does not turn a reopen-review hold into an enhancement retry" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload).to be_reopen_review_pending
+        expect(flash[:alert]).to include("intent-validation decision")
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      it "does not clear a manual-review hold while other work is queued" do
+        create(:agent_run, project:, issue: parked_issue, goal: "create_pr", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+        expect(flash[:alert]).to include("already queued")
       end
 
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
