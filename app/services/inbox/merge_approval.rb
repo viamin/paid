@@ -14,11 +14,11 @@ module Inbox
     # instantiation per open, ready PR on the account. Shared by
     # `Inbox::Count` and `Inbox::Availability` so the candidate definition
     # can't drift between the badge, the filters dialog, and the queue.
-    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-004
+    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-004 INBOX-FOUNDATION-012
     def self.candidates(project_ids)
       Issue
         .joins(:project)
-        .includes(:project)
+        .preload(:project)
         .where(
           project_id: project_ids,
           is_pull_request: true,

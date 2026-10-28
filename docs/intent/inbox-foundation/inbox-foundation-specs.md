@@ -116,6 +116,17 @@
   *Code:* `app/services/inbox/merge_approval.rb`,
   `app/temporal/activities/scan_paid_prs_activity.rb`, `app/models/issue.rb`.
 
+- [x] **INBOX-FOUNDATION-012** — Inbox candidate queries that join projects
+  for project predicates or deterministic ordering SHALL preload the shared
+  project records separately instead of eager-loading them into each issue
+  result row. A cached badge with active personal removals SHALL subtract only
+  still-suppressed, renderable requests and SHALL NOT rebuild the entire queue
+  merely because a removal exists; phase-governed counts continue to use the
+  shared phase-relevance queue path.
+  *Tests:* `spec/services/inbox/count_spec.rb`, `spec/services/inbox/queue_spec.rb`.
+  *Code:* `app/services/inbox/count.rb`, `app/services/inbox/queue.rb`,
+  `app/services/inbox/merge_approval.rb`, `app/services/inbox/intent_conformance.rb`.
+
 - [x] **INBOX-FOUNDATION-009** — When an operator opens the Inbox, the system
   SHALL render a compact collapsed filter control. On expansion it SHALL offer
   a single type selector, a searchable selector scoped to projects currently

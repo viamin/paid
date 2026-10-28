@@ -35,12 +35,16 @@ module Inbox
     # When any visible project runs the phase model, the count comes from the
     # same scope-filtered queue the list renders, so the badge can never
     # disagree with the list about phase relevance. Personal removal is
-    # rollout-independent and requires the same exact count. Otherwise the
-    # cheap SQL approximation is unchanged.
+    # rollout-independent, but resolving each removed request directly keeps
+    # that exact without rebuilding every entry payload on a cache miss.
+    # Otherwise the cheap SQL approximation is unchanged.
     def compute_count
       return governed_count if phase_model_governed?
-      return governed_count if personal_removals?
 
+      [ candidate_count - personally_removed_entry_count, 0 ].max
+    end
+
+    def candidate_count
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
         retry_limited_count + change_intent_draft_count + partial_closeout_count +
@@ -64,8 +68,21 @@ module Inbox
       end
     end
 
-    def personal_removals?
-      InboxRemoval.active.where(user: user).exists?
+    # A removal's stable request key lets us inspect only that request's lane.
+    # The candidate count intentionally remains its cheap SQL approximation;
+    # only a currently renderable request whose saved occurrence still
+    # suppresses it is subtracted. This preserves removal semantics without
+    # making one active removal construct the whole Inbox::Queue (#4651).
+    # @spec INBOX-PHASE-RELEVANCE-009 INBOX-FOUNDATION-012
+    def personally_removed_entry_count
+      InboxRemoval.active.where(user: user).filter_map do |removal|
+        entry = Inbox::Queue.find_entry(
+          user: user,
+          entry_id: removal.request_key,
+          kind: removal.entry_kind
+        )
+        entry.id if entry && removal.suppresses?(Inbox::RequestIdentity.occurrence_for(entry))
+      end.uniq.size
     end
 
     def needs_input_count

@@ -187,6 +187,20 @@ flows that populate those questions still target issues: `enhance_issue`,
 issue-scoped today. The missing PR producer remains a follow-up item rather
 than a queue/query limitation.
 
+### Bounded badge and project loading
+
+Personal removal is independent of phase rollout. Its badge adjustment resolves
+only active removal keys through their typed lane and subtracts requests whose
+saved occurrence still suppresses a renderable entry. It does not build the
+unfiltered queue merely because a removal exists. Phase-governed projects
+continue to use the shared queue path because phase relevance depends on
+ownership, grants, and outstanding manual actions.
+
+Issue lanes retain SQL joins where project predicates or ordering need them,
+but preload shared project records separately. This avoids selecting project
+audit history into every issue row while retaining the project objects needed
+to render entries and evaluate merge-approval or intent-conformance candidates.
+
 ## Delegation from `Dashboard::NeedsInputQueue`
 
 `Dashboard::NeedsInputQueue` keeps its existing public surface

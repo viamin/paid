@@ -1263,6 +1263,19 @@ RSpec.describe Inbox::Queue do
       expect(multi_row_queries).to eq(single_row_queries)
     end
 
+    # @spec INBOX-FOUNDATION-012
+    it "preloads projects separately from joined issue rows" do
+      project.update_column(:log_data, { "audit_history" => "x" * 100_000 })
+      create_needs_input(body: questions_body)
+
+      queries = capture_queries do
+        described_class.call(user: user, kind: described_class::CLARIFYING_QUESTIONS_KIND)
+      end
+      issue_query = queries.find { |query| query.include?('FROM "issues"') && query.include?('INNER JOIN "projects"') }
+
+      expect(issue_query).not_to include('"projects"."log_data"')
+    end
+
     # @spec FEATURE-APPROVAL-013 @spec CONFIDENCE-DELIVERY-016
     it "batch-preloads feature-decision readiness inputs instead of querying per row" do
       create(:feature_intent, :approved_waiting_for_merge, project: project)
