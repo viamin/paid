@@ -18,6 +18,8 @@ class WorkItemContinuationGrant < ApplicationRecord
   validates :endpoint, presence: true, inclusion: { in: Automation::Phases::CONTINUATION_ENDPOINTS }
   validates :source, presence: true, inclusion: { in: SOURCES }
   validate :endpoint_follows_start_phase
+  validate :issue_belongs_to_project
+  validate :audit_actors_belong_to_project_account
 
   scope :active, -> { where(revoked_at: nil, completed_at: nil) }
   scope :revoked, -> { where.not(revoked_at: nil) }
@@ -68,5 +70,26 @@ class WorkItemContinuationGrant < ApplicationRecord
     return if start_phase.blank? || endpoint.blank?
 
     errors.add(:endpoint, "must be the start phase or a later delivery phase") if covered_phases.empty?
+  end
+
+  # A grant must remain inside the project's tenant-scoped work lineage. The
+  # project and issue foreign keys alone cannot express this cross-record
+  # invariant.
+  # @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-006
+  def issue_belongs_to_project
+    return unless issue && project_id.present?
+    return if issue.project_id == project_id
+
+    errors.add(:issue, "must belong to the grant project")
+  end
+
+  def audit_actors_belong_to_project_account
+    [ :created_by, :revoked_by ].each do |attribute|
+      actor = public_send(attribute)
+      next unless actor && project
+      next if actor.account_id == project.account_id
+
+      errors.add(attribute, "must belong to the grant account")
+    end
   end
 end
