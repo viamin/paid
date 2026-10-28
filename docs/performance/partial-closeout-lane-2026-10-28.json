@@ -1,0 +1,245 @@
+{
+  "measured_at": "2026-10-28",
+  "measurement_kind": "partial_closeout_lane_request_path",
+  "harness": "script/inbox/measure_partial_closeout_lane.rb",
+  "environment": {
+    "database": "paid_measure",
+    "adapter": "PostgreSQL",
+    "server_version": "16.13 (Debian 16.13-1.pgdg13+1)",
+    "runtime_role": "paid_app",
+    "cache_store": "ActiveSupport::Cache::NullStore",
+    "row_level_security_policies": 114,
+    "seeded_projects": 36,
+    "seeded_stalled_issues": 36
+  },
+  "scenarios": [
+    {
+      "projects": 1,
+      "stalled_closeouts": {
+        "queries": 32,
+        "sql_ms": 215.04,
+        "wall_ms": 279.75,
+        "eligible_scope_evaluations": 2
+      },
+      "inbox_queue": {
+        "queries": 24,
+        "sql_ms": 34.57,
+        "wall_ms": 110.74,
+        "eligible_scope_evaluations": 2
+      },
+      "inbox_queue_partial_closeout_only": {
+        "queries": 1,
+        "sql_ms": 2.29,
+        "wall_ms": 26.53,
+        "eligible_scope_evaluations": 2
+      },
+      "inbox_count": {
+        "queries": 14,
+        "sql_ms": 13.78,
+        "wall_ms": 44.58,
+        "eligible_scope_evaluations": 2
+      },
+      "inbox_availability": {
+        "queries": 10,
+        "sql_ms": 11.03,
+        "wall_ms": 41.51,
+        "eligible_scope_evaluations": 2
+      },
+      "stalled_closeouts_statements_by_name": {
+        "Issue Load": 2,
+        "Issue Pluck": 7,
+        "AgentRun Pluck": 6,
+        "Notification Pluck": 1,
+        "CodeScanningRemediationAttempt Pluck": 1,
+        "UserSetting Load": 1,
+        "Issue Exists?": 1,
+        "DesignAmendmentPause Pluck": 1,
+        "Runner Load": 1,
+        "Provider Load": 1,
+        "LlmModel Load": 1,
+        "ModelSelection Pluck": 2,
+        "FeatureIntentIssue Load": 1,
+        "CodeScanningRemediationAttempt Load": 1,
+        "IssueDependency Pluck": 3,
+        "IssueContinuationRequest Load": 1,
+        "Notification Load": 1
+      }
+    },
+    {
+      "projects": 5,
+      "stalled_closeouts": {
+        "queries": 140,
+        "sql_ms": 932.36,
+        "wall_ms": 1077.58,
+        "eligible_scope_evaluations": 10
+      },
+      "inbox_queue": {
+        "queries": 161,
+        "sql_ms": 854.9,
+        "wall_ms": 1015.08,
+        "eligible_scope_evaluations": 10
+      },
+      "inbox_queue_partial_closeout_only": {
+        "queries": 146,
+        "sql_ms": 755.66,
+        "wall_ms": 874.84,
+        "eligible_scope_evaluations": 10
+      },
+      "inbox_count": {
+        "queries": 155,
+        "sql_ms": 792.66,
+        "wall_ms": 976.13,
+        "eligible_scope_evaluations": 10
+      },
+      "inbox_availability": {
+        "queries": 158,
+        "sql_ms": 977.57,
+        "wall_ms": 1146.98,
+        "eligible_scope_evaluations": 10
+      },
+      "stalled_closeouts_statements_by_name": {
+        "Issue Load": 6,
+        "Issue Pluck": 35,
+        "AgentRun Pluck": 30,
+        "Notification Pluck": 5,
+        "CodeScanningRemediationAttempt Pluck": 5,
+        "UserSetting Load": 1,
+        "Issue Exists?": 5,
+        "DesignAmendmentPause Pluck": 5,
+        "Runner Load": 1,
+        "Provider Load": 1,
+        "LlmModel Load": 1,
+        "ModelSelection Pluck": 10,
+        "FeatureIntentIssue Load": 5,
+        "CodeScanningRemediationAttempt Load": 5,
+        "IssueDependency Pluck": 15,
+        "IssueContinuationRequest Load": 5,
+        "Notification Load": 5
+      }
+    },
+    {
+      "projects": 10,
+      "stalled_closeouts": {
+        "queries": 275,
+        "sql_ms": 1925.15,
+        "wall_ms": 2313.43,
+        "eligible_scope_evaluations": 20
+      },
+      "inbox_queue": {
+        "queries": 296,
+        "sql_ms": 1969.26,
+        "wall_ms": 2344.15,
+        "eligible_scope_evaluations": 20
+      },
+      "inbox_queue_partial_closeout_only": {
+        "queries": 281,
+        "sql_ms": 1781.96,
+        "wall_ms": 2123.97,
+        "eligible_scope_evaluations": 20
+      },
+      "inbox_count": {
+        "queries": 290,
+        "sql_ms": 1942.06,
+        "wall_ms": 2280.96,
+        "eligible_scope_evaluations": 20
+      },
+      "inbox_availability": {
+        "queries": 293,
+        "sql_ms": 1766.98,
+        "wall_ms": 2125.34,
+        "eligible_scope_evaluations": 20
+      },
+      "stalled_closeouts_statements_by_name": {
+        "Issue Load": 11,
+        "Issue Pluck": 70,
+        "AgentRun Pluck": 60,
+        "Notification Pluck": 10,
+        "CodeScanningRemediationAttempt Pluck": 10,
+        "UserSetting Load": 1,
+        "Issue Exists?": 10,
+        "DesignAmendmentPause Pluck": 10,
+        "Runner Load": 1,
+        "Provider Load": 1,
+        "LlmModel Load": 1,
+        "ModelSelection Pluck": 20,
+        "FeatureIntentIssue Load": 10,
+        "CodeScanningRemediationAttempt Load": 10,
+        "IssueDependency Pluck": 30,
+        "IssueContinuationRequest Load": 10,
+        "Notification Load": 10
+      }
+    },
+    {
+      "projects": 20,
+      "stalled_closeouts": {
+        "queries": 545,
+        "sql_ms": 3691.08,
+        "wall_ms": 4533.39,
+        "eligible_scope_evaluations": 40
+      },
+      "inbox_queue": {
+        "queries": 566,
+        "sql_ms": 3491.42,
+        "wall_ms": 4118.88,
+        "eligible_scope_evaluations": 40
+      },
+      "inbox_queue_partial_closeout_only": {
+        "queries": 551,
+        "sql_ms": 4519.59,
+        "wall_ms": 5246.38,
+        "eligible_scope_evaluations": 40
+      },
+      "inbox_count": {
+        "queries": 560,
+        "sql_ms": 4265.79,
+        "wall_ms": 4967.94,
+        "eligible_scope_evaluations": 40
+      },
+      "inbox_availability": {
+        "queries": 563,
+        "sql_ms": 5222.79,
+        "wall_ms": 6059.65,
+        "eligible_scope_evaluations": 40
+      },
+      "stalled_closeouts_statements_by_name": {
+        "Issue Load": 21,
+        "Issue Pluck": 140,
+        "AgentRun Pluck": 120,
+        "Notification Pluck": 20,
+        "CodeScanningRemediationAttempt Pluck": 20,
+        "UserSetting Load": 1,
+        "Issue Exists?": 20,
+        "DesignAmendmentPause Pluck": 20,
+        "Runner Load": 1,
+        "Provider Load": 1,
+        "LlmModel Load": 1,
+        "ModelSelection Pluck": 40,
+        "FeatureIntentIssue Load": 20,
+        "CodeScanningRemediationAttempt Load": 20,
+        "IssueDependency Pluck": 60,
+        "IssueContinuationRequest Load": 20,
+        "Notification Load": 20
+      }
+    }
+  ],
+  "eligibility_sql": {
+    "sql_bytes": 5211,
+    "exists_clauses": 1,
+    "tenant_policies_applied": {
+      "planning_ms": 32.342,
+      "execution_ms": 7.123
+    },
+    "tenant_policies_bypassed": {
+      "planning_ms": 31.384,
+      "execution_ms": 2.183
+    },
+    "simple_statement_with_policies": {
+      "planning_ms": 0.807,
+      "execution_ms": 0.23
+    },
+    "simple_statement_with_policies_bypassed": {
+      "planning_ms": 0.983,
+      "execution_ms": 0.063
+    }
+  }
+}
