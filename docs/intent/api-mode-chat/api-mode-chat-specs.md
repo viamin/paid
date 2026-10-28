@@ -1,5 +1,34 @@
 # EARS Specs: API-Mode Interactive Chat
 
+- [x] **CHAT-API-027** — When an accepted chat message starts a turn, Paid SHALL
+  persist a lifecycle record and advance its durable checkpoint with transcript
+  activity. A terminal assistant response SHALL complete it; a known error SHALL
+  fail it; and a write-tool confirmation SHALL leave it pending without being
+  eligible for stall classification.
+  *Tests:* `spec/services/chat_sessions/send_message_spec.rb`,
+  `spec/models/chat_turn_spec.rb`.
+  *Code:* `ChatTurn`, `ChatSessions::SendMessage`.
+
+- [x] **CHAT-API-028** — When a non-terminal turn has no durable activity beyond
+  the configured threshold, the maintenance sweep SHALL atomically classify it
+  as stalled, preserve its transcript, record detection and side-effect evidence,
+  and create one visible system notice identifying the last known checkpoint.
+  Turns awaiting confirmation or a recorded rate-limit recovery SHALL NOT be
+  classified as stalled.
+  *Tests:* `spec/services/chat_turns/detect_stalled_spec.rb`.
+  *Code:* `ChatTurns::DetectStalled`, `ChatTurns::DetectStalledSweepJob`.
+
+- [x] **CHAT-API-029** — When an authorized user explicitly resumes a stalled
+  turn using its current revision, Paid SHALL atomically claim one recovery,
+  resume from the persisted user message and checkpoint with auto-approved writes
+  disabled, and reject stale or concurrent requests without another enqueue.
+  Paid SHALL NOT automatically replay a stalled turn until a classified
+  infrastructure failure and all participating tools expose an idempotent replay
+  contract.
+  *Tests:* `spec/services/chat_turns/resume_spec.rb`,
+  `spec/requests/chat_turns_spec.rb`.
+  *Code:* `ChatTurns::Resume`, `ChatTurnsController`.
+
 - [x] **CHAT-API-026** — When non-free-policy API-key chat creates a session,
   executes a legacy Automatic session, or switches to a fallback runner, Paid
   SHALL use the same curated Low/Medium/High resolver. It SHALL default new and

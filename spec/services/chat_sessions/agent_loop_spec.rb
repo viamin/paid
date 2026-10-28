@@ -440,6 +440,15 @@ RSpec.describe ChatSessions::AgentLoop do
         expect(chat_session.messages.find_by(tool_status: "approved").tool_name).to eq("create_issue")
       end
 
+      # @spec CHAT-API-029
+      it "requires confirmation instead of auto-approving a write during stalled-turn recovery" do
+        result = described_class.new(chat_session: chat_session, llm_client: issue_client, recovery: true).run
+
+        expect(result).to be_nil
+        expect(Tools::Registry).not_to have_received(:dispatch)
+        expect(chat_session.messages.find_by(tool_status: "pending").tool_name).to eq("create_issue")
+      end
+
       it "still requires a manual confirmation for write tools outside the auto-approve allowlist" do
         allow(Tools::Registry).to receive(:post_dispatch_confirmation?).and_call_original
         allow(Tools::Registry).to receive(:post_dispatch_confirmation?).with("record_change_intent").and_return(true)

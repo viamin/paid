@@ -16,18 +16,20 @@ module ChatSessions
     include FallbackLoop
 
     attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
-      :transport_attempt_message
+      :transport_attempt_message, :chat_turn, :recovery
 
     MAX_CONTENT_LENGTH = 12_000
 
-    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
+    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil, recovery: false)
       @chat_session = chat_session
       @actor = actor
       @content = content
       @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @delivery_callback = on_message_persisted
+      @on_message_persisted = method(:record_persisted_message)
       @llm_client = llm_client
-      @stream_message_id = stream_message_id
+      @stream_message_id = stream_message_id || SecureRandom.uuid
+      @recovery = recovery
     end
 
     def self.call(...)
@@ -43,10 +45,22 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn!
+      record_persisted_message(transport_attempt_message)
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      conclude_turn!(assistant_message)
       update_session_activity
       assistant_message
+    rescue AgentHarness::RateLimitError
+      pause_turn!("rate_limited")
+      raise
+    rescue AgentHarness::Error
+      fail_turn!(classification: "provider_failure")
+      raise
+    rescue StandardError
+      fail_turn!(classification: "application_failure")
+      raise
     end
 
     private
@@ -113,7 +127,6 @@ module ChatSessions
       @transport_attempt_message = existing_user_message || create_user_message
 
       chat_session.generate_title_from_content!
-      on_message_persisted&.call(transport_attempt_message)
       transport_attempt_message
     end
 
@@ -174,11 +187,54 @@ module ChatSessions
       )
     end
 
+    # @spec CHAT-API-027
+    def start_turn!
+      @chat_turn = ChatTurn.find_or_initialize_by(stream_id: stream_message_id)
+      chat_turn.assign_attributes(
+        account: chat_session.account,
+        chat_session: chat_session,
+        user_message: transport_attempt_message,
+        status: "streaming",
+        last_activity_at: Time.current,
+        recovery_outcome: recovery ? "running" : chat_turn.recovery_outcome,
+        metadata: chat_turn.metadata.to_h.except("awaiting_confirmation")
+      )
+      chat_turn.save!
+    end
+
+    def record_persisted_message(message, stream_message_id: nil)
+      if chat_turn&.persisted?
+        chat_turn.update!(checkpoint_message: message, last_activity_at: Time.current)
+      end
+      @delivery_callback&.call(message, stream_message_id: stream_message_id)
+    end
+
+    def conclude_turn!(assistant_message)
+      if assistant_message
+        chat_turn.update!(status: "completed", completed_at: Time.current, recovery_outcome: recovery ? "completed" : nil)
+      else
+        chat_turn.update!(status: "pending", metadata: chat_turn.metadata.merge("awaiting_confirmation" => true))
+      end
+    end
+
+    def pause_turn!(classification)
+      return unless chat_turn&.persisted?
+
+      chat_turn.update!(status: "pending", stall_classification: classification)
+    end
+
+    def fail_turn!(classification:)
+      return unless chat_turn&.persisted? && !chat_turn.terminal?
+
+      chat_turn.update!(status: "failed", stall_classification: classification,
+        completed_at: Time.current, recovery_outcome: recovery ? "failed" : nil)
+    end
+
     # Reuse the pre-loop budget baseline so the mid-loop guard does not issue a
     # second SUM query per turn. Only forward when a limit is configured; a nil
     # baseline means "unlimited" and AgentLoop re-derives nil cheaply.
     def extra_agent_loop_kwargs
-      @token_budget ? { token_budget: @token_budget } : {}
+      { token_budget: @token_budget, recovery: recovery }.compact
     end
   end
 end

@@ -9,7 +9,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     job.send(:broadcast_error, chat_session_id, stream_message_id, "Session no longer exists") if chat_session_id
   end
 
-  def perform(chat_session_id:, content:, stream_message_id:, actor_id: nil)
+  def perform(chat_session_id:, content:, stream_message_id:, actor_id: nil, recovery: false)
     # @spec CHAT-API-002, CHAT-API-022
     chat_session = ChatSession.find(chat_session_id)
     actor = chat_session.account.users.find(actor_id || chat_session.created_by_id)
@@ -22,6 +22,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       actor: actor,
       content: content,
       stream_message_id: stream_message_id,
+      recovery: recovery,
       on_message_persisted: ->(message, stream_message_id: nil) {
         broadcast_persisted_message(stream_name, message, stream_message_id: stream_message_id)
       },

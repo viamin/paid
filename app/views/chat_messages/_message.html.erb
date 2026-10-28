@@ -1,4 +1,6 @@
-<% if message.token_limit_error? %>
+<% if message.stalled_turn_notice? %>
+  <%= render "chat_messages/stalled_turn", message: message %>
+<% elsif message.token_limit_error? %>
   <%= render "chat_messages/token_limit_error", message: message %>
 <% elsif message.rate_limit_paused? %>
   <%= render "chat_messages/rate_limit_paused", message: message %>

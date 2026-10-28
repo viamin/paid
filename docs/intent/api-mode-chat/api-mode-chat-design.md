@@ -186,6 +186,19 @@ What ships today:
   the configured Anthropic endpoint
 - token usage for chat turns is recorded on `token_usages` and surfaced back
   through the chat UI/API totals
+- every accepted user turn has a durable `ChatTurn` lifecycle record. Message
+  and tool persistence advance its checkpoint; a terminal assistant response,
+  known failure, or confirmation pause closes the transient streaming state.
+  A maintenance sweep classifies inactive non-terminal turns as stalled while
+  excluding recorded rate-limit pauses and pending confirmations. Classification
+  writes a visible transcript notice with the last durable checkpoint and
+  whether side-effecting tools completed.
+- stalled turns may be resumed only by an authorized, revision-matched human
+  action. Recovery atomically claims the stalled revision, reuses the original
+  user message and durable transcript, disables auto-approval for that replay,
+  and deduplicates concurrent attempts. Automatic replay remains disabled until
+  a failure classification and every participating tool provide an explicit
+  idempotent replay-safety contract.
 - `Tools::RepoReadClientResolver` resolves repo-read tool calls (`grep_repo`,
   `read_repo_file`, `list_repo_tree`, `search_issues`) against the project's
   own GitHub credential first (App installation token, or PAT when the

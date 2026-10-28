@@ -1,0 +1,14 @@
+<% turn = ChatTurn.find_by(id: message.metadata["stalled_turn_id"], chat_session_id: message.chat_session_id) %>
+<div id="chat-turn-stalled-<%= message.metadata["stalled_turn_id"] %>" class="mx-auto max-w-2xl rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950">
+  <p class="font-semibold">This turn needs attention</p>
+  <p class="mt-1"><%= message.content %></p>
+  <% if message.metadata["checkpoint_message_id"].present? %>
+    <p class="mt-2"><%= link_to "View last durable activity", "#chat-message-#{message.metadata["checkpoint_message_id"]}", class: "font-medium underline" %></p>
+  <% end %>
+  <% if turn&.status == "stalled" %>
+    <%= button_to "Resume turn", resume_chat_session_chat_turn_path(message.chat_session, turn),
+          params: { revision: turn.lock_version },
+          class: "mt-3 rounded-md bg-amber-700 px-3 py-2 font-medium text-white hover:bg-amber-800",
+          form: { data: { turbo_confirm: "Resume from the saved checkpoint? Any new write tool will require confirmation." } } %>
+  <% end %>
+</div>
