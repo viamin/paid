@@ -206,6 +206,21 @@ recording completion, so a continuation cannot dispatch after the attestation.
   work reuses the existing `create_issue` tool (dependency wording is parsed
   by the existing sync parser).
 
+### Assessment transport diagnosis
+
+`Llm::AnalyzePartialCloseout` treats transport availability and assessment
+structure as separate fail-closed outcomes. Every failed bounded assessment
+provides a category, selected provider/model, transport, generated request and
+attempt identity; structural failures additionally provide bounded invalid field
+paths and types. The durable reconciliation record contains only that metadata
+and an actionable recovery message: it never stores provider response content
+or credentials. Host-side CLI authentication is independent of the isolated
+agent container's authentication. A missing host-side Claude login asks an
+operator to restore that login or deliberately configure authorized API-key
+transport; Paid does not silently switch subscription-backed CLI traffic to
+API-billed credentials. Failure preserves the parent as incomplete and uses the
+existing bounded retry path after the operator restores service.
+
 ### Legacy reconciliation: `PartialCloseouts::ReconcileLegacy`
 
 The `partial-closeout-reconciliation-v1` Temporal patch only intercepts new

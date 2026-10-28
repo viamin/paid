@@ -17,6 +17,18 @@ module Llm
     VALID_REFERENCE_KINDS = PartialCloseouts::Reconcile::VALID_REFERENCE_KINDS
     VALID_STATES = %w[satisfied unmet unknown].freeze
     VALID_CLASSIFICATIONS = %w[awaiting_final_audit blocked_implementation missing_measured_results coordination_epic].freeze
+    MAX_INVALID_FIELDS = 20
+
+    # Carries only bounded transport and contract metadata. Response content
+    # and credentials never cross this boundary into durable reconciliation.
+    class AssessmentFailure < AgentHarness::Error
+      attr_reader :diagnostics
+
+      def initialize(message, **diagnostics)
+        @diagnostics = diagnostics.stringify_keys
+        super(message)
+      end
+    end
     RESPONSE_SCHEMA = {
       type: "object",
       properties: {
@@ -73,9 +85,16 @@ module Llm
     def call
       parsed = schema_capable_request? ? schema_constrained_parse : legacy_text_parse
       parsed = parsed.deep_stringify_keys if parsed.is_a?(Hash)
-      raise AgentHarness::Error, "partial closeout assessment failed" unless valid_assessment?(parsed)
+      invalid_fields = invalid_fields_for(parsed)
+      raise assessment_failure("invalid_assessment", invalid_fields:) if invalid_fields.present?
 
       parsed
+    rescue AgentHarness::AuthenticationError
+      raise assessment_failure("authentication")
+    rescue AssessmentFailure
+      raise
+    rescue AgentHarness::Error
+      raise assessment_failure("transport_error")
     end
 
     private
@@ -93,20 +112,50 @@ module Llm
     # (`PartialCloseouts::Assessment#next_action` calls
     # `assessment["next_action"].to_h` and `Present_criterion#merge` would
     # raise NoMethodError on render).
-    def valid_assessment?(parsed)
-      return false unless parsed.is_a?(Hash)
+    def invalid_fields_for(parsed)
+      return [ field_error("$", "object", parsed) ] unless parsed.is_a?(Hash)
 
-      gaps = parsed["gaps"]
-      gaps.is_a?(Array) && gaps.size <= MAX_GAPS && gaps.all? { |gap| valid_gap?(gap) } &&
-        valid_criteria?(parsed["criteria"]) && valid_next_action?(parsed["next_action"])
+      invalid_fields = []
+      append_gap_errors(invalid_fields, parsed["gaps"])
+      append_criteria_errors(invalid_fields, parsed["criteria"]) if parsed.key?("criteria")
+      append_next_action_errors(invalid_fields, parsed["next_action"]) if parsed.key?("next_action")
+      invalid_fields.take(MAX_INVALID_FIELDS)
     end
 
-    def valid_gap?(gap)
-      return false unless gap.is_a?(Hash) && gap["criterion"].present? && VALID_KINDS.include?(gap["kind"])
-      return false unless owner_resolvable?(gap)
-      return true unless gap["kind"] == "human"
+    def append_gap_errors(errors, gaps)
+      return errors << field_error("gaps", "array", gaps) unless gaps.is_a?(Array)
+      return errors << field_error("gaps", "array with at most #{MAX_GAPS} items", gaps) if gaps.size > MAX_GAPS
 
-      valid_references?(gap["references"]) && valid_policy_selection?(gap["policy_selection"])
+      gaps.each_with_index { |gap, index| append_gap_errors_for_item(errors, gap, index) }
+    end
+
+    def append_gap_errors_for_item(errors, gap, index)
+      path = "gaps[#{index}]"
+      return errors << field_error(path, "object", gap) unless gap.is_a?(Hash)
+
+      errors << field_error("#{path}.criterion", "nonblank string", gap["criterion"]) unless gap["criterion"].is_a?(String) && gap["criterion"].present?
+      errors << field_error("#{path}.kind", "agent or human", gap["kind"]) unless VALID_KINDS.include?(gap["kind"])
+      append_owner_errors(errors, gap, path)
+      append_human_gap_errors(errors, gap, path) if gap["kind"] == "human"
+    end
+
+    def append_owner_errors(errors, gap, path)
+      return if owner_resolvable?(gap)
+
+      errors << field_error("#{path}.title", "nonblank string or positive owner_issue_number", gap["title"])
+    end
+
+    def append_human_gap_errors(errors, gap, path)
+      append_reference_errors(errors, gap["references"], "#{path}.references") unless valid_references?(gap["references"])
+      errors << field_error("#{path}.policy_selection", "valid policy selection", gap["policy_selection"]) unless valid_policy_selection?(gap["policy_selection"])
+    end
+
+    def append_reference_errors(errors, references, path)
+      return errors << field_error(path, "array", references) unless references.is_a?(Array)
+
+      references.each_with_index do |reference, index|
+        errors << field_error("#{path}[#{index}]", "reference object", reference) unless valid_reference?(reference)
+      end
     end
 
     def valid_references?(references)
@@ -141,8 +190,13 @@ module Llm
     # A criteria entry that is not a Hash (or one that omits `criterion`)
     # cannot be rendered or merged, so reject the whole assessment rather
     # than persist a partial shape that crashes `present_criterion`.
-    def valid_criteria?(criteria)
-      criteria.nil? || (criteria.is_a?(Array) && criteria.size <= MAX_GAPS && criteria.all? { |criterion| valid_criterion?(criterion) })
+    def append_criteria_errors(errors, criteria)
+      return errors << field_error("criteria", "array", criteria) unless criteria.is_a?(Array)
+      return errors << field_error("criteria", "array with at most #{MAX_GAPS} items", criteria) if criteria.size > MAX_GAPS
+
+      criteria.each_with_index do |criterion, index|
+        errors << field_error("criteria[#{index}]", "valid criterion object", criterion) unless valid_criterion?(criterion)
+      end
     end
 
     def valid_criterion?(criterion)
@@ -168,9 +222,10 @@ module Llm
     # read via `assessment["next_action"].to_h`. A String here would
     # NoMethodError on `.to_h`, and a Hash missing `kind`/`explanation`
     # would silently drop actionability.
-    def valid_next_action?(next_action)
-      next_action.nil? ||
-        (next_action.is_a?(Hash) && next_action["kind"].present? && next_action["explanation"].present?)
+    def append_next_action_errors(errors, next_action)
+      return if next_action.is_a?(Hash) && next_action["kind"].present? && next_action["explanation"].present?
+
+      errors << field_error("next_action", "object with nonblank kind and explanation", next_action)
     end
 
     # Schema-constrained responses require API-key authentication because
@@ -187,7 +242,7 @@ module Llm
 
     def schema_constrained_parse
       result = AgentHarness::Api::ChatTransport.new.call(request)
-      return nil unless result&.dig(:status) == :succeeded
+      raise assessment_failure("unsuccessful_response") unless result&.dig(:status) == :succeeded
 
       result[:parsed]
     end
@@ -201,9 +256,9 @@ module Llm
         tools: :none,
         **Llm::TextMode.options
       )
-      return nil if response.respond_to?(:success?) && !response.success?
-
       output = response.respond_to?(:output) ? response.output : response.to_s
+      raise assessment_failure("unsuccessful_response", output_bytes: output.to_s.bytesize) if response.respond_to?(:success?) && !response.success?
+
       JSON.parse(strip_markdown_fence(output.to_s.strip))
     rescue JSON::ParserError => e
       Rails.logger.warn(
@@ -211,17 +266,56 @@ module Llm
         agent_run_id: agent_run.id,
         error: e.message
       )
-      nil
+      raise assessment_failure("invalid_json", output_bytes: output.to_s.bytesize)
     end
 
     def request
       {
-        request_id: SecureRandom.uuid, operation: :schema, schema_name: "partial_closeout_assessment",
+        request_id:, operation: :schema, schema_name: "partial_closeout_assessment",
         schema: RESPONSE_SCHEMA, schema_mode: :json_schema, timeout: { read_seconds: TIMEOUT },
         candidates: [ { provider: :anthropic, model: DEFAULT_MODEL, protocol: :messages,
           authentication_mode: :api_key, credentials: { api_key: api_key } } ],
         messages: [ { role: :user, content: prompt } ]
       }
+    end
+
+    def assessment_failure(category, output_bytes: nil, invalid_fields: nil)
+      message = failure_message(category)
+      AssessmentFailure.new(message, **failure_diagnostics(category, output_bytes:, invalid_fields:))
+    end
+
+    def failure_message(category)
+      case category
+      when "authentication"
+        "partial closeout assessment authentication failed; restore the host-side Claude login or configure an authorized API key"
+      when "unsuccessful_response", "transport_error"
+        "partial closeout assessment transport did not succeed; verify host-side Claude availability and authentication before retrying"
+      when "invalid_json"
+        "partial closeout assessment returned invalid JSON; retry the bounded assessment"
+      else
+        "partial closeout assessment failed structural validation; retry the bounded assessment"
+      end
+    end
+
+    def failure_diagnostics(category, output_bytes:, invalid_fields:)
+      {
+        category:,
+        provider: DEFAULT_PROVIDER.to_s,
+        model: DEFAULT_MODEL,
+        transport: schema_capable_request? ? "schema" : "cli",
+        request_id:,
+        attempt_id: request_id,
+        output_bytes:,
+        invalid_fields: Array(invalid_fields).take(MAX_INVALID_FIELDS).presence
+      }.compact
+    end
+
+    def request_id
+      @request_id ||= SecureRandom.uuid
+    end
+
+    def field_error(path, expected_type, value)
+      { "path" => path, "expected_type" => expected_type, "actual_type" => value.class.name.demodulize.underscore }
     end
 
     def api_key

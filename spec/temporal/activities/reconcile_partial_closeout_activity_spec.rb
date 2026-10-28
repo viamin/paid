@@ -87,5 +87,31 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
         phase_key: "reconcile_partial_closeout", phase_group: "post", status: "failed"
       )
     end
+
+    # @spec PARTIAL-CLOSEOUT-034
+    it "persists bounded assessment authentication diagnostics and leaves the parent incomplete" do
+      failure = Llm::AnalyzePartialCloseout::AssessmentFailure.new(
+        "partial closeout assessment authentication failed; restore the host-side Claude login or configure an authorized API key",
+        category: "authentication",
+        provider: "claude",
+        model: Llm::AnalyzePartialCloseout::DEFAULT_MODEL,
+        transport: "cli",
+        request_id: "closeout-request-1",
+        attempt_id: "closeout-attempt-1"
+      )
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(failure)
+
+      expect { activity.execute(agent_run_id: run.id) }.to raise_error(Llm::AnalyzePartialCloseout::AssessmentFailure)
+
+      reconciliation = run.reload.reconciliation
+      expect(reconciliation).to include("status" => "retryable_failure", "error" => include("authentication failed"))
+      expect(reconciliation.fetch("assessment_failure")).to include(
+        "category" => "authentication", "provider" => "claude", "model" => Llm::AnalyzePartialCloseout::DEFAULT_MODEL,
+        "request_id" => "closeout-request-1", "attempt_id" => "closeout-attempt-1"
+      )
+      expect(parent.reload.github_state).to eq("open")
+      expect(run.reload.pull_request_number).to eq(99)
+      expect(reconciliation).not_to have_key("assessment")
+    end
   end
 end

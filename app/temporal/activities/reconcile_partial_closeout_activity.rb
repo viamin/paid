@@ -21,7 +21,7 @@ module Activities
           gaps_remain: gaps_remain?(agent_run) }
       end
     rescue StandardError => e
-      agent_run&.update!(reconciliation: agent_run.reconciliation.merge("status" => "retryable_failure", "error" => e.message))
+      agent_run&.update!(reconciliation: failure_reconciliation(agent_run, e))
       raise
     end
 
@@ -47,6 +47,25 @@ module Activities
           agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => assessment))
         end
       end
+    end
+
+    # Store machine-actionable assessment diagnostics separately from the
+    # recovery message. The analyzer deliberately excludes response content
+    # and credentials from this envelope.
+    # @spec PARTIAL-CLOSEOUT-034
+    def failure_reconciliation(agent_run, error)
+      agent_run.reconciliation.merge(
+        "status" => "retryable_failure",
+        "error" => error.message,
+        "failed_at" => Time.current.iso8601,
+        "assessment_failure" => assessment_failure_diagnostics(error)
+      ).compact
+    end
+
+    def assessment_failure_diagnostics(error)
+      return unless error.is_a?(Llm::AnalyzePartialCloseout::AssessmentFailure)
+
+      error.diagnostics
     end
   end
 end

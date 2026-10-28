@@ -57,11 +57,38 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       expect(result.dig("gaps", 0, "criterion")).to eq("dispatch")
     end
 
-    it "raises when no transport produced a parseable assessment" do
+    # @spec PARTIAL-CLOSEOUT-034
+    it "reports an unsuccessful empty CLI response as an actionable transport failure" do
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
-      allow(legacy_response).to receive(:success?).and_return(false)
+      allow(legacy_response).to receive_messages(success?: false, output: "")
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure, /transport did not succeed/)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-034
+    it "reports missing host-side Claude authentication without changing billing transport" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      allow(AgentHarness).to receive(:send_message)
+        .and_raise(AgentHarness::AuthenticationError, "Not logged in")
+
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure, /restore the host-side Claude login/)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-034
+    it "reports bounded structural field diagnostics without retaining the response" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      allow(legacy_response).to receive(:output).and_return({ gaps: [ "wire dispatch" ] }.to_json)
+
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure) { |error|
+          expect(error.diagnostics).to include(
+            "category" => "invalid_assessment",
+            "invalid_fields" => include(a_hash_including("path" => "gaps[0]", "actual_type" => "string"))
+          )
+          expect(error.diagnostics.to_json).not_to include("wire dispatch")
+        }
     end
 
     it "caps the gaps array at the reconciler's bound in the response schema" do
@@ -249,7 +276,8 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       it "raises when the schema result did not succeed" do
         allow(chat_transport).to receive(:call).and_return(status: :failed, parsed: nil)
 
-        expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+        expect { described_class.call(agent_run: agent_run) }
+          .to raise_error(described_class::AssessmentFailure, /transport did not succeed/)
       end
     end
 

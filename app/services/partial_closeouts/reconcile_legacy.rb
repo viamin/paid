@@ -363,9 +363,20 @@ module PartialCloseouts
       reconciliation = reconciliation.except("assessment") if reconciliation["gaps"].blank?
       agent_run.update!(
         reconciliation: reconciliation.merge(
-          "status" => "retryable_failure", "error" => error.message, "failed_at" => Time.current.iso8601
-        )
+          "status" => "retryable_failure", "error" => error.message, "failed_at" => Time.current.iso8601,
+          "assessment_failure" => assessment_failure_diagnostics(error)
+        ).compact
       )
+    end
+
+    # `Llm::AnalyzePartialCloseout` has already bounded these fields and
+    # excludes response content and credentials. Preserve them for the
+    # retrying operator without recording provider output.
+    # @spec PARTIAL-CLOSEOUT-034
+    def assessment_failure_diagnostics(error)
+      return unless error.is_a?(Llm::AnalyzePartialCloseout::AssessmentFailure)
+
+      error.diagnostics
     end
 
     # Two flavors of "already done":
