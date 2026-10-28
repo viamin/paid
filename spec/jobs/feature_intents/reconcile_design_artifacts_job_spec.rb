@@ -102,6 +102,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
       expect(Rails.logger).to have_received(:info).with(hash_including(
         message: "feature_intents.reconciliation_finished", project_id: project.id,
         status: "completed", allocated_objects: be >= 0, duration_ms: be >= 0,
+        query_count: be >= 0, artifacts_reconciled: be >= 0, issues_covered: be >= 0,
         rss_before_kb: be_a(Integer).or(be_nil), rss_after_kb: be_a(Integer).or(be_nil),
         process_peak_rss_kb: be_a(Integer).or(be_nil)
       ))
@@ -211,6 +212,28 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     issue_queries = queries.grep(/SELECT .* FROM "issues"/)
     expect(issue_queries).not_to be_empty
     expect(issue_queries.grep(/"projects"\."log_data"/)).to be_empty
+    expect(DesignArtifactFinding.count).to eq(0)
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
+  it "reuses one bounded issue snapshot for every artifact in a project sweep" do
+    artifacts = [ "020", "021" ].map do |number|
+      FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/RDR-#{number}.md", revision: "a" * 40,
+        body: "## Related Issues\n- ##{number.to_i}"
+      )
+    end
+    [ 20, 21 ].each { |number| create(:issue, project:, github_number: number) }
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery(artifacts))
+    queries = []
+    subscriber = ->(event) { queries << event.payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.perform_now(project.id)
+    end
+
+    issue_queries = queries.grep(/SELECT .* FROM "issues"/)
+    expect(issue_queries.count).to eq(1)
     expect(DesignArtifactFinding.count).to eq(0)
   end
 
