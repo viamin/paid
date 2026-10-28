@@ -490,6 +490,19 @@ module Projects
       )
     end
 
+    # @spec ISSUE-REOPEN-REVIEW-005
+    def validate_reopen_review
+      authorize @project, :run_agent?
+      issue = resolve_manual_review_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      result = Issues::ValidateReopenReview.call(issue:, actor: current_user, reason: params[:reason])
+      redirect_to safe_return_target || dashboard_path, **(result.success? ? { notice: result.message } : { alert: result.message })
+    end
+
     # Operator-driven counterpart to
     # RunAgentActivity#clear_issue_runner_retry_abandonment: clears
     # runner_retry_abandoned_at / runner_retry_abandon_reason so the issue

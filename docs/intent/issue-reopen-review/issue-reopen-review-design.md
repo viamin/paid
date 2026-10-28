@@ -21,6 +21,14 @@ review reason. The Inbox exposes this state to an operator, and ordinary
 automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
+## Recovery routing
+
+Reopen review is distinct from an enhancement failure. The Inbox identifies it
+from `Issue#reopen_review_pending?`, shows the recorded reopen reason and the
+available closure evidence, and requires an authorized, revision-bound
+intent-validation decision with a reason before it offers a supported
+continuation. It never treats a generic enhancement retry as that decision.
+
 An operator resumes the issue from manual review only after validating whether
 the original intent remains valid and whether new work is required. This moves
 the issue back into active work through the existing manual-review workflow.

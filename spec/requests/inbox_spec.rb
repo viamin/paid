@@ -1061,11 +1061,8 @@ RSpec.describe "Inbox" do
 
   # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
   it "renders manual_review detail with the reason and the inbox-scoped resume action" do
-    parked = create_manual_review_issue(
-      title: "Parked issue",
-      github_number: 509,
-      reason: "Structured output failed validation."
-    )
+    parked = create_manual_review_issue(title: "Parked issue", github_number: 509, reason: "Structured output failed validation.")
+    create(:agent_run, :completed, project:, issue: parked, goal: "enhance_issue")
 
     get inbox_entry_path(
       entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),

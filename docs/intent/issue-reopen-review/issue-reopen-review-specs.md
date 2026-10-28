@@ -30,3 +30,10 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [ ] **ISSUE-REOPEN-REVIEW-005** - When an issue is parked for reopen review,
+  the system SHALL identify that cause from `Issue#reopen_review_pending?` and
+  display the reopen reason before offering continuation. A generic enhancement
+  retry SHALL NOT be presented as the reopen decision.
+  *Tests:* `spec/services/inbox/manual_review_recovery_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`.

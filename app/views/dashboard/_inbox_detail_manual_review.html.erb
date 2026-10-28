@@ -1,15 +1,43 @@
 <%# @spec OPERATOR-INBOX-002D %>
+<% recovery = Inbox::ManualReviewRecovery.for(entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.enhancement? && entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
+      <% elsif recovery.enhancement? %>
+        Paid stopped enhancement analysis. You can retry that analysis from here.
       <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+        <%= recovery.description %>
       <% end %>
     </p>
   </div>
+
+  <% if recovery.waiting_for_dependency? %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Waiting for dependency resolution</h3>
+      <ul class="mt-2 list-disc pl-5 text-sm text-amber-800">
+        <% recovery.dependencies.each do |dependency| %>
+          <% if dependency.local? %>
+            <li><%= link_to "##{dependency.depends_on_issue.github_number} — #{dependency.depends_on_issue.title}", dependency.depends_on_issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "underline" %></li>
+          <% else %>
+            <li><%= dependency.external_ref %></li>
+          <% end %>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <% if recovery.action == :validate_intent && policy(entry.project).run_agent? %>
+    <%= form_with url: validate_reopen_review_project_agent_runs_path(entry.project), method: :post, class: "space-y-3" do |form| %>
+      <%= hidden_field_tag :issue_id, entry.issue.id %>
+      <%= hidden_field_tag :return_to, inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+      <%= form.label :reason, "Intent-validation decision and reason", class: "block text-sm font-semibold text-gray-900" %>
+      <%= form.text_area :reason, required: true, rows: 3, class: "block w-full rounded-md border-gray-300" %>
+      <%= form.submit "Record intent validation", class: "inline-flex rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white" %>
+    <% end %>
+  <% end %>
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
@@ -34,7 +62,7 @@
       The terminal round's preserved clarifying questions ARE the manual
       review this state asks for: render the same answer form the
       clarifying_questions lane uses, submitting to the same endpoint. %>
-  <% if entry.questions.any? %>
+  <% if recovery.enhancement? && entry.questions.any? %>
     <%= render "dashboard/inbox_clarifying_answer_form",
           entry: entry,
           scoped_project: scoped_project,
@@ -42,7 +70,7 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if recovery.enhancement? && policy(entry.project).run_agent? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

@@ -176,6 +176,17 @@
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`.
 
+- [ ] **OPERATOR-INBOX-002L** — When an issue is in `manual_review`, the Inbox
+  SHALL classify its recovery from durable producer provenance rather than the
+  free-form reason text: reopen review, a currently unresolved dependency,
+  scanner-confirmed recurrence, enhancement stop, or visibly unknown. It SHALL
+  offer an enhancement retry only for an enhancement stop. A dependency wait
+  SHALL link the blocking owner/action and remain parked until that dependency
+  resolves; it SHALL not be cleared by acknowledgement or an unrelated retry.
+  *Tests:* `spec/services/inbox/manual_review_recovery_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by
   `Issue#abandon_due_to_runner_retry_cap!` after every available runner hit
