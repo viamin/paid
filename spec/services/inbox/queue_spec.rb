@@ -56,7 +56,7 @@ RSpec.describe Inbox::Queue do
 
       issue_queries = queries.select { |query| query.include?("FROM \"issues\"") }
       expect(issue_queries).to all(include("JOIN \"projects\""))
-      expect(issue_queries).to all(a_string_not_including("\"projects\".\"log_data\""))
+      expect(issue_queries.none? { |query| query.include?("\"projects\".\"log_data\"") }).to be(true)
     ensure
       ActiveSupport::Notifications.unsubscribe(subscriber) if subscriber
     end
