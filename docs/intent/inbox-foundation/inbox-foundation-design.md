@@ -84,11 +84,14 @@ Today three kinds exist:
   or failed CI, dependency, conflict, review-feedback, and policy signals do
   not create a human-action row; their snapshot remains available as machine
   work/blocker context. The inbox entry uses the PR's approval-wait/head-
-  activity timestamp instead of `needs_input_since`, so PRs do not need to
-  enter `paid_state: "needs_input"` just to become visible. An open ready PR
-  with `paid-hold-review` is also a `:merge_approval` entry, irrespective of
-  its ordinary blocker snapshot, because the label is an explicit request for
-  human action.
+activity timestamp instead of `needs_input_since`, so PRs do not need to
+enter `paid_state: "needs_input"` just to become visible. An open PR with
+`paid-hold-review` is also a `:merge_approval` entry, irrespective of its
+ordinary blocker snapshot or a stale/uninitialized internal review phase,
+because the label is an explicit request for human action. The corresponding
+local `hold_for_review` flag has the same meaning when label integration is
+ignored. This is read-only Inbox projection: it neither advances the phase nor
+asserts that the PR is merge-ready.
 
 Future kinds (`:paused_run_decision`)
 plug in by registering an entry-finder that contributes rows to the same

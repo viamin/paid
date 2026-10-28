@@ -84,6 +84,27 @@ RSpec.describe "Mobile inbox API" do
     expect(response).to have_http_status(:not_modified)
   end
 
+  it "lists an explicit review hold with a stale draft phase" do # @spec INBOX-FOUNDATION-008 MOBILE-API-006
+    project.update!(auto_merge_mode: "all")
+    pull_request = create(
+      :issue,
+      :pull_request,
+      project: project,
+      pr_review_phase: "draft",
+      labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+      auto_merge_evaluated_at: nil,
+      auto_merge_blockers: nil
+    )
+
+    get "/api/v1/inbox", params: { kind: "merge_approval" }, headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("entries")).to include(
+      include("id" => "merge_approval:#{pull_request.id}", "summary" => "Human review requested before merging")
+    )
+    expect(pull_request.reload.pr_review_phase).to eq("draft")
+  end
+
   # @spec MOBILE-API-008 MOBILE-API-009
   it "re-resolves an entry and opens its native chat" do
     issue
