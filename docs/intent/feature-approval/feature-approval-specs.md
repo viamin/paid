@@ -294,6 +294,21 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   `app/jobs/feature_intents/reconcile_design_artifacts_job.rb`,
   `app/jobs/feature_intents/design_artifact_reconciliation_sweep_job.rb`.
 
+- [x] **DESIGN-RECONCILIATION-003** — During one reconciliation execution, the
+  system SHALL assemble one bounded, job-scoped issue-fact snapshot for each
+  account-authorized project needed by the discovered artifacts, and SHALL
+  reuse those facts for every RDR and design PR in that execution. The snapshot
+  SHALL contain only the synchronized fields required for structural and
+  semantic coverage, SHALL batch exact-backlink and canonical-manifest reads,
+  and SHALL discard ORM result graphs after conversion to facts. It SHALL not
+  cross account boundaries, reuse evidence across executions or revisions, or
+  turn unavailable authorized-project coverage into complete coverage. Execution
+  measurements SHALL include artifact and issue-fact counts and SQL query count
+  alongside resident-memory, allocation, and duration measurements.
+  *Tests:* `spec/jobs/feature_intents/reconcile_design_artifacts_job_spec.rb`.
+  *Code:* `app/services/feature_intents/issue_coverage_snapshot.rb`,
+  `app/jobs/feature_intents/reconcile_design_artifacts_job.rb`.
+
 - [x] **ISSUE-TREE-001** — When a feature-planning run creates or adopts
   implementation issues, the system SHALL persist an issue-tree manifest on
   its `FeatureIntent`, keyed by stable task identity and containing expected

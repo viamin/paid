@@ -78,10 +78,15 @@ one deduplicated finding per artifact/revision and
 reports evidence, coverage time, and an explicit state: `missing_tree`,
 `partial_tree`, `stale_metadata`, `deferred`, or `unverifiable`.
 
-Issue coverage preloads shared project records in a separate query rather than
-joining full project rows into the issue result. Project audit history must not
-be repeated for every issue: PostgreSQL results and their Ruby string copies
-would otherwise multiply that history by the synchronized issue count.
+Issue coverage assembles a bounded, job-scoped snapshot of only the synchronized
+issue facts reconciliation requires, once per account-authorized project needed
+by the discovered artifacts. It reuses that snapshot for every RDR and design
+PR, batching exact-backlink and canonical-manifest reads, and discards ORM
+result graphs after conversion. Project audit history must not be repeated for
+every issue: PostgreSQL results and their Ruby string copies would otherwise
+multiply that history by the synchronized issue count. A snapshot is never
+reused across executions or repository revisions; unavailable authorized
+coverage remains unknown.
 
 PR synchronization schedules repository reconciliation after a fixed 30-second
 coalescing window. Scheduling and coalescing happen after the synchronization

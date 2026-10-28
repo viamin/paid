@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec DESIGN-RECONCILIATION-001
+# @spec DESIGN-RECONCILIATION-001 @spec DESIGN-RECONCILIATION-003
 RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
   def discovery(artifacts, complete: true)
     FeatureIntents::DiscoverRdrArtifacts::Discovery.new(
@@ -102,6 +102,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
       expect(Rails.logger).to have_received(:info).with(hash_including(
         message: "feature_intents.reconciliation_finished", project_id: project.id,
         status: "completed", allocated_objects: be >= 0, duration_ms: be >= 0,
+        artifacts_reconciled: be >= 0, issue_facts: be >= 0, query_count: be >= 0,
         rss_before_kb: be_a(Integer).or(be_nil), rss_after_kb: be_a(Integer).or(be_nil),
         process_peak_rss_kb: be_a(Integer).or(be_nil)
       ))
@@ -211,6 +212,27 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     issue_queries = queries.grep(/SELECT .* FROM "issues"/)
     expect(issue_queries).not_to be_empty
     expect(issue_queries.grep(/"projects"\."log_data"/)).to be_empty
+    expect(DesignArtifactFinding.count).to eq(0)
+  end
+
+  # @spec DESIGN-RECONCILIATION-003
+  it "reuses bounded issue coverage across every discovered RDR" do
+    artifacts = [ "one", "two" ].map do |name|
+      FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/RDR-#{name}.md", revision: "a" * 40, body: "Implements #101"
+      )
+    end
+    create(:issue, project:, github_number: 101, body: "Implements docs/rdrs/RDR-one.md")
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery(artifacts))
+    queries = []
+    subscriber = ->(event) { queries << event.payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.perform_now(project.id)
+    end
+
+    issue_coverage_queries = queries.grep(/SELECT .* FROM "issues"/)
+    expect(issue_coverage_queries.size).to eq(1)
     expect(DesignArtifactFinding.count).to eq(0)
   end
 
