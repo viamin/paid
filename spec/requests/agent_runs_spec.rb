@@ -2613,7 +2613,10 @@ RSpec.describe "AgentRuns" do
     end
 
     context "when authenticated" do
-      before { sign_in user }
+      before do
+        sign_in user
+        create(:agent_run, :failed, project: project, issue: parked_issue, goal: "enhance_issue")
+      end
 
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
@@ -2634,10 +2637,11 @@ RSpec.describe "AgentRuns" do
           owner: "acme", repo: "lane", auto_pick_enabled: true, active: true)
         parked = create(:issue, project: gated_project, github_number: 90, paid_state: "manual_review",
           manual_review_reason: "Round limit reached.")
+        create(:agent_run, :failed, project: gated_project, issue: parked, goal: "enhance_issue")
 
         entries = Inbox::Queue.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)
         expect(entries.map(&:issue)).to include(parked)
-        expect(Inbox::Count.call(user: user)).to eq(1)
+        expect(Inbox::Count.call(user: user)).to eq(2)
 
         post resume_manual_review_project_agent_runs_path(gated_project), params: { issue_id: parked.id }
 
@@ -2645,8 +2649,22 @@ RSpec.describe "AgentRuns" do
         expect(parked.paid_state).to eq("in_progress")
         expect(parked.manual_review_started_at).to be_nil
         expect(parked.manual_review_reason).to be_nil
-        expect(Inbox::Queue.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)).to be_empty
-        expect(Inbox::Count.call(user: user)).to eq(0)
+        remaining_entries = Inbox::Queue.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+        expect(remaining_entries.map(&:issue)).not_to include(parked)
+        expect(Inbox::Count.call(user: user)).to eq(1)
+      end
+
+      # @spec OPERATOR-INBOX-002D
+      it "does not clear a dependency hold or queue an enhancement retry" do
+        blocker = create(:issue, project: project, github_state: "open", paid_state: "new")
+        parked_issue.issue_dependencies.create!(depends_on_issue: blocker)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+        expect(flash[:alert]).to include("waiting for ##{blocker.github_number}")
       end
 
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D

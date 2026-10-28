@@ -121,11 +121,15 @@
   a `manual_review` inbox entry showing why
   automation stopped (`manual_review_reason`) and how long it has been stopped
   (`manual_review_started_at`, falling back to `updated_at` for legacy rows —
-  `ISSUE-ENHANCEMENT-012`). The entry SHALL offer an operator-triggered manual
-  `enhance_issue` run as its clearing action, since automatic picking excludes
-  `manual_review` and only an explicit operator-triggered run resumes work
-  (`ISSUE-ENHANCEMENT-011`). Queuing that run SHALL transition the issue out
-  of `manual_review` in the same request — inside the same transaction that
+  `ISSUE-ENHANCEMENT-012`). The entry SHALL classify recovery from durable
+  provenance, not from the reason's wording: the dedicated reopen-review
+  marker, unresolved dependency edges, scanner verification evidence,
+  preserved enhancement questions or a failed enhancement run. Only the last
+  two SHALL offer the existing operator-triggered manual `enhance_issue` run;
+  reopen review, dependency wait, scanner recurrence, and unknown provenance
+  SHALL remain visibly held with their corresponding action or inspection
+  guidance. Queuing an enhancement retry SHALL transition the issue out of
+  `manual_review` in the same request — inside the same transaction that
   creates the run — so the entry clears from the queue and the badge at queue
   time rather than when the workflow eventually starts the run (#3853); a
   failed queue attempt (budget, no runnable runner) SHALL leave the issue in

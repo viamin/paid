@@ -480,6 +480,12 @@ module Projects
         return
       end
 
+      recovery = ManualReviews::Recovery.call(issue: issue)
+      unless recovery.enhancement_retry?
+        redirect_to safe_return_target || dashboard_path, alert: recovery.message
+        return
+      end
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,

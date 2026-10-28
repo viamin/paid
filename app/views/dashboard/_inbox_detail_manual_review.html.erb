@@ -3,11 +3,7 @@
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
-        Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
-      <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
-      <% end %>
+      <%= entry.manual_review_recovery.message %>
     </p>
   </div>
 
@@ -42,7 +38,7 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if entry.manual_review_recovery.enhancement_retry? && policy(entry.project).run_agent? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,
