@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2921,6 +2921,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.boolean "supports_vision", default: false, null: false
     t.string "tier", limit: 10
     t.datetime "updated_at", null: false
+    t.datetime "zdr_checked_at", comment: "When OpenRouter ZDR endpoint eligibility was last successfully evaluated for this model."
+    t.boolean "zdr_eligible", default: false, null: false, comment: "Whether OpenRouter currently advertises at least one ZDR-eligible endpoint for this model."
     t.index ["active"], name: "index_llm_models_on_active"
     t.index ["category"], name: "index_llm_models_on_category"
     t.index ["free_variant_of_id"], name: "index_llm_models_on_free_variant_of_id"
@@ -2928,6 +2930,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["provider", "active"], name: "index_llm_models_on_provider_and_active"
     t.index ["provider"], name: "index_llm_models_on_provider"
     t.index ["tier"], name: "index_llm_models_on_tier"
+    t.index ["zdr_eligible"], name: "index_llm_models_on_zdr_eligible"
     t.check_constraint "tier IS NULL OR (tier::text = ANY (ARRAY['low'::character varying::text, 'mid'::character varying::text, 'high'::character varying::text]))", name: "llm_models_tier_check"
   end
 
@@ -3163,6 +3166,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["account_id", "position"], name: "index_onboarding_steps_on_account_id_and_position"
     t.index ["account_id", "step"], name: "index_onboarding_steps_on_account_id_and_step", unique: true
     t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
+  end
+
+  create_table "openrouter_zdr_catalog_statuses", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "last_attempt_at"
+    t.text "last_error"
+    t.datetime "last_success_at"
+    t.string "source", null: false
+    t.string "status", default: "unavailable", null: false
+    t.datetime "updated_at", null: false
+    t.index ["source"], name: "index_openrouter_zdr_catalog_statuses_on_source", unique: true
   end
 
   create_table "orchestration_decisions", comment: "Structured log of orchestration decisions for later workflow analysis and learning.", force: :cascade do |t|

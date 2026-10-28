@@ -110,16 +110,19 @@ RSpec.describe Runners::ModelOptions do
         create(:llm_model, model_id: "qwen/qwen3-coder", display_name: "Qwen3 Coder (free)",
           provider: "qwen", family: nil, tier: "high", capability_score: 7.0,
           pricing_tier: "free", catalog_source: "openrouter_sync")
+        create(:llm_model, model_id: "openai/paid-zdr-model", display_name: "OpenAI Paid ZDR Model",
+          provider: "openai", family: nil, tier: "high", capability_score: 9.0,
+          pricing_tier: "paid", catalog_source: "openrouter_zdr_sync", zdr_eligible: true)
       end
 
-      it "includes the pareto row and the synced free models" do # @spec RUNNER-MODEL-OPTIONS-003
+      it "includes the pareto row, synced free models, and eligible paid ZDR models" do # @spec RUNNER-MODEL-OPTIONS-003 # @spec FREE-MODEL-SYNC-014
         values = options.select(&:model?).map(&:value)
-        expect(values).to include("openrouter/pareto-code", "deepseek/deepseek-chat-v3", "qwen/qwen3-coder")
+        expect(values).to include("openrouter/pareto-code", "deepseek/deepseek-chat-v3", "qwen/qwen3-coder", "openai/paid-zdr-model")
       end
 
       it "orders family-backed rows before nil-family synced rows, then by capability" do
         expect(options.select(&:model?).map(&:value)).to eq(
-          %w[openrouter/pareto-code qwen/qwen3-coder deepseek/deepseek-chat-v3]
+          %w[openrouter/pareto-code openai/paid-zdr-model qwen/qwen3-coder deepseek/deepseek-chat-v3]
         )
       end
     end
