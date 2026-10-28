@@ -13,7 +13,9 @@ prefix: MAINT
 > its EARS specs are
 > reviewable contracts produced for the human review gate that RDR
 > acceptance requires; they are not accepted intent and authorize no
-> implementation. See
+> implementation. The #4604 live validation evidence remains uncollected: its
+> 2026-10-28 capability revalidation found no Docker-compatible client, socket,
+> or configured backend. See
 > [`audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md`](../../rdrs/audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md)
 > for the tool-handoff evidence this design relies on.
 

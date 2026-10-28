@@ -339,7 +339,8 @@ any repair: a scan never mutates source code or opens a PR on its own.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
-that acceptance.
+that acceptance and #4604's still-uncollected live execution-environment
+evidence.
 
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
