@@ -1,0 +1,37 @@
+{
+  "data": [
+    {
+      "name": "Azure | openai/gpt-paid",
+      "model_id": "openai/gpt-paid",
+      "model_name": "OpenAI: GPT Paid",
+      "context_length": 200000,
+      "pricing": { "prompt": "0.000002", "completion": "0.000008" },
+      "provider_name": "Azure",
+      "tag": "azure/eu",
+      "max_completion_tokens": 32000,
+      "supported_parameters": ["tools", "reasoning"]
+    },
+    {
+      "name": "Azure | openai/gpt-paid-alt",
+      "model_id": "openai/gpt-paid",
+      "model_name": "OpenAI: GPT Paid",
+      "context_length": 200000,
+      "pricing": { "prompt": "0.000003", "completion": "0.000009" },
+      "provider_name": "Azure",
+      "tag": "azure/us",
+      "max_completion_tokens": 16000,
+      "supported_parameters": ["tools"]
+    },
+    {
+      "name": "Together | qwen/free-model",
+      "model_id": "qwen/free-model:free",
+      "model_name": "Qwen: Free Model",
+      "context_length": 128000,
+      "pricing": { "prompt": "0", "completion": "0" },
+      "provider_name": "Together",
+      "tag": "together",
+      "max_completion_tokens": 8192,
+      "supported_parameters": ["tools"]
+    }
+  ]
+}

@@ -33,3 +33,27 @@
 - [x] **FREE-MODEL-SYNC-008** — When the daily free-model sync job is
   scheduled, the system SHALL enqueue `FreeModels::SyncJob` once per day
   through GoodJob cron and serialize concurrent executions.
+
+## Advertised ZDR Endpoint Catalog
+
+- [x] **FREE-MODEL-SYNC-009** — When the ZDR catalog refresh receives an
+  OpenRouter `/api/v1/endpoints/zdr` response containing one or more valid
+  endpoint records for a model ID, the system SHALL expose that exact model ID
+  as an eligible candidate, regardless of whether its advertised endpoint price
+  is free or paid.
+- [x] **FREE-MODEL-SYNC-010** — When the ZDR catalog refresh persists an
+  eligible model, the system SHALL retain runner-setup metadata and all
+  advertised endpoint records for that model, and SHALL not infer eligibility
+  from model vendor, provider-wide policy, or price.
+- [x] **FREE-MODEL-SYNC-011** — When a successful ZDR refresh omits every
+  advertised eligible endpoint for a previously eligible model, the system
+  SHALL withdraw that model's eligibility and deactivate it only when the ZDR
+  catalog exclusively owns its row.
+- [x] **FREE-MODEL-SYNC-012** — When a ZDR refresh succeeds, including with an
+  empty endpoint array, the system SHALL mark the catalog available with its
+  successful refresh time; when the request or payload fails, it SHALL mark the
+  catalog unavailable and preserve the last successfully eligible models.
+- [x] **FREE-MODEL-SYNC-013** — When runner setup queries eligible ZDR models,
+  the system SHALL return the catalog freshness state and only models that
+  remain eligible, active, permitted by the existing OpenRouter provider
+  selection, and compatible with the selected runner and authentication mode.

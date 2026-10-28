@@ -122,6 +122,14 @@ RSpec.describe Runners::ModelOptions do
           %w[openrouter/pareto-code qwen/qwen3-coder deepseek/deepseek-chat-v3]
         )
       end
+
+      it "includes advertised ZDR paid models through the existing compatibility filter" do # @spec FREE-MODEL-SYNC-013
+        create(:llm_model, model_id: "openai/gpt-zdr-paid", display_name: "GPT ZDR Paid",
+          provider: "openrouter", family: "openrouter", tier: "high", capability_score: 9.0,
+          catalog_source: "openrouter_zdr_sync", openrouter_zdr_eligible: true)
+
+        expect(options.select(&:model?).map(&:value)).to include("openai/gpt-zdr-paid")
+      end
     end
 
     context "with the free policy entry" do
