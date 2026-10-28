@@ -62,6 +62,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error: e.message
     )
     pause_message = ChatSessions::MarkRateLimited.call(chat_session: chat_session, error: e)
+    complete_turn(chat_session_id, stream_message_id, "rate_limited")
     broadcast_persisted_message(stream_name, pause_message)
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue AgentHarness::Error => e
@@ -71,6 +72,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error_class: e.class.name,
       error: e.message
     )
+    fail_turn(chat_session_id, stream_message_id, "provider_error")
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue ActiveRecord::RecordNotFound
     raise
@@ -81,6 +83,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error_class: e.class.name,
       error: e.message
     )
+    fail_turn(chat_session_id, stream_message_id, "unexpected_error")
     broadcast_error(chat_session_id, stream_message_id, "An unexpected error occurred")
   end
 
@@ -120,6 +123,18 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       message_id: stream_message_id,
       message: error_message
     }.merge(extra.compact))
+  end
+
+  def complete_turn(chat_session_id, stream_message_id, outcome)
+    ChatTurn.find_by(chat_session_id:, metadata: { "stream_message_id" => stream_message_id })&.complete!(outcome:)
+  end
+
+  def fail_turn(chat_session_id, stream_message_id, classification)
+    turn = ChatTurn.find_by(chat_session_id:, metadata: { "stream_message_id" => stream_message_id })
+    return unless turn
+
+    turn.fail!(classification:)
+    turn.chat_session.messages.create!(role: "system", content: "This chat turn failed before a final assistant response was recorded. Please review the transcript and try again.", metadata: { "stalled_turn_notice" => true, "chat_turn_id" => turn.id })
   end
 
   def tenant_account
