@@ -209,8 +209,9 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   serialize execution for that scope, and permit one queued follow-up for
   changes arriving during execution; repeated requests SHALL NOT extend the
   window. Each execution SHALL log process-wide resident memory before/after,
-  process peak resident memory when available, allocated-object delta, elapsed
-  time and completion status without content payloads, including on failure.
+  process peak resident memory when available, allocated-object delta, SQL query
+  count, artifact and covered-issue counts, elapsed time and completion status
+  without content payloads, including on failure.
   Unavailable process-memory readings SHALL NOT prevent reconciliation or
   replace its original failure.
   Scheduling/coalescing SHALL occur after synchronization commits, and rolled-
@@ -223,6 +224,13 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   examines RDR artifacts using the project's configured `rdr_convention`
   directory and filename pattern (defaulting to `docs/rdrs/RDR-*.md`) or open design PRs at
   a pinned revision,
+  the system SHALL build one job-scoped, bounded snapshot of minimal synchronized
+  issue facts for each authorized project referenced by that execution and reuse
+  it for every artifact. It SHALL batch feature-intent manifests and exact
+  artifact-backlink evidence for the sweep, retain no raw ORM result graph after
+  snapshot assembly, and discard the snapshot at job completion. A snapshot
+  SHALL be fresh for each job execution and SHALL NOT be reused across artifact
+  revisions or executions.
   the system SHALL compare declared issue-tree evidence with existing open and
   closed synchronized issues, stored identities, canonical manifests, and exact
   artifact backlinks before classifying a gap. It SHALL retain an evidence-backed

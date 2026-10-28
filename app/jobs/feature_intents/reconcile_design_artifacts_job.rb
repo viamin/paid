@@ -39,10 +39,15 @@ module FeatureIntents
 
     def perform(project_id, pull_request_number = nil)
       @project = Project.find(project_id)
+      @issue_coverage = DesignArtifactIssueCoverage.new(project:, relationship_text: method(:relationship_text))
       return reconcile_project_artifacts unless pull_request_number
 
       design_pr = design_pull_request(pull_request_number)
-      reconcile(artifact_for(design_pr), revision: design_pr.head_sha) if design_pr
+      return unless design_pr
+
+      artifact = artifact_for(design_pr)
+      @issue_coverage.prepare!([ artifact ])
+      reconcile(artifact, revision: design_pr.head_sha)
     end
 
     private
@@ -57,15 +62,18 @@ module FeatureIntents
       allocated_before = GC.stat(:total_allocated_objects)
       memory_before = process_memory
       completed = false
+      query_count = 0
       @reconciled_artifact_count = 0
       logger.info(message: "feature_intents.reconciliation_started", project_id: arguments.first,
         job_id:, rss_kb: memory_before[:rss_kb])
-      yield
+      subscriber = ->(event) { query_count += 1 unless event.payload[:name] == "SCHEMA" }
+      ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") { yield }
       completed = true
     ensure
       memory_after = process_memory
       logger.info(message: "feature_intents.reconciliation_finished", project_id: arguments.first, job_id:,
         status: completed ? "completed" : "failed", artifacts_reconciled: @reconciled_artifact_count,
+        issues_covered: @issue_coverage&.issue_count || 0, sql_query_count: query_count,
         duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round(1),
         allocated_objects: GC.stat(:total_allocated_objects) - allocated_before,
         rss_before_kb: memory_before[:rss_kb], rss_after_kb: memory_after[:rss_kb],
@@ -93,10 +101,8 @@ module FeatureIntents
         body: issue&.body,
         status: design_pr.draft? ? "draft" : nil,
         related_issues: explicit_references(issue&.body),
-        stored_identities: design_pr.feature_intent.issues.map { |linked| identity_for(linked) },
-        associated_issues: design_pr.feature_intent.issues.filter_map do |linked|
-          association_for(linked, "Paid feature intent linkage")
-        end,
+        stored_identities: [],
+        feature_intent_id: design_pr.feature_intent_id,
         coverage_complete: issue.present? && design_pr.draft.in?([ true, false ])
       }
     end
@@ -106,8 +112,7 @@ module FeatureIntents
       @project_issue[number] ||= project.issues.find_by(github_number: number)
     end
 
-    def reconcile_rdr_artifacts
-      discovery = DiscoverRdrArtifacts.call(project:)
+    def reconcile_rdr_artifacts(discovery)
       discovery.artifacts.each do |artifact|
         reconcile(rdr_artifact(artifact), revision: artifact.revision,
           coverage_complete: discovery.complete? && !artifact.body.nil?)
@@ -123,14 +128,18 @@ module FeatureIntents
     end
 
     def reconcile_project_artifacts
-      reconcile_rdr_artifacts
-      open_design_pull_requests.find_each do |design_pr|
-        reconcile(artifact_for(design_pr), revision: design_pr.head_sha)
+      discovery = DiscoverRdrArtifacts.call(project:)
+      rdr_artifacts = discovery.artifacts.map { |artifact| rdr_artifact(artifact) }
+      design_artifacts = open_design_pull_requests.map { |design_pr| artifact_for(design_pr) }
+      @issue_coverage.prepare!(rdr_artifacts + design_artifacts)
+      reconcile_rdr_artifacts(discovery)
+      design_artifacts.each do |artifact|
+        reconcile(artifact, revision: artifact.fetch(:revision))
       end
     end
 
     def open_design_pull_requests
-      FeatureIntentDesignPr.joins(:feature_intent).includes(feature_intent: { issues: :project }).where(
+      FeatureIntentDesignPr.joins(:feature_intent).where(
         feature_intents: { project_id: project.id }, merged_at: nil
       )
     end
@@ -160,75 +169,7 @@ module FeatureIntents
     end
 
     def issue_coverage(artifact)
-      references = artifact.fetch(:related_issues)
-      projects = projects_for(references)
-      associations = Array(artifact[:associated_issues]) + structural_associations(artifact)
-      association_projects = associations.filter_map { |association| association[:project] }.uniq
-      [
-        issue_facts((projects.values + association_projects).uniq),
-        references.all? { |reference| projects.key?(repository_for(reference)) },
-        associations
-      ]
-    end
-
-    def structural_associations(artifact)
-      exact_backlinks(artifact) + manifest_associations(artifact)
-    end
-
-    def exact_backlinks(artifact)
-      project.issues.includes(:project).where(
-        "issues.body LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(artifact[:path])}%"
-      ).filter_map do |issue|
-        next if issue.is_pull_request? || !issue.trusted?
-        next unless explicit_artifact_backlink?(issue, artifact)
-
-        association_for(issue, "exact artifact backlink")
-      end
-    end
-
-    def explicit_artifact_backlink?(issue, artifact)
-      relationship_text(issue.body).match?(artifact_path_pattern(artifact.fetch(:path)))
-    end
-
-    def artifact_path_pattern(path)
-      /(?<![\w.\/-])#{Regexp.escape(path)}(?![\w.\/-])/
-    end
-
-    def manifest_associations(artifact)
-      FeatureIntent.where(project:).includes(issues: :project).filter_map do |feature_intent|
-        next unless artifact[:path].in?(feature_intent.design_document_paths)
-
-        feature_intent.issues.filter_map { |issue| association_for(issue, "canonical issue-tree manifest") }
-      end.flatten
-    end
-
-    def association_for(issue, provenance)
-      return unless issue.github_number
-
-      {
-        repository: issue.project.full_name,
-        number: issue.github_number,
-        revision: issue.github_updated_at&.iso8601,
-        provenance:, project: issue.project
-      }
-    end
-
-    def projects_for(references)
-      repositories = references.map { |reference| repository_for(reference) }.uniq
-      external = repositories - [ project.full_name ]
-      projects = Project.where(account_id: project.account_id, owner: external.map { |name| name.split("/").first }, repo: external.map { |name| name.split("/").last })
-      projects.to_a.append(project).index_by(&:full_name)
-    end
-
-    def issue_facts(projects)
-      Issue.preload(:project).where(project_id: projects.map(&:id)).where.not(github_number: nil).filter_map do |issue|
-        next if issue.is_pull_request? || !issue.trusted?
-
-        {
-          repository: issue.project.full_name, number: issue.github_number, state: issue.github_state,
-          title: issue.title, body: issue.body, revision: issue.github_updated_at&.iso8601
-        }
-      end
+      @issue_coverage.coverage_for(artifact)
     end
 
     def repository_for(reference)
