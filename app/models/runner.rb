@@ -18,7 +18,6 @@ class Runner < ApplicationRecord
   # valid only when the runner resolves to the openrouter API provider.
   # @spec MODEL-POLICY-001 MODEL-POLICY-002 MODEL-POLICY-003
   MODEL_POLICIES = %w[specific free].freeze
-
   LEGACY_PROVIDER_ATTRIBUTE_BRIDGES = {
     "provider_key" => "runner_key"
   }.freeze
@@ -375,6 +374,26 @@ class Runner < ApplicationRecord
   # @spec MODEL-POLICY-004
   def free_model_policy?
     direct_outbound_free_policy?
+  end
+
+  # The declaration is portable, but Paid can enforce it only for the current
+  # OpenRouter direct-outbound path. Derive this rather than persist it so a
+  # credential change cannot leave a stale enforcement claim behind.
+  # @spec RUNNER-ZDR-001 RUNNER-ZDR-003
+  def zero_data_retention_provenance
+    return "not_requested" unless zero_data_retention?
+    return "openrouter_enforced" if openrouter_zdr_enforced?
+
+    "user_declared"
+  end
+
+  # @spec RUNNER-ZDR-002 RUNNER-ZDR-003
+  def openrouter_zdr_enforced?
+    zero_data_retention? && direct_outbound_api_provider == OPENROUTER_FREE_MODEL_PROVIDER
+  end
+
+  def zdr_required?
+    openrouter_zdr_enforced?
   end
 
   def opencode_preflight_timeout_seconds

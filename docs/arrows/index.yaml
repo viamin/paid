@@ -52,6 +52,14 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  runner-zero-data-retention:
+    title: Runner Zero Data Retention
+    path: docs/intent/runner-zero-data-retention/runner-zero-data-retention-design.md
+    specs: docs/intent/runner-zero-data-retention/runner-zero-data-retention-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    next: "Keep non-OpenRouter declarations distinct from request-time OpenRouter enforcement."
   dependency-declarations:
     title: Dependency Declarations
     path: docs/intent/dependency-declarations/dependency-declarations-design.md

@@ -76,6 +76,34 @@ RSpec.describe Runner do
     it { is_expected.to belong_to(:integration_credential).optional }
   end
 
+  describe "zero data retention" do
+    # @spec RUNNER-ZDR-001 RUNNER-ZDR-002 RUNNER-ZDR-003
+    it "defaults to off and distinguishes an OpenRouter-enforced request from a provider declaration" do
+      user = create(:user)
+      openrouter_key = create(:provider_api_key, user:, api_service_type: "openrouter")
+      openrouter_runner = create(:runner, :api_key, user:, runner_key: "opencode", provider_api_key: openrouter_key,
+        config: { "opencode" => { "model" => "moonshotai/kimi-k2-0905" } }, zero_data_retention: true)
+
+      declared_runner = create(:runner, user:, zero_data_retention: true)
+
+      expect(build(:runner).zero_data_retention?).to be(false)
+      expect(openrouter_runner.zero_data_retention_provenance).to eq("openrouter_enforced")
+      expect(declared_runner.zero_data_retention_provenance).to eq("user_declared")
+    end
+
+    # @spec RUNNER-ZDR-003
+    it "recomputes provenance when the provider changes" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user:, api_service_type: "openrouter")
+      runner = create(:runner, :api_key, user:, runner_key: "opencode", provider_api_key: api_key,
+        config: { "opencode" => { "model" => "moonshotai/kimi-k2-0905" } }, zero_data_retention: true)
+
+      api_key.update!(api_service_type: "anthropic")
+
+      expect(runner.reload.zero_data_retention_provenance).to eq("user_declared")
+    end
+  end
+
   describe "validations" do
     subject(:runner) { build(:runner) }
 

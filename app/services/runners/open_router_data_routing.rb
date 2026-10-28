@@ -11,7 +11,7 @@ module Runners
     DEFAULT_DATA_CLASSIFICATION = "internal"
 
     def build_provider_routing(project)
-      case data_classification_for(project)
+      routing = case data_classification_for(project)
       when "open", "internal"
         { data_collection: "allow" }
       when "confidential"
@@ -21,12 +21,19 @@ module Runners
       else
         { data_collection: "allow" }
       end
+
+      routing[:zdr] = true if zdr_required?
+      routing
     end
 
     def data_classification_for(project)
       return DEFAULT_DATA_CLASSIFICATION unless project&.respond_to?(:data_classification)
 
       project.data_classification.presence || DEFAULT_DATA_CLASSIFICATION
+    end
+
+    def zdr_required?
+      false
     end
   end
 end

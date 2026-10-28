@@ -91,7 +91,7 @@ class RunnersController < ApplicationController
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
-      audit_event("runner.created", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
+      audit_event("runner.created", metadata: runner_audit_metadata)
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_created_notice
       else
@@ -119,7 +119,7 @@ class RunnersController < ApplicationController
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
-      audit_event("runner.updated", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
+      audit_event("runner.updated", metadata: runner_audit_metadata)
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_updated_notice
       else
@@ -234,6 +234,7 @@ class RunnersController < ApplicationController
       :agent_co_author_trailer,
       :monthly_token_budget,
       :weight,
+      :zero_data_retention,
       :model_selection_choice,
       :custom_model_id
     ]
@@ -275,6 +276,16 @@ class RunnersController < ApplicationController
       result["complexity_thresholds"] = normalize_complexity_thresholds(result["complexity_thresholds"])
     end
     result
+  end
+
+  # @spec RUNNER-ZDR-004
+  def runner_audit_metadata
+    {
+      runner_name: @runner.display_name,
+      runner_key: @runner.runner_key,
+      zero_data_retention: @runner.zero_data_retention?,
+      zero_data_retention_provenance: @runner.zero_data_retention_provenance
+    }
   end
 
   def normalize_direct_outbound_free_policy!(config, runner_key)

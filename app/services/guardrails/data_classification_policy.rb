@@ -104,6 +104,10 @@ module Guardrails
       build_provider_routing(project)
     end
 
+    def zdr_required?
+      agent_run.runner&.openrouter_zdr_enforced? == true
+    end
+
     def warning_message(data_collection)
       return unless warning?
 

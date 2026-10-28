@@ -18,6 +18,10 @@ module Runners
       @project = project
     end
 
+    def zdr_required?
+      @runner.openrouter_zdr_enforced?
+    end
+
     # @spec FREE-MODEL-001
     def call
       raise ArgumentError, "OpenRouter API key required" if @runner.effective_api_secret.to_s.blank?
