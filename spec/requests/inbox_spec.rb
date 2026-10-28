@@ -247,6 +247,30 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec FACET-CONFIDENCE-022
+  it "translates a typed closeout evaluation escalation and preserves Inbox context for its primary action" do
+    issue, notification, context = typed_closeout_evaluation_escalation
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort: "newest")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Evaluation needed before this closeout can move forward", "Start evaluation")
+    expect(response.body).to include("0 judgments recorded", "remaining", "View Issue")
+    expect(response.body).not_to include("blinded reference judgments", "facet-confidence corpus")
+    expect(response.body).to include(new_project_facet_confidence_evaluation_path(project, issue_id: issue.id, **context).gsub("&", "&amp;"))
+
+    post project_facet_confidence_evaluations_path(project), params: { issue_id: issue.id, **context }
+
+    evaluation = issue.facet_confidence_evaluations.sole
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation, **context))
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort: "newest")
+
+    expect(response.body).to include("Resume evaluation", "0 judgments recorded")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a
@@ -2047,6 +2071,18 @@ RSpec.describe "Inbox" do
         "remediation_steps" => [ "Open the quality dashboard", "Resume manually or adjust thresholds" ]
       }
     )
+  end
+
+  def typed_closeout_evaluation_escalation
+    issue = create(:issue, project: project, github_number: 4323)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: Inbox::FacetConfidenceEscalation::SOURCE, blocking: true,
+      title: "Remediation Required",
+      description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.",
+      metadata: { "action_workflow" => Inbox::FacetConfidenceEscalation::WORKFLOW_TYPE })
+    context = { inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_sort: "newest",
+                inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification) }
+    [ issue, notification, context ]
   end
 
   def stale_approval_snapshot

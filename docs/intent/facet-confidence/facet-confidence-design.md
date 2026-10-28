@@ -174,3 +174,15 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+## Action Required escalation entry point
+
+An Action Required notification may explicitly identify the facet-confidence
+closeout workflow through the `closeout_evaluation_required` source or
+`metadata.action_workflow` set to `facet_confidence_closeout_evaluation`. Its Inbox detail translates the
+escalation into plain language, shows recorded and remaining judgments, and
+offers the state-specific Start evaluation, Resume evaluation, Continue
+judging, or Freeze judgments action. The route preserves the originating Inbox
+context and keeps View Issue as secondary context. Notifications without that
+typed marker remain on the generic Action Required path; notification prose is
+never classified by keyword matching.
