@@ -61,7 +61,52 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
       allow(legacy_response).to receive(:success?).and_return(false)
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure, /transport returned an unsuccessful response/) do |error|
+          expect(error.diagnostic).to include(category: "unsuccessful_response", provider: "claude", model: described_class::DEFAULT_MODEL)
+          expect(error.diagnostic).to include(:request_id, :attempt_id)
+        end
+    end
+
+    # @spec PARTIAL-CLOSEOUT-034
+    it "routes CLI assessments through the account's active managed Claude subscription credential" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      credential = create(:runner_credential, account: project.account, runner_key: "claude", auth_kind: "oauth_token",
+        token: "managed-oauth-token", long_lived: true)
+
+      described_class.call(agent_run: agent_run)
+
+      expect(AgentHarness).to have_received(:send_message) do |_prompt, options|
+        expect(options.dig(:provider_runtime, :env)).to eq("CLAUDE_CODE_OAUTH_TOKEN" => credential.token)
+        expect(options).not_to include(:mode)
+      end
+    end
+
+    # @spec PARTIAL-CLOSEOUT-034
+    it "does not inject a native Claude credential as an OAuth environment token" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      create(:runner_credential, account: project.account, runner_key: "claude", auth_kind: "oauth_token",
+        token: JSON.generate("claudeAiOauth" => { "accessToken" => "native-access-token", "refreshToken" => "native-refresh-token" }))
+
+      described_class.call(agent_run: agent_run)
+
+      expect(AgentHarness).to have_received(:send_message) do |_prompt, options|
+        expect(options).not_to have_key(:provider_runtime)
+      end
+    end
+
+    # @spec PARTIAL-CLOSEOUT-034
+    it "classifies Claude authentication errors without exposing the provider response" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      allow(AgentHarness).to receive(:send_message).and_raise(
+        AgentHarness::AuthenticationError.new("Not logged in · Please run /login", provider: :claude)
+      )
+
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure, /authorized Claude credential/) do |error|
+          expect(error.diagnostic).to include(category: "authentication_unavailable", provider: "claude")
+          expect(error.diagnostic).not_to have_key(:response)
+        end
     end
 
     it "caps the gaps array at the reconciler's bound in the response schema" do
@@ -81,14 +126,22 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
       allow(legacy_response).to receive(:output).and_return({ gaps: [ "wire dispatch" ] }.to_json)
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure) do |error|
+          expect(error.diagnostic.fetch(:invalid_fields)).to include(path: "gaps[0]", expected: "object", actual: "string")
+        end
     end
 
-    it "raises when a gap omits its criterion" do
+    it "records the invalid path and type when a gap omits its criterion" do # @spec PARTIAL-CLOSEOUT-034
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
       allow(legacy_response).to receive(:output).and_return({ gaps: [ { kind: "agent", title: "Finish dispatch" } ] }.to_json)
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure) do |error|
+          expect(error.diagnostic.fetch(:invalid_fields)).to include(
+            path: "gaps[0].criterion", expected: "nonblank string", actual: "nil_class"
+          )
+        end
     end
 
     it "raises when a gap carries an unknown kind" do

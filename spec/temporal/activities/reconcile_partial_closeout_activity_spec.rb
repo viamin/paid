@@ -87,5 +87,25 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
         phase_key: "reconcile_partial_closeout", phase_group: "post", status: "failed"
       )
     end
+
+    # @spec PARTIAL-CLOSEOUT-034
+    it "persists bounded authentication diagnostics and re-raises for Temporal retry" do
+      failure = Llm::AnalyzePartialCloseout::AssessmentFailure.new(
+        "Partial closeout assessment could not authenticate with an authorized Claude credential. Reconnect the account's Claude runner credential and retry.",
+        category: "authentication_unavailable", provider: "claude", model: "claude-sonnet-4-6",
+        request_id: "request-123", attempt_id: "attempt-456"
+      )
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(failure)
+
+      expect { activity.execute(agent_run_id: run.id) }.to raise_error(Llm::AnalyzePartialCloseout::AssessmentFailure)
+
+      reconciliation = run.reload.reconciliation
+      expect(reconciliation).to include("status" => "retryable_failure")
+      expect(reconciliation.fetch("assessment_failure")).to include(
+        "category" => "authentication_unavailable", "provider" => "claude", "model" => "claude-sonnet-4-6",
+        "request_id" => "request-123", "attempt_id" => "attempt-456"
+      )
+      expect(reconciliation.fetch("error")).to include("Reconnect the account's Claude runner credential")
+    end
   end
 end

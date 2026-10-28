@@ -20,6 +20,12 @@ module Activities
         { agent_run_id: agent_run.id, status: agent_run.reload.reconciliation.fetch("status"),
           gaps_remain: gaps_remain?(agent_run) }
       end
+    rescue Llm::AnalyzePartialCloseout::AssessmentFailure => e
+      agent_run&.update!(reconciliation: agent_run.reconciliation.merge(
+        "status" => "retryable_failure", "error" => e.message,
+        "assessment_failure" => e.diagnostic.stringify_keys, "failed_at" => Time.current.iso8601
+      ))
+      raise
     rescue StandardError => e
       agent_run&.update!(reconciliation: agent_run.reconciliation.merge("status" => "retryable_failure", "error" => e.message))
       raise
