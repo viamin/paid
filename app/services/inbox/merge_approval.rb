@@ -18,7 +18,7 @@ module Inbox
     def self.candidates(project_ids)
       Issue
         .joins(:project)
-        .includes(:project)
+        .preload(:project)
         .where(
           project_id: project_ids,
           is_pull_request: true,

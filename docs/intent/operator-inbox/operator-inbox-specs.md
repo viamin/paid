@@ -689,6 +689,18 @@
   `spec/views/dashboard/inbox_detail_feature_decision_partial_spec.rb`,
   `spec/lib/committee/drivers_mobile_inbox_contract_spec.rb`.
 
+- [x] **OPERATOR-INBOX-022** — When an issue-backed Inbox lane needs project
+  predicates or project ordering, it SHALL join `projects` for those SQL
+  operations and preload its project records in a separate query. The issue
+  result rows SHALL NOT repeat project audit history or other `projects`
+  payloads. This applies to the clarifying-question, manual-review,
+  retry-limited, test-review-pending, merge-approval, and intent-conformance
+  lanes without changing their visibility, ordering, or admission rules.
+  *Code:* `app/services/inbox/queue.rb`,
+  `app/services/inbox/merge_approval.rb`,
+  `app/services/inbox/intent_conformance.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`.
+
 - [x] **OPERATOR-INBOX-020** — The traceability-gap Inbox lane, its badge
   count, filter availability, detail and direct-link access, and the supported
   API surfaces SHALL share one actionability rule with reconciliation and the
