@@ -1073,7 +1073,7 @@ RSpec.describe "Inbox" do
     )
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Structured output failed validation.", "Start enhancement run")
+    expect(response.body).to include("Structured output failed validation.", "Retry analysis")
     document = Nokogiri::HTML(response.body)
     form = document.at_css(
       %(form[action="#{resume_manual_review_project_agent_runs_path(project, issue_id: parked.id)}"])
@@ -1101,7 +1101,7 @@ RSpec.describe "Inbox" do
     )
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Which events should be recorded?", "Submit Answers", "Start enhancement run")
+    expect(response.body).to include("Which events should be recorded?", "Submit Answers", "Retry analysis")
     document = Nokogiri::HTML(response.body)
     form = document.at_css(%(form[action="#{project_issue_clarifying_questions_path(project, parked)}"]))
 
@@ -2001,6 +2001,7 @@ RSpec.describe "Inbox" do
       title: title,
       github_number: github_number,
       paid_state: "manual_review",
+      enhance_issue_rounds: 1,
       manual_review_reason: reason,
       **attrs
     )

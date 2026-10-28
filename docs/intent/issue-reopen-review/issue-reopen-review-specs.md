@@ -30,3 +30,16 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resolves a
+  reopen-review Inbox entry, the system SHALL require a non-blank
+  intent-validation reason and the current GitHub revision, retain the actor,
+  decision, reason, revision, and prior closure context in the account audit
+  trail, and route the selected continuation to implementation or analysis.
+  A stale revision, unresolved dependency, or incompatible unfinished run
+  SHALL leave the reopen gate intact; a compatible unfinished run SHALL be
+  reused rather than duplicated.
+  *Tests:* `spec/services/issues/resolve_manual_review_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`, `Issues::ResolveManualReview`,
+  `Projects::AgentRunsController`.

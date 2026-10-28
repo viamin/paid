@@ -2586,6 +2586,7 @@ RSpec.describe "AgentRuns" do
         github_number: 89,
         title: "Fix flaky specs",
         paid_state: "manual_review",
+        enhance_issue_rounds: 1,
         manual_review_reason: "Paid reached the configured limit of enhancement re-evaluation rounds.")
     end
 
@@ -2633,6 +2634,7 @@ RSpec.describe "AgentRuns" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,
           owner: "acme", repo: "lane", auto_pick_enabled: true, active: true)
         parked = create(:issue, project: gated_project, github_number: 90, paid_state: "manual_review",
+          enhance_issue_rounds: 1,
           manual_review_reason: "Round limit reached.")
 
         entries = Inbox::Queue.call(user: user, kind: Inbox::Queue::MANUAL_REVIEW_KIND)

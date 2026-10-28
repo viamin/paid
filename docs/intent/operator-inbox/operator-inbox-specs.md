@@ -121,13 +121,22 @@
   a `manual_review` inbox entry showing why
   automation stopped (`manual_review_reason`) and how long it has been stopped
   (`manual_review_started_at`, falling back to `updated_at` for legacy rows —
-  `ISSUE-ENHANCEMENT-012`). The entry SHALL offer an operator-triggered manual
-  `enhance_issue` run as its clearing action, since automatic picking excludes
-  `manual_review` and only an explicit operator-triggered run resumes work
-  (`ISSUE-ENHANCEMENT-011`). Queuing that run SHALL transition the issue out
+  `ISSUE-ENHANCEMENT-012`). The entry SHALL classify every applicable cause
+  from persisted provenance and retain an explicit unknown cause when none
+  matches. Reopen review SHALL use `ISSUE-REOPEN-REVIEW-005`; unresolved
+  dependencies SHALL link their owning issues and remain non-waivable; scanner
+  recurrence SHALL show its verification evidence and offer implementation
+  recovery; enhancement output and round-limit causes SHALL preserve their
+  question-answer form and offer analysis retry; other failed-run recovery
+  SHALL name the originating run and supported retry goal. The entry SHALL
+  explain whether an action records a decision, retries analysis, resumes
+  implementation, or collects evidence. Queuing supported work SHALL transition the issue out
   of `manual_review` in the same request — inside the same transaction that
   creates the run — so the entry clears from the queue and the badge at queue
-  time rather than when the workflow eventually starts the run (#3853); a
+  time rather than when the workflow eventually starts the run (#3853).
+  Before clearing, the action SHALL inspect every unfinished run for the issue:
+  compatible work is reused, while incompatible work requires explicit
+  reconciliation and keeps the hold; double submission is idempotent. A
   failed queue attempt (budget, no runnable runner) SHALL leave the issue in
   `manual_review` and the entry in the inbox, and a repeated/stale click
   SHALL yield a "no longer waiting for manual review" message instead of an
@@ -159,9 +168,7 @@
   When a `create_feature` run is paused on the issue (RDR-053), clearing
   SHALL resume that run under the same `in_progress` queue-time flip an
   operator-triggered run gets, rather than leaving the issue in a lane
-  auto-pick skips until the run completes. An entry with no preserved
-  questions renders the state + "Start
-  enhancement run" button only, as before.
+  auto-pick skips until the run completes.
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
   `app/services/inbox/manual_review_comment_link.rb`,
   `app/services/dashboard/eligibility_breakdown.rb`, `app/models/issue.rb`,

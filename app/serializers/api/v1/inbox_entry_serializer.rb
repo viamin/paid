@@ -104,11 +104,31 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        recovery = manual_review_recovery
+        {
+          questions: entry.questions,
+          comment_url: entry.manual_review_comment_url,
+          causes: recovery.causes.map { |cause| manual_review_cause_payload(cause) },
+          active_runs: recovery.active_runs,
+          required_revision: recovery.required_revision
+        }
+      end
+
+      def manual_review_cause_payload(cause)
+        { type: cause.type, label: cause.label, explanation: cause.explanation,
+          action: cause.action, evidence: cause.evidence, links: cause.links }
       end
 
       def manual_review_list_payload
-        { questions: entry.questions }
+        { questions: entry.questions,
+          causes: manual_review_recovery.causes.map { |cause| manual_review_cause_payload(cause) },
+          active_runs: manual_review_recovery.active_runs,
+          required_revision: manual_review_recovery.required_revision }
+      end
+
+      def manual_review_recovery
+        entry.recovery || (Inbox::ManualReviewRecovery.call(entry.issue) if entry.issue) ||
+          Inbox::ManualReviewRecovery::Snapshot.new(causes: [], active_runs: [], required_revision: nil)
       end
 
       # entry.record is Inbox::IntentConformance::Snapshot, already carrying

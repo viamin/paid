@@ -88,6 +88,7 @@ module Inbox
       :action_url,
       :guidance,
       :closeout_status,
+      :recovery,
       keyword_init: true
     ) do
       def to_param
@@ -687,7 +688,10 @@ module Inbox
     # and escalated_pr do, rather than a separate notification.
     # @spec OPERATOR-INBOX-002D
     def manual_review_entries
-      ordered_manual_review_issues.map do |issue|
+      issues = ordered_manual_review_issues.to_a
+      inputs = Issues::CloseoutStatus.inputs_for(issues)
+      issues.map do |issue|
+        recovery = Inbox::ManualReviewRecovery.call(issue, inputs:)
         Entry.new(
           id: "#{MANUAL_REVIEW_KIND}:#{issue.id}",
           kind: MANUAL_REVIEW_KIND,
@@ -699,7 +703,8 @@ module Inbox
           tasks: [],
           summary_text: issue.manual_review_reason.presence || "Manual review required.",
           title_text: nil,
-          action_url: nil
+          action_url: nil,
+          recovery: recovery
         )
       end
     end
@@ -713,7 +718,7 @@ module Inbox
 
       Issue
         .joins(:project)
-        .includes(:project)
+        .includes(:project, :agent_runs, :code_scanning_remediation_attempts, issue_dependencies: :depends_on_issue)
         .where(project_id: ids, paid_state: "manual_review", github_state: "open")
         .then { |scope| only_record(scope) }
         .order(Arel.sql("issues.manual_review_started_at ASC NULLS LAST"))

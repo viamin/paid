@@ -21,9 +21,18 @@ review reason. The Inbox exposes this state to an operator, and ordinary
 automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
-An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+The manual-review entry classifies the gate from persisted provenance rather
+than treating every parked issue as an enhancement failure. For a reopen gate,
+it shows the prior closure context and the recorded reopen reason. An operator
+resolves the gate only by recording a non-blank intent-validation reason bound
+to the issue's current GitHub revision and choosing whether the issue needs
+implementation or a fresh analysis. The decision is retained in the account
+audit trail. A changed GitHub revision invalidates a stale form submission.
+
+Resolution inspects every unfinished run for the issue while holding the issue
+lock. Compatible queued or running work is reused and reported; incompatible
+work keeps the gate visible for reconciliation. The action never creates a
+second run and never silently clears the gate beside incompatible work.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

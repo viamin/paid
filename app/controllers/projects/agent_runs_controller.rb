@@ -461,16 +461,8 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **unblock_flash(result, pr)
     end
 
-    # manual_review only clears when an explicit operator-triggered run
-    # resumes work (ISSUE-ENHANCEMENT-011) — unlike unblock_escalation, this
-    # queues a fresh manual enhance_issue run rather than just clearing state,
-    # since a queued run is what actually resumes the enhancement work. The
-    # queue-time state flip (resume_issue_from_manual_review) removes the
-    # inbox entry as soon as the run is queued, so the item leaves the lane
-    # immediately instead of surviving the whole queue wait; re-entry
-    # producers (parse failure, round limit, needs_input) bring it back if
-    # the resumed work still needs a human decision.
     # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -480,14 +472,17 @@ module Projects
         return
       end
 
-      create_enhance_issue_runs_and_redirect(
-        issue_ids: [ issue.id ],
-        on_error_path: safe_return_target || dashboard_path,
-        success_path: safe_return_target || dashboard_path,
-        custom_prompt: nil,
-        goal: "enhance_issue",
-        priority_tier: nil
+      recovery = Inbox::ManualReviewRecovery.call(issue)
+      requested_action = params[:recovery_action].presence || recovery.primary.action&.to_s
+      result = Issues::ResolveManualReview.call(
+        issue:, actor: current_user, action: requested_action,
+        revision: params[:issue_revision], reason: params[:reason], continuation: params[:continuation],
+        run_creator: ->(goal:) { create_agent_run(issue:, goal:) }
       )
+      flash = result.success? ? { notice: result.message } : { alert: result.message }
+      redirect_to safe_return_target || dashboard_path, **flash
+    rescue NoRunnableRunnerError, InvalidDockerHostSelectionError => error
+      redirect_to safe_return_target || dashboard_path, alert: error.message
     end
 
     # Operator-driven counterpart to
