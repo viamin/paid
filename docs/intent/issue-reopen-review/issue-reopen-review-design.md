@@ -21,9 +21,33 @@ review reason. The Inbox exposes this state to an operator, and ordinary
 automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
-An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+An operator resolves reopen review only after validating the original closure,
+the current GitHub revision, and the remaining scope. The resolution records
+the authorized actor, decision, reason, and revision in the account audit
+trail. A decision that the closure remains valid records the review without
+starting work; a decision that scope remains queues the existing supported
+continuation only after the current review has been resolved. The continuation
+never treats a reopen acknowledgement as a dependency waiver or as evidence
+that an unrelated queued run is compatible.
+
+## Cause-specific manual-review recovery
+
+`ManualReviews::Recovery` classifies a manual-review item from durable,
+structural provenance rather than interpreting the free-text review reason.
+The dedicated reopen gate, unresolved `IssueDependency` readiness checks,
+scanner remediation-attempt state, preserved enhancement questions, and the
+latest enhancement run select their respective existing recovery action. An
+unrecognized combination remains visibly unknown and offers no state-clearing
+action.
+
+Recovery first inspects unfinished work for the issue. A compatible run is
+reused and shown to the operator; an incompatible queued or running run keeps
+the hold visible for explicit reconciliation. Dependency recovery names and
+links the owner dependency and relies on the existing dependency-resolution
+path to reevaluate readiness. Scanner recurrence offers the existing
+implementation continuation; retryable scanner evidence remains a wait. The
+existing enhancement retry and question-answer paths remain available only for
+enhancement provenance.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

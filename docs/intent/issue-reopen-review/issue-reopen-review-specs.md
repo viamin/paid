@@ -30,3 +30,15 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resolves a
+  pending reopen review, the system SHALL record the decision, non-blank
+  reason, actor, and current issue revision in the account audit trail before
+  it offers a supported continuation. The Inbox SHALL show the prior closure
+  context and remaining scope, shall not clear an unresolved dependency, and
+  shall reuse or explicitly reconcile any queued or running issue work instead
+  of creating a second run. 
+  *Tests:* `spec/services/manual_reviews/recovery_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `ManualReviews::Recovery`, `ManualReviews::ResolveReopenReview`,
+  `Projects::AgentRunsController`, inbox manual-review detail.

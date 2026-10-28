@@ -470,7 +470,7 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D OPERATOR-INBOX-002L ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -479,6 +479,12 @@ module Projects
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
         return
       end
+
+      recovery = ManualReviews::Recovery.call(issue: issue)
+      # Legacy rows predate durable producer provenance. They remain visibly
+      # unknown in the Inbox, but retain the historical explicit operator retry
+      # endpoint until a later producer writes a typed cause.
+      return redirect_manual_review_recovery(recovery) unless recovery.action.in?([ :retry_enhancement, :answer_questions, :none ])
 
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
@@ -1079,6 +1085,32 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
+    end
+
+    def redirect_manual_review_recovery(recovery)
+      case recovery.action
+      when :record_reopen_review
+        result = ManualReviews::ResolveReopenReview.call(issue: resolve_manual_review_issue, actor: current_user,
+          decision: params[:decision], reason: params[:reason])
+        unless result.success?
+          redirect_to safe_return_target || dashboard_path, alert: result.error
+          return
+        end
+        redirect_to safe_return_target || dashboard_path, notice: "Reopen-review decision recorded. Choose the supported continuation from the issue."
+      when :wait_for_dependency
+        refs = recovery.dependencies.map { |dependency| "##{dependency.github_number}" }.join(", ")
+        redirect_to safe_return_target || dashboard_path, alert: "Waiting for dependency #{refs}; it will be reevaluated when resolved."
+      when :wait_for_scanner
+        redirect_to safe_return_target || dashboard_path, alert: "Scanner verification is still pending; the verifier will retry with the next scan."
+      when :resume_implementation
+        redirect_to new_project_agent_run_path(@project, goal: "create_pr", issue_id: resolve_manual_review_issue.id),
+          notice: "Scanner recurrence requires a new implementation run."
+      when :reconcile_active_run
+        redirect_to project_agent_run_path(@project, recovery.active_run),
+          alert: "Existing #{recovery.active_run.goal.humanize} work is still #{recovery.active_run.status}; reconcile it before resuming this hold."
+      else
+        redirect_to safe_return_target || dashboard_path, alert: "Manual-review cause is unknown; inspect the recorded reason before resuming."
+      end
     end
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap
