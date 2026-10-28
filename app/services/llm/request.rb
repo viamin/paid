@@ -17,7 +17,7 @@ module Llm
       @timeout = timeout
     end
 
-    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 PARTIAL-CLOSEOUT-031
+    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 MODEL-POLICY-015 MODEL-POLICY-016 PARTIAL-CLOSEOUT-031
       unless @user && (!@account || @user.account_id == @account.id)
         raise AgentHarness::ConfigurationError, "No owning user for this LLM request"
       end
@@ -63,6 +63,11 @@ module Llm
       runtime = runtime_for(runner)
       validate_model_policy!(runner, @policy_model_id || runtime.model)
       if !isolated? && runner.api_key?
+        if isolated_data_routing_required?(runner)
+          raise AgentHarness::ConfigurationError,
+            "The selected runner requires isolated execution to enforce zero data retention"
+        end
+
         api_runtime = AgentHarness::ProviderRuntime.new(model: @policy_model_id || runtime.model, base_url: runtime.base_url)
         return ApiRequest.call(runner: runner, runtime: api_runtime, prompt: @prompt, timeout: timeout)
       end
@@ -95,6 +100,11 @@ module Llm
 
     def permitted_usage?(runner)
       agent_run&.effective_runner_record ? runner.enabled_for_agent_runs? : runner.enabled_for_chat?
+    end
+
+    def isolated_data_routing_required?(runner)
+      runner.zero_data_retention_enforced? ||
+        (@project&.restricted? && runner.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER)
     end
 
     def selected_runners
