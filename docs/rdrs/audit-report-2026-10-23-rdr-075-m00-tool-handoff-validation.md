@@ -365,3 +365,29 @@ inferring live lifecycle behavior from static tests or host-only commands.
 Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
 an HLD pointer) are reviewable drafts for the same pending human-review gate,
 not accepted intent.
+
+## #4604 execution-environment capability recheck — 2026-10-28
+
+**Result: not executed; no Docker-capable execution environment is available
+in this workspace.** Before attempting either acceptance scenario, the
+supported local and alternate execution capabilities were checked again:
+
+| Capability | Result |
+| --- | --- |
+| Docker-compatible CLI (`docker`, `podman`, `nerdctl`) | None installed |
+| Local Docker socket (`/var/run/docker.sock`, `/run/docker.sock`) | Neither exists |
+| Remote Docker endpoint configuration (`DOCKER_*`, `REMOTE_DOCKER_*`) | None configured |
+| Swarm backend configuration | None configured |
+| Paid execution backend | Local backend, with no available engine |
+
+No `AgentRun` was provisioned, so neither required live artifact was
+produced. Installing a client without a daemon, running host commands, or
+using mocks would not satisfy the acceptance criteria and was not substituted.
+The native-analyzer and sidecar criteria therefore remain open, and the
+`marketplace_tool_sidecars` rollout policy is unchanged.
+
+Recovery remains to run both documented scenarios in a Paid environment with
+an available local socket or an authorized remote Docker backend, then append
+the returned execution and cleanup artifacts to this report. Until that
+happens, RDR-075 remains Draft and implementation phases #4328–#4333 remain
+unreleased.
