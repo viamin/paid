@@ -1,12 +1,12 @@
 <%# @spec OPERATOR-INBOX-002D %>
+<% recovery = entry.manual_review_recovery %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
-    <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
+    <h3 class="text-sm font-semibold text-purple-900"><%= recovery.label %></h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <%= recovery.explanation %>
+      <% if entry.questions.any? && recovery.action == "retry_enhancement" %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
-      <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
       <% end %>
     </p>
   </div>
@@ -17,6 +17,72 @@
       <%= entry.summary %>
     </p>
   </div>
+
+  <% if recovery.action == "wait_for_dependency" %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Resolve the prerequisite first</h3>
+      <p class="mt-1 text-sm text-amber-800">
+        This hold will be reevaluated when the prerequisite resolves. An acknowledgment here cannot waive it.
+      </p>
+      <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">
+        <% recovery.dependencies.each do |dependency| %>
+          <li><%= link_to dependency.label, dependency.url, target: "_blank", rel: "noopener noreferrer", class: "underline" %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% elsif recovery.action == "validate_reopen" %>
+    <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+      <h3 class="text-sm font-semibold text-indigo-900">Validate the reopened intent</h3>
+      <p class="mt-1 text-sm text-indigo-800">
+        Review the original closure and the remaining scope below. Record an authorized decision and reason before continuing work.
+      </p>
+      <% if entry.issue.closed_at.present? || entry.issue.reopen_reason.present? %>
+        <div class="mt-2 space-y-1 text-sm text-indigo-900">
+          <% if entry.issue.closed_at.present? %>
+            <p><span class="font-medium">Original closure:</span> <%= l(entry.issue.closed_at) %></p>
+          <% end %>
+          <% if entry.issue.reopen_reason.present? %>
+            <p><span class="font-medium">Reopen scope:</span> <%= entry.issue.reopen_reason %></p>
+          <% end %>
+        </div>
+      <% end %>
+      <% if entry.issue.partial_completion_reason.present? %>
+        <p class="mt-2 text-sm text-indigo-900"><span class="font-medium">Remaining scope:</span> <%= entry.issue.partial_completion_reason %></p>
+      <% end %>
+      <% if policy(entry.project).run_agent? %>
+        <% reopen_revision = entry.issue.last_scanned_head_sha.presence || entry.issue.github_updated_at.utc.iso8601 %>
+        <%= form_with url: resolve_reopen_review_project_agent_runs_path(entry.project), method: :post,
+              data: { turbo_frame: "_top" }, class: "mt-3 space-y-2" do |form| %>
+          <%= form.hidden_field :issue_id, value: entry.issue.id %>
+          <%= form.hidden_field :revision, value: reopen_revision %>
+          <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+          <%= form.label :decision, "Validation decision", class: "text-sm font-medium text-indigo-900" %>
+          <%= form.select :decision, [["Intent remains valid; continue implementation", "valid"], ["Intent needs changes; keep review open", "needs_changes"]], {}, class: "block w-full rounded-md border-gray-300 text-sm" %>
+          <%= form.label :reason, "Decision reason", class: "text-sm font-medium text-indigo-900" %>
+          <%= form.text_area :reason, required: true, rows: 3, class: "block w-full rounded-md border-gray-300 text-sm" %>
+          <%= form.submit "Record validation decision", class: "inline-flex items-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-semibold text-white" %>
+        <% end %>
+      <% end %>
+    </div>
+  <% elsif recovery.action == "collect_scanner_evidence" %>
+    <div class="rounded-xl border border-violet-200 bg-violet-50 p-4">
+      <h3 class="text-sm font-semibold text-violet-900">Collect scanner evidence</h3>
+      <p class="mt-1 text-sm text-violet-800">Use the supported validation action below; this does not create an enhancement retry.</p>
+    </div>
+  <% elsif recovery.action == "retry_analysis" %>
+    <div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
+      <h3 class="text-sm font-semibold text-gray-900">Retry the failed analysis</h3>
+      <p class="mt-1 text-sm text-gray-600">The last run failed before implementation. Inspect its output and use its supported retry action.</p>
+      <% if recovery.run %>
+        <%= link_to "View failed run", project_agent_run_path(entry.project, recovery.run), data: { turbo_frame: "_top" }, class: "mt-2 inline-flex text-sm font-medium text-indigo-600 hover:text-indigo-900" %>
+      <% end %>
+    </div>
+  <% elsif recovery.action == "investigate" %>
+    <div class="rounded-xl border border-red-200 bg-red-50 p-4">
+      <h3 class="text-sm font-semibold text-red-900">Cause unavailable</h3>
+      <p class="mt-1 text-sm text-red-800">No recovery action is enabled until the missing provenance is investigated.</p>
+    </div>
+  <% end %>
 
   <%# A scanner-confirmed recurrence routes through manual_review, not the
       partial_closeout lane (SecurityAlerts::VerifyRemediationAttempt#fail!
@@ -34,7 +100,7 @@
       The terminal round's preserved clarifying questions ARE the manual
       review this state asks for: render the same answer form the
       clarifying_questions lane uses, submitting to the same endpoint. %>
-  <% if entry.questions.any? %>
+  <% if entry.questions.any? && recovery.action == "retry_enhancement" %>
     <%= render "dashboard/inbox_clarifying_answer_form",
           entry: entry,
           scoped_project: scoped_project,
@@ -42,7 +108,7 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && recovery.action == "retry_enhancement" %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

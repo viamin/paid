@@ -176,6 +176,19 @@
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002D1** — When an open manual-review issue is shown, the
+  system SHALL classify it from explicit persisted provenance: reopen review,
+  unresolved dependency, scanner recurrence, enhancement failure, technical
+  failure, or unknown. The detail pane SHALL retain unknown causes visibly and
+  SHALL route only enhancement causes to the existing enhancement retry. An
+  unresolved dependency SHALL remain a wait state with its owner/action
+  references; scanner and technical causes SHALL describe their supported
+  recovery instead of presenting enhancement as a universal resume action.
+  *Code:* `app/services/inbox/manual_review_recovery.rb`,
+  `app/services/inbox/queue.rb`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+  *Test:* `spec/services/inbox/manual_review_recovery_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by
   `Issue#abandon_due_to_runner_retry_cap!` after every available runner hit

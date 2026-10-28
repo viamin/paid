@@ -30,3 +30,13 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resolves a
+  reopen-review Inbox item, the system SHALL require a revision-bound decision
+  and non-blank reason, record the actor, decision, reason, and revision in the
+  account audit trail, and only offer implementation continuation after a
+  valid-intent decision. A needs-changes decision SHALL keep the review open.
+  *Tests:* `spec/services/issues/resolve_reopen_review_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Issues::ResolveReopenReview`,
+  `Projects::AgentRunsController#resolve_reopen_review`.

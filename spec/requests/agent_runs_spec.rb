@@ -2628,6 +2628,20 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec OPERATOR-INBOX-002D1 @spec ISSUE-REOPEN-REVIEW-001
+      it "does not turn reopen review into an enhancement retry" do
+        reopened = create(:issue, project: project, github_number: 901, paid_state: "manual_review",
+          manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: reopened.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:alert]).to include("Reopen review")
+        expect(reopened.reload).to be_reopen_review_pending
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,

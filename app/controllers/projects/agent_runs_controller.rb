@@ -480,6 +480,13 @@ module Projects
         return
       end
 
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue)
+      unless recovery.action == "retry_enhancement"
+        redirect_to safe_return_target || dashboard_path,
+          alert: "#{recovery.label}: use the supported Inbox recovery action (#{recovery.explanation})"
+        return
+      end
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
@@ -488,6 +495,25 @@ module Projects
         goal: "enhance_issue",
         priority_tier: nil
       )
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005
+    def resolve_reopen_review
+      authorize @project, :run_agent?
+      issue = resolve_manual_review_issue
+      unless issue&.reopen_review_pending?
+        redirect_to safe_return_target || dashboard_path, alert: "This issue is no longer waiting for reopen review."
+        return
+      end
+
+      result = Issues::ResolveReopenReview.call(
+        issue:, actor: current_user, decision: params[:decision], reason: params[:reason], revision: params[:revision]
+      )
+      if result.success? && params[:decision] == "valid"
+        redirect_to new_project_agent_run_path(@project, goal: "create_pr", issue_id: issue.id), notice: result.message
+      else
+        redirect_to safe_return_target || dashboard_path, **(result.success? ? { notice: result.message } : { alert: result.message })
+      end
     end
 
     # Operator-driven counterpart to

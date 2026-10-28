@@ -118,6 +118,10 @@ module Inbox
         kind == MANUAL_REVIEW_KIND
       end
 
+      def manual_review_recovery
+        @manual_review_recovery ||= Inbox::ManualReviewRecovery.call(issue:) if manual_review?
+      end
+
       def intent_conformance?
         kind == INTENT_CONFORMANCE_KIND
       end
