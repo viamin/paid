@@ -480,12 +480,36 @@ module Projects
         return
       end
 
+      recovery = Inbox::ManualReviewRecovery.new(issue: issue)
+      cause = recovery.cause
+      requested_action = params[:recovery_action].presence
+      requested_action ||= cause.action if cause.key == :enhancement
+      unless requested_action == cause.action
+        redirect_to safe_return_target || dashboard_path, alert: "That recovery action is not valid for this manual-review cause."
+        return
+      end
+      if recovery.active_runs.exists?
+        run = recovery.active_runs.first
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Run ##{run.id} (#{run.goal}) is already #{run.status}; reconcile it before clearing this hold."
+        return
+      end
+      if cause.key == :reopen_review && params[:decision_reason].to_s.strip.blank?
+        redirect_to safe_return_target || dashboard_path, alert: "Explain the reopen intent-validation decision before continuing."
+        return
+      end
+      if cause.key == :reopen_review && params[:issue_revision] != issue.github_updated_at&.iso8601
+        redirect_to safe_return_target || dashboard_path, alert: "The issue changed after this review opened. Refresh and validate the current revision."
+        return
+      end
+
+      record_manual_review_decision(issue, cause)
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
         success_path: safe_return_target || dashboard_path,
         custom_prompt: nil,
-        goal: "enhance_issue",
+        goal: cause.action == "retry_analysis" ? "enhance_issue" : "create_pr",
         priority_tier: nil
       )
     end
@@ -1079,6 +1103,21 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
+    end
+
+    def record_manual_review_decision(issue, cause)
+      return unless cause.key == :reopen_review
+
+      issue.project.account.account_activity_events.create!(
+        action: "issue.reopen_intent_validated",
+        actor: current_user,
+        subject: issue,
+        metadata: {
+          decision: params[:recovery_action],
+          reason: params[:decision_reason].to_s.strip,
+          issue_revision: params[:issue_revision]
+        }.compact
+      )
     end
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap
@@ -1719,10 +1758,11 @@ module Projects
 
       ProcessRunQueueJob.perform_later
 
+      work_type = goal == "enhance_issue" ? "issue enhancement" : "implementation"
       notice = if issues.size == 1
-        "Agent run queued for issue enhancement."
+        "Agent run queued for #{work_type}."
       else
-        "#{issues.size} agent runs queued for issue enhancement."
+        "#{issues.size} agent runs queued for #{work_type}."
       end
       redirect_to success_path, notice: notice
     rescue NoRunnableRunnerError => e

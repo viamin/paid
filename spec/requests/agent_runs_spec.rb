@@ -2581,12 +2581,14 @@ RSpec.describe "AgentRuns" do
 
   describe "POST /projects/:project_id/agent_runs/resume_manual_review" do
     let(:parked_issue) do
-      create(:issue,
+      issue = create(:issue,
         project: project,
         github_number: 89,
         title: "Fix flaky specs",
         paid_state: "manual_review",
         manual_review_reason: "Paid reached the configured limit of enhancement re-evaluation rounds.")
+      create(:agent_run, :completed, :enhance_issue_goal, project: project, issue: issue)
+      issue
     end
 
     context "when not authenticated" do
@@ -2617,6 +2619,7 @@ RSpec.describe "AgentRuns" do
 
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
+        parked_issue
         expect {
           post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
         }.to change(AgentRun, :count).by(1)
@@ -2655,6 +2658,7 @@ RSpec.describe "AgentRuns" do
           limit_cents: 100, current_usage_cents: 200,
           period_started_at: Time.current.beginning_of_day)
 
+        parked_issue
         expect {
           post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
         }.not_to change(AgentRun, :count)
@@ -2673,6 +2677,7 @@ RSpec.describe "AgentRuns" do
         allow(Runner).to receive(:for_identifier).and_return(nil)
         allow(Runner).to receive(:ensure_default_for).with(owner).and_return(nil)
 
+        parked_issue
         expect {
           post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
         }.not_to change(AgentRun, :count)

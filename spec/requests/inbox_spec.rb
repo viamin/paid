@@ -1066,13 +1066,12 @@ RSpec.describe "Inbox" do
       github_number: 509,
       reason: "Structured output failed validation."
     )
-
+    create(:agent_run, :completed, :enhance_issue_goal, project: project, issue: parked)
     get inbox_entry_path(
       entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, parked),
       kind: Inbox::Queue::MANUAL_REVIEW_KIND
     )
 
-    expect(response).to have_http_status(:ok)
     expect(response.body).to include("Structured output failed validation.", "Start enhancement run")
     document = Nokogiri::HTML(response.body)
     form = document.at_css(

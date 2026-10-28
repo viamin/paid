@@ -30,3 +30,15 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resolves a
+  pending reopen review, the system SHALL show the prior reopen reason and
+  remaining scope, require a non-blank intent-validation reason bound to the
+  current GitHub revision, record the actor and decision in the account audit
+  trail, and inspect all unfinished issue work before offering implementation
+  continuation. It SHALL not substitute an enhancement retry or duplicate an
+  already queued or running run.
+  *Tests:* `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`,
+  `Projects::AgentRunsController#resume_manual_review`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.

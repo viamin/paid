@@ -307,9 +307,17 @@ round-limit copy when `EnhanceIssueActivity` sets the state directly without
 going through that service) as its summary, and `manual_review_started_at`
 (falling back to `updated_at` for legacy rows predating the column —
 `ISSUE-ENHANCEMENT-012`) as its waiting-since timestamp. The detail pane
-offers a "Start enhancement run" action that queues a manual `enhance_issue`
-run for the issue: per `ISSUE-ENHANCEMENT-011`, automatic picking excludes
-`manual_review` and only an explicit operator-triggered run resumes work —
+classifies the stop from durable producer provenance: the dedicated reopen
+reason, unresolved dependency records, scanner verification attempts,
+preserved enhancement questions, and the latest run goal. Unknown provenance
+remains visibly unknown. Enhancement stops keep the existing question form
+and manual `enhance_issue` retry; technical failures resume implementation;
+dependencies remain held; scanner recurrence remains an evidence-collection
+task; and reopen review records a reasoned, GitHub-revision-bound validation.
+Before continuation, every unfinished run for the issue is inspected and must
+be reconciled instead of duplicated or hidden by clearing the hold.
+Automatic picking excludes `manual_review`; only an explicit cause-specific
+operator recovery resumes work —
 the queueing is the resume, so (unlike `unblock_escalation`, which clears
 state directly) this action still creates a run rather than just flipping
 state. The same request also transitions the issue out of `manual_review`

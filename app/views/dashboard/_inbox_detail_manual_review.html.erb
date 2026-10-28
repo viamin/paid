@@ -1,14 +1,28 @@
 <%# @spec OPERATOR-INBOX-002D %>
+<% recovery = Inbox::ManualReviewRecovery.new(issue: entry.issue) %>
+<% cause = recovery.cause %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if cause.key == :enhancement && entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+        <%= cause.explanation %>
       <% end %>
     </p>
+  </div>
+
+  <div class="rounded-lg border border-gray-200 bg-white p-4">
+    <h3 class="text-sm font-semibold text-gray-900"><%= cause.title %></h3>
+    <% if cause.details.any? %>
+      <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-600">
+        <% cause.details.each do |detail| %><li><%= detail %></li><% end %>
+      </ul>
+    <% end %>
+    <% if recovery.active_runs.any? %>
+      <p class="mt-2 text-sm text-amber-700">Existing work: <%= recovery.active_runs.map { |run| "run ##{run.id} (#{run.goal}, #{run.status})" }.join(", ") %>. Reconcile it before recovering this hold.</p>
+    <% end %>
   </div>
 
   <div class="space-y-3">
@@ -34,7 +48,7 @@
       The terminal round's preserved clarifying questions ARE the manual
       review this state asks for: render the same answer form the
       clarifying_questions lane uses, submitting to the same endpoint. %>
-  <% if entry.questions.any? %>
+  <% if cause.key == :enhancement && entry.questions.any? %>
     <%= render "dashboard/inbox_clarifying_answer_form",
           entry: entry,
           scoped_project: scoped_project,
@@ -42,13 +56,21 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
-      <%= button_to "Start enhancement run",
-            resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
-            method: :post,
-            params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
+    <% if policy(entry.project).run_agent? && cause.action.present? && recovery.active_runs.none? %>
+      <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id), method: :post,
+            class: "space-y-3", data: { turbo_frame: "_top" } do |form| %>
+        <%= form.hidden_field :issue_id, value: entry.issue.id %>
+        <%= form.hidden_field :recovery_action, value: cause.action %>
+        <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+        <% if cause.key == :reopen_review %>
+          <%= form.hidden_field :issue_revision, value: entry.issue.github_updated_at&.iso8601 %>
+          <%= form.label :decision_reason, "Intent-validation decision and remaining scope", class: "block text-sm font-medium text-gray-700" %>
+          <%= form.text_area :decision_reason, required: true, rows: 3, class: "block w-full rounded-md border-gray-300 text-sm", placeholder: "What changed since closure, what remains, and why should implementation continue?" %>
+        <% end %>
+        <%= form.submit cause.action_label,
             class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500",
-            form: { data: { turbo_confirm: "Queue a manual enhancement run for #{entry.project.full_name}##{entry.issue.github_number}?", turbo_frame: "_top" } } %>
+            data: { turbo_confirm: "Apply this #{cause.title.downcase} action for #{entry.project.full_name}##{entry.issue.github_number}?" } %>
+      <% end %>
     <% end %>
     <%= link_to inbox_issue_link_label(entry.issue),
           entry.issue.github_url,
