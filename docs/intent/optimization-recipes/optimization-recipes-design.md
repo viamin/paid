@@ -28,6 +28,21 @@ bounded auto-queue; [#4496](https://github.com/viamin/paid/issues/4496) staged
 types. [#4492](https://github.com/viamin/paid/issues/4492) is tracking only
 and owns no executable claim.
 
+## Decision Provenance and Acceptance
+
+The 2026-10-16 owner decisions recorded in [#4495](https://github.com/viamin/paid/issues/4495)
+are the source for this policy: per-run off-by-default election, a configured
+eligibility threshold, per-repair cost/time caps, checkout revalidation,
+approved-finding scope, idempotency, and security default-deny. This LLD
+expresses those decisions without changing their meaning: its ordered standing
+is an uncalibrated semantic assessment, not a numeric confidence claim.
+
+[#4636](https://github.com/viamin/paid/issues/4636) is the pending owner
+decision on this precise HLD/LLD/EARS revision. Until an owner accepts that
+revision and the canonical artifacts merge, this is preparation only: none of
+#4493–#4496 may treat the recorded #4495 agreement as authorization to
+implement, enable `maintenance_runs`, or auto-queue a repair.
+
 ## Catalog and Scope
 
 The catalog is a code-defined registry, not a run enum or database column.
@@ -124,6 +139,7 @@ authorization. This is a preparation-only policy, not a rollout decision.
 | Type widening | Separate owner authorization | Per-run election cannot make a manual-only type automatic. |
 | Default minimum | `supported` | Requires affirmative evidence without inventing a stronger evidence guarantee. |
 | Dispatch timing | `completed` report only | Partial coverage must not silently support a repair. |
+| Acceptance boundary | Explicit owner acceptance of this canonical revision | #4495 supplies policy provenance; #4636 decides whether this revision becomes implementation intent. |
 
 ## What This Is Not
 

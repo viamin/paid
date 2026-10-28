@@ -3,7 +3,9 @@
 > **Draft — pending design acceptance.** These active-gap claims trace to
 > [`optimization-recipes-design.md`](optimization-recipes-design.md) and draft
 > RDR-075. They authorize no implementation until accepted and merged. #4492
-> is tracking only and owns none of the claims.
+> is tracking only and owns none of the claims. #4495 records the owner policy
+> decisions reconciled here; #4636 remains the required acceptance decision
+> for this exact canonical revision.
 
 ## Catalog and Type Menu — [#4493](https://github.com/viamin/paid/issues/4493)
 
