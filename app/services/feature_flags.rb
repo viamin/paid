@@ -137,6 +137,7 @@ class FeatureFlags
     end
 
     def enable!(flag_name, project: nil, actor: nil)
+      validate_enable_scope!(flag_name, project:, actor:)
       resolved_actor = resolve_actor(project:, actor:)
       return feature(flag_name).enable unless resolved_actor
 
@@ -145,6 +146,7 @@ class FeatureFlags
 
     def disable!(flag_name, project: nil, actor: nil)
       resolved_actor = resolve_actor(project:, actor:)
+      validate_rollback!(flag_name, project:, actor:)
 
       unless resolved_actor
         # Flipper's boolean-gate disable already calls clear(feature), which
@@ -195,6 +197,18 @@ class FeatureFlags
     end
 
     private
+
+    def validate_enable_scope!(flag_name, project:, actor:)
+      return unless definition(flag_name).name == Automation::RolloutGuard::FLAG
+
+      Automation::RolloutGuard.ensure_enable_scope!(project: project || actor)
+    end
+
+    def validate_rollback!(flag_name, project:, actor:)
+      return unless definition(flag_name).name == Automation::RolloutGuard::FLAG
+
+      Automation::RolloutGuard.ensure_rollback_allowed!(project: project || actor)
+    end
 
     def feature(flag_name)
       flipper[definition(flag_name).name]

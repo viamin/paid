@@ -35,6 +35,13 @@ every policy decision reads it through `Automation::RolloutGuard.enabled?`
 `Automation::EffectivePolicy` returns a permitted `legacy_policy` decision, so
 existing execution and Inbox behavior is untouched.
 
+Operators activate only a named, validated pilot with
+`PROJECT_ID=<id> bin/rails feature_flags:enable[automation_phases]`; broad
+activation is rejected. Disabling the flag is rejected while the affected
+scope has an active continuation grant. Operators must first let each grant
+finish or explicitly revoke it, reconcile affected queued work, and then retry
+the rollback.
+
 ## Project phase defaults
 
 `projects.automation_phase_settings` (jsonb) stores:

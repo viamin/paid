@@ -24,10 +24,27 @@ RSpec.describe Automation::RolloutGuard do
     expect(described_class.enabled?(project)).to be(true)
   end
 
+  it "requires coordinated activation to name a pilot project" do
+    expect { FeatureFlags.enable!(described_class::FLAG) }
+      .to raise_error(described_class::ProjectScopeRequired, /PROJECT_ID/)
+  end
+
   it "reads through FeatureFlags so tenant overrides still apply" do
     create(:tenant_setting, account:, features: { "automation_phases" => true })
 
     expect(described_class.enabled?(project)).to be(true)
+  end
+
+  it "blocks project rollback while a continuation grant is active" do
+    FeatureFlags.enable!(described_class::FLAG, project:)
+    grant = create(:work_item_continuation_grant, project:, issue: create(:issue, project:))
+
+    expect { FeatureFlags.disable!(described_class::FLAG, project:) }
+      .to raise_error(described_class::ActiveGrantsPreventRollback, /active continuation grant/)
+    expect(described_class.enabled?(project)).to be(true)
+
+    grant.revoke!
+    expect { FeatureFlags.disable!(described_class::FLAG, project:) }.not_to raise_error
   end
 
   it "batch-loads tenant overrides for a project collection" do
