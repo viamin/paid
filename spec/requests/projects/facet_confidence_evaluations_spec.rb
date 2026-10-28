@@ -214,6 +214,38 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response.body).to include("Open evaluation and report")
   end
 
+  it "keeps a typed Action Required escalation actionable as evaluation progress changes" do # @spec FACET-CONFIDENCE-022
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: Inbox::ActionRequiredGuidance::FACET_CONFIDENCE_CLOSEOUT_EVALUATION_SOURCE,
+      blocking: true, title: "Remediation Required", description: "Internal workflow text",
+      metadata: { "workflow" => Inbox::ActionRequiredGuidance::FACET_CONFIDENCE_CLOSEOUT_EVALUATION_WORKFLOW })
+    entry = entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+    context = { project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort: "newest" }
+
+    get inbox_entry_path(entry, **context)
+    expect(response.body).to include("Start evaluation")
+
+    post project_facet_confidence_evaluations_path(project), params: {
+      issue_id: issue.id, inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      inbox_sort: "newest", inbox_entry_id: entry
+    }
+    evaluation = issue.facet_confidence_evaluations.sole
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_sort: "newest", inbox_entry_id: entry))
+
+    get inbox_entry_path(entry, **context)
+    expect(response.body).to include("0 judgments recorded", "Continue judging")
+
+    label_all!(evaluation)
+
+    get inbox_entry_path(entry, **context)
+    expect(response.body).to include("0 remaining", "Freeze judgments")
+
+    post freeze_project_facet_confidence_evaluation_path(project, evaluation)
+    get inbox_entry_path(entry, **context)
+    expect(response.body).to include("Closeout evaluation complete", "View evaluation report")
+  end
+
   it "keeps the entry point blocked while the closeout records an unresolved prerequisite" do
     prerequisite = create(:issue, project: project, github_number: 41, github_state: "open")
     create(:issue_dependency, issue: issue, depends_on_issue: prerequisite)

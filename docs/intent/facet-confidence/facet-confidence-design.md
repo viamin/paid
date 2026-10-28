@@ -174,3 +174,13 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+When a closeout-evaluation escalation reaches the Action Required lane, its
+typed workflow identity selects the same evaluation entry point instead of
+rendering producer prose. The Inbox explains in plain language that the
+closeout is waiting for an independent human review of every test case, shows
+recorded and remaining judgments, and offers the next lifecycle action:
+start, continue judging, freeze, or view the completed report. Its route
+carries the selected Inbox entry, lane, and sort as fixed internal context.
+Unrecognized Action Required notifications retain their generic remediation
+surface and never receive a guessed workflow action.

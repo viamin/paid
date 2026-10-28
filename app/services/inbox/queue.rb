@@ -579,12 +579,14 @@ module Inbox
       end
     end
 
-    # @spec OPERATOR-INBOX-002B
+    # @spec OPERATOR-INBOX-002B @spec FACET-CONFIDENCE-022
     def action_required_entries
       visible_blocking_notifications.filter_map do |notification|
         project, issue = notification_context(notification)
         next unless project
         next if project_filter_excludes?(project)
+
+        guidance = ActionRequiredGuidance.call(notification:, issue:)
 
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
@@ -595,9 +597,10 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
-          action_url: notification.action_url
+          summary_text: guidance&.fetch(:explanation) || notification.metadata["recommended_action"].presence || notification.description,
+          title_text: guidance&.fetch(:title) || notification.title,
+          action_url: notification.action_url,
+          guidance: guidance
         )
       end
     end
@@ -1025,10 +1028,12 @@ module Inbox
       Notification.preload_resolved_projects(notifications)
 
       subjects = notifications.filter_map(&:subject)
+      issues = subjects.select { |subject| subject.is_a?(Issue) }
       agent_runs = subjects.select { |subject| subject.is_a?(AgentRun) }
       runners = subjects.select { |subject| subject.is_a?(Runner) }
 
       ActiveRecord::Associations::Preloader.new(records: agent_runs, associations: :issue).call
+      ActiveRecord::Associations::Preloader.new(records: issues, associations: { facet_confidence_evaluations: :labels }).call
       ActiveRecord::Associations::Preloader.new(records: runners, associations: :user).call
       AgentRun.preload_source_pull_requests(agent_runs)
     end

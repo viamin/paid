@@ -1,6 +1,46 @@
 <%# @spec OPERATOR-INBOX-002B %>
 <div class="space-y-6">
   <% notification = entry.record %>
+  <% if entry.guidance %>
+    <% guidance = entry.guidance %>
+    <% inbox_context = {
+         inbox_kind: params[:kind].presence_in(Inbox::Queue::KINDS),
+         inbox_sort: params[:sort].presence_in(Inbox::Queue::SORTS.keys),
+         inbox_entry_id: entry.id
+       }.compact %>
+    <% evaluation = guidance[:evaluation] %>
+    <% action_path = if guidance[:action] == :start
+         new_project_facet_confidence_evaluation_path(entry.project, issue_id: entry.issue.id, **inbox_context)
+       else
+         project_facet_confidence_evaluation_path(entry.project, evaluation, **inbox_context)
+       end %>
+    <% action_label = {
+         start: "Start evaluation",
+         continue_judging: "Continue judging",
+         freeze: "Freeze judgments",
+         view_report: "View evaluation report"
+       }.fetch(guidance[:action]) %>
+    <div class="rounded-xl border border-rose-200 bg-rose-50 p-4" data-facet-confidence-action-required>
+      <h3 class="text-sm font-semibold text-rose-900"><%= guidance[:title] %></h3>
+      <p class="mt-1 text-sm text-rose-800"><%= guidance[:explanation] %></p>
+      <% if evaluation %>
+        <p class="mt-2 text-sm text-rose-800">
+          <%= guidance[:recorded] %> judgments recorded · <%= guidance[:remaining] %> remaining · <%= guidance[:total] %> total.
+        </p>
+      <% end %>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-3">
+      <%= link_to action_label, action_path,
+            data: { turbo_frame: "_top" },
+            class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
+      <% if entry.issue %>
+        <%= link_to inbox_issue_link_label(entry.issue), entry.issue.github_url,
+              target: "_blank", rel: "noopener noreferrer",
+              class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      <% end %>
+    </div>
+  <% else %>
   <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
     <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
     <% if notification.description.present? %>
@@ -9,7 +49,7 @@
     <% if entry.summary.present? && entry.summary != notification.description %>
       <p class="mt-2 text-sm text-rose-800"><%= entry.summary %></p>
     <% elsif notification.description.blank? %>
-      <p class="mt-1 text-sm text-rose-800">A human action is required before work can continue.</p>
+      <p class="mt-1 text-sm text-rose-800">Review the available details and follow the remediation guidance. If no guidance is available, open the issue or contact the project operator before continuing.</p>
     <% end %>
   </div>
 
@@ -60,5 +100,6 @@
             data: { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
+  <% end %>
   <% end %>
 </div>

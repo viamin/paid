@@ -247,6 +247,34 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  it "renders a typed closeout evaluation escalation with a contextual primary action" do # @spec FACET-CONFIDENCE-022
+    issue = create(:issue, project: project, github_number: 4323)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: Inbox::ActionRequiredGuidance::FACET_CONFIDENCE_CLOSEOUT_EVALUATION_SOURCE,
+      blocking: true, title: "Remediation Required",
+      description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.",
+      metadata: { "workflow" => Inbox::ActionRequiredGuidance::FACET_CONFIDENCE_CLOSEOUT_EVALUATION_WORKFLOW })
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort: "newest")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Start the closeout evaluation", "Start evaluation")
+    expect(response.body).to include("independently reviews every test case")
+    expect(response.body).not_to include("blinded reference judgments", "facet-confidence corpus")
+    document = Nokogiri::HTML(response.body)
+    link = document.at_css("[data-facet-confidence-action-required] ~ div a")
+    uri = URI.parse(link["href"])
+    expect(uri.path).to eq(new_project_facet_confidence_evaluation_path(project))
+    expect(Rack::Utils.parse_nested_query(uri.query)).to include(
+      "issue_id" => issue.id.to_s,
+      "inbox_kind" => Inbox::Queue::ACTION_REQUIRED_KIND,
+      "inbox_sort" => "newest",
+      "inbox_entry_id" => "action_required:#{notification.id}"
+    )
+    expect(link["data-turbo-frame"]).to eq("_top")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a

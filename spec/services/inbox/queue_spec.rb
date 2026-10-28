@@ -389,6 +389,23 @@ RSpec.describe Inbox::Queue do
       expect(entry.summary).to eq("The configured review method could not complete its check.")
     end
 
+    it "translates a typed closeout-evaluation escalation without inspecting its producer prose" do # @spec FACET-CONFIDENCE-022
+      issue = create(:issue, project: project, github_number: 4323)
+      notification = create(:notification, :error, account: account, subject: issue,
+        source: Inbox::ActionRequiredGuidance::FACET_CONFIDENCE_CLOSEOUT_EVALUATION_SOURCE,
+        blocking: true, title: "Remediation Required",
+        description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.",
+        metadata: { "workflow" => Inbox::ActionRequiredGuidance::FACET_CONFIDENCE_CLOSEOUT_EVALUATION_WORKFLOW })
+
+      entry = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+        .find { |candidate| candidate.record == notification }
+
+      expect(entry).to have_attributes(title_text: "Start the closeout evaluation")
+      expect(entry.summary).to include("independently reviews every test case")
+      expect(entry.summary).not_to include("blinded reference judgments", "corpus")
+      expect(entry.guidance).to include(action: :start, recorded: 0, remaining: 0)
+    end
+
     # @spec NOTIFICATION-SEVERITY-011
     it "projects runner-scoped blocking notifications into action_required using the owner's visible project" do
       project
