@@ -145,6 +145,18 @@
     <p class="mt-1 text-xs text-gray-500">A custom label to distinguish this runner entry.</p>
   </div>
 
+  <%# @spec MODEL-POLICY-017 %>
+  <div class="rounded-lg border border-gray-200 p-4">
+    <div class="flex items-start gap-3">
+      <%= form.check_box :zero_data_retention, class: "mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+      <div>
+        <%= form.label :zero_data_retention, "Require zero data retention", class: "text-sm font-medium text-gray-900" %>
+        <p class="mt-1 text-xs text-gray-500">This is independent of model selection. OpenRouter-backed runs use request-time enforcement where the active runtime supports it.</p>
+        <p class="mt-1 text-xs text-amber-700">You are responsible for verifying this provider's zero data retention agreement and configuration.</p>
+      </div>
+    </div>
+  </div>
+
   <% if is_new && available_api_keys.any? %>
     <div data-runner-form-target="apiKeySelectContainer" <% unless is_api_key %>hidden<% end %>>
       <%= form.label :provider_api_key_id, "API Key", class: "block text-sm font-medium text-gray-900" %>

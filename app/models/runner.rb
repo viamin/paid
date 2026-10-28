@@ -377,6 +377,21 @@ class Runner < ApplicationRecord
     direct_outbound_free_policy?
   end
 
+  # ZDR provenance is derived from the active provider/runtime so a credential
+  # or provider change cannot retain a stale enforcement claim.
+  # @spec MODEL-POLICY-015 MODEL-POLICY-016
+  def zero_data_retention_provenance
+    return "disabled" unless zero_data_retention?
+    return "openrouter_enforced" if zero_data_retention_enforced?
+
+    "user_declared"
+  end
+
+  # @spec MODEL-POLICY-016
+  def zero_data_retention_enforced?
+    zero_data_retention? && openrouter_zdr_request_routing_supported?
+  end
+
   def opencode_preflight_timeout_seconds
     return nil unless runner_key == "opencode"
 
@@ -1728,6 +1743,12 @@ class Runner < ApplicationRecord
     direct_outbound_model_policy == "free"
   end
 
+  def openrouter_zdr_request_routing_supported?
+    return false unless required_api_service_type == OPENROUTER_FREE_MODEL_PROVIDER
+
+    opencode_direct_outbound? || opencode_free_model_policy_runtime? || kilocode_free_model_policy_runtime?
+  end
+
   def opencode_free_model_policy_runtime?
     runner_key == "opencode" && direct_outbound_free_policy? && opencode_api_provider == OPENROUTER_FREE_MODEL_PROVIDER
   end
@@ -1933,7 +1954,9 @@ class Runner < ApplicationRecord
     end
 
     if project.present? && api_config[:service_type] == OPENROUTER_FREE_MODEL_PROVIDER
-      provider_metadata["openrouter"] = provider_metadata.fetch("openrouter", {}).merge(build_provider_routing(project))
+      provider_metadata["openrouter"] = provider_metadata.fetch("openrouter", {}).merge(
+        build_provider_routing(project, zero_data_retention: zero_data_retention_enforced?)
+      )
     end
 
     provider_metadata.any? ? { "provider" => provider_metadata } : {}

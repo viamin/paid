@@ -44,6 +44,40 @@ rotation for `model_policy`. A direct-outbound runner with
 execution plan and rotation flow, with recovery state keyed by the runner's
 routing identifier so distinct free-policy runners do not collide.
 
+### Zero data retention declaration
+
+`runners.zero_data_retention` is an explicit, independent opt-in. It defaults
+to `false` for every existing and newly created runner; it neither selects a
+model nor changes the `specific`/`free` model-policy contract. Project
+classification remains a separate minimum: a restricted project continues to
+request OpenRouter ZDR even when its runner declaration is off.
+
+The runner exposes a derived provenance rather than persisting a claim that
+can go stale when its provider or credential changes:
+
+| Declaration / active runtime | Provenance |
+| --- | --- |
+| Off | `disabled` |
+| On, OpenRouter request-routing integration available | `openrouter_enforced` |
+| On, every other provider or an OpenRouter runtime without ZDR request support | `user_declared` |
+
+For `openrouter_enforced`, Paid adds `zdr: true` to the OpenRouter request
+routing metadata. A non-isolated application request cannot use an
+`openrouter_enforced` API-key runner because the API chat transport does not
+consume that routing metadata; Paid fails the request rather than sending it
+without ZDR enforcement. Non-OpenRouter declarations are permitted without
+Paid verifying an external contract and display: “You are responsible for
+verifying this provider's zero data retention agreement and configuration.” A
+provider or credential change recomputes provenance from the current runner,
+so no historical verification claim survives a routing change. Pi and OMP
+retain `user_declared` until their upstream execution integration consumes
+OpenRouter routing metadata.
+
+Runner edit/details surfaces, MCP runner serialization, and runner creation /
+update audit metadata include the declaration and current provenance. They use
+the existing runner policy scope and ownership authorization; no cross-tenant
+lookup is introduced.
+
 ## Design
 
 ### `model_policy` config

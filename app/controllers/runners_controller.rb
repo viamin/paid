@@ -91,7 +91,7 @@ class RunnersController < ApplicationController
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
-      audit_event("runner.created", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
+      audit_event("runner.created", metadata: runner_audit_metadata)
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_created_notice
       else
@@ -119,7 +119,7 @@ class RunnersController < ApplicationController
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
-      audit_event("runner.updated", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
+      audit_event("runner.updated", metadata: runner_audit_metadata)
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_updated_notice
       else
@@ -231,6 +231,7 @@ class RunnersController < ApplicationController
       :enabled_for_fallback,
       :name,
       :fallback_role,
+      :zero_data_retention,
       :agent_co_author_trailer,
       :monthly_token_budget,
       :weight,
@@ -754,6 +755,16 @@ class RunnersController < ApplicationController
     runner.enabled_for_chat = false unless chat_param_submitted
     runner.enabled_for_fallback = true if runner.enabled_for_fallback.nil?
     runner.fallback_role = "rate_limit_fallback" unless submitted_runner_params.key?("fallback_role") || submitted_runner_params.key?(:fallback_role)
+  end
+
+  # @spec MODEL-POLICY-017
+  def runner_audit_metadata
+    {
+      runner_name: @runner.display_name,
+      runner_key: @runner.runner_key,
+      zero_data_retention: @runner.zero_data_retention?,
+      zero_data_retention_provenance: @runner.zero_data_retention_provenance
+    }
   end
 
   def api_key_only_runner?(runner_key)
