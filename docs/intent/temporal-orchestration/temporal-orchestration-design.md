@@ -43,6 +43,15 @@ Temporal workflow. Provisioning, setup, and preflight consume worker/container
 capacity, so operators and capacity controls must see that work as active
 rather than as ordinary waiting queue depth.
 
+Queue admission uses a transaction and row locks, with unique indexes guarding
+concurrent inserts. On a uniqueness violation, the admission transaction (or
+its savepoint when nested) rolls back before querying for an existing active
+run. Either the issue or the source PR can identify matching active work within
+the project, including runs that reference different issue records for the same
+PR. A matching active run is returned as a duplicate; otherwise the original
+uniqueness error propagates for diagnosis. Failed admission rolls back any
+enhancement-round accounting and does not enqueue queue processing.
+
 ## Human-input pauses and stale recovery
 
 Stale recovery distinguishes a recoverable execution pause from a deliberate

@@ -114,6 +114,18 @@
   "uses the unwrapped ApplicationError message rather than 'Activity task failed'").
   *Code:* `Workflows::AgentExecutionWorkflow#execute`.
 
+- [x] **TEMPORAL-ORCHESTRATION-012** — When queue admission encounters a
+  uniqueness violation, it SHALL roll back its transaction or nested savepoint
+  before looking up an existing active run. If an active run matches the work,
+  admission SHALL match on either the issue or the source PR within the project
+  and return it as a duplicate; otherwise it SHALL re-raise the
+  original uniqueness error. Failed admission SHALL roll back enhancement-round
+  accounting, SHALL leave the caller's transaction usable, and SHALL NOT enqueue
+  queue processing.
+  *Tests:* `spec/temporal/activities/queue_agent_run_activity_spec.rb`,
+  `spec/temporal/activities/queue_agent_run_activity_concurrency_spec.rb`.
+  *Code:* `Activities::QueueAgentRunActivity#execute`.
+
 - [D] **TEMPORAL-ORCHESTRATION-004** — When deployment requirements justify a
   hosted Temporal topology, the orchestration layer SHALL update this segment to
   describe the shipped operational model and its verification evidence.
