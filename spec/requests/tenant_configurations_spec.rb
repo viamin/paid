@@ -15,12 +15,22 @@ RSpec.describe "TenantConfigurations" do
       cleanup_criteria: "None"
     )
   end
+  let(:automation_phases_definition) do
+    FeatureFlags::Definition.new(
+      name: :automation_phases,
+      owner: "automation-phases",
+      intent: "Test automation phase rollout protection",
+      rollout_plan: "Default-off",
+      cleanup_criteria: "None"
+    )
+  end
 
   before do
     sign_in user
     FeatureFlags.flipper.features.each(&:remove)
     stub_const("#{FeatureFlags}::DEFINITIONS", {
-      test_feature_flag: test_definition
+      test_feature_flag: test_definition,
+      automation_phases: automation_phases_definition
     }.freeze)
   end
 
@@ -38,6 +48,21 @@ RSpec.describe "TenantConfigurations" do
   end
 
   describe "PATCH /tenant_configuration" do
+    # @spec AUTOMATION-PHASES-014
+    it "blocks rollback through the authorized tenant configuration surface while grants are active" do
+      project = create(:project, account:)
+      create(:work_item_continuation_grant, project:)
+      account.tenant_setting!.update!(features: { "automation_phases" => true })
+
+      patch tenant_configuration_path, params: {
+        tenant_setting: { features: { automation_phases: "0", test_feature_flag: "0" } }
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(account.tenant_setting.reload.features["automation_phases"]).to be(true)
+      expect(response.body).to include("active continuation grants")
+    end
+
     it "updates runner, budget, guardrail, quality, agent, and feature settings" do
       api_key = create(:provider_api_key, user: user, api_service_type: "anthropic")
 
