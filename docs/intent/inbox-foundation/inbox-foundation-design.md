@@ -19,6 +19,22 @@ The first user of these primitives is the existing
 `Dashboard::NeedsInputQueue` (kept as a thin delegator), so the rollout is
 behavior-preserving for the current `/dashboard/needs_input` page.
 
+## Structured review holds
+
+A structured review hold is an explicit human-decision request, not evidence
+that a pull request is ready to merge. `Inbox::MergeApproval` therefore admits
+an open held pull request before applying ordinary phase and auto-merge
+eligibility checks. This protects the handoff when a workflow fails, times
+out, or is interrupted after GitHub creates the pull request but before Paid
+records its final phase, labels, or run-to-PR linkage.
+
+The admission rule is deliberately narrow: it recognizes only the trusted
+hold label (or `hold_for_review` when label integration is ignored). It does
+not infer a hold from an absent automation label, mutate the phase, restore a
+label, or change merge authority. The existing phase-relevance projection then
+continues to determine whether the human request is actionable or held back by
+a disabled merge phase.
+
 ## Purpose
 
 Two trends make the existing single-purpose queue untenable:
@@ -85,10 +101,10 @@ Today three kinds exist:
   not create a human-action row; their snapshot remains available as machine
   work/blocker context. The inbox entry uses the PR's approval-wait/head-
   activity timestamp instead of `needs_input_since`, so PRs do not need to
-  enter `paid_state: "needs_input"` just to become visible. An open ready PR
-  with `paid-hold-review` is also a `:merge_approval` entry, irrespective of
-  its ordinary blocker snapshot, because the label is an explicit request for
-  human action.
+  enter `paid_state: "needs_input"` just to become visible. An open PR with
+  `paid-hold-review` is also a `:merge_approval` entry, irrespective of its
+  ordinary blocker snapshot or internal review phase, because the label is an
+  explicit request for human action.
 
 Future kinds (`:paused_run_decision`)
 plug in by registering an entry-finder that contributes rows to the same
