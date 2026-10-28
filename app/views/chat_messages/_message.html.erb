@@ -6,6 +6,10 @@
   <%= render "chat_messages/provider_error_notice", message: message %>
 <% elsif message.pending_confirmation_notice? %>
   <%= render "chat_messages/pending_confirmation_notice", message: message %>
+<% elsif message.stalled_turn_notice? %>
+  <%= render "chat_messages/stalled_turn_notice", message: message %>
+<% elsif message.chat_turn_failure_notice? %>
+  <%= render "chat_messages/turn_failure_notice", message: message %>
 <% elsif message.role == "system" %>
   <details class="group">
     <summary class="mx-auto flex cursor-pointer items-center justify-center gap-2 rounded-md bg-gray-50 px-4 py-1.5 text-xs font-medium text-gray-500 ring-1 ring-gray-200 hover:bg-gray-100">

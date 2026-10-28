@@ -7,6 +7,8 @@ class ChatMessage < ApplicationRecord
   before_validation :set_external_id, on: :create
 
   belongs_to :chat_session
+  has_one :user_chat_turn, class_name: "ChatTurn", foreign_key: :user_message_id, dependent: :nullify
+  has_one :assistant_chat_turn, class_name: "ChatTurn", foreign_key: :assistant_message_id, dependent: :nullify
   has_one :chat_diagram, dependent: :nullify
   has_many :api_usage_attempts, dependent: :nullify
 
@@ -89,13 +91,23 @@ class ChatMessage < ApplicationRecord
     metadata.is_a?(Hash) && metadata["pending_confirmation_notice"] == true
   end
 
+  # @spec CHAT-TURN-RECOVERY-004
+  def stalled_turn_notice?
+    metadata.is_a?(Hash) && metadata["chat_turn_stalled_notice"] == true
+  end
+
+  # @spec CHAT-TURN-RECOVERY-002
+  def chat_turn_failure_notice?
+    metadata.is_a?(Hash) && metadata["chat_turn_failure_notice"] == true
+  end
+
   # @spec CHAT-API-024
   def groupable_tool?
     (tool_name.present? || role == "tool") && !pending_confirmation? && !transcript_notice?
   end
 
   def transcript_notice?
-    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice?
+    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice? || stalled_turn_notice? || chat_turn_failure_notice?
   end
 
   private

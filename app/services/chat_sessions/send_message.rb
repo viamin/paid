@@ -15,12 +15,12 @@ module ChatSessions
   class SendMessage
     include FallbackLoop
 
-    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
+    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id, :chat_turn,
       :transport_attempt_message
 
     MAX_CONTENT_LENGTH = 12_000
 
-    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
+    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil, chat_turn: nil)
       @chat_session = chat_session
       @actor = actor
       @content = content
@@ -28,6 +28,7 @@ module ChatSessions
       @on_message_persisted = on_message_persisted
       @llm_client = llm_client
       @stream_message_id = stream_message_id
+      @chat_turn = chat_turn
     end
 
     def self.call(...)
@@ -41,11 +42,13 @@ module ChatSessions
       validate_session_state!
       check_token_limit!
       resume_session_if_needed!
+      ensure_chat_turn!
 
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
       update_session_activity
+      chat_turn.complete!(assistant_message)
       assistant_message
     end
 
@@ -113,6 +116,7 @@ module ChatSessions
       @transport_attempt_message = existing_user_message || create_user_message
 
       chat_session.generate_title_from_content!
+      chat_turn.checkpoint!(transport_attempt_message)
       on_message_persisted&.call(transport_attempt_message)
       transport_attempt_message
     end
@@ -172,6 +176,26 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001
+    def ensure_chat_turn!
+      @chat_turn ||= chat_session.chat_turns.find_or_create_by!(stream_message_id: stream_message_id || SecureRandom.uuid) do |turn|
+        turn.last_activity_at = Time.current
+      end
+      chat_turn.start!
+      instrument_persisted_messages!
+    end
+
+    def instrument_persisted_messages!
+      return if @chat_turn_callback_installed
+
+      callback = @on_message_persisted
+      @on_message_persisted = ->(message, **kwargs) {
+        chat_turn.checkpoint!(message)
+        callback&.call(message, **kwargs)
+      }
+      @chat_turn_callback_installed = true
     end
 
     # Reuse the pre-loop budget baseline so the mid-loop guard does not issue a
