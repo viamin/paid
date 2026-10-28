@@ -470,13 +470,23 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
       issue = resolve_manual_review_issue
       unless issue
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = Issues::ManualReviewRecovery.call(issue: issue)
+      if recovery.kind == :reopen_review
+        resolve_reopen_review_and_redirect(issue)
+        return
+      end
+      unless recovery.kind == :enhancement
+        redirect_to safe_return_target || dashboard_path, alert: recovery.message
         return
       end
 
@@ -1117,6 +1127,19 @@ module Projects
       return unless issue.paid_state == "manual_review"
 
       issue.update!(paid_state: "in_progress")
+    end
+
+    def resolve_reopen_review_and_redirect(issue)
+      unless params[:reopen_review_confirmed] == "1"
+        redirect_to safe_return_target || dashboard_path, alert: "Confirm that you validated the original closure before continuing."
+        return
+      end
+
+      Issues::ManualReviewRecovery.new(issue: issue).validate_reopen!(actor: current_user, reason: params[:reopen_reason])
+      redirect_to safe_return_target || dashboard_path,
+        notice: "Reopen review recorded. Paid will re-evaluate the issue before starting further work."
+    rescue ArgumentError => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
     end
 
     # A stale page can still render the "Start enhancement run" button after

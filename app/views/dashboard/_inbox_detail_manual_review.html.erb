@@ -1,9 +1,20 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec OPERATOR-INBOX-002D ISSUE-REOPEN-REVIEW-005 %>
+<% recovery = Issues::ManualReviewRecovery.call(issue: entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.kind == :reopen_review %>
+        This issue was reopened after closure. Validate the original closure and remaining scope before selecting a continuation.
+      <% elsif recovery.kind == :dependency %>
+        This issue is waiting on a real unresolved dependency. Resolving that dependency will re-evaluate work automatically.
+      <% elsif recovery.kind == :scanner_recurrence %>
+        Scanner evidence requires technical validation before work can resume.
+      <% elsif recovery.kind == :active_work %>
+        Existing queued or running work must be reconciled before another recovery action is started.
+      <% elsif recovery.kind == :unknown %>
+        Paid cannot safely infer a recovery action from this manual-review record.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
         Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
@@ -17,6 +28,13 @@
       <%= entry.summary %>
     </p>
   </div>
+
+  <% if recovery.kind == :reopen_review && entry.issue.reopen_reason.present? %>
+    <div class="space-y-1">
+      <h3 class="text-sm font-semibold text-gray-900">Original closure scope</h3>
+      <p class="text-sm text-gray-600"><%= entry.issue.reopen_reason %></p>
+    </div>
+  <% end %>
 
   <%# A scanner-confirmed recurrence routes through manual_review, not the
       partial_closeout lane (SecurityAlerts::VerifyRemediationAttempt#fail!
@@ -42,7 +60,16 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && recovery.kind == :reopen_review %>
+      <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project), method: :post, class: "flex flex-wrap items-end gap-3", data: { turbo_frame: "_top" } do |form| %>
+        <%= form.hidden_field :issue_id, value: entry.issue.id %>
+        <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+        <label class="flex items-center gap-2 text-sm text-gray-700"><%= form.check_box :reopen_review_confirmed %> I validated the original closure</label>
+        <%= form.text_field :reopen_reason, required: true, placeholder: "Remaining scope and decision", class: "rounded-md border-gray-300 text-sm" %>
+        <%= form.submit "Record validation", class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+      <% end %>
+    <% end %>
+    <% if policy(entry.project).run_agent? && recovery.kind == :enhancement %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

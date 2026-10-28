@@ -2615,6 +2615,34 @@ RSpec.describe "AgentRuns" do
     context "when authenticated" do
       before { sign_in user }
 
+      # @spec ISSUE-REOPEN-REVIEW-005
+      it "does not queue enhancement work for a reopen-review hold" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("Confirm that you validated")
+        expect(parked_issue.reload).to be_reopen_review_pending
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005
+      it "records a revision-bound reopen decision before releasing the hold" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON, reopen_reason: "Original scope was incomplete")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id, reopen_review_confirmed: "1", reopen_reason: "Collect the missing live-validation artifacts"
+          }
+        }.to change(OrchestrationDecision, :count).by(1)
+
+        decision = OrchestrationDecision.last
+        expect(decision.decision_type).to eq("validate_reopen_intent")
+        expect(decision.inputs).to include("remaining_scope_reason" => "Collect the missing live-validation artifacts")
+        expect(parked_issue.reload.paid_state).to eq("new")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
         expect {

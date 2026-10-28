@@ -30,3 +30,13 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an operator opens a manual-review
+  entry, the system SHALL classify recovery from persisted reopen-gate,
+  dependency, scanner, active-run, or enhancement provenance rather than from
+  `manual_review_reason` prose. A pending reopen gate, live dependency,
+  existing work, or unknown provenance SHALL remain visible and SHALL NOT queue
+  an enhancement run.
+  *Tests:* `spec/services/issues/manual_review_recovery_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Issues::ManualReviewRecovery`, `Projects::AgentRunsController`.
