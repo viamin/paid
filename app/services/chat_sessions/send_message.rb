@@ -43,10 +43,16 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      turn = @chat_turn = ChatTurns::Start.call(chat_session: chat_session, initiating_message: transport_attempt_message)
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      ChatTurns::Complete.call(turn:, paused_for_confirmation: assistant_message.nil?)
       update_session_activity
       assistant_message
+    rescue StandardError
+      turn&.update!(status: "failed", failed_at: Time.current, last_activity_at: Time.current,
+        failure_classification: "execution_error") if turn&.status.in?(ChatTurn::ACTIVE_STATUSES)
+      raise
     end
 
     private
@@ -115,6 +121,15 @@ module ChatSessions
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
       transport_attempt_message
+    end
+
+    def fallback_loop_kwargs
+      super.merge(on_message_persisted: method(:record_persisted_message))
+    end
+
+    def record_persisted_message(message, **kwargs)
+      ChatTurns::RecordActivity.call(turn: @chat_turn) if @chat_turn
+      on_message_persisted&.call(message, **kwargs)
     end
 
     # A restarted job retains its stream id. Reusing the original user row

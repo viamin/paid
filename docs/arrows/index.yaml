@@ -764,6 +764,14 @@ arrows:
     status: MAPPED
     sampled: 2026-10-23
     next: "Implement Phase 1 intent and audit foundation (#4432), then Phase 2 manual audit and Inbox (#4433), per RDR-076's accepted design"
+  chat-turn-recovery:
+    title: Chat Turn Recovery
+    path: docs/intent/chat-turn-recovery/chat-turn-recovery-design.md
+    specs: docs/intent/chat-turn-recovery/chat-turn-recovery-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: OK
+    audited: 2026-10-28
 
 # Items found during mapping that don't yet belong to a segment.
 # arrow-maintenance cleans this up on each audit.

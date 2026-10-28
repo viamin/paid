@@ -1,0 +1,6 @@
+<%# @spec CHAT-TURN-RECOVERY-003 %>
+<div id="chat-message-<%= message.id %>" data-message-id="<%= message.id %>" class="mx-auto max-w-2xl rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+  <p class="font-medium">This chat turn needs attention</p>
+  <p class="mt-1"><%= message.content %></p>
+  <p class="mt-2 text-xs">Use any pending confirmation card to decide that action. Do not replay a side-effecting request unless you explicitly intend to repeat it.</p>
+</div>
