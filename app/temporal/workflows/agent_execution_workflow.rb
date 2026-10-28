@@ -497,6 +497,8 @@ module Workflows
               # with nondeterministic-history. Workflows started on or after
               # the patch marker take the new path; see docs/PATCH_GUARDS.md.
               if Temporalio::Workflow.patched("partial-closeout-reconciliation-v1")
+                # The assessment has a 60-second request budget. Leave the rest
+                # of this activity budget for timeout cleanup and reconciliation.
                 reconcile_result = run_activity(Activities::ReconcilePartialCloseoutActivity,
                   { agent_run_id: agent_run_id }, timeout: 120)
 

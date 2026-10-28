@@ -219,7 +219,8 @@ module Llm
       output = response.respond_to?(:output) ? response.output : response.to_s
       JSON.parse(strip_markdown_fence(output.to_s.strip))
     rescue JSON::ParserError
-      raise assessment_failure("invalid_json")
+      # Parser messages can quote untrusted response content, including secrets.
+      raise assessment_failure("invalid_json"), cause: nil
     end
 
     def assessment_failure(category, invalid_fields = [])

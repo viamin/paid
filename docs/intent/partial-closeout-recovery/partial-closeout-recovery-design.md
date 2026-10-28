@@ -223,19 +223,16 @@ recording completion, so a continuation cannot dispatch after the attestation.
 
 ### Assessment transport diagnostics
 
-Closeout assessment remains a fail-closed Claude CLI operation. When the host
-does not have an authenticated Claude session, the request uses an owning
-account's active managed Claude subscription credential as a request-scoped CLI
-environment override only when the provider materializer supports its env-token
-form. Native Claude credentials remain unmodified because their refresh token
-must be materialized as the CLI credentials file; they are never reduced to a
-bare access token. The request never silently changes to API-key/text-mode
-billing.
-Failed attempts persist only a bounded category, provider/model, request and
-attempt identities, plus invalid-field paths/types for structural failures.
-They retain no provider response content or credential material, and an
-authentication failure names reconnecting the account Claude credential as the
-recovery action.
+Closeout assessment is a fail-closed request through the run's effective
+configured runner. It reuses the run's isolated environment when available;
+report-only host calls use only the selected runner's explicit API credential or
+native subscription materialization and clear conflicting API variables. The
+request never silently changes provider, credential, model, or billing path.
+Failed attempts persist only a bounded category, actual provider/model
+provenance when available, request and attempt identities, and invalid-field
+paths/types for structural failures. They retain no raw provider response
+content or credential material, and an authentication failure names reconnecting
+the configured runner credential as the recovery action.
 
 The `partial-closeout-reconciliation-v1` Temporal patch only intercepts new
 workflows. Pre-patch runs — including the 2026-09-17 / 2026-09-22 /
