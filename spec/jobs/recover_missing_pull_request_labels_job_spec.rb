@@ -10,9 +10,11 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
 
     before do
       allow(GithubClient).to receive(:new).and_return(github_client)
-      allow(github_client).to receive(:add_labels_to_issue)
-      allow(github_client).to receive(:issue).and_return(
-        OpenStruct.new(
+      allow(github_client).to receive_messages(
+        add_labels_to_issue: nil,
+        pull_requests: [],
+        issue_events: [],
+        issue: OpenStruct.new(
           id: 9001,
           number: 416,
           title: "Recovered PR",
@@ -25,6 +27,92 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
           updated_at: Time.current
         )
       )
+    end
+
+    # @spec PR-LABEL-RECOVERY-003
+    it "recovers a PR opened by a timed-out run before finalization recorded its identity" do
+      source_issue = create(:issue, project: project, github_number: 400)
+      run = create(
+        :agent_run, project:, issue: source_issue, goal: "create_pr", status: "timeout", branch_name: "paid/400-fix",
+        completed_at: Time.current
+      )
+      allow(github_client).to receive(:pull_requests)
+        .with("viamin/paid", head: "viamin:paid/400-fix", state: "open")
+        .and_return([ OpenStruct.new(number: 416, html_url: "https://github.com/viamin/paid/pull/416") ])
+
+      described_class.perform_now
+
+      expect(run.reload).to have_attributes(pull_request_number: 416,
+        pull_request_url: "https://github.com/viamin/paid/pull/416")
+      pull_request = project.issues.find_by!(github_number: 416, is_pull_request: true)
+      expect(pull_request.parent_issue).to eq(source_issue)
+      expect(pull_request.labels).to include("paid-generated", "paid-automation")
+      expect(github_client).to have_received(:add_labels_to_issue).once
+
+      described_class.perform_now
+
+      expect(github_client).to have_received(:add_labels_to_issue).once
+    end
+
+    # @spec PR-LABEL-RECOVERY-003
+    it "does not query active runs" do
+      run = create(
+        :agent_run, project:, custom_prompt: "Create PR", goal: "create_pr",
+        status: "running", branch_name: "paid/active"
+      )
+
+      described_class.perform_now
+
+      expect(run.reload.pull_request_number).to be_nil
+      expect(github_client).not_to have_received(:pull_requests)
+    end
+
+    it "does not query rate-limited runs that can still resume" do
+      run = create(
+        :agent_run, project:, custom_prompt: "Create PR", goal: "create_pr",
+        status: "rate_limited", branch_name: "paid/waiting"
+      )
+
+      described_class.perform_now
+
+      expect(run.reload.pull_request_number).to be_nil
+      expect(github_client).not_to have_received(:pull_requests)
+    end
+
+    it "does not query terminal runs outside the recovery window" do
+      run = create(
+        :agent_run,
+        project:,
+        custom_prompt: "Create PR",
+        goal: "create_pr",
+        status: "failed",
+        branch_name: "paid/expired",
+        completed_at: 31.days.ago
+      )
+
+      described_class.perform_now
+
+      expect(run.reload.pull_request_number).to be_nil
+      expect(github_client).not_to have_received(:pull_requests)
+    end
+
+    it "does not claim an ambiguously matched run" do
+      ambiguous = create(
+        :agent_run, project:, custom_prompt: "Create PR", goal: "create_pr", status: "cancelled",
+        branch_name: "paid/ambiguous",
+        completed_at: Time.current
+      )
+      matches = [ OpenStruct.new(number: 416), OpenStruct.new(number: 417) ]
+      allow(github_client).to receive(:pull_requests)
+        .with("viamin/paid", head: "viamin:paid/ambiguous", state: "open")
+        .and_return(matches)
+
+      described_class.perform_now
+
+      expect(ambiguous.reload.pull_request_number).to be_nil
+      expect(github_client).to have_received(:pull_requests).once
+      expect(github_client).not_to have_received(:issue)
+      expect(github_client).not_to have_received(:add_labels_to_issue)
     end
 
     it "reapplies the generated and automation labels when both are missing" do
@@ -159,6 +247,33 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
           project: project,
           github_number: 416,
           labels: [ "paid-generated" ])
+
+        described_class.perform_now
+
+        expect(github_client).not_to have_received(:add_labels_to_issue)
+      end
+    end
+
+    context "when a trusted user intentionally removed Paid labels" do
+      it "does not restore either label" do
+        create(:agent_run, :completed,
+          project: project,
+          issue: nil,
+          custom_prompt: "Create PR",
+          goal: "create_pr",
+          pull_request_number: 416,
+          pull_request_url: "https://github.com/viamin/paid/pull/416")
+        create(:issue, :pull_request,
+          project: project,
+          github_number: 416,
+          labels: [])
+        removal = OpenStruct.new(
+          event: "unlabeled",
+          label: OpenStruct.new(name: project.automation_label_name),
+          actor: OpenStruct.new(login: project.owner),
+          created_at: Time.current
+        )
+        allow(github_client).to receive(:issue_events).and_return([ removal ])
 
         described_class.perform_now
 

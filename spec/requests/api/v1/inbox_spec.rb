@@ -84,6 +84,53 @@ RSpec.describe "Mobile inbox API" do
     expect(response).to have_http_status(:not_modified)
   end
 
+  # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 MOBILE-API-006 MOBILE-API-008
+  it "lists, counts, and opens a held PR even when its internal phase is stale" do
+    pull_request = create(
+      :issue, :pull_request,
+      project: project,
+      pr_review_phase: "draft",
+      labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+      auto_merge_evaluated_at: nil,
+      auto_merge_blockers: nil
+    )
+    entry_id = "merge_approval:#{pull_request.id}"
+
+    get "/api/v1/inbox", params: { kind: "merge_approval" }, headers: headers
+    expect(response.parsed_body.dig("entries", 0)).to include(
+      "id" => entry_id,
+      "summary" => "Human review requested before merging"
+    )
+
+    get "/api/v1/inbox/count", headers: headers
+    expect(response.parsed_body).to include("count" => 1)
+
+    get "/api/v1/inbox/entries/#{entry_id}", headers: headers
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig("entry", "id")).to eq(entry_id)
+    expect(pull_request.reload.pr_review_phase).to eq("draft")
+  end
+
+  # @spec INBOX-FOUNDATION-012 MOBILE-API-006 MOBILE-API-008
+  it "exposes stopped PR automation with run and source evidence" do
+    source_issue, pull_request, run = create_stalled_pull_request(project:, github_number: 49)
+
+    get "/api/v1/inbox", params: { kind: "merge_approval" }, headers: headers
+
+    entry = response.parsed_body.fetch("entries").sole
+    expect(entry).to include(
+      "id" => "merge_approval:#{pull_request.id}",
+      "summary" => "Automation stopped before pull request finalization"
+    )
+    expect(entry.dig("guidance", "blockers").sole).to include(
+      "signal" => "automation_stalled",
+      "run_id" => run.id,
+      "source_issue_url" => source_issue.github_url,
+      "pull_request_url" => pull_request.github_url
+    )
+    expect(pull_request.reload.pr_review_phase).to eq("draft")
+  end
+
   # @spec MOBILE-API-008 MOBILE-API-009
   it "re-resolves an entry and opens its native chat" do
     issue
@@ -136,6 +183,16 @@ RSpec.describe "Mobile inbox API" do
     chat = ChatSession.find(response.parsed_body.fetch("chat_session_id"))
     expect(chat.feature_intent).to eq(feature)
     expect(chat.metadata["exploration_focus"]).to include("issue_id" => issue.id)
+  end
+
+  def create_stalled_pull_request(project:, github_number:)
+    source_issue = create(:issue, project:, github_number: github_number - 1)
+    pull_request = create(:issue, :pull_request, project:, github_number:, pr_review_phase: "draft", labels: [])
+    run = create(
+      :agent_run, project:, issue: source_issue, goal: "create_pr", status: "failed",
+      pull_request_number: github_number, completed_at: Time.current
+    )
+    [ source_issue, pull_request, run ]
   end
 
   def stub_github_comments

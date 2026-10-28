@@ -24,7 +24,9 @@ An agent that determines its own PR needs a human decision applies the
 interpretation of prose — and it blocks both scan-time eligibility and the
 last-mile merge activity. Held PRs appear in the Inbox's merge-approval lane
 with a human-review summary, even if ordinary approval/check signals have not
-yet been evaluated. A human releases the hold by removing the label.
+yet been evaluated or the locally cached review phase is stale. Inbox
+visibility does not promote the phase or weaken merge gates. A human releases
+the hold by removing the label.
 
 This segment captures the shipped behavior rather than the abandoned umbrella
 PR strategy discussed in RDR-022.

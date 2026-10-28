@@ -47,6 +47,14 @@
         <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
           <p class="font-medium text-gray-900"><%= blocker.fetch("sanitized_message") %></p>
           <p class="mt-1"><%= blocker.fetch("next_action") %></p>
+          <% if blocker["run_id"].present? %>
+            <p class="mt-2">
+              <%= link_to "View failed run", project_agent_run_path(entry.project, blocker["run_id"]), class: "font-semibold underline" %>
+              <% if blocker["source_issue_url"].present? %>
+                · <%= link_to "View source issue", blocker["source_issue_url"], target: "_blank", rel: "noopener noreferrer", class: "font-semibold underline" %>
+              <% end %>
+            </p>
+          <% end %>
         </li>
       <% end %>
     </ul>

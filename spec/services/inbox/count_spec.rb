@@ -485,6 +485,41 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(1)
     end
 
+    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008
+    it "counts a review-held PR with a stale draft phase" do
+      create(
+        :issue, :pull_request,
+        project: project,
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
+    # @spec INBOX-FOUNDATION-012
+    it "counts a stale-phase PR whose creating run stopped" do
+      pull_request = create(
+        :issue, :pull_request,
+        project:,
+        github_number: 48,
+        pr_review_phase: "draft",
+        labels: []
+      )
+      create(
+        :agent_run,
+        project:,
+        goal: "create_pr",
+        status: "failed",
+        pull_request_number: pull_request.github_number,
+        completed_at: Time.current
+      )
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
     # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
     it "counts a clear ready PR awaiting a manual merge decision when auto-merge is disabled" do
       disabled_project = create(

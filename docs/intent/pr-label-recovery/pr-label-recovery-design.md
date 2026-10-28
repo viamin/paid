@@ -12,7 +12,7 @@ When that call fails transiently (GitHub API error), the PR is left without
 ## Design
 
 `RecoverMissingPullRequestLabelsJob` (GoodJob cron, hourly) re-applies missing
-labels to PRs created by completed `create_pr` agent runs:
+labels to PRs created by `create_pr` agent runs:
 
 - **Candidate window**: runs **completed** in the last 24 hours. PRs are
   opened at run completion, so the window must track `completed_at`, not
@@ -23,6 +23,18 @@ labels to PRs created by completed `create_pr` agent runs:
   do not re-add.
 - **Priority inheritance**: missing priority labels are backfilled even when
   auto-add labels is disabled.
+- **Interrupted finalization**: terminal failed, timed-out, cancelled, or
+  otherwise interrupted runs from a bounded 30-day window that have a branch
+  but no recorded PR number are matched to an open PR only through GitHub's
+  exact owner-qualified head-branch filter. An unambiguous match restores the
+  run's PR identity, syncs the local PR, and then uses the same label recovery
+  path. Running, paused, queued, rate-limited, and superseded retry work and
+  ambiguous matches are never claimed. Repeated sweeps are idempotent because
+  repaired runs leave the unlinked candidate scope.
+- **Human opt-out**: recovery consults trusted GitHub label history before
+  restoring a wholly missing Paid label set. A trusted removal is preserved;
+  absence without trusted removal evidence remains recoverable because the
+  original post-processing call may never have succeeded.
 
 ## Code
 

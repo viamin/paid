@@ -85,10 +85,18 @@ Today three kinds exist:
   not create a human-action row; their snapshot remains available as machine
   work/blocker context. The inbox entry uses the PR's approval-wait/head-
   activity timestamp instead of `needs_input_since`, so PRs do not need to
-  enter `paid_state: "needs_input"` just to become visible. An open ready PR
+  enter `paid_state: "needs_input"` just to become visible. An open PR
   with `paid-hold-review` is also a `:merge_approval` entry, irrespective of
   its ordinary blocker snapshot, because the label is an explicit request for
-  human action.
+  human action. The request remains visible when the locally cached review
+  phase is stale or uninitialized; surfacing it does not promote the phase,
+  assert merge readiness, or bypass any merge safeguard.
+  A non-ready PR linked to a recent terminal creating run also remains visible
+  when no workflow responsible for that PR is active. This is a stalled
+  execution request, not a merge-readiness claim: it names the stopped run,
+  links the PR and source issue, and directs the operator to inspect and retry.
+  Normally waiting ready PRs and PRs with active workflows retain their
+  existing lanes and are not converted into human tasks.
 
 Future kinds (`:paused_run_decision`)
 plug in by registering an entry-finder that contributes rows to the same

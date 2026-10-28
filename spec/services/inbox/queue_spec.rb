@@ -336,6 +336,82 @@ RSpec.describe Inbox::Queue do
       )
     end
 
+    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008
+    it "surfaces an explicit review hold while the internal review phase is stale" do
+      pr = create(
+        :issue, :pull_request,
+        project: project,
+        github_number: 44,
+        pr_review_phase: nil,
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry).to have_attributes(issue: pr, summary_text: "Human review requested before merging")
+      expect(pr.reload.pr_review_phase).to be_nil
+    end
+
+    # @spec LABEL-CONTROL-004 INBOX-FOUNDATION-008
+    it "surfaces an ignored-mode local review hold while the internal review phase is stale" do
+      project.update!(label_integration_mode: "ignored")
+      pr = create(
+        :issue, :pull_request,
+        project: project,
+        github_number: 45,
+        pr_review_phase: "draft",
+        hold_for_review: true
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry.issue).to eq(pr)
+      expect(pr.reload.pr_review_phase).to eq("draft")
+    end
+
+    # @spec INBOX-FOUNDATION-012
+    it "surfaces a linked failed creating run without claiming merge readiness" do
+      source_issue, pr, run = create_stalled_pull_request(project:, github_number: 46, status: "timeout")
+
+      entry = described_class.call(user:, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry).to have_attributes(
+        issue: pr,
+        summary_text: "Automation stopped before pull request finalization"
+      )
+      expect(entry.guidance.fetch(:blockers).sole).to include(
+        "signal" => "automation_stalled",
+        "run_id" => run.id,
+        "source_issue_url" => source_issue.github_url,
+        "pull_request_url" => pr.github_url
+      )
+      expect(pr.reload.pr_review_phase).to eq("draft")
+    end
+
+    # @spec INBOX-FOUNDATION-012
+    it "does not surface stalled automation while a responsible workflow is active" do
+      pr = create(:issue, :pull_request, project:, github_number: 47, pr_review_phase: "draft")
+      create(
+        :agent_run,
+        project:,
+        goal: "create_pr",
+        status: "failed",
+        pull_request_number: pr.github_number,
+        completed_at: 1.hour.ago
+      )
+      create(
+        :agent_run,
+        project:,
+        goal: "review",
+        status: "running",
+        source_pull_request_number: pr.github_number
+      )
+
+      expect(described_class.call(user:, kind: described_class::MERGE_APPROVAL_KIND)).to be_empty
+    end
+
     it "does not use a hold label for an ignored-mode PR without a local review hold" do # @spec LABEL-CONTROL-004
       project.update!(label_integration_mode: "ignored")
       pr = create(
@@ -1641,6 +1717,16 @@ RSpec.describe Inbox::Queue do
         not_evaluated: []
       )
     )
+  end
+
+  def create_stalled_pull_request(project:, github_number:, status: "failed")
+    source_issue = create(:issue, project:, github_number: github_number - 1)
+    pull_request = create(:issue, :pull_request, project:, github_number:, pr_review_phase: "draft", labels: [])
+    run = create(
+      :agent_run, project:, issue: source_issue, goal: "create_pr", status:,
+      pull_request_number: github_number, completed_at: Time.current
+    )
+    [ source_issue, pull_request, run ]
   end
 
   def create_intent_conformance_pr(github_number: 50)

@@ -21,6 +21,9 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
   )
 
   CANDIDATE_WINDOW = 24.hours
+  UNLINKED_CANDIDATE_WINDOW = 30.days
+  UNLINKED_BATCH_SIZE = 200
+  UNLINKED_RECOVERY_STATUSES = %w[completed no_output failed cancelled timeout token_budget_exceeded auth_expired].freeze
 
   def perform
     recovered = 0
@@ -28,7 +31,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
     failed = 0
     not_synced = 0
 
-    runs = candidate_runs.to_a
+    runs = (candidate_runs.to_a + recover_unlinked_runs).uniq(&:id)
     synced_prs = prefetch_synced_prs(runs)
 
     runs.each do |agent_run|
@@ -84,6 +87,52 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
   end
 
   private
+
+  # @spec PR-LABEL-RECOVERY-003
+  def recover_unlinked_runs
+    unlinked_candidate_runs.filter_map { |agent_run| recover_unlinked_run(agent_run) }
+  end
+
+  def unlinked_candidate_runs
+    AgentRun.joins(:project)
+      .where(goal: "create_pr", pull_request_number: nil, status: UNLINKED_RECOVERY_STATUSES)
+      .where.not(branch_name: [ nil, "" ])
+      .where("agent_runs.completed_at >= ?", UNLINKED_CANDIDATE_WINDOW.ago)
+      .where.not(projects: { pr_target: "upstream" })
+      .order(completed_at: :asc, id: :asc)
+      .limit(UNLINKED_BATCH_SIZE)
+      .preload(:issue, project: :github_token)
+  end
+
+  def recover_unlinked_run(agent_run)
+    project = agent_run.project
+    matches = project.client.pull_requests(
+      project.full_name,
+      head: "#{project.owner}:#{agent_run.branch_name}",
+      state: "open"
+    )
+    return unless matches.one?
+
+    pull_request = matches.first
+    github_issue = project.client.issue(project.full_name, pull_request.number)
+    AgentRun.transaction do
+      agent_run.update_columns(
+        pull_request_number: pull_request.number,
+        pull_request_url: pull_request.html_url,
+        updated_at: Time.current
+      )
+      Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
+    end
+    agent_run
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "agent_execution.pr_link_recovery_failed",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      error: e.message
+    )
+    nil
+  end
 
   # Returns one AgentRun per unique (project_id, pull_request_number),
   # bounded to runs completed in the last 24 hours. The window must track
@@ -148,10 +197,17 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       return inherited_missing
     end
 
+    return inherited_missing if trusted_label_opt_out?(project, synced_pr, generated, automation)
+
     labels = [ generated ]
     labels << automation unless synced_pr.has_label?(automation)
     labels.concat(inherited_missing)
     labels.uniq
+  end
+
+  def trusted_label_opt_out?(project, synced_pr, generated, automation)
+    Automation::LabelPolicy.trusted_user_removed_label?(project, synced_pr, generated) ||
+      Automation::LabelPolicy.trusted_user_removed_label?(project, synced_pr, automation)
   end
 
   def backfill_synced_pr(agent_run)

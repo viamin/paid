@@ -150,7 +150,10 @@
   scan-time auto-merge eligibility and the last-mile merge activity, SHALL
   create an actionable `merge_approval` Inbox entry with a human-review
   summary, and SHALL require a human to remove it before automatic merging can
-  resume. PR prose SHALL NOT be parsed as a merge-control signal.
+  resume. The request SHALL remain visible while the PR is open even when its
+  locally cached review phase is stale or uninitialized; visibility SHALL NOT
+  promote that phase or grant merge authority. PR prose SHALL NOT be parsed as
+  a merge-control signal.
   *Code:* `app/services/automation/strategies/auto_merge.rb`,
   `app/temporal/activities/merge_pull_request_activity.rb`,
   `app/services/inbox/merge_approval.rb`,
