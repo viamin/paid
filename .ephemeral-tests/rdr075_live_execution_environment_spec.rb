@@ -296,11 +296,10 @@ RSpec.describe "RDR-075 live execution-environment validation" do
       loop do
         container = tool_sidecar_container(validation_run)
         if container
-          state = container.info["State"] || {}
+          state = container.info["State"]
           address = container_ip(container)
           puts "RDR075_DIAG sidecar name=#{container_name(container)} id=#{container.id} " \
-               "running=#{state["Running"]} status=#{state["Status"]} exit=#{state["ExitCode"]} " \
-               "error=#{state["Error"].inspect} ip=#{address.inspect}"
+               "state=#{state.inspect} status=#{container.info["Status"].inspect} ip=#{address.inspect}"
 
           if address.present?
             write_hosts_entry(container_name(container), address)
@@ -348,7 +347,9 @@ RSpec.describe "RDR-075 live execution-environment validation" do
   end
 
   def container_name(container)
-    container.info["Name"].to_s.delete_prefix("/")
+    names = container.info["Names"]
+    name = Array(names).first.to_s.delete_prefix("/")
+    name.presence || container.info["Name"].to_s.delete_prefix("/")
   end
 
   def write_hosts_entry(hostname, address)
