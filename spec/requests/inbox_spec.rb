@@ -888,6 +888,26 @@ RSpec.describe "Inbox" do
     expect(master_detail["data-inbox-master-detail-detail-open-value"]).to eq("true")
   end
 
+  # @spec INBOX-FOUNDATION-008 AUTO-MERGE-009
+  it "renders a stale-phase review hold as an actionable Inbox detail without changing its phase" do
+    pr = create(
+      :issue,
+      :pull_request,
+      project: project,
+      github_number: 4715,
+      pr_review_phase: "draft",
+      labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+      auto_merge_evaluated_at: nil,
+      auto_merge_blockers: nil
+    )
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MERGE_APPROVAL_KIND, pr), project_id: project.id)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Human review requested before merging", "View PR")
+    expect(pr.reload.pr_review_phase).to eq("draft")
+  end
+
   it "renders stale manual-merge guidance with approval evidence and no automatic-merge promise" do
     project.update!(auto_merge_mode: "off")
     snapshot = stale_approval_snapshot
