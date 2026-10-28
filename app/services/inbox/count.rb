@@ -35,17 +35,20 @@ module Inbox
     # When any visible project runs the phase model, the count comes from the
     # same scope-filtered queue the list renders, so the badge can never
     # disagree with the list about phase relevance. Personal removal is
-    # rollout-independent and requires the same exact count. Otherwise the
-    # cheap SQL approximation is unchanged.
+    # rollout-independent, but only requires resolving each removed request;
+    # rebuilding every Inbox entry on a cache miss is unnecessary. Otherwise
+    # the cheap SQL approximation is unchanged.
     def compute_count
       return governed_count if phase_model_governed?
-      return governed_count if personal_removals?
 
-      needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
+      count = needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
         retry_limited_count + change_intent_draft_count + partial_closeout_count +
         test_review_pending_count + project_setup_pending_count + traceability_gap_count +
         layered_verification_finding_count
+      return count unless personal_removals?
+
+      [ count - suppressed_removal_count, 0 ].max
     end
 
     def governed_count
@@ -65,7 +68,32 @@ module Inbox
     end
 
     def personal_removals?
-      InboxRemoval.active.where(user: user).exists?
+      active_removals.any?
+    end
+
+    # A removal can only have been created for a real queue entry. Resolve its
+    # one lane and record rather than materializing every lane just to apply a
+    # presentation-only suppression. `find_entry` also rechecks the current
+    # occurrence, so stale removal rows do not lower the badge.
+    #
+    # Every lane summed into `count` is a raw SQL/policy count that ignores
+    # personal removals, except `feature_decision_count`, which comes from
+    # Inbox::Queue.call — whose #apply_scope already rejects suppressed entries.
+    # Feature-decision removals are therefore excluded from `count` before this
+    # subtraction, so skipping them here avoids subtracting the same removal
+    # twice and keeps the badge in agreement with the rendered list.
+    # @spec INBOX-PHASE-RELEVANCE-009
+    def suppressed_removal_count
+      active_removals.count do |removal|
+        next false if removal.entry_kind == Inbox::Queue::FEATURE_DECISION_KIND
+
+        entry = Inbox::Queue.find_entry(user:, entry_id: removal.request_key)
+        entry && removal.suppresses?(Inbox::RequestIdentity.occurrence_for(entry))
+      end
+    end
+
+    def active_removals
+      @active_removals ||= InboxRemoval.active.where(user: user).to_a
     end
 
     def needs_input_count

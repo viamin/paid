@@ -22,8 +22,8 @@ module Inbox
 
       Issue
         .joins(:project)
-        .includes(:project)
-        .select("issues.*, (#{stalled_execution_condition}) AS stalled_execution_candidate")
+        .preload(:project)
+        .select(Issue.arel_table[Arel.star], Arel.sql("(#{stalled_execution_condition}) AS stalled_execution_candidate"))
         .where(
           project_id: project_ids,
           is_pull_request: true,
