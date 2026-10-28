@@ -3,6 +3,16 @@
 module IssueEnhancements
   class StopForManualReview
     COMMENT_MARKER = "<!-- paid:enhance-issue-manual-review -->"
+    # Durable producer provenance. Keep historic emitted values here while
+    # callers migrate, so recovery never has to infer a cause from prose.
+    ENHANCEMENT_REASONS = [
+      "Paid reached the configured enhancement-round limit.",
+      "Paid reached the configured limit of enhancement re-evaluation rounds.",
+      "Paid has reached the configured limit of 3 enhancement re-evaluation rounds for this issue.",
+      "Paid could not validate the enhancement agent's structured output.",
+      "Structured output failed validation.",
+      "Round limit reached."
+    ].freeze
 
     def self.call(...)
       new(...).call

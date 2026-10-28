@@ -480,14 +480,42 @@ module Projects
         return
       end
 
-      create_enhance_issue_runs_and_redirect(
-        issue_ids: [ issue.id ],
-        on_error_path: safe_return_target || dashboard_path,
-        success_path: safe_return_target || dashboard_path,
-        custom_prompt: nil,
-        goal: "enhance_issue",
-        priority_tier: nil
+      recovery = Inbox::ManualReviewRecovery.call(issue:)
+      if recovery.action == :retry_enhancement
+        create_enhance_issue_runs_and_redirect(
+          issue_ids: [ issue.id ], on_error_path: safe_return_target || dashboard_path,
+          success_path: safe_return_target || dashboard_path, custom_prompt: nil, goal: "enhance_issue", priority_tier: nil
+        )
+        return
+      end
+
+      if recovery.action == :resume_remediation
+        create_manual_review_recovery_run_and_redirect(issue:, goal: recovery.continuation_goal)
+        return
+      end
+
+      redirect_to safe_return_target || dashboard_path, alert: manual_review_recovery_alert(recovery)
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005 OPERATOR-INBOX-002L
+    def resolve_reopen_review
+      authorize @project, :run_agent?
+
+      issue = resolve_manual_review_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = Inbox::ManualReviewRecovery.resolve(
+        issue:, actor: current_user, revision: params[:revision], decision: params[:decision], reason: params[:reason]
       )
+      unless recovery.success?
+        redirect_to safe_return_target || dashboard_path, alert: recovery.message
+        return
+      end
+
+      create_manual_review_recovery_run_and_redirect(issue:, goal: recovery.continuation_goal)
     end
 
     # Operator-driven counterpart to
@@ -1132,6 +1160,15 @@ module Projects
       end
     end
 
+    def manual_review_recovery_alert(recovery)
+      case recovery.action
+      when :record_decision then "Record the reopen-intent decision before resuming implementation."
+      when :wait_for_dependency then "A required dependency is still unresolved; its resolution will be reevaluated automatically."
+      when :reconcile_active_run then "Run ##{recovery.active_run.id} is already #{recovery.active_run.status}; reconcile that work before starting another run."
+      else "Manual-review provenance is unknown. Investigate the recorded reason before choosing work."
+      end
+    end
+
     def cancel_in_flight_execution_for_resume!
       return if @agent_run.temporal_workflow_id.blank?
 
@@ -1731,6 +1768,30 @@ module Projects
       redirect_to on_error_path, alert: e.message
     rescue ActiveRecord::RecordNotUnique
       redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."
+    end
+
+    # @spec OPERATOR-INBOX-002L
+    def create_manual_review_recovery_run_and_redirect(issue:, goal:)
+      budget_result = CostBudgets::Check.call(@project)
+      unless budget_result[:allowed]
+        redirect_to safe_return_target || dashboard_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
+        return
+      end
+
+      current_recovery = Inbox::ManualReviewRecovery.call(issue:)
+      if current_recovery.active_run
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_recovery_alert(current_recovery)
+        return
+      end
+
+      create_agent_run(issue:, goal:)
+      resume_issue_from_manual_review(issue)
+      ProcessRunQueueJob.perform_later
+      redirect_to safe_return_target || dashboard_path, notice: "#{goal == "create_pr" ? "Implementation" : "Recovery"} run queued."
+    rescue NoRunnableRunnerError, InvalidDockerHostSelectionError => e
+      redirect_to safe_return_target || dashboard_path, alert: e.message
+    rescue ActiveRecord::RecordNotUnique
+      redirect_to safe_return_target || dashboard_path, alert: "A compatible run is already queued; refresh the Inbox."
     end
 
     def create_feature_run_and_redirect(feature_description:, on_error_path:, priority_tier: nil)

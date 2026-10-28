@@ -30,3 +30,12 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an authorized operator resolves a
+  reopen-review Inbox item, the system SHALL require a non-blank reason and
+  the displayed GitHub revision, record the decision with actor and revision,
+  and only then offer the supported implementation continuation. A stale
+  revision, unresolved dependency, or queued/running issue run SHALL remain
+  visible for reconciliation and SHALL NOT create another run.
+  *Tests:* `spec/services/inbox/manual_review_recovery_spec.rb`.
+  *Code:* `Inbox::ManualReviewRecovery`, `Projects::AgentRunsController`.

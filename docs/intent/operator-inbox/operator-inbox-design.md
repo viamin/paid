@@ -76,6 +76,20 @@ rechecks current queue membership and returns an empty frame for stale entries.
 
 ## Entry Kinds
 
+### `manual_review`
+
+`manual_review` is a hold surface, not a recovery instruction. The shared
+`Inbox::ManualReviewRecovery` derives a typed cause from durable provenance:
+the reopen-review marker, unresolved dependency records, scanner verification
+attempts, or enhancement stop provenance. It keeps unknown provenance visible.
+The same result drives web copy, API payloads, and the mutation controller.
+Before a continuation it inspects all unfinished issue work; existing work is
+reconciled rather than duplicated. Reopen review records an actor, reason, and
+GitHub revision in the existing audit trail before continuing implementation;
+an unresolved dependency remains a hold and is re-evaluated by normal
+dependency resolution. This composes existing retries and remediation runs;
+it adds no approval or evidence workflow.
+
 ### `traceability_gap`
 
 Durable reconciliation findings are operator decisions, not proof that an

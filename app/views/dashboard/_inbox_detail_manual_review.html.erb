@@ -1,12 +1,21 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec OPERATOR-INBOX-002D OPERATOR-INBOX-002L %>
 <div class="space-y-6">
+  <% recovery = entry.manual_review_recovery %>
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.action == :record_decision %>
+        This issue was reopened after closure. Review the original scope and record why the current revision needs implementation before resuming.
+      <% elsif recovery.action == :wait_for_dependency %>
+        A required dependency is unresolved. Paid will reevaluate the issue when the dependency resolves; acknowledging this item does not waive it.
+      <% elsif recovery.action == :reconcile_active_run %>
+        Existing work is already <%= recovery.active_run.status %>. Reconcile that run before starting another one.
+      <% elsif recovery.action == :investigate %>
+        Paid retained the recorded reason but cannot safely identify a recovery action. Investigate before starting work.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
-        Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+        This action retries enhancement analysis; it does not resume implementation.
       <% end %>
     </p>
   </div>
@@ -41,14 +50,42 @@
           selected_kind: selected_kind %>
   <% end %>
 
+  <% if recovery.action == :wait_for_dependency %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <h3 class="font-semibold">Waiting on dependency</h3>
+      <% entry.issue.blocking_issues.each do |dependency| %>
+        <p class="mt-1"><%= link_to "##{dependency.github_number}: #{dependency.title}", dependency.github_url, target: "_blank", rel: "noopener noreferrer", class: "underline" %></p>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if recovery.action == :record_decision && policy(entry.project).run_agent? %>
+    <%= form_with url: resolve_reopen_review_project_agent_runs_path(entry.project), method: :post, class: "space-y-3" do |form| %>
+      <%= hidden_field_tag :issue_id, entry.issue.id %>
+      <%= hidden_field_tag :revision, entry.issue.github_updated_at.iso8601 %>
+      <%= hidden_field_tag :decision, "resume_implementation" %>
+      <%= hidden_field_tag :return_to, inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+      <%= form.label :reason, "Reopen-review decision and remaining scope", class: "block text-sm font-semibold text-gray-900" %>
+      <%= form.text_area :reason, required: true, rows: 3, class: "block w-full rounded-md border-gray-300" %>
+      <%= form.submit "Record decision and start implementation", class: "inline-flex rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white" %>
+    <% end %>
+  <% end %>
+
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && recovery.action == :retry_enhancement %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,
             params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
             class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500",
             form: { data: { turbo_confirm: "Queue a manual enhancement run for #{entry.project.full_name}##{entry.issue.github_number}?", turbo_frame: "_top" } } %>
+    <% elsif policy(entry.project).run_agent? && recovery.action == :resume_remediation %>
+      <%= button_to "Resume remediation implementation",
+            resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id), method: :post,
+            params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
+            class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+    <% elsif recovery.action == :reconcile_active_run %>
+      <%= link_to "Open existing run ##{recovery.active_run.id}", project_agent_runs_path(entry.project), class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300" %>
     <% end %>
     <%= link_to inbox_issue_link_label(entry.issue),
           entry.issue.github_url,
