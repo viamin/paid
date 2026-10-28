@@ -160,6 +160,15 @@ What ships today:
   mutations
 - `ChatSessions::ResolveToolCall` atomically resolves pending confirmations and
   resumes the loop only when the final pending confirmation has been settled
+- Every dispatched chat execution has a durable `ChatTurn` lifecycle
+  (`pending`, `streaming`, `completed`, `failed`, `stalled`, or `abandoned`). A
+  five-minute server sweep marks only inactive, non-confirmation turns stalled
+  after the configured inactivity threshold. It preserves the transcript and
+  adds a visible notice rather than fabricating a successful assistant reply.
+  The notice identifies whether tool activity makes replay unsafe; automatic
+  replay is deliberately not enabled until a tool exposes an idempotent
+  checkpoint contract. An explicit retry is serialized per turn and only
+  permitted when its durable transcript contains no tool activity.
 - rate-limited sessions are resumed by a maintenance sweep after their recorded
   reset time; a renewed rate limit records the new reset time, while another
   provider error creates a durable transcript notice and requires a user to

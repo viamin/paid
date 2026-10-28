@@ -1,5 +1,23 @@
 # EARS Specs: API-Mode Interactive Chat
 
+- [x] **CHAT-TURN-001** — When a chat message is accepted for execution, Paid
+  SHALL persist a `ChatTurn` with a durable lifecycle and activity timestamp.
+  It SHALL record a terminal completion or failure and SHALL never infer
+  successful completion from streamed browser state.
+  *Tests:* `spec/models/chat_turn_spec.rb`, `spec/services/chat_sessions/send_message_spec.rb`.
+  *Code:* `ChatTurns::Start`, `ChatSessions::SendMessage`, `ChatTurn`.
+
+- [x] **CHAT-TURN-002** — When an active chat turn has no durable activity for
+  the configured threshold, Paid SHALL classify it as `stalled` and append a
+  transcript notice describing the preserved state. A turn awaiting a write
+  tool confirmation SHALL not be stalled. The notice SHALL state when tool
+  activity makes replay unsafe; automatic replay remains disabled unless an
+  explicit idempotent checkpoint contract is added. An explicit retry SHALL be
+  authorization-checked and deduplicated, and SHALL run only when no tool
+  activity is recorded.
+  *Tests:* `spec/jobs/chat_sessions/stall_sweep_job_spec.rb`, `spec/services/chat_turns/retry_spec.rb`.
+  *Code:* `ChatSessions::StallSweepJob`, `ChatTurns::StallNotice`, `ChatTurns::Retry`, `ChatTurn`.
+
 - [x] **CHAT-API-026** — When non-free-policy API-key chat creates a session,
   executes a legacy Automatic session, or switches to a fallback runner, Paid
   SHALL use the same curated Low/Medium/High resolver. It SHALL default new and
