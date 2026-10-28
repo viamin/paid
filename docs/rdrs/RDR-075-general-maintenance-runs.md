@@ -18,7 +18,10 @@
   [#4604](https://github.com/viamin/paid/issues/4604). Its 2026-10-24
   revalidation found no Docker client, socket, or alternate local engine, so
   the required native-analyzer and sidecar artifacts remain uncollected and
-  must run in a Docker-capable execution environment.
+  must run in a Docker-capable execution environment. The 2026-10-28
+  revalidation found the same capability gap: this workspace has no Docker
+  client or socket, no `REMOTE_DOCKER_*` configuration, and no alternate
+  configured container endpoint.
 
 ## Dependencies
 
