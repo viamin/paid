@@ -485,6 +485,17 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(1)
     end
 
+    # @spec INBOX-FOUNDATION-008
+    it "counts a review-held PR whose internal review phase is still draft" do
+      create(
+        :issue, :pull_request, project: project,
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ]
+      )
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
     # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
     it "counts a clear ready PR awaiting a manual merge decision when auto-merge is disabled" do
       disabled_project = create(

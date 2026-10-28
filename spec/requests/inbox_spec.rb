@@ -136,6 +136,23 @@ RSpec.describe "Inbox" do
     end
   end
 
+  # @spec INBOX-FOUNDATION-008
+  it "renders a held PR with a stale draft phase in the merge-approval journey" do
+    pull_request = create(
+      :issue, :pull_request, project: project,
+      title: "Held after interrupted finalization",
+      pr_review_phase: "draft",
+      labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ]
+    )
+
+    get inbox_path(kind: Inbox::Queue::MERGE_APPROVAL_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Held after interrupted finalization")
+    expect(response.body).to include("Human review requested before merging")
+    expect(pull_request.reload.pr_review_phase).to eq("draft")
+  end
+
   # @spec OPERATOR-INBOX-015
   it "promotes a stale detail redirect to a full-page visit even when the inbox is empty" do
     issue = create(:issue, :needs_input, project: project, body: questions_body, github_state: "closed")

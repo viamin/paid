@@ -89,11 +89,18 @@
   *Tests:* `spec/services/dashboard/needs_input_queue_spec.rb`.
   *Code:* `app/services/dashboard/needs_input_queue.rb`.
 
-- [x] **INBOX-FOUNDATION-008** — When an open ready pull request has the
-  structured `paid-hold-review` label, `Inbox::Queue` SHALL return it as a
-  `merge_approval` entry with a human-review summary even if its ordinary
-  auto-merge blocker snapshot is absent or has other blockers.
-  *Tests:* `spec/services/inbox/queue_spec.rb`.
+- [x] **INBOX-FOUNDATION-008** — When an open pull request has the structured
+  `paid-hold-review` label, `Inbox::Queue` SHALL return it as a
+  `merge_approval` entry with a human-review summary regardless of a stale or
+  uninitialized internal review phase and even if its ordinary auto-merge
+  blocker snapshot is absent or has other blockers. A project that ignores
+  provider labels SHALL use the existing local `hold_for_review` equivalent.
+  The Inbox list, badge count, and filter availability SHALL agree; closing
+  the PR or clearing the hold SHALL remove the request. Surfacing the request
+  SHALL NOT promote its review phase or grant merge authority.
+  *Tests:* `spec/services/inbox/queue_spec.rb`,
+  `spec/services/inbox/count_spec.rb`,
+  `spec/services/inbox/availability_spec.rb`, `spec/requests/inbox_spec.rb`.
   *Code:* `app/services/inbox/merge_approval.rb`.
 
 - [x] **INBOX-FOUNDATION-011** — When an authorized operator can see an open,

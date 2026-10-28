@@ -336,6 +336,29 @@ RSpec.describe Inbox::Queue do
       )
     end
 
+    # @spec INBOX-FOUNDATION-008 LABEL-CONTROL-004
+    it "surfaces explicit review holds without treating a stale draft phase as merge readiness" do
+      labeled = create(
+        :issue, :pull_request, project: project, github_number: 44,
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ]
+      )
+      ignored_project = create(
+        :project, account: account, created_by: user, active: true,
+        owner: "acme", repo: "ignored", label_integration_mode: "ignored"
+      )
+      local = create(
+        :issue, :pull_request, project: ignored_project, github_number: 45,
+        pr_review_phase: "draft", hold_for_review: true
+      )
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries.map(&:issue)).to contain_exactly(labeled, local)
+      expect(entries.map(&:summary_text)).to all(eq("Human review requested before merging"))
+      expect([ labeled.reload.pr_review_phase, local.reload.pr_review_phase ]).to eq(%w[draft draft])
+    end
+
     it "does not use a hold label for an ignored-mode PR without a local review hold" do # @spec LABEL-CONTROL-004
       project.update!(label_integration_mode: "ignored")
       pr = create(
