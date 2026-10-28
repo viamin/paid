@@ -1,15 +1,43 @@
 <%# @spec OPERATOR-INBOX-002D %>
 <div class="space-y-6">
+  <% recovery = entry.manual_review_recovery %>
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.reopen_review? %>
+        This issue was reopened after prior closure. Record a current-revision decision about the original closure and remaining scope before continuing.
+      <% elsif recovery.dependency? %>
+        This issue is waiting for declared prerequisite work. Resolving or acknowledging this pane does not waive that dependency.
+      <% elsif recovery.action == :resume_implementation %>
+        Scanner evidence shows the prior remediation did not resolve the finding. Resume implementation to produce a new remediation, then collect fresh scanner evidence.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
-      <% else %>
+      <% elsif recovery.action == :retry_enhancement %>
         Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
+      <% else %>
+        Automatic picking skips this unknown manual-review hold until its originating workflow provides a supported recovery action.
       <% end %>
     </p>
   </div>
+
+  <% if recovery.dependency? %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Waiting for dependency</h3>
+      <ul class="mt-2 list-disc pl-5 text-sm text-amber-800">
+        <% recovery.blockers.each do |blocker| %>
+          <% if blocker.is_a?(IssueDependency) %>
+            <li><%= blocker.external_ref %> (external dependency; resolve it with its owner)</li>
+          <% else %>
+            <li><%= link_to "##{blocker.github_number} #{blocker.title}", blocker.github_url, target: "_blank", rel: "noopener noreferrer", class: "underline" %></li>
+          <% end %>
+        <% end %>
+      </ul>
+    </div>
+  <% elsif recovery.action == :none %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+      The workflow that placed this issue in manual review did not record a supported recovery action. Its provenance is retained for investigation.
+    </div>
+  <% end %>
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
@@ -42,13 +70,32 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if policy(entry.project).run_agent? && recovery.action == :retry_enhancement %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,
             params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
             class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500",
             form: { data: { turbo_confirm: "Queue a manual enhancement run for #{entry.project.full_name}##{entry.issue.github_number}?", turbo_frame: "_top" } } %>
+    <% elsif policy(entry.project).run_agent? && recovery.action == :resume_implementation %>
+      <%= button_to "Resume remediation implementation",
+            resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
+            method: :post,
+            params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
+            class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500",
+            form: { data: { turbo_confirm: "Queue remediation implementation for #{entry.project.full_name}##{entry.issue.github_number}?", turbo_frame: "_top" } } %>
+    <% elsif policy(entry.project).run_agent? && recovery.reopen_review? %>
+      <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project), data: { turbo_frame: "_top" }, class: "flex w-full flex-col gap-2" do |form| %>
+        <%= form.hidden_field :issue_id, value: entry.issue.id %>
+        <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+        <%= form.hidden_field :reopen_review_revision, value: entry.issue.github_updated_at&.iso8601 %>
+        <%= form.hidden_field :reopen_review_confirmed, value: "1" %>
+        <%= form.label :reopen_review_reason, "Closure and remaining-scope decision", class: "text-sm font-medium text-gray-700" %>
+        <%= form.text_area :reopen_review_reason, required: true, maxlength: 2000, rows: 3,
+              placeholder: "What did the prior closure cover, what remains, and what evidence should the continuation collect?",
+              class: "min-w-0 w-full resize-y rounded-md border-gray-300 text-sm shadow-sm" %>
+        <%= form.submit "Record decision and start enhancement", class: "inline-flex self-start items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm" %>
+      <% end %>
     <% end %>
     <%= link_to inbox_issue_link_label(entry.issue),
           entry.issue.github_url,

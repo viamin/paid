@@ -30,3 +30,11 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an operator resumes a dedicated
+  reopen-review Inbox item, the system SHALL require an authorized,
+  revision-bound decision describing the prior closure and remaining scope
+  before queuing supported continuation work, and SHALL retain the decision
+  reason in the issue audit trail.
+  *Tests:* `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `Projects::AgentRunsController`, `Inbox::ManualReviewRecovery`.

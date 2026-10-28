@@ -251,6 +251,13 @@ module Inbox
         @manual_review_comment_url = manual_review? ? manual_review_comment_link : nil
       end
 
+      # @spec OPERATOR-INBOX-002L
+      def manual_review_recovery
+        return unless manual_review?
+
+        @manual_review_recovery ||= Inbox::ManualReviewRecovery.call(issue: issue)
+      end
+
       private
 
       def context_loader
@@ -685,7 +692,7 @@ module Inbox
     # on every stop path. This lane
     # derives from `paid_state` directly, the same way clarifying_questions
     # and escalated_pr do, rather than a separate notification.
-    # @spec OPERATOR-INBOX-002D
+    # @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002L
     def manual_review_entries
       ordered_manual_review_issues.map do |issue|
         Entry.new(

@@ -2615,6 +2615,57 @@ RSpec.describe "AgentRuns" do
     context "when authenticated" do
       before { sign_in user }
 
+      # @spec OPERATOR-INBOX-002L ISSUE-REOPEN-REVIEW-005
+      it "requires a revision-bound reopen decision before resuming reopened work" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("current revision")
+        expect(parked_issue.reload).to be_reopen_review_pending
+      end
+
+      # @spec OPERATOR-INBOX-002L ISSUE-REOPEN-REVIEW-005
+      it "records a reopen decision and queues its supported continuation" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: {
+            issue_id: parked_issue.id,
+            reopen_review_confirmed: true,
+            reopen_review_reason: "The prior closure lacked live validation evidence; collect it now.",
+            reopen_review_revision: parked_issue.github_updated_at&.iso8601
+          }
+        }.to change(AgentRun, :count).by(1)
+
+        expect(parked_issue.reload.reopen_reason).to include("live validation")
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "does not waive an unresolved dependency or queue irrelevant enhancement work" do
+        blocker = create(:issue, project: project, github_state: "open", paid_state: "new")
+        create(:issue_dependency, issue: parked_issue, depends_on_issue: blocker)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("declared dependency")
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "does not create a second run while another recovery is queued" do
+        create(:agent_run, project: project, issue: parked_issue, goal: "create_pr", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("queued or running work")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
         expect {

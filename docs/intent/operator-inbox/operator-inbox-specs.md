@@ -5,6 +5,22 @@
 > Each ID is a grep target across specs, tests, and code
 > (`grep -r OPERATOR-INBOX-001`).
 
+- [x] **OPERATOR-INBOX-002L** — When an Inbox `manual_review` entry is
+  rendered or resumed, the system SHALL derive its recovery cause from durable
+  provenance rather than from the human-readable stop reason. Dedicated reopen
+  review requires a current-revision, authorized closure-and-remaining-scope
+  decision with a reason before its supported continuation is queued; declared
+  unresolved dependencies remain linked waits and cannot be waived by that
+  action; enhancement-originated entries retain their question-answer and
+  enhancement retry behavior; and unsupported provenance remains visibly
+  unknown without clearing the hold. Before any continuation the system SHALL
+  refuse to create another run while queued or running issue work exists.
+  *Code:* `app/services/inbox/manual_review_recovery.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+  *Test:* `spec/services/inbox/manual_review_recovery_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-001** — When a signed-in user opens the inbox, the
   system SHALL list actionable clarifying-question entries drawn from the
   existing needs-input queue, preserving the user's project visibility and any

@@ -470,7 +470,7 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002L
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -480,12 +480,24 @@ module Projects
         return
       end
 
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue)
+      unless manual_review_recovery_permitted?(issue, recovery)
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_recovery_alert(recovery)
+        return
+      end
+
+      if issue.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This issue already has queued or running work. Reconcile that work before resuming manual review."
+        return
+      end
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
         success_path: safe_return_target || dashboard_path,
         custom_prompt: nil,
-        goal: "enhance_issue",
+        goal: manual_review_recovery_goal(recovery),
         priority_tier: nil
       )
     end
@@ -1079,6 +1091,36 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
+    end
+
+    def manual_review_recovery_permitted?(issue, recovery)
+      return true if recovery.action.in?([ :retry_enhancement, :resume_implementation ])
+      return false unless recovery.action == :record_reopen_decision
+      return false unless ActiveModel::Type::Boolean.new.cast(params[:reopen_review_confirmed])
+      return false if params[:reopen_review_reason].to_s.strip.blank?
+      return false unless params[:reopen_review_revision].to_s == issue.github_updated_at&.iso8601.to_s
+
+      issue.update!(reopen_reason: params[:reopen_review_reason].to_s.strip)
+      audit_event(
+        "issue.reopen_review_resolved",
+        metadata: { issue_id: issue.id, github_number: issue.github_number, revision: issue.github_updated_at&.iso8601 }
+      )
+      true
+    end
+
+    def manual_review_recovery_alert(recovery)
+      case recovery.action
+      when :record_reopen_decision
+        "Confirm the original closure and remaining scope against the current revision, then provide a reason before resuming."
+      when :wait_for_dependency
+        "This issue is waiting for its declared dependency. Resolve or update that dependency before resuming work."
+      else
+        "Manual-review provenance is unknown. It remains visible until its producing workflow provides a supported recovery action."
+      end
+    end
+
+    def manual_review_recovery_goal(recovery)
+      recovery.action == :resume_implementation ? "create_pr" : "enhance_issue"
     end
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap

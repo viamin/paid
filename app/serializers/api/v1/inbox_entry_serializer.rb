@@ -104,7 +104,24 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        recovery = entry.manual_review_recovery
+        {
+          questions: entry.questions,
+          comment_url: entry.manual_review_comment_url,
+          recovery: {
+            cause: recovery.cause,
+            action: recovery.action,
+            blockers: recovery.blockers.map { |blocker| manual_review_blocker_payload(blocker) }
+          }
+        }
+      end
+
+      def manual_review_blocker_payload(blocker)
+        if blocker.is_a?(IssueDependency)
+          { external_ref: blocker.external_ref }
+        else
+          { id: blocker.id, github_number: blocker.github_number, url: blocker.github_url }
+        end
       end
 
       def manual_review_list_payload
