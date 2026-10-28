@@ -11,6 +11,10 @@
 > Plan step 1. Implementation phases are tracked at
 > [#4328](https://github.com/viamin/paid/issues/4328)–[#4333](https://github.com/viamin/paid/issues/4333).
 
+> The `MAINT-080`–`MAINT-092` proposed optimization-policy claims below map
+> to #4493–#4496; #4492 is tracking only. They remain `[ ]` until the
+> RDR-075/LID acceptance gate and their implementation dependencies resolve.
+
 ## Admission and Rollout Guard
 
 - [ ] **MAINT-001**: The system shall define a `maintenance_runs` feature
@@ -159,3 +163,64 @@
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
       an explicit user selection.
+
+## Optimization Recipe Catalog and Policy-Governed Repair
+
+- [ ] **MAINT-080**: When an authorized user starts an optimization
+      maintenance run through the UI, authenticated API, or MCP surface, the
+      system shall expose the same optional curated type catalog (Performance,
+      Design / Architecture, Code Duplication, Security Hardening, Cost /
+      Resource Efficiency, Maintainability / Readability, and Test Coverage &
+      Quality) and the same project-scoped authorization on every surface.
+- [ ] **MAINT-081**: When an optimization type selection resolves to a catalog
+      recipe, the system shall snapshot the selected type, recipe version,
+      scope, guidance, and applicable policy revision at run start and retain
+      them across retries.
+- [ ] **MAINT-082**: If an optimization type selection has no mapped recipe,
+      then the system shall admit it as a custom-objective maintenance run
+      rather than rejecting the request.
+- [ ] **MAINT-083**: For Code Duplication, Maintainability / Readability, and
+      Performance optimization recipes, the system shall record the recipe's
+      evidence provenance and incomplete coverage honestly; it shall not
+      represent missing, unavailable, or partial collector evidence as a
+      clean report.
+- [ ] **MAINT-084**: When an optimization finding is assessed, the system
+      shall obtain its semantic claim assessment through `agent_harness` and
+      persist the structured assessment's evidence, counterevidence,
+      verification disposition, rubric revision, and elected-threshold
+      disposition separately from raw tool confidence.
+- [ ] **MAINT-085**: The system shall not infer semantic confidence or repair
+      eligibility from application-side keywords, heuristics, raw tool scores,
+      or an unapproved numerical calibration; it shall enforce only the
+      structured `agent_harness` assessment disposition and deterministic
+      policy gates.
+- [ ] **MAINT-086**: When an authorized user explicitly elects optimization
+      auto-queue at maintenance-run start, the system shall snapshot a
+      per-run policy revision, configured confidence threshold, and explicit
+      cost/time cap for each candidate repair; without that election it shall
+      preserve report-only behavior.
+- [ ] **MAINT-087**: When an optimization report completes after a valid
+      auto-queue election, the system shall dispatch a repair only through the
+      existing authorized repair pathway if the finding is open, belongs to
+      that report, is within its approved repair scope, and has a matching
+      `agent_harness` assessment that meets the snapshotted threshold.
+- [ ] **MAINT-088**: When an auto-queued repair target revision differs from
+      its source report revision, the system shall revalidate the finding
+      against the repair checkout before application; if revalidation fails
+      or is unavailable, it shall preserve visible evidence and shall not
+      apply the stale recommendation.
+- [ ] **MAINT-089**: When the system auto-queues an optimization repair, it
+      shall enforce the snapshotted per-repair cost/time caps and preserve
+      collected evidence when a cap is exhausted.
+- [ ] **MAINT-090**: When repeated finding occurrences, retries, or duplicate
+      report-completion delivery identify the same project, recipe, and
+      canonical finding identity, the system shall not create duplicate active
+      or completed auto-queued repair work.
+- [ ] **MAINT-091**: For a Security Hardening optimization finding, the system
+      shall keep repair manual-selection-only and shall exclude it from
+      auto-queue until a separately accepted security repair policy authorizes
+      that category.
+- [ ] **MAINT-092**: While `maintenance_runs` is disabled for a project's
+      tenant, the system shall not create new optimization auto-queues, and
+      shall keep existing reports readable without cancelling an already
+      active repair run.

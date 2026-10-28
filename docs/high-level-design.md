@@ -213,6 +213,27 @@ lets the control plane swap models and providers without scattered call sites.
 The secrets proxy forwards authenticated requests from containers; it is
 infrastructure, not an application-level LLM interface.
 
+## Approach: Evidence-Bounded Maintenance and Repair
+
+Maintenance investigations produce durable, revision-bound evidence before
+they can suggest work. A recipe catalog may make common audit objectives easy
+to select, but it does not convert a menu choice, a tool match, or a report
+into authority to change a repository. Semantic assessment of evidence belongs
+to `agent_harness`; the control plane deterministically enforces the resulting
+authorization, scope, freshness, budget, idempotency, tenancy, and rollout
+gates. This keeps a confidence policy from becoming an application-side claim
+that a particular numeric score has universal meaning.
+
+Maintenance is report-only by default. An owner may explicitly pre-authorize a
+bounded repair policy for one identified run only when an accepted maintenance
+policy defines that recipe category and its safeguards. Such an election is
+off by default, remains bound to the run's pinned policy and budgets, and
+cannot bypass revalidation when the repair checkout has moved. Security repair
+remains manual-only unless a separately accepted policy says otherwise. Until
+the RDR-075 maintenance design and its LID artifacts are accepted and merged,
+these are proposed constraints, not enabled runtime behavior. See
+`docs/intent/maintenance-runs/`.
+
 ## Tenets
 
 The operating principles that tie the approaches above to day-to-day work:
