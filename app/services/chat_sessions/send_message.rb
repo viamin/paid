@@ -15,7 +15,7 @@ module ChatSessions
   class SendMessage
     include FallbackLoop
 
-    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
+    attr_reader :chat_session, :actor, :content, :on_chunk, :llm_client, :stream_message_id,
       :transport_attempt_message
 
     MAX_CONTENT_LENGTH = 12_000
@@ -25,7 +25,7 @@ module ChatSessions
       @actor = actor
       @content = content
       @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @external_on_message_persisted = on_message_persisted
       @llm_client = llm_client
       @stream_message_id = stream_message_id
     end
@@ -43,13 +43,29 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      finish_turn(assistant_message)
       update_session_activity
       assistant_message
+    rescue AgentHarness::Error => error
+      fail_turn(error)
+      raise
     end
 
     private
+
+    def on_message_persisted
+      @on_message_persisted ||= lambda { |message, stream_message_id: nil|
+        @chat_turn&.update!(last_activity_at: Time.current) if message.persisted?
+        if stream_message_id
+          @external_on_message_persisted&.call(message, stream_message_id:)
+        else
+          @external_on_message_persisted&.call(message)
+        end
+      }
+    end
 
     def resume_session_if_needed!
       return unless chat_session.status == "closed"
@@ -115,6 +131,34 @@ module ChatSessions
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
       transport_attempt_message
+    end
+
+    # @spec CHAT-API-027
+    def start_turn
+      @chat_turn = chat_session.chat_turns.find_or_create_by!(user_message: transport_attempt_message) do |turn|
+        turn.state = "streaming"
+        turn.last_activity_at = Time.current
+      end
+      @chat_turn.record!("started") if @chat_turn.events.empty?
+    end
+
+    def finish_turn(assistant_message)
+      return pause_turn if assistant_message.nil?
+
+      @chat_turn.update!(state: "completed", completed_at: Time.current, last_activity_at: Time.current)
+      @chat_turn.record!("completed", assistant_message_id: assistant_message.id)
+    end
+
+    def pause_turn
+      @chat_turn.update!(state: "pending", last_activity_at: Time.current)
+      @chat_turn.record!("awaiting_confirmation")
+    end
+
+    def fail_turn(error)
+      return unless @chat_turn
+
+      @chat_turn.update!(state: "failed", failure_classification: error.class.name, last_activity_at: Time.current)
+      @chat_turn.record!("failed", error_class: error.class.name)
     end
 
     # A restarted job retains its stream id. Reusing the original user row

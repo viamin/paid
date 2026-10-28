@@ -107,6 +107,18 @@
   `chat_controller.js#handleMessageChunk`, `#handleMessageComplete`,
   `#lastAssistantTextResponse`.
 
+- [x] **CHAT-API-027** — When a persisted chat turn remains in `streaming`
+  without durable activity past the configured stall threshold, Paid SHALL mark
+  it `stalled`, preserve its messages and tool evidence, append one actionable
+  transcript notice, and record the classification. Turns paused for a pending
+  write-tool confirmation, known rate-limit recovery, or a terminal outcome
+  SHALL NOT be classified as stalled. Recovery remains explicit unless a
+  future tool checkpoint declares replay safe. Repeated recovery requests SHALL
+  be deduplicated and recorded as audit events.
+  *Tests:* `spec/models/chat_turn_spec.rb`,
+  `spec/services/chat_sessions/detect_stalled_turns_spec.rb`.
+  *Code:* `ChatTurn`, `ChatSessions::DetectStalledTurns`.
+
 - [x] **CHAT-API-003** — When the API-mode chat loop receives tool calls, the
   system SHALL execute authorized read-only tools inline, advertise write tools
   without model-supplied confirmation, persist pending write-tool confirmation

@@ -155,6 +155,15 @@ What ships today:
   active stream; it discards a transient bubble on a duplicate or gap and
   relies on the persisted message render as the authoritative transcript.
   Terminal and error events likewise remove any remaining transient bubble.
+- Every submitted user message also starts a durable `ChatTurn`. A maintenance
+  sweep classifies only `streaming` turns with no persisted activity beyond the
+  configured threshold as `stalled`; confirmation-paused and known terminal
+  states remain excluded. Classification is lock-protected, creates one audit
+  event and one in-transcript notice, and preserves all partial tool evidence.
+  The notice deliberately requires an explicit recovery decision. Recovery
+  resumes the saved conversation, never creates another user message, and
+  deduplicates concurrent requests; automatic replay remains disabled until a
+  tool has an idempotent checkpoint contract.
 - `ChatSessions::AgentLoop` executes read-only tools inline and persists
   pending write-tool confirmations without letting the model self-authorize
   mutations
