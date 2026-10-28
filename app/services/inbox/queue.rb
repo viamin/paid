@@ -110,6 +110,11 @@ module Inbox
         kind == ACTION_REQUIRED_KIND
       end
 
+      # @spec FACET-CONFIDENCE-022
+      def action_required_workflow
+        @action_required_workflow ||= Inbox::ActionRequiredWorkflow.for(record) if action_required?
+      end
+
       def escalated_pr?
         kind == ESCALATED_PR_KIND
       end
@@ -595,11 +600,30 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
+          summary_text: action_required_summary(notification),
+          title_text: action_required_title(notification),
           action_url: notification.action_url
         )
       end
+    end
+
+    # Typed workflows own their user-facing vocabulary. Generic notifications
+    # continue to expose publisher-supplied copy unchanged.
+    # @spec FACET-CONFIDENCE-022
+    def action_required_title(notification)
+      return "Human evaluation required" if facet_confidence_action?(notification)
+
+      notification.title
+    end
+
+    def action_required_summary(notification)
+      return "Independently review each frozen test case, record every judgment, and freeze the completed set." if facet_confidence_action?(notification)
+
+      notification.metadata["recommended_action"].presence || notification.description
+    end
+
+    def facet_confidence_action?(notification)
+      notification.metadata["in_product_action"] == Inbox::ActionRequiredWorkflow::FACET_CONFIDENCE
     end
 
     def merge_approval_issues

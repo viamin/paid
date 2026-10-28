@@ -73,6 +73,29 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(occurrences).to all(include("source_revision" => expected_revision))
   end
 
+  it "persists a typed in-product action without deriving it from human prose" do # @spec FACET-CONFIDENCE-022
+    described_class.call(agent_run: run, assessment: gaps([ {
+      "criterion" => "Independent evaluation",
+      "kind" => "human",
+      "next_step" => "Complete the human evaluation.",
+      "in_product_action" => "facet_confidence_evaluation"
+    } ]))
+
+    notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    expect(notification.metadata["in_product_action"]).to eq("facet_confidence_evaluation")
+  end
+
+  it "keeps mixed human prerequisites on the generic action path" do # @spec FACET-CONFIDENCE-022
+    typed = { "criterion" => "Reference evaluation", "kind" => "human",
+              "next_step" => "Complete the evaluation.", "in_product_action" => "facet_confidence_evaluation" }
+    generic = { "criterion" => "Policy approval", "kind" => "human", "next_step" => "Approve the policy." }
+
+    described_class.call(agent_run: run, assessment: gaps([ typed, generic ]))
+
+    notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    expect(notification.metadata).not_to have_key("in_product_action")
+  end
+
   it "preserves submitted evidence when reconciling the prerequisite again" do # @spec PARTIAL-CLOSEOUT-033
     gap = { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot." }
     described_class.call(agent_run: run, assessment: gaps([ gap ]))

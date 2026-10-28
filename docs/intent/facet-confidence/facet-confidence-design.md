@@ -174,3 +174,14 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+When a partial-closeout assessment identifies this evaluation as the required
+human action, it records a typed workflow identifier on the blocking
+notification. The Action Required lane translates that identifier into plain
+language, shows recorded and remaining counts, and routes to Start, Continue
+judging, or Freeze judgments as the persisted state requires. The originating
+Action Required entry and filters travel with the route and provide the return
+destination. The workflow may disregard only its own typed prerequisite
+notification when checking whether it can start; every unrelated closeout
+blocker still applies. Notifications without a supported typed workflow keep
+the generic remediation surface.

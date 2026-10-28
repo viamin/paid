@@ -220,6 +220,10 @@ module PartialCloseouts
       identity = Digest::SHA256.hexdigest(JSON.generate(identities))
       metadata = { "prerequisite_identity" => identity, "references" => references,
                    "prerequisites" => human_gaps.map { |gap| prerequisite_occurrence(gap) } }
+      actions = human_gaps.filter_map { |gap| gap["in_product_action"] }.uniq
+      if actions.one? && human_gaps.all? { |gap| gap["in_product_action"] == actions.first }
+        metadata["in_product_action"] = actions.first
+      end
       submissions = reconciled_evidence_submissions(previous, metadata.fetch("prerequisites"))
       metadata["evidence_submissions"] = submissions if submissions.any?
       policy_selection = replacement_policy_action(human_gaps)
@@ -255,7 +259,7 @@ module PartialCloseouts
     end
 
     def prerequisite_identity(gap)
-      identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection"))
+      identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection", "in_product_action"))
       identity["references"] = Array(gap["references"])
         .map { |reference| canonicalize(reference) }
         .sort_by { |reference| JSON.generate(reference) }

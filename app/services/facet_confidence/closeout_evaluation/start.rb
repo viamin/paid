@@ -9,7 +9,7 @@ module FacetConfidence
     # NEW generation, superseding the old one rather than mutating it. The
     # entry point stays blocked while the closeout records unresolved
     # blockers, and the operator who starts becomes the sole reference judge.
-    # @spec FACET-CONFIDENCE-020
+    # @spec FACET-CONFIDENCE-020 @spec FACET-CONFIDENCE-022
     class Start
       Result = Data.define(:success, :error, :evaluation, :resumed) do
         def success? = success
@@ -28,7 +28,7 @@ module FacetConfidence
         return failure("the originating work item must belong to this project") unless @issue.project_id == @project.id
         return failure("an authenticated operator must start the evaluation") if @actor.blank?
 
-        blockers = closeout_status.blockers
+        blockers = closeout_status.blockers.reject { |blocker| self_blocker?(blocker) }
         return failure("the closeout entry point is blocked until its recorded prerequisites resolve: #{blockers.map(&:message).join(' ')}") if blockers.any?
 
         corpus = FacetConfidence::Corpus.new(path: CloseoutEvaluationPacket::MANIFEST_PATH)
@@ -73,6 +73,23 @@ module FacetConfidence
 
       def closeout_status
         @status || Issues::CloseoutStatus.call(@issue)
+      end
+
+      def self_blocker?(blocker)
+        blocker.code == :human_prerequisite_notification && prerequisite_notifications.one? && typed_notifications.one?
+      end
+
+      def typed_notifications
+        @typed_notifications ||= prerequisite_notifications.select do |notification|
+          notification.metadata["in_product_action"] == Inbox::ActionRequiredWorkflow::FACET_CONFIDENCE
+        end
+      end
+
+      def prerequisite_notifications
+        @prerequisite_notifications ||= Notification.active.where(
+          account: @project.account, subject: @issue,
+          source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE
+        ).to_a
       end
 
       def log_started(evaluation, resumed:)

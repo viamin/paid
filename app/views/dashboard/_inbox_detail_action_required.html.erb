@@ -1,6 +1,27 @@
-<%# @spec OPERATOR-INBOX-002B %>
+<%# @spec OPERATOR-INBOX-002B @spec FACET-CONFIDENCE-022 %>
 <div class="space-y-6">
   <% notification = entry.record %>
+  <% workflow = entry.action_required_workflow %>
+  <% if workflow %>
+    <% progress = workflow.progress %>
+    <div class="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4" data-action-required-workflow="facet-confidence-evaluation">
+      <h3 class="text-sm font-semibold text-indigo-900">Human evaluation required</h3>
+      <p class="text-sm text-indigo-800">
+        Work is blocked until a maintainer independently reviews every frozen test case, records a judgment for each one,
+        and freezes the completed set. This evaluation is still required; it has not been completed merely because the cases are frozen.
+      </p>
+      <p class="text-sm font-medium text-indigo-900" data-evaluation-progress>
+        <%= progress[:labeled] %> of <%= progress[:total] %> judgments recorded · <%= workflow.remaining %> remaining
+        <% if progress[:skipped].positive? %> · <%= progress[:skipped] %> skipped cases still need judgments<% end %>
+      </p>
+      <div class="flex flex-wrap items-center gap-3">
+        <%= link_to workflow.action_label, workflow.action_path(entry), data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+        <%= link_to inbox_issue_link_label(entry.issue), entry.issue.github_url, target: "_blank", rel: "noopener noreferrer",
+              class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      </div>
+    </div>
+  <% else %>
   <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
     <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
     <% if notification.description.present? %>
@@ -60,5 +81,6 @@
             data: { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
+  <% end %>
   <% end %>
 </div>

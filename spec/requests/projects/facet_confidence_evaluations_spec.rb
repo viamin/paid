@@ -62,6 +62,13 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     evaluation.corpus.cases.each { |corpus_case| label!(evaluation, corpus_case) }
   end
 
+  def typed_evaluation_notification
+    create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Internal closeout wording", description: "Blinded reference judgments for the corpus.",
+      metadata: { "in_product_action" => "facet_confidence_evaluation" })
+  end
+
   it "starts from the Inbox entry point and resumes the same evaluation on repeated clicks" do
     evaluation = start_evaluation!
 
@@ -212,6 +219,55 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
       project_id: project.id, kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND)
 
     expect(response.body).to include("Open evaluation and report")
+  end
+
+  it "renders a typed Action Required escalation with plain guidance and an Inbox-aware start action" do # @spec FACET-CONFIDENCE-022
+    notification = typed_evaluation_notification
+    key = entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+
+    get inbox_entry_path(key, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Human evaluation required", "independently reviews every frozen test case")
+    expect(response.body).to include("0 of 8 judgments recorded", "8 remaining", "Start evaluation")
+    expect(response.body).not_to include("Internal closeout wording", "Blinded reference judgments for the corpus")
+    start_path = new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_entry_id: key)
+    expect(response.body).to include(start_path.gsub("&", "&amp;"))
+  end
+
+  it "starts through the typed escalation and shows state-specific progress actions" do # @spec FACET-CONFIDENCE-022
+    notification = typed_evaluation_notification
+    key = entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+
+    post project_facet_confidence_evaluations_path(project), params: {
+      issue_id: issue.id, inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_entry_id: key
+    }
+    evaluation = issue.facet_confidence_evaluations.sole
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_entry_id: key))
+
+    label!(evaluation, evaluation.corpus.cases.first)
+    get inbox_entry_path(key, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+    expect(response.body).to include("1 of 8 judgments recorded", "7 remaining", "Continue judging")
+
+    evaluation.corpus.cases.drop(1).each { |corpus_case| label!(evaluation, corpus_case) }
+    get inbox_entry_path(key, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+    expect(response.body).to include("Freeze judgments")
+  end
+
+  it "does not expose a typed evaluation action to an unauthorized project user" do # @spec FACET-CONFIDENCE-022
+    notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Evaluation required", description: "Complete the evaluation.",
+      metadata: { "in_product_action" => "facet_confidence_evaluation" })
+    outsider = create(:user, :owner, account: create(:account))
+    sign_in outsider
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::ACTION_REQUIRED_KIND))
   end
 
   it "keeps the entry point blocked while the closeout records an unresolved prerequisite" do
