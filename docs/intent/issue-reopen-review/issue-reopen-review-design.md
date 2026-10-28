@@ -21,9 +21,14 @@ review reason. The Inbox exposes this state to an operator, and ordinary
 automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
-An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+An operator resolves a reopen review only after validating whether the original
+intent remains valid and whether new work is required. The decision has a
+non-blank reason and binds to the synchronized GitHub revision, so a changed
+issue must be reviewed again. Paid records the actor, decision, reason, and
+revision in the account audit trail before returning the issue to normal
+admission. The decision distinguishes resuming implementation from collecting
+required validation evidence; it is not an enhancement retry and it does not
+create a duplicate run.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

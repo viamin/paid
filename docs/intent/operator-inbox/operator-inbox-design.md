@@ -301,18 +301,24 @@ automation stopped, *why*, and *what clears it*; a project's whole dependency
 graph could sit parked behind a `manual_review` root for days with zero
 operator-visible signal (issue #3788).
 
-The entry payload carries the issue's `manual_review_reason` (the message
-`IssueEnhancements::StopForManualReview` was given, or the equivalent
-round-limit copy when `EnhanceIssueActivity` sets the state directly without
-going through that service) as its summary, and `manual_review_started_at`
-(falling back to `updated_at` for legacy rows predating the column —
-`ISSUE-ENHANCEMENT-012`) as its waiting-since timestamp. The detail pane
-offers a "Start enhancement run" action that queues a manual `enhance_issue`
-run for the issue: per `ISSUE-ENHANCEMENT-011`, automatic picking excludes
-`manual_review` and only an explicit operator-triggered run resumes work —
-the queueing is the resume, so (unlike `unblock_escalation`, which clears
-state directly) this action still creates a run rather than just flipping
-state. The same request also transitions the issue out of `manual_review`
+The entry payload carries the issue's `manual_review_reason` and
+`manual_review_started_at` (falling back to `updated_at` for legacy rows
+predating the column — `ISSUE-ENHANCEMENT-012`). `Inbox::ManualReviewRecovery`
+classifies the hold from persisted provenance, in order: the explicit reopen
+marker, live dependency records, scanner verification records, enhancement
+provenance, and an explicit unknown fallback. It never infers a safe action
+from a phrase in agent output. Reopen review records an authorized,
+reasoned decision bound to the synchronized GitHub revision, then returns the
+issue to normal admission without queuing work. A dependency hold links the
+blocking owner/action and remains held until normal dependency resolution
+reevaluates eligibility. Scanner recurrence retains its scanner evidence for
+the existing remediation authorization path. Only enhancement recovery offers
+a "Start enhancement run" action that queues a manual `enhance_issue` run:
+per `ISSUE-ENHANCEMENT-011`, automatic picking excludes `manual_review` and
+only an explicit operator-triggered run resumes enhancement work. The queueing
+is the resume, so (unlike `unblock_escalation`, which clears state directly)
+this action still creates a run rather than just flipping state. The same
+request also transitions the issue out of `manual_review`
 (`paid_state: "in_progress"`, the state `CreateAgentRunActivity` sets when
 the run starts), inside the same transaction that creates the run, so the
 entry leaves the queue and the nav badge at queue time (#3853) instead of

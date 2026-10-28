@@ -480,6 +480,13 @@ module Projects
         return
       end
 
+      recovery = Inbox::ManualReviewRecovery.call(issue)
+      unless recovery.enhancement?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This manual-review hold requires #{recovery.action.to_s.humanize.downcase}; enhancement retry is not authorized."
+        return
+      end
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
@@ -488,6 +495,22 @@ module Projects
         goal: "enhance_issue",
         priority_tier: nil
       )
+    end
+
+    # @spec OPERATOR-INBOX-002L ISSUE-REOPEN-REVIEW-005
+    def resolve_manual_review
+      authorize @project, :run_agent?
+      issue = resolve_manual_review_issue
+      unless issue && issue.reopen_review_pending?
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      result = Inbox::ResolveReopenReview.call(issue:, actor: current_user, decision: params[:decision],
+        reason: params[:reason], revision: params[:revision])
+      redirect_to safe_return_target || dashboard_path, **result
+    rescue Inbox::ResolveReopenReview::Error => error
+      redirect_to safe_return_target || dashboard_path, alert: error.message
     end
 
     # Operator-driven counterpart to

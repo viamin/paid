@@ -2581,12 +2581,14 @@ RSpec.describe "AgentRuns" do
 
   describe "POST /projects/:project_id/agent_runs/resume_manual_review" do
     let(:parked_issue) do
-      create(:issue,
+      issue = create(:issue,
         project: project,
         github_number: 89,
         title: "Fix flaky specs",
         paid_state: "manual_review",
         manual_review_reason: "Paid reached the configured limit of enhancement re-evaluation rounds.")
+      create(:agent_run, project: project, issue: issue, goal: "enhance_issue", status: "failed")
+      issue
     end
 
     context "when not authenticated" do
@@ -2626,6 +2628,18 @@ RSpec.describe "AgentRuns" do
         expect(agent_run.goal).to eq("enhance_issue")
         expect(agent_run.trigger_type).to eq("manual")
         expect(response).to redirect_to(dashboard_path)
+      end
+
+      # @spec OPERATOR-INBOX-002L ISSUE-REOPEN-REVIEW-005
+      it "does not turn a reopen-review hold into an enhancement retry" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload).to be_reopen_review_pending
+        expect(flash[:alert]).to include("record reopen decision")
       end
 
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
