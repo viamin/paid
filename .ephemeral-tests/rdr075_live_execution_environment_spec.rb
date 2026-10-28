@@ -218,7 +218,7 @@ RSpec.describe "RDR-075 live execution-environment validation" do
     dockerfile = <<~DOCKERFILE
       FROM ruby:3.3-slim
       RUN apt-get update \\
-        && apt-get install -y --no-install-recommends git ca-certificates \\
+        && apt-get install -y --no-install-recommends git ca-certificates build-essential \\
         && rm -rf /var/lib/apt/lists/*
       RUN useradd --create-home --uid 1001 --shell /bin/bash agent \\
         && mkdir -p /workspace \\
