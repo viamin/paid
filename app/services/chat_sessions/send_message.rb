@@ -15,12 +15,12 @@ module ChatSessions
   class SendMessage
     include FallbackLoop
 
-    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
+    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id, :chat_turn,
       :transport_attempt_message
 
     MAX_CONTENT_LENGTH = 12_000
 
-    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
+    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil, chat_turn: nil)
       @chat_session = chat_session
       @actor = actor
       @content = content
@@ -28,6 +28,7 @@ module ChatSessions
       @on_message_persisted = on_message_persisted
       @llm_client = llm_client
       @stream_message_id = stream_message_id
+      @chat_turn = chat_turn
     end
 
     def self.call(...)
@@ -42,11 +43,16 @@ module ChatSessions
       check_token_limit!
       resume_session_if_needed!
 
+      start_turn!
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
       update_session_activity
+      chat_turn.complete!(awaiting_confirmation: assistant_message.nil?)
       assistant_message
+    rescue StandardError => error
+      chat_turn&.fail!(classification: error.class.name) unless chat_turn&.terminal?
+      raise
     end
 
     private
@@ -111,10 +117,20 @@ module ChatSessions
 
     def persist_user_message
       @transport_attempt_message = existing_user_message || create_user_message
+      chat_turn.update!(user_message: transport_attempt_message) if chat_turn.user_message_id != transport_attempt_message.id
+      transport_attempt_message.update!(chat_turn: chat_turn) if transport_attempt_message.chat_turn_id != chat_turn.id
 
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
       transport_attempt_message
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001
+    def start_turn!
+      @chat_turn ||= chat_session.chat_turns.find_or_create_by!(stream_message_id: stream_message_id || SecureRandom.uuid) do |turn|
+        turn.last_activity_at = Time.current
+      end
+      chat_turn.start! if chat_turn.status == "pending"
     end
 
     # A restarted job retains its stream id. Reusing the original user row
@@ -127,11 +143,14 @@ module ChatSessions
     end
 
     def create_user_message
-      chat_session.messages.create!(
+      message = chat_session.messages.create!(
         role: "user",
         content: content,
-        metadata: { "stream_message_id" => stream_message_id }.compact
+        metadata: { "stream_message_id" => stream_message_id }.compact,
+        chat_turn: chat_turn
       )
+      chat_turn.update!(user_message: message)
+      message
     end
 
     # A conversational reply (e.g. "yes") is not a confirmation. When a write
@@ -148,6 +167,7 @@ module ChatSessions
 
       tool_names = pending.map { |message| message.tool_name.presence || "tool" }.uniq
       message = chat_session.messages.create!(
+        chat_turn: chat_turn,
         role: "system",
         content: pending_confirmation_notice_content(tool_names),
         metadata: {
@@ -178,7 +198,7 @@ module ChatSessions
     # second SUM query per turn. Only forward when a limit is configured; a nil
     # baseline means "unlimited" and AgentLoop re-derives nil cheaply.
     def extra_agent_loop_kwargs
-      @token_budget ? { token_budget: @token_budget } : {}
+      { chat_turn: chat_turn }.merge(@token_budget ? { token_budget: @token_budget } : {})
     end
   end
 end

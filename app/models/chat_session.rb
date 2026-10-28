@@ -2,6 +2,7 @@
 
 class ChatSession < ApplicationRecord
   has_many :chat_diagrams, dependent: :destroy
+  has_many :chat_turns, dependent: :destroy
   include TenantScoped
   self.ignored_columns += [ "mode" ]
 
