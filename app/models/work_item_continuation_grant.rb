@@ -17,7 +17,10 @@ class WorkItemContinuationGrant < ApplicationRecord
   validates :start_phase, presence: true, inclusion: { in: Automation::Phases::ALL }
   validates :endpoint, presence: true, inclusion: { in: Automation::Phases::CONTINUATION_ENDPOINTS }
   validates :source, presence: true, inclusion: { in: SOURCES }
+  validates :created_by, presence: true
   validate :endpoint_follows_start_phase
+  validate :issue_belongs_to_project
+  validate :actor_belongs_to_project_account
 
   scope :active, -> { where(revoked_at: nil, completed_at: nil) }
   scope :revoked, -> { where.not(revoked_at: nil) }
@@ -68,5 +71,21 @@ class WorkItemContinuationGrant < ApplicationRecord
     return if start_phase.blank? || endpoint.blank?
 
     errors.add(:endpoint, "must be the start phase or a later delivery phase") if covered_phases.empty?
+  end
+
+  # A grant's project, work item, and audit actor form one tenant-scoped
+  # authorization record. Rejecting mismatched associations here protects
+  # callers beyond the project-scoped controllers.
+  # @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-009
+  def issue_belongs_to_project
+    return if issue.blank? || project.blank? || issue.project_id == project.id
+
+    errors.add(:issue, "must belong to the grant project")
+  end
+
+  def actor_belongs_to_project_account
+    return if created_by.blank? || project.blank? || created_by.account_id == project.account_id
+
+    errors.add(:created_by, "must belong to the grant account")
   end
 end
