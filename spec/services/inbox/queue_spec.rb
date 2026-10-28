@@ -342,7 +342,7 @@ RSpec.describe Inbox::Queue do
         :issue, :pull_request,
         project: project,
         github_number: 44,
-        pr_review_phase: nil,
+        pr_review_phase: "draft",
         labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
         auto_merge_evaluated_at: nil,
         auto_merge_blockers: nil
@@ -351,7 +351,7 @@ RSpec.describe Inbox::Queue do
       entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
 
       expect(entry).to have_attributes(issue: pr, summary_text: "Human review requested before merging")
-      expect(pr.reload.pr_review_phase).to be_nil
+      expect(pr.reload.pr_review_phase).to eq("draft")
     end
 
     # @spec LABEL-CONTROL-004 INBOX-FOUNDATION-008
