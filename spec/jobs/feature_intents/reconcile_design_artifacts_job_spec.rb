@@ -271,6 +271,22 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     expect(DesignArtifactAssociation.sole.provenance).to eq("Paid feature intent linkage")
   end
 
+  # @spec DESIGN-RECONCILIATION-003
+  it "uses an account-authorized cross-project stored link during a project sweep" do
+    external_project = create(:project, account: project.account, owner: "acme", repo: "external")
+    create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
+    linked_issue = create(:issue, project: external_project, github_number: 101)
+    create(:feature_intent_issue, feature_intent:, issue: linked_issue)
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.sole).to have_attributes(
+      issue_identity: "acme/external#101", provenance: "Paid feature intent linkage"
+    )
+  end
+
   it "assesses synchronized open issue candidates before creating a missing-tree finding" do
     allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
     response = instance_double(AgentHarness::Response, success?: true,

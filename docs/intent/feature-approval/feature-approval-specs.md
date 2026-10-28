@@ -300,8 +300,10 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   that sweep while exposing to each artifact only facts from that artifact's
   referenced or associated projects. It SHALL batch exact-backlink and
   canonical-manifest evidence, select only fields needed for reconciliation,
-  and discard raw ORM issue graphs after snapshot construction. The snapshot
-  SHALL NOT be reused across sweeps or revisions; unavailable
+  and seed account-authorized coverage from persisted direct associations even
+  when their repository is not named in the artifact body. It SHALL discard
+  raw ORM issue graphs after snapshot construction. The snapshot SHALL NOT be
+  reused across sweeps or revisions; unavailable
   authorized-project coverage SHALL remain unverifiable.
   *Tests:* `spec/jobs/feature_intents/reconcile_design_artifacts_job_spec.rb`.
   *Code:* `FeatureIntents::ReconcileDesignArtifactsJob`.

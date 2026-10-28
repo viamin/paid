@@ -179,11 +179,18 @@ module FeatureIntents
       attr_reader :project, :artifacts, :relationship_text, :projects_by_repository, :projects_by_id, :facts_by_issue_id, :facts, :manifest_associations_by_path
 
       def authorized_projects
-        repositories = artifacts.flat_map { |artifact| artifact.fetch(:related_issues) }
-          .map { |reference| repository_for(reference) }.uniq - [ project.full_name ]
+        repositories = (referenced_repositories + associated_repositories).uniq - [ project.full_name ]
         external = Project.where(account_id: project.account_id, owner: repositories.map { |name| name.split("/").first },
           repo: repositories.map { |name| name.split("/").last }).select(*PROJECT_FIELDS).to_a
         external.append(project).index_by(&:full_name)
+      end
+
+      def referenced_repositories
+        artifacts.flat_map { |artifact| artifact.fetch(:related_issues) }.map { |reference| repository_for(reference) }
+      end
+
+      def associated_repositories
+        artifacts.flat_map { |artifact| Array(artifact[:associated_issues]) }.filter_map { |association| association[:repository] }
       end
 
       def load_facts
