@@ -62,6 +62,42 @@ RSpec.describe "Inbox" do
     "#{entry_kind}:#{record.id}"
   end
 
+  def create_facet_confidence_evaluation(issue)
+    corpus_path = FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH
+    FacetConfidenceEvaluation.create!(
+      project: project,
+      issue: issue,
+      created_by: user,
+      corpus_path: corpus_path,
+      corpus_digest: Digest::SHA256.file(Rails.root.join(corpus_path)).hexdigest,
+      corpus_version: "facet-confidence-corpus-v1",
+      rubric_version: "facet-confidence-v1",
+      model_version: "claude-sonnet-4-6"
+    )
+  end
+
+  def create_typed_facet_confidence_notification(issue, title: "Internal escalation", description: "Internal escalation")
+    create(:notification, :error, account: account, subject: issue,
+      source: "facet_confidence.closeout_evaluation", blocking: true,
+      title: title, description: description,
+      metadata: { "action_required_workflow" => "facet_confidence_closeout_evaluation" })
+  end
+
+  def render_action_required(notification)
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+  end
+
+  def record_judgment(evaluation)
+    corpus_case = evaluation.corpus.cases.first
+    FacetConfidenceEvaluationLabel.create!(
+      facet_confidence_evaluation: evaluation, case_id: corpus_case.fetch("id"), state: "labeled",
+      verdict: corpus_case.dig("expected", "status"), intent_band: corpus_case.dig("expected", "intent_band"),
+      technical_band: corpus_case.dig("expected", "technical_band"), readiness: corpus_case.dig("expected", "readiness"),
+      cited_evidence_reference: corpus_case.dig("evidence", 0, "reference"), reason: "Reviewed independently.",
+      recorded_by: user, recorded_at: Time.current)
+  end
+
   # @spec OPERATOR-INBOX-017
   it "renders selected context in the detail response without a nested Turbo request" do
     issue = create(:issue, :needs_input, project: project, body: questions_body)
@@ -245,6 +281,46 @@ RSpec.describe "Inbox" do
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("The configured review method could not complete its check.")
     expect(response.body).not_to include("A human action is required before work can continue.")
+  end
+
+  # @spec FACET-CONFIDENCE-022
+  it "translates a typed facet-confidence escalation and starts its evaluation from the Inbox" do
+    issue = create(:issue, project: project, github_number: 4678, title: "Closeout evidence")
+    notification = create_typed_facet_confidence_notification(issue,
+      title: "Remediation Required — Independent maintainers have entered and frozen the blinded reference judgments.",
+      description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.")
+
+    render_action_required(notification)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Independent review of test cases is needed", "0 recorded · 8 remaining")
+    expect(response.body).to include("Review each frozen test case yourself, record a judgment for every case, then freeze the completed set.")
+    expect(response.body).to include("Start evaluation")
+    expect(response.body).not_to include("blinded reference judgments", "facet-confidence corpus")
+    expect(response.body).to include(new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)).gsub("&", "&amp;"))
+  end
+
+  # @spec FACET-CONFIDENCE-022
+  it "shows typed evaluation progress and the state-specific next action" do
+    issue = create(:issue, project: project, github_number: 4679, title: "Closeout evidence")
+    evaluation = create_facet_confidence_evaluation(issue)
+    record_judgment(evaluation)
+    notification = create_typed_facet_confidence_notification(issue)
+
+    render_action_required(notification)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("1 recorded · 7 remaining", "Continue judging")
+    expect(response.body).to include(project_facet_confidence_evaluation_path(project, evaluation,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)).gsub("&", "&amp;"))
+
+    evaluation.update!(status: "frozen", labels_frozen_at: Time.current)
+    render_action_required(notification)
+
+    expect(response.body).to include("The completed judgment set is frozen.", "View evaluation")
   end
 
   # @spec OPERATOR-INBOX-002B

@@ -8,7 +8,7 @@ module Notifications
       new(...).call
     end
 
-    def initialize(account:, source:, subject:, severity:, title:, description: nil, metadata: {}, action_url: nil, nav_section: nil, user: nil, blocking: false)
+    def initialize(account:, source:, subject:, severity:, title:, description: nil, metadata: {}, action_url: nil, nav_section: nil, user: nil, blocking: false, action_required_workflow: nil)
       @account = account
       @source = source
       @subject = subject
@@ -20,6 +20,7 @@ module Notifications
       @nav_section = nav_section
       @user = user
       @blocking = blocking
+      @action_required_workflow = action_required_workflow
     end
 
     def call
@@ -36,7 +37,7 @@ module Notifications
         severity: severity,
         title: title,
         description: description,
-        metadata: metadata,
+        metadata: metadata_with_workflow,
         action_url: resolved_action_url(notification),
         nav_section: nav_section,
         user: user,
@@ -59,7 +60,16 @@ module Notifications
     private
 
     attr_reader :account, :source, :subject, :severity, :title,
-      :description, :metadata, :action_url, :nav_section, :user, :blocking
+      :description, :metadata, :action_url, :nav_section, :user, :blocking, :action_required_workflow
+
+    # Typed workflow metadata is the dispatch contract for an in-product
+    # Action Required resolution. It prevents UI code from interpreting
+    # arbitrary notification text to select a privileged route.
+    def metadata_with_workflow
+      return metadata if action_required_workflow.blank?
+
+      metadata.merge("action_required_workflow" => action_required_workflow)
+    end
 
     def resolved_action_url(notification)
       return action_url if action_url.present?

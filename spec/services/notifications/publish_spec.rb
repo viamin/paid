@@ -99,6 +99,24 @@ RSpec.describe Notifications::Publish do
       expect(notification.action_url).to eq("/projects/#{project.id}/quality_dashboard")
     end
 
+    # @spec FACET-CONFIDENCE-022
+    it "persists a typed Action Required workflow without interpreting its copy" do
+      notification = described_class.call(
+        account: account,
+        source: "facet_confidence.closeout_evaluation",
+        subject: project,
+        severity: :error,
+        blocking: true,
+        title: "Evaluation needs attention",
+        description: "An evaluation requires operator attention.",
+        action_required_workflow: "facet_confidence_closeout_evaluation"
+      )
+
+      expect(notification.metadata).to include(
+        "action_required_workflow" => "facet_confidence_closeout_evaluation"
+      )
+    end
+
     # @spec OPERATOR-INBOX-002B
     it "rejects blocking notifications without inline context or remediation guidance" do
       expect {

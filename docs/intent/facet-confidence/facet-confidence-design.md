@@ -174,3 +174,23 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+## Action Required escalation guidance
+
+An Action Required notification that names the facet-confidence closeout
+evaluation through typed workflow metadata is an operator entry point, not an
+unstructured error message. The Inbox explains that the closeout is blocked
+pending an independent human review of every frozen test case; the judge
+records one judgment for each case and freezes the completed set. It does not
+expose the corpus or blinded-reference terminology without that explanation,
+and it does not say that judgments are frozen until the persisted evaluation
+is frozen.
+
+The projection derives its primary action and progress from the persisted
+evaluation: Start evaluation when none exists, Resume evaluation before any
+judgment is recorded, Continue judging while cases remain (including skipped
+cases), Freeze judgments when every case is recorded, and View evaluation once
+frozen. The action carries the originating Inbox query context into the
+authorized project evaluation route and its Back to Inbox link restores that
+context. Notifications without a recognized workflow retain the generic
+Action Required presentation and their remediation guidance.
