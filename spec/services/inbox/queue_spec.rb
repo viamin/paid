@@ -168,6 +168,27 @@ RSpec.describe Inbox::Queue do
       )
     end
 
+    # @spec INBOX-FOUNDATION-008
+    it "returns a held PR whose internal review phase is still draft" do
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry).to have_attributes(
+        issue: pr,
+        summary_text: "Human review requested before merging"
+      )
+      expect(entry.guidance.fetch(:instruction)).to include("remove the hold")
+    end
+
     # @spec INBOX-PHASE-RELEVANCE-003
     it "keeps merge approvals accessible in Disabled phases when merge is disabled" do
       FeatureFlags.enable!(:automation_phases, project:)

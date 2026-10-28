@@ -17,3 +17,11 @@
   *Code:* `RecoverMissingPullRequestLabelsJob#missing_labels`.
   *Test:* `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`
   ("preserves manual opt-out").
+
+- [x] **PR-LABEL-RECOVERY-003** — While a `create_pr` run finished within the
+  candidate window with a recorded pull request number, recovery SHALL consider
+  it even if the run failed, timed out, or was cancelled after publishing the
+  pull request. Recovery SHALL preserve the existing manual automation-label
+  opt-out rule.
+  *Code:* `RecoverMissingPullRequestLabelsJob#candidate_runs`.
+  *Test:* `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`.
