@@ -15,12 +15,22 @@ RSpec.describe "TenantConfigurations" do
       cleanup_criteria: "None"
     )
   end
+  let(:automation_phases_definition) do
+    FeatureFlags::Definition.new(
+      name: :automation_phases,
+      owner: "automation-phases",
+      intent: "Test automation phase rollout rollback protection",
+      rollout_plan: "Default-off",
+      cleanup_criteria: "None"
+    )
+  end
 
   before do
     sign_in user
     FeatureFlags.flipper.features.each(&:remove)
     stub_const("#{FeatureFlags}::DEFINITIONS", {
-      test_feature_flag: test_definition
+      test_feature_flag: test_definition,
+      automation_phases: automation_phases_definition
     }.freeze)
   end
 
@@ -64,6 +74,21 @@ RSpec.describe "TenantConfigurations" do
       end.to change(AccountActivityEvent, :count).by(1)
 
       expect(account.account_activity_events.recent.first.action).to eq("tenant_configuration.updated")
+    end
+
+    # @spec AUTOMATION-PHASES-014
+    it "rejects tenant pilot rollback while an affected project has an active grant" do
+      project = create(:project, account:)
+      account.tenant_setting!.update!(features: { "automation_phases" => true })
+      create(:work_item_continuation_grant, project:, issue: create(:issue, project:))
+
+      patch tenant_configuration_path, params: {
+        tenant_setting: { features: { test_feature_flag: "1", automation_phases: "0" } }
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(response.body).to include("active continuation grants")
+      expect(account.tenant_setting.reload.features["automation_phases"]).to be(true)
     end
 
     it "records every changed field when chat_settings are submitted alongside another change" do

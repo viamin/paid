@@ -6,6 +6,7 @@ class FeatureFlags
   UnknownFlagError = Class.new(ArgumentError)
   InvalidActorError = Class.new(ArgumentError)
   InvalidPercentageError = Class.new(ArgumentError)
+  RolloutBlockedError = Class.new(StandardError)
 
   DEFINITIONS = {
     question_exploration: Definition.new(
@@ -144,6 +145,7 @@ class FeatureFlags
     end
 
     def disable!(flag_name, project: nil, actor: nil)
+      ensure_rollback_permitted!(flag_name, project:)
       resolved_actor = resolve_actor(project:, actor:)
 
       unless resolved_actor
@@ -220,6 +222,22 @@ class FeatureFlags
       return actor if actor
 
       nil
+    end
+
+    # @spec AUTOMATION-PHASES-014
+    # A legacy policy cannot safely interpret an active phase grant. Keep the
+    # project in the guarded policy until an operator completes or revokes its
+    # grants and reconciles any queued work.
+    def ensure_rollback_permitted!(flag_name, project:)
+      return unless flag_name.to_sym == :automation_phases
+
+      active_grants = WorkItemContinuationGrant.active
+      active_grants = active_grants.where(project:) if project
+      return unless active_grants.exists?
+
+      raise RolloutBlockedError,
+        "Cannot disable automation phases while #{project ? "this project has" : "projects have"} active continuation grants. " \
+        "Complete or revoke them and reconcile queued work before rollback."
     end
 
     def update_percentage_gate(flipper_feature, gate, percentage)

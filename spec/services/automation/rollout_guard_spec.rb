@@ -24,6 +24,30 @@ RSpec.describe Automation::RolloutGuard do
     expect(described_class.enabled?(project)).to be(true)
   end
 
+  it "blocks project rollback while continuation grants remain active" do
+    FeatureFlags.enable!(described_class::FLAG, project:)
+    create(:work_item_continuation_grant, project:, issue: create(:issue, project:))
+
+    expect {
+      FeatureFlags.disable!(described_class::FLAG, project:)
+    }.to raise_error(FeatureFlags::RolloutBlockedError, /active continuation grants/)
+
+    expect(described_class.enabled?(project)).to be(true)
+  end
+
+  it "blocks tenant rollback while any covered project has an active grant" do
+    create(:tenant_setting, account:, features: { "automation_phases" => true })
+    create(:work_item_continuation_grant, project:, issue: create(:issue, project:))
+
+    expect {
+      described_class.ensure_tenant_rollback_permitted!(
+        account:,
+        current_features: { "automation_phases" => true },
+        requested_features: { "automation_phases" => false }
+      )
+    }.to raise_error(FeatureFlags::RolloutBlockedError, /active continuation grants/)
+  end
+
   it "reads through FeatureFlags so tenant overrides still apply" do
     create(:tenant_setting, account:, features: { "automation_phases" => true })
 

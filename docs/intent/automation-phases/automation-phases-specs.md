@@ -106,7 +106,10 @@
 - [x] **AUTOMATION-PHASES-014** — The phase model SHALL be gated by the
   default-off `automation_phases` feature flag read through
   `FeatureFlags.enabled?(:automation_phases, project:)`, and while the flag is
-  off the pre-existing execution and Inbox policies SHALL remain in force.
+  off the pre-existing execution and Inbox policies SHALL remain in force. The
+  authorized project and tenant pilot-management surfaces SHALL reject rollback
+  while an affected project has an active continuation grant, until its grants
+  are completed or revoked and queued work is reconciled.
   *Tests:* `spec/services/automation/rollout_guard_spec.rb`
   *Code:* `FeatureFlags`, `Automation::RolloutGuard`
 
