@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "rails_helper"
+require "digest"
 require "ostruct"
 
 RSpec.describe "Inbox" do
@@ -52,6 +53,9 @@ RSpec.describe "Inbox" do
   before do
     sign_in user
     allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive_messages(
+      ref: OpenStruct.new(object: OpenStruct.new(sha: "abc123")), commit: OpenStruct.new(sha: "abc123")
+    )
   end
 
   def entry_id(entry_kind, record)
@@ -82,7 +86,6 @@ RSpec.describe "Inbox" do
       get inbox_entry_path(entry_id(Inbox::Queue::CLARIFYING_QUESTIONS_KIND, issue)),
         headers: { "Turbo-Frame" => "inbox-detail" }
     end
-
     expect(response).to have_http_status(:ok)
     expect(response.body).to include('id="inbox-detail"', "Selected question")
     expect(response.body).not_to include("Other question", "Filters and sort", 'id="inbox-list"')
@@ -401,6 +404,24 @@ RSpec.describe "Inbox" do
         description: "Pilot latency results: attach the measured p95 to the follow-up comment and link it here")
     end
 
+    def create_evidence_notification
+      Notification.find_by!(account: account, subject: guided_issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE).update!(
+        title: "Evidence submission", description: "Evidence submission is awaiting validation",
+        metadata: {
+          "prerequisites" => [
+            { "identity" => "pilot-results", "criterion" => "Pilot results" },
+            { "identity" => "accessibility-review", "criterion" => "Accessibility review" }
+          ],
+          "evidence_submissions" => [
+            { "prerequisite_identity" => "pilot-results", "evidence_url" => "https://evidence.example.test/pilot",
+              "explanation" => "The pilot report is attached.", "actor_id" => user.id,
+              "submitted_at" => "2026-10-27T00:00:00Z", "outcome" => "pending_validation",
+              "reason" => "Evidence was recorded for validation. A link alone does not satisfy acceptance." }
+          ]
+        })
+    end
+
     def render_guided_pane
       get inbox_entry_path(
         entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, guided_issue),
@@ -453,6 +474,32 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("who must supply it")
       expect(response.body).to include("resumes automatically")
       expect(response.body).to include("deliberate continuation")
+    end
+
+    it "renders recorded evidence and unique fields for every prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-033
+      create_evidence_notification
+      render_guided_pane
+
+      document = Nokogiri::HTML(response.body)
+      expect(document.css("#prerequisite_pilot-results_evidence_url").size).to eq(1)
+      expect(document.css("#prerequisite_accessibility-review_evidence_url").size).to eq(1)
+      expect(response.body).to include("https://evidence.example.test/pilot", "The pilot report is attached.",
+        "Submitted by user ##{user.id}", "pending_validation")
+    end
+
+    it "renders an evidence form for a legacy prerequisite notification" do # @spec PARTIAL-CLOSEOUT-033
+      notification = Notification.find_by!(account: account, subject: guided_issue,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+      notification.update!(metadata: {
+        "prerequisite_identity" => "legacy-pilot-results",
+        "references" => [ { "kind" => "artifact", "label" => "Pilot report", "revision" => "v1" } ]
+      })
+
+      render_guided_pane
+
+      document = Nokogiri::HTML(response.body)
+      expect(document.css("#prerequisite_legacy-pilot-results_evidence_url").size).to eq(1)
+      expect(response.body).to include("Submit for validation")
     end
 
     # @spec PARTIAL-CLOSEOUT-023
@@ -2043,5 +2090,91 @@ RSpec.describe "Inbox" do
       project_id: project.id,
       kind: Inbox::Queue::MERGE_APPROVAL_KIND
     )
+  end
+
+  # @spec LAYERED-VERIFY-015 LAYERED-VERIFY-016
+  it "renders finding evidence and records a decision without plan-review actions" do
+    finding = create_layered_verification_finding
+    check_result = create(:layered_verification_check_result, obligation: finding.obligation, agent_run: finding.agent_run,
+      execution_state: "completed", obligation_coverage: "contradicted", cause_signature: "missing-idempotency-guard",
+      input_revision: { "code" => "abc123", "intent" => finding.obligation.external_revision })
+    finding.update!(observations: [ { "check_result_ids" => [ check_result.id ] } ])
+    key = entry_id(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND, finding)
+
+    get inbox_entry_path(key), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response.body).to include("PAYMENTS-017", "Two captures occur after retry.",
+      "Only the retry path was exercised.", "Request a separately authorized repair", "Contributing check results",
+      "completed", "contradicted", "matches audit revision")
+    expect(response.body).not_to include("Approve plan", "Reject plan", "Revise plan")
+
+    post inbox_layered_verification_finding_decision_path(key), params: {
+      decision: { action: "defer", reason: "Awaiting a business-owner answer.", external_revision: "abc123" }
+    }
+
+    expect(response).to redirect_to(inbox_entry_path(key))
+    expect(finding.reload).to have_attributes(status: "deferred")
+    expect(finding.decision).to include("selected_action" => "defer", "reason" => "Awaiting a business-owner answer.")
+    expect(AgentRun.where(goal: "layered_verification_repair", project:)).to be_empty
+  end
+
+  # @spec LAYERED-VERIFY-018
+  it "accepts a finding decision when the branch advances without changing the canonical source" do
+    finding = create_layered_verification_finding
+    finding.obligation.update!(external_revision: "a" * 40, canonical_source_path: "docs/intent/payments-specs.md")
+    create(:layered_verification_check_result, obligation: finding.obligation, agent_run: finding.agent_run,
+      input_revision: { "external_revision" => "a" * 40 })
+    key = entry_id(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND, finding)
+    allow(github_client).to receive(:ref).with("acme/alpha", "heads/main")
+      .and_return(OpenStruct.new(object: OpenStruct.new(sha: "b" * 40)))
+    allow(github_client).to receive(:file_content)
+      .with("acme/alpha", path: "docs/intent/payments-specs.md", ref: "a" * 40).and_return("same source")
+    allow(github_client).to receive(:file_content)
+      .with("acme/alpha", path: "docs/intent/payments-specs.md", ref: "b" * 40).and_return("same source")
+
+    post inbox_layered_verification_finding_decision_path(key), params: {
+      decision: { action: "defer", reason: "Awaiting a business-owner answer.", external_revision: "abc123" }
+    }
+
+    expect(response).to redirect_to(inbox_entry_path(key))
+    expect(flash[:alert]).to be_nil
+    expect(finding.reload).to have_attributes(status: "deferred")
+  end
+
+  # @spec LAYERED-VERIFY-018
+  it "rejects a finding decision when the current canonical source content changed" do
+    finding = create_layered_verification_finding
+    finding.obligation.update!(canonical_source_path: "docs/intent/payments-specs.md")
+    key = entry_id(Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND, finding)
+    allow(github_client).to receive(:file_content)
+      .with("acme/alpha", path: "docs/intent/payments-specs.md", ref: "abc123")
+      .and_return("changed obligation source")
+
+    post inbox_layered_verification_finding_decision_path(key), params: {
+      decision: { action: "defer", reason: "Awaiting a business-owner answer.", external_revision: "abc123" }
+    }
+
+    expect(response).to redirect_to(inbox_entry_path(key))
+    expect(flash[:alert]).to eq("The obligation source changed; review fresh evidence before deciding.")
+    expect(finding.reload).to have_attributes(status: "open")
+  end
+
+  def create_layered_verification_finding
+    source = "PAYMENTS-017 requires one captured charge."
+    allow(github_client).to receive(:file_content)
+      .with("acme/alpha", path: "docs/intent/payments-specs.md", ref: "abc123").and_return(source)
+    obligation = create(:layered_verification_obligation, project:, external_identity: "PAYMENTS-017",
+      canonical_source_path: "docs/intent/payments-specs.md",
+      scope_description: "Retry a charge without duplicating it.", external_revision: Digest::SHA256.hexdigest(source))
+    LayeredVerificationFinding.create!(project:, obligation:,
+      agent_run: create(:agent_run, project:, goal: "layered_verification_audit",
+        external_metadata: { "layered_verification" => { "target_revision" => "abc123" } }),
+      correspondence_claim_type: "spec_to_code", cause_signature: "missing-idempotency-guard",
+      source_passages: [ source ],
+      observed_behavior: { "summary" => "Two captures occur after retry." },
+      check_limitations: [ "Only the retry path was exercised." ],
+      decision: { "question" => "How should this discrepancy be handled?",
+                  "options" => %w[request_repair approve_clarification defer],
+                  "consequences" => [ "Repair requires separate authorization." ] })
   end
 end

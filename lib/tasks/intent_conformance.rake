@@ -2,9 +2,9 @@
 
 namespace :intent_conformance do
   namespace :shadow_evaluation do
-    desc "Execute the real intent-conformance reviewer for a frozen shadow evaluation " \
+    desc "Queue the real intent-conformance reviewer for asynchronous execution of a frozen shadow evaluation " \
       "(usage: bin/rails 'intent_conformance:shadow_evaluation:execute[<id>]'). " \
-      "Records actual verdicts, failures, and cost; retries cases without an evaluated verdict."
+      "A GoodJob worker records verdicts, failures, and cost and retries cases without an evaluated verdict."
     # @spec INTENT-CONFORMANCE-ROLLOUT-007
     task :execute, [ :shadow_evaluation_id ] => :environment do |_task, args|
       evaluation, account = TenantContext.with_system_access do
@@ -13,11 +13,13 @@ namespace :intent_conformance do
       end
       TenantContext.apply!(account)
 
-      result = IntentConformance::ShadowEvaluation::ExecuteReviewer.call(evaluation: evaluation)
-      IntentConformance::ShadowEvaluation::CompileReport.call(evaluation: evaluation) if result.success?
+      result = IntentConformance::ShadowEvaluation::EnqueueExecution.call(
+        evaluation: evaluation,
+        actor: evaluation.created_by
+      )
 
       if result.success?
-        puts "executed=#{result.executed} failed=#{result.failed} status=#{evaluation.reload.status}"
+        puts "execution_queued=#{result.enqueued} status=#{evaluation.reload.status}; GoodJob completes the evaluation asynchronously"
       else
         puts result.error
         exit 1

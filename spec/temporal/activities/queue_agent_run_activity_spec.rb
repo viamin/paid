@@ -456,7 +456,66 @@ RSpec.describe Activities::QueueAgentRunActivity do
       expect(ProcessRunQueueJob).to have_been_enqueued
     end
 
+    context "when insertion violates a unique constraint" do
+      before do
+        # Force a real PostgreSQL constraint failure without changing sequences
+        # or mocking the application persistence path.
+        existing = create(:agent_run, :completed, project: project, issue: issue)
+        allow(SecureRandom).to receive(:hex).and_call_original
+        allow(SecureRandom).to receive(:hex).with(32).and_return(existing.proxy_token)
+      end
+
+      # @spec TEMPORAL-ORCHESTRATION-012
+      it "preserves the uniqueness error and leaves the caller's transaction usable" do
+        expect {
+          activity.execute(project_id: project.id, issue_id: issue.id,
+            source_pull_request_number: 42, goal: "review")
+        }.to raise_error(ActiveRecord::RecordNotUnique, /index_agent_runs_on_proxy_token/)
+
+        expect(project.agent_runs.count).to eq(1)
+        expect(ProcessRunQueueJob).not_to have_been_enqueued
+      end
+
+      # @spec TEMPORAL-ORCHESTRATION-012
+      it "rolls back enhancement-round accounting when insertion fails" do
+        expect {
+          activity.execute(project_id: project.id, issue_id: issue.id, goal: "enhance_issue")
+        }.to raise_error(ActiveRecord::RecordNotUnique, /index_agent_runs_on_proxy_token/)
+
+        expect(issue.reload.enhance_issue_rounds).to eq(0)
+        expect(project.agent_runs.count).to eq(1)
+        expect(ProcessRunQueueJob).not_to have_been_enqueued
+      end
+    end
+
     context "when a duplicate run exists" do
+      # @spec TEMPORAL-ORCHESTRATION-012
+      it "does not match the same PR number in another project in the account" do
+        other_project = create(:project, account: user.account, created_by: user)
+        existing = create(:agent_run, :running, project: other_project,
+          source_pull_request_number: 42, goal: "review")
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id,
+          source_pull_request_number: 42, goal: "review")
+
+        expect(result).to include(queued: true)
+        expect(result[:agent_run_id]).not_to eq(existing.id)
+        expect(project.agent_runs.sole).to have_attributes(source_pull_request_number: 42, goal: "review")
+      end
+
+      # @spec TEMPORAL-ORCHESTRATION-012
+      it "matches the PR even when the request references a different issue record" do
+        existing = create(:agent_run, :running, project: project,
+          source_pull_request_number: 42, goal: "review")
+
+        result = activity.execute(project_id: project.id, issue_id: issue.id,
+          source_pull_request_number: 42, goal: "review")
+
+        expect(result).to include(agent_run_id: existing.id, queued: false, duplicate: true)
+        expect(project.agent_runs.count).to eq(1)
+        expect(ProcessRunQueueJob).not_to have_been_enqueued
+      end
+
       it "returns existing run when a queued run exists for the same issue" do
         existing = create(:agent_run, :queued, project: project, issue: issue)
 

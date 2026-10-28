@@ -67,8 +67,8 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
   end
 
   describe "max_threads" do
-    it "defaults to 11" do
-      expect(Paid::GoodJobConfig.max_threads).to eq(11)
+    it "defaults to 12" do
+      expect(Paid::GoodJobConfig.max_threads).to eq(12)
     end
   end
 
@@ -91,8 +91,17 @@ RSpec.describe GoodJob, :no_db do # @spec RAILS-CONTROL-PLANE-003
 
       expect(queue_entries.first).to start_with("default:")
       expect(queue_entries.map { |e| e.split(":").first }).to eq(
-        %w[default maintenance metrics knowledge low_priority]
+        %w[default maintenance metrics knowledge low_priority shadow_evaluation]
       )
+    end
+
+    it "serves the platform-required queues" do
+      queue_entries = Paid::GoodJobConfig.queues.split(";").to_h do |entry|
+        name, threads = entry.split(":")
+        [ name, threads.to_i ]
+      end
+
+      expect(queue_entries.fetch("shadow_evaluation")).to be >= 1
     end
 
     it "does not allocate more per-queue threads than max_threads" do

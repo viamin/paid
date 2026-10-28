@@ -62,6 +62,15 @@ RSpec.describe DevcontainerFile, :no_db do
     expect(impeccable_installer).to include('npx --yes "$IMPECCABLE_PACKAGE" install')
   end
 
+  it "detaches plugin install steps from the lifecycle TTY so CLIs exit instead of hanging until timeout" do
+    installers = %w[install-compound-engineering.sh install-lid.sh install-ponytail.sh].map do |name|
+      Rails.root.join(".devcontainer", name).read
+    end
+
+    expect(installers).to all(include("pipefail"))
+    expect(installers).to all(include('timeout -k 10 "$STEP_TIMEOUT" "$@" </dev/null 2>&1 | cat'))
+  end
+
   it "re-runs setup on every start to restore the detached dev supervisor" do
     command = devcontainer.fetch("postStartCommand")
 

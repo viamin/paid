@@ -136,6 +136,23 @@ step when operator selection is required. Reconciliation never resolves the
 prerequisite, discards valid human evidence, or substitutes solo review for a
 team policy; free-text notification content is not used to infer policy changes.
 
+### Submitted prerequisite evidence
+
+Each human prerequisite occurrence has a stable identity beneath the aggregate
+notification. An authorized operator can submit an HTTP(S) artifact and an
+explanation against that exact identity. The durable submission records actor,
+timestamp, identity, and a disposition (`pending_validation`, `sufficient`,
+`insufficient`, `stale`, or `unavailable`). A submission begins pending: a
+URL, comment, upload, green run, or dismissed alert is never acceptance proof.
+A changed source revision makes the submission stale. Only a current,
+explicitly sufficient assessment may release that occurrence; personal
+dismissal remains a distinct scheduling action, never evidence satisfaction.
+Active notifications created before occurrence-level metadata are represented as
+one compatible occurrence using their persisted aggregate identity, references,
+and operator guidance. A valid submission atomically upgrades that occurrence
+with the current source revision; rendering this compatibility view does not
+mutate the blocker.
+
 For Inbox lane construction, `StalledCloseouts` batch-loads the evidence and
 persisted diagnostic inputs for each project's candidates before evaluating
 individual `CloseoutStatus` values. The per-issue status still produces the
@@ -203,6 +220,22 @@ recording completion, so a continuation cannot dispatch after the attestation.
   by the existing sync parser).
 
 ### Legacy reconciliation: `PartialCloseouts::ReconcileLegacy`
+
+### Assessment transport diagnostics
+
+Closeout assessment remains a fail-closed Claude CLI operation. When the host
+does not have an authenticated Claude session, the request uses an owning
+account's active managed Claude subscription credential as a request-scoped CLI
+environment override only when the provider materializer supports its env-token
+form. Native Claude credentials remain unmodified because their refresh token
+must be materialized as the CLI credentials file; they are never reduced to a
+bare access token. The request never silently changes to API-key/text-mode
+billing.
+Failed attempts persist only a bounded category, provider/model, request and
+attempt identities, plus invalid-field paths/types for structural failures.
+They retain no provider response content or credential material, and an
+authentication failure names reconnecting the account Claude credential as the
+recovery action.
 
 The `partial-closeout-reconciliation-v1` Temporal patch only intercepts new
 workflows. Pre-patch runs — including the 2026-09-17 / 2026-09-22 /

@@ -6,6 +6,7 @@ FactoryBot.define do
     framework { "lid" }
     sequence(:external_identity) { |n| "PAYMENTS-#{n}" }
     external_revision { "abc123" }
+    canonical_source_path { "docs/intent/payments/payment-specs.md" }
     scope_description { "Process a checkout payment." }
     approval_state { "proposed" }
 

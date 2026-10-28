@@ -21,11 +21,24 @@
 - [x] **PARTIAL-CLOSEOUT-030** — When Paid requests a partial-closeout
   assessment, it SHALL supply the JSON response contract to CLI subscription
   callers, identify unsuccessful transport responses using safe
-  status metadata without provider payloads or credentials, and preserve
-  harness authentication exceptions. Transport failure SHALL remain a failure
-  rather than acceptance evidence.
+  status metadata without provider payloads or credentials, and classify
+  harness authentication exceptions into bounded retry diagnostics. Transport
+  failure SHALL remain a failure rather than acceptance evidence.
   *Code:* `app/services/llm/analyze_partial_closeout.rb`.
   *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-034** — When a partial-closeout request cannot obtain
+  a valid assessment from the run's configured runner, it SHALL remain
+  fail-closed and persist a bounded failure category, actual provider/model
+  provenance when available, request and attempt identities, and structural
+  invalid-field paths/types where applicable; it SHALL not persist response
+  content or credentials. Authentication failures SHALL state the configured
+  credential recovery action rather than being reported as a generic malformed
+  assessment.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/temporal/activities/reconcile_partial_closeout_activity.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-032** — When an authorized technical-prerequisite
       validation is prepared from a partial-closeout item, the system SHALL
@@ -605,4 +618,24 @@
   *Test:* `spec/services/issues/closeout_status_spec.rb`,
   `spec/services/inbox/chat_context_spec.rb`,
   `spec/services/security_alerts/verify_remediation_attempt_spec.rb`,
+  `spec/requests/inbox_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-033** — When an authorized operator submits durable
+  prerequisite evidence from the partial-closeout Inbox item, the system SHALL
+  record the exact prerequisite occurrence identity, artifact URL, explanation,
+  actor, timestamp, and explicit disposition. A URL, comment, upload, green
+  run, or dismissed notification SHALL start as `pending_validation`, not as
+  acceptance satisfaction; evidence for an obsolete source revision SHALL be
+  `stale`. An active legacy prerequisite notification without a
+  `prerequisites` array SHALL expose its one persisted prerequisite identity as
+  a compatible occurrence and atomically upgrade it with the current source
+  revision before recording the submission. The unresolved notification remains
+  active until a current, sufficient assessment resolves that occurrence.
+  *Code:* `app/services/partial_closeouts/submit_evidence.rb`,
+  `app/services/partial_closeouts/prerequisite_occurrences.rb`,
+  `app/services/partial_closeouts/reconcile.rb`,
+  `app/controllers/projects/closeout_evidence_controller.rb`,
+  `app/views/dashboard/_inbox_detail_partial_closeout.html.erb`.
+  *Test:* `spec/services/partial_closeouts/submit_evidence_spec.rb`,
+  `spec/requests/projects/closeout_evidence_spec.rb`,
   `spec/requests/inbox_spec.rb`.

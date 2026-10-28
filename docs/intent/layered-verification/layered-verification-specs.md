@@ -62,9 +62,11 @@
   remain `proposed` with its pending-persistence state visible
   (`LAYERED-VERIFY-016`) even when its `ChangeIntent` row is `active`; chat
   exploration, acknowledgment, or deferral in the Inbox SHALL NOT change
-  `approval_state`. A repair request that depends on a clarification still in
-  `proposed` SHALL be rejected with an explicit "clarification not yet
-  approved" reason.
+  `approval_state`. The obligation SHALL retain the canonical source's
+  repository-relative path separately from `external_identity`, because a LID
+  EARS ID is not a repository path. A repair request that depends on a
+  clarification still in `proposed` SHALL be rejected with an explicit
+  "clarification not yet approved" reason.
   *Tests:* `spec/models/layered_verification_obligation_spec.rb`
   *Code:* `LayeredVerificationObligation#record_approval!` (#4432)
 

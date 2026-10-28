@@ -62,15 +62,20 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       allow(provider).to receive(:send_message).and_return(response)
 
       expect { described_class.call(agent_run: agent_run) }
-        .to raise_error(AgentHarness::Error, /partial closeout assessment failed: configured runner runner:\d+ exited with code 1/)
+        .to raise_error(described_class::AssessmentFailure, /transport returned an unsuccessful response/) do |error|
+          expect(error.diagnostic).to include(category: "unsuccessful_response", provider: "claude")
+          expect(error.diagnostic).not_to include(:response, :output, :error)
+        end
     end
 
     # @spec PARTIAL-CLOSEOUT-030
-    it "preserves authentication exceptions from the harness" do
+    it "classifies authentication exceptions from the harness" do
       allow(provider).to receive(:send_message).and_raise(AgentHarness::AuthenticationError, "Not logged in")
 
       expect { described_class.call(agent_run: agent_run) }
-        .to raise_error(AgentHarness::AuthenticationError, "Not logged in")
+        .to raise_error(described_class::AssessmentFailure, /configured runner/) do |error|
+          expect(error.diagnostic).to include(category: "authentication_unavailable", provider: "codex")
+        end
     end
 
     # @spec PARTIAL-CLOSEOUT-031
@@ -155,7 +160,25 @@ RSpec.describe Llm::AnalyzePartialCloseout do
     it "raises when no transport produced a parseable assessment" do
       allow(llm_response).to receive(:success?).and_return(false)
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure, /transport returned an unsuccessful response/) do |error|
+          expect(error.diagnostic).to include(category: "unsuccessful_response", provider: "codex")
+          expect(error.diagnostic).to include(:request_id, :attempt_id)
+          expect(error.diagnostic).not_to have_key(:response)
+        end
+    end
+
+    # @spec PARTIAL-CLOSEOUT-034
+    it "classifies configured-runner authentication errors without exposing the provider response" do
+      allow(provider).to receive(:send_message).and_raise(
+        AgentHarness::AuthenticationError.new("Not logged in", provider: :codex)
+      )
+
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure, /configured runner/) do |error|
+          expect(error.diagnostic).to include(category: "authentication_unavailable", provider: "codex")
+          expect(error.diagnostic).not_to have_key(:response)
+        end
     end
 
     it "caps the gaps array at the reconciler's bound in the response schema" do
@@ -173,13 +196,21 @@ RSpec.describe Llm::AnalyzePartialCloseout do
     it "raises when a gap entry is not an object" do
       allow(llm_response).to receive(:output).and_return({ gaps: [ "wire dispatch" ] }.to_json)
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure) do |error|
+          expect(error.diagnostic.fetch(:invalid_fields)).to include(path: "gaps[0]", expected: "object", actual: "string")
+        end
     end
 
-    it "raises when a gap omits its criterion" do
+    it "records the invalid path and type when a gap omits its criterion" do # @spec PARTIAL-CLOSEOUT-034
       allow(llm_response).to receive(:output).and_return({ gaps: [ { kind: "agent", title: "Finish dispatch" } ] }.to_json)
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure) do |error|
+          expect(error.diagnostic.fetch(:invalid_fields)).to include(
+            path: "gaps[0].criterion", expected: "nonblank string", actual: "nil_class"
+          )
+        end
     end
 
     it "raises when a gap carries an unknown kind" do

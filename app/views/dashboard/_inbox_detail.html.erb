@@ -91,6 +91,8 @@
     <%= render "dashboard/inbox_detail_project_setup_pending", entry: entry %>
   <% elsif entry.traceability_gap? %>
     <%= render "dashboard/inbox_detail_traceability_gap", entry: entry %>
+  <% elsif entry.layered_verification_finding? %>
+    <%= render "dashboard/inbox_detail_layered_verification_finding", entry: entry %>
   <% else %>
     <%= render "dashboard/inbox_detail_plan_review",
           entry: entry,
