@@ -484,7 +484,7 @@ module Inbox
 
         Issue
           .joins(:project)
-          .includes(:project)
+          .preload(:project)
           .where(project_id: ids, paid_state: "needs_input", github_state: "open")
           .then { |scope| only_record(scope) }
           .order(Arel.sql("issues.needs_input_since ASC NULLS LAST"))
@@ -713,7 +713,7 @@ module Inbox
 
       Issue
         .joins(:project)
-        .includes(:project)
+        .preload(:project)
         .where(project_id: ids, paid_state: "manual_review", github_state: "open")
         .then { |scope| only_record(scope) }
         .order(Arel.sql("issues.manual_review_started_at ASC NULLS LAST"))
@@ -810,7 +810,7 @@ module Inbox
 
       Issue
         .joins(:project)
-        .includes(:project)
+        .preload(:project)
         .where(project_id: ids, github_state: "open")
         .where.not(runner_retry_abandoned_at: nil)
         .then { |scope| only_record(scope) }
@@ -921,7 +921,7 @@ module Inbox
         self.class.test_review_pending_issues(ids)
           .then { |scope| only_record(scope) }
           .joins(:project)
-          .includes(:project)
+          .preload(:project)
           .order("issues.github_updated_at ASC")
           .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
       end

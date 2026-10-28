@@ -74,6 +74,13 @@ GitHub-only context and enhancement-comment links load in a separate lazy
 Turbo Frame after the local detail and its actions have rendered. That request
 rechecks current queue membership and returns an empty frame for stale entries.
 
+Issue-backed lanes retain their project joins when project predicates or
+ordering require them, but preload projects separately. This keeps one shared
+project object per project while preventing a project audit-history payload
+from being selected into every issue row. The optimization is representation
+only: lane membership, ordering, phase relevance, and personal-removal
+semantics remain unchanged.
+
 ## Entry Kinds
 
 ### `traceability_gap`
