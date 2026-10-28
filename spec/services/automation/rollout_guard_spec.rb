@@ -39,4 +39,23 @@ RSpec.describe Automation::RolloutGuard do
     expect(queries.grep(/FROM \"accounts\"/).size).to eq(1)
     expect(queries.grep(/FROM \"tenant_settings\"/).size).to eq(1)
   end
+
+  # @spec AUTOMATION-PHASES-014
+  it "blocks project rollback while a continuation grant is active" do
+    FeatureFlags.enable!(:automation_phases, project:)
+    create(:work_item_continuation_grant, project:, issue: create(:issue, project:))
+
+    expect { FeatureFlags.disable!(:automation_phases, project:) }
+      .to raise_error(FeatureFlags::UnsafeDisableError, /active continuation grants/)
+    expect(described_class.enabled?(project)).to be(true)
+  end
+
+  it "allows project rollback after grants are revoked" do
+    FeatureFlags.enable!(:automation_phases, project:)
+    grant = create(:work_item_continuation_grant, project:, issue: create(:issue, project:))
+    grant.revoke!
+
+    expect { FeatureFlags.disable!(:automation_phases, project:) }.not_to raise_error
+    expect(described_class.enabled?(project)).to be(false)
+  end
 end

@@ -46,6 +46,20 @@ bundle exec rake "feature_flags:disable[explicit_pr_automation_decisions]" PROJE
 
 Omit `PROJECT_ID=123` to change the global flag state. Use the Paid project id, not `owner/repo`, because the same GitHub repository can exist in multiple accounts.
 
+### Automation phases pilot
+
+`automation_phases` is authorized only through the project-scoped task above.
+Before enabling a pilot, review its migration preview and validate phase
+mappings, subordinate capability settings, grant storage, and Inbox
+classification together. Do not use a global or percentage rollout for this
+flag.
+
+Rollback is intentionally refused while the affected project has an active
+continuation grant. Revoke or complete each grant, let the phase authorization
+recheck reconcile affected queued work, and then run the project-scoped disable
+task. This keeps the legacy policy from interpreting work queued under a grant
+it does not understand.
+
 ## Issue convention
 
 When a rollout uses a flag:

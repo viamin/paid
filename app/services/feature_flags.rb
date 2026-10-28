@@ -6,6 +6,7 @@ class FeatureFlags
   UnknownFlagError = Class.new(ArgumentError)
   InvalidActorError = Class.new(ArgumentError)
   InvalidPercentageError = Class.new(ArgumentError)
+  UnsafeDisableError = Class.new(StandardError)
 
   DEFINITIONS = {
     question_exploration: Definition.new(
@@ -145,6 +146,7 @@ class FeatureFlags
 
     def disable!(flag_name, project: nil, actor: nil)
       resolved_actor = resolve_actor(project:, actor:)
+      ensure_safe_disable!(flag_name, project:)
 
       unless resolved_actor
         # Flipper's boolean-gate disable already calls clear(feature), which
@@ -195,6 +197,18 @@ class FeatureFlags
     end
 
     private
+
+    # @spec AUTOMATION-PHASES-014
+    def ensure_safe_disable!(flag_name, project:)
+      return unless definition(flag_name).name == :automation_phases
+
+      grants = WorkItemContinuationGrant.unscoped.active
+      grants = grants.where(project:) if project
+      return unless grants.exists?
+
+      raise UnsafeDisableError,
+        "Cannot disable automation_phases with active continuation grants; revoke or complete them and reconcile queued work first."
+    end
 
     def feature(flag_name)
       flipper[definition(flag_name).name]

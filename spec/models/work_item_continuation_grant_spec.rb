@@ -34,6 +34,15 @@ RSpec.describe WorkItemContinuationGrant do
     expect(grant).not_to be_valid
   end
 
+  # @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-009
+  it "requires an actor and keeps the work item in the grant project" do
+    other_project = create(:project, account:)
+    other_issue = create(:issue, project: other_project)
+
+    expect(build(:work_item_continuation_grant, project:, issue:, created_by: nil)).not_to be_valid
+    expect(build(:work_item_continuation_grant, project:, issue: other_issue)).not_to be_valid
+  end
+
   describe "completion" do
     it "completes when the endpoint's work lands" do
       grant = create(:work_item_continuation_grant, project:, issue:)
