@@ -41,9 +41,14 @@ module ChatSessions
         actor: actor,
         llm_client: llm_client,
         on_chunk: on_chunk,
-        on_message_persisted: on_message_persisted,
+        on_message_persisted: method(:record_turn_activity),
         stream_message_id: stream_message_id
       }.merge(extra_agent_loop_kwargs)
+    end
+
+    def record_turn_activity(message, stream_message_id: nil)
+      @chat_turn&.touch_activity!
+      on_message_persisted&.call(message, stream_message_id:)
     end
 
     # Hosts may override to pass additional kwargs into AgentLoop (e.g. a

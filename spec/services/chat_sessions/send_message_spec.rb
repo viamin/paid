@@ -63,6 +63,18 @@ RSpec.describe ChatSessions::SendMessage do
       }.to change { chat_session.messages.where(role: "user").count }.by(1)
     end
 
+    # @spec CHAT-TURN-001
+    it "records a completed durable turn instead of inferring completion from the user message" do
+      assistant_message = described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+
+      turn = chat_session.chat_turns.sole
+      expect(turn).to have_attributes(
+        status: "completed",
+        initiating_message: chat_session.messages.find_by!(role: "user"),
+        terminal_message: assistant_message
+      )
+    end
+
     # @spec PARTIAL-CLOSEOUT-017 — a conversational "yes" must never be
     # treated, displayed, or replayed as approval of a pending write tool.
     describe "with a pending write-tool confirmation" do
@@ -99,6 +111,17 @@ RSpec.describe ChatSessions::SendMessage do
 
         expect(pending_confirmation.reload.pending_confirmation?).to be true
         expect(pending_confirmation.tool_status).to eq("pending")
+      end
+
+      # @spec CHAT-TURN-003
+      it "records that the turn is awaiting confirmation" do
+        tool_response = llm_response.merge(tool_calls: [ { id: "call_1", name: "write_file", arguments: { path: "x" } } ])
+        allow(llm_client).to receive(:call).and_return(tool_response)
+        allow(Tools::Registry).to receive(:write_tool?).with("write_file").and_return(true)
+
+        described_class.call(chat_session: chat_session, content: "Please write", llm_client: llm_client)
+
+        expect(chat_session.chat_turns.last.status).to eq("awaiting_confirmation")
       end
 
       it "does not persist the notice when no confirmation is pending" do
