@@ -187,6 +187,23 @@ flows that populate those questions still target issues: `enhance_issue`,
 issue-scoped today. The missing PR producer remains a follow-up item rather
 than a queue/query limitation.
 
+### Structured review holds
+
+A structured review hold is an explicit human-decision request, not evidence
+that Paid has finished its review lifecycle. `Inbox::MergeApproval` therefore
+includes an open held PR before it applies the ordinary `ready`-phase and
+auto-merge-assessment predicates. A run can open a PR on GitHub and then fail,
+time out, or be interrupted before finalization stores its internal phase;
+filtering that hold through the stale phase would turn the requested decision
+into a silent stop. The entry keeps the ordinary hold wording and does not
+mutate the phase, restore labels, or assert merge readiness. The same rule
+uses `hold_for_review` when the project's label integration is ignored.
+
+Non-held merge-approval entries retain the ready-phase and assessment
+requirements. Escalated PRs remain the bounded standing-stop path owned by
+`pr-escalation-recovery`; this lane does not infer a hold from a failed run or
+turn pending CI/review into a merge decision.
+
 ## Delegation from `Dashboard::NeedsInputQueue`
 
 `Dashboard::NeedsInputQueue` keeps its existing public surface

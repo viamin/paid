@@ -145,7 +145,7 @@ RSpec.describe Inbox::Queue do
       expect_merge_approval_entry(entries, pr)
     end
 
-    # @spec AUTO-MERGE-009
+    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008
     it "returns a merge-approval Inbox entry for an unevaluated review-gated PR" do
       project.update!(owner_reviewer_login: nil)
       pr = create(
@@ -166,6 +166,30 @@ RSpec.describe Inbox::Queue do
         summary_text: "Human review requested before merging",
         waiting_since: pr.github_updated_at
       )
+    end
+
+    # @spec INBOX-FOUNDATION-008
+    it "returns a merge-approval Inbox entry for a review-held PR with a stale draft phase" do
+      project.update!(owner_reviewer_login: nil)
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 42,
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry).to have_attributes(
+        issue: pr,
+        summary_text: "Human review requested before merging",
+        waiting_since: pr.github_updated_at
+      )
+      expect(pr.reload.pr_review_phase).to eq("draft")
     end
 
     # @spec INBOX-PHASE-RELEVANCE-003
@@ -314,13 +338,14 @@ RSpec.describe Inbox::Queue do
       expect(guidance.fetch(:instruction)).not_to include("remove the hold")
     end
 
-    it "returns a merge-approval Inbox entry for an ignored-mode local review hold without a blocker snapshot" do # @spec LABEL-CONTROL-004
+    it "returns a merge-approval Inbox entry for an ignored-mode local review hold with a stale draft phase" do # @spec INBOX-FOUNDATION-008 LABEL-CONTROL-004
       project.update!(label_integration_mode: "ignored")
       pr = create(
         :issue,
         :pull_request,
         project: project,
         github_number: 42,
+        pr_review_phase: "draft",
         hold_for_review: true,
         auto_merge_evaluated_at: nil,
         auto_merge_blockers: nil
@@ -334,6 +359,7 @@ RSpec.describe Inbox::Queue do
         summary_text: "Human review requested before merging",
         waiting_since: pr.github_updated_at
       )
+      expect(pr.reload.pr_review_phase).to eq("draft")
     end
 
     it "does not use a hold label for an ignored-mode PR without a local review hold" do # @spec LABEL-CONTROL-004

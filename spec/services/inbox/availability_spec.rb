@@ -181,6 +181,28 @@ RSpec.describe Inbox::Availability do
       expect(availability.kind_counts[Inbox::Queue::MERGE_APPROVAL_KIND]).to eq(1)
     end
 
+    # @spec INBOX-FOUNDATION-008
+    it "offers merge approval for a review-held PR with a stale draft phase" do
+      project_a.update!(owner_reviewer_login: nil)
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project_a,
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      queue_count = Inbox::Queue.call(user: user, kind: Inbox::Queue::MERGE_APPROVAL_KIND).size
+      badge_count = Inbox::Count.call(user: user)
+      availability = described_class.call(user: user)
+
+      expect([ queue_count, badge_count, availability.kind_counts[Inbox::Queue::MERGE_APPROVAL_KIND] ]).to eq([ 1, 1, 1 ])
+      expect(availability.available_projects).to include(project_a)
+      expect(pr.reload.pr_review_phase).to eq("draft")
+    end
+
     # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
     it "includes clear manual-merge decisions but excludes PRs awaiting checks" do
       project_a.update!(auto_merge_mode: "off", auto_pick_enabled: false)
