@@ -334,6 +334,13 @@
   *Tests:* `spec/lib/chat_popup_controller_node_harness_spec.rb`.
   *Code:* `app/javascript/controllers/chat_popup_controller.js`.
 
+- [x] **CHAT-API-027** — The global chat popup overflow menu SHALL label its
+  link to the active session's dedicated chat route "Open full chat", so the
+  compact popup clearly communicates that the action opens the main chat
+  surface.
+  *Test:* `spec/requests/chat_sessions_spec.rb`.
+  *Code:* `app/views/chat_sessions/_popup.html.erb`.
+
 - [x] **CHAT-API-025** — When a user follows a same-origin navigation from a
   popup or full-page chat, Paid SHALL hand that chat session to the global
   popup and open it on the destination page, without changing the user's

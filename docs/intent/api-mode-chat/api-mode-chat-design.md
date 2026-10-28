@@ -125,6 +125,9 @@ What ships today:
   A full-page navigation restores the same persisted conversation only while
   that preference is enabled; otherwise the popup starts closed. Explicit
   dismissal persists closed without discarding the selected session.
+- The popup overflow menu labels its link to the session's dedicated chat
+  route "Open full chat", distinguishing it from the compact popup and from
+  unrelated application pages.
 - A same-origin navigation initiated from either chat surface explicitly hands
   its active session to the global popup for the destination load. Chat links
   may use their normal `href` or a `data-chat-navigate-url` value; the browser
