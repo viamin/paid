@@ -43,10 +43,23 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      assistant_message ? ChatTurns::Track.complete!(@chat_turn) : ChatTurns::Track.activity!(@chat_turn)
       update_session_activity
       assistant_message
+    rescue ChatSessions::TokenLimitExceededError
+      raise
+    rescue AgentHarness::RateLimitError
+      ChatTurns::Track.fail!(@chat_turn, classification: "rate_limited") if @chat_turn
+      raise
+    rescue AgentHarness::Error
+      ChatTurns::Track.fail!(@chat_turn, classification: "provider_error") if @chat_turn
+      raise
+    rescue StandardError
+      ChatTurns::Track.fail!(@chat_turn, classification: "infrastructure_error") if @chat_turn
+      raise
     end
 
     private
@@ -131,6 +144,16 @@ module ChatSessions
         role: "user",
         content: content,
         metadata: { "stream_message_id" => stream_message_id }.compact
+      )
+    end
+
+    # @spec CHAT-TURN-001
+    def start_turn
+      @chat_turn = ChatTurns::Track.start!(
+        chat_session: chat_session,
+        user_message: transport_attempt_message,
+        actor: actor,
+        stream_message_id: stream_message_id
       )
     end
 

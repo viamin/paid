@@ -41,7 +41,7 @@ module ChatSessions
         actor: actor,
         llm_client: llm_client,
         on_chunk: on_chunk,
-        on_message_persisted: on_message_persisted,
+        on_message_persisted: method(:record_persisted_message),
         stream_message_id: stream_message_id
       }.merge(extra_agent_loop_kwargs)
     end
@@ -50,6 +50,11 @@ module ChatSessions
     # pre-computed token budget). Default: none.
     def extra_agent_loop_kwargs
       {}
+    end
+
+    def record_persisted_message(message, **kwargs)
+      ChatTurns::Track.activity!(@chat_turn) if defined?(@chat_turn) && @chat_turn
+      on_message_persisted&.call(message, **kwargs)
     end
 
     # Remove only partial rows the failed attempt itself persisted, identified

@@ -6,6 +6,14 @@
   <%= render "chat_messages/provider_error_notice", message: message %>
 <% elsif message.pending_confirmation_notice? %>
   <%= render "chat_messages/pending_confirmation_notice", message: message %>
+<% elsif message.stalled_turn_notice? %>
+  <div class="rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="alert">
+    <p class="font-semibold">This turn needs attention</p>
+    <p class="mt-1"><%= message.content %></p>
+    <% if (turn_id = message.metadata["chat_turn_id"]) %>
+      <%= link_to "Review request", "#chat-message-#{message.metadata["user_message_id"]}", class: "mt-2 inline-block font-medium text-amber-900 underline" %>
+    <% end %>
+  </div>
 <% elsif message.role == "system" %>
   <details class="group">
     <summary class="mx-auto flex cursor-pointer items-center justify-center gap-2 rounded-md bg-gray-50 px-4 py-1.5 text-xs font-medium text-gray-500 ring-1 ring-gray-200 hover:bg-gray-100">

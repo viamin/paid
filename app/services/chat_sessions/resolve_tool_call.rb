@@ -50,12 +50,14 @@ module ChatSessions
       prepare_resolution!
       on_tool_call_resolved&.call(tool_call_message)
 
-      if post_dispatch_confirmation?
+      result = if post_dispatch_confirmation?
         resolve_post_dispatch_confirmation!
       else
         resolve_pending_tool_call!
         resume_loop_unless_other_pending
       end
+      track_turn(result)
+      result
     end
 
     private
@@ -66,6 +68,14 @@ module ChatSessions
     # @spec API-CONVERSATION-DELEGATION-002
     def originating_user_message
       chat_session.messages.where(role: "user").where("id < ?", tool_call_message.id).order(id: :desc).first
+    end
+
+    # @spec CHAT-TURN-001
+    def track_turn(result)
+      turn = ChatTurn.find_by(user_message: transport_attempt_message)
+      return unless turn
+
+      result.is_a?(ChatMessage) ? ChatTurns::Track.complete!(turn) : ChatTurns::Track.activity!(turn)
     end
 
     # @spec QUESTION-EXPLORATION-001
