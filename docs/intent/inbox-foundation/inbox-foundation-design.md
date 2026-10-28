@@ -178,6 +178,18 @@ PR owner-approval and paused-run paths (future kinds) will produce PR entries,
 so the queue must include PRs from day one. The SQL therefore drops the
 explicit `is_pull_request: false` clause so the inbox is structurally ready.
 
+### Held pull requests and stale phase state
+
+`paid-hold-review` is an explicit human decision request. A hold therefore
+enters the merge-approval lane for every open pull request, including one whose
+persisted review phase remains `draft` after interrupted PR finalization. In
+ignored label mode the local `hold_for_review` value is the equivalent signal.
+This exception is deliberately limited to an explicit hold: ordinary
+approval/merge candidates still require the ready phase and their persisted
+assessment. The Inbox presents the request as a review hold and does not
+promote the phase, infer green checks, restore automation labels, or grant
+merge authority.
+
 Current producer state: the consumer side is PR-safe before the producers are.
 As of August 26, 2026, the inbox can render and answer a PR-backed
 clarifying-question record when that row already contains parseable questions
