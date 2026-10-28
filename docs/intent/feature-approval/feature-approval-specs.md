@@ -281,7 +281,11 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   only after structural evidence is exhausted and be cached by assessed revisions;
   the existing daily sweep remains the bounded fallback for unchanged inputs.
   Issue coverage SHALL load shared project records separately from issue rows,
-  so project audit history is not duplicated for every synchronized issue.
+  so project audit history is not duplicated for every synchronized issue. One
+  reconciliation execution SHALL reuse a bounded minimal issue-fact snapshot
+  for each account-authorized project across its artifacts, batch backlink and
+  manifest evidence reads, and discard that snapshot at execution end. It SHALL
+  not reuse evidence across executions or artifact revisions.
   *Tests:* `spec/services/feature_intents/reconcile_design_artifacts_spec.rb`,
   `spec/services/feature_intents/persist_design_artifact_findings_spec.rb`,
   `spec/models/design_artifact_finding_spec.rb`,

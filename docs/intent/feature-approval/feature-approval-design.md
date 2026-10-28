@@ -81,7 +81,13 @@ reports evidence, coverage time, and an explicit state: `missing_tree`,
 Issue coverage preloads shared project records in a separate query rather than
 joining full project rows into the issue result. Project audit history must not
 be repeated for every issue: PostgreSQL results and their Ruby string copies
-would otherwise multiply that history by the synchronized issue count.
+would otherwise multiply that history by the synchronized issue count. One
+reconciliation execution keeps a bounded, minimal issue-fact snapshot for each
+account-authorized project it needs. It reuses that snapshot for every artifact
+in the execution, batches feature-intent manifest and backlink evidence reads,
+and retains neither ORM result graphs nor evidence beyond the execution. Each
+new execution reads a fresh snapshot, so a finding remains bound to its
+artifact revision and current synchronized evidence.
 
 PR synchronization schedules repository reconciliation after a fixed 30-second
 coalescing window. Scheduling and coalescing happen after the synchronization
