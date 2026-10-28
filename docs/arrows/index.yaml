@@ -330,6 +330,14 @@ arrows:
     taxonomy: chat
     status: OK
     audited: 2026-10-07
+  chat-turn-recovery:
+    title: Chat Turn Recovery
+    path: docs/intent/chat-turn-recovery/chat-turn-recovery-design.md
+    specs: docs/intent/chat-turn-recovery/chat-turn-recovery-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: OK
+    audited: 2026-10-28
   api-conversation-delegation:
     title: API Conversation Transport Delegation
     path: docs/intent/api-conversation-delegation/api-conversation-delegation-design.md
