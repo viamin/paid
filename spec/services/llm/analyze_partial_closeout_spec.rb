@@ -128,7 +128,8 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
       allow(legacy_response).to receive(:output).and_return({ gaps: [ "wire dispatch" ] }.to_json)
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(AgentHarness::Error, "partial closeout assessment failed: invalid assessment structure at gaps[0]: expected object, got string")
     end
 
     it "raises when a gap omits its criterion" do
@@ -142,7 +143,8 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
       allow(legacy_response).to receive(:output).and_return({ gaps: [ { criterion: "dispatch", kind: "robot", title: "Finish dispatch" } ] }.to_json)
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(AgentHarness::Error, "partial closeout assessment failed: invalid assessment structure at gaps[0].kind: expected one of agent, human")
     end
 
     it "raises when an agent gap has neither a title nor an owner issue" do

@@ -74,7 +74,9 @@ module Llm
     def call
       parsed = schema_capable_request? ? schema_constrained_parse : legacy_text_parse
       parsed = parsed.deep_stringify_keys if parsed.is_a?(Hash)
-      raise AgentHarness::Error, "partial closeout assessment failed: invalid assessment structure" unless valid_assessment?(parsed)
+      if (diagnostic = invalid_assessment_diagnostic(parsed))
+        raise AgentHarness::Error, "partial closeout assessment failed: invalid assessment structure at #{diagnostic}"
+      end
 
       parsed
     end
@@ -100,6 +102,46 @@ module Llm
       gaps = parsed["gaps"]
       gaps.is_a?(Array) && gaps.size <= MAX_GAPS && gaps.all? { |gap| valid_gap?(gap) } &&
         valid_criteria?(parsed["criteria"]) && valid_next_action?(parsed["next_action"])
+    end
+
+    # The response body is untrusted, so diagnostics name only fixed contract
+    # paths and Ruby types. They must never include invalid field values.
+    def invalid_assessment_diagnostic(parsed)
+      return "assessment: expected object, got #{type_name(parsed)}" unless parsed.is_a?(Hash)
+
+      gaps = parsed["gaps"]
+      return "gaps: expected array, got #{type_name(gaps)}" unless gaps.is_a?(Array)
+      return "gaps: expected at most #{MAX_GAPS} items" if gaps.size > MAX_GAPS
+
+      gaps.each_with_index do |gap, index|
+        diagnostic = invalid_gap_diagnostic(gap, index)
+        return diagnostic if diagnostic
+      end
+      return "criteria: expected array, got #{type_name(parsed["criteria"])}" unless valid_criteria?(parsed["criteria"])
+      return "next_action: expected object, got #{type_name(parsed["next_action"])}" unless valid_next_action?(parsed["next_action"])
+
+      "assessment: violates response contract" unless valid_assessment?(parsed)
+    end
+
+    def invalid_gap_diagnostic(gap, index)
+      path = "gaps[#{index}]"
+      return "#{path}: expected object, got #{type_name(gap)}" unless gap.is_a?(Hash)
+      return "#{path}.criterion: expected non-empty string" unless gap["criterion"].is_a?(String) && gap["criterion"].present?
+      return "#{path}.kind: expected string, got #{type_name(gap["kind"])}" unless gap["kind"].is_a?(String)
+      return "#{path}.kind: expected one of #{VALID_KINDS.join(", ")}" unless VALID_KINDS.include?(gap["kind"])
+
+      return "#{path}: missing resolvable owner" unless owner_resolvable?(gap)
+      return unless gap["kind"] == "human" && (!valid_references?(gap["references"]) || !valid_policy_selection?(gap["policy_selection"]))
+
+      "#{path}: invalid human-gap references or policy selection"
+    end
+
+    def type_name(value)
+      return "null" if value.nil?
+      return "object" if value.is_a?(Hash)
+      return "array" if value.is_a?(Array)
+
+      value.class.name.demodulize.underscore
     end
 
     def valid_gap?(gap)
@@ -214,9 +256,20 @@ module Llm
 
       output = response.respond_to?(:output) ? response.output : response.to_s
       JSON.parse(strip_markdown_fence(output.to_s.strip))
+    rescue AgentHarness::Error => error
+      raise if error.context.present?
+
+      transport_failure!("CLI", provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL,
+        category: transport_error_category(error), detail: error.message)
     rescue JSON::ParserError
       # Parser messages can quote untrusted response content, including secrets.
       raise AgentHarness::Error, "partial closeout assessment failed: invalid JSON response", cause: nil
+    end
+
+    def transport_error_category(error)
+      return "authentication" if error.is_a?(AgentHarness::AuthenticationError)
+
+      "request"
     end
 
     # Retains the failure category, provider/model, and request identity

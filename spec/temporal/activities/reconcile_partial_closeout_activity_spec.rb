@@ -118,6 +118,38 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
       )
     end
 
+    # @spec NO-OUTPUT-ISSUE-007
+    it "redacts and bounds a raised harness authentication error without context" do
+      secret = "sk-ant-api03-" + "a" * 80
+      error = AgentHarness::AuthenticationError.new("Claude authentication failed: #{secret}" + "x" * 600)
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      allow(AgentHarness).to receive(:send_message).and_raise(error)
+
+      expect { activity.execute(agent_run_id: run.id) }.to raise_error(AgentHarness::Error)
+
+      diagnostic = run.reload.reconciliation.fetch("error")
+      expect(diagnostic).to include("transport" => "CLI", "category" => "authentication")
+      expect(diagnostic.fetch("detail")).not_to include(secret)
+      expect(diagnostic.fetch("detail")).to include("[REDACTED:")
+      expect(diagnostic.fetch("detail").length).to be <= AgentRun::MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH
+      expect(run.reconciliation).not_to have_key("assessment")
+    end
+
+    # @spec NO-OUTPUT-ISSUE-007
+    it "persists a safe structural path diagnostic for an invalid assessment" do
+      error = AgentHarness::Error.new(
+        "partial closeout assessment failed: invalid assessment structure at gaps[0].kind: expected one of agent, human"
+      )
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(error)
+
+      expect { activity.execute(agent_run_id: run.id) }.to raise_error(AgentHarness::Error)
+
+      expect(run.reload.reconciliation.fetch("error")).to eq(
+        "partial closeout assessment failed: invalid assessment structure at gaps[0].kind: expected one of agent, human"
+      )
+      expect(run.reconciliation).not_to have_key("assessment")
+    end
+
     it "records a retryable failure and re-raises when reconciliation fails" do
       allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return({ "gaps" => [] })
       allow(PartialCloseouts::Reconcile).to receive(:call).and_raise(GithubClient::Error, "github unavailable")

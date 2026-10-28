@@ -32,12 +32,26 @@ module Activities
     # `AgentHarness::Error#context` (see that class's `transport_failure!`)
     # so a retryable auth/provider failure stays diagnosable and recoverable
     # per #4655, instead of persisting only the formatted message string.
-    # Other errors reaching this rescue (e.g. `GithubClient::Error`) carry
-    # no such context and keep persisting their plain message.
+    # Raised harness errors (including CLI authentication failures) can carry
+    # raw provider output in their message with no context at all. Sanitize
+    # every message at this persistence boundary, and only retain the known
+    # transport metadata after applying the same bounded sanitization.
     def failure_diagnostic(error)
-      return error.message unless error.is_a?(AgentHarness::Error) && error.context.present?
+      message = sanitized_diagnostic(error.message)
+      return message unless error.is_a?(AgentHarness::Error) && error.context.present?
 
-      error.context.stringify_keys.merge("message" => error.message)
+      safe_transport_context(error.context).merge("message" => message)
+    end
+
+    def safe_transport_context(context)
+      context.stringify_keys.slice("transport", "provider", "model", "request_id", "category", "detail")
+        .each_with_object({}) do |(key, value), safe_context|
+          safe_context[key] = sanitized_diagnostic(value) if value.present?
+        end
+    end
+
+    def sanitized_diagnostic(value)
+      AgentRun::ErrorMessageSanitizer.call(text: value).presence || "assessment failure"
     end
 
     # The workflow cannot query the database (deterministic replay), so the
