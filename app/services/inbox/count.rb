@@ -24,7 +24,7 @@ module Inbox
 
     # @spec OPERATOR-INBOX-010
     def call
-      Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { compute_count }
+      Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { [ compute_count, DISPLAY_CAP ].min }
     end
 
     private
@@ -35,12 +35,17 @@ module Inbox
     # When any visible project runs the phase model, the count comes from the
     # same scope-filtered queue the list renders, so the badge can never
     # disagree with the list about phase relevance. Personal removal is
-    # rollout-independent and requires the same exact count. Otherwise the
-    # cheap SQL approximation is unchanged.
+    # rollout-independent; outside the phase rollout it is reconciled against
+    # only the user's removed entries, not by constructing the entire queue.
+    # Otherwise the cheap SQL approximation is unchanged.
+    # @spec INBOX-PHASE-RELEVANCE-005 @spec INBOX-PHASE-RELEVANCE-009 @spec INBOX-FOUNDATION-012
     def compute_count
       return governed_count if phase_model_governed?
-      return governed_count if personal_removals?
 
+      [ ungoverned_count - suppressed_personal_removal_count, 0 ].max
+    end
+
+    def ungoverned_count
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
         retry_limited_count + change_intent_draft_count + partial_closeout_count +
@@ -65,7 +70,32 @@ module Inbox
     end
 
     def personal_removals?
-      InboxRemoval.active.where(user: user).exists?
+      active_removals.any?
+    end
+
+    # A removal carries its stable request identity, so validating it needs the
+    # corresponding single-kind, single-record entry only. Rebuilding every
+    # Inbox lane here made one active removal turn a badge cache miss into a
+    # full list materialization.
+    # @spec INBOX-PHASE-RELEVANCE-009 @spec INBOX-FOUNDATION-012
+    def suppressed_personal_removal_count
+      return 0 unless personal_removals?
+
+      active_removals.count do |removal|
+        entry = removal_entry(removal)
+        entry && removal.suppresses?(Inbox::RequestIdentity.occurrence_for(entry))
+      end
+    end
+
+    def active_removals
+      @active_removals ||= InboxRemoval.active.where(user: user).to_a
+    end
+
+    def removal_entry(removal)
+      kind, record_id = removal.request_key.to_s.split(":", 2)
+      return unless Inbox::Queue::KINDS.include?(kind) && record_id.present?
+
+      Inbox::Queue.new(user: user, kind: kind, record_id: record_id).entries.first
     end
 
     def needs_input_count

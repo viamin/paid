@@ -42,6 +42,20 @@ RSpec.describe Inbox::Count do
       expect(Inbox::Queue.call(user:)).to be_empty
     end
 
+    # @spec INBOX-PHASE-RELEVANCE-009 INBOX-FOUNDATION-012
+    it "counts an active personal removal without constructing the full queue when phases are off" do
+      allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))
+      create(:issue, :needs_input, project:, github_state: "open",
+        needs_input_questions: [ "Which behavior?" ])
+      entry = Inbox::Queue.call(user:).first
+      Inbox::Removals::Remove.call(entry:, user:)
+
+      allow(Inbox::Queue).to receive(:call).and_call_original
+
+      expect(described_class.call(user:)).to eq(0)
+      expect(Inbox::Queue).not_to have_received(:call).with(user: user)
+    end
+
     # @spec DESIGN-RECONCILIATION-001
     it "counts open traceability gaps and invalidates after resolution" do
       finding = create(:design_artifact_finding, project: project, account: account)

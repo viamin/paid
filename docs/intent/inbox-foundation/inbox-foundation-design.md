@@ -162,6 +162,21 @@ the unfiltered view (keeping only `sort`) with a notice that the filter was
 cleared. That empty state therefore means exactly "nothing is waiting
 anywhere", not "this combination matches nothing".
 
+### Bounded badge queries and project preloading (#4651)
+
+The navigation badge keeps its inexpensive per-lane count when no phase-model
+project is visible. An active personal removal is checked only against its
+identified entry and current occurrence, rather than causing construction of
+the full queue; this preserves removal semantics while bounding the extra work
+to active removals. Phase-governed counts continue to use the shared queue so
+phase relevance remains identical to the list.
+
+Issue lanes retain joins to `projects` when project predicates or deterministic
+ordering require them, but load the associated project records in a separate
+preload query. This prevents large project audit histories from being selected
+once per issue row while preserving the shared project instance each entry
+needs.
+
 Ordering differs in the one way the inbox page cares about:
 
 - **Oldest-waiting-first** by `needs_input_since ASC NULLS LAST`, with a stable

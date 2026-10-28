@@ -175,3 +175,14 @@
   link instead of only `index` handling it.
   *Tests:* `spec/requests/inbox_spec.rb`.
   *Code:* `app/controllers/inbox_controller.rb#redirect_for_empty_filtered_combination`.
+
+- [x] **INBOX-FOUNDATION-012** — When Inbox issue lanes need a `projects` join
+  for predicates or deterministic ordering, they SHALL preload project records
+  separately so a project's audit history is not repeated in every issue result
+  row. When a user has active personal removals and no visible project is
+  phase-governed, `Inbox::Count` SHALL validate only the removed entries'
+  current occurrences instead of constructing the full queue, while preserving
+  badge/list removal agreement and cache invalidation.
+  *Tests:* `spec/services/inbox/count_spec.rb`, `spec/services/inbox/queue_spec.rb`.
+  *Code:* `app/services/inbox/count.rb`, `app/services/inbox/queue.rb`,
+  `app/services/inbox/merge_approval.rb`, `app/services/inbox/intent_conformance.rb`.
