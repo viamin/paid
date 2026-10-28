@@ -365,3 +365,40 @@ inferring live lifecycle behavior from static tests or host-only commands.
 Companion artifacts drafted alongside this report (`docs/intent/maintenance-runs/`,
 an HLD pointer) are reviewable drafts for the same pending human-review gate,
 not accepted intent.
+
+## #4604 execution-environment capability check — 2026-10-28
+
+**Result: not executed; no Docker-capable execution environment is available
+to this Paid workspace.** Before attempting either live scenario, this run
+checked the supported local and configured-remote paths. No Docker-compatible
+client (`docker`, `podman`, or `nerdctl`) is installed, `/var/run/docker.sock`
+and `/run/docker.sock` are absent, and the environment supplies no
+`DOCKER_HOST`, `REMOTE_DOCKER_*`, or Swarm backend configuration. The local
+backend therefore has no reachable engine through which
+`AgentRun#provision_execution_environment` can provision the required run.
+
+This is a capability check, **not** an acceptance artifact. It records no
+native analyzer output, sidecar response, image/check-out identity, or
+container cleanup, so neither criterion has progressed. Installing a client,
+running host commands, using mocks, or changing `marketplace_tool_sidecars`
+would not provide the required evidence and was not attempted.
+
+Recovery remains to run both scenarios through Paid's supported lifecycle in
+an authorized environment with a local Docker socket or configured remote
+Docker backend:
+
+1. Provision a fresh pinned `AgentRun`, invoke a bounded read-only native CLI
+   analyzer with `execute_in_execution_environment(..., stream: false)`, and
+   preserve its `stdout`, `stderr`, `exit_code`, image/check-out identity, and
+   run-container cleanup.
+2. Provision a representative allowlisted `tool_sidecar`, call its documented
+   health or API endpoint from that paired run using the same execution method,
+   and preserve the endpoint, response shape, exit code, and both sidecar and
+   run-container cleanup.
+
+Until those artifacts exist, #4604 remains open, RDR-075 remains Draft, its
+`Blocked on` metadata and `maintenance-runs` arrow remain unchanged in
+substance, phases #4328–#4333 remain unreleased, and no upstream RDR-073
+extension decision can be made. The existing `marketplace_tool_sidecars`
+rollout guard remains default-off; a future live validation must obtain any
+required pilot authorization instead of bypassing that flag.
