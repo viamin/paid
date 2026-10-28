@@ -520,6 +520,10 @@ Rails.application.routes.draw do
   end
 
   # Chat sessions and messages
+  resources :chat_turns, only: [] do
+    post :recover, on: :member
+  end
+
   resources :chat_sessions, path: "chat", only: %i[index create show update destroy] do
     patch :archive, on: :member
     patch :unarchive, on: :member

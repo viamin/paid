@@ -28,3 +28,10 @@
   same turn.
   *Code:* `ChatSessions::DetectStalledTurns`.
   *Test:* `spec/services/chat_sessions/detect_stalled_turns_spec.rb`.
+
+- [x] **CHAT-TURN-RECOVERY-005** — When an authorized user selects safe retry
+  for a stalled turn, the system SHALL record one recovery decision under the
+  turn lock, mark the original turn `abandoned`, and require a new user message
+  rather than replaying incomplete tool activity.
+  *Code:* `ChatSessions::RecoverStalledTurn`, `ChatTurnsController#recover`.
+  *Test:* `spec/services/chat_sessions/recover_stalled_turn_spec.rb`.

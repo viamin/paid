@@ -33,7 +33,9 @@ the send service rather than waiting for the detector.
 
 The first release does not replay stalled turns automatically. The notice
 identifies whether a completed tool result exists after the user message and
-directs the user to inspect the retained transcript before starting a new turn.
+offers an explicit safe-retry action. That action records the user's recovery
+decision, transitions the old turn to `abandoned`, and directs the user to
+start a new turn from the retained transcript.
 This is an intentional safe baseline: without a per-tool idempotency contract
 and a durable provider checkpoint, replay could repeat a side effect. Future
 automatic recovery may be enabled only for an explicit infrastructure failure
