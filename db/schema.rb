@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_003213) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -809,6 +809,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
 
   create_table "chat_messages", force: :cascade do |t|
     t.bigint "chat_session_id", null: false
+    t.bigint "chat_turn_id", comment: "Turn that durably produced this transcript row."
     t.text "content"
     t.datetime "created_at", null: false
     t.uuid "external_id", default: -> { "gen_random_uuid()" }, null: false
@@ -825,6 +826,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.datetime "updated_at", null: false
     t.index ["chat_session_id", "created_at"], name: "index_chat_messages_on_chat_session_id_and_created_at"
     t.index ["chat_session_id"], name: "index_chat_messages_on_chat_session_id"
+    t.index ["chat_turn_id"], name: "index_chat_messages_on_chat_turn_id"
     t.index ["external_id"], name: "index_chat_messages_on_external_id", unique: true
     t.index ["role"], name: "index_chat_messages_on_role"
     t.index ["tool_status"], name: "index_chat_messages_on_tool_status", where: "((tool_status)::text = 'pending'::text)"
@@ -884,6 +886,23 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["rate_limited_until"], name: "index_chat_sessions_on_rate_limited_until"
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
+  end
+
+  create_table "chat_turns", force: :cascade do |t|
+    t.bigint "chat_session_id", null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.string "failure_classification"
+    t.datetime "last_activity_at", null: false, comment: "Most recent durable message or lifecycle activity."
+    t.jsonb "metadata", default: {}, null: false
+    t.integer "recovery_attempts", default: 0, null: false
+    t.datetime "stalled_at"
+    t.string "status", default: "pending", null: false, comment: "Durable turn lifecycle state."
+    t.string "stream_message_id", null: false, comment: "Client stream identity used to deduplicate one turn."
+    t.datetime "updated_at", null: false
+    t.bigint "user_message_id", comment: "The persisted user message that initiated this turn."
+    t.index ["chat_session_id", "stream_message_id"], name: "index_chat_turns_on_chat_session_id_and_stream_message_id", unique: true
+    t.index ["status", "last_activity_at"], name: "index_chat_turns_on_status_and_last_activity_at"
   end
 
   create_table "clarifying_question_progresses", comment: "Durable per-question exploration progress and attributable answer evidence.", force: :cascade do |t|
@@ -4671,6 +4690,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   add_foreign_key "chat_investigations", "projects"
   add_foreign_key "chat_investigations", "users", column: "created_by_id"
   add_foreign_key "chat_messages", "chat_sessions"
+  add_foreign_key "chat_messages", "chat_turns"
   add_foreign_key "chat_session_projects", "chat_sessions"
   add_foreign_key "chat_session_projects", "projects"
   add_foreign_key "chat_sessions", "accounts"
@@ -4679,6 +4699,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "chat_turns", "chat_messages", column: "user_message_id"
+  add_foreign_key "chat_turns", "chat_sessions"
   add_foreign_key "clarifying_question_progresses", "accounts"
   add_foreign_key "clarifying_question_progresses", "chat_sessions"
   add_foreign_key "clarifying_question_progresses", "issues"

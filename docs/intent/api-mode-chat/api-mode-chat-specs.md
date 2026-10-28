@@ -588,3 +588,23 @@
   `app/views/chat_messages/_tool_call_group.html.erb`,
   `app/javascript/controllers/chat_controller.js#appendToolCard`,
   `#mergeResolvedCardIntoAdjacentRun`.
+
+- [x] **CHAT-API-026** — When a background chat turn has a persisted user
+  message or partial transcript activity but no durable terminal conclusion
+  for the configured inactivity window, Paid SHALL classify the durable turn
+  as `stalled` and persist an in-transcript system notice. The notice SHALL
+  state that no final assistant response was recorded, preserve existing
+  transcript evidence, and link to a pending tool confirmation when one
+  exists. It SHALL NOT classify a rate-limited session or a pending
+  confirmation as stalled, and it SHALL NOT imply an unfinished tool ran.
+  *Tests:* `spec/services/chat_sessions/detect_stalled_turns_spec.rb`.
+  *Code:* `ChatTurn`, `ChatSessions::DetectStalledTurns`,
+  `ChatSessions::DetectStalledTurnsJob`,
+  `app/views/chat_messages/_stalled_turn_notice.html.erb`.
+
+- [x] **CHAT-API-027** — Chat turn lifecycle transitions and detector
+  classifications SHALL be persisted and queryable. One client stream ID
+  SHALL create at most one turn per chat session, and concurrent watchdog
+  sweeps SHALL create at most one stalled notice for that turn.
+  *Tests:* `spec/services/chat_sessions/detect_stalled_turns_spec.rb`.
+  *Code:* `ChatTurn`, `ChatSessions::ProcessMessageJob`.

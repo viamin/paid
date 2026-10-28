@@ -13,6 +13,9 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     # @spec CHAT-API-002, CHAT-API-022
     chat_session = ChatSession.find(chat_session_id)
     actor = chat_session.account.users.find(actor_id || chat_session.created_by_id)
+    turn = ChatTurn.find_or_create_by!(chat_session:, stream_message_id:) do |new_turn|
+      new_turn.last_activity_at = Time.current
+    end
     stream_name = "chat_session:#{chat_session.id}"
 
     chunk_sequence = 0
@@ -23,6 +26,8 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       content: content,
       stream_message_id: stream_message_id,
       on_message_persisted: ->(message, stream_message_id: nil) {
+        message.update!(chat_turn: turn) if message.chat_turn_id.nil?
+        turn.record_activity!(message.role == "user" ? message : nil)
         broadcast_persisted_message(stream_name, message, stream_message_id: stream_message_id)
       },
       on_chunk: ->(chunk) {
@@ -36,6 +41,8 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       }
     )
 
+    (assistant_message || turn.pending_confirmation?) ? turn.complete! : turn.fail!("missing_terminal_response")
+
     ActionCable.server.broadcast(stream_name, {
       type: "message_complete",
       message_id: stream_message_id,
@@ -45,15 +52,20 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       }
     })
   rescue ArgumentError => e
+    turn&.fail!("validation_error")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue NotImplementedError => e
+    turn&.fail!("configuration_error")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::LlmClientConfigurationError => e
+    turn&.fail!("configuration_error")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
+    turn&.fail!("budget_exhausted")
     broadcast_error(chat_session_id, stream_message_id, e.message,
       limit_type: e.limit_type, limit: e.limit, used: e.used)
   rescue AgentHarness::RateLimitError => e
+    turn&.fail!("rate_limited")
     # @spec CHAT-API-017
     Rails.logger.warn(
       message: "chat_process_message_job.rate_limited",
@@ -65,6 +77,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     broadcast_persisted_message(stream_name, pause_message)
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue AgentHarness::Error => e
+    turn&.fail!("provider_error")
     Rails.logger.error(
       message: "chat_process_message_job.provider_error",
       chat_session_id: chat_session_id,
@@ -75,6 +88,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   rescue ActiveRecord::RecordNotFound
     raise
   rescue StandardError => e
+    turn&.fail!("infrastructure_error")
     Rails.logger.error(
       message: "chat_process_message_job.failed",
       chat_session_id: chat_session_id,

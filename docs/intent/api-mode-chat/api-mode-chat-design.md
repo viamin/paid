@@ -186,6 +186,12 @@ What ships today:
   the configured Anthropic endpoint
 - token usage for chat turns is recorded on `token_usages` and surfaced back
   through the chat UI/API totals
+- each background chat operation has a durable `ChatTurn` lifecycle. A
+  watchdog classifies only inactive non-terminal turns as stalled, preserving
+  transcript evidence and adding a visible notice instead of fabricating a
+  completion. Pending confirmations and known provider rate-limit pauses are
+  intentional waiting states, not stalls; recovery is not authorized merely
+  by detection, so stalled tools are never blindly replayed.
 - `Tools::RepoReadClientResolver` resolves repo-read tool calls (`grep_repo`,
   `read_repo_file`, `list_repo_tree`, `search_issues`) against the project's
   own GitHub credential first (App installation token, or PAT when the
