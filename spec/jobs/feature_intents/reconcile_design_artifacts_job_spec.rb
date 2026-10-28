@@ -214,6 +214,28 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     expect(DesignArtifactFinding.count).to eq(0)
   end
 
+  # @spec DESIGN-RECONCILIATION-003
+  it "reuses one bounded issue coverage snapshot across multiple RDR artifacts" do
+    [ 101, 102, 103 ].each { |number| create(:issue, project:, github_number: number, body: "Implementation #{number}") }
+    artifacts = [ 101, 102, 103 ].map do |number|
+      FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/RDR-#{number}.md", revision: "#{number}" * 40,
+        body: "## Related Issues\n- ##{number}"
+      )
+    end
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery(artifacts))
+    queries = []
+    subscriber = ->(event) { queries << event.payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.perform_now(project.id)
+    end
+
+    issue_fact_queries = queries.grep(/FROM "issues"/)
+    expect(issue_fact_queries.count).to be <= 2
+    expect(DesignArtifactFinding.count).to eq(0)
+  end
+
   it "uses a stored Paid feature-intent link without requiring a document repair" do
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
     linked_issue = create(:issue, project:, github_number: 101)

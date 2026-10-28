@@ -294,6 +294,20 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   `app/jobs/feature_intents/reconcile_design_artifacts_job.rb`,
   `app/jobs/feature_intents/design_artifact_reconciliation_sweep_job.rb`.
 
+- [x] **DESIGN-RECONCILIATION-003** — When one reconciliation execution
+  examines multiple design artifacts, the system SHALL build one job-scoped,
+  bounded snapshot of only the synchronized issue fields required for coverage
+  for each account-authorized project. It SHALL batch canonical-manifest and
+  exact-backlink evidence reads, reuse those plain issue facts for every
+  artifact in the execution, and discard them when the execution ends. The
+  snapshot SHALL preserve trusted-author filtering, repository-qualified
+  external identities, pinned issue revisions, account boundaries, and
+  incomplete-coverage behavior; it SHALL NOT reuse evidence across executions
+  or revisions.
+  *Tests:* `spec/jobs/feature_intents/reconcile_design_artifacts_job_spec.rb`.
+  *Code:* `app/services/feature_intents/issue_coverage_snapshot.rb`,
+  `app/jobs/feature_intents/reconcile_design_artifacts_job.rb`.
+
 - [x] **ISSUE-TREE-001** — When a feature-planning run creates or adopts
   implementation issues, the system SHALL persist an issue-tree manifest on
   its `FeatureIntent`, keyed by stable task identity and containing expected

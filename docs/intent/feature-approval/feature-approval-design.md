@@ -108,6 +108,11 @@ with a bare number. Compound historical/superseded statuses are deferred only
 when their structural status form explicitly says so. External identities are
 read only from account-authorized project coverage; missing or inaccessible
 coverage is unknown, never evidence that local implementation work is missing.
+A reconciliation execution assembles that coverage once into a bounded,
+job-scoped plain-fact snapshot. It projects only fields used for structural and
+semantic assessment, batches canonical-manifest and exact-backlink evidence,
+and discards the snapshot when the execution ends. The snapshot does not cross
+account boundaries, executions, or revisions.
 A weak semantic candidate is not linked
 until an `agent_harness` assessment confirms it. The existing daily sweep is a bounded
 fallback; sync and design events prompt reassessment, while unchanged assessed inputs
