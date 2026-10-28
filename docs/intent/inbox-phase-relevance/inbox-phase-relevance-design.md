@@ -64,8 +64,12 @@ platform requests (no phase) and follow the same visibility rule.
 Hiding never resolves, clears, comments, or changes readiness.
 
 `Inbox::Queue` accepts `scope:` (`actionable` default, `disabled_phases`,
-`removed`), and `Inbox::Count` / `Inbox::Availability` derive from the same
-call so lists, counts, badges, and indicators cannot disagree.
+`removed`). `Inbox::Count` and `Inbox::Availability` preserve the same
+relevance result: when the phase model governs a visible project they use the
+scope-filtered queue, while an ungoverned badge uses lane counts and checks
+only active personal removals against their current candidate occurrence. This
+avoids constructing every render payload merely because a user has removed an
+item.
 
 ## Personal removal
 

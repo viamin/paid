@@ -73,7 +73,10 @@
 - [x] **INBOX-PHASE-RELEVANCE-009** — Personally removed items SHALL be
   excluded consistently from default lists, counts, badges, and availability,
   while authorized direct-link inspection and manual work SHALL remain
-  available.
+  available. When no visible project is phase-governed, badge counting SHALL
+  retain the existing lane-count queries and evaluate only active removal
+  candidates for current-occurrence suppression; it SHALL NOT construct the
+  full Inbox entry payload set merely because any removal exists.
   *Tests:* `spec/services/inbox/count_spec.rb`, `spec/requests/api/v1/inbox_spec.rb`
   *Code:* `Inbox::Count`, `Inbox::Queue`
 

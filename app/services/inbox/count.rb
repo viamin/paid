@@ -39,13 +39,33 @@ module Inbox
     # cheap SQL approximation is unchanged.
     def compute_count
       return governed_count if phase_model_governed?
-      return governed_count if personal_removals?
+      return count_with_personal_removals if personal_removals?
 
+      ungoverned_count
+    end
+
+    def ungoverned_count
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
         retry_limited_count + change_intent_draft_count + partial_closeout_count +
         test_review_pending_count + project_setup_pending_count + traceability_gap_count +
         layered_verification_finding_count
+    end
+
+    # Personal removal is rollout-independent, but does not require building
+    # every render payload. Start with the existing bounded lane counts and
+    # materialize only the user's removed candidates to compare their current
+    # occurrence with the persisted suppression.
+    # @spec INBOX-PHASE-RELEVANCE-009
+    def count_with_personal_removals
+      ungoverned_count - suppressed_removal_count
+    end
+
+    def suppressed_removal_count
+      InboxRemoval.active.where(user: user).find_each.count do |removal|
+        entry = Inbox::Queue.find_entry(user: user, entry_id: removal.request_key)
+        entry && removal.suppresses?(Inbox::RequestIdentity.occurrence_for(entry))
+      end
     end
 
     def governed_count
