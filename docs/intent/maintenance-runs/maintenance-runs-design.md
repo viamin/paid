@@ -45,8 +45,9 @@ model. Each run persists, immutably once started:
   investigated, and `issue_id` (nullable — issue-less manual runs are
   first-class).
 - `objective` (the recipe key, or `nil` for a free-text user question),
-  `scope` (optional paths/symbols the user named), and `guidance` (free-text
-  instructions), captured verbatim at run start.
+  `scope` (optional paths/symbols or a free-form natural-language target the
+  user named), and `guidance` (free-text instructions), captured verbatim at
+  run start.
 - `recipe_version` and the resolved tool versions/configuration actually
   used, for provenance (RDR-073 attachment metadata plus any native-CLI
   analyzer version string captured at invocation time).
@@ -120,10 +121,11 @@ selection also applies the existing authorization of the selected issue or
 PR-creation pathway:
 
 - **Start**: an authorized user supplies a project, optional objective (recipe
-  key), optional scope (paths/symbols), and optional free-text guidance. A
-  start request must include either a recipe objective or nonblank guidance;
-  scope alone is not an investigation objective. Response identifies the
-  created run and its resolved (or pending-clarification) scope.
+  key), optional scope (paths/symbols or a free-form natural-language target),
+  and optional free-text guidance. A start request must include either a
+  recipe objective or nonblank guidance; scope alone is not an investigation
+  objective. Response identifies the created run and its resolved (or
+  pending-clarification) scope.
 - **Inspect**: an authorized user reads run status, report outcome once
   terminal, and findings with their status.
 - **Cancel**: an authorized user takes an explicit action distinct from
@@ -132,6 +134,10 @@ PR-creation pathway:
   become a bounded issue or PR-creation run through existing authorized
   pathways — this create path is a new run/issue through existing creation
   goals, not a new side-effecting action hung off the maintenance report.
+  A run may instead carry an explicit election captured at run start under a
+  separately approved automatic-repair policy; the candidate policy in
+  [`optimization-recipes`](../optimization-recipes/optimization-recipes-design.md)
+  is not accepted.
 
 All three surfaces are gated by the `maintenance_runs` guard (below); none
 of the three may admit a maintenance run while the guard is off for the

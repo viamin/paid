@@ -340,6 +340,15 @@ evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
 building a second provisioning path, and keeps investigation separate from
 any repair: a scan never mutates source code or opens a PR on its own.
+A planned optimization recipe family extends that capability with
+non-functional audits selected from a code-defined catalog and scoped by a
+free-form natural-language target as readily as paths or symbols. Semantic
+repair eligibility belongs to an `agent_harness` assessment; authorization,
+budgets, idempotency, and revalidation remain deterministic code gates.
+Automatic repair is a draft, per-run, off-by-default election, bounded to the
+approved finding and unavailable to security hardening. See
+`docs/intent/optimization-recipes/`; it remains unaccepted and does not enable
+implementation or rollout.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
