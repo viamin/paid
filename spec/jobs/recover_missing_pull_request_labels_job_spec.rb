@@ -226,6 +226,26 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
         .with("viamin/paid", 416, [ "paid-generated", "paid-automation" ])
     end
 
+    # @spec PR-LABEL-RECOVERY-003
+    it "recovers labels after a failed create-pr run that recorded the published PR" do
+      create(:agent_run,
+        project: project,
+        issue: nil,
+        custom_prompt: "Create PR",
+        goal: "create_pr",
+        status: "failed",
+        completed_at: 1.hour.ago,
+        pull_request_number: 416,
+        pull_request_url: "https://github.com/viamin/paid/pull/416")
+      pull_request = create(:issue, :pull_request, project: project, github_number: 416, labels: [])
+
+      described_class.perform_now
+
+      expect(github_client).to have_received(:add_labels_to_issue)
+        .with("viamin/paid", 416, [ "paid-generated", "paid-automation" ])
+      expect(pull_request.reload.labels).to include("paid-generated", "paid-automation")
+    end
+
     it "skips runs completed more than 24 hours ago" do
       create(:agent_run, :completed,
         project: project,

@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
 # Re-applies missing labels to pull requests created by Paid when the
-# original post-creation label API call failed transiently.
+# original post-creation label API call failed transiently or the creating run
+# reached a terminal failure after publishing the PR.
 #
 # If a PR still has the generated label but is missing the automation label,
 # assume a human intentionally removed automation to take over manually and do
@@ -85,16 +86,16 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
 
   private
 
-  # Returns one AgentRun per unique (project_id, pull_request_number),
+  # Returns one terminal AgentRun per unique (project_id, pull_request_number),
   # bounded to runs completed in the last 24 hours. The window must track
   # completion, not creation: pull requests are opened when a run completes,
   # so a run older than 24h at completion (e.g. a multi-day create_pr run)
   # would otherwise never be eligible for label recovery.
   # DISTINCT ON deduplicates in SQL so we don't need an in-memory Set.
   # Uses the (status, completed_at) index.
-  # @spec PR-LABEL-RECOVERY-001
-  def candidate_runs # @spec PR-LABEL-RECOVERY-001 UPSTREAM-PR-005
-    AgentRun.completed.joins(:project)
+  # @spec PR-LABEL-RECOVERY-001 PR-LABEL-RECOVERY-003
+  def candidate_runs # @spec PR-LABEL-RECOVERY-001 PR-LABEL-RECOVERY-003 UPSTREAM-PR-005
+    AgentRun.finished.joins(:project)
       .where(goal: "create_pr")
       .where.not(pull_request_number: nil)
       .where("agent_runs.completed_at >= ?", CANDIDATE_WINDOW.ago)

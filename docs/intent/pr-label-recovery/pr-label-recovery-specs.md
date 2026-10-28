@@ -17,3 +17,11 @@
   *Code:* `RecoverMissingPullRequestLabelsJob#missing_labels`.
   *Test:* `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`
   ("preserves manual opt-out").
+
+- [x] **PR-LABEL-RECOVERY-003** — When a terminal `create_pr` run recorded a
+  pull-request identity within the recovery window, label recovery SHALL
+  consider it regardless of whether the run completed successfully, failed,
+  timed out, or was cancelled. Recovery SHALL retain the existing intentional
+  automation-label-removal guard.
+  *Code:* `RecoverMissingPullRequestLabelsJob#candidate_runs`.
+  *Test:* `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`.
