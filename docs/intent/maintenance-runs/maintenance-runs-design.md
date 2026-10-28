@@ -16,6 +16,13 @@ prefix: MAINT
 > implementation. See
 > [`audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md`](../../rdrs/audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md)
 > for the tool-handoff evidence this design relies on.
+>
+> **Optimization preparation — Tracks [#4636](https://github.com/viamin/paid/issues/4636).**
+> The policy below reconciles the owner decisions recorded in
+> [#4495](https://github.com/viamin/paid/issues/4495) into reviewable intent.
+> It is documentation-only and remains pending explicit owner acceptance of
+> these precise revisions. It does not accept RDR-075, enable
+> `maintenance_runs`, authorize a runtime rollout, or close #4636.
 
 ## Purpose
 
@@ -36,6 +43,15 @@ tool attachment, matching, provisioning, or sidecar hardening — that remains
 [`marketplace-tool-sidecars`](../marketplace-tool-sidecars/marketplace-tool-sidecars-design.md),
 consumed rather than duplicated.
 
+The optimization recipe family is a maintenance consumer, not a second run
+type. Its executable delivery slices are [#4493](https://github.com/viamin/paid/issues/4493)
+(catalog/menu), [#4494](https://github.com/viamin/paid/issues/4494) (initial
+recipes), [#4495](https://github.com/viamin/paid/issues/4495) (bounded,
+opt-in auto-queue policy), and [#4496](https://github.com/viamin/paid/issues/4496)
+(staged follow-on recipes). [#4492](https://github.com/viamin/paid/issues/4492)
+is their tracking umbrella, not an implementation prerequisite or authority
+for runtime behavior.
+
 ## Storage Contract
 
 A maintenance run is a new `AgentRun` goal (`"maintenance"`), not a new
@@ -52,6 +68,25 @@ model. Each run persists, immutably once started:
   analyzer version string captured at invocation time).
 - `cost_limit`/`time_limit` snapshots, consistent with existing run budget
   fields.
+
+An optimization recipe is a code-defined entry in the maintenance recipe
+catalog, not an enum in the run contract. An entry supplies its display name,
+description, investigation instructions, default metric hints, and an optional
+pointer to its recipe definition. The initial curated entries are Performance,
+Design / Architecture, Code Duplication, Security Hardening, Cost / Resource
+Efficiency, Maintainability / Readability, and Test Coverage & Quality. A
+selected catalog type is persisted with the run snapshot and retries retain
+it; an unknown or unmapped type becomes a custom-objective maintenance run
+rather than a rejected request. This is the #4493 contract.
+
+An optimization run may also persist an **automatic-repair election**. It is
+absent by default and is available only through the same authorized start
+contract on UI, API, and MCP. When present, its immutable snapshot names the
+optimization policy revision, the operator-selected confidence threshold, and
+explicit per-repair cost and time limits. The election is a request to apply a
+later accepted policy after report completion; it is neither a finding nor a
+repair run, and it never changes the report-only semantics of the scan. This
+is the narrow #4495 contract, pending acceptance.
 
 A maintenance run produces exactly one `MaintenanceReport`, associated
 1:1 with the run (reports are not retried in place — a retry or a new
@@ -137,6 +172,59 @@ All three surfaces are gated by the `maintenance_runs` guard (below); none
 of the three may admit a maintenance run while the guard is off for the
 project's tenant.
 
+For an optimization start, each surface additionally exposes the optional
+automatic-repair election, its confidence threshold, and explicit repair
+budgets with the same authorization and validation. Omitting it creates the
+same report-only run as any other maintenance start. A user cannot add or
+broaden the election after the run starts; a new run is required.
+
+## Optimization Assessment and Bounded Repair Policy
+
+The catalog is an entry point, not a claim that a particular optimization is
+safe or worthwhile. #4494's Code Duplication, Maintainability / Readability,
+and Performance recipes reuse the maintenance evidence contract: each finding
+records scope, evidence and counterevidence, proposed action, validation plan,
+tool provenance where applicable, and visible coverage limitations. A recipe
+may inspect callers, tests, framework entry points, and design artifacts beyond
+the requested scope to assess a recommendation, but it must disclose that
+supporting inspection. A repair remains bounded to the approved finding;
+evidence access never expands repair authority.
+
+Semantic assessment — including whether evidence supports an optimization,
+the interpretation of counterevidence, and the finding's confidence — is made
+through `agent_harness` with a structured response. Tool output and code may
+perform only structural collection, parsing, provenance capture, and policy
+gates; they must not infer semantic suitability from a keyword, heuristic, or
+tool score. The confidence threshold in an election compares the structured,
+agent-assessed confidence recorded on that finding with the snapshotted policy
+value. It is not asserted to be a calibrated probability, and a raw tool
+confidence cannot qualify a repair. This separates the owner-selected policy
+input from semantic judgment in accordance with Zero Framework Cognition.
+
+After a completed report, the #4495 policy may create a repair request only
+when every deterministic gate passes: the run's immutable opt-in election is
+present; `maintenance_runs` remains enabled; the finding belongs to that
+report, is open, and is an eligible optimization category; the structured
+assessment meets the stored threshold; and the explicit per-repair time and
+cost limits can be attached. The request uses the existing MAINT repair-handoff
+path, carries report/finding/policy provenance, and is subject to its normal
+authorization and revision revalidation. A non-qualifying finding remains in
+the report for manual selection, with the reason it was not queued visible.
+
+The gate must derive a stable idempotency identity from the source report,
+canonical finding identity, and policy revision so retries or repeated
+occurrences cannot create duplicate repair work. Before a queued repair
+applies a recommendation, a changed repair-checkout revision requires fresh
+revalidation; failed or unavailable revalidation is visible and never falls
+back to stale evidence. Disabling `maintenance_runs` stops new automatic
+queues but neither cancels active repair runs nor deletes reports.
+
+Security Hardening findings are always excluded from automatic queueing and
+remain manual-selection-only until a dedicated accuracy and safety policy is
+accepted. #4496 owns that staged recipe work, along with Cost / Resource
+Efficiency, Design / Architecture, and Test Coverage & Quality; it cannot
+reinterpret #4495's election as security-repair authorization.
+
 ## Run-Outcome Contract
 
 A maintenance run's terminal report outcome is one of exactly five values,
@@ -208,6 +296,8 @@ shipped code in
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
 | Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Optimization catalog | Code-defined catalog entries with a custom-objective fallback | Run-contract enum; project-admin authoring UI | The curated menu remains extensible without migration churn while existing free-text maintenance remains available (#4493). |
+| Optimization auto-queue | Per-run, immutable opt-in election with agent-harness assessment and deterministic gates | Tenant-wide default; raw-tool or heuristic qualification | Preserves #4495's owner decision while keeping semantic assessment in the LLM boundary and enforceable authorization, budget, revalidation, idempotency, and category exclusions in code. Pending explicit owner acceptance. |
 
 ## Open Questions & Future Decisions
 
@@ -242,8 +332,10 @@ shipped code in
 - Not a tool marketplace, matching engine, or provisioning system — that is
   RDR-073's territory, consumed here, not duplicated.
 - Not an automatic-repair mechanism — a scan never deletes source code or
-  opens a PR as a side effect; repair is a separate, explicitly authorized
-  run.
+  opens a PR as a side effect. The only proposed exception is the separately
+  accepted, per-run optimization election documented above; it queues a
+  bounded repair through the existing authorized pathway, never directly
+  mutates source code, and is not enabled by this draft.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.
@@ -262,3 +354,6 @@ shipped code in
   native CLI analyzer invocation inside the execution environment
 - `app/models/agent_run.rb` — `execute_in_execution_environment`,
   `cleanup_execution_environment`
+- [#4636](https://github.com/viamin/paid/issues/4636) — pending owner decision
+  for this optimization preparation revision; [#4492](https://github.com/viamin/paid/issues/4492)
+  is tracking only, while #4493–#4496 own executable follow-on work

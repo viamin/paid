@@ -10,6 +10,9 @@
 > merges — see `docs/rdrs/RDR-075-general-maintenance-runs.md` §Implementation
 > Plan step 1. Implementation phases are tracked at
 > [#4328](https://github.com/viamin/paid/issues/4328)–[#4333](https://github.com/viamin/paid/issues/4333).
+> Optimization preparation below tracks [#4636](https://github.com/viamin/paid/issues/4636)
+> and is pending explicit owner acceptance; it authorizes neither runtime
+> implementation nor rollout.
 
 ## Admission and Rollout Guard
 
@@ -158,4 +161,97 @@
       back to its source maintenance report and finding.
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
-      an explicit user selection.
+      an explicit user selection, except through the separately accepted,
+      immutable per-run optimization election defined by MAINT-090–MAINT-097.
+
+## Optimization Catalog, Recipes, and Scope
+
+The claims in this section are preparation for [#4493](https://github.com/viamin/paid/issues/4493)
+and [#4494](https://github.com/viamin/paid/issues/4494); [#4492](https://github.com/viamin/paid/issues/4492)
+tracks the family and is not an executable prerequisite.
+
+- [ ] **MAINT-080**: The system shall define code-based optimization catalog
+      entries for Performance, Design / Architecture, Code Duplication,
+      Security Hardening, Cost / Resource Efficiency, Maintainability /
+      Readability, and Test Coverage & Quality, each with a display name,
+      description, default metric hints, and optional recipe-definition
+      reference.
+- [ ] **MAINT-081**: When an authorized user starts an optimization
+      maintenance run, the UI, authenticated API, and MCP surface shall
+      expose the same catalog selection contract with free-text scope and
+      guidance, persist the selected type in the immutable run snapshot, and
+      retain it across retries.
+- [ ] **MAINT-082**: If an optimization type is absent from the catalog, then
+      the system shall start the request as a custom-objective maintenance run
+      rather than reject it or coerce it to a different catalog type.
+- [ ] **MAINT-083**: When an optimization recipe assesses a finding, the
+      system shall record evidence, counterevidence, tool provenance when
+      applicable, proposed action, validation plan, and coverage limitations;
+      a prompt-only recipe shall disclose that no tool evidence was collected.
+- [ ] **MAINT-084**: The system shall allow an optimization recipe to inspect
+      supporting callers, tests, framework entry points, and design artifacts
+      outside requested scope only to assess a recommendation, shall disclose
+      that inspection in the report, and shall not use it to expand repair
+      scope without explicit authorization.
+- [ ] **MAINT-085**: The system shall obtain an optimization finding's
+      semantic assessment and confidence through `agent_harness` in a
+      structured response, shall preserve raw tool confidence as separate
+      evidence, and shall not derive semantic repair suitability from a raw
+      tool score, keyword, or code heuristic.
+
+## Opt-In Optimization Automatic Repair
+
+The claims in this section prepare [#4495](https://github.com/viamin/paid/issues/4495)
+only. They remain inactive until the precise policy receives explicit owner
+acceptance; they neither accept RDR-075 nor enable `maintenance_runs`.
+
+- [ ] **MAINT-090**: The system shall default every optimization maintenance
+      run to report-only and shall permit automatic repair queueing only when
+      an authorized user elects it at run start through the UI, authenticated
+      API, or MCP surface with equivalent authorization.
+- [ ] **MAINT-091**: When an authorized user elects optimization automatic
+      repair queueing, the system shall snapshot the policy revision, selected
+      confidence threshold, and explicit per-repair cost and time limits on
+      the maintenance run and shall not add or broaden that election after the
+      run starts.
+- [ ] **MAINT-092**: After an optimization report completes, the system shall
+      queue a repair through the existing authorized repair pathway only when
+      the run's immutable election exists, `maintenance_runs` remains enabled,
+      the finding belongs to that report and is open and eligible, its
+      agent-harness assessment meets the snapshotted threshold, and its
+      explicit repair budgets can be attached.
+- [ ] **MAINT-093**: When a finding does not pass an automatic-repair gate,
+      the system shall retain it in the report for manual selection and shall
+      visibly record why it was not automatically queued.
+- [ ] **MAINT-094**: The system shall enforce the snapshotted per-repair cost
+      and time limits on every automatically queued repair and shall preserve
+      collected evidence with a visible budget-exhausted outcome when either
+      limit is exhausted.
+- [ ] **MAINT-095**: Before an automatically queued repair applies a
+      recommendation, if its repair-checkout revision differs from the source
+      report revision, then the system shall require fresh finding
+      revalidation and shall visibly stop rather than apply stale evidence
+      when revalidation fails or is unavailable.
+- [ ] **MAINT-096**: The system shall use a stable idempotency identity based
+      on the source report, canonical finding identity, and policy revision so
+      a retry or repeated finding occurrence shall not create duplicate repair
+      work.
+- [ ] **MAINT-097**: The system shall exclude Security Hardening findings
+      from optimization automatic repair queueing and retain them for manual
+      selection only until a dedicated security accuracy and safety policy is
+      explicitly accepted.
+- [ ] **MAINT-098**: When `maintenance_runs` is disabled after an optimization
+      report starts, the system shall stop new automatic repair queues without
+      cancelling an active repair run or deleting the report.
+
+## Staged Follow-On Optimization Recipes
+
+The claims in this section prepare [#4496](https://github.com/viamin/paid/issues/4496).
+
+- [ ] **MAINT-100**: The system shall register Cost / Resource Efficiency,
+      Design / Architecture, and Test Coverage & Quality through the
+      optimization catalog and shall apply the evidence and honest-coverage
+      contracts of MAINT-083–MAINT-085 to each staged recipe.
+- [ ] **MAINT-101**: When designing the Test Coverage & Quality recipe, the
+      system shall reconcile it with RDR-075's planned test-quality recipe
+      rather than create a duplicate maintenance objective.

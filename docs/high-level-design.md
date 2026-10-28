@@ -258,6 +258,12 @@ The operating principles that tie the approaches above to day-to-day work:
    measurement.
    Recurring execution obstacles become reviewable, evidence-bounded proposals;
    they never authorize a repair or a new run merely by being detected.
+   A project owner may separately pre-authorize a narrowly bounded follow-up
+   policy for a particular investigation only where its accepted intent makes
+   the election, scope, budget, revalidation, idempotency, and exclusions
+   explicit. That authorization is distinct from detection, remains opt-in and
+   revocable, and does not waive normal repair, review, security, or rollout
+   controls.
 4. **Stay portable across models and providers.** Swap the model or provider
    behind a component without rewriting call sites.
 5. **Run in multiple deployment models.** Managed cloud and private deployment,
