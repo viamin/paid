@@ -125,6 +125,8 @@ What ships today:
   A full-page navigation restores the same persisted conversation only while
   that preference is enabled; otherwise the popup starts closed. Explicit
   dismissal persists closed without discarding the selected session.
+- The popup action menu labels the link to a session's full-page conversation
+  as "Open full chat" so its destination is clear beside popup-local actions.
 - A same-origin navigation initiated from either chat surface explicitly hands
   its active session to the global popup for the destination load. Chat links
   may use their normal `href` or a `data-chat-navigate-url` value; the browser
