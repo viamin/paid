@@ -271,6 +271,14 @@ module Inbox
       new(...).call
     end
 
+    # The badge needs the Queue's exact phase-relevance and personal-removal
+    # projection, but it does not need a rendered list. Keep that work behind
+    # a separate entry point so callers do not accidentally retain the list.
+    # @spec INBOX-PHASE-RELEVANCE-011
+    def self.count(...)
+      new(...).count
+    end
+
     # @spec OPERATOR-INBOX-015
     def self.find_entry(user:, entry_id:, project: nil, kind: nil)
       entry_kind, record_id = entry_id.to_s.split(":", 2)
@@ -327,6 +335,11 @@ module Inbox
     # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-009 @spec OPERATOR-INBOX-002C @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002E @spec OPERATOR-INBOX-002J
     def call
       sort_entries(apply_scope(build_entries))
+    end
+
+    # @spec INBOX-PHASE-RELEVANCE-011
+    def count
+      apply_scope(build_entries).size
     end
 
     # Unfiltered source entries for read-only projections such as the phase
@@ -484,7 +497,7 @@ module Inbox
 
         Issue
           .joins(:project)
-          .includes(:project)
+          .preload(:project)
           .where(project_id: ids, paid_state: "needs_input", github_state: "open")
           .then { |scope| only_record(scope) }
           .order(Arel.sql("issues.needs_input_since ASC NULLS LAST"))
@@ -713,7 +726,7 @@ module Inbox
 
       Issue
         .joins(:project)
-        .includes(:project)
+        .preload(:project)
         .where(project_id: ids, paid_state: "manual_review", github_state: "open")
         .then { |scope| only_record(scope) }
         .order(Arel.sql("issues.manual_review_started_at ASC NULLS LAST"))
@@ -810,7 +823,7 @@ module Inbox
 
       Issue
         .joins(:project)
-        .includes(:project)
+        .preload(:project)
         .where(project_id: ids, github_state: "open")
         .where.not(runner_retry_abandoned_at: nil)
         .then { |scope| only_record(scope) }
@@ -921,7 +934,7 @@ module Inbox
         self.class.test_review_pending_issues(ids)
           .then { |scope| only_record(scope) }
           .joins(:project)
-          .includes(:project)
+          .preload(:project)
           .order("issues.github_updated_at ASC")
           .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
       end

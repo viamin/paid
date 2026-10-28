@@ -32,11 +32,11 @@ module Inbox
     attr_reader :user
 
     # @spec INBOX-PHASE-RELEVANCE-005 @spec INBOX-PHASE-RELEVANCE-009
-    # When any visible project runs the phase model, the count comes from the
-    # same scope-filtered queue the list renders, so the badge can never
-    # disagree with the list about phase relevance. Personal removal is
-    # rollout-independent and requires the same exact count. Otherwise the
-    # cheap SQL approximation is unchanged.
+    # When any visible project runs the phase model, or the user has a personal
+    # removal, count the same scope-filtered candidates as the list. The Queue
+    # count projection deliberately returns only an integer so the badge does
+    # not retain a second rendered list. Otherwise the cheap SQL approximation
+    # is unchanged.
     def compute_count
       return governed_count if phase_model_governed?
       return governed_count if personal_removals?
@@ -49,7 +49,7 @@ module Inbox
     end
 
     def governed_count
-      [ Inbox::Queue.call(user: user).size, DISPLAY_CAP ].min
+      [ Inbox::Queue.count(user: user), DISPLAY_CAP ].min
     end
 
     def phase_model_governed?

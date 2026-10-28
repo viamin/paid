@@ -128,6 +128,19 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:record)).to start_with(newer, older)
     end
 
+    # @spec INBOX-PHASE-RELEVANCE-011
+    it "preloads projects separately from ordered issue-lane queries" do
+      create_needs_input(body: questions_body)
+
+      queries = capture_queries do
+        described_class.call(user: user, kind: described_class::CLARIFYING_QUESTIONS_KIND)
+      end
+      issue_query = queries.find { |sql| sql.include?('FROM "issues"') }
+
+      expect(issue_query).to include('INNER JOIN "projects"')
+      expect(issue_query).not_to include('"projects"."log_data"')
+    end
+
     it "returns typed entries for clarifying questions, plan reviews, and merge approvals" do
       issue = create_needs_input(body: questions_body)
       review = create_plan_review(project: project, workflow_id: "planning-workflow-1")

@@ -84,3 +84,12 @@
   to phase-owned requests.
   *Tests:* `spec/services/inbox/removals_spec.rb`
   *Code:* `Inbox::Removals::RestoreOnPhaseEnablement`, `Inbox::PhaseRelevance`
+
+- [x] **INBOX-PHASE-RELEVANCE-011** — When phase relevance or personal
+  removal requires exact badge membership, `Inbox::Count` SHALL use the same
+  actionable scope as `Inbox::Queue` without retaining a rendered Inbox list.
+  Ordered issue lanes SHALL preload projects separately from their predicate
+  and ordering joins, so a project's audit history is not repeated in each
+  issue result row.
+  *Tests:* `spec/services/inbox/count_spec.rb`, `spec/services/inbox/queue_spec.rb`.
+  *Code:* `Inbox::Count`, `Inbox::Queue`, `Inbox::MergeApproval`.

@@ -64,8 +64,10 @@ platform requests (no phase) and follow the same visibility rule.
 Hiding never resolves, clears, comments, or changes readiness.
 
 `Inbox::Queue` accepts `scope:` (`actionable` default, `disabled_phases`,
-`removed`), and `Inbox::Count` / `Inbox::Availability` derive from the same
-call so lists, counts, badges, and indicators cannot disagree.
+`removed`). `Inbox::Count` uses the Queue's count projection while phase
+relevance or personal removal requires exact membership; it applies the same
+scope policy without retaining a rendered list. `Inbox::Availability` derives
+from the same policy so lists, counts, badges, and indicators cannot disagree.
 
 ## Personal removal
 
