@@ -37,7 +37,8 @@
 - [ ] **MAINT-OPT-020**: The system shall record a recipe's metric hints on its findings.
 - [ ] **MAINT-OPT-021**: When every planned check completes with no finding, the system shall report a successful clean outcome.
 - [ ] **MAINT-OPT-022**: When repeated scans observe a canonical finding, the system shall create the current occurrence without duplicate repair work.
-- [ ] **MAINT-OPT-023**: The system shall retain external-project recipe evaluation evidence for findings, false positives, coverage, latency, cost, and repeated-finding noise.
+- [ ] **MAINT-OPT-023**: The system shall retain external-project recipe evaluation evidence for findings, false positives, coverage, latency, cost, repeated-finding noise, and repair-review outcomes.
+- [ ] **MAINT-OPT-023A**: The system shall block a recipe's delivery close until at least one project other than Paid has recorded evaluation evidence covering every category in MAINT-OPT-023, and shall identify the qualifying project(s) in that evidence.
 
 ## Semantic Repair-Eligibility Assessment — [#4495](https://github.com/viamin/paid/issues/4495)
 
