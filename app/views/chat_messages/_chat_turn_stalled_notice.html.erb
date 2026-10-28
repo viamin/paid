@@ -1,0 +1,10 @@
+<div class="mx-auto max-w-2xl rounded-md border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950" role="alert">
+  <p><%= message.content %></p>
+  <% turn = message.chat_session.chat_turns.find_by(id: message.metadata["chat_turn_id"]) %>
+  <% if turn&.stalled? %>
+    <%= button_to "Resume safely",
+      recover_chat_session_chat_turn_path(message.chat_session, turn),
+      params: {revision: message.metadata["turn_revision"], confirmed: true},
+      class: "mt-3 rounded-md bg-amber-700 px-3 py-1.5 font-medium text-white hover:bg-amber-800" %>
+  <% end %>
+</div>

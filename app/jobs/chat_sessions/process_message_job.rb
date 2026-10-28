@@ -9,9 +9,10 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     job.send(:broadcast_error, chat_session_id, stream_message_id, "Session no longer exists") if chat_session_id
   end
 
-  def perform(chat_session_id:, content:, stream_message_id:, actor_id: nil)
+  def perform(chat_session_id:, content:, stream_message_id:, actor_id: nil, recovery_attempt_id: nil)
     # @spec CHAT-API-002, CHAT-API-022
     chat_session = ChatSession.find(chat_session_id)
+    start_recovery_attempt(recovery_attempt_id)
     actor = chat_session.account.users.find(actor_id || chat_session.created_by_id)
     stream_name = "chat_session:#{chat_session.id}"
 
@@ -44,16 +45,26 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
         output: assistant_message&.tokens_output
       }
     })
+    complete_recovery_attempt(recovery_attempt_id)
   rescue ArgumentError => e
+    fail_recovery_attempt(recovery_attempt_id, e)
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue NotImplementedError => e
+    fail_recovery_attempt(recovery_attempt_id, e)
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::LlmClientConfigurationError => e
+    fail_recovery_attempt(recovery_attempt_id, e)
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
+    fail_recovery_attempt(recovery_attempt_id, e)
     broadcast_error(chat_session_id, stream_message_id, e.message,
       limit_type: e.limit_type, limit: e.limit, used: e.used)
+  rescue Timeout::Error => e
+    fail_recovery_attempt(recovery_attempt_id, e)
+    recover_infrastructure_failure(stream_message_id, actor_id)
+    broadcast_error(chat_session_id, stream_message_id, "The provider timed out; one safe recovery was queued.")
   rescue AgentHarness::RateLimitError => e
+    fail_recovery_attempt(recovery_attempt_id, e)
     # @spec CHAT-API-017
     Rails.logger.warn(
       message: "chat_process_message_job.rate_limited",
@@ -65,6 +76,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     broadcast_persisted_message(stream_name, pause_message)
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue AgentHarness::Error => e
+    fail_recovery_attempt(recovery_attempt_id, e)
     Rails.logger.error(
       message: "chat_process_message_job.provider_error",
       chat_session_id: chat_session_id,
@@ -72,9 +84,11 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error: e.message
     )
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
-  rescue ActiveRecord::RecordNotFound
+  rescue ActiveRecord::RecordNotFound => e
+    fail_recovery_attempt(recovery_attempt_id, e)
     raise
   rescue StandardError => e
+    fail_recovery_attempt(recovery_attempt_id, e)
     Rails.logger.error(
       message: "chat_process_message_job.failed",
       chat_session_id: chat_session_id,
@@ -85,6 +99,36 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   end
 
   private
+
+  def complete_recovery_attempt(recovery_attempt_id)
+    return unless recovery_attempt_id
+
+    attempt = ChatTurnRecoveryAttempt.find(recovery_attempt_id)
+    attempt.update!(status: "completed", outcome: "completed", started_at: attempt.started_at || Time.current,
+      finished_at: Time.current)
+  end
+
+  def start_recovery_attempt(recovery_attempt_id)
+    return unless recovery_attempt_id
+
+    ChatTurnRecoveryAttempt.find(recovery_attempt_id).update!(status: "running", started_at: Time.current)
+  end
+
+  def fail_recovery_attempt(recovery_attempt_id, error)
+    return unless recovery_attempt_id
+
+    attempt = ChatTurnRecoveryAttempt.find_by(id: recovery_attempt_id)
+    attempt&.update!(status: "failed", outcome: error.class.name, finished_at: Time.current)
+  end
+
+  def recover_infrastructure_failure(stream_message_id, actor_id)
+    turn = ChatTurn.find_by!(stream_key: stream_message_id)
+    actor = turn.chat_session.account.users.find(actor_id || turn.chat_session.created_by_id)
+    ChatTurns::Recover.call(turn:, actor:, revision: turn.revision, confirmed: false, automatic: true)
+  rescue ArgumentError, ChatTurns::StaleRevision, ActiveRecord::RecordNotFound => error
+    Rails.logger.warn(message: "chat_turn.automatic_recovery_skipped", stream_key: stream_message_id,
+      error_class: error.class.name)
+  end
 
   def broadcast_persisted_message(stream_name, message, stream_message_id: nil)
     # @spec CHAT-API-002

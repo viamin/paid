@@ -15,7 +15,7 @@ module ChatSessions
   class SendMessage
     include FallbackLoop
 
-    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
+    attr_reader :chat_session, :actor, :content, :on_chunk, :llm_client, :stream_message_id,
       :transport_attempt_message
 
     MAX_CONTENT_LENGTH = 12_000
@@ -25,7 +25,7 @@ module ChatSessions
       @actor = actor
       @content = content
       @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @client_on_message_persisted = on_message_persisted
       @llm_client = llm_client
       @stream_message_id = stream_message_id
     end
@@ -43,10 +43,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn!
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      finish_turn!(assistant_message)
       update_session_activity
       assistant_message
+    rescue StandardError => error
+      fail_turn!(error)
+      raise
     end
 
     private
@@ -110,11 +115,69 @@ module ChatSessions
     end
 
     def persist_user_message
+      @stream_message_id ||= SecureRandom.uuid
       @transport_attempt_message = existing_user_message || create_user_message
 
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
       transport_attempt_message
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001
+    def start_turn!
+      @chat_turn = ChatTurn.find_or_create_by!(stream_key: stream_message_id) do |turn|
+        turn.chat_session = chat_session
+        turn.user_message = transport_attempt_message
+        turn.last_activity_at = Time.current
+      end
+      @chat_turn.update!(state: "streaming", last_activity_at: Time.current,
+        lease_expires_at: 35.minutes.from_now, pause_reason: nil)
+    end
+
+    def on_message_persisted
+      @turn_message_callback ||= lambda do |message, stream_message_id: nil|
+        checkpoint_turn!(message)
+        @client_on_message_persisted&.call(message, stream_message_id: stream_message_id)
+      end
+    end
+
+    def checkpoint_turn!(message)
+      return unless @chat_turn
+
+      side_effect = message.role == "tool" && Tools::Registry.write_tool?(message.tool_name)
+      @chat_turn.update!(last_checkpoint_message: message, last_activity_at: Time.current,
+        lease_expires_at: 35.minutes.from_now,
+        side_effects_completed: @chat_turn.side_effects_completed? || side_effect)
+    end
+
+    def finish_turn!(assistant_message)
+      attributes = if assistant_message
+        { state: "completed", pause_reason: nil, recovery_outcome: "completed" }
+      else
+        { state: "streaming", pause_reason: "confirmation" }
+      end
+      @chat_turn.update!(**attributes, last_activity_at: Time.current, lease_expires_at: nil)
+    end
+
+    def fail_turn!(error)
+      return unless @chat_turn&.persisted?
+
+      @chat_turn.update!(state: "failed", pause_reason: failure_pause_reason(error),
+        failure_classification: failure_classification(error), last_activity_at: Time.current,
+        lease_expires_at: nil, recovery_outcome: "failed")
+    end
+
+    def failure_classification(error)
+      return "infrastructure" if error.is_a?(AgentHarness::RateLimitError) || error.is_a?(Timeout::Error)
+      return "provider" if error.is_a?(AgentHarness::Error)
+      return "budget" if error.is_a?(TokenLimitExceededError)
+      return "client_disconnect" if error.is_a?(IOError)
+
+      "application"
+    end
+
+    def failure_pause_reason(error)
+      failure_classification(error)
     end
 
     # A restarted job retains its stream id. Reusing the original user row

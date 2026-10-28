@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_124538) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -884,6 +884,54 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["rate_limited_until"], name: "index_chat_sessions_on_rate_limited_until"
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
+  end
+
+  create_table "chat_turn_recovery_attempts", force: :cascade do |t|
+    t.bigint "actor_id", null: false
+    t.boolean "automatic", default: false, null: false
+    t.bigint "chat_turn_id", null: false
+    t.datetime "created_at", null: false
+    t.string "deduplication_key"
+    t.datetime "finished_at"
+    t.string "outcome"
+    t.integer "requested_revision", null: false
+    t.datetime "started_at"
+    t.string "status", default: "queued", null: false
+    t.datetime "updated_at", null: false
+    t.index ["actor_id"], name: "index_chat_turn_recovery_attempts_on_actor_id"
+    t.index ["chat_turn_id", "requested_revision"], name: "idx_chat_turn_recovery_revision", unique: true
+    t.index ["chat_turn_id"], name: "index_chat_turn_recovery_attempts_on_chat_turn_id"
+    t.index ["status", "created_at"], name: "index_chat_turn_recovery_attempts_on_status_and_created_at"
+    t.check_constraint "status::text = ANY (ARRAY['queued'::character varying, 'running'::character varying, 'completed'::character varying, 'failed'::character varying]::text[])", name: "chat_turn_recovery_attempts_status"
+  end
+
+  create_table "chat_turns", force: :cascade do |t|
+    t.bigint "chat_session_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "detected_stalled_at"
+    t.integer "duplicate_prevention_count", default: 0, null: false
+    t.string "failure_classification"
+    t.datetime "last_activity_at", null: false
+    t.bigint "last_checkpoint_message_id"
+    t.datetime "lease_expires_at"
+    t.string "pause_reason"
+    t.integer "recovery_attempts_count", default: 0, null: false
+    t.string "recovery_outcome"
+    t.integer "revision", default: 1, null: false
+    t.boolean "side_effects_completed", default: false, null: false
+    t.string "state", default: "pending", null: false
+    t.string "stream_key", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_message_id", null: false
+    t.index ["chat_session_id"], name: "index_chat_turns_on_chat_session_id"
+    t.index ["detected_stalled_at"], name: "index_chat_turns_on_detected_stalled_at"
+    t.index ["failure_classification"], name: "index_chat_turns_on_failure_classification"
+    t.index ["last_checkpoint_message_id"], name: "index_chat_turns_on_last_checkpoint_message_id"
+    t.index ["state", "last_activity_at"], name: "index_chat_turns_on_state_and_last_activity_at"
+    t.index ["stream_key"], name: "index_chat_turns_on_stream_key", unique: true
+    t.index ["user_message_id"], name: "index_chat_turns_on_user_message_id", unique: true
+    t.check_constraint "revision > 0", name: "chat_turns_positive_revision"
+    t.check_constraint "state::text = ANY (ARRAY['pending'::character varying, 'streaming'::character varying, 'completed'::character varying, 'failed'::character varying, 'stalled'::character varying, 'abandoned'::character varying]::text[])", name: "chat_turns_state"
   end
 
   create_table "clarifying_question_progresses", comment: "Durable per-question exploration progress and attributable answer evidence.", force: :cascade do |t|
@@ -4679,6 +4727,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "chat_turn_recovery_attempts", "chat_turns"
+  add_foreign_key "chat_turn_recovery_attempts", "users", column: "actor_id"
+  add_foreign_key "chat_turns", "chat_messages", column: "last_checkpoint_message_id"
+  add_foreign_key "chat_turns", "chat_messages", column: "user_message_id"
+  add_foreign_key "chat_turns", "chat_sessions"
   add_foreign_key "clarifying_question_progresses", "accounts"
   add_foreign_key "clarifying_question_progresses", "chat_sessions"
   add_foreign_key "clarifying_question_progresses", "issues"
