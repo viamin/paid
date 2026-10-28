@@ -64,45 +64,48 @@ module Activities
       # queued/active runs for the same issue or PR under concurrency.
       # Falls back to DB unique indexes (RecordNotUnique) as a safety net
       # for races between concurrent activity executions.
-      agent_run, duplicate, enhancement_limit_reached, enhancement_held = AgentRun.transaction do
-        issue.lock! if automatic_enhancement?(goal, trigger_type, issue)
-        if automatic_enhancement_held?(project, issue, goal, trigger_type)
-          [ nil, false, false, true ]
-        elsif (existing = find_existing_run(project, issue, source_pull_request_number))
-          if existing.goal == goal
-            merge_draft_review_round_tracking!(existing,
+      # @spec TEMPORAL-ORCHESTRATION-012
+      agent_run, duplicate, enhancement_limit_reached, enhancement_held = begin
+        AgentRun.transaction(requires_new: true) do
+          issue.lock! if automatic_enhancement?(goal, trigger_type, issue)
+          if automatic_enhancement_held?(project, issue, goal, trigger_type)
+            [ nil, false, false, true ]
+          elsif (existing = find_existing_run(project, issue, source_pull_request_number))
+            if existing.goal == goal
+              merge_draft_review_round_tracking!(existing,
+                count_toward_draft_review_round: count_toward_draft_review_round,
+                expected_draft_review_count: expected_draft_review_count)
+            end
+            [ existing, true, false, false ]
+          elsif enhancement_round_limit_reached?(project, issue, goal, trigger_type)
+            [ nil, false, true, false ]
+          else
+            consume_enhancement_round!(issue) if automatic_enhancement?(goal, trigger_type, issue)
+            run = AgentRun.create!(
+              project: project,
+              issue: issue,
+              initiating_user_id: input[:initiating_user_id],
+              provider_id: provider_id,
+              agent_type: agent_type,
+              custom_prompt: custom_prompt,
+              source_pull_request_number: source_pull_request_number,
+              goal: goal,
+              focus: focus,
+              tdd_phase: tdd_phase,
+              trigger_type: trigger_type,
+              auto_pick: auto_pick,
               count_toward_draft_review_round: count_toward_draft_review_round,
-              expected_draft_review_count: expected_draft_review_count)
+              expected_draft_review_count: expected_draft_review_count,
+              # @spec REVIEW-DEPTH-006 — snapshot the project's effective
+              # review_depth preset at queue time so later project changes
+              # cannot retroactively alter the run's review behavior.
+              review_depth_snapshot: project.effective_review_depth,
+              status: "queued"
+            )
+            snapshot_page_load_evidence!(run, input[:focus_evidence])
+            snapshot_tdd_review_feedback!(run, input[:tdd_review_feedback])
+            [ run, false, false, false ]
           end
-          [ existing, true, false, false ]
-        elsif enhancement_round_limit_reached?(project, issue, goal, trigger_type)
-          [ nil, false, true, false ]
-        else
-          consume_enhancement_round!(issue) if automatic_enhancement?(goal, trigger_type, issue)
-          run = AgentRun.create!(
-            project: project,
-            issue: issue,
-            initiating_user_id: input[:initiating_user_id],
-            provider_id: provider_id,
-            agent_type: agent_type,
-            custom_prompt: custom_prompt,
-            source_pull_request_number: source_pull_request_number,
-            goal: goal,
-            focus: focus,
-            tdd_phase: tdd_phase,
-            trigger_type: trigger_type,
-            auto_pick: auto_pick,
-            count_toward_draft_review_round: count_toward_draft_review_round,
-            expected_draft_review_count: expected_draft_review_count,
-            # @spec REVIEW-DEPTH-006 — snapshot the project's effective
-            # review_depth preset at queue time so later project changes
-            # cannot retroactively alter the run's review behavior.
-            review_depth_snapshot: project.effective_review_depth,
-            status: "queued"
-          )
-          snapshot_page_load_evidence!(run, input[:focus_evidence])
-          snapshot_tdd_review_feedback!(run, input[:tdd_review_feedback])
-          [ run, false, false, false ]
         end
       rescue ActiveRecord::RecordNotUnique
         existing = find_existing_run(project, issue, source_pull_request_number)
@@ -303,7 +306,9 @@ module Activities
     def find_existing_run(project, issue, source_pull_request_number)
       scope = project.agent_runs.where(status: AgentRun::DEDUP_BLOCKING_STATUSES).lock("FOR UPDATE")
       if issue
-        scope.where(issue: issue).first
+        matches = scope.where(issue: issue)
+        matches = matches.or(scope.where(source_pull_request_number: source_pull_request_number)) if source_pull_request_number
+        matches.first
       elsif source_pull_request_number
         scope.where(source_pull_request_number: source_pull_request_number).first
       end

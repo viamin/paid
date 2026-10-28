@@ -84,12 +84,13 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
       allow(AgentHarness).to receive(:send_message).and_return(response)
 
       expect { activity.execute(agent_run_id: run.id) }
-        .to raise_error(AgentHarness::Error, /CLI transport: OAuth session expired/)
+        .to raise_error(Llm::AnalyzePartialCloseout::AssessmentFailure, /transport returned an unsuccessful response/)
 
       run.reload
       expect(run.reconciliation.fetch("status")).to eq("retryable_failure")
-      expect(run.reconciliation.fetch("error")).to include(
-        "transport" => "CLI", "provider" => "claude", "detail" => /OAuth session expired/
+      expect(run.reconciliation.fetch("error")).to include("transport returned an unsuccessful response")
+      expect(run.reconciliation.fetch("assessment_failure")).to include(
+        "transport" => "cli", "provider" => "claude", "detail" => "OAuth session expired"
       )
       expect(run.reconciliation).not_to have_key("assessment")
       expect(parent.reload.paid_state).to eq("in_progress")
@@ -127,12 +128,13 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
 
       expect { activity.execute(agent_run_id: run.id) }.to raise_error(AgentHarness::Error)
 
-      diagnostic = run.reload.reconciliation.fetch("error")
-      expect(diagnostic).to include("transport" => "CLI", "category" => "authentication")
+      reconciliation = run.reload.reconciliation
+      diagnostic = reconciliation.fetch("assessment_failure")
+      expect(diagnostic).to include("transport" => "harness", "transport_category" => "authentication")
       expect(diagnostic.fetch("detail")).not_to include(secret)
       expect(diagnostic.fetch("detail")).to include("[REDACTED:")
       expect(diagnostic.fetch("detail").length).to be <= AgentRun::MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH
-      expect(run.reconciliation).not_to have_key("assessment")
+      expect(reconciliation).not_to have_key("assessment")
     end
 
     # @spec NO-OUTPUT-ISSUE-007
@@ -160,6 +162,26 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
       expect(AgentRunPhase.find_by(agent_run: run)).to have_attributes(
         phase_key: "reconcile_partial_closeout", phase_group: "post", status: "failed"
       )
+    end
+
+    # @spec PARTIAL-CLOSEOUT-034
+    it "persists bounded authentication diagnostics and re-raises for Temporal retry" do
+      failure = Llm::AnalyzePartialCloseout::AssessmentFailure.new(
+        "Partial closeout assessment could not authenticate with an authorized Claude credential. Reconnect the account's Claude runner credential and retry.",
+        category: "authentication_unavailable", provider: "claude", model: "claude-sonnet-4-6",
+        request_id: "request-123", attempt_id: "attempt-456"
+      )
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(failure)
+
+      expect { activity.execute(agent_run_id: run.id) }.to raise_error(Llm::AnalyzePartialCloseout::AssessmentFailure)
+
+      reconciliation = run.reload.reconciliation
+      expect(reconciliation).to include("status" => "retryable_failure")
+      expect(reconciliation.fetch("assessment_failure")).to include(
+        "category" => "authentication_unavailable", "provider" => "claude", "model" => "claude-sonnet-4-6",
+        "request_id" => "request-123", "attempt_id" => "attempt-456"
+      )
+      expect(reconciliation.fetch("error")).to include("Reconnect the account's Claude runner credential")
     end
   end
 end

@@ -5,6 +5,17 @@ module Llm
   class AnalyzePartialCloseout
     include OutputNormalizer
 
+    # Carries only request metadata that may safely reach durable reconciliation
+    # state. Provider output and credentials remain at the transport boundary.
+    class AssessmentFailure < AgentHarness::Error
+      attr_reader :diagnostic
+
+      def initialize(message, **diagnostic)
+        @diagnostic = diagnostic.freeze
+        super(message)
+      end
+    end
+
     DEFAULT_MODEL = "claude-sonnet-4-6"
     DEFAULT_PROVIDER = :claude
     TIMEOUT = 30
@@ -71,14 +82,26 @@ module Llm
       @agent_run = agent_run
     end
 
-    def call
+    def call # @spec PARTIAL-CLOSEOUT-034
+      @request_id = SecureRandom.uuid
+      @attempt_id = SecureRandom.uuid
       parsed = schema_capable_request? ? schema_constrained_parse : legacy_text_parse
       parsed = parsed.deep_stringify_keys if parsed.is_a?(Hash)
-      if (diagnostic = invalid_assessment_diagnostic(parsed))
-        raise AgentHarness::Error, "partial closeout assessment failed: invalid assessment structure at #{diagnostic}"
-      end
+      raise assessment_failure("invalid_assessment", invalid_fields(parsed)) unless valid_assessment?(parsed)
 
       parsed
+    rescue AssessmentFailure
+      raise
+    rescue AgentHarness::AuthenticationError => error
+      raise assessment_failure("authentication_unavailable", transport: transport_diagnostic(
+        transport: "harness", provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL,
+        transport_category: "authentication", detail: error.message
+      ))
+    rescue AgentHarness::Error => error
+      raise assessment_failure("transport_error", transport: transport_diagnostic(
+        transport: "harness", provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL,
+        transport_category: error.class.name, detail: error.message
+      ))
     end
 
     private
@@ -102,46 +125,6 @@ module Llm
       gaps = parsed["gaps"]
       gaps.is_a?(Array) && gaps.size <= MAX_GAPS && gaps.all? { |gap| valid_gap?(gap) } &&
         valid_criteria?(parsed["criteria"]) && valid_next_action?(parsed["next_action"])
-    end
-
-    # The response body is untrusted, so diagnostics name only fixed contract
-    # paths and Ruby types. They must never include invalid field values.
-    def invalid_assessment_diagnostic(parsed)
-      return "assessment: expected object, got #{type_name(parsed)}" unless parsed.is_a?(Hash)
-
-      gaps = parsed["gaps"]
-      return "gaps: expected array, got #{type_name(gaps)}" unless gaps.is_a?(Array)
-      return "gaps: expected at most #{MAX_GAPS} items" if gaps.size > MAX_GAPS
-
-      gaps.each_with_index do |gap, index|
-        diagnostic = invalid_gap_diagnostic(gap, index)
-        return diagnostic if diagnostic
-      end
-      return "criteria: expected array, got #{type_name(parsed["criteria"])}" unless valid_criteria?(parsed["criteria"])
-      return "next_action: expected object, got #{type_name(parsed["next_action"])}" unless valid_next_action?(parsed["next_action"])
-
-      "assessment: violates response contract" unless valid_assessment?(parsed)
-    end
-
-    def invalid_gap_diagnostic(gap, index)
-      path = "gaps[#{index}]"
-      return "#{path}: expected object, got #{type_name(gap)}" unless gap.is_a?(Hash)
-      return "#{path}.criterion: expected non-empty string" unless gap["criterion"].is_a?(String) && gap["criterion"].present?
-      return "#{path}.kind: expected string, got #{type_name(gap["kind"])}" unless gap["kind"].is_a?(String)
-      return "#{path}.kind: expected one of #{VALID_KINDS.join(", ")}" unless VALID_KINDS.include?(gap["kind"])
-
-      return "#{path}: missing resolvable owner" unless owner_resolvable?(gap)
-      return unless gap["kind"] == "human" && (!valid_references?(gap["references"]) || !valid_policy_selection?(gap["policy_selection"]))
-
-      "#{path}: invalid human-gap references or policy selection"
-    end
-
-    def type_name(value)
-      return "null" if value.nil?
-      return "object" if value.is_a?(Hash)
-      return "array" if value.is_a?(Array)
-
-      value.class.name.demodulize.underscore
     end
 
     def valid_gap?(gap)
@@ -230,13 +213,13 @@ module Llm
 
     def schema_constrained_parse
       result = AgentHarness::Api::ChatTransport.new.call(request)
-      unless result&.dig(:status) == :succeeded
-        transport_failure!("schema", provider: result&.dig(:provider), model: result&.dig(:model),
-          request_id: result&.dig(:request_id), category: result&.dig(:error, :category),
-          detail: result&.dig(:error, :message))
-      end
+      return result[:parsed] if result&.dig(:status) == :succeeded
 
-      result[:parsed]
+      raise assessment_failure("unsuccessful_response", transport: transport_diagnostic(
+        transport: "schema", provider: result&.dig(:provider), model: result&.dig(:model),
+        request_id: result&.dig(:request_id), transport_category: result&.dig(:error, :category),
+        detail: result&.dig(:error, :message)
+      ))
     end
 
     def legacy_text_parse
@@ -246,50 +229,26 @@ module Llm
         model: DEFAULT_MODEL,
         timeout: CLI_TIMEOUT,
         tools: :none,
-        **Llm::TextMode.options
+        **text_transport_options
       )
       if response.respond_to?(:success?) && !response.success?
-        transport_failure!("CLI", provider: response.respond_to?(:provider) ? response.provider : nil,
-          model: response.respond_to?(:model) ? response.model : nil,
-          detail: response.respond_to?(:error) ? response.error : nil)
+        raise assessment_failure("unsuccessful_response", transport: transport_diagnostic(
+          transport: "cli", provider: response.respond_to?(:provider) ? response.provider : DEFAULT_PROVIDER,
+          model: response.respond_to?(:model) ? response.model : DEFAULT_MODEL,
+          detail: response.respond_to?(:error) ? response.error : nil
+        ))
       end
 
       output = response.respond_to?(:output) ? response.output : response.to_s
       JSON.parse(strip_markdown_fence(output.to_s.strip))
-    rescue AgentHarness::Error => error
-      raise if error.context.present?
-
-      transport_failure!("CLI", provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL,
-        category: transport_error_category(error), detail: error.message)
     rescue JSON::ParserError
       # Parser messages can quote untrusted response content, including secrets.
-      raise AgentHarness::Error, "partial closeout assessment failed: invalid JSON response", cause: nil
-    end
-
-    def transport_error_category(error)
-      return "authentication" if error.is_a?(AgentHarness::AuthenticationError)
-
-      "request"
-    end
-
-    # Retains the failure category, provider/model, and request identity
-    # alongside the sanitized diagnostic (as `AgentHarness::Error#context`)
-    # instead of collapsing the transport failure to a formatted string, so
-    # `ReconcilePartialCloseoutActivity` can persist enough structure for
-    # retryable auth/provider failures to be recovered and diagnosed (#4655).
-    # @spec NO-OUTPUT-ISSUE-007
-    def transport_failure!(transport, provider: nil, model: nil, request_id: nil, category: nil, detail: nil)
-      diagnostic = AgentRun::ErrorMessageSanitizer.call(text: detail).presence || "no successful response"
-      raise AgentHarness::Error.new(
-        "partial closeout assessment failed: #{transport} transport: #{diagnostic}",
-        context: { transport: transport, provider: provider, model: model, request_id: request_id,
-                    category: category, detail: diagnostic }.compact
-      )
+      raise assessment_failure("invalid_json"), cause: nil
     end
 
     def request
       {
-        request_id: SecureRandom.uuid, operation: :schema, schema_name: "partial_closeout_assessment",
+        request_id: request_id, operation: :schema, schema_name: "partial_closeout_assessment",
         schema: RESPONSE_SCHEMA, schema_mode: :json_schema, timeout: { read_seconds: TIMEOUT },
         candidates: [ { provider: :anthropic, model: DEFAULT_MODEL, protocol: :messages,
           authentication_mode: :api_key, credentials: { api_key: api_key } } ],
@@ -301,6 +260,101 @@ module Llm
       ENV["ANTHROPIC_API_KEY"].to_s.strip.presence || raise(
         AgentHarness::ConfigurationError, "ANTHROPIC_API_KEY is required for schema-mode partial closeout assessment"
       )
+    end
+
+    def text_transport_options
+      options = Llm::TextMode.options
+      return options if options.present?
+
+      token = managed_claude_oauth_token
+      return options if token.blank?
+
+      options.merge(provider_runtime: { env: { "CLAUDE_CODE_OAUTH_TOKEN" => token } })
+    end
+
+    # A managed credential is scoped to the run's account and injected only
+    # into this AgentHarness CLI subprocess. It therefore preserves Claude
+    # subscription billing instead of falling back to HTTP text mode.
+    def managed_claude_oauth_token
+      credential = agent_run.project.account.runner_credentials.active.for_runner("claude")
+        .where(auth_kind: "oauth_token").order(created_at: :desc, id: :desc).first
+      return unless credential
+
+      materialization = Runners::SubscriptionAuthProviders.for_runner("claude").materialize(secret: credential.token)
+      materialization.env["CLAUDE_CODE_OAUTH_TOKEN"]
+    end
+
+    def assessment_failure(category, invalid_fields = [], transport: {})
+      message = case category
+      when "authentication_unavailable"
+        "Partial closeout assessment could not authenticate with an authorized Claude credential. Reconnect the account's Claude runner credential and retry."
+      when "unsuccessful_response"
+        "partial closeout assessment failed: transport returned an unsuccessful response. Retry after Claude transport recovery."
+      when "invalid_json"
+        "partial closeout assessment failed: returned invalid JSON. Retry the assessment."
+      when "invalid_assessment"
+        "partial closeout assessment failed: returned invalid fields. Retry the assessment."
+      else
+        "Partial closeout assessment transport failed. Retry after Claude transport recovery."
+      end
+      diagnostic = { category: category, provider: DEFAULT_PROVIDER.to_s, model: DEFAULT_MODEL,
+                     request_id: request_id, attempt_id: attempt_id }
+      diagnostic[:invalid_fields] = invalid_fields if invalid_fields.any?
+      AssessmentFailure.new(message, **diagnostic.merge(transport))
+    end
+
+    # @spec NO-OUTPUT-ISSUE-007
+    def transport_diagnostic(transport:, provider: nil, model: nil, request_id: nil, transport_category: nil, detail: nil)
+      { transport: transport, provider: provider, model: model, request_id: request_id,
+        transport_category: transport_category, detail: detail }
+        .compact
+        .transform_values { |value| AgentRun::ErrorMessageSanitizer.call(text: value).presence }
+        .compact
+    end
+
+    def request_id = @request_id || "unknown"
+
+    def attempt_id = @attempt_id || "unknown"
+
+    def invalid_fields(parsed)
+      return [ violation("$", "object", parsed) ] unless parsed.is_a?(Hash)
+      return [ violation("gaps", "array", parsed["gaps"]) ] unless parsed["gaps"].is_a?(Array)
+
+      structural_invalid_fields(parsed)
+    end
+
+    def structural_invalid_fields(parsed)
+      fields = []
+      Array(parsed["gaps"]).each_with_index do |gap, index|
+        fields.concat(invalid_gap_fields(gap, index))
+      end
+      Array(parsed["criteria"]).each_with_index do |criterion, index|
+        fields.concat(invalid_criterion_fields(criterion, index))
+      end
+      fields << violation("next_action", "object", parsed["next_action"]) if parsed.key?("next_action") && !parsed["next_action"].is_a?(Hash)
+      fields
+    end
+
+    def invalid_gap_fields(gap, index)
+      return [ violation("gaps[#{index}]", "object", gap) ] unless gap.is_a?(Hash)
+
+      fields = []
+      fields << violation("gaps[#{index}].criterion", "nonblank string", gap["criterion"]) unless gap["criterion"].is_a?(String) && gap["criterion"].present?
+      fields << violation("gaps[#{index}].kind", "agent or human", gap["kind"]) unless VALID_KINDS.include?(gap["kind"])
+      fields
+    end
+
+    def invalid_criterion_fields(criterion, index)
+      return [ violation("criteria[#{index}]", "object", criterion) ] unless criterion.is_a?(Hash)
+
+      fields = []
+      fields << violation("criteria[#{index}].criterion", "nonblank string", criterion["criterion"]) unless criterion["criterion"].is_a?(String) && criterion["criterion"].present?
+      fields << violation("criteria[#{index}].state", "satisfied, unmet, or unknown", criterion["state"]) unless VALID_STATES.include?(criterion["state"])
+      fields
+    end
+
+    def violation(path, expected, value)
+      { path: path, expected: expected, actual: value.class.name.underscore }
     end
 
     def prompt

@@ -4,6 +4,23 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-034** — When a partial-closeout assessment uses the
+  Claude CLI transport, Paid SHALL use the owning account's active managed
+  Claude subscription credential's materializer-supported environment-token
+  form when one is available, without switching to API-key/text-mode billing.
+  It SHALL NOT inject a native Claude credentials JSON payload as a bare access
+  token. When the request cannot obtain a valid assessment,
+  it SHALL remain fail-closed and persist a bounded failure category,
+  provider/model, request and attempt identities, structural invalid-field
+  paths/types where applicable, and only a normalized, redacted, bounded
+  transport diagnostic; it SHALL not persist raw response content or
+  credentials. Authentication failures SHALL state the authorized credential
+  recovery action rather than being reported as a generic malformed assessment.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/temporal/activities/reconcile_partial_closeout_activity.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-032** — When an authorized technical-prerequisite
       validation is prepared from a partial-closeout item, the system SHALL
       inspect compatible execution hosts through the existing backend scheduler
