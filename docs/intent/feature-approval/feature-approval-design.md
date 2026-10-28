@@ -79,9 +79,15 @@ reports evidence, coverage time, and an explicit state: `missing_tree`,
 `partial_tree`, `stale_metadata`, `deferred`, or `unverifiable`.
 
 Issue coverage preloads shared project records in a separate query rather than
-joining full project rows into the issue result. Project audit history must not
-be repeated for every issue: PostgreSQL results and their Ruby string copies
-would otherwise multiply that history by the synchronized issue count.
+joining full project rows into the issue result. A reconciliation execution
+builds one bounded, minimal issue-fact snapshot for each authorized project and
+reuses it for every artifact at that execution's pinned revisions. Backlink and
+canonical-manifest evidence are batched into the same execution-local snapshot.
+Project audit history must not be repeated for every issue: PostgreSQL results
+and their Ruby string copies would otherwise multiply that history by the
+synchronized issue count. The snapshot retains plain facts, not ORM result
+graphs, and is discarded after the execution; it is never reused across
+revisions or later reconciliation runs.
 
 PR synchronization schedules repository reconciliation after a fixed 30-second
 coalescing window. Scheduling and coalescing happen after the synchronization
@@ -93,9 +99,10 @@ Repeated syncs share the queued invocation; a sync during execution may enqueue
 one follow-up that reads the latest synchronized state. The window is not
 extended by subsequent syncs, so continuous activity cannot starve coverage.
 The daily sweep remains a backstop. Each execution records start/end resident
-memory, process peak resident memory, allocated-object delta, elapsed time and
-completion status without logging issue bodies or artifact content. These are
-process-wide measurements, so concurrent work can contribute to their deltas.
+memory, process peak resident memory, allocated-object delta, SQL query count,
+artifact and issue-fact counts, elapsed time and completion status without
+logging issue bodies or artifact content. These are process-wide measurements,
+so concurrent work can contribute to their deltas.
 Unavailable process-memory readings leave RSS fields empty and never prevent
 reconciliation or mask its original failure.
 

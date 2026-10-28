@@ -11,6 +11,33 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
   end
 
+  def project_sweep_artifacts
+    [
+      FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/RDR-001-local.md", revision: "a" * 40, body: "Implements #101"
+      ),
+      FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/RDR-002-local.md", revision: "b" * 40, body: "Implements #102"
+      ),
+      FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/RDR-003-external.md", revision: "c" * 40, body: "Implements shared/platform#12"
+      ),
+      FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/RDR-004-manifest.md", revision: "d" * 40, body: "Status: Accepted"
+      )
+    ]
+  end
+
+  def populate_project_sweep
+    shared_project = create(:project, account: project.account, owner: "shared", repo: "platform")
+    create(:issue, project:, github_number: 101)
+    create(:issue, project:, github_number: 102)
+    manifest_issue = create(:issue, project:, github_number: 103)
+    create(:issue, project: shared_project, github_number: 12)
+    feature_intent.update!(design_document_paths: [ "docs/rdrs/RDR-004-manifest.md" ])
+    create(:feature_intent_issue, feature_intent:, issue: manifest_issue)
+  end
+
   let(:project) { create(:project, owner: "acme", repo: "widget") }
   let(:feature_intent) { create(:feature_intent, project:) }
   let(:design_pr) { create(:feature_intent_design_pr, feature_intent:, pull_request_number: 100, draft: false) }
@@ -102,6 +129,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
       expect(Rails.logger).to have_received(:info).with(hash_including(
         message: "feature_intents.reconciliation_finished", project_id: project.id,
         status: "completed", allocated_objects: be >= 0, duration_ms: be >= 0,
+        query_count: be >= 0, issue_fact_count: be >= 0, artifacts_reconciled: be >= 0,
         rss_before_kb: be_a(Integer).or(be_nil), rss_after_kb: be_a(Integer).or(be_nil),
         process_peak_rss_kb: be_a(Integer).or(be_nil)
       ))
@@ -212,6 +240,25 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     expect(issue_queries).not_to be_empty
     expect(issue_queries.grep(/"projects"\."log_data"/)).to be_empty
     expect(DesignArtifactFinding.count).to eq(0)
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
+  it "reuses bounded issue coverage across a project sweep" do
+    populate_project_sweep
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery(project_sweep_artifacts))
+    queries = []
+    subscriber = ->(event) { queries << event.payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.perform_now(project.id)
+    end
+
+    issue_population_queries = queries.grep(/SELECT .* FROM "issues" WHERE "issues"\."project_id" =/)
+    expect(issue_population_queries).to have_attributes(size: 2)
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.pluck(:issue_identity)).to contain_exactly(
+      "acme/widget#101", "acme/widget#102", "shared/platform#12", "acme/widget#103"
+    )
   end
 
   it "uses a stored Paid feature-intent link without requiring a document repair" do

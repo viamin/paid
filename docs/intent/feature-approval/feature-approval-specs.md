@@ -209,8 +209,9 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   serialize execution for that scope, and permit one queued follow-up for
   changes arriving during execution; repeated requests SHALL NOT extend the
   window. Each execution SHALL log process-wide resident memory before/after,
-  process peak resident memory when available, allocated-object delta, elapsed
-  time and completion status without content payloads, including on failure.
+  process peak resident memory when available, allocated-object delta, SQL
+  query count, artifact and issue-fact counts, elapsed time and completion
+  status without content payloads, including on failure.
   Unavailable process-memory readings SHALL NOT prevent reconciliation or
   replace its original failure.
   Scheduling/coalescing SHALL occur after synchronization commits, and rolled-
@@ -281,7 +282,12 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   only after structural evidence is exhausted and be cached by assessed revisions;
   the existing daily sweep remains the bounded fallback for unchanged inputs.
   Issue coverage SHALL load shared project records separately from issue rows,
-  so project audit history is not duplicated for every synchronized issue.
+  so project audit history is not duplicated for every synchronized issue. One
+  reconciliation execution SHALL reuse a bounded, minimal plain issue-fact
+  snapshot for every artifact that references the same authorized project, and
+  SHALL batch exact-backlink and canonical-manifest reads for that execution.
+  The snapshot SHALL be discarded when the execution finishes and SHALL NOT be
+  reused across revisions or later executions.
   *Tests:* `spec/services/feature_intents/reconcile_design_artifacts_spec.rb`,
   `spec/services/feature_intents/persist_design_artifact_findings_spec.rb`,
   `spec/models/design_artifact_finding_spec.rb`,
