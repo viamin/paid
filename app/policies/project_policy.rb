@@ -26,6 +26,13 @@ class ProjectPolicy < ApplicationPolicy
     has_any_account_role?(:owner, :admin, :member) || has_project_role?
   end
 
+  # A continuation grant delegates a future action, so its creator must retain
+  # the same tenant-scoped permission required to start that work.
+  # @spec AUTOMATION-PHASES-009
+  def delegate_continuation?
+    run_agent?
+  end
+
   # @spec APPLE-VERIFY-002
   # @spec APPLE-VERIFY-003
   # RDR-077 §3: only users who may delegate the covered actions may create a

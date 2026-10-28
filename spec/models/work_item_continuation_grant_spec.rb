@@ -34,6 +34,14 @@ RSpec.describe WorkItemContinuationGrant do
     expect(grant).not_to be_valid
   end
 
+  # @spec AUTOMATION-PHASES-005
+  it "rejects a grant whose work item belongs to another project" do
+    grant = build(:work_item_continuation_grant, project:, issue: create(:issue))
+
+    expect(grant).not_to be_valid
+    expect(grant.errors[:issue]).to include("must belong to the project")
+  end
+
   describe "completion" do
     it "completes when the endpoint's work lands" do
       grant = create(:work_item_continuation_grant, project:, issue:)
