@@ -333,6 +333,23 @@ RDR-073 extension can be decided from an unprovisioned environment; retain
 the existing direction that an extension is filed only if a completed live
 validation identifies a checkout-dependent sidecar need.
 
+### Capability refresh — 2026-10-28
+
+The current Paid workspace was checked before attempting either scenario. It
+has no Docker-compatible client (`docker`, `podman`, and `nerdctl` are absent),
+no local Docker socket (`/var/run/docker.sock` and `/run/docker.sock` are
+absent), and no configured Docker, remote-Docker, Swarm, or execution-runner
+endpoint. The local backend therefore has no admitted execution environment
+to provision through Paid's supported run/tool lifecycle.
+
+No host command, mock, Docker-client installation, or rollout-flag change was
+substituted for the two live artifacts. This refresh is not an acceptance
+artifact and does not close #4604. Recovery remains to run the recorded
+native-analyzer and allowlisted-sidecar scenarios in an authorized
+Docker-capable Paid environment, then capture their output, identities, and
+cleanup results in this report before changing the RDR-075 blocker or deciding
+whether RDR-073 needs an extension.
+
 ## Disposition
 
 This report resolves critical assumption 1 only. Critical assumption 2 remains
