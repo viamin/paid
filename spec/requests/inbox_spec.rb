@@ -92,6 +92,30 @@ RSpec.describe "Inbox" do
     expect(queries.grep(/FROM "(?:decomposition_decisions|feature_intents|change_intents|issue_continuation_requests)"/)).to be_empty
   end
 
+  # @spec INBOX-FOUNDATION-008 AUTO-MERGE-009
+  it "keeps a held PR discoverable in the Inbox page and badge when its local phase is draft" do
+    pr = create(
+      :issue,
+      :pull_request,
+      project: project,
+      title: "Held after interrupted closeout",
+      github_number: 4685,
+      pr_review_phase: "draft",
+      labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+      auto_merge_evaluated_at: nil,
+      auto_merge_blockers: nil
+    )
+
+    get inbox_path(kind: Inbox::Queue::MERGE_APPROVAL_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(pr.title, "Human review requested before merging")
+
+    get inbox_count_path
+
+    expect(Nokogiri::HTML(response.body).at_css("turbo-frame#inbox_nav_badge_desktop span")&.text&.strip).to eq("1")
+  end
+
   # @spec OPERATOR-INBOX-015
   it "rejects a detail frame selection excluded by the kind filter" do
     issue = create(:issue, :needs_input, project: project, body: questions_body)

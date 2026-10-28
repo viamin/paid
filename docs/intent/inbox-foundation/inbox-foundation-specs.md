@@ -89,10 +89,16 @@
   *Tests:* `spec/services/dashboard/needs_input_queue_spec.rb`.
   *Code:* `app/services/dashboard/needs_input_queue.rb`.
 
-- [x] **INBOX-FOUNDATION-008** — When an open ready pull request has the
-  structured `paid-hold-review` label, `Inbox::Queue` SHALL return it as a
+- [x] **INBOX-FOUNDATION-008** — When an open pull request has the structured
+  `paid-hold-review` label, or its Paid-local review hold while label
+  integration is ignored, `Inbox::Queue` SHALL return it as a
   `merge_approval` entry with a human-review summary even if its ordinary
-  auto-merge blocker snapshot is absent or has other blockers.
+  auto-merge blocker snapshot is absent or has other blockers. This explicit
+  human decision request is independent of the internal review phase: a
+  failed, timed-out, cancelled, or interrupted PR-creation workflow can leave
+  the synced GitHub PR in `draft` locally after GitHub has opened it for
+  review. Surfacing the hold SHALL NOT mutate that phase, restore automation
+  labels, or imply merge readiness or authority.
   *Tests:* `spec/services/inbox/queue_spec.rb`.
   *Code:* `app/services/inbox/merge_approval.rb`.
 
