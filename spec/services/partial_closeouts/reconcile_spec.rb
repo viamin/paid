@@ -46,6 +46,29 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(run.reload.reconciliation.fetch("status")).to eq("awaiting_operator")
   end
 
+  it "publishes a typed in-product workflow only when every human gap uses it" do # @spec FACET-CONFIDENCE-022
+    workflow = Inbox::ActionRequiredWorkflow::FACET_CONFIDENCE_TYPE
+    described_class.call(agent_run: run, assessment: gaps([
+      { "criterion" => "Independent evaluation", "kind" => "human",
+        "next_step" => "Judge every frozen test case.", "workflow" => workflow }
+    ]))
+
+    notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    expect(notification.metadata.dig("workflow", "type")).to eq(workflow)
+  end
+
+  it "does not type a notification containing mixed human work" do # @spec FACET-CONFIDENCE-022
+    described_class.call(agent_run: run, assessment: gaps([
+      { "criterion" => "Independent evaluation", "kind" => "human",
+        "next_step" => "Judge every frozen test case.",
+        "workflow" => Inbox::ActionRequiredWorkflow::FACET_CONFIDENCE_TYPE },
+      { "criterion" => "Pilot sign-off", "kind" => "human", "next_step" => "Run the external pilot." }
+    ]))
+
+    notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    expect(notification.metadata).not_to have_key("workflow")
+  end
+
   it "publishes a stable identity for each human prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-033
     described_class.call(agent_run: run, assessment: gaps([
       { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot." },

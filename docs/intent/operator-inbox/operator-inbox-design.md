@@ -171,6 +171,11 @@ absent, the description is also the entry summary. `Notifications::Publish`
 rejects a blocking notification that has neither a non-blank description nor
 remediation guidance, so every Action Required entry has meaningful context.
 
+Recognized typed workflow metadata may replace this generic presentation with
+domain-owned copy, progress, and an in-product action. Workflow selection is
+structural rather than inferred from notification prose. Unknown or missing
+workflow types always fall back to the generic presentation above.
+
 ### `merge_approval`
 
 Backed by the PR scanner's persisted current-head policy snapshot on `Issue`.

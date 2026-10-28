@@ -1,6 +1,43 @@
-<%# @spec OPERATOR-INBOX-002B %>
+<%# @spec OPERATOR-INBOX-002B @spec OPERATOR-INBOX-002L @spec FACET-CONFIDENCE-022 %>
 <div class="space-y-6">
   <% notification = entry.record %>
+  <% workflow = Inbox::ActionRequiredWorkflow.call(notification:) %>
+  <% if workflow %>
+    <% inbox_context = {
+         inbox_kind: params[:kind].presence_in(Inbox::Queue::KINDS),
+         inbox_sort: params[:sort].presence_in(Inbox::Queue::SORTS.keys),
+         inbox_entry_id: entry.id,
+         evaluation_notification_id: notification.id
+       }.compact %>
+    <div class="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4" data-action-required-workflow="<%= workflow.type %>">
+      <div>
+        <h3 class="text-sm font-semibold text-indigo-900"><%= workflow.title %></h3>
+        <p class="mt-1 text-sm text-indigo-800"><%= workflow.explanation %></p>
+      </div>
+      <p class="text-sm text-indigo-900" data-evaluation-progress>
+        <span class="font-medium"><%= workflow.recorded %> of <%= workflow.total %></span> judgments recorded ·
+        <span class="font-medium"><%= workflow.remaining %></span> remaining.
+        <% if workflow.action_label == "Freeze judgments" %>
+          Every case is judged; freeze the set to finish this requirement.
+        <% elsif workflow.evaluation&.frozen? %>
+          The completed judgment set is frozen and its report is ready.
+        <% end %>
+      </p>
+      <div class="flex flex-wrap items-center gap-3">
+        <% workflow_path = if workflow.evaluation
+             project_facet_confidence_evaluation_path(entry.project, workflow.evaluation, **inbox_context)
+           else
+             new_project_facet_confidence_evaluation_path(entry.project, issue_id: workflow.issue.id, **inbox_context)
+           end %>
+        <%= link_to workflow.action_label, workflow_path,
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+        <%= link_to inbox_issue_link_label(entry.issue), entry.issue.github_url,
+              target: "_blank", rel: "noopener noreferrer",
+              class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+      </div>
+    </div>
+  <% else %>
   <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
     <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
     <% if notification.description.present? %>
@@ -12,6 +49,10 @@
       <p class="mt-1 text-sm text-rose-800">A human action is required before work can continue.</p>
     <% end %>
   </div>
+
+  <p class="text-sm text-gray-600">
+    Follow the remediation steps above. If no in-product action is available, open the related issue for context and record the requested decision or evidence there.
+  </p>
 
   <% if entry.tasks.any? %>
     <div class="space-y-3">
@@ -60,5 +101,6 @@
             data: { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
+  <% end %>
   <% end %>
 </div>

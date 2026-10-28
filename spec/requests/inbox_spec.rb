@@ -221,6 +221,27 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("The quality pause could not be automatically resumed.")
     expect(response.body).to include("Review the quality dashboard and resume manually or adjust thresholds.")
     expect(response.body).to include("Open the quality dashboard", "Resume manually or adjust thresholds")
+    expect(response.body).to include("If no in-product action is available")
+  end
+
+  # @spec FACET-CONFIDENCE-022 @spec OPERATOR-INBOX-002L
+  it "translates a typed facet-confidence escalation into progress and a direct evaluation action" do
+    issue = create(:issue, project:, github_number: 4323)
+    notification = create(:notification, :error, account:, subject: issue, blocking: true,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+      title: "Internal closeout wording",
+      description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.",
+      metadata: { "workflow" => { "type" => "facet_confidence_closeout_evaluation" } })
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort: "newest")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Human evaluation required", "0 of 8", "8</span> remaining", "Start evaluation")
+    expect(response.body).to include("must independently review each frozen test case")
+    expect(response.body).to include("inbox_kind=action_required", "inbox_sort=newest",
+      "evaluation_notification_id=#{notification.id}")
+    expect(response.body).not_to include("blinded reference judgments", "facet-confidence corpus")
   end
 
   # @spec OPERATOR-INBOX-002B

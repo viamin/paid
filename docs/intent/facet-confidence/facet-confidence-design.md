@@ -174,3 +174,13 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+When the closeout assessment identifies this evaluation as a human
+prerequisite, it persists a typed workflow marker with the blocking
+notification. The Action Required pane uses that marker, never prose matching,
+to replace internal wording with a plain-language explanation, judgment
+progress, and a state-specific Start, Resume, Continue, Freeze, or report
+action. The marked notification does not block the evaluation it asks the
+operator to perform, but every unrelated closeout blocker still does. It
+resolves only after the same judge freezes the complete set. Notifications
+without a recognized marker retain safe generic rendering.

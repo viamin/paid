@@ -41,6 +41,10 @@ module PartialCloseouts
         # operator next step reaches the Inbox notification; a generic
         # fallback would leave the prerequisite unactionable (#4119).
         raise ArgumentError, "human gap next_step is required" if human_gap?(gap) && gap["next_step"].to_s.strip.blank?
+        if human_gap?(gap) && gap["workflow"].present? &&
+            !Llm::AnalyzePartialCloseout::VALID_HUMAN_WORKFLOWS.include?(gap["workflow"])
+          raise ArgumentError, "human gap workflow is invalid"
+        end
         validate_human_references!(gap) if human_gap?(gap)
       end
     end
@@ -224,6 +228,8 @@ module PartialCloseouts
       metadata["evidence_submissions"] = submissions if submissions.any?
       policy_selection = replacement_policy_action(human_gaps)
       metadata["policy_selection"] = policy_selection if policy_selection
+      workflow = typed_workflow(human_gaps)
+      metadata["workflow"] = { "type" => workflow } if workflow
 
       superseded = Array(previous&.metadata&.fetch("superseded_references", nil))
       if previous&.metadata&.fetch("prerequisite_identity", nil) != identity
@@ -255,7 +261,7 @@ module PartialCloseouts
     end
 
     def prerequisite_identity(gap)
-      identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection"))
+      identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection", "workflow"))
       identity["references"] = Array(gap["references"])
         .map { |reference| canonicalize(reference) }
         .sort_by { |reference| JSON.generate(reference) }
@@ -290,6 +296,11 @@ module PartialCloseouts
         gap.dig("policy_selection", "next_step") if gap.dig("policy_selection", "required")
       end.uniq
       { "required" => true, "next_step" => steps.join(" ") } if steps.any?
+    end
+
+    def typed_workflow(human_gaps)
+      workflows = human_gaps.map { |gap| gap["workflow"] }.uniq
+      workflows.first if workflows.length == 1 && workflows.first.in?(Llm::AnalyzePartialCloseout::VALID_HUMAN_WORKFLOWS)
     end
 
     def existing_prerequisite_notification

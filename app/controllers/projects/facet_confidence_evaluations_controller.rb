@@ -9,6 +9,7 @@ module Projects
   # URL.
   # @spec FACET-CONFIDENCE-020
   # @spec FACET-CONFIDENCE-021
+  # @spec FACET-CONFIDENCE-022
   class FacetConfidenceEvaluationsController < ApplicationController
     before_action :set_project
     before_action :set_evaluation, except: %i[new create]
@@ -17,20 +18,24 @@ module Projects
       authorize FacetConfidenceEvaluation.new(project: @project)
       @issue = @project.issues.find(params[:issue_id])
       @existing = @issue.facet_confidence_evaluations.latest_first.first
-      @packet = FacetConfidence::CloseoutEvaluationPacket.call(issue: @issue, status: Issues::CloseoutStatus.call(@issue))
+      @workflow_notification = workflow_notification_for(@issue)
+      @packet = FacetConfidence::CloseoutEvaluationPacket.call(issue: @issue, status: closeout_status_for(@issue))
       @inbox_context = inbox_context
     end
 
     def create
       authorize FacetConfidenceEvaluation.new(project: @project)
 
-      issue = @project.issues.find(params[:issue_id])
-      result = FacetConfidence::CloseoutEvaluation::Start.call(project: @project, issue: issue, actor: current_user)
+      @issue = @project.issues.find(params[:issue_id])
+      @workflow_notification = workflow_notification_for(@issue)
+      result = FacetConfidence::CloseoutEvaluation::Start.call(
+        project: @project, issue: @issue, actor: current_user, status: closeout_status_for(@issue)
+      )
       if result.success?
         redirect_to evaluation_path(result.evaluation),
-          notice: result.resumed ? "Resumed the existing evaluation for this closeout." : "Evaluation started. Record the blinded reference judgments, then freeze the reference set."
+          notice: result.resumed ? "Resumed the existing evaluation for this closeout." : "Evaluation started. Review each frozen test case independently, record your judgments, then freeze the completed set."
       else
-        redirect_to new_project_facet_confidence_evaluation_path(@project, issue_id: issue.id, **inbox_context), alert: result.error
+        redirect_to new_project_facet_confidence_evaluation_path(@project, issue_id: @issue.id, **inbox_context), alert: result.error
       end
     end
 
@@ -73,6 +78,7 @@ module Projects
       authorize @evaluation
 
       result = FacetConfidence::CloseoutEvaluation::FreezeLabels.call(evaluation: @evaluation, actor: current_user)
+      resolve_workflow_notification if result.success?
       redirect_for(result, success_notice: "Reference set frozen. The compiled report is ready to return to the Inbox item.")
     end
 
@@ -128,7 +134,8 @@ module Projects
       {
         inbox_kind: params[:inbox_kind].presence_in(Inbox::Queue::KINDS),
         inbox_sort: params[:inbox_sort].presence_in(Inbox::Queue::SORTS.keys),
-        inbox_entry_id: valid_inbox_entry_id
+        inbox_entry_id: valid_inbox_entry_id,
+        evaluation_notification_id: valid_workflow_notification_id
       }.compact
     end
 
@@ -139,6 +146,45 @@ module Projects
       entry = Inbox::Queue.find_entry(user: current_user, entry_id: entry_id, project: @project,
         kind: params[:inbox_kind].presence_in(Inbox::Queue::KINDS))
       entry&.id
+    end
+
+    def workflow_notification_for(issue)
+      return @workflow_notification if @workflow_notification&.subject == issue
+
+      id = params[:evaluation_notification_id].to_s
+      return if id.blank?
+
+      notification = NotificationPolicy::Scope.new(current_user, Notification).resolve
+        .active.blocking.find_by(id:, subject: issue)
+      notification if notification && Inbox::ActionRequiredWorkflow.call(notification:)
+    end
+
+    def valid_workflow_notification_id
+      workflow_notification_for(@evaluation&.issue || @issue)&.id
+    end
+
+    # The typed notification is the request to perform this evaluation, so it
+    # cannot also prevent its own start. Any other notification or blocker
+    # remains authoritative.
+    def closeout_status_for(issue)
+      status = Issues::CloseoutStatus.call(issue)
+      return status unless @workflow_notification
+
+      status.blockers = status.blockers.reject do |blocker|
+        next false unless blocker.code == :human_prerequisite_notification
+
+        ids = Array(blocker.evidence["notifications"]).filter_map { |item| item["notification_id"] }
+        ids == [ @workflow_notification.id ]
+      end
+      status
+    end
+
+    def resolve_workflow_notification
+      @workflow_notification = workflow_notification_for(@evaluation.issue)
+      return unless @workflow_notification
+
+      Notifications::Resolve.call(account: @workflow_notification.account, source: @workflow_notification.source,
+        subject: @workflow_notification.subject, user: @workflow_notification.user)
     end
 
     def evaluation_path(evaluation)

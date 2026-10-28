@@ -73,6 +73,33 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation))
   end
 
+  # @spec FACET-CONFIDENCE-022
+  it "starts through its typed Action Required notification, preserves context, and resolves it only after freezing" do
+    notification = create(:notification, :error, account:, subject: issue, blocking: true,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+      metadata: { "workflow" => { "type" => "facet_confidence_closeout_evaluation" } })
+    context = { evaluation_notification_id: notification.id,
+                inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+                inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification) }
+
+    get new_project_facet_confidence_evaluation_path(project, issue_id: issue.id, **context)
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Start evaluation")
+
+    post project_facet_confidence_evaluations_path(project, **context), params: { issue_id: issue.id }
+    evaluation = issue.facet_confidence_evaluations.find_by!(corpus_digest: FacetConfidence::Corpus.new(
+      path: FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH).content_digest)
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation, **context))
+    expect(notification.reload).to be_active
+
+    label_all!(evaluation)
+    post freeze_project_facet_confidence_evaluation_path(project, evaluation, **context)
+
+    expect(notification.reload.resolved_at).to be_present
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation,
+      evaluation_notification_id: notification.id, inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND))
+  end
+
   it "refuses to start for an originating work item outside the project" do
     other_project = create(:project, account: account, created_by: owner)
     other_issue = create(:issue, project: other_project, github_number: 99)

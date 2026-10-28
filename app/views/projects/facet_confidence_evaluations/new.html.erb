@@ -3,8 +3,8 @@
   <div>
     <h1 class="text-2xl font-bold text-gray-900">Facet-confidence closeout evaluation</h1>
     <p class="mt-1 text-sm text-gray-600">
-      Record blinded human reference judgments for the frozen RDR-070 corpus, freeze the reference set, and return
-      the compiled report to the originating Inbox item. Completing this never closes the source issue, enables
+      Independently review each frozen test case, record your judgment, freeze the completed set, and return
+      the report to the originating Inbox item. Completing this never closes the source issue, enables
       delivery, or changes the 80/80 defaults.
     </p>
   </div>
@@ -44,8 +44,8 @@
       <%= form_with url: project_facet_confidence_evaluations_path(@project, **@inbox_context), method: :post, class: "space-y-3" do |form| %>
         <%= form.hidden_field :issue_id, value: @issue.id %>
         <p class="text-xs text-gray-500">
-          You, <%= current_user.email %>, become the sole reference judge: you alone record and freeze the blinded
-          reference judgments. Case shapes, selection rationale, and the frozen expectations stay hidden until you
+          You, <%= current_user.email %>, become the sole judge: you alone record and freeze these independent
+          judgments. Case shapes, selection rationale, and the expected answers stay hidden until you
           freeze; a skipped case never counts as completed evidence.
         </p>
         <%= form.submit "Start evaluation",
