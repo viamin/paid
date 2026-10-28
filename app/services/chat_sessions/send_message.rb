@@ -43,10 +43,16 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      @chat_turn = find_or_create_turn
+      track_durable_activity
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      assistant_message ? @chat_turn.complete! : @chat_turn.wait_for_confirmation!
       update_session_activity
       assistant_message
+    rescue StandardError => error
+      @chat_turn&.fail!(classification: error.class.name)
+      raise
     end
 
     private
@@ -132,6 +138,22 @@ module ChatSessions
         content: content,
         metadata: { "stream_message_id" => stream_message_id }.compact
       )
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001
+    def find_or_create_turn
+      chat_session.chat_turns.find_or_create_by!(user_message: transport_attempt_message) do |turn|
+        turn.status = "pending"
+        turn.last_activity_at = Time.current
+      end
+    end
+
+    def track_durable_activity
+      original_callback = on_message_persisted
+      @on_message_persisted = ->(message, **) {
+        @chat_turn.record_activity!
+        original_callback&.call(message)
+      }
     end
 
     # A conversational reply (e.g. "yes") is not a confirmation. When a write
