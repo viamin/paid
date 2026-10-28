@@ -139,7 +139,9 @@ RSpec.describe "RDR-075 live execution-environment validation" do
     validation_run = start_validation(requirement:)
     pin_image(validation_run, image_id:)
     attach_tool_sidecar(validation_run)
+    alias_publisher = publish_sidecar_alias(validation_run)
     evidence = run_validation(validation_run)
+    alias_publisher&.join
 
     print_artifact(
       scenario: "sidecar_interaction",
@@ -271,12 +273,68 @@ RSpec.describe "RDR-075 live execution-environment validation" do
         {
           "name" => "rdr075-echo",
           "image" => SIDECAR_IMAGE,
-          "port" => SIDECAR_PORT,
+          "metadata" => { "port" => SIDECAR_PORT },
           "env" => {}
         }
       ]
     )
     validation_run.reload
+  end
+
+  # The shipped tool-sidecar health probe resolves the sidecar's per-run DNS
+  # alias from the platform host (Containers::TcpHealthProbe#local_port_open?).
+  # In production the platform runs in a container attached to the paid_agent
+  # network, where Docker's embedded DNS resolves that alias. This CI job runs
+  # the app directly on the runner host, which has no embedded DNS, so the
+  # harness publishes the same alias -> container IP mapping into the runner's
+  # /etc/hosts as soon as the product creates the sidecar. Only the resolution
+  # path is emulated; the container itself is created by the shipped
+  # provisioner.
+  def publish_sidecar_alias(validation_run)
+    Thread.new do
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 25
+      loop do
+        container = tool_sidecar_container(validation_run)
+        address = container_ip(container) if container
+        if address.present?
+          write_hosts_entry(container_name(container), address)
+          break
+        end
+
+        break if Process.clock_gettime(Process::CLOCK_MONOTONIC) > deadline
+
+        sleep 0.2
+      end
+    end
+  end
+
+  def tool_sidecar_container(validation_run)
+    Containers.backend.list_containers(all: true).find do |container|
+      labels = container.info["Labels"] || {}
+      labels["paid.tool_sidecar"] == "true" &&
+        labels["paid.agent_run_id"] == validation_run.id.to_s
+    end
+  end
+
+  def container_ip(container)
+    networks = container.info.dig("NetworkSettings", "Networks") || {}
+    networks.each_value do |settings|
+      address = settings["IPAddress"]
+      return address if address.present?
+    end
+    nil
+  end
+
+  def container_name(container)
+    container.info["Name"].to_s.delete_prefix("/")
+  end
+
+  def write_hosts_entry(hostname, address)
+    entry = "#{address} #{hostname}\n"
+    File.open("/etc/hosts", "a") { |file| file.write(entry) }
+  rescue SystemCallError => e
+    Rails.logger.warn(message: "rdr075.hosts_write_failed", error: e.message)
+    system("sudo", "sh", "-c", "echo '#{entry.strip}' >> /etc/hosts")
   end
 
   def run_validation(validation_run)
