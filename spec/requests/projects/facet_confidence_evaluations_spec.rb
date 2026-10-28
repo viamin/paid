@@ -87,6 +87,7 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response.body).to include("Independent evaluation needed", "independently reviews each frozen test case")
     expect(response.body).to include("0 of 8 judgments recorded; 8 remaining.")
     expect(response.body).to include("Start evaluation")
+    expect(response.body).not_to include("Remediation Required")
     expect(response.body).not_to include("Independent maintainers have entered and frozen the blinded reference judgments.")
 
     post project_facet_confidence_evaluations_path(project), params: {
@@ -116,6 +117,55 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     evaluation.corpus.cases.drop(1).each { |corpus_case| label!(evaluation, corpus_case) }
     get inbox_entry_path(action_entry_id, project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
     expect(response.body).to include("Freeze judgments", "8 of 8 judgments recorded; 0 remaining.")
+  end
+
+  it "starts the current corpus generation when the latest evaluation uses an older digest" do
+    notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Remediation Required", description: "Internal closeout prose.",
+      metadata: { "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW })
+    action_entry_id = entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+    historical = start_evaluation!
+    historical.update!(corpus_digest: "older-corpus-digest")
+
+    get inbox_entry_path(action_entry_id, project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response.body).to include("Start evaluation", "0 of 8 judgments recorded; 8 remaining.")
+    expect(response.body).not_to include("Resume evaluation")
+
+    get new_project_facet_confidence_evaluation_path(project, issue_id: issue.id)
+
+    expect(response.body).to include("Start evaluation")
+    expect(response.body).not_to include("An evaluation already exists", "Resume judgments")
+
+    post project_facet_confidence_evaluations_path(project), params: { issue_id: issue.id }
+
+    current = issue.facet_confidence_evaluations.where.not(id: historical.id).sole
+    expect(current.corpus_digest).to eq(FacetConfidence::Corpus.new(
+      path: FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH
+    ).content_digest)
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, current))
+  end
+
+  it "offers a view-only evaluation to an operator who is not its judge" do
+    notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Remediation Required", description: "Internal closeout prose.",
+      metadata: { "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW })
+    action_entry_id = entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+    evaluation = start_evaluation!
+    sign_in member
+
+    get inbox_entry_path(action_entry_id, project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response.body).to include("View evaluation", project_facet_confidence_evaluation_path(project, evaluation))
+    expect(response.body).not_to include("Resume evaluation", "Continue judging", "Freeze judgments")
+
+    get project_facet_confidence_evaluation_path(project, evaluation)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Only the operator who started this evaluation can record judgments.")
+    expect(response.body).not_to include("Save judgment", "Skip case", "Finish and freeze reference set")
   end
 
   it "refuses to start for an originating work item outside the project" do

@@ -14,12 +14,12 @@
       <p class="mt-3 text-sm font-medium text-indigo-900"><%= facet_escalation.progress_message %></p>
       <div class="mt-3 flex flex-wrap items-center gap-3">
         <% if facet_escalation.evaluation %>
-          <%= link_to facet_escalation.action_label,
+          <%= link_to facet_escalation.action_label(actor: current_user),
                 project_facet_confidence_evaluation_path(entry.project, facet_escalation.evaluation, **inbox_context),
                 data: { turbo_frame: "_top" },
                 class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
         <% elsif policy(FacetConfidenceEvaluation.new(project: entry.project)).create? %>
-          <%= link_to facet_escalation.action_label,
+          <%= link_to facet_escalation.action_label(actor: current_user),
                 new_project_facet_confidence_evaluation_path(entry.project, issue_id: entry.issue.id, **inbox_context),
                 data: { turbo_frame: "_top" },
                 class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>

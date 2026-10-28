@@ -32,7 +32,9 @@ module FacetConfidence
       end
 
       def evaluation
-        @evaluation ||= issue.facet_confidence_evaluations.latest_first.first
+        return @evaluation if defined?(@evaluation)
+
+        @evaluation = issue.facet_confidence_evaluations.find_by(corpus_digest: current_corpus.content_digest)
       end
 
       def title = "Independent evaluation needed"
@@ -42,9 +44,10 @@ module FacetConfidence
           "Record a judgment for every case, then freeze the completed set so the closeout has human evidence."
       end
 
-      def action_label
+      def action_label(actor:)
         return "Start evaluation" unless evaluation
         return "View completed evaluation" if evaluation.frozen?
+        return "View evaluation" unless evaluation.created_by_id == actor&.id
         return "Resume evaluation" if progress.fetch(:labeled).zero? && progress.fetch(:skipped).zero?
         return "Freeze judgments" if remaining.zero? && progress.fetch(:skipped).zero?
 
@@ -53,7 +56,7 @@ module FacetConfidence
 
       def progress
         @progress ||= evaluation&.progress || {
-          total: FacetConfidence::Corpus.new(path: CloseoutEvaluationPacket::MANIFEST_PATH).case_ids.length,
+          total: current_corpus.case_ids.length,
           labeled: 0,
           skipped: 0
         }
@@ -78,6 +81,7 @@ module FacetConfidence
       attr_reader :notification
 
       def issue = notification.subject
+      def current_corpus = @current_corpus ||= FacetConfidence::Corpus.new(path: CloseoutEvaluationPacket::MANIFEST_PATH)
     end
   end
 end
