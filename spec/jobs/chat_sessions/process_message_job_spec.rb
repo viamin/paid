@@ -52,6 +52,18 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
       ))
   end
 
+  # @spec CHAT-TURN-RECOVERY-004
+  it "records a completed durable turn" do
+    turn = create(:chat_turn, chat_session:, stream_message_id: stream_message_id)
+    assistant_msg = create(:chat_message, :assistant, chat_session:)
+    allow(ChatSessions::SendMessage).to receive(:call).and_return(assistant_msg)
+
+    described_class.perform_now(chat_session_id: chat_session.id, content: "Hello",
+      stream_message_id: stream_message_id, chat_turn_id: turn.id)
+
+    expect(turn.reload).to have_attributes(status: "completed", started_at: be_present)
+  end
+
   # @spec QUESTION-EXPLORATION-007
   it "passes the requesting collaborator to SendMessage" do
     collaborator = create(:user, account: account)
