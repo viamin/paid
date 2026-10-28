@@ -3,6 +3,8 @@
 module Inbox
   class MergeApproval
     APPROVAL_SIGNALS = %w[owner_approved reviews_fresh].freeze
+    STALL_CANDIDATE_WINDOW = 30.days
+    STALL_GRACE_PERIOD = 10.minutes
 
     def self.call(issue, phase_authorized: nil)
       new(issue, phase_authorized:).call
@@ -23,7 +25,6 @@ module Inbox
           project_id: project_ids,
           is_pull_request: true,
           github_state: "open",
-          pr_review_phase: "ready",
           merge_permission_rejected_at: nil
         )
         .where(candidate_conditions)
@@ -33,10 +34,14 @@ module Inbox
       Issue.sanitize_sql_array([
         "(projects.label_integration_mode <> 'ignored' AND issues.labels @> :hold_label::jsonb) OR " \
           "(projects.label_integration_mode = 'ignored' AND issues.hold_for_review = TRUE) OR (" \
+          "issues.pr_review_phase = 'ready' AND " \
           "issues.auto_merge_evaluated_at IS NOT NULL AND " \
           "issues.auto_merge_blockers IS NOT NULL AND (" \
-          "projects.auto_merge_mode = 'off' OR projects.owner_reviewer_login IS NOT NULL))",
-        hold_label: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ].to_json
+          "projects.auto_merge_mode = 'off' OR projects.owner_reviewer_login IS NOT NULL)) OR (" \
+          "issues.github_updated_at >= :stall_cutoff AND projects.pr_target = 'own_repo' AND " \
+          "projects.auto_add_labels_enabled = TRUE AND issues.pr_review_phase <> 'ready')",
+        hold_label: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ].to_json,
+        stall_cutoff: STALL_CANDIDATE_WINDOW.ago
       ])
     end
     private_class_method :candidate_conditions
@@ -49,20 +54,22 @@ module Inbox
     def call
       return unless candidate?
 
-      Snapshot.new(issue:, blockers: failed_blockers, phase_authorized:)
+      Snapshot.new(issue:, blockers: failed_blockers, phase_authorized:, stalled_run:)
     end
 
     class Snapshot
       attr_reader :blockers, :issue, :phase_authorized
 
-      def initialize(issue:, blockers:, phase_authorized: nil)
+      def initialize(issue:, blockers:, phase_authorized: nil, stalled_run: nil)
         @issue = issue
         @blockers = blockers
         @phase_authorized = phase_authorized
+        @stalled_run = stalled_run
       end
 
       def summary
         return "Human review requested before merging" if held_for_review?
+        return "Pull request automation stopped after #{run_status}" if stalled_run
         return "Approval is stale for the current revision" if stale_approval?
         return "Human review required before manual merge" if manual_merge? && approval_required?
         return "Manual merge decision required" if manual_merge?
@@ -87,10 +94,12 @@ module Inbox
           stale_approval: stale_approval?,
           approval_evidence: approval_evidence,
           blockers: display_blockers
-        }
+        }.merge(stall_evidence)
       end
 
       private
+
+      attr_reader :stalled_run
 
       def stale_approval?
         blockers.any? { |blocker| blocker["signal"] == "reviews_fresh" }
@@ -118,6 +127,7 @@ module Inbox
 
       def guidance_heading
         return "Human review is on hold" if held_for_review?
+        return "Pull request automation stopped" if stalled_run
         return "Approval is stale for the current revision" if stale_approval?
         return "Manual merge decision on GitHub" if manual_merge?
 
@@ -126,6 +136,7 @@ module Inbox
 
       def guidance_instruction
         return held_review_instruction if held_for_review?
+        return stalled_instruction if stalled_run
         return stale_approval_instruction if stale_approval?
         return "Review the current changes and make the manual merge decision on GitHub. Paid will not merge this pull request automatically." if manual_merge?
 
@@ -136,6 +147,26 @@ module Inbox
         return "Review the current changes and make the manual merge decision on GitHub. Paid will not merge this pull request automatically." if manual_merge?
 
         "Review the current changes and remove the hold when automatic merging may resume."
+      end
+
+      def stalled_instruction
+        "Inspect run ##{stalled_run.id} and its failure, then retry the source issue when automation should resume. " \
+          "This request does not mean the pull request is ready to merge."
+      end
+
+      def stall_evidence
+        return {} unless stalled_run
+
+        {
+          run_id: stalled_run.id,
+          run_status: stalled_run.status,
+          source_issue_number: stalled_run.issue&.github_number
+        }.compact
+      end
+
+      def run_status
+        { "timeout" => "a timed out run", "cancelled" => "a cancelled run" }
+          .fetch(stalled_run.status, "a #{stalled_run.status.humanize.downcase} run")
       end
 
       def stale_approval_instruction
@@ -212,23 +243,77 @@ module Inbox
 
     def candidate?
       # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-004
-      return false unless reviewable_pr?
+      return false unless open_pull_request?
       return true if held_for_review?
+      return true if stalled_run
+      return false unless reviewable_pr?
       return false if manual_merge? && automatic_merge_active?
 
       manual_merge? ? manual_action_required? : approval_only_blockers?
     end
 
     def reviewable_pr?
-      issue.is_pull_request? &&
-        issue.github_state == "open" &&
-        issue.pr_review_phase == "ready" &&
+      issue.pr_review_phase == "ready" &&
         (manual_merge? || automatic_merge_configured?) &&
         !issue.merge_permission_rejected?
     end
 
+    def open_pull_request?
+      issue.is_pull_request? && issue.github_state == "open" && !issue.merge_permission_rejected?
+    end
+
     def held_for_review?
       issue.held_for_review?
+    end
+
+    # A stopped execution request relies only on persisted, repository-scoped
+    # evidence. It deliberately leaves unknown and intentionally deactivated
+    # PRs alone; the generated-without-automation shape is the established
+    # human opt-out marker used by label recovery.
+    # @spec INBOX-FOUNDATION-012
+    def stalled_run
+      return @stalled_run if defined?(@stalled_run)
+      return @stalled_run = nil unless stall_eligible?
+      return @stalled_run = nil if correlated_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
+
+      @stalled_run = correlated_runs
+        .where(status: AgentRun::TERMINAL_FAILURE_STATUSES)
+        .where("agent_runs.completed_at <= ?", STALL_GRACE_PERIOD.ago)
+        .order(completed_at: :desc, id: :desc)
+        .first
+    end
+
+    def stall_eligible?
+      project = issue.project
+      return false unless project.pr_target == "own_repo" && project.auto_add_labels_enabled?
+      return false if issue.pr_review_phase == "ready" || issue.github_updated_at < STALL_CANDIDATE_WINDOW.ago
+
+      generated = project.generated_label_name
+      automation = project.automation_label_name
+      !issue.has_label?(generated) && !issue.has_label?(automation)
+    end
+
+    def correlated_runs
+      @correlated_runs ||= begin
+        clauses = []
+        values = {}
+        if issue.parent_issue_id
+          clauses << "agent_runs.issue_id = :source_issue_id"
+          values[:source_issue_id] = issue.parent_issue_id
+        end
+        clauses << "agent_runs.pull_request_number = :pr_number"
+        values[:pr_number] = issue.github_number
+        if issue.github_url.present?
+          clauses << "agent_runs.pull_request_url = :pr_url"
+          values[:pr_url] = issue.github_url
+        end
+        if issue.last_scanned_head_sha.present?
+          clauses << "agent_runs.result_commit_sha = :head_sha"
+          values[:head_sha] = issue.last_scanned_head_sha
+        end
+
+        issue.project.agent_runs.where(goal: "create_pr").where(clauses.join(" OR "), values)
+      end
     end
 
     def approval_only_blockers?

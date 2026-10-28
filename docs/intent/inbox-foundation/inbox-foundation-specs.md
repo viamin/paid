@@ -89,11 +89,30 @@
   *Tests:* `spec/services/dashboard/needs_input_queue_spec.rb`.
   *Code:* `app/services/dashboard/needs_input_queue.rb`.
 
-- [x] **INBOX-FOUNDATION-008** — When an open ready pull request has the
-  structured `paid-hold-review` label, `Inbox::Queue` SHALL return it as a
-  `merge_approval` entry with a human-review summary even if its ordinary
-  auto-merge blocker snapshot is absent or has other blockers.
+- [x] **INBOX-FOUNDATION-008** — When an open pull request has the structured
+  `paid-hold-review` label (or the local hold equivalent in ignored-label
+  mode), `Inbox::Queue` SHALL return it as a `merge_approval` entry with a
+  human-review summary regardless of a stale or uninitialized internal review
+  phase and regardless of whether its ordinary auto-merge blocker snapshot is
+  absent or has other blockers. Surfacing the hold SHALL NOT promote the review
+  phase or imply merge readiness.
   *Tests:* `spec/services/inbox/queue_spec.rb`.
+  *Code:* `app/services/inbox/merge_approval.rb`.
+
+- [x] **INBOX-FOUNDATION-012** — While an open, recently updated pull request
+  belongs to an automated own-repository project, when persisted source, PR
+  identity, or current-head evidence correlates it to a terminal failed,
+  timed-out, cancelled, rate-limited, authentication-expired, or token-limited
+  create-PR run and no correlated run remains queued, running, or paused,
+  `Inbox::Queue`, its badge, filter availability, API, and chat/detail consumers
+  SHALL expose one `merge_approval` entry that identifies stopped execution and
+  gives a concrete inspect-or-retry action. The bounded detection SHALL remain
+  distinct from a human review hold, SHALL NOT classify pending CI/review or
+  unknown coverage as stopped execution, and SHALL NOT mutate phase, labels, or
+  merge authority. The entry SHALL resolve when a correlated workflow resumes
+  or the pull request closes.
+  *Tests:* `spec/services/inbox/queue_spec.rb`,
+  `spec/services/inbox/count_spec.rb`.
   *Code:* `app/services/inbox/merge_approval.rb`.
 
 - [x] **INBOX-FOUNDATION-011** — When an authorized operator can see an open,

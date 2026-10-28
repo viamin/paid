@@ -168,6 +168,56 @@ RSpec.describe Inbox::Queue do
       )
     end
 
+    # @spec INBOX-FOUNDATION-008
+    it "surfaces an explicit review hold without promoting a stale draft phase" do
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry.summary_text).to eq("Human review requested before merging")
+      expect(pr.reload.pr_review_phase).to eq("draft")
+    end
+
+    # @spec INBOX-FOUNDATION-012
+    it "surfaces stopped create-PR execution correlated by the scanned head" do
+      source = create(:issue, project: project)
+      run = create(
+        :agent_run, :timeout, project: project, issue: source, goal: "create_pr",
+        result_commit_sha: "a" * 40,
+        pull_request_number: nil, pull_request_url: nil,
+        completed_at: 20.minutes.ago
+      )
+      pr = create(
+        :issue, :pull_request, project: project, pr_review_phase: "draft", parent_issue: nil, labels: [],
+        last_scanned_head_sha: run.result_commit_sha
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry).to have_attributes(issue: pr, summary_text: "Pull request automation stopped after a timed out run")
+      expect(entry.guidance.fetch(:instruction)).to include("Inspect run ##{run.id}", "retry")
+      expect(entry.guidance).to include(run_id: run.id, source_issue_number: source.github_number)
+      expect(pr.reload).to have_attributes(pr_review_phase: "draft", labels: [])
+    end
+
+    # @spec INBOX-FOUNDATION-012
+    it "does not surface a stopped run while a responsible workflow is active" do
+      source = create(:issue, project: project)
+      pr = create(:issue, :pull_request, project: project, pr_review_phase: "draft", parent_issue: source)
+      create(:agent_run, :timeout, project: project, issue: source, goal: "create_pr", completed_at: 20.minutes.ago)
+      create(:agent_run, :running, project: project, issue: source, goal: "create_pr")
+
+      expect(described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)).to be_empty
+    end
+
     # @spec INBOX-PHASE-RELEVANCE-003
     it "keeps merge approvals accessible in Disabled phases when merge is disabled" do
       FeatureFlags.enable!(:automation_phases, project:)
@@ -321,6 +371,7 @@ RSpec.describe Inbox::Queue do
         :pull_request,
         project: project,
         github_number: 42,
+        pr_review_phase: "draft",
         hold_for_review: true,
         auto_merge_evaluated_at: nil,
         auto_merge_blockers: nil

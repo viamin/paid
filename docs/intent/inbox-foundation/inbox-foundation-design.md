@@ -88,7 +88,20 @@ Today three kinds exist:
   enter `paid_state: "needs_input"` just to become visible. An open ready PR
   with `paid-hold-review` is also a `:merge_approval` entry, irrespective of
   its ordinary blocker snapshot, because the label is an explicit request for
-  human action.
+  human action. An explicit review hold is authoritative even when the locally
+  stored review phase is stale or uninitialized; surfacing the request never
+  changes that phase or implies that the pull request is merge-ready.
+
+  The same lane also exposes a distinct stopped-execution state for a recently
+  active pull request in an automated own-repository project when trusted local
+  evidence correlates it to a terminal create-PR run and no correlated workflow
+  remains queued, running, or paused. Correlation is bounded to persisted source
+  linkage, repository-qualified PR identity, or the scanned PR head SHA. This
+  catches interrupted post-processing without treating every unlabeled PR, a
+  normally waiting PR, or unknown coverage as human work. The entry identifies
+  the failed run and source issue and directs the operator to inspect/retry the
+  workflow; it does not claim merge readiness, restore labels, or authorize a
+  merge.
 
 Future kinds (`:paused_run_decision`)
 plug in by registering an entry-finder that contributes rows to the same
