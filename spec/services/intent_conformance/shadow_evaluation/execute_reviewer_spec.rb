@@ -203,7 +203,7 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
   it "stops between cases when an authorized cancellation is requested and preserves collected evidence" do
     prepare_frozen!
     allow(github_client).to receive(:compare_summary).and_return(comparison)
-    allow(AgentHarness).to receive(:send_message) do
+    allow(AgentHarness.conductor).to receive(:execute_direct) do
       evaluation.update!(cancellation_requested_at: Time.current)
       llm_response("within_scope")
     end
@@ -213,14 +213,14 @@ RSpec.describe IntentConformance::ShadowEvaluation::ExecuteReviewer do
     expect(result).to be_success
     expect(evaluation.reload).to be_cancelled
     expect(evaluation.runs.where.not(verdict: "not_evaluated").count).to eq(1)
-    expect(AgentHarness).to have_received(:send_message).once
+    expect(AgentHarness.conductor).to have_received(:execute_direct).once
   end
 
   # @spec INTENT-CONFORMANCE-ROLLOUT-011
   it "preserves a cancellation requested after the final case check" do
     prepare_frozen!
     allow(github_client).to receive(:compare_summary).and_return(comparison)
-    allow(AgentHarness).to receive(:send_message).and_return(llm_response("within_scope"))
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response("within_scope"))
     executor = described_class.new(evaluation: evaluation)
     cancellation_checks = 0
     allow(executor).to receive(:cancellation_requested?).and_wrap_original do |original|
