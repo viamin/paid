@@ -336,6 +336,47 @@ RSpec.describe Inbox::Queue do
       )
     end
 
+    it "returns a merge-approval Inbox entry for a review-held draft PR" do # @spec INBOX-FOUNDATION-008
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 44,
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+        .find { |candidate| candidate.issue == pr }
+
+      expect(entry).to have_attributes(
+        kind: described_class::MERGE_APPROVAL_KIND,
+        summary_text: "Human review requested before merging",
+        waiting_since: pr.github_updated_at
+      )
+    end
+
+    it "returns a merge-approval Inbox entry for an ignored-mode draft PR with a local review hold" do # @spec INBOX-FOUNDATION-008 LABEL-CONTROL-004
+      project.update!(label_integration_mode: "ignored")
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 45,
+        pr_review_phase: "draft",
+        hold_for_review: true,
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+        .find { |candidate| candidate.issue == pr }
+
+      expect(entry).to have_attributes(kind: described_class::MERGE_APPROVAL_KIND)
+    end
+
     it "does not use a hold label for an ignored-mode PR without a local review hold" do # @spec LABEL-CONTROL-004
       project.update!(label_integration_mode: "ignored")
       pr = create(
