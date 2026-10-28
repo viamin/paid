@@ -87,5 +87,22 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
         phase_key: "reconcile_partial_closeout", phase_group: "post", status: "failed"
       )
     end
+
+    it "persists authentication diagnostics and leaves the parent incomplete" do # @spec PARTIAL-CLOSEOUT-034
+      error = Llm::AnalyzePartialCloseout::AssessmentError.new(
+        "restore worker authentication", category: :authentication, provider: :claude,
+        model: "claude-sonnet-4-6", request_id: "request-1", attempt_id: "attempt-1"
+      )
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(error)
+
+      result = activity.execute(agent_run_id: run.id)
+
+      expect(result).to include(status: "assessment_unavailable", gaps_remain: true)
+      failure = run.reload.reconciliation.fetch("assessment_failure")
+      expect(failure).to include("category" => "authentication", "provider" => "claude",
+        "model" => "claude-sonnet-4-6", "request_id" => "request-1", "attempt_id" => "attempt-1")
+      expect(run.reconciliation).not_to have_key("assessment")
+      expect(parent.reload.github_state).to eq("open")
+    end
   end
 end

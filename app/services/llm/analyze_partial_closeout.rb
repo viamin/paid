@@ -5,6 +5,20 @@ module Llm
   class AnalyzePartialCloseout
     include OutputNormalizer
 
+    class AssessmentError < AgentHarness::Error
+      attr_reader :category, :provider, :model, :request_id, :attempt_id, :invalid_fields
+
+      def initialize(message, category:, provider:, model:, request_id:, attempt_id:, invalid_fields: [])
+        @category = category
+        @provider = provider
+        @model = model
+        @request_id = request_id
+        @attempt_id = attempt_id
+        @invalid_fields = invalid_fields
+        super(message)
+      end
+    end
+
     DEFAULT_MODEL = "claude-sonnet-4-6"
     DEFAULT_PROVIDER = :claude
     TIMEOUT = 30
@@ -71,11 +85,16 @@ module Llm
     end
 
     def call
+      @request_id = SecureRandom.uuid
+      @attempt_id = SecureRandom.uuid
       parsed = schema_capable_request? ? schema_constrained_parse : legacy_text_parse
       parsed = parsed.deep_stringify_keys if parsed.is_a?(Hash)
-      raise AgentHarness::Error, "partial closeout assessment failed" unless valid_assessment?(parsed)
+      invalid_fields = invalid_fields_for(parsed)
+      raise assessment_error(:invalid_assessment, invalid_fields:) if invalid_fields.any?
 
       parsed
+    rescue AgentHarness::AuthenticationError => error
+      raise assessment_error(:authentication, message: authentication_message, original_error: error)
     end
 
     private
@@ -93,13 +112,20 @@ module Llm
     # (`PartialCloseouts::Assessment#next_action` calls
     # `assessment["next_action"].to_h` and `Present_criterion#merge` would
     # raise NoMethodError on render).
-    def valid_assessment?(parsed)
-      return false unless parsed.is_a?(Hash)
+    def invalid_fields_for(parsed)
+      return [ "$: expected object, got #{type_name(parsed)}" ] unless parsed.is_a?(Hash)
 
       gaps = parsed["gaps"]
-      gaps.is_a?(Array) && gaps.size <= MAX_GAPS && gaps.all? { |gap| valid_gap?(gap) } &&
-        valid_criteria?(parsed["criteria"]) && valid_next_action?(parsed["next_action"])
+      errors = []
+      errors << "gaps: expected array, got #{type_name(gaps)}" unless gaps.is_a?(Array)
+      errors << "gaps: exceeds maximum of #{MAX_GAPS}" if gaps.is_a?(Array) && gaps.size > MAX_GAPS
+      Array(gaps).each_with_index { |gap, index| errors << "gaps[#{index}]: invalid #{type_name(gap)}" unless valid_gap?(gap) }
+      errors << "criteria: invalid #{type_name(parsed['criteria'])}" unless valid_criteria?(parsed["criteria"])
+      errors << "next_action: invalid #{type_name(parsed['next_action'])}" unless valid_next_action?(parsed["next_action"])
+      errors
     end
+
+    def type_name(value) = value.class.name
 
     def valid_gap?(gap)
       return false unless gap.is_a?(Hash) && gap["criterion"].present? && VALID_KINDS.include?(gap["kind"])
@@ -187,7 +213,7 @@ module Llm
 
     def schema_constrained_parse
       result = AgentHarness::Api::ChatTransport.new.call(request)
-      return nil unless result&.dig(:status) == :succeeded
+      transport_failure! unless result&.dig(:status) == :succeeded
 
       result[:parsed]
     end
@@ -201,22 +227,33 @@ module Llm
         tools: :none,
         **Llm::TextMode.options
       )
-      return nil if response.respond_to?(:success?) && !response.success?
+      transport_failure! if response.respond_to?(:success?) && !response.success?
 
       output = response.respond_to?(:output) ? response.output : response.to_s
       JSON.parse(strip_markdown_fence(output.to_s.strip))
-    rescue JSON::ParserError => e
-      Rails.logger.warn(
-        message: "llm.analyze_partial_closeout_parse_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
-      nil
+    rescue JSON::ParserError
+      raise assessment_error(:invalid_assessment, invalid_fields: [ "$: invalid JSON" ])
+    end
+
+    def transport_failure!
+      raise assessment_error(:transport_unavailable, message: "partial closeout assessment failed: transport returned no successful response.")
+    end
+
+    def assessment_error(category, invalid_fields: [], message: nil, original_error: nil)
+      AssessmentError.new(
+        message || "partial closeout assessment failed: invalid assessment response.",
+        category:, provider: DEFAULT_PROVIDER, model: DEFAULT_MODEL,
+        request_id: @request_id, attempt_id: @attempt_id, invalid_fields:
+      ).tap { |error| error.set_backtrace(original_error.backtrace) if original_error }
+    end
+
+    def authentication_message
+      "partial closeout assessment failed: Claude authentication is unavailable on this worker. Restore the worker's owner-authorized Claude login or configure an approved host API key; this does not change billing automatically."
     end
 
     def request
       {
-        request_id: SecureRandom.uuid, operation: :schema, schema_name: "partial_closeout_assessment",
+        request_id: @request_id, operation: :schema, schema_name: "partial_closeout_assessment",
         schema: RESPONSE_SCHEMA, schema_mode: :json_schema, timeout: { read_seconds: TIMEOUT },
         candidates: [ { provider: :anthropic, model: DEFAULT_MODEL, protocol: :messages,
           authentication_mode: :api_key, credentials: { api_key: api_key } } ],

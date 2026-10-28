@@ -43,7 +43,7 @@ module PartialCloseouts
     # a fresh failure skips this pass, a stale one resumes from the last
     # durable state instead of restarting from scratch (which would re-file
     # owner issues from the assessment).
-    TERMINAL_STATUSES = %w[reconciled awaiting_operator].freeze
+    TERMINAL_STATUSES = %w[reconciled awaiting_operator assessment_unavailable].freeze
     # The merge grace window used elsewhere to disambiguate PR numbers
     # that have not yet synced as local Issue rows. We inherit it so a
     # legacy sweep that runs an hour after a slug-deployed merge still
@@ -312,8 +312,8 @@ module PartialCloseouts
         error_class: e.class.name,
         error: e.message
       )
-      persist_retryable_failure!(agent_run, e)
-      :retryable_failure
+      persist_assessment_failure!(agent_run, e)
+      e.is_a?(Llm::AnalyzePartialCloseout::AssessmentError) ? :skipped : :retryable_failure
     rescue GithubClient::Error => e
       Rails.logger.error(
         message: "partial_closeouts.legacy_reconcile_github_failed",
@@ -366,6 +366,20 @@ module PartialCloseouts
           "status" => "retryable_failure", "error" => error.message, "failed_at" => Time.current.iso8601
         )
       )
+    end
+
+    def persist_assessment_failure!(agent_run, error)
+      return persist_retryable_failure!(agent_run, error) unless error.is_a?(Llm::AnalyzePartialCloseout::AssessmentError)
+
+      agent_run.update!(reconciliation: agent_run.reconciliation.merge(
+        "status" => "assessment_unavailable",
+        "assessment_failure" => {
+          "category" => error.category.to_s, "provider" => error.provider.to_s, "model" => error.model,
+          "request_id" => error.request_id, "attempt_id" => error.attempt_id,
+          "invalid_fields" => error.invalid_fields.first(10), "recovery" => error.message
+        },
+        "failed_at" => Time.current.iso8601
+      ))
     end
 
     # Two flavors of "already done":

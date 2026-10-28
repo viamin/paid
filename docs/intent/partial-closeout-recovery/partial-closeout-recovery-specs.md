@@ -4,6 +4,19 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-034** — When a bounded partial-closeout assessment
+  cannot authenticate, returns an unsuccessful transport response, or fails
+  structural validation, the system SHALL keep the parent issue incomplete,
+  persist a bounded failure category with provider, model, request and attempt
+  identity (plus invalid field paths/types for malformed responses), and record
+  actionable recovery without response content or credentials. Authentication
+  failures SHALL not cause automatic follow-up work; the existing PR evidence
+  path SHALL remain available.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/temporal/activities/reconcile_partial_closeout_activity.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-032** — When an authorized technical-prerequisite
       validation is prepared from a partial-closeout item, the system SHALL
       inspect compatible execution hosts through the existing backend scheduler

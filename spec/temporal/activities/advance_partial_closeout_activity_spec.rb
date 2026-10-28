@@ -42,4 +42,12 @@ RSpec.describe Activities::AdvancePartialCloseoutActivity do
       phase_key: "advance_partial_closeout", phase_group: "post", status: "completed"
     )
   end
+
+  it "does not schedule a follow-up audit when assessment authentication is unavailable" do # @spec PARTIAL-CLOSEOUT-034
+    agent_run.update!(reconciliation: { "status" => "assessment_unavailable" })
+
+    result = activity.execute(agent_run_id: agent_run.id)
+
+    expect(result).to include(agent_run_id: agent_run.id, scheduled: false, code: "assessment_unavailable")
+  end
 end

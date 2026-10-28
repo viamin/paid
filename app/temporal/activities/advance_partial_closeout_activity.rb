@@ -15,6 +15,7 @@ module Activities
         # issue intent to advance, and must not fail after publishing a PR.
         # @spec PROJECT-READINESS-007
         return { agent_run_id: agent_run.id, scheduled: false, code: "skipped_no_issue" } unless agent_run.issue
+        return { agent_run_id: agent_run.id, scheduled: false, code: "assessment_unavailable" } if agent_run.reconciliation["status"] == "assessment_unavailable"
 
         assessment = agent_run.reconciliation.fetch("assessment", {})
         result = PartialCloseouts::Advance.call(agent_run: agent_run, assessment: assessment)

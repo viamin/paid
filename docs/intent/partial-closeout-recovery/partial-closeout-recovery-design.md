@@ -418,6 +418,14 @@ records a classification (`awaiting_final_audit`, `blocked_implementation`,
 that explains when open ownership makes another run duplicate work. A fresh
 semantic assessment remains a bounded explicit `agent_harness` operation.
 
+Assessment transport/authentication failures and malformed assessment data are
+recorded separately. The run retains only a bounded category, provider/model,
+request/attempt identity, and structural field paths/types where applicable;
+it never retains response content or credentials. An unavailable assessment
+leaves the parent incomplete, blocks automatic follow-up work, and preserves
+the PR-evidence route so an operator can restore authorized worker
+authentication and rerun it without changing billing implicitly.
+
 ### Report-only acceptance audits (#4595)
 
 When an assessment is missing or stale, Inbox offers a distinct **Run
