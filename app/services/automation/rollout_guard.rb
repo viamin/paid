@@ -8,11 +8,25 @@ module Automation
   # @spec AUTOMATION-PHASES-014
   module RolloutGuard
     FLAG = :automation_phases
+    RollbackBlocked = Class.new(StandardError)
 
     module_function
 
     def enabled?(project)
       FeatureFlags.enabled?(FLAG, project:)
+    end
+
+    # A project cannot return to the legacy policy while an explicit grant is
+    # still in force: the legacy policy has no way to interpret that grant.
+    # The flag-management surface calls this before changing the flag state.
+    # @spec AUTOMATION-PHASES-015
+    def ensure_rollback_allowed!(project)
+      active_grants = WorkItemContinuationGrant.active.where(project_id: project.id).count
+      return if active_grants.zero?
+
+      raise RollbackBlocked,
+        "Cannot disable automation phases while #{active_grants} continuation " \
+        "grant(s) are active; complete or revoke them first."
     end
 
     # Resolve a collection with tenant overrides preloaded, so checking many

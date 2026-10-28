@@ -64,6 +64,14 @@ retains both values, and enabling one never enables the other.
 phases that transitioned disabled → enabled; that transition list is what drives
 Inbox reconciliation (`INBOX-PHASE-RELEVANCE-004`, `-007`).
 
+Pilot enablement is coordinated through the existing authorized project
+feature-flag management surface: operators review the migration preview and
+phase mappings before enabling `automation_phases`. Rollback uses the same
+surface, but is fail-closed while the project has active continuation grants;
+operators must let those grants complete or revoke them before returning to the
+legacy policy. The guard preserves the rollout boundary because the legacy
+policy cannot interpret an active grant.
+
 ## Effective execution policy
 
 ```ruby

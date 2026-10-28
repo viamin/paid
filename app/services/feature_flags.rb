@@ -144,6 +144,7 @@ class FeatureFlags
     end
 
     def disable!(flag_name, project: nil, actor: nil)
+      protect_automation_phase_rollback!(flag_name, project)
       resolved_actor = resolve_actor(project:, actor:)
 
       unless resolved_actor
@@ -227,6 +228,12 @@ class FeatureFlags
       return flipper_feature.public_send("disable_percentage_of_#{gate}") if value.zero?
 
       flipper_feature.public_send("enable_percentage_of_#{gate}", value)
+    end
+
+    def protect_automation_phase_rollback!(flag_name, project)
+      return unless flag_name.to_sym == :automation_phases && project
+
+      Automation::RolloutGuard.ensure_rollback_allowed!(project)
     end
 
     def normalize_percentage(percentage)

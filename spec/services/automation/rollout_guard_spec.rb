@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# @spec AUTOMATION-PHASES-014
+# @spec AUTOMATION-PHASES-014 @spec AUTOMATION-PHASES-015
 RSpec.describe Automation::RolloutGuard do
   let(:account) { create(:account) }
   let(:project) { create(:project, account:) }
@@ -28,6 +28,29 @@ RSpec.describe Automation::RolloutGuard do
     create(:tenant_setting, account:, features: { "automation_phases" => true })
 
     expect(described_class.enabled?(project)).to be(true)
+  end
+
+  it "blocks rollback while the project has an active continuation grant" do
+    issue = create(:issue, project:)
+    create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
+    FeatureFlags.enable!(:automation_phases, project:)
+
+    expect {
+      FeatureFlags.disable!(:automation_phases, project:)
+    }.to raise_error(described_class::RollbackBlocked, /complete or revoke/)
+
+    expect(described_class.enabled?(project)).to be(true)
+  end
+
+  it "allows rollback after every continuation grant is closed" do
+    issue = create(:issue, project:)
+    grant = create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
+    FeatureFlags.enable!(:automation_phases, project:)
+    grant.revoke!
+
+    FeatureFlags.disable!(:automation_phases, project:)
+
+    expect(described_class.enabled?(project)).to be(false)
   end
 
   it "batch-loads tenant overrides for a project collection" do
