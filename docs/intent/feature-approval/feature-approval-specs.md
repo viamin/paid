@@ -210,7 +210,8 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   changes arriving during execution; repeated requests SHALL NOT extend the
   window. Each execution SHALL log process-wide resident memory before/after,
   process peak resident memory when available, allocated-object delta, elapsed
-  time and completion status without content payloads, including on failure.
+  time, SQL query count, artifact count, covered issue-fact count and completion
+  status without content payloads, including on failure.
   Unavailable process-memory readings SHALL NOT prevent reconciliation or
   replace its original failure.
   Scheduling/coalescing SHALL occur after synchronization commits, and rolled-
@@ -281,7 +282,12 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   only after structural evidence is exhausted and be cached by assessed revisions;
   the existing daily sweep remains the bounded fallback for unchanged inputs.
   Issue coverage SHALL load shared project records separately from issue rows,
-  so project audit history is not duplicated for every synchronized issue.
+  so project audit history is not duplicated for every synchronized issue. A
+  project sweep SHALL reuse one bounded, minimal, job-scoped issue-fact
+  snapshot for every RDR and design PR, batch backlink and canonical-manifest
+  reads, retain no raw ORM result graph beyond the query, and discard the
+  snapshot when the sweep ends; it SHALL NOT reuse evidence across revisions
+  or jobs.
   *Tests:* `spec/services/feature_intents/reconcile_design_artifacts_spec.rb`,
   `spec/services/feature_intents/persist_design_artifact_findings_spec.rb`,
   `spec/models/design_artifact_finding_spec.rb`,
@@ -289,6 +295,7 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   `spec/jobs/feature_intents/design_artifact_reconciliation_sweep_job_spec.rb`.
   *Code:* `app/models/design_artifact_finding.rb`,
   `app/services/feature_intents/reconcile_design_artifacts.rb`,
+  `app/services/feature_intents/issue_coverage_snapshot.rb`,
   `app/services/feature_intents/persist_design_artifact_findings.rb`,
   `app/services/feature_intents/discover_rdr_artifacts.rb`,
   `app/jobs/feature_intents/reconcile_design_artifacts_job.rb`,

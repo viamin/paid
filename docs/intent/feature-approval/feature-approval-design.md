@@ -79,9 +79,16 @@ reports evidence, coverage time, and an explicit state: `missing_tree`,
 `partial_tree`, `stale_metadata`, `deferred`, or `unverifiable`.
 
 Issue coverage preloads shared project records in a separate query rather than
-joining full project rows into the issue result. Project audit history must not
-be repeated for every issue: PostgreSQL results and their Ruby string copies
-would otherwise multiply that history by the synchronized issue count.
+joining full project rows into the issue result. A reconciliation sweep builds
+one revision-local, minimal issue-fact snapshot for each authorized project it
+actually covers, and reuses it for every discovered RDR and open design PR.
+Backlink candidates and canonical manifest links are read in bounded batch
+queries and indexed by artifact path. The snapshot retains plain issue facts,
+not ORM association graphs or query-cache copies, and is discarded at the end
+of the sweep; a new revision or job always reads fresh synchronized evidence.
+Project audit history must not be repeated for every issue: PostgreSQL results
+and their Ruby string copies would otherwise multiply that history by the
+synchronized issue count.
 
 PR synchronization schedules repository reconciliation after a fixed 30-second
 coalescing window. Scheduling and coalescing happen after the synchronization
@@ -93,7 +100,8 @@ Repeated syncs share the queued invocation; a sync during execution may enqueue
 one follow-up that reads the latest synchronized state. The window is not
 extended by subsequent syncs, so continuous activity cannot starve coverage.
 The daily sweep remains a backstop. Each execution records start/end resident
-memory, process peak resident memory, allocated-object delta, elapsed time and
+memory, process peak resident memory, allocated-object delta, elapsed time,
+SQL query count, reconciled artifact count, covered issue-fact count and
 completion status without logging issue bodies or artifact content. These are
 process-wide measurements, so concurrent work can contribute to their deltas.
 Unavailable process-memory readings leave RSS fields empty and never prevent
