@@ -341,6 +341,21 @@ any repair: a scan never mutates source code or opens a PR on its own.
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
 that acceptance.
 
+The planned maintenance capability also includes an optimization recipe
+family: a catalog of non-functional contracting audits that can recommend
+efficiency improvements without adding product behavior. The catalog and its
+curated presentation are distinct from a run's objective, so new types do not
+require a run-contract migration. Initial recipe candidates are code
+duplication, maintainability, and performance; security, cost, architecture,
+and test quality follow only through their separately scoped work. Every
+optimization audit retains the same report-only and honest-coverage contract
+as general maintenance. A separately proposed, per-run opt-in may queue
+bounded repair work after a report, but it remains default-off, subject to
+deterministic authorization, budget, stale-evidence, and idempotency gates;
+security findings remain manual-selection-only pending separate approval.
+This is draft policy intent, not a rollout authorization. See
+`docs/intent/maintenance-runs/` and [#4636](https://github.com/viamin/paid/issues/4636).
+
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
 management (an isolated environment is provisioned), into the agent layer (the

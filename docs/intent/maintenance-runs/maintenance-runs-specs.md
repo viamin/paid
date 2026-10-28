@@ -159,3 +159,56 @@
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
       an explicit user selection.
+
+## Optimization Recipe Family (Draft — #4636 acceptance required)
+
+- [ ] **MAINT-080**: The system shall resolve optimization types through an
+      extensible catalog whose initial curated entries are Performance, Design
+      / Architecture, Code Duplication, Security Hardening, Cost / Resource
+      Efficiency, Maintainability / Readability, and Test Coverage & Quality;
+      adding an entry shall not require a maintenance-run contract enum or
+      migration. (#4493)
+- [ ] **MAINT-081**: Where an optimization type is selected, the system shall
+      present and authorize that selection equivalently in the project UI,
+      authenticated API, and MCP surface, snapshot the selection with the
+      objective/scope/guidance, and retain it across retries. (#4493)
+- [ ] **MAINT-082**: If an optimization type has no catalog mapping, then the
+      system shall retain it as a custom-objective maintenance run rather than
+      rejecting the run. (#4493)
+- [ ] **MAINT-083**: The system shall provide code-duplication,
+      maintainability/readability, and performance recipes with recipe
+      instructions, evidence collectors where applicable, validation guidance,
+      and metric hints; performance shall disclose prompt-only coverage when
+      no applicable tool runs. (#4494)
+- [ ] **MAINT-084**: When an optimization finding requires semantic judgment,
+      the system shall obtain its structured assessment through
+      `agent_harness`, preserving supporting evidence, counterevidence,
+      recommendation, verification disposition, category, and policy
+      assessment value without deriving those semantic conclusions from
+      framework-code keywords or raw tool scores. (#4494, #4495)
+- [ ] **MAINT-085**: Where a run elects an optimization auto-queue confidence
+      threshold, the system shall treat the configured threshold solely as a
+      deterministic gate over the `agent_harness` structured assessment value
+      and shall not represent that value as a calibrated probability or
+      invent a numerical semantic outside the assessment contract. (#4495)
+- [ ] **MAINT-086**: The system shall default optimization repairs to manual
+      selection; it may auto-queue a bounded repair only when the authorized
+      user explicitly elected the per-run option at start and the completed
+      report's finding meets the selected policy. (#4495)
+- [ ] **MAINT-087**: Before auto-queueing an optimization repair, the system
+      shall deterministically enforce the run election, authorization,
+      finding-bounded scope, explicit per-repair cost/time budgets,
+      canonical-finding idempotency, and source-report provenance. (#4495)
+- [ ] **MAINT-088**: If a selected auto-queued repair's target revision differs
+      from its source report revision, then the system shall revalidate the
+      finding against the repair checkout before applying its recommendation;
+      a failed revalidation shall be visible and shall not dispatch a repair.
+      (#4495)
+- [ ] **MAINT-089**: The system shall exclude Security Hardening findings from
+      optimization auto-queue and keep their repairs manual-selection-only
+      until a separately accepted safety and accuracy policy authorizes an
+      exception. (#4496)
+- [ ] **MAINT-090**: The system shall stage security hardening, cost/resource
+      efficiency, design/architecture, and test coverage/quality recipes after
+      the first optimization recipes, and shall reconcile test-quality scope
+      with the RDR-075 test-quality recipe rather than duplicating it. (#4496)

@@ -9,7 +9,7 @@
 - **Type**: Architecture
 - **Priority**: —
 - **Related RDRs**: [RDR-073](RDR-073-marketplace-tool-sidecars.md), [RDR-031](RDR-031-focused-agent-runs.md), [RDR-036](RDR-036-mutation-testing-for-ai-generated-tests.md), [RDR-046](RDR-046-polyglot-language-detection-and-test-execution.md), [RDR-054](RDR-054-prompt-assembly-service.md)
-- **Related Issues**: [#4326](https://github.com/viamin/paid/issues/4326) (umbrella), [#4327](https://github.com/viamin/paid/issues/4327) (planning/tool handoff), [#4604](https://github.com/viamin/paid/issues/4604) (deferred live execution-environment validations), [#4334](https://github.com/viamin/paid/issues/4334) (closeout)
+- **Related Issues**: [#4326](https://github.com/viamin/paid/issues/4326) (umbrella), [#4327](https://github.com/viamin/paid/issues/4327) (planning/tool handoff), [#4604](https://github.com/viamin/paid/issues/4604) (deferred live execution-environment validations), [#4334](https://github.com/viamin/paid/issues/4334) (closeout), [#4492](https://github.com/viamin/paid/issues/4492) (optimization tracking umbrella), [#4636](https://github.com/viamin/paid/issues/4636) (optimization policy-intent preparation)
 - **Blocked on**: Validating the batch-analyzer checkout-access and
   batch-invocation contract against RDR-073's shipped attachment lifecycle
   (Critical assumption 2). Recorded by [#4327](https://github.com/viamin/paid/issues/4327)'s
@@ -157,6 +157,46 @@ dependencies, duplication, complexity, unnecessary abstractions, and obsolete
 behavior. Tool evidence identifies candidates; agents assess meaning through
 `agent_harness`. Structural execution and policy enforcement remain in code.
 
+### Optimization recipe family and bounded-repair policy
+
+Optimization is a maintenance recipe family for non-functional contracting
+audits. Its catalog is extensible data/configuration presented as a curated
+type menu, rather than an enum embedded in the run contract. The initial menu
+contains performance, design/architecture, code duplication, security
+hardening, cost/resource efficiency, maintainability/readability, and test
+coverage/quality. Selecting a known type resolves its recipe; an unmapped
+selection remains a custom-objective maintenance run rather than failing
+admission. The UI, authenticated API, and MCP surface expose equivalent
+catalog selection and retain it with the ordinary objective/scope/guidance
+snapshot.
+
+Code duplication, maintainability, and performance are the first executable
+recipe deliverables: duplication and maintainability can consume suitable
+tool evidence, while performance begins prompt-first when no tool is
+applicable. All semantic assessment — including whether evidence supports a
+recommendation, counterevidence, and an optimization finding's policy
+confidence — is performed through `agent_harness` using a structured result.
+The control plane does not infer semantic confidence from titles, keywords,
+tool scores, or a locally invented numeric interpretation. A configured
+threshold is only a deterministic policy gate over the agent's structured
+assessment; it is not a claim that the stored value is universally calibrated
+or a probability. Code deterministically enforces admission, authorization,
+category exclusion, revision checks, budgets, and idempotency.
+
+The base maintenance contract remains report-only. A future optimization
+exception may be elected explicitly for one run at its start: it is off by
+default, never a tenant-wide or recipe default, and may queue only a bounded
+repair through the existing repair pathway after the report completes. Before
+queueing each repair, the system must confirm the run election and actor
+authorization, configured confidence policy, explicit per-repair cost/time
+budget, canonical-finding idempotency, bounded finding scope, and current
+evidence. A changed target revision requires revalidation before a repair can
+apply. Failed gates remain visible and leave the finding available for manual
+selection. Security-hardening findings are manual-selection-only until a
+separate safety and accuracy policy is accepted. This policy is draft intent
+for [#4495](https://github.com/viamin/paid/issues/4495), not authorization to
+implement or roll out automatic repair.
+
 ### Manual focused investigation
 
 Users can start maintenance from a project without an issue or PR, through
@@ -248,6 +288,13 @@ bounded repair issues or normal PR-creation runs, preserving source-report
 links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
 outside the initial scope and requires a separately approved policy.
+
+The optimization-policy preparation in [#4636](https://github.com/viamin/paid/issues/4636)
+tracks the #4492–#4496 family but is not an executable prerequisite owned by
+the #4492 umbrella. It must use non-closing `Tracks #4636` language while
+human acceptance is pending. The required Inbox decision is: **accept or
+request changes to the catalog/recipe, semantic-assessment, and bounded
+repair policy revisions before any #4493–#4496 implementation begins**.
 
 ### PR integration
 

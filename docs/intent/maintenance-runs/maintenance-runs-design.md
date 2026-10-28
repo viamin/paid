@@ -36,6 +36,88 @@ tool attachment, matching, provisioning, or sidecar hardening — that remains
 [`marketplace-tool-sidecars`](../marketplace-tool-sidecars/marketplace-tool-sidecars-design.md),
 consumed rather than duplicated.
 
+## Optimization Recipe Family (Draft)
+
+Tracks [#4636](https://github.com/viamin/paid/issues/4636); this preparation
+does not close that issue or the [#4492](https://github.com/viamin/paid/issues/4492)
+tracking umbrella. Human acceptance remains required before the canonical
+artifacts may authorize #4493–#4496 implementation. The concrete Inbox
+decision is to accept or request changes to this catalog/recipe and
+bounded-repair policy. Until accepted and merged, every claim in this section
+and its EARS claims is draft-only and enables neither maintenance rollout nor
+automatic repair.
+
+### Catalog, selection, and recipe scope
+
+Optimization is a catalog-backed maintenance recipe family. The initial
+curated menu contains Performance, Design / Architecture, Code Duplication,
+Security Hardening, Cost / Resource Efficiency, Maintainability / Readability,
+and Test Coverage & Quality. Each catalog entry supplies a display name,
+description, default metric hints, and a pointer to its recipe when one is
+available. Adding a type means adding a catalog/recipe entry; it must not
+require a run-contract enum or migration. A selection that does not map to a
+catalog entry is retained as a custom-objective maintenance run instead of an
+admission error.
+
+The project UI, authenticated API, and MCP surface present equivalent menu
+selection beside free-form scope and guidance. Scope is a recommendation
+boundary, not a restriction on supporting evidence: a recipe may inspect
+callers, tests, entry points, and design documents needed to establish or
+refute a finding. It must disclose supporting inspection outside the request,
+and any repair broader than the approved finding needs fresh human
+authorization.
+
+[#4493](https://github.com/viamin/paid/issues/4493) implements the catalog
+and menu. [#4494](https://github.com/viamin/paid/issues/4494) implements the
+first recipes: code duplication and maintainability use appropriate tool
+evidence where available, while performance is prompt-first until credible
+tool support exists. [#4496](https://github.com/viamin/paid/issues/4496)
+stages security, cost, architecture, and test-quality recipes; test quality
+must reconcile with the existing RDR-075 recipe rather than duplicate it.
+
+### Semantic assessment and evidence
+
+An optimization recipe can collect deterministic tool evidence through the
+RDR-073 path, but raw tool output never itself establishes a recommendation
+or repair eligibility. `agent_harness` performs the semantic assessment and
+returns a structured finding assessment: recommendation, supporting and
+counterevidence, explanation, verification disposition, category, and the
+assessment value consumed by any selected confidence policy. This keeps
+meaning-based judgments out of framework code under Zero Framework Cognition.
+
+The assessment value is not assigned a new calibrated numerical meaning by
+this LLD. Where a run elects a configured confidence threshold, code compares
+the structured value with that configured gate only; it does not reinterpret
+the value as a probability, derive it from keywords or tool scores, or replace
+the agent's semantic judgment. Reports always retain the full findings and
+evidence regardless of whether a finding passes an auto-queue gate.
+
+### Bounded auto-queued repair (draft exception)
+
+[#4495](https://github.com/viamin/paid/issues/4495) proposes a narrow
+exception to the base report-only rule. The election is explicit at run start,
+per-run, and off by default; omission is exactly report-only behavior. It is
+not a tenant-wide setting, catalog default, or permission to repair during a
+scan. Each eligible finding is dispatched only through the ordinary bounded
+repair pathway and retains links to its source report and canonical identity.
+
+Before dispatch, deterministic code must require all of the following:
+
+- a completed report and an explicit, authorized run-start election;
+- a non-security category, a structured assessment meeting the selected
+  configured threshold, and an approved finding-bounded scope;
+- explicit cost and time budgets copied to that individual repair run;
+- canonical-finding idempotency, so repeated occurrences cannot queue
+  duplicate repair work; and
+- revalidation against the repair checkout whenever its target revision moved
+  after the report evidence was collected.
+
+Any failed gate is a visible non-dispatch outcome, not a silent drop. It does
+not erase the report or prevent manual selection. Security-hardening findings
+are always manual-selection-only until a distinct safety/accuracy policy is
+accepted. Disabling `maintenance_runs` prevents new admissions and
+auto-queues, but does not delete reports or cancel active repair runs.
+
 ## Storage Contract
 
 A maintenance run is a new `AgentRun` goal (`"maintenance"`), not a new
