@@ -62,6 +62,24 @@ RSpec.describe "Inbox" do
     "#{entry_kind}:#{record.id}"
   end
 
+  it "renders a held pull request with a stale local review phase" do # @spec INBOX-FOUNDATION-008
+    create(
+      :issue,
+      :pull_request,
+      project: project,
+      title: "Held decision PR",
+      pr_review_phase: "draft",
+      labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+      auto_merge_evaluated_at: nil,
+      auto_merge_blockers: nil
+    )
+
+    get inbox_path(kind: Inbox::Queue::MERGE_APPROVAL_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Held decision PR", "Human review requested before merging")
+  end
+
   # @spec OPERATOR-INBOX-017
   it "renders selected context in the detail response without a nested Turbo request" do
     issue = create(:issue, :needs_input, project: project, body: questions_body)

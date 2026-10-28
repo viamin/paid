@@ -477,6 +477,7 @@ RSpec.describe Inbox::Count do
         :issue,
         :pull_request,
         project: project,
+        pr_review_phase: "draft",
         labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
         auto_merge_evaluated_at: nil,
         auto_merge_blockers: nil
