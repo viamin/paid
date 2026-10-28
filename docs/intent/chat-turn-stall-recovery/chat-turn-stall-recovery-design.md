@@ -196,7 +196,11 @@ Authorization: `ChatChannel#recover_stalled_turn` reuses
 `ChatMessagePolicy#create?` (the same authority required to send a message
 in the session) and scopes the lookup through `@chat_session.chat_turns`, so
 a stalled turn can only be resumed by someone who could already act in that
-session.
+session. Because the queued job may outlive that authorization,
+`ChatTurns::RecoverStalledTurnJob` repeats the same policy check immediately
+before a manual recovery executes. If access was revoked after enqueue, the
+job does not call the model: it fails the claimed turn, refreshes the durable
+notice, and broadcasts the denied terminal outcome.
 
 If a claimed recovery fails, `ChatTurns::RecoverStalledTurnJob` broadcasts a
 terminal stream error and rewrites the existing durable stall notice to state

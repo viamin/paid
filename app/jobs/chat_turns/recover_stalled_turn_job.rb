@@ -9,6 +9,8 @@ module ChatTurns
   # (ChatTurn#claim_recovery!) before enqueuing this job, so a crashed/retried
   # enqueue cannot start a second concurrent recovery for the same turn.
   class RecoverStalledTurnJob < ApplicationJob
+    AuthorizationRevokedError = Class.new(StandardError)
+
     queue_as :maintenance
 
     discard_on ActiveRecord::RecordNotFound
@@ -34,6 +36,8 @@ module ChatTurns
     private
 
     def recover(chat_turn, chat_session, actor, triggered_by)
+      return deny_manual_recovery(chat_turn, chat_session) unless recovery_authorized?(chat_session, actor, triggered_by)
+
       stream_message_id = SecureRandom.uuid
       stream_name = "chat_session:#{chat_session.id}"
 
@@ -72,6 +76,23 @@ module ChatTurns
     rescue StandardError, NotImplementedError => e
       handle_recovery_failure(chat_turn, stream_name, stream_message_id, e)
       raise
+    end
+
+    # @spec CHAT-TURN-RECOVERY-005
+    def recovery_authorized?(chat_session, actor, triggered_by)
+      return true unless triggered_by == "manual"
+      return false unless actor
+
+      ChatMessagePolicy.new(actor, ChatMessage.new(chat_session: chat_session)).create?
+    end
+
+    def deny_manual_recovery(chat_turn, chat_session)
+      stream_name = "chat_session:#{chat_session.id}"
+      error = AuthorizationRevokedError.new("The requesting user is no longer authorized to resume this conversation")
+      chat_turn.fail!(error: error)
+      ActionCable.server.broadcast(stream_name, { type: "error", message: error.message })
+      notice = ChatTurns::PersistStallNotice.refresh_after_recovery_failure!(chat_turn: chat_turn)
+      broadcast_persisted_message(stream_name, notice) if notice
     end
 
     def handle_recovery_failure(chat_turn, stream_name, stream_message_id, error)

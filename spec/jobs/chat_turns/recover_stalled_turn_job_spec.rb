@@ -61,6 +61,28 @@ RSpec.describe ChatTurns::RecoverStalledTurnJob do
       expect(rendered_notice(notice)).not_to include("Resume")
     end
 
+    # @spec CHAT-TURN-RECOVERY-005
+    it "settles and broadcasts a manual recovery denied after the actor loses access" do
+      user.add_role(:member, account)
+      notice = ChatTurns::PersistStallNotice.call(
+        chat_turn: chat_turn,
+        automatic_recovery_attempted: false
+      )
+      chat_turn.update!(status: "streaming", recovery_attempts: 1)
+      user.remove_role(:member, account)
+
+      expect(ChatTurns::Resume).not_to receive(:call)
+      expect {
+        described_class.perform_now(chat_turn_id: chat_turn.id, triggered_by: "manual", actor_id: user.id)
+      }.to have_broadcasted_to("chat_session:#{chat_session.id}")
+        .with(hash_including(type: "error", message: /no longer authorized/i))
+        .and have_broadcasted_to("chat_session:#{chat_session.id}")
+          .with(hash_including(type: "message_created", message_id: notice.id))
+
+      expect(chat_turn.reload.status).to eq("failed")
+      expect(notice.reload.content).to include("recovery attempt failed")
+    end
+
     # @spec CHAT-TURN-RECOVERY-004
     it "terminates the stream and refreshes the durable notice when recovery fails" do
       notice = ChatTurns::PersistStallNotice.call(

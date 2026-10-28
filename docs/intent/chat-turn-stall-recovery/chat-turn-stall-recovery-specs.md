@@ -76,12 +76,17 @@
 - [x] **CHAT-TURN-RECOVERY-005** — Any stalled turn that has dispatched a
   write tool call, or has exhausted automatic recovery, SHALL require an
   explicit, authenticated human confirmation (the transcript's Resume action)
-  before any recovery attempt runs — the system SHALL NOT automatically
-  replay such a turn.
+  before any recovery attempt runs; the queued recovery SHALL recheck that the
+  confirming actor still has authority to send messages immediately before
+  execution, and if that authority was revoked SHALL NOT call the model and
+  SHALL settle and broadcast the denied recovery state — the system SHALL NOT
+  automatically replay such a turn.
   *Code:* `app/views/chat_messages/_stalled_turn_notice.html.erb`,
   `ChatChannel#recover_stalled_turn`,
+  `ChatTurns::RecoverStalledTurnJob`,
   `app/javascript/controllers/chat_controller.js#resumeStalledTurn`.
-  *Test:* `spec/channels/chat_channel_spec.rb`.
+  *Test:* `spec/channels/chat_channel_spec.rb`,
+  `spec/jobs/chat_turns/recover_stalled_turn_job_spec.rb`.
 
 - [x] **CHAT-TURN-RECOVERY-006** — The system SHALL deduplicate concurrent or
   repeated recovery requests for the same turn: `ChatTurn#claim_recovery!`
