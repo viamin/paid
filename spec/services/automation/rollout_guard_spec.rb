@@ -39,4 +39,13 @@ RSpec.describe Automation::RolloutGuard do
     expect(queries.grep(/FROM \"accounts\"/).size).to eq(1)
     expect(queries.grep(/FROM \"tenant_settings\"/).size).to eq(1)
   end
+
+  it "blocks project rollback while a continuation grant is active" do
+    FeatureFlags.enable!(described_class::FLAG, project:)
+    create(:work_item_continuation_grant, project:)
+
+    expect { FeatureFlags.disable!(described_class::FLAG, project:) }
+      .to raise_error(FeatureFlags::RollbackBlockedError, /active continuation grants/)
+    expect(described_class.enabled?(project)).to be(true)
+  end
 end

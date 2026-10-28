@@ -6,6 +6,7 @@ class FeatureFlags
   UnknownFlagError = Class.new(ArgumentError)
   InvalidActorError = Class.new(ArgumentError)
   InvalidPercentageError = Class.new(ArgumentError)
+  RollbackBlockedError = Class.new(StandardError)
 
   DEFINITIONS = {
     question_exploration: Definition.new(
@@ -143,7 +144,9 @@ class FeatureFlags
       feature(flag_name).enable(resolved_actor)
     end
 
+    # @spec AUTOMATION-PHASES-014
     def disable!(flag_name, project: nil, actor: nil)
+      ensure_rollback_allowed!(flag_name, project)
       resolved_actor = resolve_actor(project:, actor:)
 
       unless resolved_actor
@@ -195,6 +198,15 @@ class FeatureFlags
     end
 
     private
+
+    def ensure_rollback_allowed!(flag_name, project)
+      return unless flag_name.to_sym == :automation_phases && project
+      return unless project.work_item_continuation_grants.active.exists?
+
+      raise RollbackBlockedError,
+        "Cannot disable automation phases while the project has active continuation grants; " \
+        "complete or revoke them and reconcile queued work first."
+    end
 
     def feature(flag_name)
       flipper[definition(flag_name).name]
