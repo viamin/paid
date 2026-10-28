@@ -58,6 +58,16 @@ RSpec.describe Runners::FreeModelExecutionPlan do
       expect(result.config.fetch(:provider_routing)).to eq(data_collection: "deny", zdr: true)
     end
 
+    # @spec RUNNER-ZDR-003
+    it "enables ZDR for an OpenRouter runner declaration" do
+      runner.update!(zero_data_retention: true)
+      project = Struct.new(:data_classification).new("internal")
+
+      result = described_class.call(runner: runner, model_id: "deepseek/deepseek-v4-flash:free", project: project)
+
+      expect(result.config.fetch(:provider_routing)).to eq(data_collection: "allow", zdr: true)
+    end
+
     it "raises a service-type error (not an API key error) when the runner is not OpenRouter-backed" do
       project = Struct.new(:data_classification).new("internal")
       allow(runner).to receive(:required_api_service_type).and_return("anthropic")

@@ -18,7 +18,7 @@ module Runners
       @project = project
     end
 
-    # @spec FREE-MODEL-001
+    # @spec FREE-MODEL-001 RUNNER-ZDR-003
     def call
       raise ArgumentError, "OpenRouter API key required" if @runner.effective_api_secret.to_s.blank?
       unless @runner.required_api_service_type == OPENROUTER_PROVIDER_KEY
@@ -32,7 +32,7 @@ module Runners
           model: @model_id,
           base_url: Runner::DIRECT_OUTBOUND_API_PROVIDERS.fetch(OPENROUTER_PROVIDER_KEY).fetch(:base_url),
           api_key_env: "OPENROUTER_API_KEY",
-          provider_routing: build_provider_routing(@project)
+          provider_routing: build_provider_routing(@project, zero_data_retention: @runner.zero_data_retention?)
         }
       )
     end

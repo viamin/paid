@@ -354,6 +354,8 @@ RSpec.describe AgentRunPatterns::Detect do
             runner_key: "kilocode",
             auth_type: "api_key",
             tier_model_ids: { low: "gpt-4o", mid: "gpt-4o", high: "gpt-4o" },
+            zero_data_retention: false,
+            zero_data_retention_provenance: "not_requested",
             provider_api_key_configured: true
           }
         )

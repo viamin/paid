@@ -4,6 +4,32 @@ require "rails_helper"
 require "securerandom"
 
 RSpec.describe Runner do
+  describe "zero data retention" do
+    # @spec RUNNER-ZDR-001
+    it "defaults zero data retention to off" do
+      expect(build(:runner).zero_data_retention?).to be(false)
+    end
+
+    # @spec RUNNER-ZDR-003 RUNNER-ZDR-004 RUNNER-ZDR-005
+    it "derives ZDR provenance from the runner's current provider" do
+      user = create(:user)
+      openrouter_key = create(:provider_api_key, user:, api_service_type: "openrouter")
+      anthropic_key = create(:provider_api_key, user:, api_service_type: "anthropic")
+      runner = create(:runner, user:, runner_key: "opencode", auth_type: "api_key", provider_api_key: openrouter_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } },
+        zero_data_retention: true)
+
+      expect(runner.zero_data_retention_provenance).to eq("openrouter_enforced")
+
+      runner.update!(
+        provider_api_key: anthropic_key,
+        config: { "opencode" => { "api_provider" => "anthropic", "model" => "claude-sonnet-4" } }
+      )
+
+      expect(runner.reload.zero_data_retention_provenance).to eq("user_declared")
+    end
+  end
+
   describe ".update_fallback_flags" do
     let(:user) { create(:user) }
 

@@ -14,7 +14,7 @@ module AgentRunPatterns
     EVIDENCE_MESSAGE_LIMIT = 5
     EVIDENCE_RUNNER_ATTEMPT_LIMIT = 10
     EVIDENCE_RUNNER_CONFIG_LIMIT = 5
-    EVIDENCE_SAFE_RUNNER_CONFIG_FIELDS = %w[runner_key auth_type tier_model_ids].freeze
+    EVIDENCE_SAFE_RUNNER_CONFIG_FIELDS = %w[runner_key auth_type tier_model_ids zero_data_retention].freeze
     DETECTION_FINISHED_STATUSES = (AgentRun::FINISHED_STATUSES - [ "retried" ]).freeze
     ANALYZE_ISSUE_PROVIDER_EXHAUSTION_PREFIX = "All issue-analysis providers exhausted"
 
@@ -312,11 +312,13 @@ module AgentRunPatterns
     end
 
     def snapshot_runner_config(runner)
+      # @spec RUNNER-ZDR-006
       return if runner.blank?
 
       EVIDENCE_SAFE_RUNNER_CONFIG_FIELDS.each_with_object({}) do |field, snapshot|
         snapshot[field.to_sym] = sanitize_free_text(read_attribute(runner, field))
       end.merge(
+        zero_data_retention_provenance: runner.zero_data_retention_provenance,
         provider_api_key_configured: read_attribute(runner, :provider_api_key_id).present?
       ).compact
     end

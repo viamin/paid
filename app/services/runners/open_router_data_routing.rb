@@ -10,8 +10,9 @@ module Runners
   module OpenRouterDataRouting
     DEFAULT_DATA_CLASSIFICATION = "internal"
 
-    def build_provider_routing(project)
-      case data_classification_for(project)
+    # @spec FREE-MODEL-001 RUNNER-ZDR-003
+    def build_provider_routing(project, zero_data_retention: false)
+      routing = case data_classification_for(project)
       when "open", "internal"
         { data_collection: "allow" }
       when "confidential"
@@ -21,6 +22,9 @@ module Runners
       else
         { data_collection: "allow" }
       end
+
+      routing[:zdr] = true if zero_data_retention
+      routing
     end
 
     def data_classification_for(project)

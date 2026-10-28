@@ -1544,6 +1544,29 @@ RSpec.describe "Runners" do
       expect(runner.reload.enabled_for_chat).to be(false)
     end
 
+    # @spec RUNNER-ZDR-002
+    it "shows ZDR guidance on the runner edit form" do
+      runner = user.runners.create!(runner_key: "cursor")
+
+      get edit_runner_path(runner)
+
+      expect(response.body).to include("You are responsible for verifying this provider's zero data retention agreement and configuration.")
+    end
+
+    # @spec RUNNER-ZDR-002 RUNNER-ZDR-006
+    it "persists a ZDR declaration and records its provenance in the audit event" do
+      runner = user.runners.create!(runner_key: "cursor")
+
+      patch runner_path(runner), params: { runner: { zero_data_retention: true } }
+
+      expect(response).to redirect_to(runners_path)
+      expect(runner.reload).to have_attributes(zero_data_retention: true, zero_data_retention_provenance: "user_declared")
+      expect(user.account.account_activity_events.order(:created_at).last.metadata).to include(
+        "zero_data_retention" => true,
+        "zero_data_retention_provenance" => "user_declared"
+      )
+    end
+
     it "persists the agent_co_author_trailer on update" do
       runner = user.runners.create!(runner_key: "cursor")
       trailer = "Co-Authored-By: Cursor <noreply@cursor.sh>"

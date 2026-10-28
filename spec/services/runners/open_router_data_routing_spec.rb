@@ -32,6 +32,11 @@ RSpec.describe Runners::OpenRouterDataRouting do
     expect(host.build_provider_routing(project_with("restricted"))).to eq(data_collection: "deny", zdr: true)
   end
 
+  # @spec RUNNER-ZDR-003
+  it "adds declared ZDR without weakening the project privacy route" do
+    expect(host.build_provider_routing(project_with("confidential"), zero_data_retention: true)).to eq(data_collection: "deny", zdr: true)
+  end
+
   it "falls back to allow for an unknown classification" do
     expect(host.build_provider_routing(project_with("top-secret"))).to eq(data_collection: "allow")
   end

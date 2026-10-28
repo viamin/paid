@@ -377,6 +377,13 @@ class Runner < ApplicationRecord
     direct_outbound_free_policy?
   end
 
+  # @spec RUNNER-ZDR-003 RUNNER-ZDR-004 RUNNER-ZDR-005
+  def zero_data_retention_provenance
+    return "not_requested" unless zero_data_retention?
+
+    openrouter_provider_routed? ? "openrouter_enforced" : "user_declared"
+  end
+
   def opencode_preflight_timeout_seconds
     return nil unless runner_key == "opencode"
 
@@ -1933,7 +1940,9 @@ class Runner < ApplicationRecord
     end
 
     if project.present? && api_config[:service_type] == OPENROUTER_FREE_MODEL_PROVIDER
-      provider_metadata["openrouter"] = provider_metadata.fetch("openrouter", {}).merge(build_provider_routing(project))
+      provider_metadata["openrouter"] = provider_metadata.fetch("openrouter", {}).merge(
+        build_provider_routing(project, zero_data_retention: zero_data_retention?)
+      )
     end
 
     provider_metadata.any? ? { "provider" => provider_metadata } : {}

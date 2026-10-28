@@ -145,6 +145,19 @@
     <p class="mt-1 text-xs text-gray-500">A custom label to distinguish this runner entry.</p>
   </div>
 
+  <div class="rounded-lg border border-sky-200 bg-sky-50 p-4">
+    <label class="flex items-start gap-3" for="runner_zero_data_retention">
+      <%= form.check_box :zero_data_retention, class: "mt-1 h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-600" %>
+      <span>
+        <span class="block text-sm font-medium text-sky-950">Require zero data retention</span>
+        <span class="mt-1 block text-xs text-sky-900">You are responsible for verifying this provider's zero data retention agreement and configuration.</span>
+      </span>
+    </label>
+    <% if runner.zero_data_retention? %>
+      <p class="mt-2 text-xs text-sky-900">Current provenance: <%= runner.zero_data_retention_provenance.humanize %>.</p>
+    <% end %>
+  </div>
+
   <% if is_new && available_api_keys.any? %>
     <div data-runner-form-target="apiKeySelectContainer" <% unless is_api_key %>hidden<% end %>>
       <%= form.label :provider_api_key_id, "API Key", class: "block text-sm font-medium text-gray-900" %>
