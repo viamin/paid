@@ -78,7 +78,7 @@ RSpec.describe "RDR-075 live execution-environment validation" do
   before do
     skip("Docker daemon is unavailable in this environment") unless docker_available?
 
-    create(:account_membership, :owner, account: account, user: owner)
+    promote_to_account_owner
     create(:user_setting, user: owner, allowed_service_images: [ SIDECAR_IMAGE ])
     FeatureFlags.enable!(:marketplace_tool_sidecars, project: project)
   end
@@ -121,7 +121,8 @@ RSpec.describe "RDR-075 live execution-environment validation" do
       },
       cleanup: evidence["cleanup"],
       status: evidence["status"],
-      error: evidence["error"]
+      error: evidence["error"],
+      run_error: validation_run.error_message
     )
 
     expect(evidence["status"]).to eq("completed"), "validation failed: #{evidence.inspect}"
@@ -165,7 +166,8 @@ RSpec.describe "RDR-075 live execution-environment validation" do
       },
       cleanup: evidence["cleanup"],
       status: evidence["status"],
-      error: evidence["error"]
+      error: evidence["error"],
+      run_error: validation_run.error_message
     )
 
     expect(evidence["status"]).to eq("completed"), "validation failed: #{evidence.inspect}"
@@ -176,6 +178,14 @@ RSpec.describe "RDR-075 live execution-environment validation" do
   end
 
   private
+
+  # The tool-sidecar image allowlist is read from the account's admin/owner
+  # user settings, so the acting user has to hold that role.
+  def promote_to_account_owner
+    membership = AccountMembership.find_by(account_id: account.id, user_id: owner.id) ||
+      create(:account_membership, account: account, user: owner)
+    membership.update!(role: :owner)
+  end
 
   def docker_available?
     Containers.backend.ping
@@ -272,9 +282,7 @@ RSpec.describe "RDR-075 live execution-environment validation" do
   def run_validation(validation_run)
     TechnicalPrerequisiteValidationJob.perform_now(validation_run.id)
     validation_run.reload
-    validation_run.verification_result.fetch(TechnicalPrerequisites::EVIDENCE_KEY) do
-      raise "no validation evidence recorded: #{validation_run.error_message.inspect}"
-    end
+    validation_run.verification_result.fetch(TechnicalPrerequisites::EVIDENCE_KEY, {})
   end
 
   def analyzer_command
