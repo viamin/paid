@@ -207,7 +207,7 @@ shipped code in
 | New run type vs. custom prompt on an existing goal | New `"maintenance"` `AgentRun` goal | Custom prompts on existing creation goals | A custom prompt cannot represent report-only success, recurring finding identity, or a maintenance-shaped scope without overloading an unrelated goal's semantics (RDR-075 draft, Alternatives Considered). |
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
-| Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). A proposed, per-run pre-authorization for the optimization family is owned by the `maintenance-optimization` extension; it does not alter this default contract until accepted. |
 
 ## Open Questions & Future Decisions
 
@@ -242,8 +242,10 @@ shipped code in
 - Not a tool marketplace, matching engine, or provisioning system — that is
   RDR-073's territory, consumed here, not duplicated.
 - Not an automatic-repair mechanism — a scan never deletes source code or
-  opens a PR as a side effect; repair is a separate, explicitly authorized
-  run.
+  opens a PR as a side effect. Repair is a separate, explicitly authorized
+  run; the only proposed exception is the still-pending, per-run optimization
+  policy in `maintenance-optimization`, which must satisfy its deterministic
+  authorization, budget, idempotency, and revalidation gates.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.
@@ -258,6 +260,8 @@ shipped code in
   (`LAYERED-VERIFY-030`–`-032`) that consume this segment's scheduling
   contract (RDR-076 §2, [#4440](https://github.com/viamin/paid/issues/4440))
 - [2026-10-23 tool-handoff validation report](../../rdrs/audit-report-2026-10-23-rdr-075-m00-tool-handoff-validation.md)
+- [maintenance optimization LLD](../maintenance-optimization/maintenance-optimization-design.md)
+  — proposed catalog, recipe, and bounded-repair policy extension for #4493–#4496
 - `app/services/pre_commit_requirements/evaluate.rb` — shipped precedent for
   native CLI analyzer invocation inside the execution environment
 - `app/models/agent_run.rb` — `execute_in_execution_environment`,

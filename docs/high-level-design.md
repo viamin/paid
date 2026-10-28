@@ -335,11 +335,21 @@ repository investigations — focused, issue-less questions and durable,
 evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
 building a second provisioning path, and keeps investigation separate from
-any repair: a scan never mutates source code or opens a PR on its own.
+any repair: a scan never mutates source code or opens a PR on its own. A
+planned optimization recipe family may offer a separately accepted,
+per-run pre-authorization to queue a repair after a report, but remains
+off by default and is constrained by the maintenance rollout guard,
+deterministic authorization, explicit per-repair budgets, finding-identity
+idempotency, and stale-evidence revalidation. Semantic assessment belongs to
+the agent through `agent_harness`; the control plane applies the resulting
+policy and safety gates deterministically. Security findings remain
+manual-selection-only until a separate policy is accepted. This policy is not
+runtime authorization or rollout enablement.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
-that acceptance.
+that acceptance, and `docs/intent/maintenance-optimization/` for the
+reviewable optimization extension pending its own owner acceptance.
 
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container

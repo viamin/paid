@@ -744,7 +744,17 @@ arrows:
     taxonomy: runtime
     status: MAPPED
     sampled: 2026-10-24
-    next: "Draft LLD/EARS only; RDR-075 remains Status: Draft (merged to main via #4308) and no implementation exists. #4604 revalidated its tool-handoff evidence environment on 2026-10-24: no Docker client, socket, or alternate local engine was available, so critical assumption 2's native-analyzer and sidecar artifacts remain uncollected. Move both validations to a Docker-capable environment; do not release #4328-#4333 before design acceptance and that evidence."
+    next: "Draft LLD/EARS only; RDR-075 remains Status: Draft (merged to main via #4308) and no implementation exists. #4604 revalidated its tool-handoff evidence environment on 2026-10-24: no Docker client, socket, or alternate local engine was available, so critical assumption 2's native-analyzer and sidecar artifacts remain uncollected. Move both validations to a Docker-capable environment; do not release #4328-#4333 before design acceptance and that evidence. The separate maintenance-optimization draft owns #4493-#4496's catalog and proposed bounded-repair policy; it remains pending owner acceptance."
+  maintenance-optimization:
+    title: Maintenance Optimization Recipes
+    path: docs/intent/maintenance-optimization/maintenance-optimization-design.md
+    specs: docs/intent/maintenance-optimization/maintenance-optimization-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: MAPPED
+    sampled: 2026-10-28
+    blockedBy: [maintenance-runs]
+    next: "Draft prerequisite for #4493-#4496 only: obtain owner acceptance of the precise catalog and bounded automatic-repair policy, then merge it. Keep `maintenance_runs` default-off; #4492 is tracking only, and #4495 does not authorize security auto-repair."
   marketplace-tool-sidecars:
     title: Marketplace Tool Sidecars
     path: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-design.md
