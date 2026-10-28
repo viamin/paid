@@ -282,6 +282,13 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   the existing daily sweep remains the bounded fallback for unchanged inputs.
   Issue coverage SHALL load shared project records separately from issue rows,
   so project audit history is not duplicated for every synchronized issue.
+  One reconciliation execution SHALL build and reuse a bounded minimal
+  issue-fact snapshot for each account-authorized project across its artifacts,
+  batching exact-backlink and canonical-manifest evidence without retaining
+  ORM result graphs or sharing evidence across executions or revisions.
+  Each full execution SHALL record process peak RSS, allocated objects,
+  uncached query count, artifact count, and bounded issue-fact count without
+  logging issue bodies or artifact content.
   *Tests:* `spec/services/feature_intents/reconcile_design_artifacts_spec.rb`,
   `spec/services/feature_intents/persist_design_artifact_findings_spec.rb`,
   `spec/models/design_artifact_finding_spec.rb`,

@@ -101,7 +101,8 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
       ))
       expect(Rails.logger).to have_received(:info).with(hash_including(
         message: "feature_intents.reconciliation_finished", project_id: project.id,
-        status: "completed", allocated_objects: be >= 0, duration_ms: be >= 0,
+        status: "completed", allocated_objects: be >= 0, query_count: be >= 0,
+        issue_facts: be >= 0, duration_ms: be >= 0,
         rss_before_kb: be_a(Integer).or(be_nil), rss_after_kb: be_a(Integer).or(be_nil),
         process_peak_rss_kb: be_a(Integer).or(be_nil)
       ))
@@ -212,6 +213,50 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     expect(issue_queries).not_to be_empty
     expect(issue_queries.grep(/"projects"\."log_data"/)).to be_empty
     expect(DesignArtifactFinding.count).to eq(0)
+  end
+
+  it "reuses bounded local issue coverage across multiple RDR artifacts" do
+    artifacts = [
+      FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/RDR-001.md", revision: "a" * 40, body: "Implements #101"
+      ),
+      FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/RDR-002.md", revision: "b" * 40, body: "Implements #102"
+      )
+    ]
+    create(:issue, project:, github_number: 101)
+    create(:issue, project:, github_number: 102)
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery(artifacts))
+    queries = []
+    subscriber = ->(event) { queries << event.payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.perform_now(project.id)
+    end
+
+    issue_queries = queries.grep(/SELECT .* FROM "issues"/)
+    expect(issue_queries.count { |query| query.include?("github_creator_login") }).to eq(1)
+    expect(DesignArtifactFinding.count).to eq(0)
+  end
+
+  it "reuses authorized external coverage and keeps unavailable coverage unverifiable" do
+    external = create(:project, account: project.account, owner: "acme", repo: "mobile")
+    create(:issue, project: external, github_number: 17)
+    artifacts = [
+      FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/RDR-001.md", revision: "a" * 40, body: "Implements acme/mobile#17"
+      ),
+      FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/RDR-002.md", revision: "b" * 40, body: "Implements denied/mobile#17"
+      )
+    ]
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery(artifacts))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.find_by!(artifact_path: "docs/rdrs/RDR-002.md"))
+      .to have_attributes(state: "unverifiable", status: "open")
+    expect(DesignArtifactFinding.find_by(artifact_path: "docs/rdrs/RDR-001.md")).to be_nil
   end
 
   it "uses a stored Paid feature-intent link without requiring a document repair" do
