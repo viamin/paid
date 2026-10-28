@@ -36,6 +36,12 @@ tool attachment, matching, provisioning, or sidecar hardening — that remains
 [`marketplace-tool-sidecars`](../marketplace-tool-sidecars/marketplace-tool-sidecars-design.md),
 consumed rather than duplicated.
 
+**Tracks [#4636](https://github.com/viamin/paid/issues/4636).** The
+optimization policy below reconciles recorded owner decisions from
+[#4495](https://github.com/viamin/paid/issues/4495) into a reviewable draft;
+it is not that policy's acceptance or runtime authorization. RDR-075 remains
+Draft, and the `maintenance_runs` rollout guard remains default-off.
+
 ## Storage Contract
 
 A maintenance run is a new `AgentRun` goal (`"maintenance"`), not a new
@@ -200,6 +206,68 @@ shipped code in
   while a tool check that *was* planned and then failed to run keeps
   forcing `partial` (MAINT-022).
 
+## Recipe Catalog and Optimization Repair Policy
+
+The recipe mechanism is an extensible, code-defined catalog. A catalog entry
+has a stable key, display name, investigation description, default metric
+hints, and a pointer to its recipe definition when one exists. A curated menu
+is presentation over that catalog, not an enum in the maintenance-run
+contract. The initial optimization entries are Performance, Design /
+Architecture, Code Duplication, Security Hardening, Cost / Resource
+Efficiency, Maintainability / Readability, and Test Coverage & Quality. A
+missing or unmapped selection becomes a custom-objective maintenance run;
+runs remain startable with guidance and no selection.
+
+An optimization request may name files, a feature, or an application page,
+or omit scope for an explicit broad-scope investigation. Requested scope
+bounds recommendations and proposed repair changes, not the supporting
+callers, tests, entry points, or design evidence the investigation may inspect.
+Any recommendation or repair beyond the requested scope needs explicit human
+authorization.
+
+Recipes collect tool or prompt evidence and ask `agent_harness` for the
+semantic assessment: whether a candidate is actionable, its counterevidence,
+the recommended bounded change, validation plan, and whether it satisfies the
+run's recorded auto-queue selection policy. Raw tool scores and the policy's
+configured confidence threshold remain provenance, not a calibrated numerical
+meaning implemented by Rails. Code must not derive semantic confidence from
+keywords, score arithmetic, or heuristics; it only validates the structured
+assessment's shape and provenance and applies deterministic authorization
+gates.
+
+The separately proposed optimization auto-queue policy is a per-run,
+pre-authorized election, defaulting off. When elected at run start, it records
+the selection-policy threshold and explicit cost/time cap for each possible
+repair. After a report completes, deterministic admission may queue a repair
+only when all of these hold: the run's election is on; the structured
+`agent_harness` assessment says the finding satisfies the recorded policy;
+the finding is not Security Hardening; the caller remains authorized for the
+existing repair pathway; the repair has explicit budgets; the canonical
+finding has no equivalent active or completed repair; and evidence is
+revalidated against the repair checkout when its revision differs from the
+report. A rejected or failed gate is visible in the report/repair state and
+does not silently drop the finding. Auto-queue never widens a repair beyond
+the approved finding. Security Hardening findings remain report-only and
+manual-repair-only until a dedicated policy is accepted.
+
+This policy is a future repair-handoff variant, not an exception to the
+report-only scan contract: the scan itself still creates no repair as a side
+effect unless its separately reviewed per-run election has been accepted and
+implemented behind the existing guard.
+
+### Optimization delivery mapping
+
+| Scoped claim | Delivery owner | Boundary |
+| --- | --- | --- |
+| Catalog entries, curated menu, selection snapshot, custom-objective fallback, and UI/API/MCP parity | [#4493](https://github.com/viamin/paid/issues/4493) | Depends on accepted maintenance intent and M01; #4492 only tracks this work. |
+| Code Duplication, Maintainability / Readability, and prompt-first Performance recipes with honest evidence | [#4494](https://github.com/viamin/paid/issues/4494) | Depends on report/finding and tool contracts; does not authorize repair. |
+| Per-run opt-in election, `agent_harness` semantic assessment, deterministic authorization/budget/idempotency/revalidation gates, and visible failures | [#4495](https://github.com/viamin/paid/issues/4495) | Separately approved policy required; default-off and guarded. |
+| Security, cost, architecture, and test-quality recipes; manual-only security repair | [#4496](https://github.com/viamin/paid/issues/4496) | Security auto-queue remains default-deny pending a dedicated accepted policy. |
+
+#4492 is the tracking umbrella, not an executable prerequisite or a source of
+repair authority. Base RDR-075 acceptance and its independent implementation
+dependencies continue to apply to every delivery owner.
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
@@ -208,6 +276,8 @@ shipped code in
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
 | Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Optimization auto-queue confidence | `agent_harness` makes a structured semantic assessment against the recorded policy; Rails enforces only structural and policy gates | Rails-calculated confidence score; keyword or heuristic classification | Confidence is a judgment about evidence and change suitability, so ZFC assigns it to `agent_harness`. Deterministic code still owns authorization, budgets, identity, and revision checks. |
+| Security optimization repair | Report and manual selection only | Include Security Hardening in optimization auto-queue | Security repair requires a dedicated accuracy and blast-radius policy; the optimization policy therefore defaults to deny. |
 
 ## Open Questions & Future Decisions
 
@@ -236,14 +306,18 @@ shipped code in
    live execution-environment artifact before an implementation uses this
    candidate path. The handoff audit's host-only commands are not evidence for
    this decision.
+6. Owner acceptance of this precise optimization-policy draft — record the
+   acceptance in the Inbox/review flow before #4493–#4496 implementation;
+   the prior #4495 agreement is evidence for this draft, not acceptance of it.
 
 ## What This Is Not
 
 - Not a tool marketplace, matching engine, or provisioning system — that is
   RDR-073's territory, consumed here, not duplicated.
 - Not an automatic-repair mechanism — a scan never deletes source code or
-  opens a PR as a side effect; repair is a separate, explicitly authorized
-  run.
+  opens a PR as a side effect; the proposed optimization election can only
+  queue a separately authorized, bounded repair run after acceptance and
+  implementation.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.

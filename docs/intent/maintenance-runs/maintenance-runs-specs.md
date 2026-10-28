@@ -62,6 +62,32 @@
       on every surface and the existing authorization of the selected repair
       creation pathway.
 
+## Optimization Catalog, Scope, and Assessment
+
+- [ ] **MAINT-019**: The system shall represent optimization types as
+      code-defined recipe catalog entries, not as a maintenance-run enum, and
+      shall provide the initial Performance, Design / Architecture, Code
+      Duplication, Security Hardening, Cost / Resource Efficiency,
+      Maintainability / Readability, and Test Coverage & Quality entries with
+      a display name, investigation description, metric hints, and recipe
+      reference where one exists. (#4493, #4496)
+- [ ] **MAINT-019A**: When an authorized user starts a maintenance run from
+      the UI, authenticated API, or MCP surface, the system shall expose the
+      same optimization catalog selection and retain the selected entry in the
+      run snapshot across retries; when a submitted selection is unmapped, it
+      shall create a custom-objective run rather than reject the request.
+      (#4493)
+- [ ] **MAINT-019B**: When an optimization request supplies files, a feature,
+      or an application page as scope, the system shall bound recommendations
+      and repair changes to that requested scope while permitting cited
+      supporting inspection outside it; when scope is omitted, it shall record
+      an explicit broad-scope investigation. (#4493, #4494)
+- [ ] **MAINT-019C**: The system shall obtain every optimization finding's
+      semantic actionability and auto-queue-policy assessment through
+      `agent_harness`, retaining the assessment rationale and evidence;
+      application code shall not calculate, calibrate, or infer semantic
+      confidence from tool scores, keywords, or heuristics. (#4494, #4495)
+
 ## Reports and Findings
 
 - [ ] **MAINT-020**: The system shall produce exactly one `MaintenanceReport`
@@ -159,3 +185,27 @@
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
       an explicit user selection.
+- [ ] **MAINT-074**: Where a run-start request does not explicitly elect the
+      separately authorized optimization auto-queue policy, the system shall
+      remain report-only and shall not queue repair work automatically. (#4495)
+- [ ] **MAINT-075**: When an authorized user explicitly elects the accepted
+      optimization auto-queue policy at run start, the system shall snapshot
+      its configured confidence threshold and explicit per-repair cost/time
+      budgets, and shall surface the same election on UI, authenticated API,
+      and MCP starts. (#4495)
+- [ ] **MAINT-076**: After an elected optimization report completes, the
+      system shall queue a bounded repair through the existing authorized
+      repair pathway only if the `agent_harness` assessment satisfies the
+      snapshotted policy, the finding is not Security Hardening, the repair
+      has explicit budgets, and no equivalent canonical finding already has
+      active or completed repair work. (#4495, #4496)
+- [ ] **MAINT-077**: If an auto-queued repair target revision differs from
+      the source report revision, then the system shall revalidate the
+      finding's evidence against the repair checkout before applying its
+      recommendation; a failed or rejected authorization, budget,
+      idempotency, or revalidation gate shall be visible and shall not silently
+      create or discard repair work. (#4495)
+- [ ] **MAINT-078**: The system shall exclude Security Hardening findings
+      from optimization auto-queue and shall make their repairs available only
+      by manual selection until a dedicated security-repair policy is accepted.
+      (#4496)

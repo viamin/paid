@@ -335,7 +335,16 @@ repository investigations — focused, issue-less questions and durable,
 evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
 building a second provisioning path, and keeps investigation separate from
-any repair: a scan never mutates source code or opens a PR on its own.
+any repair: a scan never mutates source code or opens a PR on its own. Its
+planned optimization recipe family is a catalog of report-only investigations;
+the curated type menu is an input to a recipe, not a new run type or a closed
+enum. A separately reviewed, per-run auto-queue election may later create
+only bounded repair runs for qualifying optimization findings. Semantic
+assessment belongs to `agent_harness`; deterministic code enforces the
+election, authorization, explicit budgets, finding identity, revalidation,
+and security-category exclusion. The election is off by default and does not
+authorize a scan to mutate source code. Security repairs remain manual-only
+until separately approved.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
