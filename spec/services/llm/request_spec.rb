@@ -129,6 +129,34 @@ RSpec.describe Llm::Request do
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
   end
 
+  # @spec MODEL-POLICY-016
+  it "refuses host API execution when OpenRouter ZDR requires isolated request routing" do
+    credential = create(:runner_api_key, user: owner, api_service_type: "openrouter")
+    selected = create(:runner, :api_key, user: owner, runner_key: "opencode", provider_api_key: credential,
+      zero_data_retention: true,
+      config: { "opencode" => { "api_provider" => "openrouter", "model" => "meta-llama/llama-4-maverick" } })
+    owner.settings.update!(kb_chat_runner: selected.routing_key, fallback_enabled: false)
+    allow(AgentHarness).to receive(:provider_class).with(:opencode).and_return(provider_class)
+    expect(AgentHarness::Api::ChatTransport).not_to receive(:new)
+
+    expect { described_class.call(project: project, prompt: "Assess", timeout: 30) }
+      .to raise_error(AgentHarness::ConfigurationError, /requires isolated execution/)
+  end
+
+  # @spec MODEL-POLICY-015
+  it "preserves restricted-project ZDR when the selected runner declaration is off" do
+    project.update!(data_classification: "restricted")
+    credential = create(:runner_api_key, user: owner, api_service_type: "openrouter")
+    selected = create(:runner, :api_key, user: owner, runner_key: "opencode", provider_api_key: credential,
+      config: { "opencode" => { "api_provider" => "openrouter", "model" => "meta-llama/llama-4-maverick" } })
+    owner.settings.update!(kb_chat_runner: selected.routing_key, fallback_enabled: false)
+    allow(AgentHarness).to receive(:provider_class).with(:opencode).and_return(provider_class)
+    expect(AgentHarness::Api::ChatTransport).not_to receive(:new)
+
+    expect { described_class.call(project: project, prompt: "Assess", timeout: 30) }
+      .to raise_error(AgentHarness::ConfigurationError, /requires isolated execution/)
+  end
+
   # @spec PARTIAL-CLOSEOUT-031
   it "uses the selected API credential for host requests" do
     credential = create(:runner_api_key, user: owner, api_service_type: "openai")

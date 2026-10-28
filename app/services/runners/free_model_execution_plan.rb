@@ -32,7 +32,10 @@ module Runners
           model: @model_id,
           base_url: Runner::DIRECT_OUTBOUND_API_PROVIDERS.fetch(OPENROUTER_PROVIDER_KEY).fetch(:base_url),
           api_key_env: "OPENROUTER_API_KEY",
-          provider_routing: build_provider_routing(@project)
+          provider_routing: build_provider_routing(
+            @project,
+            zero_data_retention: @runner.zero_data_retention_enforced?
+          )
         }
       )
     end

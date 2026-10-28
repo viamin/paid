@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_28_205540) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_213051) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4002,6 +4002,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_205540) do
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.integer "weight", default: 1, null: false
+    t.boolean "zero_data_retention", default: false, null: false, comment: "User-selected zero data retention requirement; enforcement provenance is derived from the active runner provider and runtime."
     t.index ["auth_type"], name: "index_runners_on_auth_type"
     t.index ["discarded_at"], name: "index_runners_on_discarded_at"
     t.index ["integration_credential_id"], name: "index_runners_on_integration_credential_id"

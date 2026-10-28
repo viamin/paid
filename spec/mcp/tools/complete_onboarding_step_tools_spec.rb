@@ -79,6 +79,19 @@ RSpec.describe Tools::CompleteOnboardingStep do
     expect(listed_runner).to include("health" => "rate_limited", "last_checked_at" => checked_at)
   end
 
+  # @spec MODEL-POLICY-017
+  it "serializes the runner ZDR declaration and derived provenance" do
+    runner = create(:runner, user:, zero_data_retention: true)
+
+    result = Tools::ListRunners.new(user:, session:).call
+
+    listed_runner = result.fetch(:runners).find { |item| item.fetch("id") == runner.id }
+    expect(listed_runner).to include(
+      "zero_data_retention" => true,
+      "zero_data_retention_provenance" => "user_declared"
+    )
+  end
+
   it "does not permit another user's provider API key" do
     other = create(:user, :owner, account: create(:account))
     key = create(:provider_api_key, user: other)

@@ -73,6 +73,9 @@
                 <% if runner.free_model_policy? %>
                   <span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Free Models</span>
                 <% end %>
+                <% if runner.zero_data_retention? %>
+                  <span class="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700"><%= runner.zero_data_retention_provenance == "openrouter_enforced" ? "ZDR enforced" : "ZDR declared" %></span>
+                <% end %>
               </div>
             </td>
             <td data-test-agent-target="status" class="px-4 py-3 text-sm">
