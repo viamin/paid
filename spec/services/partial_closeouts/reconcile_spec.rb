@@ -46,6 +46,17 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(run.reload.reconciliation.fetch("status")).to eq("awaiting_operator")
   end
 
+  # @spec FACET-CONFIDENCE-022
+  it "retains a typed facet-confidence workflow on the Action Required notification" do
+    described_class.call(agent_run: run, assessment: gaps([
+      { "criterion" => "reference judgment evaluation", "kind" => "human",
+        "workflow" => "facet_confidence_closeout_evaluation", "next_step" => "Judge every frozen case." }
+    ]))
+
+    notification = Notification.find_by!(subject: parent, source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE)
+    expect(notification.metadata).to include("workflow" => "facet_confidence_closeout_evaluation")
+  end
+
   it "publishes a stable identity for each human prerequisite occurrence" do # @spec PARTIAL-CLOSEOUT-033
     described_class.call(agent_run: run, assessment: gaps([
       { "criterion" => "macOS acceptance", "kind" => "human", "next_step" => "Run the pilot." },

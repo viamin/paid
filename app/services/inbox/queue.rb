@@ -110,6 +110,14 @@ module Inbox
         kind == ACTION_REQUIRED_KIND
       end
 
+      # Typed Action Required notifications may opt into an in-product
+      # workflow. Untyped notifications deliberately keep the generic detail
+      # surface and its safe fallback links.
+      # @spec FACET-CONFIDENCE-022
+      def facet_confidence_evaluation?
+        guidance&.fetch(:workflow, nil) == "facet_confidence_closeout_evaluation"
+      end
+
       def escalated_pr?
         kind == ESCALATED_PR_KIND
       end
@@ -586,6 +594,7 @@ module Inbox
         next unless project
         next if project_filter_excludes?(project)
 
+        guidance = action_required_guidance(notification, issue)
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
           kind: ACTION_REQUIRED_KIND,
@@ -596,8 +605,9 @@ module Inbox
           questions: [],
           tasks: remediation_steps_for(notification),
           summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
-          action_url: notification.action_url
+          title_text: action_required_title(notification, guidance),
+          action_url: notification.action_url,
+          guidance: guidance
         )
       end
     end
@@ -1038,6 +1048,26 @@ module Inbox
       return steps if steps.any?
 
       Array(notification.metadata["recommended_action"])
+    end
+
+    # Workflow identity is an explicit producer contract, never inferred from
+    # notification prose. This keeps arbitrary notification text on the
+    # generic rendering path while allowing a domain to provide a real CTA.
+    # @spec FACET-CONFIDENCE-022
+    def action_required_guidance(notification, issue)
+      return unless issue
+
+      metadata = notification.metadata.to_h.stringify_keys
+      workflow = metadata["workflow"].presence || metadata["action_required_workflow"].presence
+      return unless workflow == "facet_confidence_closeout_evaluation"
+
+      { workflow: workflow }
+    end
+
+    def action_required_title(notification, guidance)
+      return notification.title unless guidance
+
+      "Facet-confidence evaluation needs your review"
     end
 
     def notification_context(notification)

@@ -1,0 +1,71 @@
+<%# @spec FACET-CONFIDENCE-022 %>
+<% issue = entry.issue %>
+<% status = Issues::CloseoutStatus.call(issue) %>
+<% packet = FacetConfidence::CloseoutEvaluationPacket.call(issue:, status:) %>
+<% evaluation = issue.facet_confidence_evaluations.where(corpus_digest: packet.corpus_digest).latest_first.first %>
+<% progress = evaluation&.progress || { total: 0, labeled: 0, skipped: 0 } %>
+<% remaining = [ progress[:total] - progress[:labeled], 0 ].max %>
+<% inbox_context = {
+     inbox_kind: params[:kind].presence_in(Inbox::Queue::KINDS),
+     inbox_sort: params[:sort].presence_in(Inbox::Queue::SORTS.keys),
+     inbox_entry_id: entry.id
+   }.compact %>
+<% evaluation_path = if evaluation
+     project_facet_confidence_evaluation_path(entry.project, evaluation, **inbox_context)
+   else
+     new_project_facet_confidence_evaluation_path(entry.project, issue_id: issue.id, **inbox_context)
+   end %>
+<% action_label = if evaluation&.frozen?
+     "View evaluation report"
+   elsif evaluation && remaining.zero?
+     "Freeze judgments"
+   elsif evaluation && progress[:labeled].positive?
+     "Continue judging"
+   else
+     "Start evaluation"
+   end %>
+<div class="space-y-6">
+  <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+    <h3 class="text-sm font-semibold text-indigo-900">Facet-confidence review needs your judgment</h3>
+    <p class="mt-1 text-sm text-indigo-800">
+      The closeout is waiting for an independent human review of each frozen test case.
+      Record one judgment per case, then freeze the completed set so Paid can compare it
+      with the expected results. The judgments are not complete yet.
+    </p>
+  </div>
+
+  <% if evaluation %>
+    <div class="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-700">
+      <p class="font-semibold text-gray-900">Evaluation progress</p>
+      <p class="mt-1">
+        <%= progress[:labeled] %> of <%= progress[:total] %> judgments recorded;
+        <%= remaining %> remaining<%= progress[:skipped].positive? ? " (#{progress[:skipped]} skipped and still required)" : "" %>.
+      </p>
+    </div>
+  <% else %>
+    <p class="text-sm text-gray-700">No evaluation has been started for this closeout.</p>
+  <% end %>
+
+  <% if packet.ready? %>
+    <%= link_to action_label, evaluation_path,
+          data: { turbo_frame: "_top" },
+          class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+  <% else %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <p class="font-semibold">The evaluation cannot start yet.</p>
+      <ul class="mt-2 list-disc space-y-1 pl-5">
+        <% packet.blockers.each do |blocker| %>
+          <li><%= blocker[:message] %> Next step: <%= blocker[:recovery] %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
+
+  <div class="flex flex-wrap items-center gap-3">
+    <% if issue %>
+      <%= link_to inbox_issue_link_label(issue), issue.github_url,
+            target: "_blank", rel: "noopener noreferrer",
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    <% end %>
+  </div>
+</div>

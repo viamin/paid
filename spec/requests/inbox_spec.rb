@@ -247,6 +247,27 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec FACET-CONFIDENCE-022
+  it "renders typed facet-confidence Action Required guidance with a state-specific CTA" do
+    issue = create(:issue, :in_progress, project: project, github_number: 4323)
+    create(:issue, :pull_request, project: project, github_number: 4324, github_state: "closed",
+      pr_review_phase: "merged", parent_issue_id: issue.id)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: "facet_confidence.closeout_evaluation", blocking: true,
+      title: "Reference judgments required", description: "Internal workflow details",
+      metadata: { "workflow" => "facet_confidence_closeout_evaluation" })
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Facet-confidence evaluation needs your review",
+      "Facet-confidence review needs your judgment",
+      "Record one judgment per case", "Start evaluation", "The judgments are not complete yet.")
+    expect(response.body).to include("inbox_kind=action_required")
+    expect(response.body).not_to include("blinded reference judgments", "corpus")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a

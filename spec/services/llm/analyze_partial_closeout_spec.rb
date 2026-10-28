@@ -336,4 +336,10 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       end
     end
   end
+
+  # @spec FACET-CONFIDENCE-022
+  it "allows the model to identify a facet-confidence evaluation as a typed workflow" do
+    expect(described_class::RESPONSE_SCHEMA.dig(:properties, :gaps, :items, :properties, :workflow, :enum))
+      .to eq([ "facet_confidence_closeout_evaluation" ])
+  end
 end

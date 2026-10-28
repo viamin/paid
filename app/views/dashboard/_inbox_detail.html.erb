@@ -42,7 +42,7 @@
           scoped_project: scoped_project,
           selected_kind: selected_kind %>
   <% elsif entry.action_required? %>
-    <%= render "dashboard/inbox_detail_action_required",
+    <%= render entry.facet_confidence_evaluation? ? "dashboard/inbox_detail_action_required_facet_confidence" : "dashboard/inbox_detail_action_required",
           entry: entry %>
   <% elsif entry.merge_approval? %>
     <%= render "dashboard/inbox_detail_merge_approval",
