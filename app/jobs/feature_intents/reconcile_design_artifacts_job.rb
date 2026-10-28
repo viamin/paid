@@ -168,8 +168,10 @@ module FeatureIntents
 
       def for(artifact)
         associations = Array(artifact[:associated_issues]) + exact_backlinks(artifact) + manifest_associations(artifact)
-        repositories = artifact.fetch(:related_issues).map { |reference| repository_for(reference) }
-        [ facts, repositories.all? { |repository| projects_by_repository.key?(repository) }, associations ]
+        referenced_repositories = artifact.fetch(:related_issues).map { |reference| repository_for(reference) }
+        repositories = repositories_for(referenced_repositories, associations)
+        artifact_facts = facts.select { |fact| repositories.include?(fact[:repository]) }
+        [ artifact_facts, referenced_repositories.all? { |repository| projects_by_repository.key?(repository) }, associations ]
       end
 
       private
@@ -229,6 +231,10 @@ module FeatureIntents
       def association_for(fact, provenance)
         { repository: fact[:repository], number: fact[:number], revision: fact[:revision], provenance:,
           project: projects_by_repository.fetch(fact[:repository]) }.compact
+      end
+
+      def repositories_for(referenced_repositories, associations)
+        ([ project.full_name ] + referenced_repositories + associations.filter_map { |item| item[:repository] }).to_set
       end
 
       def repository_for(reference) = reference.split("#", 2).first

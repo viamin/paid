@@ -236,6 +236,30 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     expect(DesignArtifactFinding.count).to eq(0)
   end
 
+  # @spec DESIGN-RECONCILIATION-003
+  it "scopes reused issue facts to each artifact's own projects" do
+    external_project = create(:project, account: project.account, owner: "acme", repo: "external")
+    create(:issue, project: external_project, github_number: 201, title: "Implement linkless design")
+    linkless = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-101-linkless.md", revision: "a" * 40, body: "# Linkless design"
+    )
+    external = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-102-external.md", revision: "b" * 40,
+      body: "## Related Issues\n- acme/external#201\n"
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ linkless, external ]))
+    allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
+    response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"issue_identity":"acme/external#201","explanation":"It implements this design."}')
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(artifact_path: linkless.path, state: "missing_tree")
+    expect(DesignArtifactAssociation.where(artifact_path: linkless.path)).to be_empty
+    expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+  end
+
   it "uses a stored Paid feature-intent link without requiring a document repair" do
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
     linked_issue = create(:issue, project:, github_number: 101)
