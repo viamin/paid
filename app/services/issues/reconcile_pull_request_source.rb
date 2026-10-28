@@ -47,11 +47,35 @@ module Issues
     # persisted `pull_request_url` is repo-qualified, so require it to match
     # this PR's actual GitHub URL before treating the run as evidence.
     def sources
+      recorded_sources.presence || interrupted_publication_sources
+    end
+
+    def recorded_sources
       pull_request.project.agent_runs
         .where(goal: "create_pr", pull_request_number: pull_request.github_number, pull_request_url: pull_request.github_url)
         .includes(issue: :parent_issue)
         .filter_map { |run| source_issue(run.issue) }
         .uniq
+    end
+
+    # A worker can publish a PR and fail before reserve_pull_request! records
+    # its number. A unique GitHub closing reference plus a terminal, unrecorded
+    # create-pr run is sufficient to restore local lineage, but deliberately
+    # does not restore labels or infer merge authority.
+    # @spec PR-LABEL-RECOVERY-003
+    def interrupted_publication_sources
+      references = pull_request.closing_referenced_issue_numbers
+      return [] unless references.one?
+
+      source = pull_request.project.issues.find_by(github_number: references.first, is_pull_request: false)
+      return [] unless source
+      return [] unless source.agent_runs.where(
+        goal: "create_pr",
+        status: AgentRun::TERMINAL_FAILURE_STATUSES,
+        pull_request_number: nil
+      ).exists?
+
+      [ source ]
     end
 
     private

@@ -23,6 +23,11 @@ labels to PRs created by completed `create_pr` agent runs:
   do not re-add.
 - **Priority inheritance**: missing priority labels are backfilled even when
   auto-add labels is disabled.
+- **Interrupted publication**: a synced PR that uniquely closes a same-project
+  source issue may restore its local source link when that issue has a terminal
+  unrecorded `create_pr` run. The link is diagnostic evidence for a bounded
+  Inbox notification; it never restores labels, changes the review phase, or
+  grants merge authority.
 
 ## Code
 

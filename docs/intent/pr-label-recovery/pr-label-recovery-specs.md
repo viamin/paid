@@ -17,3 +17,12 @@
   *Code:* `RecoverMissingPullRequestLabelsJob#missing_labels`.
   *Test:* `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`
   ("preserves manual opt-out").
+
+- [x] **PR-LABEL-RECOVERY-003** — When a synced open pull request has a
+  unique, same-project closing reference to a source issue whose `create_pr`
+  run terminated without recording a PR number, the system SHALL restore only
+  the local source link. It SHALL not restore labels or change merge/review
+  authority; subsequent Inbox and notification lanes may use the link as
+  bounded evidence of an interrupted Paid publication.
+  *Code:* `Issues::ReconcilePullRequestSource`.
+  *Test:* `spec/services/issues/reconcile_pull_request_source_spec.rb`.

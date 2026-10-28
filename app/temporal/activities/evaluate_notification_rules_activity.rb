@@ -15,6 +15,9 @@ module Activities
 
       Notifications::Rules::RepeatedNoChanges.call(scope: issue_scope)
       Notifications::Rules::StalledDraftPr.call(scope: pr_scope)
+      Notifications::Rules::InterruptedPullRequestPublication.call(
+        scope: Notifications::Rules::InterruptedPullRequestPublication.candidates(project)
+      )
       Notifications::Rules::PrFollowupLimitReached.call(
         scope: pr_scope,
         progress_states: Array(input[:pr_progress_states])

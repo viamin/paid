@@ -11,6 +11,7 @@ RSpec.describe Activities::EvaluateNotificationRulesActivity do
   it "routes the batch to the rule services" do
     allow(Notifications::Rules::RepeatedNoChanges).to receive(:call)
     allow(Notifications::Rules::StalledDraftPr).to receive(:call)
+    allow(Notifications::Rules::InterruptedPullRequestPublication).to receive(:call)
     allow(Notifications::Rules::PrFollowupLimitReached).to receive(:call)
     allow(Notifications::Rules::ScannerWedgedOnPendingReview).to receive(:call)
 
@@ -24,6 +25,7 @@ RSpec.describe Activities::EvaluateNotificationRulesActivity do
 
     expect(Notifications::Rules::RepeatedNoChanges).to have_received(:call)
     expect(Notifications::Rules::StalledDraftPr).to have_received(:call)
+    expect(Notifications::Rules::InterruptedPullRequestPublication).to have_received(:call)
     expect(Notifications::Rules::PrFollowupLimitReached).to have_received(:call).with(
       scope: kind_of(ActiveRecord::Relation),
       progress_states: [ { issue_id: pr.id, consecutive_unsuccessful_automatic_runs: 1 } ]
@@ -34,6 +36,7 @@ RSpec.describe Activities::EvaluateNotificationRulesActivity do
   it "accepts string-keyed input from serialized workflow payloads" do
     allow(Notifications::Rules::RepeatedNoChanges).to receive(:call)
     allow(Notifications::Rules::StalledDraftPr).to receive(:call)
+    allow(Notifications::Rules::InterruptedPullRequestPublication).to receive(:call)
     allow(Notifications::Rules::PrFollowupLimitReached).to receive(:call)
     allow(Notifications::Rules::ScannerWedgedOnPendingReview).to receive(:call)
 

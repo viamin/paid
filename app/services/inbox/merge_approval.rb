@@ -23,16 +23,23 @@ module Inbox
           project_id: project_ids,
           is_pull_request: true,
           github_state: "open",
-          pr_review_phase: "ready",
           merge_permission_rejected_at: nil
         )
-        .where(candidate_conditions)
+        .where("(#{hold_conditions}) OR (issues.pr_review_phase = 'ready' AND (#{candidate_conditions}))")
     end
+
+    def self.hold_conditions
+      Issue.sanitize_sql_array([
+        "(projects.label_integration_mode <> 'ignored' AND issues.labels @> :hold_label::jsonb) OR " \
+          "(projects.label_integration_mode = 'ignored' AND issues.hold_for_review = TRUE)",
+        hold_label: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ].to_json
+      ])
+    end
+    private_class_method :hold_conditions
 
     def self.candidate_conditions
       Issue.sanitize_sql_array([
-        "(projects.label_integration_mode <> 'ignored' AND issues.labels @> :hold_label::jsonb) OR " \
-          "(projects.label_integration_mode = 'ignored' AND issues.hold_for_review = TRUE) OR (" \
+        "(" \
           "issues.auto_merge_evaluated_at IS NOT NULL AND " \
           "issues.auto_merge_blockers IS NOT NULL AND (" \
           "projects.auto_merge_mode = 'off' OR projects.owner_reviewer_login IS NOT NULL))",
@@ -212,18 +219,23 @@ module Inbox
 
     def candidate?
       # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-004
-      return false unless reviewable_pr?
+      return false unless open_pull_request?
       return true if held_for_review?
+      return false unless reviewable_pr?
       return false if manual_merge? && automatic_merge_active?
 
       manual_merge? ? manual_action_required? : approval_only_blockers?
     end
 
     def reviewable_pr?
+      open_pull_request? &&
+        issue.pr_review_phase == "ready" &&
+        (manual_merge? || automatic_merge_configured?)
+    end
+
+    def open_pull_request?
       issue.is_pull_request? &&
         issue.github_state == "open" &&
-        issue.pr_review_phase == "ready" &&
-        (manual_merge? || automatic_merge_configured?) &&
         !issue.merge_permission_rejected?
     end
 

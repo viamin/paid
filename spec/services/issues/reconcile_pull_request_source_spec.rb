@@ -31,6 +31,28 @@ RSpec.describe Issues::ReconcilePullRequestSource do
     expect(pull_request.reload.parent_issue).to eq(source)
   end
 
+  it "links a PR with a unique closing reference after its create run failed before recording the PR" do # @spec PR-LABEL-RECOVERY-003
+    source = create(:issue, project: project, github_number: 41)
+    pull_request = create(:issue, :pull_request, project: project, github_number: 42,
+      parent_issue_id: nil, body: "Fixes #41")
+    create(:agent_run, :failed, project: project, issue: source, goal: "create_pr", pull_request_number: nil)
+
+    described_class.call(pull_request: pull_request)
+
+    expect(pull_request.reload.parent_issue).to eq(source)
+  end
+
+  it "does not link a closing reference without failed publication evidence" do # @spec PR-LABEL-RECOVERY-003
+    source = create(:issue, project: project, github_number: 41)
+    pull_request = create(:issue, :pull_request, project: project, github_number: 42,
+      parent_issue_id: nil, body: "Fixes #41")
+    create(:agent_run, :completed, project: project, issue: source, goal: "create_pr", pull_request_number: nil)
+
+    described_class.call(pull_request: pull_request)
+
+    expect(pull_request.reload.parent_issue).to be_nil
+  end
+
   it "does not guess when runs for the same PR disagree about the source" do # @spec EAGER-QUEUE-010
     first_source = create(:issue, project: project)
     second_source = create(:issue, project: project)
