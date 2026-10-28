@@ -158,4 +158,6 @@
       back to its source maintenance report and finding.
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
-      an explicit user selection.
+      an explicit user selection. A separately accepted extension may define
+      a narrower pre-authorized policy, but this base maintenance claim shall
+      not be interpreted as that authorization.

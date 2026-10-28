@@ -336,10 +336,15 @@ evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
 building a second provisioning path, and keeps investigation separate from
 any repair: a scan never mutates source code or opens a PR on its own.
+The planned optimization recipe family is a catalog extension to that
+maintenance capability. Its proposed, per-run auto-queue policy is opt-in and
+bounded; it does not change the report-only default, authorize security
+repairs, or enable rollout while its review remains pending.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
-`docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending
-that acceptance.
+`docs/intent/maintenance-runs/` and
+`docs/intent/optimization-maintenance-recipes/` for the reviewable LLD/EARS
+contracts pending that acceptance.
 
 Intent flows from the control plane (an issue is picked, a prompt is built, a
 strategy is chosen) into orchestration (a durable workflow), into container
