@@ -123,6 +123,30 @@ remain unchanged. Stored catalog IDs and API-chat model IDs remain unqualified.
   `"Oh My Pi Free (OpenRouter)"`, `"KiloCode Free (OpenRouter)"`),
   matching the `"(API Key)"` suffix convention used elsewhere.
 
+### Zero data retention declaration and provenance
+
+`runners.zero_data_retention` is a non-null boolean that defaults to `false`,
+including for existing rows. It is independent of `model_policy`: a runner may
+use either specific or Free model selection with or without a ZDR declaration.
+The runner derives its ZDR provenance from its current effective API provider
+on every read, so changing a direct-outbound provider or credential cannot
+leave a stale OpenRouter provenance behind.
+
+The serialized ZDR configuration includes the requested flag, provenance, and
+whether Paid has verified runtime enforcement. A disabled declaration has
+`not_requested` provenance. An enabled runner currently resolving to
+OpenRouter has `openrouter_request_pending` provenance; OpenRouter can enforce
+the request, but this control-plane setting does not claim that Paid sent or
+verified a request until the execution integration supports it. Any other
+enabled runner has `user_declared` provenance and `runtime_enforced: false`.
+For that declaration the UI presents: "You are responsible for verifying this
+provider's zero data retention agreement and configuration."
+
+Runner creation and update audit events, the authorized runner listing tool,
+and runner details expose this derived configuration without exposing
+credentials. Existing controller policy scopes and tenant ownership continue
+to govern each interface.
+
 ### Rotation parity
 
 `FreeModels::Rotation` keys off `Runner#free_model_policy?` plus the

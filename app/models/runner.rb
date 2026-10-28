@@ -377,6 +377,25 @@ class Runner < ApplicationRecord
     direct_outbound_free_policy?
   end
 
+  # ZDR is a runner-owner declaration, not a model-selection policy. Until the
+  # execution integration sends and verifies a provider request, this
+  # configuration must not represent itself as runtime enforcement.
+  # @spec MODEL-POLICY-015
+  def zero_data_retention_configuration
+    {
+      requested: zero_data_retention?,
+      provenance: zero_data_retention_provenance,
+      runtime_enforced: false
+    }
+  end
+
+  # @spec MODEL-POLICY-015
+  def zero_data_retention_provenance
+    return "not_requested" unless zero_data_retention?
+
+    zero_data_retention_openrouter? ? "openrouter_request_pending" : "user_declared"
+  end
+
   def opencode_preflight_timeout_seconds
     return nil unless runner_key == "opencode"
 
@@ -1768,6 +1787,14 @@ class Runner < ApplicationRecord
     when "pi" then pi_api_provider
     when "omp" then omp_api_provider
     end
+  end
+
+  def zero_data_retention_openrouter?
+    zero_data_retention_provider == OPENROUTER_FREE_MODEL_PROVIDER
+  end
+
+  def zero_data_retention_provider
+    provider_api_key&.api_service_type.presence || integration_credential&.service_key.presence || direct_outbound_api_provider
   end
 
   def direct_outbound_api_label

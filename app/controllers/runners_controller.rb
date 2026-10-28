@@ -91,7 +91,7 @@ class RunnersController < ApplicationController
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
-      audit_event("runner.created", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
+      audit_event("runner.created", metadata: runner_audit_metadata)
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_created_notice
       else
@@ -119,7 +119,7 @@ class RunnersController < ApplicationController
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
-      audit_event("runner.updated", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
+      audit_event("runner.updated", metadata: runner_audit_metadata)
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_updated_notice
       else
@@ -235,7 +235,8 @@ class RunnersController < ApplicationController
       :monthly_token_budget,
       :weight,
       :model_selection_choice,
-      :custom_model_id
+      :custom_model_id,
+      :zero_data_retention
     ]
     if action_name == "create"
       permitted.push(:runner_key, :provider_key, :auth_type, :provider_api_key_id)
@@ -287,6 +288,15 @@ class RunnersController < ApplicationController
 
     runner_config["model_policy"] = Runners::ModelOptions::FREE_POLICY_VALUE
     runner_config.delete("model")
+  end
+
+  # @spec MODEL-POLICY-016
+  def runner_audit_metadata
+    {
+      runner_name: @runner.display_name,
+      runner_key: @runner.runner_key,
+      zero_data_retention: @runner.zero_data_retention_configuration
+    }
   end
 
   # Coerces blank-string form inputs to nil and integer-like strings to Ints,

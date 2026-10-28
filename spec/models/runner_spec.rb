@@ -76,6 +76,55 @@ RSpec.describe Runner do
     it { is_expected.to belong_to(:integration_credential).optional }
   end
 
+  describe "zero data retention" do
+    # @spec MODEL-POLICY-015
+    it "defaults the persisted declaration off without changing model policy" do
+      runner = create(:runner, runner_key: "cursor")
+
+      expect(runner).not_to be_zero_data_retention
+      expect(runner.zero_data_retention_configuration).to eq(
+        requested: false,
+        provenance: "not_requested",
+        runtime_enforced: false
+      )
+    end
+
+    # @spec MODEL-POLICY-015
+    it "reports an OpenRouter request as pending runtime enforcement" do
+      user = create(:user)
+      api_key = create(:provider_api_key, user:, api_service_type: "openrouter")
+      runner = create(:runner, user:, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key,
+        enabled_for_agent_runs: false, enabled_for_chat: false, enabled_for_fallback: false,
+        zero_data_retention: true,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "openrouter/free" } })
+
+      expect(runner.zero_data_retention_configuration).to eq(
+        requested: true,
+        provenance: "openrouter_request_pending",
+        runtime_enforced: false
+      )
+    end
+
+    # @spec MODEL-POLICY-015
+    it "re-derives provenance after the provider credential changes" do
+      user = create(:user)
+      openrouter_key = create(:provider_api_key, user:, api_service_type: "openrouter")
+      minimax_key = create(:provider_api_key, user:, api_service_type: "minimax")
+      runner = create(:runner, user:, runner_key: "opencode", auth_type: "api_key", provider_api_key: openrouter_key,
+        enabled_for_agent_runs: false, enabled_for_chat: false, enabled_for_fallback: false,
+        zero_data_retention: true,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "openrouter/free" } })
+
+      runner.update!(provider_api_key: minimax_key, config: { "opencode" => { "api_provider" => "minimax", "model" => "MiniMax-M3" } })
+
+      expect(runner.zero_data_retention_configuration).to eq(
+        requested: true,
+        provenance: "user_declared",
+        runtime_enforced: false
+      )
+    end
+  end
+
   describe "validations" do
     subject(:runner) { build(:runner) }
 

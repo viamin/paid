@@ -20,6 +20,7 @@ module Tools
       runner.attributes.slice("id", "name", "runner_key", "auth_type", "enabled_for_chat", "enabled_for_agent_runs", "fallback_role").merge(
         "service_type" => runner.provider_api_key&.api_service_type,
         "free_model_policy" => runner.free_model_policy?,
+        "zero_data_retention" => runner.zero_data_retention_configuration.deep_stringify_keys,
         "health" => health(state),
         "last_checked_at" => state&.quota_status_checked_at
       )

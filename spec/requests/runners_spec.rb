@@ -191,6 +191,16 @@ RSpec.describe "Runners" do
         expect(response.body).to include("The active automated runner is excluded automatically for each run")
       end
 
+      # @spec MODEL-POLICY-016
+      it "shows ZDR provenance and external-provider responsibility guidance" do
+        user.runners.create!(runner_key: "cursor", zero_data_retention: true)
+
+        get edit_runner_path(user.runners.last)
+
+        expect(response.body).to include("Require zero data retention")
+        expect(response.body).to include("You are responsible for verifying this provider's zero data retention agreement and configuration.")
+      end
+
       it "shows the chat eligibility column" do
         get runners_path
 
@@ -807,6 +817,24 @@ RSpec.describe "Runners" do
 
       expect(response).to redirect_to(runners_path)
       expect(user.runners.find_by(runner_key: "cursor")).to have_attributes(enabled_for_chat: false)
+    end
+
+    # @spec MODEL-POLICY-016
+    it "records the derived ZDR configuration in the creation audit event" do
+      allow(RunnerSupport).to receive(:addable_runner_key?).and_call_original
+      allow(RunnerSupport).to receive(:addable_runner_key?).with("cursor").and_return(true)
+
+      post runners_path, params: { runner: { runner_key: "cursor", zero_data_retention: true } }
+
+      event = user.account.account_activity_events.order(:id).last
+      expect(event).to have_attributes(action: "runner.created")
+      expect(event.metadata).to include(
+        "zero_data_retention" => {
+          "requested" => true,
+          "provenance" => "user_declared",
+          "runtime_enforced" => false
+        }
+      )
     end
 
     it "keeps a literal legacy OpenCode model id of custom when the catalog form flag is off" do
@@ -1542,6 +1570,22 @@ RSpec.describe "Runners" do
       expect(response).to redirect_to(runners_path)
       expect(runner.reload.enabled_for_agent_runs).to be(false)
       expect(runner.reload.enabled_for_chat).to be(false)
+    end
+
+    # @spec MODEL-POLICY-016
+    it "updates the ZDR declaration through the authorized runner endpoint" do
+      runner = user.runners.create!(runner_key: "cursor")
+
+      patch runner_path(runner), params: { runner: { zero_data_retention: true } }
+
+      expect(response).to redirect_to(runners_path)
+      expect(runner.reload.zero_data_retention_configuration).to include(
+        requested: true,
+        provenance: "user_declared"
+      )
+      expect(user.account.account_activity_events.order(:id).last.metadata).to include(
+        "zero_data_retention" => hash_including("requested" => true)
+      )
     end
 
     it "persists the agent_co_author_trailer on update" do

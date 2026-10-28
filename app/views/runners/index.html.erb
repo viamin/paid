@@ -73,6 +73,10 @@
                 <% if runner.free_model_policy? %>
                   <span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">Free Models</span>
                 <% end %>
+                <% if runner.zero_data_retention? %>
+                  <% zdr_label = runner.zero_data_retention_provenance == "openrouter_request_pending" ? "OpenRouter ZDR pending" : "User-declared ZDR" %>
+                  <span class="inline-flex items-center rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-700" title="Paid has not verified runtime enforcement."><%= zdr_label %></span>
+                <% end %>
               </div>
             </td>
             <td data-test-agent-target="status" class="px-4 py-3 text-sm">

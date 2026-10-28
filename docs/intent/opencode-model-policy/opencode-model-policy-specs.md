@@ -92,3 +92,30 @@
   usage. API chat, container chat, and chat-only runner tests SHALL resolve a
   concrete model from the Paid-managed chat pool and SHALL fail explicitly
   when the pool is empty, without using a paid default or a routing alias.
+
+## Zero Data Retention
+
+- [x] **MODEL-POLICY-015** — `Runner#zero_data_retention` SHALL persist as a
+  non-null boolean defaulting to false for new and existing runners, independently
+  of `model_policy`. When enabled, `Runner#zero_data_retention_configuration`
+  SHALL report `openrouter_request_pending` only while the runner's current
+  effective provider is OpenRouter, and `user_declared` for every other
+  provider; disabled runners SHALL report `not_requested`. Every configuration
+  SHALL report `runtime_enforced: false` until execution integration sends and
+  verifies the provider request, so a configuration declaration never claims
+  verified enforcement. Changing provider or credentials SHALL re-derive the
+  provenance on the next read.
+  *Tests:* `spec/models/runner_spec.rb`.
+  *Code:* `Runner#zero_data_retention_configuration`.
+
+- [x] **MODEL-POLICY-016** — The authorized runner create/update form SHALL
+  accept a ZDR declaration for every runner without requiring Paid to verify an
+  external agreement. Runner details, authorized runner-list serialization,
+  and runner create/update audit metadata SHALL expose the derived ZDR
+  configuration without exposing credentials. The form SHALL state: "You are
+  responsible for verifying this provider's zero data retention agreement and
+  configuration."
+  *Tests:* `spec/requests/runners_spec.rb`,
+  `spec/mcp/tools/complete_onboarding_step_tools_spec.rb`.
+  *Code:* `RunnersController`, `Tools::ListRunners`,
+  `app/views/runners/_form.html.erb`, `app/views/runners/index.html.erb`.
