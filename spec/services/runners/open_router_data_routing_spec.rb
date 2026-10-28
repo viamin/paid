@@ -32,6 +32,13 @@ RSpec.describe Runners::OpenRouterDataRouting do
     expect(host.build_provider_routing(project_with("restricted"))).to eq(data_collection: "deny", zdr: true)
   end
 
+  # @spec RUNNER-ZDR-004
+  it "enables zdr for an explicit runner requirement without weakening classification routing" do
+    expect(host.build_provider_routing(project_with("open"), zdr_required: true)).to eq(data_collection: "allow", zdr: true)
+    expect(host.build_provider_routing(project_with("confidential"), zdr_required: true)).to eq(data_collection: "deny", zdr: true)
+    expect(host.build_provider_routing(project_with("restricted"), zdr_required: false)).to eq(data_collection: "deny", zdr: true)
+  end
+
   it "falls back to allow for an unknown classification" do
     expect(host.build_provider_routing(project_with("top-secret"))).to eq(data_collection: "allow")
   end

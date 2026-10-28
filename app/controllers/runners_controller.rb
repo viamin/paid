@@ -91,7 +91,7 @@ class RunnersController < ApplicationController
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
-      audit_event("runner.created", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
+      audit_event("runner.created", metadata: runner_audit_metadata)
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_created_notice
       else
@@ -119,7 +119,7 @@ class RunnersController < ApplicationController
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
-      audit_event("runner.updated", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
+      audit_event("runner.updated", metadata: runner_audit_metadata)
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_updated_notice
       else
@@ -233,6 +233,7 @@ class RunnersController < ApplicationController
       :fallback_role,
       :agent_co_author_trailer,
       :monthly_token_budget,
+      :zdr_required,
       :weight,
       :model_selection_choice,
       :custom_model_id
@@ -287,6 +288,16 @@ class RunnersController < ApplicationController
 
     runner_config["model_policy"] = Runners::ModelOptions::FREE_POLICY_VALUE
     runner_config.delete("model")
+  end
+
+  # @spec RUNNER-ZDR-006 RUNNER-ZDR-008
+  def runner_audit_metadata
+    {
+      runner_name: @runner.display_name,
+      runner_key: @runner.runner_key,
+      zdr_required: @runner.zdr_required?,
+      zdr_provenance: @runner.zdr_provenance
+    }
   end
 
   # Coerces blank-string form inputs to nil and integer-like strings to Ints,

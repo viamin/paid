@@ -198,6 +198,16 @@ RSpec.describe "Runners" do
         expect(response.body).to include("Chat")
       end
 
+      # @spec RUNNER-ZDR-007
+      it "shows the ZDR declaration and provenance in runner details" do
+        runner = user.runners.create!(runner_key: "cursor", name: "Private Cursor", zdr_required: true)
+
+        get runners_path
+
+        row = runner_table_row_for(runner.display_name)
+        expect(row.text).to include("Required", "User declared")
+      end
+
       # @spec RUNNER-USAGE-011
       it "does not offer runners disabled for agent runs in the fallback order list" do
         allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[claude cursor codex])
@@ -807,6 +817,25 @@ RSpec.describe "Runners" do
 
       expect(response).to redirect_to(runners_path)
       expect(user.runners.find_by(runner_key: "cursor")).to have_attributes(enabled_for_chat: false)
+    end
+
+    # @spec RUNNER-ZDR-006 RUNNER-ZDR-008
+    it "persists and audits a user-declared ZDR requirement" do
+      allow(RunnerSupport).to receive(:addable_runner_key?).and_return(true)
+
+      post runners_path, params: { runner: { runner_key: "cursor", zdr_required: "1" } }
+
+      runner = user.runners.find_by!(runner_key: "cursor")
+      event = user.account.account_activity_events.find_by!(action: "runner.created")
+      expect(runner).to be_zdr_required
+      expect(event.metadata).to include("zdr_required" => true, "zdr_provenance" => "user_declared")
+    end
+
+    # @spec RUNNER-ZDR-006
+    it "shows the external-provider verification guidance" do
+      get new_runner_path
+
+      expect(response.body).to include("You are responsible for verifying this provider's zero data retention agreement and configuration.")
     end
 
     it "keeps a literal legacy OpenCode model id of custom when the catalog form flag is off" do
@@ -1532,6 +1561,17 @@ RSpec.describe "Runners" do
       # Seed direct-outbound model ids used by patch-runner-path params in this spec so
       # the seeded-catalog lookup path is exercised (matches the test factory fixture).
       KnownDirectOutboundModels.seed_model(model_id: "moonshotai/kimi-k2-0905", provider: "openrouter")
+    end
+
+    # @spec RUNNER-ZDR-006 RUNNER-ZDR-008
+    it "updates and audits the ZDR requirement" do
+      runner = user.runners.create!(runner_key: "cursor")
+
+      patch runner_path(runner), params: { runner: { zdr_required: "1" } }
+
+      event = user.account.account_activity_events.find_by!(action: "runner.updated")
+      expect(runner.reload).to be_zdr_required
+      expect(event.metadata).to include("zdr_required" => true, "zdr_provenance" => "user_declared")
     end
 
     it "updates runner flags" do

@@ -4,6 +4,36 @@ require "rails_helper"
 require "securerandom"
 
 RSpec.describe Runner do
+  describe "zero data retention" do
+    # @spec RUNNER-ZDR-001
+    it "defaults the declaration off independently of model policy" do
+      runner = described_class.new(runner_key: "cursor", config: { "cursor" => { "model_policy" => "free" } })
+
+      expect(runner.zdr_required).to be(false)
+    end
+
+    # @spec RUNNER-ZDR-002 RUNNER-ZDR-003 RUNNER-ZDR-005
+    it "derives current provenance without claiming non-OpenRouter enforcement" do
+      runner = build(:runner, runner_key: "cursor", zdr_required: true)
+
+      expect(runner.zdr_provenance).to eq("user_declared")
+
+      runner.runner_key = "opencode"
+      runner.auth_type = "api_key"
+      runner.provider_api_key = build(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+      runner.config = { "opencode" => { "api_provider" => "openrouter", "model" => "openai/gpt-5" } }
+
+      expect(runner.zdr_provenance).to eq("openrouter_enforced")
+
+      runner.runner_key = "pi"
+      runner.config = { "pi" => { "api_provider" => "openrouter" } }
+      expect(runner.zdr_provenance).to eq("user_declared")
+
+      runner.zdr_required = false
+      expect(runner.zdr_provenance).to eq("none")
+    end
+  end
+
   describe ".update_fallback_flags" do
     let(:user) { create(:user) }
 

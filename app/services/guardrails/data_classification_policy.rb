@@ -101,7 +101,7 @@ module Guardrails
     def routing_params
       return {} unless openrouter_routed?
 
-      build_provider_routing(project)
+      build_provider_routing(project, zdr_required: agent_run.runner&.zdr_required?)
     end
 
     def warning_message(data_collection)

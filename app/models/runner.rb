@@ -189,6 +189,19 @@ class Runner < ApplicationRecord
     fallback_role == "rate_limit_fallback"
   end
 
+  # @spec RUNNER-ZDR-001 RUNNER-ZDR-002 RUNNER-ZDR-003 RUNNER-ZDR-005
+  def zdr_provenance
+    return "none" unless zdr_required?
+    return "openrouter_enforced" if zdr_enforced_by_openrouter?
+
+    "user_declared"
+  end
+
+  def zdr_enforced_by_openrouter?
+    %w[opencode kilocode].include?(runner_key) &&
+      required_api_service_type == OPENROUTER_FREE_MODEL_PROVIDER
+  end
+
   def effective_api_secret
     return provider_api_key&.api_key.to_s.presence if provider_api_key.present?
     return unless active_integration_credential?
@@ -1933,7 +1946,9 @@ class Runner < ApplicationRecord
     end
 
     if project.present? && api_config[:service_type] == OPENROUTER_FREE_MODEL_PROVIDER
-      provider_metadata["openrouter"] = provider_metadata.fetch("openrouter", {}).merge(build_provider_routing(project))
+      provider_metadata["openrouter"] = provider_metadata.fetch("openrouter", {}).merge(
+        build_provider_routing(project, zdr_required: zdr_required?)
+      )
     end
 
     provider_metadata.any? ? { "provider" => provider_metadata } : {}
