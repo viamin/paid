@@ -43,10 +43,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      @turn = ChatTurn.start_for!(chat_session:, user_message: transport_attempt_message)
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      assistant_message ? @turn.complete! : @turn.await_confirmation!
       update_session_activity
       assistant_message
+    rescue StandardError
+      @turn&.fail!(classification: "execution_error")
+      raise
     end
 
     private
@@ -172,6 +177,10 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    def on_activity
+      -> { @turn&.touch_activity! }
     end
 
     # Reuse the pre-loop budget baseline so the mid-loop guard does not issue a

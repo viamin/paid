@@ -588,3 +588,23 @@
   `app/views/chat_messages/_tool_call_group.html.erb`,
   `app/javascript/controllers/chat_controller.js#appendToolCard`,
   `#mergeResolvedCardIntoAdjacentRun`.
+
+- [x] **CHAT-API-027** — When a persisted user message begins API-mode chat
+  execution, the system SHALL create one durable `ChatTurn` lifecycle record.
+  It SHALL mark a final assistant response `completed`, a pending write-tool
+  confirmation `awaiting_confirmation`, and an execution error `failed`.
+  Every persisted assistant or tool record SHALL refresh the turn's durable
+  activity time. A maintenance sweep SHALL classify only `pending` or
+  `streaming` turns whose durable activity exceeds the configured inactivity
+  threshold as `stalled`; it SHALL preserve the transcript and append a
+  system notice stating that there is no final response, that completed tool
+  evidence is preserved, and that the user must review it before retrying.
+  Pending confirmations and terminal/provider/rate-limit/token-limit states
+  SHALL NOT be classified as stalled or represented as successful. This first
+  release SHALL NOT automatically replay a stalled turn or any tool call.
+  *Tests:* `spec/models/chat_turn_spec.rb`,
+  `spec/services/chat_sessions/detect_stalled_turns_spec.rb`.
+  *Code:* `ChatTurn`, `ChatSessions::SendMessage`,
+  `ChatSessions::AgentLoop`, `ChatSessions::DetectStalledTurns`,
+  `ChatSessions::DetectStalledTurnsJob`,
+  `app/views/chat_messages/_stalled_turn_notice.html.erb`.

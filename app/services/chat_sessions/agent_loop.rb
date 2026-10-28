@@ -21,10 +21,10 @@ module ChatSessions
     TOKEN_BUDGET_SOFT_STOP_FALLBACK_MESSAGE = "I've reached the token budget for this chat session. Please increase the session token limit or start a new chat to continue."
 
     attr_reader :chat_session, :actor, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id,
-      :created_message_ids
+      :created_message_ids, :on_activity
 
     def initialize(chat_session:, actor: chat_session.created_by, llm_client:, on_chunk: nil, on_message_persisted: nil, stream_message_id: nil,
-      token_budget: nil)
+      token_budget: nil, on_activity: nil)
       @chat_session = chat_session
       @actor = actor
       @llm_client = llm_client
@@ -33,6 +33,7 @@ module ChatSessions
       @stream_message_id = stream_message_id
       @created_message_ids = []
       @token_budget_override = token_budget
+      @on_activity = on_activity
     end
 
     # @return [ChatMessage, nil] the final assistant message, or +nil+ when the
@@ -465,6 +466,7 @@ module ChatSessions
 
       track_created_message(message)
       on_message_persisted&.call(message, stream_message_id: stream_message_id)
+      on_activity&.call
       message
     end
 
@@ -509,6 +511,7 @@ module ChatSessions
       # transient streaming bubble. Without it, a confirmation after streamed
       # narration cannot safely clear that bubble.
       on_message_persisted&.call(tool_call_message, stream_message_id: stream_message_id)
+      on_activity&.call
       tool_call_message
     end
 
@@ -528,6 +531,7 @@ module ChatSessions
       ChatDiagrams::AttachToMessage.call(message: tool_result_message)
       track_created_message(tool_result_message)
       on_message_persisted&.call(tool_result_message)
+      on_activity&.call
       tool_result_message
     end
 
