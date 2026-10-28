@@ -15,9 +15,10 @@ When that call fails transiently (GitHub API error), the PR is left without
 labels to PRs created by terminal `create_pr` agent runs, including runs that
 failed, timed out, or were cancelled after GitHub accepted the PR:
 
-- **Candidate window**: terminal runs updated in the last 30 days. The bounded
-  sweep covers post-publication failures while avoiding an unbounded historical
-  scan.
+- **Candidate window**: terminal runs whose completion timestamp, or update
+  timestamp when completion is missing, falls within the last 30 days. The
+  bounded sweep covers post-publication failures while avoiding an unbounded
+  historical scan.
 - **Missing linkage**: when a terminal run has no recorded PR number but has a
   branch, the job looks up an open PR for that exact repository-qualified head.
   Exactly one match repairs the run's number and URL before normal local sync

@@ -98,7 +98,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
   # branch is a second, exact GitHub lookup key. The bounded window prevents a
   # historical full-table recovery scan.
   # DISTINCT ON deduplicates in SQL so we don't need an in-memory Set.
-  # Uses the (status, completed_at) index.
+  # Uses the (status, COALESCE(completed_at, updated_at)) index.
   # @spec PR-LABEL-RECOVERY-001
   def candidate_runs # @spec PR-LABEL-RECOVERY-001 PR-LABEL-RECOVERY-003 UPSTREAM-PR-005
     AgentRun.joins(:project)

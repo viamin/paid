@@ -276,6 +276,27 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
         .with("viamin/paid", 416, [ "paid-generated", "paid-automation" ])
     end
 
+    # @spec PR-LABEL-RECOVERY-001
+    it "recovers labels for a terminal run missing its completion timestamp" do
+      run = create(:agent_run, :completed,
+        project: project,
+        issue: nil,
+        custom_prompt: "Create PR",
+        goal: "create_pr",
+        pull_request_number: 416,
+        pull_request_url: "https://github.com/viamin/paid/pull/416")
+      run.update_columns(completed_at: nil, updated_at: 1.hour.ago)
+      create(:issue, :pull_request,
+        project: project,
+        github_number: 416,
+        labels: [])
+
+      described_class.perform_now
+
+      expect(github_client).to have_received(:add_labels_to_issue)
+        .with("viamin/paid", 416, [ "paid-generated", "paid-automation" ])
+    end
+
     it "skips terminal runs outside the bounded recovery window" do
       create(:agent_run, :completed,
         project: project,

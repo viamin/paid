@@ -4,10 +4,11 @@
 > `[x]` implemented · `[ ]` active gap · `[D]` deferred. Each ID is a grep
 > target across specs, tests, and code (`grep -r PR-LABEL-RECOVERY-001`).
 
-- [x] **PR-LABEL-RECOVERY-001** — While an agent run completed within the
-  last 24 hours created a pull request, the recovery job SHALL consider that
-  run a candidate regardless of when the run was created, and SHALL re-apply
-  the generated and automation labels when both are missing.
+- [x] **PR-LABEL-RECOVERY-001** — While a terminal `create_pr` agent run has a
+  completion timestamp, or an update timestamp when completion is missing,
+  within the last 30 days and created a pull request, the recovery job SHALL
+  consider that run a candidate regardless of when the run was created, and
+  SHALL re-apply the generated and automation labels when both are missing.
   *Code:* `RecoverMissingPullRequestLabelsJob#candidate_runs`.
   *Test:* `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`.
 
