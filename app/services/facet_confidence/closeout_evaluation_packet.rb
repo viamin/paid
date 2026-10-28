@@ -44,9 +44,13 @@ module FacetConfidence
     def source_revision = PartialCloseouts::Assessment.call(issue).source_revision
 
     def blockers
-      status.blockers.map do |blocker|
+      status.blockers.reject { |blocker| evaluation_escalation_blocker?(blocker) }.map do |blocker|
         { code: blocker.code, message: blocker.message, evidence: blocker.evidence, recovery: blocker.recovery }
       end
+    end
+
+    def evaluation_escalation_blocker?(blocker)
+      blocker.code == :human_prerequisite_notification && CloseoutEvaluation::InboxEscalation.active_for?(issue)
     end
   end
 end

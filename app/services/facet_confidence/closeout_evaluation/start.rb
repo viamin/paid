@@ -28,7 +28,7 @@ module FacetConfidence
         return failure("the originating work item must belong to this project") unless @issue.project_id == @project.id
         return failure("an authenticated operator must start the evaluation") if @actor.blank?
 
-        blockers = closeout_status.blockers
+        blockers = closeout_status.blockers.reject { |blocker| evaluation_escalation_blocker?(blocker) }
         return failure("the closeout entry point is blocked until its recorded prerequisites resolve: #{blockers.map(&:message).join(' ')}") if blockers.any?
 
         corpus = FacetConfidence::Corpus.new(path: CloseoutEvaluationPacket::MANIFEST_PATH)
@@ -73,6 +73,13 @@ module FacetConfidence
 
       def closeout_status
         @status || Issues::CloseoutStatus.call(@issue)
+      end
+
+      # The typed escalation is cleared by this exact evaluation. It must not
+      # block its own authorized start, while every unrelated closeout blocker
+      # continues to fail closed.
+      def evaluation_escalation_blocker?(blocker)
+        blocker.code == :human_prerequisite_notification && InboxEscalation.active_for?(@issue)
       end
 
       def log_started(evaluation, resumed:)

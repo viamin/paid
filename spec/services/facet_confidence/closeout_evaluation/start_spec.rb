@@ -6,7 +6,7 @@ require "rails_helper"
 # partial-closeout Inbox entry point: one evaluation per originating closeout,
 # pinned to the shipped frozen corpus, and blocked while the closeout records
 # unresolved blockers.
-# @spec FACET-CONFIDENCE-020
+# @spec FACET-CONFIDENCE-020 @spec FACET-CONFIDENCE-022
 RSpec.describe FacetConfidence::CloseoutEvaluation::Start do
   let(:account) { create(:account) }
   let(:owner) { create(:user, :owner, account: account) }
@@ -62,6 +62,28 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::Start do
     expect(result).not_to be_success
     expect(result.error).to include("#4316 is open")
     expect(issue.facet_confidence_evaluations).to be_empty
+  end
+
+  it "starts through its typed Action Required escalation but keeps other blockers" do
+    notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Independent evaluation needed", description: "Internal wording is not used by the Inbox presentation.",
+      metadata: { "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW })
+    escalation = Issues::CloseoutStatus::Blocker.new(code: :human_prerequisite_notification,
+      message: "The evaluation is waiting for an independent maintainer.", evidence: { "notification_id" => notification.id }, recovery: "Start evaluation.")
+    unrelated = Issues::CloseoutStatus::Blocker.new(code: :unmet_prerequisites,
+      message: "#4316 is open", evidence: {}, recovery: "Complete #4316.")
+
+    result = described_class.call(project:, issue:, actor: owner,
+      status: instance_double(Issues::CloseoutStatus::Result, blockers: [ escalation ]))
+
+    expect(result).to be_success
+
+    result = described_class.call(project:, issue:, actor: owner,
+      status: instance_double(Issues::CloseoutStatus::Result, blockers: [ escalation, unrelated ]))
+
+    expect(result).not_to be_success
+    expect(result.error).to include("#4316 is open")
   end
 
   it "refuses an originating work item outside the project" do
