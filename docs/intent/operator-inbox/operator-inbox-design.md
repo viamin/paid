@@ -455,6 +455,11 @@ projects, and queries open plan reviews. So the badge is async, not inline:
    caches it per user for 90 seconds via `Dashboard::CacheVersion` (scope
    `:inbox`), the same account-scoped version-bump pattern
    `Dashboard::QueuePreview` uses.
+   Active personal removals are resolved individually against their stable
+   request identity and occurrence, rather than making the badge construct the
+   complete queue. Ordered issue lanes retain joins for project predicates and
+   sorting, but preload projects in a separate query so an expanded project
+   audit history is not repeated in every issue result row.
 3. The version bumps on queue-mutating events: `Issue` bumps it whenever
    `needs_input_since` changes or a waiting issue flips `github_state`
    between open/closed (covers entering needs_input, answer submission,

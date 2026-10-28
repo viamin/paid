@@ -40,6 +40,22 @@ RSpec.describe Inbox::Queue do
   # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-004 @spec INBOX-FOUNDATION-009
   # @spec INBOX-FOUNDATION-005 @spec INBOX-FOUNDATION-006
   describe ".call" do
+    # @spec OPERATOR-INBOX-010
+    it "keeps project audit history out of per-issue ordered-lane result rows" do
+      create(:issue, :needs_input, project: project)
+
+      queries = [
+        described_class.new(user: user).send(:ordered_clarifying_issues),
+        Inbox::MergeApproval.candidates([ project.id ]),
+        Inbox::IntentConformance.candidates([ project.id ])
+      ]
+
+      queries.each do |query|
+        expect(query.to_sql).to include('JOIN "projects"')
+        expect(query.to_sql).not_to include('"projects"."log_data"')
+      end
+    end
+
     # @spec DESIGN-RECONCILIATION-001
     it "returns open design artifact findings as traceability-gap entries" do
       finding = create(:design_artifact_finding, project:, account: account, artifact_path: "docs/rdrs/RDR-063-example.md",

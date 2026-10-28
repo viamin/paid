@@ -25,7 +25,8 @@ module Inbox
     # dialog, and the queue.
     def self.candidates(project_ids)
       Issue
-        .includes(:project)
+        .joins(:project)
+        .preload(:project)
         .where(
           project_id: project_ids,
           is_pull_request: true,

@@ -34,13 +34,18 @@ module Inbox
     # @spec INBOX-PHASE-RELEVANCE-005 @spec INBOX-PHASE-RELEVANCE-009
     # When any visible project runs the phase model, the count comes from the
     # same scope-filtered queue the list renders, so the badge can never
-    # disagree with the list about phase relevance. Personal removal is
-    # rollout-independent and requires the same exact count. Otherwise the
-    # cheap SQL approximation is unchanged.
+    # disagree with the list about phase relevance. Outside that rollout,
+    # removal is resolved only for the user's active removals instead of
+    # rebuilding every entry payload. Otherwise the cheap SQL approximation
+    # is unchanged.
+    # @spec INBOX-PHASE-RELEVANCE-005 @spec INBOX-PHASE-RELEVANCE-009
     def compute_count
       return governed_count if phase_model_governed?
-      return governed_count if personal_removals?
 
+      [ candidate_count - personally_removed_count, 0 ].max
+    end
+
+    def candidate_count
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
         retry_limited_count + change_intent_draft_count + partial_closeout_count +
@@ -64,8 +69,19 @@ module Inbox
       end
     end
 
-    def personal_removals?
-      InboxRemoval.active.where(user: user).exists?
+    # Resolve only entries with an active removal. Queue lookup remains the
+    # source of truth for occurrence comparison, so a stale removal cannot
+    # suppress fresh work, while a badge cache miss no longer builds the full
+    # queue merely because one removal exists.
+    def personally_removed_count
+      active_removals.count do |removal|
+        entry = Inbox::Queue.find_entry(user:, entry_id: removal.request_key)
+        entry && removal.suppresses?(Inbox::RequestIdentity.occurrence_for(entry))
+      end
+    end
+
+    def active_removals
+      @active_removals ||= InboxRemoval.active.where(user: user).to_a
     end
 
     def needs_input_count
