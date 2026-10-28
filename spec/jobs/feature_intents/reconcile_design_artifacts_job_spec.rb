@@ -102,6 +102,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
       expect(Rails.logger).to have_received(:info).with(hash_including(
         message: "feature_intents.reconciliation_finished", project_id: project.id,
         status: "completed", allocated_objects: be >= 0, duration_ms: be >= 0,
+        artifacts_reconciled: be >= 0, issues_covered: be >= 0, query_count: be >= 0,
         rss_before_kb: be_a(Integer).or(be_nil), rss_after_kb: be_a(Integer).or(be_nil),
         process_peak_rss_kb: be_a(Integer).or(be_nil)
       ))
@@ -212,6 +213,27 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     expect(issue_queries).not_to be_empty
     expect(issue_queries.grep(/"projects"\."log_data"/)).to be_empty
     expect(DesignArtifactFinding.count).to eq(0)
+  end
+
+  it "reuses one bounded issue snapshot across an RDR sweep" do
+    artifacts = [ "RDR-100", "RDR-101" ].map do |name|
+      FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/#{name}.md", revision: name, body: "Status: Accepted"
+      )
+    end
+    create(:issue, project:, github_number: 101, body: "Implementation work")
+    issue_queries = []
+    subscriber = lambda do |event|
+      issue_queries << event.payload[:sql] if event.payload[:sql].match?(/SELECT .* FROM "issues"/)
+    end
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery(artifacts))
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.perform_now(project.id)
+    end
+
+    expect(issue_queries.count).to eq(1)
+    expect(DesignArtifactFinding.order(:artifact_path).pluck(:state)).to eq([ "missing_tree", "missing_tree" ])
   end
 
   it "uses a stored Paid feature-intent link without requiring a document repair" do

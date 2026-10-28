@@ -58,14 +58,17 @@ module FeatureIntents
       memory_before = process_memory
       completed = false
       @reconciled_artifact_count = 0
+      @covered_issue_count = 0
+      @reconciliation_query_count = 0
       logger.info(message: "feature_intents.reconciliation_started", project_id: arguments.first,
         job_id:, rss_kb: memory_before[:rss_kb])
-      yield
+      ActiveSupport::Notifications.subscribed(method(:count_reconciliation_query), "sql.active_record") { yield }
       completed = true
     ensure
       memory_after = process_memory
       logger.info(message: "feature_intents.reconciliation_finished", project_id: arguments.first, job_id:,
         status: completed ? "completed" : "failed", artifacts_reconciled: @reconciled_artifact_count,
+        issues_covered: @covered_issue_count, query_count: @reconciliation_query_count,
         duration_ms: ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round(1),
         allocated_objects: GC.stat(:total_allocated_objects) - allocated_before,
         rss_before_kb: memory_before[:rss_kb], rss_after_kb: memory_after[:rss_kb],
@@ -79,6 +82,11 @@ module FeatureIntents
       {}
     end
 
+    def count_reconciliation_query(event)
+      name = event.payload[:name]
+      @reconciliation_query_count += 1 unless event.payload[:cached] || name.in?([ "SCHEMA", "TRANSACTION" ])
+    end
+
     def design_pull_request(pull_request_number)
       FeatureIntentDesignPr.joins(:feature_intent).includes(feature_intent: { issues: :project }).find_by(
         feature_intents: { project_id: project.id }, pull_request_number:
@@ -90,9 +98,9 @@ module FeatureIntents
       {
         path: "pull/#{design_pr.pull_request_number}",
         revision: design_pr.head_sha,
-        body: issue&.body,
+        body: issue&.fetch(:body),
         status: design_pr.draft? ? "draft" : nil,
-        related_issues: explicit_references(issue&.body),
+        related_issues: explicit_references(issue&.fetch(:body)),
         stored_identities: design_pr.feature_intent.issues.map { |linked| identity_for(linked) },
         associated_issues: design_pr.feature_intent.issues.filter_map do |linked|
           association_for(linked, "Paid feature intent linkage")
@@ -102,8 +110,7 @@ module FeatureIntents
     end
 
     def project_issue(number)
-      @project_issue ||= {}
-      @project_issue[number] ||= project.issues.find_by(github_number: number)
+      issue_snapshot(project).find { |issue| issue[:number] == number }
     end
 
     def reconcile_rdr_artifacts
@@ -162,6 +169,7 @@ module FeatureIntents
     def issue_coverage(artifact)
       references = artifact.fetch(:related_issues)
       projects = projects_for(references)
+      issue_facts(projects.values)
       associations = Array(artifact[:associated_issues]) + structural_associations(artifact)
       association_projects = associations.filter_map { |association| association[:project] }.uniq
       [
@@ -176,18 +184,15 @@ module FeatureIntents
     end
 
     def exact_backlinks(artifact)
-      project.issues.includes(:project).where(
-        "issues.body LIKE ?", "%#{ActiveRecord::Base.sanitize_sql_like(artifact[:path])}%"
-      ).filter_map do |issue|
-        next if issue.is_pull_request? || !issue.trusted?
+      issue_facts([ project ]).filter_map do |issue|
         next unless explicit_artifact_backlink?(issue, artifact)
 
-        association_for(issue, "exact artifact backlink")
+        association_for_fact(issue, project, "exact artifact backlink")
       end
     end
 
     def explicit_artifact_backlink?(issue, artifact)
-      relationship_text(issue.body).match?(artifact_path_pattern(artifact.fetch(:path)))
+      relationship_text(issue[:body]).match?(artifact_path_pattern(artifact.fetch(:path)))
     end
 
     def artifact_path_pattern(path)
@@ -195,11 +200,16 @@ module FeatureIntents
     end
 
     def manifest_associations(artifact)
-      FeatureIntent.where(project:).includes(issues: :project).filter_map do |feature_intent|
-        next unless artifact[:path].in?(feature_intent.design_document_paths)
+      manifest_associations_by_path.fetch(artifact[:path], [])
+    end
 
-        feature_intent.issues.filter_map { |issue| association_for(issue, "canonical issue-tree manifest") }
-      end.flatten
+    def manifest_associations_by_path
+      @manifest_associations_by_path ||= FeatureIntent.where(project:).includes(issues: :project).each_with_object({}) do |feature_intent, associations|
+        feature_intent.design_document_paths.each do |path|
+          associations[path] ||= []
+          associations[path].concat(feature_intent.issues.filter_map { |issue| association_for(issue, "canonical issue-tree manifest") })
+        end
+      end
     end
 
     def association_for(issue, provenance)
@@ -221,14 +231,34 @@ module FeatureIntents
     end
 
     def issue_facts(projects)
-      Issue.preload(:project).where(project_id: projects.map(&:id)).where.not(github_number: nil).filter_map do |issue|
-        next if issue.is_pull_request? || !issue.trusted?
+      projects.flat_map { |coverage_project| issue_snapshot(coverage_project) }.reject { |issue| issue[:pull_request] || !issue[:trusted] }
+    end
 
-        {
-          repository: issue.project.full_name, number: issue.github_number, state: issue.github_state,
-          title: issue.title, body: issue.body, revision: issue.github_updated_at&.iso8601
-        }
+    # @spec DESIGN-RECONCILIATION-001
+    def issue_snapshot(coverage_project)
+      @issue_snapshots ||= {}
+      @issue_snapshots[coverage_project.id] ||= Issue.where(project: coverage_project).where.not(github_number: nil)
+        .pluck(:github_number, :github_state, :title, :body, :github_updated_at, :github_creator_login, :is_pull_request)
+        .map do |number, state, title, body, updated_at, creator_login, pull_request|
+          {
+            repository: coverage_project.full_name, number:, state:, title:, body:, revision: updated_at&.iso8601,
+            pull_request:, trusted: trusted_issue_author?(coverage_project, creator_login)
+          }
+        end.then { |snapshot| @covered_issue_count += snapshot.size; snapshot }
+    end
+
+    def trusted_issue_author?(coverage_project, creator_login)
+      if coverage_project.upstream_pr_target?
+        coverage_project.trusted_upstream_issue_author?(creator_login)
+      else
+        coverage_project.trusted_github_author?(creator_login)
       end
+    end
+
+    def association_for_fact(fact, coverage_project, provenance)
+      {
+        repository: fact[:repository], number: fact[:number], revision: fact[:revision], provenance:, project: coverage_project
+      }
     end
 
     def repository_for(reference)
