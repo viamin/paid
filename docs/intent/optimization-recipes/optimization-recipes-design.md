@@ -40,7 +40,7 @@ is an uncalibrated semantic assessment, not a numeric confidence claim.
 [#4636](https://github.com/viamin/paid/issues/4636) is the pending owner
 decision on this precise HLD/LLD/EARS revision. Until an owner accepts that
 revision and the canonical artifacts merge, this is preparation only: none of
-#4493–#4496 may treat the recorded #4495 agreement as authorization to
+the work under #4493–#4496 may treat the recorded #4495 agreement as authorization to
 implement, enable `maintenance_runs`, or auto-queue a repair.
 
 ## Catalog and Scope
