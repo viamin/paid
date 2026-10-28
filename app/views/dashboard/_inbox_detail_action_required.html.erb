@@ -1,12 +1,54 @@
-<%# @spec OPERATOR-INBOX-002B %>
+<%# @spec OPERATOR-INBOX-002B @spec OPERATOR-INBOX-002L %>
 <div class="space-y-6">
   <% notification = entry.record %>
+  <% typed_guidance = entry.guidance %>
+  <% if typed_guidance && entry.issue %>
+    <% packet = FacetConfidence::CloseoutEvaluationPacket.call(issue: entry.issue, status: Issues::CloseoutStatus.call(entry.issue)) %>
+    <% evaluation = entry.issue.facet_confidence_evaluations.where(corpus_digest: packet.corpus_digest).latest_first.first %>
+    <% progress = evaluation&.progress %>
+    <% inbox_context = {
+         inbox_kind: params[:kind].presence_in(Inbox::Queue::KINDS),
+         inbox_sort: params[:sort].presence_in(Inbox::Queue::SORTS.keys),
+         inbox_entry_id: entry.id
+       }.compact %>
+    <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4" data-facet-confidence-action-required>
+      <h3 class="text-sm font-semibold text-indigo-900"><%= typed_guidance[:title] %></h3>
+      <p class="mt-1 text-sm text-indigo-800"><%= typed_guidance[:explanation] %></p>
+      <% if packet.blockers.any? %>
+        <p class="mt-3 text-sm font-medium text-indigo-900">The evaluation cannot start yet:</p>
+        <ul class="mt-1 space-y-1 text-sm text-indigo-800">
+          <% packet.blockers.each do |blocker| %>
+            <li><%= blocker[:message] %> <span class="text-indigo-700">Next: <%= blocker[:recovery] %></span></li>
+          <% end %>
+        </ul>
+      <% elsif evaluation %>
+        <% remaining = progress[:total] - progress[:labeled] %>
+        <p class="mt-3 text-sm text-indigo-900" data-evaluation-progress>
+          <%= progress[:labeled] %> of <%= progress[:total] %> judgments recorded · <%= remaining %> remaining.
+          <% if progress[:skipped].positive? %><%= progress[:skipped] %> skipped cases still need judgments.<% end %>
+        </p>
+        <%= link_to(
+              evaluation.labeling? && remaining.positive? ? "Continue judging" :
+                evaluation.labeling? ? "Freeze judgments" : "View evaluation report",
+              project_facet_confidence_evaluation_path(entry.project, evaluation, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "mt-3 inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500"
+            ) %>
+      <% else %>
+        <p class="mt-3 text-sm text-indigo-900">No judgments have been recorded yet.</p>
+        <%= link_to "Start evaluation",
+              new_project_facet_confidence_evaluation_path(entry.project, issue_id: entry.issue.id, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "mt-3 inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% end %>
+    </div>
+  <% end %>
   <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
-    <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
+    <h3 class="text-sm font-semibold text-rose-900"><%= typed_guidance ? "Action required" : "Remediation Required" %></h3>
     <% if notification.description.present? %>
-      <p class="mt-1 text-sm text-rose-800"><%= notification.description %></p>
+      <p class="mt-1 text-sm text-rose-800"><%= typed_guidance ? "The closeout cannot move forward until the evaluation is complete." : notification.description %></p>
     <% end %>
-    <% if entry.summary.present? && entry.summary != notification.description %>
+    <% if !typed_guidance && entry.summary.present? && entry.summary != notification.description %>
       <p class="mt-2 text-sm text-rose-800"><%= entry.summary %></p>
     <% elsif notification.description.blank? %>
       <p class="mt-1 text-sm text-rose-800">A human action is required before work can continue.</p>

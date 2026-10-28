@@ -389,6 +389,28 @@ RSpec.describe Inbox::Queue do
       expect(entry.summary).to eq("The configured review method could not complete its check.")
     end
 
+    # @spec OPERATOR-INBOX-002L
+    it "marks explicitly typed facet-confidence notifications for workflow guidance" do
+      notification = create(
+        :notification,
+        :error,
+        account: account,
+        subject: project,
+        source: "partial_closeout.prerequisite",
+        blocking: true,
+        description: "Internal evaluation wording",
+        metadata: { "inbox_workflow" => "facet_confidence_closeout_evaluation" }
+      )
+
+      entry = described_class.call(user: user, kind: described_class::ACTION_REQUIRED_KIND)
+        .find { |candidate| candidate.record == notification }
+
+      expect(entry.guidance).to include(
+        workflow: "facet_confidence_closeout_evaluation",
+        title: "Evaluation needed to complete this closeout"
+      )
+    end
+
     # @spec NOTIFICATION-SEVERITY-011
     it "projects runner-scoped blocking notifications into action_required using the owner's visible project" do
       project

@@ -88,6 +88,18 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** — When a blocking notification explicitly
+  identifies the facet-confidence closeout workflow, the Action Required
+  detail SHALL translate it into plain-language guidance, show recorded and
+  remaining judgment progress, and provide a state-specific Start, Continue,
+  Freeze, or report action that preserves the Inbox context. Notifications
+  without that typed marker SHALL retain the generic description and fallback
+  actions.
+  *Code:* `app/services/inbox/action_required_guidance.rb`,
+  `app/services/inbox/queue.rb`,
+  `app/views/dashboard/_inbox_detail_action_required.html.erb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002C** — When an open pull request's review phase is
   `escalated` and its project is within the operator's authorized Inbox
   visibility (`INBOX-FOUNDATION-006` — account isolation plus owner
