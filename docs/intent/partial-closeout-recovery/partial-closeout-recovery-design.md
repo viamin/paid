@@ -208,6 +208,22 @@ recording completion, so a continuation cannot dispatch after the attestation.
 
 ### Legacy reconciliation: `PartialCloseouts::ReconcileLegacy`
 
+### Assessment transport diagnostics
+
+Closeout assessment remains a fail-closed Claude CLI operation. When the host
+does not have an authenticated Claude session, the request uses an owning
+account's active managed Claude subscription credential as a request-scoped CLI
+environment override only when the provider materializer supports its env-token
+form. Native Claude credentials remain unmodified because their refresh token
+must be materialized as the CLI credentials file; they are never reduced to a
+bare access token. The request never silently changes to API-key/text-mode
+billing.
+Failed attempts persist only a bounded category, provider/model, request and
+attempt identities, plus invalid-field paths/types for structural failures.
+They retain no provider response content or credential material, and an
+authentication failure names reconnecting the account Claude credential as the
+recovery action.
+
 The `partial-closeout-reconciliation-v1` Temporal patch only intercepts new
 workflows. Pre-patch runs — including the 2026-09-17 / 2026-09-22 /
 2026-10-01 closeouts against #3860, #3861, #3871, #3930, and #4013 — left
