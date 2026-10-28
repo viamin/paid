@@ -119,11 +119,16 @@ RSpec.describe Llm::AnalyzePartialCloseout do
         end
     end
 
-    it "raises when a gap omits its criterion" do
+    it "records the invalid path and type when a gap omits its criterion" do # @spec PARTIAL-CLOSEOUT-034
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
       allow(legacy_response).to receive(:output).and_return({ gaps: [ { kind: "agent", title: "Finish dispatch" } ] }.to_json)
 
-      expect { described_class.call(agent_run: agent_run) }.to raise_error(AgentHarness::Error, /partial closeout assessment failed/)
+      expect { described_class.call(agent_run: agent_run) }
+        .to raise_error(described_class::AssessmentFailure) do |error|
+          expect(error.diagnostic.fetch(:invalid_fields)).to include(
+            path: "gaps[0].criterion", expected: "nonblank string", actual: "nil_class"
+          )
+        end
     end
 
     it "raises when a gap carries an unknown kind" do

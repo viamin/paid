@@ -295,9 +295,31 @@ module Llm
 
     def structural_invalid_fields(parsed)
       fields = []
-      Array(parsed["gaps"]).each_with_index { |gap, index| fields << violation("gaps[#{index}]", "object", gap) unless gap.is_a?(Hash) }
-      Array(parsed["criteria"]).each_with_index { |criterion, index| fields << violation("criteria[#{index}]", "object", criterion) unless criterion.is_a?(Hash) }
+      Array(parsed["gaps"]).each_with_index do |gap, index|
+        fields.concat(invalid_gap_fields(gap, index))
+      end
+      Array(parsed["criteria"]).each_with_index do |criterion, index|
+        fields.concat(invalid_criterion_fields(criterion, index))
+      end
       fields << violation("next_action", "object", parsed["next_action"]) if parsed.key?("next_action") && !parsed["next_action"].is_a?(Hash)
+      fields
+    end
+
+    def invalid_gap_fields(gap, index)
+      return [ violation("gaps[#{index}]", "object", gap) ] unless gap.is_a?(Hash)
+
+      fields = []
+      fields << violation("gaps[#{index}].criterion", "nonblank string", gap["criterion"]) unless gap["criterion"].is_a?(String) && gap["criterion"].present?
+      fields << violation("gaps[#{index}].kind", "agent or human", gap["kind"]) unless VALID_KINDS.include?(gap["kind"])
+      fields
+    end
+
+    def invalid_criterion_fields(criterion, index)
+      return [ violation("criteria[#{index}]", "object", criterion) ] unless criterion.is_a?(Hash)
+
+      fields = []
+      fields << violation("criteria[#{index}].criterion", "nonblank string", criterion["criterion"]) unless criterion["criterion"].is_a?(String) && criterion["criterion"].present?
+      fields << violation("criteria[#{index}].state", "satisfied, unmet, or unknown", criterion["state"]) unless VALID_STATES.include?(criterion["state"])
       fields
     end
 
