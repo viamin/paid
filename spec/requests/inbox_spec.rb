@@ -223,6 +223,29 @@ RSpec.describe "Inbox" do
     expect(response.body).to include("Open the quality dashboard", "Resume manually or adjust thresholds")
   end
 
+  # @spec FACET-CONFIDENCE-022
+  it "translates the typed facet-confidence escalation into a start action with Inbox context" do
+    issue = create(:issue, project: project, github_number: 4678, paid_state: "in_progress")
+    create(:issue, :pull_request, project: project, github_number: 4679, github_state: "closed",
+      pr_review_phase: "merged", parent_issue: issue, created_at: 2.days.ago)
+    notification = create(:notification, :error, account: account, subject: issue, blocking: true,
+      source: "partial_closeout.prerequisite", title: "Internal workflow prose",
+      description: "Independent maintainers have entered and frozen the blinded reference judgments.",
+      metadata: { "references" => [ { "kind" => "policy", "key" => "RDR-070", "revision" => "current", "label" => "Facet confidence" } ] })
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Complete the closeout evaluation", "Start evaluation")
+    expect(response.body).to include("independently reviews each test case")
+    expect(Nokogiri::HTML(response.body).at_css("[data-facet-confidence-action-required]").text)
+      .not_to include("blinded reference judgments")
+    expect(response.body).to include(new_project_facet_confidence_evaluation_path(project, issue_id: issue.id,
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND).gsub("&", "&amp;"))
+  end
+
   # @spec OPERATOR-INBOX-002B
   it "renders a blocking notification description when remediation guidance is absent" do
     notification = create(

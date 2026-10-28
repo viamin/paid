@@ -1,6 +1,41 @@
-<%# @spec OPERATOR-INBOX-002B %>
+<%# @spec OPERATOR-INBOX-002B @spec FACET-CONFIDENCE-022 %>
 <div class="space-y-6">
   <% notification = entry.record %>
+  <% notification_metadata = notification.respond_to?(:metadata) ? notification.metadata.to_h : {} %>
+  <% facet_confidence_reference = Array(notification_metadata["references"]).any? { |reference| reference.is_a?(Hash) && reference["key"] == "RDR-070" } %>
+  <% facet_confidence_evaluation = (notification_metadata["action_workflow"] == PartialCloseouts::FACET_CONFIDENCE_CLOSEOUT_EVALUATION_WORKFLOW || facet_confidence_reference) && entry.issue %>
+  <% evaluation = facet_confidence_evaluation && entry.issue.facet_confidence_evaluations.latest_first.first %>
+  <% inbox_context = { inbox_entry_id: entry.id, inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND, inbox_sort: params[:sort].presence }.compact %>
+  <% if facet_confidence_evaluation %>
+    <% progress = evaluation&.progress %>
+    <% remaining = progress && progress[:total] - progress[:labeled] %>
+    <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4" data-facet-confidence-action-required>
+      <h3 class="text-sm font-semibold text-indigo-900">Complete the closeout evaluation</h3>
+      <% if evaluation&.frozen? %>
+        <p class="mt-1 text-sm text-indigo-800">All judgments are recorded and frozen. Review the completed evaluation report before refreshing the closeout evidence.</p>
+      <% elsif evaluation %>
+        <p class="mt-1 text-sm text-indigo-800">This closeout is waiting for your independent review of each test case. Record your judgment for every case, then freeze the completed set.</p>
+        <p class="mt-2 text-sm font-medium text-indigo-900"><%= progress[:labeled] %> of <%= progress[:total] %> judgments recorded · <%= remaining %> remaining.</p>
+      <% else %>
+        <p class="mt-1 text-sm text-indigo-800">This closeout is blocked until a maintainer independently reviews each test case, records a judgment, and freezes the completed set.</p>
+      <% end %>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <% if evaluation %>
+        <% cta = evaluation.frozen? ? "View completed evaluation" : remaining.zero? ? "Freeze judgments" : progress[:labeled].zero? ? "Resume evaluation" : "Continue judging" %>
+        <%= link_to cta,
+              project_facet_confidence_evaluation_path(entry.project, evaluation, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% else %>
+        <%= link_to "Start evaluation",
+              new_project_facet_confidence_evaluation_path(entry.project, issue_id: entry.issue.id, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% end %>
+      <%= link_to inbox_issue_link_label(entry.issue), entry.issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    </div>
+  <% else %>
   <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
     <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
     <% if notification.description.present? %>
@@ -60,5 +95,6 @@
             data: { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
+  <% end %>
   <% end %>
 </div>

@@ -69,3 +69,6 @@ blinded reference-judgment flow over the frozen corpus.
   After unblinding, Paid SHALL preserve every frozen judgment and compiled report while allowing that same judge to append an attributable, reasoned correction with its own complete judgment and cited evidence.
   *Tests:* `spec/services/facet_confidence/closeout_evaluation/record_label_spec.rb`, `spec/services/facet_confidence/closeout_evaluation/freeze_labels_spec.rb`, `spec/requests/projects/facet_confidence_evaluations_spec.rb`.
   *Code:* `app/services/facet_confidence/closeout_evaluation/`, `app/controllers/projects/facet_confidence_evaluations_controller.rb`, `app/views/projects/facet_confidence_evaluations/`.
+- [x] **FACET-CONFIDENCE-022** — When an Action Required partial-closeout prerequisite is identified by the stable RDR-070 reference, Paid SHALL translate it into plain-language closeout-evaluation guidance, show the recorded and remaining judgment count, and provide an authorized state-specific evaluation action while preserving the originating Inbox context. Other Action Required notifications SHALL retain their generic remediation rendering.
+  *Tests:* `spec/requests/inbox_spec.rb`, `spec/requests/projects/facet_confidence_evaluations_spec.rb`.
+  *Code:* `app/services/partial_closeouts/reconcile.rb`, `app/views/dashboard/_inbox_detail_action_required.html.erb`.

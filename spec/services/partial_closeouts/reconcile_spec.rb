@@ -234,6 +234,17 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(notifications.first.description).to include("security sign-off: Approve the audit in the portal.")
   end
 
+  # @spec FACET-CONFIDENCE-022
+  it "marks an RDR-070 prerequisite with its typed evaluation workflow" do
+    described_class.call(agent_run: run, assessment: gaps([ {
+      "criterion" => "Facet-confidence evaluation", "kind" => "human", "next_step" => "Complete the evaluation.",
+      "references" => [ { "kind" => "policy", "key" => "RDR-070", "revision" => "current", "label" => "Facet confidence" } ]
+    } ]))
+
+    notification = Notification.find_by!(subject: parent, blocking: true)
+    expect(notification.metadata.fetch("action_workflow")).to eq(PartialCloseouts::FACET_CONFIDENCE_CLOSEOUT_EVALUATION_WORKFLOW)
+  end
+
   it "does not attach the parent issue to itself when reuse guesses its number" do
     created = OpenStruct.new(number: 447, html_url: "https://example.test/issues/447", id: 447, title: "Finish dispatch", body: "")
     allow(client).to receive(:create_issue).and_return(created)

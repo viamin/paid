@@ -220,6 +220,7 @@ module PartialCloseouts
       identity = Digest::SHA256.hexdigest(JSON.generate(identities))
       metadata = { "prerequisite_identity" => identity, "references" => references,
                    "prerequisites" => human_gaps.map { |gap| prerequisite_occurrence(gap) } }
+      metadata["action_workflow"] = FACET_CONFIDENCE_CLOSEOUT_EVALUATION_WORKFLOW if facet_confidence_evaluation?(references)
       submissions = reconciled_evidence_submissions(previous, metadata.fetch("prerequisites"))
       metadata["evidence_submissions"] = submissions if submissions.any?
       policy_selection = replacement_policy_action(human_gaps)
@@ -266,6 +267,13 @@ module PartialCloseouts
       { "identity" => Digest::SHA256.hexdigest(JSON.generate(prerequisite_identity(gap))),
         "criterion" => gap["criterion"], "references" => Array(gap["references"]),
         "source_revision" => source_revision }
+    end
+
+    # The assessment identifies the RDR by its stable reference key. The
+    # Inbox can route this prerequisite to its shipped workflow without
+    # attempting to infer meaning from the LLM's prose.
+    def facet_confidence_evaluation?(references)
+      references.any? { |reference| reference["key"] == "RDR-070" }
     end
 
     def source_revision

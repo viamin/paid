@@ -174,3 +174,12 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+An Action Required prerequisite carrying the stable RDR-070 reference is a
+typed route to this same packet. Its Inbox detail translates the requirement
+into the maintainer's work: independently review every test case, record each
+judgment, and freeze the completed set. It reports recorded and remaining
+counts and uses a state-specific Start, Resume, Continue judging, or Freeze
+judgments action. This routing is driven by structured reference metadata,
+never by matching notification prose; other Action Required notifications keep
+their generic remediation guidance.
