@@ -12,9 +12,12 @@ When that call fails transiently (GitHub API error), the PR is left without
 ## Design
 
 `RecoverMissingPullRequestLabelsJob` (GoodJob cron, hourly) re-applies missing
-labels to PRs created by completed `create_pr` agent runs:
+labels to PRs created by terminal `create_pr` agent runs. If post-processing
+fails before the run records its PR number, the job may use an open locally
+synced PR linked to the run's source issue; it never infers ownership from PR
+text or labels:
 
-- **Candidate window**: runs **completed** in the last 24 hours. PRs are
+- **Candidate window**: runs reaching a terminal state in the last 24 hours. PRs are
   opened at run completion, so the window must track `completed_at`, not
   `created_at` — a multi-day run would otherwise age out of the window before
   its PR ever exists.

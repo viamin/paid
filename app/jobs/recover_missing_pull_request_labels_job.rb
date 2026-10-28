@@ -21,6 +21,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
   )
 
   CANDIDATE_WINDOW = 24.hours
+  Candidate = Data.define(:agent_run, :pull_request_number)
 
   def perform
     recovered = 0
@@ -28,10 +29,12 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
     failed = 0
     not_synced = 0
 
-    runs = candidate_runs.to_a
-    synced_prs = prefetch_synced_prs(runs)
+    candidates = recovery_candidates
+    synced_prs = prefetch_synced_prs(candidates)
 
-    runs.each do |agent_run|
+    candidates.each do |candidate|
+      agent_run = candidate.agent_run
+      pull_request_number = candidate.pull_request_number
       # Upstream mode (#4078): never re-add labels to PRs opened in the
       # upstream repository. @spec UPSTREAM-GATE-002
       unless agent_run.project.upstream_feature_enabled?(:pr_labeling)
@@ -39,12 +42,12 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
         next
       end
 
-      synced_pr = synced_prs[[ agent_run.project_id, agent_run.pull_request_number ]]
+      synced_pr = synced_prs[[ agent_run.project_id, pull_request_number ]]
 
       unless synced_pr
-        synced_pr = backfill_synced_pr(agent_run)
+        synced_pr = backfill_synced_pr(agent_run, pull_request_number)
         if synced_pr
-          synced_prs[[ agent_run.project_id, agent_run.pull_request_number ]] = synced_pr
+          synced_prs[[ agent_run.project_id, pull_request_number ]] = synced_pr
         else
           not_synced += 1
           next
@@ -58,7 +61,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
         next
       end
 
-      if recover_label(agent_run, synced_pr, labels_to_recover)
+      if recover_label(agent_run, synced_pr, labels_to_recover, pull_request_number)
         recovered += 1
       else
         failed += 1
@@ -68,7 +71,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       Rails.logger.error(
         message: "agent_execution.pr_label_recovery_unexpected_error",
         agent_run_id: agent_run.id,
-        pr_number: agent_run.pull_request_number,
+        pr_number: pull_request_number,
         error_class: e.class.name,
         error: e.message
       )
@@ -85,31 +88,53 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
 
   private
 
-  # Returns one AgentRun per unique (project_id, pull_request_number),
-  # bounded to runs completed in the last 24 hours. The window must track
-  # completion, not creation: pull requests are opened when a run completes,
-  # so a run older than 24h at completion (e.g. a multi-day create_pr run)
-  # would otherwise never be eligible for label recovery.
-  # DISTINCT ON deduplicates in SQL so we don't need an in-memory Set.
-  # Uses the (status, completed_at) index.
-  # @spec PR-LABEL-RECOVERY-001
+  # @spec PR-LABEL-RECOVERY-001 PR-LABEL-RECOVERY-003
   def candidate_runs # @spec PR-LABEL-RECOVERY-001 UPSTREAM-PR-005
-    AgentRun.completed.joins(:project)
+    AgentRun.joins(:project)
       .where(goal: "create_pr")
-      .where.not(pull_request_number: nil)
+      .where(status: AgentRun::FINISHED_STATUSES)
       .where("agent_runs.completed_at >= ?", CANDIDATE_WINDOW.ago)
       .where.not(projects: { pr_target: "upstream" })
-      .select("DISTINCT ON (project_id, pull_request_number) agent_runs.*")
-      .order(:project_id, :pull_request_number, id: :desc)
+      .order(id: :desc)
       .preload(:issue, project: :github_token)
+  end
+
+  # A run can publish a PR and then time out before recording its number.
+  # The locally synced PR's parent source link is trusted project evidence, so
+  # it supplies a bounded recovery path without guessing from PR text or
+  # restoring labels on unrelated repository PRs.
+  # @spec PR-LABEL-RECOVERY-003
+  def recovery_candidates
+    runs = candidate_runs.to_a
+    linked_prs = linked_pull_requests(runs)
+    candidates = runs.filter_map do |run|
+      number = run.pull_request_number || linked_prs[[ run.project_id, run.issue_id ]]&.github_number
+      Candidate.new(agent_run: run, pull_request_number: number) if number
+    end
+
+    candidates.uniq { |candidate| [ candidate.agent_run.project_id, candidate.pull_request_number ] }
+  end
+
+  def linked_pull_requests(runs)
+    source_ids_by_project = runs.filter_map do |run|
+      [ run.project_id, run.issue_id ] if run.pull_request_number.nil? && run.issue_id
+    end.group_by(&:first)
+
+    source_ids_by_project.each_with_object({}) do |(project_id, pairs), result|
+      pairs.map(&:second).uniq.each_slice(500) do |source_ids|
+        Issue.where(project_id:, parent_issue_id: source_ids, is_pull_request: true, github_state: "open").find_each do |pull_request|
+          result[[ project_id, pull_request.parent_issue_id ]] ||= pull_request
+        end
+      end
+    end
   end
 
   # Batch-loads synced Issue records for all candidate runs, keyed by
   # [project_id, pull_request_number]. Groups by project_id and queries
   # github_number values in bounded chunks to avoid building a single large
   # OR predicate in SQL.
-  def prefetch_synced_prs(runs)
-    pr_keys = runs.map { |r| [ r.project_id, r.pull_request_number ] }.uniq
+  def prefetch_synced_prs(candidates)
+    pr_keys = candidates.map { |candidate| [ candidate.agent_run.project_id, candidate.pull_request_number ] }.uniq
 
     return {} if pr_keys.empty?
 
@@ -154,9 +179,9 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
     labels.uniq
   end
 
-  def backfill_synced_pr(agent_run)
+  def backfill_synced_pr(agent_run, pull_request_number)
     project = agent_run.project
-    github_issue = project.client.issue(project.full_name, agent_run.pull_request_number)
+    github_issue = project.client.issue(project.full_name, pull_request_number)
     Issues::UpsertFromGithub.call(project: project, github_issue: github_issue)
   rescue GithubClient::Error => e
     Rails.logger.warn(
@@ -177,12 +202,12 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
     project.priority_labels_among(issue.labels)
   end
 
-  def recover_label(agent_run, synced_pr, labels)
+  def recover_label(agent_run, synced_pr, labels, pull_request_number)
     project = agent_run.project
 
     project.client.add_labels_to_issue(
       project.full_name,
-      agent_run.pull_request_number,
+      pull_request_number,
       labels
     )
 
@@ -194,7 +219,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       message: "agent_execution.pr_label_recovered",
       agent_run_id: agent_run.id,
       project_id: project.id,
-      pr_number: agent_run.pull_request_number,
+      pr_number: pull_request_number,
       labels: labels
     )
 
@@ -204,7 +229,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       message: "agent_execution.pr_label_recovery_failed",
       agent_run_id: agent_run.id,
       project_id: project.id,
-      pr_number: agent_run.pull_request_number,
+      pr_number: pull_request_number,
       error: e.message
     )
     false

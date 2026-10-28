@@ -79,6 +79,16 @@ RSpec.describe Inbox::Count do
       expect(described_class.call(user: user)).to eq(5)
     end
 
+    # @spec INBOX-FOUNDATION-008
+    it "counts a held PR whose persisted review phase is still draft" do
+      create(:issue, :pull_request,
+        project: project,
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ])
+
+      expect(described_class.call(user: user)).to eq(1)
+    end
+
     # @spec OPERATOR-INBOX-002D
     it "counts open manual_review issues" do
       create(:issue, project: project, paid_state: "manual_review", manual_review_reason: "Round limit reached.")

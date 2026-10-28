@@ -84,6 +84,21 @@ RSpec.describe Inbox::Availability do
       )
     end
 
+    # @spec INBOX-FOUNDATION-008
+    it "offers merge approval for a held draft PR, matching the queue and badge" do
+      create(:issue, :pull_request,
+        project: project_a,
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ])
+
+      availability = described_class.call(user: user)
+
+      expect(availability.kind_counts[Inbox::Queue::MERGE_APPROVAL_KIND]).to eq(1)
+      expect(availability.available_kinds).to include(Inbox::Queue::MERGE_APPROVAL_KIND)
+      expect(availability.total_count).to eq(Inbox::Queue.call(user: user).size)
+      expect(availability.total_count).to eq(Inbox::Count.call(user: user))
+    end
+
     it "agrees with the queue and badge on stalled partial closeouts" do # @spec PARTIAL-CLOSEOUT-002
       issue = create(:issue, project: project_a, github_number: 300, paid_state: "in_progress")
       create(

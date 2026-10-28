@@ -246,6 +246,30 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
       expect(github_client).not_to have_received(:add_labels_to_issue)
     end
 
+    # @spec PR-LABEL-RECOVERY-003
+    it "recovers an open PR linked to a timed-out creating run without a recorded PR number" do
+      source_issue = create(:issue, project: project)
+      pull_request = create(:issue, :pull_request,
+        project: project,
+        github_number: 417,
+        parent_issue: source_issue,
+        labels: [])
+      create(:agent_run,
+        project: project,
+        issue: source_issue,
+        goal: "create_pr",
+        status: "timeout",
+        completed_at: 10.minutes.ago,
+        pull_request_number: nil)
+      allow(github_client).to receive(:issue).with("viamin/paid", 417).and_return(github_pull_request(417))
+
+      described_class.perform_now
+
+      expect(github_client).to have_received(:add_labels_to_issue)
+        .with("viamin/paid", 417, [ "paid-generated", "paid-automation" ])
+      expect(pull_request.reload.labels).to include("paid-generated", "paid-automation")
+    end
+
     it "does not recover labels for PRs created against an upstream repository" do # @spec UPSTREAM-PR-005
       project.update!(
         pr_target: "upstream", upstream_full_name: "upstream/repo",
@@ -309,6 +333,14 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
       described_class.perform_now
 
       expect(github_client).to have_received(:add_labels_to_issue).once
+    end
+
+    def github_pull_request(number)
+      OpenStruct.new(
+        id: 9000 + number, number:, title: "Recovered PR", body: "Recovered body", state: "open", labels: [],
+        pull_request: OpenStruct.new(html_url: "https://github.com/viamin/paid/pull/#{number}"),
+        user: OpenStruct.new(login: "viamin"), created_at: 1.day.ago, updated_at: Time.current
+      )
     end
   end
 end
