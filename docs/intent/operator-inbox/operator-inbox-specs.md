@@ -82,7 +82,15 @@
   "View Agent Run" link for `AgentRun` subjects — SHALL opt out of the
   `inbox-detail` Turbo frame (`data-turbo-frame="_top"`) so they navigate the
   full page instead of leaving a "Content missing" placeholder in the pane
-  (#4501); external GitHub links keep their `target="_blank"` behavior.
+  (#4501); external GitHub links keep their `target="_blank"` behavior. When
+  the notification is a typed partial-closeout prerequisite for an issue, the
+  detail pane SHALL translate the facet-confidence evaluation into plain
+  language, show judgments recorded and remaining, and offer the authorized
+  state-specific Start, Resume, Continue judging, or Freeze judgments action
+  while preserving Inbox return context; generated prerequisite prose SHALL
+  NOT be used as a completion claim. Other notification sources SHALL retain
+  safe generic remediation rendering and explain that the operator can follow
+  the listed guidance or inspect the issue when no in-product action exists.
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
   `app/views/dashboard/_inbox_detail_action_required.html.erb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,

@@ -1,0 +1,79 @@
+<%# @spec OPERATOR-INBOX-002B FACET-CONFIDENCE-020 FACET-CONFIDENCE-021 %>
+<% notification = entry.record %>
+<% status = Issues::CloseoutStatus.call(entry.issue) %>
+<% packet = FacetConfidence::CloseoutEvaluationPacket.call(issue: entry.issue, status:, entry_notification: notification) %>
+<% evaluation = entry.issue.facet_confidence_evaluations
+     .where(corpus_digest: packet.corpus_digest).latest_first.first %>
+<% progress = evaluation&.progress || { total: packet.input_revisions.size, labeled: 0, skipped: 0 } %>
+<% remaining = progress[:total] - progress[:labeled] %>
+<% inbox_context = {
+     inbox_kind: params[:kind].presence_in(Inbox::Queue::KINDS),
+     inbox_sort: params[:sort].presence_in(Inbox::Queue::SORTS.keys),
+     inbox_entry_id: entry.id
+   }.compact %>
+
+<div class="space-y-6" data-facet-confidence-action-required>
+  <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
+    <h3 class="text-sm font-semibold text-rose-900">Human evaluation required</h3>
+    <p class="mt-1 text-sm text-rose-800">
+      Work on issue #<%= entry.issue.github_number %> is waiting for a human review. Review each frozen test case independently,
+      record your judgment from the evidence shown, and freeze the completed set after every case has a judgment.
+    </p>
+    <p class="mt-2 text-sm text-rose-800">
+      <%= pluralize(progress[:labeled], "judgment") %> recorded · <%= remaining %> remaining.
+      <% if progress[:skipped].positive? %>
+        <%= pluralize(progress[:skipped], "skipped case") %> still needs a judgment before the set can be frozen.
+      <% elsif evaluation&.frozen? %>
+        The completed judgment set is frozen and its report is ready.
+      <% else %>
+        The judgment set is not complete yet.
+      <% end %>
+    </p>
+  </div>
+
+  <% if packet.ready? %>
+    <div class="flex flex-wrap items-center gap-3">
+      <% if evaluation.nil? %>
+        <%= link_to "Start evaluation",
+              new_project_facet_confidence_evaluation_path(entry.project, issue_id: entry.issue.id, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
+      <% elsif evaluation.frozen? %>
+        <%= link_to "Open evaluation report",
+              project_facet_confidence_evaluation_path(entry.project, evaluation, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
+      <% elsif evaluation.created_by == current_user && remaining.zero? && progress[:skipped].zero? %>
+        <%= button_to "Freeze judgments",
+              freeze_project_facet_confidence_evaluation_path(entry.project, evaluation, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
+      <% else %>
+        <% action_label = progress[:labeled].positive? || progress[:skipped].positive? ? "Continue judging" : "Resume evaluation" %>
+        <%= link_to evaluation.created_by == current_user ? action_label : "View evaluation",
+              project_facet_confidence_evaluation_path(entry.project, evaluation, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
+      <% end %>
+
+      <%= link_to "View Issue", entry.issue.github_url,
+            target: "_blank", rel: "noopener noreferrer",
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    </div>
+  <% else %>
+    <div class="space-y-2">
+      <p class="text-sm font-medium text-rose-900">Resolve these other prerequisites before starting the evaluation:</p>
+      <ul class="space-y-1 text-sm text-gray-700">
+        <% packet.blockers.each do |blocker| %>
+          <li><%= blocker[:message] %> <span class="text-gray-500"><%= blocker[:recovery] %></span></li>
+        <% end %>
+      </ul>
+      <%= link_to "View Issue", entry.issue.github_url, target: "_blank", rel: "noopener noreferrer",
+            class: "inline-flex items-center text-sm font-semibold text-rose-700 hover:text-rose-600" %>
+    </div>
+  <% end %>
+
+  <p class="text-xs text-gray-500">
+    This evaluation records human evidence only. It does not close the issue, enable delivery, or change the project’s confidence thresholds.
+  </p>
+</div>

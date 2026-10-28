@@ -1,4 +1,7 @@
 <%# @spec OPERATOR-INBOX-002B %>
+<% if entry.record.source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE && entry.issue %>
+  <%= render "dashboard/inbox_detail_action_required_facet_confidence", entry: %>
+<% else %>
 <div class="space-y-6">
   <% notification = entry.record %>
   <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
@@ -61,4 +64,11 @@
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
   <% end %>
+
+  <% if entry.action_url.blank? || entry.action_url == inbox_entry_path(entry) %>
+    <p class="text-sm text-gray-600">
+      Follow the guidance above, or open the related issue for context. This escalation does not have a separate in-product action.
+    </p>
+  <% end %>
 </div>
+<% end %>

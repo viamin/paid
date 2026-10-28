@@ -247,6 +247,61 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec OPERATOR-INBOX-002B FACET-CONFIDENCE-020
+  it "translates a facet-confidence prerequisite into plain-language evaluation work" do
+    issue = create(:issue, project:, github_number: 4323)
+    notification = create_facet_evaluation_notification(issue:,
+      title: "Independent maintainers have frozen the blinded reference judgments",
+      description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.")
+
+    render_action_notification(notification, sort: "newest")
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Human evaluation required", "Review each frozen test case independently")
+    expect(response.body).to include("0 judgments recorded", "#{facet_corpus_size} remaining")
+    expect(response.body).to include("Start evaluation", "View Issue")
+    expect(response.body).not_to include("blinded reference judgments", "facet-confidence corpus")
+
+    document = Nokogiri::HTML(response.body)
+    start_link = document.css(%(a[href*="#{new_project_facet_confidence_evaluation_path(project)}"])).find do |link|
+      link.text.include?("Start evaluation")
+    end
+    expect(start_link["href"]).to include(
+      "inbox_entry_id=action_required%3A#{notification.id}",
+      "inbox_kind=action_required",
+      "inbox_sort=newest"
+    )
+    expect(start_link["data-turbo-frame"]).to eq("_top")
+  end
+
+  # @spec OPERATOR-INBOX-002B FACET-CONFIDENCE-020 FACET-CONFIDENCE-021
+  it "shows state-specific evaluation progress and the remaining action" do
+    issue = create(:issue, project:, github_number: 4323)
+    notification = create_facet_evaluation_notification(issue:)
+    evaluation = FacetConfidence::CloseoutEvaluation::Start.call(
+      project:, issue:, actor: user, entry_notification: notification
+    ).evaluation
+
+    render_action_notification(notification)
+    expect(response.body).to include("Resume evaluation", "0 judgments recorded")
+
+    record_facet_judgment(evaluation, evaluation.corpus.cases.first)
+
+    render_action_notification(notification)
+    expect(response.body).to include("Continue judging", "1 judgment recorded")
+    expect(response.body).to include("#{evaluation.corpus_case_ids.size - 1} remaining")
+
+    evaluation.corpus.cases.drop(1).each { |corpus_case| record_facet_judgment(evaluation, corpus_case) }
+
+    render_action_notification(notification)
+    expect(response.body).to include("Freeze judgments", "#{evaluation.corpus_case_ids.size} judgments recorded", "0 remaining")
+    freeze_form = Nokogiri::HTML(response.body).at_css(
+      %(form[action*="#{freeze_project_facet_confidence_evaluation_path(project, evaluation)}"])
+    )
+    expect(freeze_form).to be_present
+    expect(freeze_form["action"]).to include("inbox_entry_id=action_required%3A#{notification.id}")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a
@@ -2047,6 +2102,32 @@ RSpec.describe "Inbox" do
         "remediation_steps" => [ "Open the quality dashboard", "Resume manually or adjust thresholds" ]
       }
     )
+  end
+
+  def create_facet_evaluation_notification(issue:, title: "Reference review required", description: "Complete the independent review.")
+    create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true, title:, description:)
+  end
+
+  def render_action_notification(notification, sort: nil)
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort:)
+  end
+
+  def facet_corpus_size
+    FacetConfidence::Corpus.new(path: FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH).case_ids.size
+  end
+
+  def record_facet_judgment(evaluation, corpus_case)
+    expected = corpus_case.fetch("expected")
+    references = corpus_case.fetch("evidence").map { |item| item.fetch("reference") }
+    FacetConfidence::CloseoutEvaluation::RecordLabel.call(evaluation:, actor: user,
+      case_id: corpus_case.fetch("id"), judgment: {
+        verdict: expected.fetch("status"), intent_band: expected.fetch("intent_band"),
+        technical_band: expected.fetch("technical_band"), readiness: expected.fetch("readiness"),
+        cited_evidence_reference: (expected["must_cite"] || references).first,
+        reason: "Independent review of the cited case evidence."
+      })
   end
 
   def stale_approval_snapshot

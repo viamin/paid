@@ -17,19 +17,20 @@ module FacetConfidence
 
       def self.call(...) = new(...).call
 
-      def initialize(project:, issue:, actor:, status: nil)
+      def initialize(project:, issue:, actor:, status: nil, entry_notification: nil)
         @project = project
         @issue = issue
         @actor = actor
         @status = status
+        @entry_notification = entry_notification
       end
 
       def call
         return failure("the originating work item must belong to this project") unless @issue.project_id == @project.id
         return failure("an authenticated operator must start the evaluation") if @actor.blank?
 
-        blockers = closeout_status.blockers
-        return failure("the closeout entry point is blocked until its recorded prerequisites resolve: #{blockers.map(&:message).join(' ')}") if blockers.any?
+        blockers = evaluation_packet.blockers
+        return failure("the closeout entry point is blocked until its recorded prerequisites resolve: #{blockers.map { |blocker| blocker.fetch(:message) }.join(' ')}") if blockers.any?
 
         corpus = FacetConfidence::Corpus.new(path: CloseoutEvaluationPacket::MANIFEST_PATH)
         identity = corpus.identity
@@ -69,10 +70,14 @@ module FacetConfidence
 
       private
 
-      attr_reader :project, :issue, :actor, :status
+      attr_reader :project, :issue, :actor, :status, :entry_notification
 
       def closeout_status
         @status || Issues::CloseoutStatus.call(@issue)
+      end
+
+      def evaluation_packet
+        CloseoutEvaluationPacket.call(issue:, status: closeout_status, entry_notification:)
       end
 
       def log_started(evaluation, resumed:)

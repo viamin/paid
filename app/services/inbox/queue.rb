@@ -595,11 +595,29 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
+          summary_text: action_required_summary(notification),
+          title_text: action_required_title(notification),
           action_url: notification.action_url
         )
       end
+    end
+
+    def action_required_title(notification)
+      return "Human evaluation required" if facet_confidence_evaluation_notification?(notification)
+
+      notification.title
+    end
+
+    def action_required_summary(notification)
+      if facet_confidence_evaluation_notification?(notification)
+        return "Independently review each frozen test case, record every judgment, and freeze the completed set."
+      end
+
+      notification.metadata["recommended_action"].presence || notification.description
+    end
+
+    def facet_confidence_evaluation_notification?(notification)
+      notification.source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE && notification.subject.is_a?(Issue)
     end
 
     def merge_approval_issues

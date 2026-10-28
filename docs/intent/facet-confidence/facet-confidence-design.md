@@ -174,3 +174,12 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+When the originating human prerequisite is surfaced in Action Required, that
+notification is the entry point to this workflow rather than a prerequisite
+that blocks the workflow from starting. Other recorded closeout blockers still
+block Start. The Action Required detail describes the independent per-case
+review without relying on corpus or blinded-reference jargon, reports recorded
+and remaining judgments, and derives its primary action from the persisted
+evaluation state. Every transition carries a fixed, validated Inbox context so
+the operator can return to the originating item.

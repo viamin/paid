@@ -17,7 +17,9 @@ module Projects
       authorize FacetConfidenceEvaluation.new(project: @project)
       @issue = @project.issues.find(params[:issue_id])
       @existing = @issue.facet_confidence_evaluations.latest_first.first
-      @packet = FacetConfidence::CloseoutEvaluationPacket.call(issue: @issue, status: Issues::CloseoutStatus.call(@issue))
+      @packet = FacetConfidence::CloseoutEvaluationPacket.call(
+        issue: @issue, status: Issues::CloseoutStatus.call(@issue), entry_notification: action_required_notification
+      )
       @inbox_context = inbox_context
     end
 
@@ -25,10 +27,12 @@ module Projects
       authorize FacetConfidenceEvaluation.new(project: @project)
 
       issue = @project.issues.find(params[:issue_id])
-      result = FacetConfidence::CloseoutEvaluation::Start.call(project: @project, issue: issue, actor: current_user)
+      result = FacetConfidence::CloseoutEvaluation::Start.call(
+        project: @project, issue: issue, actor: current_user, entry_notification: action_required_notification
+      )
       if result.success?
         redirect_to evaluation_path(result.evaluation),
-          notice: result.resumed ? "Resumed the existing evaluation for this closeout." : "Evaluation started. Record the blinded reference judgments, then freeze the reference set."
+          notice: result.resumed ? "Resumed the existing evaluation for this closeout." : "Evaluation started. Review each test case independently, record every judgment, then freeze the completed set."
       else
         redirect_to new_project_facet_confidence_evaluation_path(@project, issue_id: issue.id, **inbox_context), alert: result.error
       end
@@ -139,6 +143,14 @@ module Projects
       entry = Inbox::Queue.find_entry(user: current_user, entry_id: entry_id, project: @project,
         kind: params[:inbox_kind].presence_in(Inbox::Queue::KINDS))
       entry&.id
+    end
+
+    def action_required_notification
+      entry_id = valid_inbox_entry_id
+      return unless entry_id
+
+      Inbox::Queue.find_entry(user: current_user, entry_id:, project: @project,
+        kind: Inbox::Queue::ACTION_REQUIRED_KIND)&.record
     end
 
     def evaluation_path(evaluation)

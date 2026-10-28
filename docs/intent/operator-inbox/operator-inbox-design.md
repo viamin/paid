@@ -171,6 +171,18 @@ absent, the description is also the entry summary. `Notifications::Publish`
 rejects a blocking notification that has neither a non-blank description nor
 remediation guidance, so every Action Required entry has meaningful context.
 
+The partial-closeout prerequisite source is a typed exception to that generic
+presentation. When its subject is an issue, the detail pane translates the
+facet-confidence closeout prerequisite into plain-language evaluation work and
+uses the persisted evaluation state to offer Start evaluation, Resume
+evaluation, Continue judging, or Freeze judgments. It shows completed and
+remaining judgment counts, keeps the GitHub issue link secondary, and carries
+the current Inbox entry and filters through the evaluation and back. The
+notification's generated criterion text remains available as context, but is
+not presented as the user-facing title or as proof that the work is complete.
+Other notification sources retain the generic remediation presentation and a
+clear next-step fallback when no in-product action exists.
+
 ### `merge_approval`
 
 Backed by the PR scanner's persisted current-head policy snapshot on `Issue`.

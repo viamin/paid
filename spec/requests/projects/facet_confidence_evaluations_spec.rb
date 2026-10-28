@@ -73,6 +73,27 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation))
   end
 
+  it "starts from a typed Action Required item and preserves its Inbox return context" do # @spec FACET-CONFIDENCE-020 OPERATOR-INBOX-002B
+    notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Human evaluation required", description: "Complete the independent review.")
+    context = {
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      inbox_sort: "newest",
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+    }
+
+    post project_facet_confidence_evaluations_path(project, **context), params: { issue_id: issue.id }
+
+    evaluation = issue.facet_confidence_evaluations.find_by!(issue_id: issue.id)
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation, **context))
+    follow_redirect!
+    expect(response.body).to include("Back to Inbox")
+    back_link = Nokogiri::HTML(response.body).css("a").find { |link| link.text.include?("Back to Inbox") }
+    expect(back_link["href"]).to eq(inbox_path(project_id: project, kind: context[:inbox_kind],
+      sort: context[:inbox_sort], entry_id: context[:inbox_entry_id]))
+  end
+
   it "refuses to start for an originating work item outside the project" do
     other_project = create(:project, account: account, created_by: owner)
     other_issue = create(:issue, project: other_project, github_number: 99)

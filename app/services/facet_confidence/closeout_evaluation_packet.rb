@@ -17,9 +17,10 @@ module FacetConfidence
 
     def self.call(...) = new(...).call
 
-    def initialize(issue:, status:)
+    def initialize(issue:, status:, entry_notification: nil)
       @issue = issue
       @status = status
+      @entry_notification = entry_notification
     end
 
     def call
@@ -33,7 +34,7 @@ module FacetConfidence
 
     private
 
-    attr_reader :issue, :status
+    attr_reader :issue, :status, :entry_notification
 
     def manifest
       @manifest ||= YAML.safe_load_file(manifest_path).tap { |document| document.fetch("cases") }
@@ -44,9 +45,20 @@ module FacetConfidence
     def source_revision = PartialCloseouts::Assessment.call(issue).source_revision
 
     def blockers
-      status.blockers.map do |blocker|
+      evaluation_blockers.map do |blocker|
         { code: blocker.code, message: blocker.message, evidence: blocker.evidence, recovery: blocker.recovery }
       end
+    end
+
+    def evaluation_blockers
+      return status.blockers unless evaluation_entry_notification?
+
+      status.blockers.reject { |blocker| blocker.code == :human_prerequisite_notification }
+    end
+
+    def evaluation_entry_notification?
+      entry_notification&.source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE &&
+        entry_notification.subject == issue && entry_notification.active?
     end
   end
 end
