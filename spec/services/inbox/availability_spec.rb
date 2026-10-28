@@ -181,6 +181,25 @@ RSpec.describe Inbox::Availability do
       expect(availability.kind_counts[Inbox::Queue::MERGE_APPROVAL_KIND]).to eq(1)
     end
 
+    # @spec INBOX-FOUNDATION-008 LABEL-CONTROL-004
+    it "offers the merge-approval filter for a draft local review hold" do
+      project_a.update!(label_integration_mode: "ignored")
+      create(
+        :issue,
+        :pull_request,
+        project: project_a,
+        pr_review_phase: "draft",
+        hold_for_review: true,
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      availability = described_class.call(user: user)
+
+      expect(availability.kind_counts[Inbox::Queue::MERGE_APPROVAL_KIND]).to eq(1)
+      expect(availability.available_kinds).to include(Inbox::Queue::MERGE_APPROVAL_KIND)
+    end
+
     # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
     it "includes clear manual-merge decisions but excludes PRs awaiting checks" do
       project_a.update!(auto_merge_mode: "off", auto_pick_enabled: false)

@@ -87,8 +87,11 @@ Today three kinds exist:
   activity timestamp instead of `needs_input_since`, so PRs do not need to
   enter `paid_state: "needs_input"` just to become visible. An open ready PR
   with `paid-hold-review` is also a `:merge_approval` entry, irrespective of
-  its ordinary blocker snapshot, because the label is an explicit request for
-  human action.
+  its ordinary blocker snapshot or its local review phase, because the label
+  is an explicit request for human action. In ignored-label mode, the local
+  `hold_for_review` equivalent has the same visibility. This is an Inbox
+  visibility exception only: it neither promotes the PR to `ready` nor claims
+  that CI, review, security, or merge policy gates have passed.
 
 Future kinds (`:paused_run_decision`)
 plug in by registering an entry-finder that contributes rows to the same
