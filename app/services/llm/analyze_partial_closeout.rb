@@ -5,6 +5,17 @@ module Llm
   class AnalyzePartialCloseout
     include OutputNormalizer
 
+    # Carries only request metadata that may safely reach durable reconciliation
+    # state. Provider output and credentials remain at the transport boundary.
+    class AssessmentFailure < AgentHarness::Error
+      attr_reader :diagnostic
+
+      def initialize(message, **diagnostic)
+        @diagnostic = diagnostic.freeze
+        super(message)
+      end
+    end
+
     DEFAULT_MODEL = "claude-sonnet-4-6"
     DEFAULT_PROVIDER = :claude
     TIMEOUT = 30
@@ -70,12 +81,20 @@ module Llm
       @agent_run = agent_run
     end
 
-    def call
+    def call # @spec PARTIAL-CLOSEOUT-034
+      @request_id = SecureRandom.uuid
+      @attempt_id = SecureRandom.uuid
       parsed = schema_capable_request? ? schema_constrained_parse : legacy_text_parse
       parsed = parsed.deep_stringify_keys if parsed.is_a?(Hash)
-      raise AgentHarness::Error, "partial closeout assessment failed" unless valid_assessment?(parsed)
+      raise assessment_failure("invalid_assessment", invalid_fields(parsed)) unless valid_assessment?(parsed)
 
       parsed
+    rescue AssessmentFailure
+      raise
+    rescue AgentHarness::AuthenticationError
+      raise assessment_failure("authentication_unavailable")
+    rescue AgentHarness::Error
+      raise assessment_failure("transport_error")
     end
 
     private
@@ -187,7 +206,7 @@ module Llm
 
     def schema_constrained_parse
       result = AgentHarness::Api::ChatTransport.new.call(request)
-      return nil unless result&.dig(:status) == :succeeded
+      raise assessment_failure("unsuccessful_response") unless result&.dig(:status) == :succeeded
 
       result[:parsed]
     end
@@ -199,24 +218,19 @@ module Llm
         model: DEFAULT_MODEL,
         timeout: TIMEOUT,
         tools: :none,
-        **Llm::TextMode.options
+        **text_transport_options
       )
-      return nil if response.respond_to?(:success?) && !response.success?
+      raise assessment_failure("unsuccessful_response") if response.respond_to?(:success?) && !response.success?
 
       output = response.respond_to?(:output) ? response.output : response.to_s
       JSON.parse(strip_markdown_fence(output.to_s.strip))
-    rescue JSON::ParserError => e
-      Rails.logger.warn(
-        message: "llm.analyze_partial_closeout_parse_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
-      nil
+    rescue JSON::ParserError
+      raise assessment_failure("invalid_json")
     end
 
     def request
       {
-        request_id: SecureRandom.uuid, operation: :schema, schema_name: "partial_closeout_assessment",
+        request_id: request_id, operation: :schema, schema_name: "partial_closeout_assessment",
         schema: RESPONSE_SCHEMA, schema_mode: :json_schema, timeout: { read_seconds: TIMEOUT },
         candidates: [ { provider: :anthropic, model: DEFAULT_MODEL, protocol: :messages,
           authentication_mode: :api_key, credentials: { api_key: api_key } } ],
@@ -228,6 +242,67 @@ module Llm
       ENV["ANTHROPIC_API_KEY"].to_s.strip.presence || raise(
         AgentHarness::ConfigurationError, "ANTHROPIC_API_KEY is required for schema-mode partial closeout assessment"
       )
+    end
+
+    def text_transport_options
+      options = Llm::TextMode.options
+      return options if options.present?
+
+      token = managed_claude_oauth_token
+      return options if token.blank?
+
+      options.merge(provider_runtime: { env: { "CLAUDE_CODE_OAUTH_TOKEN" => token } })
+    end
+
+    # A managed credential is scoped to the run's account and injected only
+    # into this AgentHarness CLI subprocess. It therefore preserves Claude
+    # subscription billing instead of falling back to HTTP text mode.
+    def managed_claude_oauth_token
+      credential = agent_run.project.account.runner_credentials.active.for_runner("claude")
+        .where(auth_kind: "oauth_token").order(created_at: :desc, id: :desc).first
+      ClaudeCredentials::Secret.parse(credential&.token).oauth_token
+    end
+
+    def assessment_failure(category, invalid_fields = [])
+      message = case category
+      when "authentication_unavailable"
+        "Partial closeout assessment could not authenticate with an authorized Claude credential. Reconnect the account's Claude runner credential and retry."
+      when "unsuccessful_response"
+        "partial closeout assessment failed: transport returned an unsuccessful response. Retry after Claude transport recovery."
+      when "invalid_json"
+        "partial closeout assessment failed: returned invalid JSON. Retry the assessment."
+      when "invalid_assessment"
+        "partial closeout assessment failed: returned invalid fields. Retry the assessment."
+      else
+        "Partial closeout assessment transport failed. Retry after Claude transport recovery."
+      end
+      diagnostic = { category: category, provider: DEFAULT_PROVIDER.to_s, model: DEFAULT_MODEL,
+                     request_id: request_id, attempt_id: attempt_id }
+      diagnostic[:invalid_fields] = invalid_fields if invalid_fields.any?
+      AssessmentFailure.new(message, **diagnostic)
+    end
+
+    def request_id = @request_id || "unknown"
+
+    def attempt_id = @attempt_id || "unknown"
+
+    def invalid_fields(parsed)
+      return [ violation("$", "object", parsed) ] unless parsed.is_a?(Hash)
+      return [ violation("gaps", "array", parsed["gaps"]) ] unless parsed["gaps"].is_a?(Array)
+
+      structural_invalid_fields(parsed)
+    end
+
+    def structural_invalid_fields(parsed)
+      fields = []
+      Array(parsed["gaps"]).each_with_index { |gap, index| fields << violation("gaps[#{index}]", "object", gap) unless gap.is_a?(Hash) }
+      Array(parsed["criteria"]).each_with_index { |criterion, index| fields << violation("criteria[#{index}]", "object", criterion) unless criterion.is_a?(Hash) }
+      fields << violation("next_action", "object", parsed["next_action"]) if parsed.key?("next_action") && !parsed["next_action"].is_a?(Hash)
+      fields
+    end
+
+    def violation(path, expected, value)
+      { path: path, expected: expected, actual: value.class.name.underscore }
     end
 
     def prompt
