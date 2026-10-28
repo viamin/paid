@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_120000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3163,6 +3163,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["account_id", "position"], name: "index_onboarding_steps_on_account_id_and_position"
     t.index ["account_id", "step"], name: "index_onboarding_steps_on_account_id_and_step", unique: true
     t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
+  end
+
+  create_table "openrouter_zdr_catalog_states", comment: "Singleton freshness and availability state for the OpenRouter ZDR endpoint catalog.", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.datetime "last_attempted_refresh_at", comment: "When a refresh was most recently attempted."
+    t.string "last_error_class", comment: "Class of the most recent unavailable refresh error."
+    t.datetime "last_successful_refresh_at", comment: "When the endpoint catalog was last successfully replaced, including an empty result."
+    t.datetime "unavailable_at", comment: "When the latest refresh became unavailable; null after a successful refresh."
+    t.datetime "updated_at", null: false
+  end
+
+  create_table "openrouter_zdr_models", comment: "Last-known OpenRouter endpoint-advertised ZDR eligibility by model.", force: :cascade do |t|
+    t.boolean "active", default: true, null: false, comment: "Whether the model appeared in the most recent successful ZDR endpoint refresh."
+    t.datetime "created_at", null: false
+    t.datetime "last_verified_at", comment: "When a successful OpenRouter refresh last advertised this model."
+    t.jsonb "metadata", default: {}, null: false, comment: "Matched model metadata and the advertised eligible endpoint records."
+    t.string "model_id", null: false, comment: "Concrete OpenRouter model ID advertised by one or more ZDR endpoints."
+    t.datetime "updated_at", null: false
+    t.index ["active"], name: "index_openrouter_zdr_models_on_active"
+    t.index ["model_id"], name: "index_openrouter_zdr_models_on_model_id", unique: true
   end
 
   create_table "orchestration_decisions", comment: "Structured log of orchestration decisions for later workflow analysis and learning.", force: :cascade do |t|

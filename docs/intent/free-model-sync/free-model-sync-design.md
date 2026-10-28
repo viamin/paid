@@ -18,6 +18,12 @@ This segment covers the daily synchronization path only. Runner execution,
 rotation, and data-classification routing remain covered by their existing code
 paths and RDRs.
 
+OpenRouter's advertised Zero Data Retention (ZDR) endpoint inventory is a
+separate catalog concern. It informs explicit runner setup choices but does
+not replace OpenRouter's request-time `provider.zdr` enforcement and does not
+describe Paid's own run-data retention. It neither changes the existing Free
+policy nor creates an automatic ZDR selection profile.
+
 ## Goals
 
 - Pull OpenRouter's model catalog from `GET /api/v1/models`.
@@ -97,6 +103,44 @@ The job is a daily GoodJob cron entry. It:
 - runs on the maintenance queue
 - enforces single-flight concurrency
 - delegates its business work entirely to `FreeModels::Sync`
+
+### `OpenrouterZdr::Sync`
+
+The ZDR sync obtains OpenRouter's `/api/v1/endpoints/zdr` endpoint list and
+the normal `/api/v1/models` metadata catalog. An endpoint is eligible only
+because it appears in the advertised ZDR response; the sync groups those
+endpoint rows by their concrete `model_id` and creates one candidate per model
+with one or more advertised endpoints. It must never infer eligibility from a
+model's price, vendor, or a provider-wide policy.
+
+For each eligible model, the sync stores the endpoint and model metadata in
+`OpenrouterZdrModel`. It creates or refreshes a Paid `LlmModel` only when the
+row is absent or already owned by the ZDR catalog. A free-model row remains
+owned by `FreeModels::Sync`, preserving both its metadata and its independent
+deactivation lifecycle. Paid and free ZDR candidates are both supported.
+
+A successful refresh transactionally upserts the current candidates,
+timestamps their verification, and marks withdrawn ZDR eligibility inactive.
+An empty but valid endpoint response is therefore a successful empty catalog
+and withdraws all prior eligibility. A transport, status, JSON, shape, or
+endpoint-to-model mapping failure leaves the last-known eligibility untouched;
+instead the singleton catalog state records the attempted time and explicit
+unavailability/error. A later successful refresh clears that unavailable
+state. This makes a stale successful snapshot distinguishable from newly
+verified data.
+
+`OpenrouterZdr::SyncJob` runs daily on the maintenance queue with its own
+single-flight key, independently of the Free sync so an unavailable catalog
+does not interfere with the existing Free policy refresh.
+
+### `OpenrouterZdr::EligibleModels`
+
+This query interface returns active, advertised-ZDR `LlmModel` candidates and
+their freshness state. It uses the existing `Runners::ModelOptions` path for
+runner compatibility, requires the existing tool capability needed by runner
+setup, and applies verified-model, availability, and project policy checks.
+It is a setup catalog query only; callers must continue to send and enforce
+OpenRouter's runtime `provider.zdr` routing option.
 
 ## Trace Notes
 

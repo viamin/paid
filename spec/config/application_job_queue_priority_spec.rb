@@ -55,6 +55,7 @@ RSpec.describe ApplicationJob, :no_db do
         ExecutionAuditEventRetentionJob
         ExecutionResourceReconciliationJob
         FreeModels::SyncJob
+        OpenrouterZdr::SyncJob
         GithubTokenHealthCheckJob
         KnowledgeAuditRetentionJob
         LegacyPartialCloseoutReconciliationSweepJob

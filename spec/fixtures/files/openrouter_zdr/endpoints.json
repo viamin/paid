@@ -1,0 +1,7 @@
+{
+  "data": [
+    { "name": "Provider A | paid/model", "model_id": "paid/model", "provider_name": "Provider A" },
+    { "name": "Provider B | paid/model", "model_id": "paid/model", "provider_name": "Provider B" },
+    { "name": "Provider C | free/model:free", "model_id": "free/model:free", "provider_name": "Provider C" }
+  ]
+}

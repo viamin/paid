@@ -1,0 +1,20 @@
+{
+  "data": [
+    {
+      "id": "paid/model",
+      "name": "Paid Model",
+      "context_length": 200000,
+      "supported_parameters": ["tools"],
+      "top_provider": { "max_completion_tokens": 16000 },
+      "pricing": { "prompt": "0.000001", "completion": "0.000002" }
+    },
+    {
+      "id": "free/model:free",
+      "name": "Free Model",
+      "context_length": 128000,
+      "supported_parameters": ["tools"],
+      "top_provider": { "max_completion_tokens": 8000 },
+      "pricing": { "prompt": "0", "completion": "0" }
+    }
+  ]
+}

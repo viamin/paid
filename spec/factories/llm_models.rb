@@ -50,5 +50,10 @@ FactoryBot.define do
     trait :below_quality_bar do
       metadata { { "below_quality_bar" => true } }
     end
+
+    trait :openrouter_zdr do
+      provider { "openrouter" }
+      catalog_source { "openrouter_zdr_sync" }
+    end
   end
 end

@@ -46,6 +46,10 @@ auth_type)`. It returns an ordered list of `Entry` values:
      `catalog_source == "openrouter_sync"` rows: synced free models are
      OpenRouter-reachable model ids even though their `provider` column holds
      the upstream vendor slug.
+   OpenRouter ZDR candidates are queried separately through
+   `OpenrouterZdr::EligibleModels`; this general dropdown remains an explicit
+   selection surface and does not imply runtime ZDR enforcement or alter the
+   existing Free policy.
    - Entries are filtered through `Runners::ModelCompatibility.call` (RDR-040)
      with the caller's `auth_type`, so CLI-gated or auth-mode-gated models
      never appear as selectable options — the same contract the

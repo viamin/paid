@@ -7,7 +7,7 @@ class LlmModel < ApplicationRecord
   TIERS = %w[low mid high].freeze
   PRICING_TIERS = %w[paid free freemium].freeze
   DATA_TRAINING_RISKS = %w[none possible unknown].freeze
-  CATALOG_SOURCES = %w[seeded openrouter_sync manual].freeze
+  CATALOG_SOURCES = %w[seeded openrouter_sync openrouter_zdr_sync manual].freeze
   # Sentinel dropdown value when a direct-outbound provider (see
   # Runner::DIRECT_OUTBOUND_API_PROVIDERS) has no active catalog rows: render
   # only this entry (e.g. labeled "Custom") so the user can still type a model
@@ -44,13 +44,12 @@ class LlmModel < ApplicationRecord
   scope :paid, -> { by_pricing_tier("paid") }
   scope :openrouter_synced, -> { where(catalog_source: "openrouter_sync") }
   scope :openrouter_synced_free, -> { free.openrouter_synced }
-  # Catalog rows that are NOT OpenRouter-synced free variants. First-party
-  # drift detection compares the seeded catalog against the RubyLLM registry;
-  # OpenRouter free models are sourced and lifecycle-managed by FreeModels::Sync
-  # against the OpenRouter catalog, so excluding them avoids false-positive
-  # retirement alerts.
+  # Catalog rows that are NOT dynamically OpenRouter-synced. First-party drift
+  # detection compares the seeded catalog against the RubyLLM registry; both
+  # free models and endpoint-advertised ZDR models are lifecycle-managed by
+  # their OpenRouter catalogs, so excluding them avoids false-positive alerts.
   scope :excluding_openrouter_synced_free, -> {
-    where("NOT (catalog_source = ? AND pricing_tier = ?)", "openrouter_sync", "free")
+    where.not(catalog_source: %w[openrouter_sync openrouter_zdr_sync])
   }
   scope :affordable, ->(budget_cents, avg_tokens) {
     return active if budget_cents.nil?
