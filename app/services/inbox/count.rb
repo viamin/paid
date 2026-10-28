@@ -75,9 +75,18 @@ module Inbox
     # one lane and record rather than materializing every lane just to apply a
     # presentation-only suppression. `find_entry` also rechecks the current
     # occurrence, so stale removal rows do not lower the badge.
+    #
+    # Every lane summed into `count` is a raw SQL/policy count that ignores
+    # personal removals, except `feature_decision_count`, which comes from
+    # Inbox::Queue.call — whose #apply_scope already rejects suppressed entries.
+    # Feature-decision removals are therefore excluded from `count` before this
+    # subtraction, so skipping them here avoids subtracting the same removal
+    # twice and keeps the badge in agreement with the rendered list.
     # @spec INBOX-PHASE-RELEVANCE-009
     def suppressed_removal_count
       active_removals.count do |removal|
+        next false if removal.entry_kind == Inbox::Queue::FEATURE_DECISION_KIND
+
         entry = Inbox::Queue.find_entry(user:, entry_id: removal.request_key)
         entry && removal.suppresses?(Inbox::RequestIdentity.occurrence_for(entry))
       end
