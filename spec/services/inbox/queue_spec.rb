@@ -40,6 +40,24 @@ RSpec.describe Inbox::Queue do
   # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-004 @spec INBOX-FOUNDATION-009
   # @spec INBOX-FOUNDATION-005 @spec INBOX-FOUNDATION-006
   describe ".call" do
+    # @spec INBOX-FOUNDATION-012
+    it "preloads project audit history separately from issue rows" do
+      create_needs_input(body: questions_body)
+      create_needs_input(body: questions_body)
+      queries = []
+      subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+      ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+        described_class.call(user:, kind: described_class::CLARIFYING_QUESTIONS_KIND)
+        Inbox::MergeApproval.candidates([ project.id ]).to_a
+        Inbox::IntentConformance.candidates([ project.id ]).to_a
+      end
+
+      project_join_queries = queries.grep(/FROM "issues"/).grep(/JOIN "projects"/)
+      expect(project_join_queries).to be_present
+      expect(project_join_queries).to all(satisfy { |query| !query.include?('"projects"."log_data"') })
+    end
+
     # @spec DESIGN-RECONCILIATION-001
     it "returns open design artifact findings as traceability-gap entries" do
       finding = create(:design_artifact_finding, project:, account: account, artifact_path: "docs/rdrs/RDR-063-example.md",

@@ -10,7 +10,7 @@ module Inbox
   # Inbox::MergeApproval::APPROVAL_SIGNALS so a material-drift block is never
   # mistaken for an ordinary owner-approval wait (RDR-067 Decision section).
   #
-  # @spec INTENT-CONFORMANCE-006
+  # @spec INTENT-CONFORMANCE-006 @spec INBOX-FOUNDATION-012
   class IntentConformance
     SIGNAL = "intent_conformance_ok"
 
@@ -25,7 +25,8 @@ module Inbox
     # dialog, and the queue.
     def self.candidates(project_ids)
       Issue
-        .includes(:project)
+        .joins(:project)
+        .preload(:project)
         .where(
           project_id: project_ids,
           is_pull_request: true,

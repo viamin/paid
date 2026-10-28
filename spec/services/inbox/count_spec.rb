@@ -29,16 +29,19 @@ RSpec.describe Inbox::Count do
   end
 
   describe ".call" do
-    # @spec INBOX-PHASE-RELEVANCE-009
+    # @spec INBOX-PHASE-RELEVANCE-009 INBOX-FOUNDATION-012
     it "excludes personally removed requests while the phase rollout is off" do
       allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))
       create(:issue, :needs_input, project:, github_state: "open",
         needs_input_questions: [ "Which behavior?" ])
+      expect(described_class.call(user:)).to eq(1)
       entry = Inbox::Queue.call(user:).first
 
       Inbox::Removals::Remove.call(entry:, user:)
 
+      allow(Inbox::Queue).to receive(:call).and_call_original
       expect(described_class.call(user:)).to eq(0)
+      expect(Inbox::Queue).not_to have_received(:call).with(user:)
       expect(Inbox::Queue.call(user:)).to be_empty
     end
 

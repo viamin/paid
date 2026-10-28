@@ -175,3 +175,16 @@
   link instead of only `index` handling it.
   *Tests:* `spec/requests/inbox_spec.rb`.
   *Code:* `app/controllers/inbox_controller.rb#redirect_for_empty_filtered_combination`.
+
+- [x] **INBOX-FOUNDATION-012** — While the automation-phase rollout is off,
+  an Inbox badge with active personal removals SHALL subtract only removals
+  that still suppress their current request occurrence, without materializing
+  every Inbox entry payload. Issue-backed Inbox lanes and merge-approval and
+  intent-conformance candidates SHALL retain project joins needed for
+  predicates and ordering, but SHALL preload project records separately so a
+  project audit history is not repeated in each issue result row. The badge
+  SHALL retain its display cap and cache-version invalidation, and SHALL agree
+  with the actionable list for removed requests.
+  *Tests:* `spec/services/inbox/count_spec.rb`, `spec/services/inbox/queue_spec.rb`.
+  *Code:* `app/services/inbox/count.rb`, `app/services/inbox/queue.rb`,
+  `app/services/inbox/merge_approval.rb`, `app/services/inbox/intent_conformance.rb`.

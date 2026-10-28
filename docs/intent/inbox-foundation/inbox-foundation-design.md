@@ -62,6 +62,23 @@ comment timestamp" when comment timestamps are not stored locally).
 
 ## `Inbox::Queue` service
 
+## Bounded badge and list loading
+
+Inbox navigation is a high-frequency surface and must not make its memory use
+proportional to repeated project audit history. Issue-backed lanes may join
+`projects` for predicates and deterministic ordering, but preload shared
+project records in a separate query rather than eager-loading project columns
+into each issue result row. This keeps `projects.log_data` to one row per
+project even when a project has many Inbox issues.
+
+The badge retains its cheap per-lane SQL counts while the phase rollout is
+off. When a user has active personal removals, it resolves only the removed
+request identities needed to decide whether to subtract them, rather than
+building every Inbox entry and its presentation payload. Phase-governed
+projects continue to use the scoped queue because phase relevance is an
+entry-level policy. Both paths retain the display cap and cache-version
+invalidation, and personal removal remains exact for each current occurrence.
+
 Generalizes `Dashboard::NeedsInputQueue`. The queue returns typed entries so a
 future inbox UI can branch on `entry.kind` instead of duck-typing the issue:
 
