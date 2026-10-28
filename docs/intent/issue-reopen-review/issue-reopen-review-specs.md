@@ -30,3 +30,16 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - While an issue is parked for reopen review,
+  the Inbox SHALL show the prior closure reason and remaining scope, and an
+  authorized operator SHALL be able to record a non-blank intent-validation
+  decision bound to the current synchronized GitHub revision. The system SHALL
+  inspect queued or running work before clearing the hold, reuse compatible
+  work, refuse incompatible work for explicit reconciliation, and audit the
+  actor, decision, revision, and reason. A stale or repeated submission SHALL
+  not create another run or clear another hold.
+  *Tests:* `spec/requests/agent_runs_spec.rb`,
+  `spec/services/inbox/manual_review_cause_spec.rb`.
+  *Code:* `Inbox::ManualReviewCause`, `Issues::ResolveReopenReview`,
+  `Projects::AgentRunsController`.

@@ -726,3 +726,18 @@
   `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
   `spec/requests/inbox_spec.rb`,
   `spec/requests/api/v1/design_artifact_findings_spec.rb`.
+
+- [x] **OPERATOR-INBOX-002I** — When a manual-review Inbox entry is produced,
+  the system SHALL classify its cause from persisted producer provenance as
+  reopen review, unresolved dependency, enhancement, scanner recurrence,
+  technical recovery, or unknown. It SHALL retain unknown causes visibly and
+  SHALL expose only the cause's supported action. Every action SHALL inspect
+  active work before changing the hold, remain idempotent on double submit,
+  preserve simultaneous holds, and refresh the Inbox. An acknowledgement SHALL
+  never waive a dependency.
+  *Code:* `Inbox::ManualReviewCause`, `Inbox::Queue`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`,
+  `Issues::ResolveReopenReview`, `Projects::AgentRunsController`,
+  `Api::V1::InboxEntrySerializer`.
+  *Test:* `spec/services/inbox/manual_review_cause_spec.rb`,
+  `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.

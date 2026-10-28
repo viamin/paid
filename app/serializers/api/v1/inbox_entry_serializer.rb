@@ -2,7 +2,7 @@
 
 module Api
   module V1
-    # @spec MOBILE-API-006
+    # @spec MOBILE-API-006 @spec OPERATOR-INBOX-002I
     # Exceeds the ~100-line class target deliberately: one small payload
     # method per Inbox::Queue::KINDS kind keeps each branch readable, and
     # splitting them into per-kind classes would scatter the `oneOf`
@@ -104,7 +104,14 @@ module Api
       end
 
       def manual_review_payload
-        { questions: entry.questions, comment_url: entry.manual_review_comment_url }
+        cause = Inbox::ManualReviewCause.call(entry.issue)
+        {
+          questions: entry.questions,
+          comment_url: entry.manual_review_comment_url,
+          cause: cause.kind,
+          active_run_ids: cause.active_runs.map(&:id),
+          dependency_issue_ids: cause.dependencies.map(&:id)
+        }
       end
 
       def manual_review_list_payload

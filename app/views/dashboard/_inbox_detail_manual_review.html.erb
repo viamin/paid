@@ -1,15 +1,66 @@
-<%# @spec OPERATOR-INBOX-002D %>
+<%# @spec OPERATOR-INBOX-002D OPERATOR-INBOX-002I ISSUE-REOPEN-REVIEW-005 %>
+<% cause = Inbox::ManualReviewCause.call(entry.issue) %>
 <div class="space-y-6">
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if cause.reopen_review? %>
+        Validate the prior closure against the current issue revision. This records an intent decision; it does not waive dependencies or other admission controls.
+      <% elsif cause.dependency? %>
+        This issue is waiting on prerequisite work. Resolve the owner issue; acknowledging this pane cannot waive the dependency.
+      <% elsif cause.scanner? %>
+        Scanner evidence says the finding recurred. Use the evidence recovery below rather than retrying issue enhancement.
+      <% elsif cause.technical? %>
+        Technical evidence is incomplete. Collect or retry the supported validation evidence before resuming implementation.
+      <% elsif cause.unknown? %>
+        Paid cannot prove which producer created this hold. The cause remains visible for explicit reconciliation and no recovery action is guessed.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
         Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
       <% end %>
     </p>
   </div>
+
+  <% if cause.active_runs.any? %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      Existing work must be reconciled before this hold changes:
+      <% cause.active_runs.each do |run| %>
+        <%= link_to "run ##{run.id} (#{run.goal.humanize}, #{run.status})",
+              project_agent_run_path(entry.project, run), class: "font-semibold underline" %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if cause.reopen_review? %>
+    <div class="space-y-3 rounded-xl border border-blue-200 bg-blue-50 p-4">
+      <h3 class="text-sm font-semibold text-blue-900">Prior closure and remaining scope</h3>
+      <p class="text-sm text-blue-900"><%= entry.issue.reopen_reason.presence || entry.issue.partial_completion_reason.presence || "No prior closure rationale was recorded; validate the issue and linked delivery evidence directly." %></p>
+      <% if policy(entry.project).run_agent? %>
+        <%= form_with url: resume_manual_review_project_agent_runs_path(entry.project), data: { turbo_frame: "_top" }, class: "space-y-3" do |form| %>
+          <%= form.hidden_field :issue_id, value: entry.issue.id %>
+          <%= form.hidden_field :decision, value: "resume_implementation" %>
+          <%= form.hidden_field :evidence_revision, value: (entry.issue.github_updated_at || entry.issue.updated_at).iso8601(6) %>
+          <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+          <%= form.label :reason, "Intent-validation reason", class: "block text-sm font-medium text-blue-900" %>
+          <%= form.text_area :reason, required: true, rows: 3, class: "block w-full rounded-md border-blue-300 text-sm", placeholder: "What remains in scope, and why is implementation the correct next step?" %>
+          <p class="text-xs text-blue-800">Records a decision for this exact synchronized revision, then returns the issue to normal implementation admission.</p>
+          <%= form.submit "Record decision and resume implementation", class: "inline-flex items-center rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white" %>
+        <% end %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if cause.dependency? && cause.dependencies.any? %>
+    <div class="space-y-2 rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Unresolved dependency owner</h3>
+      <% cause.dependencies.each do |dependency| %>
+        <%= link_to "#{dependency.project.full_name}##{dependency.github_number}: #{dependency.title}", dependency.github_url,
+              target: "_blank", rel: "noopener noreferrer", class: "block text-sm font-semibold text-amber-900 underline" %>
+      <% end %>
+      <p class="text-xs text-amber-800">Paid reevaluates eligibility when dependency synchronization records resolution.</p>
+    </div>
+  <% end %>
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
@@ -34,7 +85,7 @@
       The terminal round's preserved clarifying questions ARE the manual
       review this state asks for: render the same answer form the
       clarifying_questions lane uses, submitting to the same endpoint. %>
-  <% if entry.questions.any? %>
+  <% if cause.enhancement? && entry.questions.any? %>
     <%= render "dashboard/inbox_clarifying_answer_form",
           entry: entry,
           scoped_project: scoped_project,
@@ -42,7 +93,7 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if cause.enhancement? && policy(entry.project).run_agent? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

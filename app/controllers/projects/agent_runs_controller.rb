@@ -470,13 +470,26 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002I
+    # @spec ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
       issue = resolve_manual_review_issue
       unless issue
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      cause = Inbox::ManualReviewCause.call(issue)
+      return resolve_reopen_review(issue) if cause.reopen_review?
+      unless cause.enhancement?
+        redirect_to safe_return_target || dashboard_path, alert: unsupported_manual_review_action(cause)
+        return
+      end
+      if cause.active_runs.any?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "Work is already queued or running for this issue; reconcile run ##{cause.active_runs.first.id} first."
         return
       end
 
@@ -1079,6 +1092,23 @@ module Projects
       return nil if params[:issue_id].blank?
 
       @project.issues.issues_only.find_by(id: params[:issue_id], paid_state: "manual_review")
+    end
+
+    def resolve_reopen_review(issue)
+      result = Issues::ResolveReopenReview.call(
+        issue:, actor: current_user, decision: params[:decision], reason: params[:reason],
+        evidence_revision: params[:evidence_revision]
+      )
+      flash_key = result.success? ? :notice : :alert
+      redirect_to safe_return_target || dashboard_path, flash_key => result.message
+    end
+
+    def unsupported_manual_review_action(cause)
+      return "Resolve the listed dependency; an acknowledgement cannot waive it." if cause.dependency?
+      return "Use the scanner evidence recovery shown in the Inbox." if cause.scanner?
+      return "Use the technical evidence recovery shown in the Inbox." if cause.technical?
+
+      "This manual-review cause is unknown. It remains held for explicit reconciliation."
     end
 
     # The retry_limited lane carries issues and PRs (the runner-retry-cap

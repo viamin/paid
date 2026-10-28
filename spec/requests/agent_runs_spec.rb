@@ -2615,6 +2615,66 @@ RSpec.describe "AgentRuns" do
     context "when authenticated" do
       before { sign_in user }
 
+      # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002I
+      it "records a revision-bound reopen decision without creating a duplicate run" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+          github_updated_at: Time.current.change(usec: 123456), reopen_reason: "Live validation remains incomplete")
+
+        post resume_manual_review_project_agent_runs_path(project), params: {
+          issue_id: parked_issue.id,
+          decision: "resume_implementation",
+          reason: "The reopened scope requires the missing live validation artifacts.",
+          evidence_revision: parked_issue.github_updated_at.iso8601(6)
+        }
+
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:alert]).to be_nil
+        expect(flash[:notice]).to eq("Intent validation recorded. Implementation can proceed through normal admission controls.")
+        expect(parked_issue.reload.paid_state).to eq("new")
+        expect(AccountActivityEvent.where(action: "issue.reopen_review_resolved")).to exist
+        expect(AgentRun.where(issue: parked_issue)).to be_empty
+        expect(response).to redirect_to(dashboard_path)
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002I
+      it "rejects a stale reopen decision and preserves the hold" do
+        parked_issue.update!(manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+          github_updated_at: Time.current)
+
+        post resume_manual_review_project_agent_runs_path(project), params: {
+          issue_id: parked_issue.id, decision: "resume_implementation", reason: "Reviewed",
+          evidence_revision: 1.day.ago.iso8601(6)
+        }
+
+        expect(parked_issue.reload).to be_reopen_review_pending
+        expect(flash[:alert]).to include("changed after this review loaded")
+      end
+
+      # @spec OPERATOR-INBOX-002I
+      it "does not let a manual-review acknowledgement waive an unresolved dependency" do
+        blocker = create(:issue, project:, github_state: "open", paid_state: "new")
+        create(:issue_dependency, issue: parked_issue, depends_on_issue: blocker)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+        expect(flash[:alert]).to include("cannot waive")
+      end
+
+      # @spec OPERATOR-INBOX-002I
+      it "requires reconciliation when work is already queued" do
+        queued = create(:agent_run, project:, issue: parked_issue, goal: "enhance_issue", status: "queued")
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(parked_issue.reload.paid_state).to eq("manual_review")
+        expect(flash[:alert]).to include("run ##{queued.id}")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
       it "queues a manual enhance_issue run for the parked issue" do
         expect {
