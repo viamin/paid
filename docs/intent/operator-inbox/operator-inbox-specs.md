@@ -83,6 +83,9 @@
   `inbox-detail` Turbo frame (`data-turbo-frame="_top"`) so they navigate the
   full page instead of leaving a "Content missing" placeholder in the pane
   (#4501); external GitHub links keep their `target="_blank"` behavior.
+  Typed remediation guidance MAY replace generic notification copy only when
+  the notification declares an in-product workflow; otherwise the generic
+  description and remediation guidance remain the safe fallback.
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/count.rb`,
   `app/views/dashboard/_inbox_detail_action_required.html.erb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,

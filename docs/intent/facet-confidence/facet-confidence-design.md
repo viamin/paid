@@ -174,3 +174,12 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+Blocking notifications that explicitly identify this evaluation use the same
+entry point rather than presenting internal workflow wording. The Inbox
+explains that a maintainer independently reviews every test case, records a
+judgment, and freezes the completed set. It shows progress and uses the current
+evaluation state to offer Start evaluation, Continue judging, Freeze judgments,
+or View evaluation report. These links carry only the validated Inbox kind,
+sort, and entry identifier, so return navigation remains inside the authorized
+Inbox context.

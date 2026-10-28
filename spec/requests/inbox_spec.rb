@@ -62,6 +62,18 @@ RSpec.describe "Inbox" do
     "#{entry_kind}:#{record.id}"
   end
 
+  def create_facet_confidence_escalation
+    issue = create(:issue, project: project, github_number: 4323, paid_state: "in_progress")
+    create(:issue, :pull_request, project: project, github_number: 4324, github_state: "closed",
+      pr_review_phase: "merged", parent_issue: issue, created_at: 2.days.ago)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: "facet_confidence_closeout_evaluation", blocking: true, title: "Remediation Required",
+      description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.",
+      metadata: { "action_required_type" => "facet_confidence_closeout_evaluation" })
+
+    [ issue, notification ]
+  end
+
   # @spec OPERATOR-INBOX-017
   it "renders selected context in the detail response without a nested Turbo request" do
     issue = create(:issue, :needs_input, project: project, body: questions_body)
@@ -245,6 +257,37 @@ RSpec.describe "Inbox" do
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("The configured review method could not complete its check.")
     expect(response.body).not_to include("A human action is required before work can continue.")
+  end
+
+  # @spec FACET-CONFIDENCE-022 OPERATOR-INBOX-002B
+  it "routes a typed closeout-evaluation escalation into the evaluation with Inbox context and useful progress" do
+    issue, notification = create_facet_confidence_escalation
+    context = { kind: Inbox::Queue::ACTION_REQUIRED_KIND, sort: "newest" }
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification), **context)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Complete the closeout evaluation", "Start evaluation")
+    expect(response.body).to include("independently reviews every test case")
+    expect(response.body).to include(new_project_facet_confidence_evaluation_path(project,
+      issue_id: issue.id, inbox_kind: "action_required", inbox_sort: "newest",
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)).gsub("&", "&amp;"))
+    expect(response.body).not_to include("blinded reference judgments", "facet-confidence corpus")
+  end
+
+  # @spec FACET-CONFIDENCE-022
+  it "changes the typed escalation CTA from starting to continuing after evaluation begins" do
+    issue, notification = create_facet_confidence_escalation
+
+    post project_facet_confidence_evaluations_path(project), params: {
+      issue_id: issue.id,
+      inbox_kind: "action_required",
+      inbox_sort: "newest",
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+    }
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification), kind: "action_required")
+
+    expect(response.body).to include("Continue judging", "0 of")
   end
 
   # @spec OPERATOR-INBOX-002B
