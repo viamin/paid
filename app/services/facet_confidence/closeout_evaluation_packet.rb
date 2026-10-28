@@ -17,9 +17,10 @@ module FacetConfidence
 
     def self.call(...) = new(...).call
 
-    def initialize(issue:, status:)
+    def initialize(issue:, status:, ignored_blocker_codes: [])
       @issue = issue
       @status = status
+      @ignored_blocker_codes = ignored_blocker_codes
     end
 
     def call
@@ -33,7 +34,7 @@ module FacetConfidence
 
     private
 
-    attr_reader :issue, :status
+    attr_reader :ignored_blocker_codes, :issue, :status
 
     def manifest
       @manifest ||= YAML.safe_load_file(manifest_path).tap { |document| document.fetch("cases") }
@@ -44,7 +45,7 @@ module FacetConfidence
     def source_revision = PartialCloseouts::Assessment.call(issue).source_revision
 
     def blockers
-      status.blockers.map do |blocker|
+      status.blockers.reject { |blocker| blocker.code.in?(ignored_blocker_codes) }.map do |blocker|
         { code: blocker.code, message: blocker.message, evidence: blocker.evidence, recovery: blocker.recovery }
       end
     end

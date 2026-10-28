@@ -1,6 +1,28 @@
 <%# @spec OPERATOR-INBOX-002B %>
 <div class="space-y-6">
   <% notification = entry.record %>
+  <% facet_workflow = FacetConfidence::ActionRequiredEvaluation.call(notification) %>
+  <% if facet_workflow %>
+    <% progress = facet_workflow.progress %>
+    <% inbox_context = { inbox_kind: params[:kind].presence_in(Inbox::Queue::KINDS), inbox_sort: params[:sort].presence_in(Inbox::Queue::SORTS.keys), inbox_entry_id: entry.id }.compact %>
+    <div class="space-y-3 rounded-xl border border-indigo-200 bg-indigo-50 p-4" data-facet-confidence-action-required>
+      <h3 class="text-sm font-semibold text-indigo-900">Human evaluation needed before closeout can continue</h3>
+      <p class="text-sm text-indigo-900">Independently review each frozen test case, record your judgment from the evidence shown, then freeze the completed set. Paid keeps the expected answers hidden while you judge so your review remains independent.</p>
+      <% if facet_workflow.evaluation %>
+        <p class="text-sm text-indigo-900"><%= facet_workflow.recorded %> of <%= progress[:total] %> judgments recorded · <%= facet_workflow.remaining %> remaining<% if progress[:skipped].positive? %> · <%= progress[:skipped] %> skipped and still requiring judgment<% end %>.</p>
+        <%= link_to facet_workflow.action_label,
+              project_facet_confidence_evaluation_path(entry.project, facet_workflow.evaluation, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% else %>
+        <p class="text-sm text-indigo-900">No judgments have been recorded yet.</p>
+        <%= link_to facet_workflow.action_label,
+              new_project_facet_confidence_evaluation_path(entry.project, issue_id: facet_workflow.issue.id, notification_id: notification.id, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% end %>
+    </div>
+  <% else %>
   <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
     <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
     <% if notification.description.present? %>
@@ -12,8 +34,9 @@
       <p class="mt-1 text-sm text-rose-800">A human action is required before work can continue.</p>
     <% end %>
   </div>
+  <% end %>
 
-  <% if entry.tasks.any? %>
+  <% if !facet_workflow && entry.tasks.any? %>
     <div class="space-y-3">
       <h3 class="text-sm font-semibold text-gray-900">Remediation Steps</h3>
       <ol class="space-y-2 text-sm text-gray-600">

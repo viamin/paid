@@ -43,6 +43,7 @@
     <% if @packet.ready? %>
       <%= form_with url: project_facet_confidence_evaluations_path(@project, **@inbox_context), method: :post, class: "space-y-3" do |form| %>
         <%= form.hidden_field :issue_id, value: @issue.id %>
+        <%= form.hidden_field :notification_id, value: params[:notification_id] if params[:notification_id].present? %>
         <p class="text-xs text-gray-500">
           You, <%= current_user.email %>, become the sole reference judge: you alone record and freeze the blinded
           reference judgments. Case shapes, selection rationale, and the frozen expectations stay hidden until you

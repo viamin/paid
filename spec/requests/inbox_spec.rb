@@ -247,6 +247,54 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec FACET-CONFIDENCE-022
+  it "translates a typed facet-confidence escalation into progress and a state-specific workflow action" do
+    issue = create(:issue, project:, github_number: 4323, paid_state: "in_progress")
+    notification = create_facet_evaluation_notification(issue)
+
+    get_action_required(notification)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Human evaluation needed before closeout can continue", "independently review each frozen test case".capitalize)
+    expect(response.body).to include("No judgments have been recorded yet", "Start evaluation")
+    expect(response.body).not_to include("Independent maintainers have entered and frozen")
+    expect(response.body).to include("inbox_entry_id=action_required%3A#{notification.id}")
+  end
+
+  # @spec FACET-CONFIDENCE-022
+  it "shows recorded and remaining facet-confidence judgments with resume and continue actions" do
+    issue = create(:issue, project:, github_number: 4323, paid_state: "in_progress")
+    notification = create_facet_evaluation_notification(issue)
+
+    evaluation = FacetConfidence::CloseoutEvaluation::Start.call(project:, issue:, actor: user,
+      ignored_blocker_codes: [ :human_prerequisite_notification ]).evaluation
+    get_action_required(notification)
+
+    expect(response.body).to include("0 of #{evaluation.progress[:total]} judgments recorded", "Resume evaluation")
+
+    record_first_facet_judgment(evaluation)
+    get_action_required(notification)
+
+    expect(response.body).to include("1 of #{evaluation.progress[:total]} judgments recorded", "Continue judging")
+    expect(response.body).to include("#{evaluation.progress[:total] - 1} remaining")
+  end
+
+  # @spec FACET-CONFIDENCE-022
+  it "routes a completed judgment set to freezing and then to its report" do
+    issue = create(:issue, project:, github_number: 4323, paid_state: "in_progress")
+    notification = create_facet_evaluation_notification(issue)
+    evaluation = FacetConfidence::CloseoutEvaluation::Start.call(project:, issue:, actor: user,
+      ignored_blocker_codes: [ :human_prerequisite_notification ]).evaluation
+
+    record_all_facet_judgments(evaluation)
+    get_action_required(notification)
+    expect(response.body).to include("#{evaluation.progress[:total]} of #{evaluation.progress[:total]} judgments recorded", "Freeze judgments")
+
+    FacetConfidence::CloseoutEvaluation::FreezeLabels.call(evaluation:, actor: user)
+    get_action_required(notification)
+    expect(response.body).to include("View evaluation report")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a
@@ -2047,6 +2095,36 @@ RSpec.describe "Inbox" do
         "remediation_steps" => [ "Open the quality dashboard", "Resume manually or adjust thresholds" ]
       }
     )
+  end
+
+  def create_facet_evaluation_notification(issue)
+    create(:notification, :error, account:, subject: issue, blocking: true,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
+      title: "Independent maintainers have entered and frozen the blinded reference judgments",
+      description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.",
+      metadata: { "workflow" => FacetConfidence::ActionRequiredEvaluation::WORKFLOW })
+  end
+
+  def get_action_required(notification)
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+  end
+
+  def record_first_facet_judgment(evaluation)
+    record_facet_judgment(evaluation, evaluation.corpus.cases.first)
+  end
+
+  def record_all_facet_judgments(evaluation)
+    evaluation.corpus.cases.each { |corpus_case| record_facet_judgment(evaluation, corpus_case) }
+  end
+
+  def record_facet_judgment(evaluation, corpus_case)
+    expected = corpus_case.fetch("expected")
+    judgment = { verdict: expected.fetch("status"), intent_band: expected.fetch("intent_band"),
+                 technical_band: expected.fetch("technical_band"), readiness: expected.fetch("readiness"),
+                 cited_evidence_reference: corpus_case.fetch("evidence").first.fetch("reference"), reason: "Independent review." }
+    FacetConfidence::CloseoutEvaluation::RecordLabel.call(evaluation:, actor: user,
+      case_id: corpus_case.fetch("id"), judgment:)
   end
 
   def stale_approval_snapshot

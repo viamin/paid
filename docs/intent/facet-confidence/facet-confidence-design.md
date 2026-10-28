@@ -174,3 +174,11 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+When the closeout assessor explicitly types its sole human prerequisite as a
+facet-confidence evaluation, the Action Required notification is another entry
+point into this same lifecycle. Its detail translates the prerequisite into
+plain language, shows recorded and remaining judgments, and offers the next
+state-specific action. The typed notification itself does not block starting
+the evaluation; every other recorded closeout blocker still does. Untyped
+notifications retain the generic Action Required presentation.

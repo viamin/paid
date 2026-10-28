@@ -220,6 +220,8 @@ module PartialCloseouts
       identity = Digest::SHA256.hexdigest(JSON.generate(identities))
       metadata = { "prerequisite_identity" => identity, "references" => references,
                    "prerequisites" => human_gaps.map { |gap| prerequisite_occurrence(gap) } }
+      workflows = human_gaps.map { |gap| gap["workflow"] }.uniq
+      metadata["workflow"] = workflows.first if workflows.one? && workflows.first.present?
       submissions = reconciled_evidence_submissions(previous, metadata.fetch("prerequisites"))
       metadata["evidence_submissions"] = submissions if submissions.any?
       policy_selection = replacement_policy_action(human_gaps)

@@ -17,7 +17,8 @@ module Projects
       authorize FacetConfidenceEvaluation.new(project: @project)
       @issue = @project.issues.find(params[:issue_id])
       @existing = @issue.facet_confidence_evaluations.latest_first.first
-      @packet = FacetConfidence::CloseoutEvaluationPacket.call(issue: @issue, status: Issues::CloseoutStatus.call(@issue))
+      @packet = FacetConfidence::CloseoutEvaluationPacket.call(issue: @issue, status: Issues::CloseoutStatus.call(@issue),
+        ignored_blocker_codes: ignored_blocker_codes)
       @inbox_context = inbox_context
     end
 
@@ -25,7 +26,9 @@ module Projects
       authorize FacetConfidenceEvaluation.new(project: @project)
 
       issue = @project.issues.find(params[:issue_id])
-      result = FacetConfidence::CloseoutEvaluation::Start.call(project: @project, issue: issue, actor: current_user)
+      @issue = issue
+      result = FacetConfidence::CloseoutEvaluation::Start.call(project: @project, issue: issue, actor: current_user,
+        ignored_blocker_codes: ignored_blocker_codes)
       if result.success?
         redirect_to evaluation_path(result.evaluation),
           notice: result.resumed ? "Resumed the existing evaluation for this closeout." : "Evaluation started. Record the blinded reference judgments, then freeze the reference set."
@@ -143,6 +146,13 @@ module Projects
 
     def evaluation_path(evaluation)
       project_facet_confidence_evaluation_path(@project, evaluation, **inbox_context)
+    end
+
+    def ignored_blocker_codes
+      notification = @project.account.notifications.active.find_by(id: params[:notification_id], subject: @issue)
+      return [] unless notification && FacetConfidence::ActionRequiredEvaluation.call(notification)
+
+      [ :human_prerequisite_notification ]
     end
   end
 end
