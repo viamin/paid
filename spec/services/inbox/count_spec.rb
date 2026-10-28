@@ -69,14 +69,16 @@ RSpec.describe Inbox::Count do
       expect(Inbox::Queue.call(user: user, kind: Inbox::Queue::TRACEABILITY_GAP_KIND)).to be_present
     end
 
-    it "counts needs_input candidates, merge approvals, and open plan reviews" do
+    it "counts needs_input candidates, held draft PRs, merge approvals, and open plan reviews" do
       create(:issue, :needs_input, project: project)
       create(:issue, :needs_input, project: project)
       create_merge_approval_pr
+      create(:issue, :pull_request, project: project, pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ])
       create(:decomposition_decision, project: project, workflow_id: "wf-1", decision_key: "wf-1:pending", decision_type: "planning_outcome", outcome: "plan_pending_review")
       create(:notification, :error, account: account, subject: project, blocking: true)
 
-      expect(described_class.call(user: user)).to eq(5)
+      expect(described_class.call(user: user)).to eq(6)
     end
 
     # @spec OPERATOR-INBOX-002D

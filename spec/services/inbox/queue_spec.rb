@@ -145,14 +145,15 @@ RSpec.describe Inbox::Queue do
       expect_merge_approval_entry(entries, pr)
     end
 
-    # @spec AUTO-MERGE-009
-    it "returns a merge-approval Inbox entry for an unevaluated review-gated PR" do
+    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008
+    it "returns a merge-approval Inbox entry for an unevaluated review-gated draft PR" do
       project.update!(owner_reviewer_login: nil)
       pr = create(
         :issue,
         :pull_request,
         project: project,
         github_number: 41,
+        pr_review_phase: "draft",
         labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
         auto_merge_evaluated_at: nil,
         auto_merge_blockers: nil
@@ -314,13 +315,14 @@ RSpec.describe Inbox::Queue do
       expect(guidance.fetch(:instruction)).not_to include("remove the hold")
     end
 
-    it "returns a merge-approval Inbox entry for an ignored-mode local review hold without a blocker snapshot" do # @spec LABEL-CONTROL-004
+    it "returns a merge-approval Inbox entry for an ignored-mode draft PR with a local review hold without a blocker snapshot" do # @spec LABEL-CONTROL-004 INBOX-FOUNDATION-008
       project.update!(label_integration_mode: "ignored")
       pr = create(
         :issue,
         :pull_request,
         project: project,
         github_number: 42,
+        pr_review_phase: "draft",
         hold_for_review: true,
         auto_merge_evaluated_at: nil,
         auto_merge_blockers: nil
