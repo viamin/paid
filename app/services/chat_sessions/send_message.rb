@@ -15,7 +15,7 @@ module ChatSessions
   class SendMessage
     include FallbackLoop
 
-    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
+    attr_reader :chat_session, :actor, :content, :on_chunk, :llm_client, :stream_message_id,
       :transport_attempt_message
 
     MAX_CONTENT_LENGTH = 12_000
@@ -46,7 +46,11 @@ module ChatSessions
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
       update_session_activity
+      chat_turn.complete!
       assistant_message
+    rescue StandardError => error
+      chat_turn&.fail!(classification: error.class.name)
+      raise
     end
 
     private
@@ -110,7 +114,7 @@ module ChatSessions
     end
 
     def persist_user_message
-      @transport_attempt_message = existing_user_message || create_user_message
+      @transport_attempt_message = existing_user_message || create_turn_and_user_message
 
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
@@ -123,15 +127,38 @@ module ChatSessions
     def existing_user_message
       return unless stream_message_id
 
-      chat_session.messages.find_by(role: "user", metadata: { "stream_message_id" => stream_message_id })
+      message = chat_session.messages.find_by(role: "user", metadata: { "stream_message_id" => stream_message_id })
+      @chat_turn = ChatTurn.find_by(user_message: message) if message
+      @chat_turn&.touch_activity!
+      message
     end
 
-    def create_user_message
-      chat_session.messages.create!(
-        role: "user",
-        content: content,
-        metadata: { "stream_message_id" => stream_message_id }.compact
-      )
+    # @spec CHAT-API-027
+    def create_turn_and_user_message
+      chat_session.transaction do
+        @chat_turn = chat_session.chat_turns.create!(stream_message_id:, last_activity_at: Time.current)
+        message = chat_session.messages.create!(
+          role: "user",
+          content: content,
+          metadata: { "stream_message_id" => stream_message_id, "chat_turn_id" => @chat_turn.id }.compact
+        )
+        @chat_turn.update!(user_message: message, status: "streaming", last_activity_at: Time.current)
+        message
+      end
+    end
+
+    def chat_turn
+      @chat_turn
+    end
+
+    # Persisted tool and assistant messages are durable progress checkpoints.
+    # Chunks intentionally do not count: they are transient and cannot prove a
+    # tool call completed after a process dies.
+    def on_message_persisted
+      @on_message_persisted_with_activity ||= lambda do |message, **kwargs|
+        chat_turn&.touch_activity!
+        @on_message_persisted&.call(message, **kwargs)
+      end
     end
 
     # A conversational reply (e.g. "yes") is not a confirmation. When a write

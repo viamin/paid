@@ -514,6 +514,28 @@
   `app/javascript/controllers/chat_message_controller.js#legacyCopy`,
   `app/javascript/controllers/chat_message_controller.js#decorateCodeBlocks`.
 
+- [x] **CHAT-API-027** — When a dispatched API-mode chat turn has persisted a
+  user request but has no terminal outcome and no durable activity for the
+  account-configured stall interval, Paid SHALL mark its durable `ChatTurn`
+  record as `stalled` and persist an in-transcript system notice. The notice
+  SHALL state that no completion was recorded, preserve and link to the
+  original request, and direct the user to inspect pending confirmations
+  before explicitly retrying. The retry control SHALL require an explicit
+  confirmation and atomically claim the stalled turn before queuing a new
+  attempt, so concurrent recovery requests cannot duplicate that replay. A pending confirmation, a recorded rate-limit
+  recovery window, and a terminal turn SHALL NOT be classified as stalled.
+  The classification time and prior tool-completion evidence SHALL remain
+  queryable on the turn record; classification SHALL be idempotent under
+  concurrent sweeps.
+  *Tests:* `spec/models/chat_turn_spec.rb`,
+  `spec/services/chat_sessions/detect_stalled_turns_spec.rb`,
+  `spec/services/chat_sessions/retry_stalled_turn_spec.rb`,
+  `spec/jobs/chat_sessions/detect_stalled_turns_job_spec.rb`,
+  `spec/views/chat_messages/stalled_turn_notice_spec.rb`.
+  *Code:* `ChatTurn`, `ChatSessions::DetectStalledTurns`, `ChatSessions::RetryStalledTurn`,
+  `ChatSessions::DetectStalledTurnsJob`, `ChatMessage#stalled_turn_notice?`,
+  `app/views/chat_messages/_stalled_turn_notice.html.erb`.
+
 - [x] **CHAT-API-023** — When a streaming assistant turn ends without a
   persisted `message_created` replacing its in-flight bubble — a provider
   error, a rate-limit pause, a write-tool confirmation pause whose streamed

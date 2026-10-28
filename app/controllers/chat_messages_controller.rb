@@ -5,7 +5,7 @@ class ChatMessagesController < ApplicationController
 
   skip_after_action :verify_authorized, only: :index
   before_action :set_chat_session
-  before_action :reject_archived_chat_session, only: %i[create resolve]
+  before_action :reject_archived_chat_session, only: %i[create resolve retry_stalled_turn]
 
   rate_limit to: ChatMessages::RateLimit::MAX_REQUESTS, within: ChatMessages::RateLimit::PERIOD,
     by: -> { ChatMessages::RateLimit.identifier(user_id: current_user&.id, chat_session_id: params[:chat_session_id]) },
@@ -63,6 +63,19 @@ class ChatMessagesController < ApplicationController
       # @spec CHAT-API-004
       json_resolve_response(tool_call_message, decision)
     end
+  end
+
+  # @spec CHAT-API-027
+  def retry_stalled_turn
+    authorize ChatMessage.new(chat_session: @chat_session), policy_class: ChatMessagePolicy
+    turn = @chat_session.chat_turns.find(params[:turn_id])
+
+    unless ChatSessions::RetryStalledTurn.call(turn:, actor: current_user)
+      render json: { error: "This request is no longer available to retry" }, status: :conflict
+      return
+    end
+
+    redirect_back fallback_location: chat_session_path(@chat_session), notice: "Retry queued."
   end
 
   private

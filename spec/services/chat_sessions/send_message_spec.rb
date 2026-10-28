@@ -63,6 +63,16 @@ RSpec.describe ChatSessions::SendMessage do
       }.to change { chat_session.messages.where(role: "user").count }.by(1)
     end
 
+    # @spec CHAT-API-027
+    it "records a completed durable turn linked to the persisted request" do
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+
+      turn = chat_session.chat_turns.last
+      expect(turn).to be_completed
+      expect(turn.user_message).to eq(chat_session.messages.where(role: "user").last)
+      expect(turn.completed_at).to be_present
+    end
+
     # @spec PARTIAL-CLOSEOUT-017 — a conversational "yes" must never be
     # treated, displayed, or replayed as approval of a pending write tool.
     describe "with a pending write-tool confirmation" do

@@ -30,6 +30,7 @@ class TenantSetting < ApplicationRecord
     "chat_session_token_limit" => 100_000,
     "chat_monthly_token_limit" => nil,
     "chat_max_tool_iterations" => 50,
+    "chat_turn_stall_timeout" => 600,
     "chat_max_cloned_repos" => 5,
     "chat_clone_timeout" => 120,
     "chat_shell_enabled" => false,
@@ -343,6 +344,10 @@ class TenantSetting < ApplicationRecord
     effective_chat_settings["chat_max_tool_iterations"]
   end
 
+  def chat_turn_stall_timeout
+    effective_chat_settings["chat_turn_stall_timeout"]
+  end
+
   def chat_max_cloned_repos
     effective_chat_settings["chat_max_cloned_repos"]
   end
@@ -539,6 +544,13 @@ class TenantSetting < ApplicationRecord
       val = chat["chat_max_tool_iterations"]
       unless val.is_a?(Integer) && val >= 1 && val <= 200
         errors.add(:features, "chat_settings.chat_max_tool_iterations must be an integer between 1 and 200")
+      end
+    end
+
+    if chat.key?("chat_turn_stall_timeout") && chat["chat_turn_stall_timeout"].present?
+      val = chat["chat_turn_stall_timeout"]
+      unless val.is_a?(Integer) && val >= 60 && val <= 86_400
+        errors.add(:features, "chat_settings.chat_turn_stall_timeout must be an integer between 60 and 86400")
       end
     end
 

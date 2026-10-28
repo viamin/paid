@@ -1,0 +1,15 @@
+<%# @spec CHAT-API-027 %>
+<% request_id = message.metadata["user_message_id"] %>
+<div class="flex justify-center" data-message-id="<%= message.id %>">
+  <article class="mx-auto max-w-2xl rounded-md bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-amber-200">
+    <div class="mb-1 text-xs font-semibold uppercase tracking-wide text-amber-700">Request needs attention</div>
+    <div class="whitespace-pre-wrap break-words leading-6"><%= message.content.to_s %></div>
+    <% if request_id.present? %>
+      <%= link_to "Review the unfinished request", "#chat-message-#{request_id}", class: "mt-1 inline-block text-xs font-medium text-amber-800 underline hover:text-amber-950" %>
+    <% end %>
+    <%= button_to "Retry request", "/chat/#{message.chat_session_id}/messages/retry_stalled_turn",
+          params: { turn_id: message.metadata["chat_turn_id"] },
+          class: "mt-2 block rounded bg-amber-700 px-2 py-1 text-xs font-medium text-white hover:bg-amber-800",
+          form: { data: { turbo_confirm: "Retry this request? It may repeat work. Review any completed tools or pending confirmations first." } } %>
+  </article>
+</div>

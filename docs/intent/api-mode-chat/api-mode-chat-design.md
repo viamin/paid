@@ -160,6 +160,14 @@ What ships today:
   mutations
 - `ChatSessions::ResolveToolCall` atomically resolves pending confirmations and
   resumes the loop only when the final pending confirmation has been settled
+- Every dispatched turn has a durable `ChatTurn` lifecycle record. A periodic
+  server-side sweep classifies a non-terminal turn with no durable activity as
+  stalled, preserves its transcript evidence, and adds an in-transcript notice
+  rather than implying that the turn succeeded. Pending confirmations and known
+  rate-limit pauses are deliberate waits, not stalls. This first slice does
+  not replay a stalled request: users must inspect the preserved request and
+  any tool confirmation before explicitly sending a new request, so an
+  ambiguous model stop cannot duplicate a side effect.
 - rate-limited sessions are resumed by a maintenance sweep after their recorded
   reset time; a renewed rate limit records the new reset time, while another
   provider error creates a durable transcript notice and requires a user to
