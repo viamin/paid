@@ -314,6 +314,15 @@ arrows:
     taxonomy: chat
     status: OK
     audited: 2026-08-03
+  chat-turn-stall-recovery:
+    title: Chat Turn Stall Detection and Recovery
+    path: docs/intent/chat-turn-stall-recovery/chat-turn-stall-recovery-design.md
+    specs: docs/intent/chat-turn-stall-recovery/chat-turn-stall-recovery-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: OK
+    audited: 2026-10-28
+    next: "Keep automatic recovery limited to explicitly classified infrastructure failures with a durable replay-safety contract."
   issue-reopen-review:
     title: Issue Reopen Review
     path: docs/intent/issue-reopen-review/issue-reopen-review-design.md

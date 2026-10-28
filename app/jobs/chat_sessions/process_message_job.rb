@@ -50,6 +50,8 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::LlmClientConfigurationError => e
     broadcast_error(chat_session_id, stream_message_id, e.message)
+  rescue ChatTurn::RecoveryRequiredError => e
+    broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
     broadcast_error(chat_session_id, stream_message_id, e.message,
       limit_type: e.limit_type, limit: e.limit, used: e.used)
