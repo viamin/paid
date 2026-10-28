@@ -133,7 +133,7 @@ module Automation
       def delegation_permitted?
         return merge_delegation_permitted? if endpoint == Automation::Phases::MERGE
 
-        true
+        ProjectPolicy.new(user, project).run_agent?
       end
 
       def merge_delegation_permitted?
