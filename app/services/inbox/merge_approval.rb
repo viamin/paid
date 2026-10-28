@@ -11,7 +11,9 @@ module Inbox
     # Narrows to rows that could plausibly need an operator before falling back
     # to Ruby for the full `call` signal check (`APPROVAL_SIGNALS`), so
     # counting/listing stays a bounded scan instead of one Issue
-    # instantiation per open, ready PR on the account. Shared by
+    # instantiation per open PR on the account. A structured review hold is
+    # intentionally phase-independent: GitHub can have the hold before a
+    # failed post-processing path records `ready` locally. Shared by
     # `Inbox::Count` and `Inbox::Availability` so the candidate definition
     # can't drift between the badge, the filters dialog, and the queue.
     # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-004
@@ -23,11 +25,20 @@ module Inbox
           project_id: project_ids,
           is_pull_request: true,
           github_state: "open",
-          pr_review_phase: "ready",
           merge_permission_rejected_at: nil
         )
+        .where("issues.pr_review_phase = 'ready' OR #{hold_conditions}")
         .where(candidate_conditions)
     end
+
+    def self.hold_conditions
+      Issue.sanitize_sql_array([
+        "(projects.label_integration_mode <> 'ignored' AND issues.labels @> :hold_label::jsonb) OR " \
+          "(projects.label_integration_mode = 'ignored' AND issues.hold_for_review = TRUE)",
+        hold_label: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ].to_json
+      ])
+    end
+    private_class_method :hold_conditions
 
     def self.candidate_conditions
       Issue.sanitize_sql_array([
@@ -222,7 +233,7 @@ module Inbox
     def reviewable_pr?
       issue.is_pull_request? &&
         issue.github_state == "open" &&
-        issue.pr_review_phase == "ready" &&
+        (issue.pr_review_phase == "ready" || held_for_review?) &&
         (manual_merge? || automatic_merge_configured?) &&
         !issue.merge_permission_rejected?
     end

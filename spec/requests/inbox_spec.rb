@@ -148,6 +148,29 @@ RSpec.describe "Inbox" do
     expect(Nokogiri::HTML(response.body).at_css('meta[name="turbo-visit-control"]')&.[]("content")).to eq("reload")
   end
 
+  # @spec INBOX-FOUNDATION-008
+  it "renders a draft-phase structured review hold in the inbox and its detail" do
+    pull_request = create_merge_approval_pr(title: "Held despite stale phase", github_number: 4715)
+    pull_request.update!(
+      pr_review_phase: "draft",
+      labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+      auto_merge_evaluated_at: nil,
+      auto_merge_blockers: {}
+    )
+
+    get inbox_path(kind: Inbox::Queue::MERGE_APPROVAL_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Held despite stale phase", "Human review requested before merging")
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MERGE_APPROVAL_KIND, pull_request)),
+      headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Human review is on hold")
+    expect(pull_request.reload.pr_review_phase).to eq("draft")
+  end
+
   def create_inbox_entries
     create(:issue, :needs_input, project: project, title: "Alpha question", body: questions_body)
     create(:issue, :needs_input, project: second_project, title: "Beta question", body: questions_body)
