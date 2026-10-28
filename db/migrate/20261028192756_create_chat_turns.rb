@@ -1,5 +1,7 @@
 # frozen_string_literal: true
 
+# frozen_string_literal: true
+
 class CreateChatTurns < ActiveRecord::Migration[8.1]
   def change
     create_table :chat_turns do |t|

@@ -23,7 +23,7 @@ module ChatSessions
 
     attr_reader :chat_session, :actor, :tool_call_message, :decision, :llm_client,
       :on_chunk, :on_message_persisted, :on_tool_call_resolved, :stream_message_id,
-      :transport_attempt_message
+      :transport_attempt_message, :chat_turn
 
     def initialize(chat_session:, actor: chat_session.created_by, tool_call_message:, decision:, llm_client: nil, on_chunk: nil,
       on_message_persisted: nil, on_tool_call_resolved: nil, stream_message_id: nil)
@@ -37,6 +37,7 @@ module ChatSessions
       @on_tool_call_resolved = on_tool_call_resolved
       @stream_message_id = stream_message_id
       @transport_attempt_message = originating_user_message
+      @chat_turn = ChatTurn.find_by(chat_session:, user_message: transport_attempt_message)
     end
 
     def self.call(...)
@@ -54,7 +55,7 @@ module ChatSessions
         resolve_post_dispatch_confirmation!
       else
         resolve_pending_tool_call!
-        resume_loop_unless_other_pending
+        complete_turn(resume_loop_unless_other_pending)
       end
     end
 
@@ -124,7 +125,7 @@ module ChatSessions
       return rollback_to_pending(error_result: result) if error_result?(result)
 
       persist_tool_result(result)
-      resume_loop_unless_other_pending
+      complete_turn(resume_loop_unless_other_pending)
     end
 
     def approve_tool_call!
@@ -199,6 +200,7 @@ module ChatSessions
       )
 
       ChatDiagrams::AttachToMessage.call(message: message)
+      chat_turn&.record_activity!(message: message)
       on_message_persisted&.call(message)
       message
     end
@@ -217,6 +219,15 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    def complete_turn(assistant_message)
+      chat_turn&.complete!(message: assistant_message) if assistant_message
+      assistant_message
+    end
+
+    def extra_agent_loop_kwargs
+      { chat_turn: }
     end
   end
 end

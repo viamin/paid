@@ -4,8 +4,12 @@ module ChatTurns
   class DetectStalls # @spec CHAT-TURN-RECOVERY-001 CHAT-TURN-RECOVERY-002 CHAT-TURN-RECOVERY-003
     DEFAULT_THRESHOLD = 10.minutes
 
-    def self.call(now: Time.current, threshold: DEFAULT_THRESHOLD)
+    def self.call(now: Time.current, threshold: configured_threshold)
       new(now:, threshold:).call
+    end
+
+    def self.configured_threshold
+      ENV.fetch("CHAT_TURN_STALL_THRESHOLD_SECONDS", DEFAULT_THRESHOLD.to_i).to_i.seconds
     end
 
     def initialize(now:, threshold:)
@@ -24,7 +28,7 @@ module ChatTurns
     def classify(turn)
       turn.with_lock do
         return unless stale?(turn)
-        return if turn.awaiting_confirmation? || turn.chat_session.rate_limited_until.present?
+        return if turn.awaiting_confirmation? || turn.chat_session.rate_limited?
 
         turn.stall!
         create_notice(turn)
@@ -44,7 +48,9 @@ module ChatTurns
         metadata: {
           "chat_turn_stalled_notice" => true,
           "chat_turn_id" => turn.id,
-          "checkpoint_message_id" => turn.checkpoint_message_id
+          "checkpoint_message_id" => turn.checkpoint_message_id,
+          "classification" => "inactivity",
+          "detected_at" => turn.stalled_at.iso8601
         }
       )
     end

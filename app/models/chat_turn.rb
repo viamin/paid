@@ -11,6 +11,16 @@ class ChatTurn < ApplicationRecord # @spec CHAT-TURN-RECOVERY-001
 
   scope :unfinished, -> { where(status: %w[pending streaming]) }
 
+  def terminal?
+    status.in?(%w[completed failed stalled abandoned])
+  end
+
+  # Only one worker may execute a browser stream. A duplicate job observes the
+  # claimed state and exits before it can re-dispatch a tool.
+  def claim_processing! # @spec CHAT-TURN-RECOVERY-005
+    self.class.where(id: id, status: "pending").update_all(status: "streaming", updated_at: Time.current).positive?
+  end
+
   def record_activity!(message: nil)
     update!(last_activity_at: Time.current, checkpoint_message: message || checkpoint_message, status: "streaming")
   end
@@ -34,6 +44,11 @@ class ChatTurn < ApplicationRecord # @spec CHAT-TURN-RECOVERY-001
   end
 
   def awaiting_confirmation?
-    chat_session.messages.pending_tool_confirmations.exists?
+    return false unless user_message_id
+
+    messages = chat_session.messages.pending_tool_confirmations.where("id > ?", user_message_id)
+    next_user_message_id = chat_session.messages.where(role: "user").where("id > ?", user_message_id).minimum(:id)
+    messages = messages.where("id < ?", next_user_message_id) if next_user_message_id
+    messages.exists?
   end
 end

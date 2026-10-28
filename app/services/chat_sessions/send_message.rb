@@ -43,6 +43,9 @@ module ChatSessions
       resume_session_if_needed!
 
       start_turn
+      return chat_turn.checkpoint_message if chat_turn.terminal?
+      return unless chat_turn.claim_processing!
+
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
@@ -117,7 +120,7 @@ module ChatSessions
     def persist_user_message
       @transport_attempt_message = existing_user_message || create_user_message
       chat_turn.update!(user_message: transport_attempt_message, checkpoint_message: transport_attempt_message,
-        status: "streaming", last_activity_at: Time.current)
+        last_activity_at: Time.current)
 
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)

@@ -16,12 +16,14 @@ RSpec.describe ChatTurns::DetectStalls do
       expect(turn.reload).to have_attributes(status: "stalled", stalled_at: be_present)
       notice = session.messages.last
       expect(notice).to be_chat_turn_stalled_notice
-      expect(notice.metadata).to include("chat_turn_id" => turn.id, "checkpoint_message_id" => checkpoint.id)
+      expect(notice.metadata).to include("chat_turn_id" => turn.id, "checkpoint_message_id" => checkpoint.id,
+        "classification" => "inactivity", "detected_at" => turn.stalled_at.iso8601)
     end
 
     it "does not stall a turn that is awaiting explicit confirmation" do # @spec CHAT-TURN-RECOVERY-002
       session = create(:chat_session)
-      ChatTurn.create!(chat_session: session, status: "streaming", last_activity_at: 11.minutes.ago)
+      user_message = create(:chat_message, chat_session: session, role: "user")
+      ChatTurn.create!(chat_session: session, user_message:, status: "streaming", last_activity_at: 11.minutes.ago)
       create(:chat_message, :tool_call, chat_session: session, tool_status: "pending")
 
       described_class.call
@@ -36,6 +38,27 @@ RSpec.describe ChatTurns::DetectStalls do
       described_class.call
 
       expect(turn.reload.status).to eq("streaming")
+    end
+
+    it "stalls a turn after its expired rate-limit window has elapsed" do # @spec CHAT-TURN-RECOVERY-001
+      session = create(:chat_session, rate_limited_until: 1.minute.ago)
+      turn = ChatTurn.create!(chat_session: session, status: "streaming", last_activity_at: 11.minutes.ago)
+
+      described_class.call
+
+      expect(turn.reload.status).to eq("stalled")
+    end
+
+    it "does not let a confirmation from a later turn keep this turn active" do # @spec CHAT-TURN-RECOVERY-002
+      session = create(:chat_session)
+      first_message = create(:chat_message, chat_session: session, role: "user")
+      turn = ChatTurn.create!(chat_session: session, user_message: first_message, status: "streaming", last_activity_at: 11.minutes.ago)
+      create(:chat_message, chat_session: session, role: "user")
+      create(:chat_message, :tool_call, chat_session: session, tool_status: "pending")
+
+      described_class.call
+
+      expect(turn.reload.status).to eq("stalled")
     end
   end
 end
