@@ -57,6 +57,27 @@ RSpec.describe ChatSessions::SendMessage do
   end
 
   describe ".call" do
+    # @spec CHAT-TURN-RECOVERY-001 CHAT-TURN-RECOVERY-002
+    it "records a completed durable turn for the message" do
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+
+      turn = chat_session.chat_turns.last
+      expect(turn).to be_present
+      expect(turn.status).to eq("completed")
+      expect(turn.initiating_message).to have_attributes(role: "user", content: "Hello")
+      expect(turn.completed_at).to be_present
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001
+    it "uses the stream identity to avoid duplicating a restarted turn" do
+      stream_message_id = SecureRandom.uuid
+
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client, stream_message_id:)
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client, stream_message_id:)
+
+      expect(chat_session.chat_turns.where(stream_message_id:)).to have_attributes(count: 1)
+    end
+
     it "persists the user message" do
       expect {
         described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)

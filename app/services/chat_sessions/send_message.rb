@@ -43,10 +43,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
       update_session_activity
+      ChatTurns::Complete.call(chat_turn: @chat_turn)
       assistant_message
+    rescue StandardError => error
+      ChatTurns::Fail.call(chat_turn: @chat_turn, classification: error.class.name.underscore)
+      raise
     end
 
     private
@@ -113,8 +118,18 @@ module ChatSessions
       @transport_attempt_message = existing_user_message || create_user_message
 
       chat_session.generate_title_from_content!
-      on_message_persisted&.call(transport_attempt_message)
+      notify_persisted(transport_attempt_message)
       transport_attempt_message
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001
+    def start_turn
+      @chat_turn = ChatTurns::Start.call(
+        chat_session:,
+        initiating_message: transport_attempt_message,
+        actor:,
+        stream_message_id:
+      )
     end
 
     # A restarted job retains its stream id. Reusing the original user row
@@ -156,7 +171,7 @@ module ChatSessions
           "pending_message_ids" => pending.map(&:id)
         }
       )
-      on_message_persisted&.call(message)
+      notify_persisted(message)
       message
     end
 
@@ -172,6 +187,11 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    def notify_persisted(message)
+      @chat_turn&.update!(last_activity_at: Time.current) unless message == transport_attempt_message
+      on_message_persisted&.call(message)
     end
 
     # Reuse the pre-loop budget baseline so the mid-loop guard does not issue a

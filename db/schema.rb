@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_011843) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -884,6 +884,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["rate_limited_until"], name: "index_chat_sessions_on_rate_limited_until"
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
+  end
+
+  create_table "chat_turns", force: :cascade do |t|
+    t.bigint "actor_id"
+    t.bigint "chat_session_id", null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.string "failure_classification", comment: "Machine-classified terminal failure, when known."
+    t.bigint "initiating_message_id"
+    t.datetime "last_activity_at", null: false, comment: "Most recent durable turn activity."
+    t.jsonb "metadata", default: {}, null: false
+    t.integer "recovery_attempts", default: 0, null: false
+    t.datetime "stalled_at"
+    t.string "status", default: "pending", null: false, comment: "Durable chat turn lifecycle state."
+    t.string "stream_message_id"
+    t.datetime "updated_at", null: false
+    t.index ["actor_id"], name: "index_chat_turns_on_actor_id"
+    t.index ["chat_session_id", "stream_message_id"], name: "index_chat_turns_on_session_and_stream", unique: true, where: "(stream_message_id IS NOT NULL)"
+    t.index ["chat_session_id"], name: "index_chat_turns_on_chat_session_id"
+    t.index ["initiating_message_id"], name: "index_chat_turns_on_initiating_message_id"
+    t.index ["status", "last_activity_at"], name: "index_chat_turns_for_stall_detection"
   end
 
   create_table "clarifying_question_progresses", comment: "Durable per-question exploration progress and attributable answer evidence.", force: :cascade do |t|
@@ -4679,6 +4700,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "chat_turns", "chat_messages", column: "initiating_message_id"
+  add_foreign_key "chat_turns", "chat_sessions"
+  add_foreign_key "chat_turns", "users", column: "actor_id"
   add_foreign_key "clarifying_question_progresses", "accounts"
   add_foreign_key "clarifying_question_progresses", "chat_sessions"
   add_foreign_key "clarifying_question_progresses", "issues"

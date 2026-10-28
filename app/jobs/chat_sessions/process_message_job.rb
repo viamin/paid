@@ -45,12 +45,16 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       }
     })
   rescue ArgumentError => e
+    fail_turn(chat_session_id, stream_message_id, "validation_error")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue NotImplementedError => e
+    fail_turn(chat_session_id, stream_message_id, "unsupported")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::LlmClientConfigurationError => e
+    fail_turn(chat_session_id, stream_message_id, "configuration_error")
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
+    fail_turn(chat_session_id, stream_message_id, "budget_exhausted")
     broadcast_error(chat_session_id, stream_message_id, e.message,
       limit_type: e.limit_type, limit: e.limit, used: e.used)
   rescue AgentHarness::RateLimitError => e
@@ -62,6 +66,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error: e.message
     )
     pause_message = ChatSessions::MarkRateLimited.call(chat_session: chat_session, error: e)
+    complete_turn(chat_session_id, stream_message_id)
     broadcast_persisted_message(stream_name, pause_message)
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue AgentHarness::Error => e
@@ -71,6 +76,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error_class: e.class.name,
       error: e.message
     )
+    fail_turn(chat_session_id, stream_message_id, "provider_error")
     broadcast_error(chat_session_id, stream_message_id, ChatSessions::ErrorMessage.for(e))
   rescue ActiveRecord::RecordNotFound
     raise
@@ -81,6 +87,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error_class: e.class.name,
       error: e.message
     )
+    fail_turn(chat_session_id, stream_message_id, "internal_error")
     broadcast_error(chat_session_id, stream_message_id, "An unexpected error occurred")
   end
 
@@ -120,6 +127,15 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       message_id: stream_message_id,
       message: error_message
     }.merge(extra.compact))
+  end
+
+  def fail_turn(chat_session_id, stream_message_id, classification)
+    ChatTurns::Fail.call(chat_session_id:, stream_message_id:, classification:)
+  end
+
+  def complete_turn(chat_session_id, stream_message_id)
+    turn = ChatTurn.find_by(chat_session_id:, stream_message_id:)
+    ChatTurns::Complete.call(chat_turn: turn) if turn
   end
 
   def tenant_account

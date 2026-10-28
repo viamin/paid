@@ -86,7 +86,7 @@ module ChatSessions
       end
 
       @llm_client = nil
-      on_message_persisted&.call(message)
+      notify_persisted(message)
       message
     end
 
