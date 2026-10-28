@@ -30,3 +30,14 @@
   *Tests:* `spec/mcp/tools/edit_issue_spec.rb`,
   `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `Tools::EditIssue`, `Issues::UpsertFromGithub`, `Issue`.
+
+- [x] **ISSUE-REOPEN-REVIEW-005** - When an issue is in manual review because
+  GitHub synchronization recorded a reopen-review reason, the Inbox and its
+  recovery endpoint SHALL classify it from that durable provenance, SHALL keep
+  it held for closure-and-scope validation, and SHALL NOT start an enhancement
+  run merely because a generic resume request was submitted. A manual-review
+  item without a recorded cause SHALL remain visibly unknown and SHALL NOT be
+  silently treated as enhancement work.
+  *Tests:* `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`.
+  *Code:* `Issues::ManualReviewRecovery`, `Inbox::Queue`,
+  `Projects::AgentRunsController`.

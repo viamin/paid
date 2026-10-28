@@ -1,15 +1,38 @@
 <%# @spec OPERATOR-INBOX-002D %>
 <div class="space-y-6">
+  <% recovery = entry.manual_review_recovery %>
   <div class="rounded-xl border border-purple-200 bg-purple-50 p-4">
     <h3 class="text-sm font-semibold text-purple-900">Paid stopped working this issue</h3>
     <p class="mt-1 text-sm text-purple-800">
-      <% if entry.questions.any? %>
+      <% if recovery.active? %>
+        <%= recovery.message %>
+      <% elsif recovery.reopen_review? %>
+        This is a reopened issue. Review the original closure and remaining scope before choosing a supported continuation.
+      <% elsif recovery.waiting_on_dependency? %>
+        <%= recovery.message %>
+      <% elsif recovery.cause == :scanner_recurrence %>
+        This is a scanner-confirmed recurrence. Review the recorded evidence and authorize remediation through its supported recovery path.
+      <% elsif recovery.cause == :unknown %>
+        The recorded stop cause is unknown. Inspect the issue and prior runs before choosing a continuation.
+      <% elsif entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% else %>
         Automatic picking skips issues in manual review. Starting a new enhancement run is the only way to resume work.
       <% end %>
     </p>
   </div>
+
+  <% if recovery.waiting_on_dependency? %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Waiting on dependency</h3>
+      <ul class="mt-2 list-disc pl-5 text-sm text-amber-800">
+        <% recovery.blockers.each do |blocker| %>
+          <% dependency = blocker.respond_to?(:depends_on_issue) ? blocker.depends_on_issue : blocker %>
+          <li><%= link_to "#{dependency.project.full_name}##{dependency.github_number}", dependency.github_url, target: "_blank", rel: "noopener noreferrer", class: "underline" %> — <%= dependency.title %></li>
+        <% end %>
+      </ul>
+    </div>
+  <% end %>
 
   <div class="space-y-3">
     <h3 class="text-sm font-semibold text-gray-900">Why this is in your inbox</h3>
@@ -42,7 +65,9 @@
   <% end %>
 
   <div class="flex flex-wrap items-center gap-3">
-    <% if policy(entry.project).run_agent? %>
+    <% if recovery.active? %>
+      <%= link_to "Open existing run", project_agent_run_path(entry.project, recovery.active_run), class: "inline-flex items-center rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-purple-500" %>
+    <% elsif recovery.enhancement? && policy(entry.project).run_agent? %>
       <%= button_to "Start enhancement run",
             resume_manual_review_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
             method: :post,

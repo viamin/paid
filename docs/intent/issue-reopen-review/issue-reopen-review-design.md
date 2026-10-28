@@ -22,8 +22,9 @@ automatic selection remains state-neutral; completion remains gated until the
 review is resolved.
 
 An operator resumes the issue from manual review only after validating whether
-the original intent remains valid and whether new work is required. This moves
-the issue back into active work through the existing manual-review workflow.
+the original intent remains valid and whether new work is required. The Inbox
+classifies the reopen gate from its dedicated durable reason before offering a
+continuation; a generic enhancement retry cannot clear or bypass that gate.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

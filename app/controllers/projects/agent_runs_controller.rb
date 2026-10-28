@@ -470,13 +470,19 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec ISSUE-REOPEN-REVIEW-005
     def resume_manual_review
       authorize @project, :run_agent?
 
       issue = resolve_manual_review_issue
       unless issue
         redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = Issues::ManualReviewRecovery.call(issue: issue)
+      unless recovery.enhancement?
+        redirect_to safe_return_target || dashboard_path, alert: recovery.message
         return
       end
 

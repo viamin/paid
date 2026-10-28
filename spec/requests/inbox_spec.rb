@@ -1086,6 +1086,31 @@ RSpec.describe "Inbox" do
     )
   end
 
+  # @spec ISSUE-REOPEN-REVIEW-005
+  it "renders a reopen-review hold without an enhancement retry" do
+    reopened = create_manual_review_issue(
+      title: "Reopened scope review",
+      github_number: 519,
+      reason: Issue::REOPEN_REVIEW_REQUIRED_REASON
+    )
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, reopened), kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response.body).to include("This is a reopened issue", "original closure and remaining scope")
+    expect(response.body).not_to include("Start enhancement run")
+  end
+
+  # @spec OPERATOR-INBOX-002D
+  it "keeps an unknown manual-review cause visible without a retry action" do
+    unknown = create(:issue, project: project, title: "Unknown stop", github_number: 520,
+      paid_state: "manual_review", manual_review_reason: nil)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, unknown), kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response.body).to include("recorded stop cause is unknown")
+    expect(response.body).not_to include("Start enhancement run")
+  end
+
   # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
   it "renders the clarifying-questions answer form for a manual_review issue with preserved terminal-round questions" do
     parked = create_manual_review_issue(
