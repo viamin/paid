@@ -4,7 +4,7 @@ module Activities
   class ReconcilePartialCloseoutActivity < BaseActivity
     activity_name "ReconcilePartialCloseout"
 
-    def execute(input) # @spec NO-OUTPUT-ISSUE-007
+    def execute(input) # @spec NO-OUTPUT-ISSUE-007, PARTIAL-CLOSEOUT-033
       agent_run = AgentRun.find(input.fetch(:agent_run_id))
       track_phase(agent_run_id: agent_run.id, phase_key: "reconcile_partial_closeout",
         phase_group: "post", agent_run: agent_run) do
@@ -21,11 +21,20 @@ module Activities
           gaps_remain: gaps_remain?(agent_run) }
       end
     rescue StandardError => e
-      agent_run&.update!(reconciliation: agent_run.reconciliation.merge("status" => "retryable_failure", "error" => e.message))
+      persist_failure!(agent_run, e) if agent_run
       raise
     end
 
     private
+
+    def persist_failure!(agent_run, error)
+      failure = Llm::AnalyzePartialCloseout.failure_metadata(error)
+      reconciliation = agent_run.reconciliation.merge(
+        "status" => "retryable_failure", "error" => error.message, "failed_at" => Time.current.iso8601
+      )
+      reconciliation["assessment_failure"] = failure if failure
+      agent_run.update!(reconciliation: reconciliation)
+    end
 
     # The workflow cannot query the database (deterministic replay), so the
     # activity result must tell it whether any gaps remain. The persisted

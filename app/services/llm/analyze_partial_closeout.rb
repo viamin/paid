@@ -5,6 +5,19 @@ module Llm
   class AnalyzePartialCloseout
     include OutputNormalizer
 
+    # A closeout assessment is a required safety gate after a PR is produced.
+    # Preserve a small, content-free diagnosis so operators can distinguish a
+    # missing host credential from a rejected assessment without treating
+    # either condition as completion.
+    class AssessmentFailure < AgentHarness::Error
+      attr_reader :failure_metadata
+
+      def initialize(message, failure_metadata:)
+        super(message)
+        @failure_metadata = failure_metadata.freeze
+      end
+    end
+
     DEFAULT_MODEL = "claude-sonnet-4-6"
     DEFAULT_PROVIDER = :claude
     TIMEOUT = 30
@@ -66,21 +79,37 @@ module Llm
 
     def self.call(...) = new(...).call
 
+    def self.failure_metadata(error)
+      error.failure_metadata if error.is_a?(AssessmentFailure)
+    end
+
     def initialize(agent_run:)
       @agent_run = agent_run
     end
 
     def call
+      @request_id = "partial-closeout-#{SecureRandom.uuid}"
       parsed = schema_capable_request? ? schema_constrained_parse : legacy_text_parse
       parsed = parsed.deep_stringify_keys if parsed.is_a?(Hash)
-      raise AgentHarness::Error, "partial closeout assessment failed" unless valid_assessment?(parsed)
+      fail_assessment!("invalid_assessment", "partial closeout assessment failed: structurally invalid",
+        invalid_fields: validation_errors(parsed)) unless valid_assessment?(parsed)
 
       parsed
+    rescue AssessmentFailure
+      raise
+    rescue AgentHarness::AuthenticationError
+      fail_assessment!("authentication", "partial closeout assessment failed: authentication is required on the closeout worker")
+    rescue AgentHarness::Error
+      fail_assessment!("transport_error", "partial closeout assessment failed: transport error")
     end
 
     private
 
     attr_reader :agent_run
+
+    def request_id
+      @request_id ||= "partial-closeout-#{SecureRandom.uuid}"
+    end
 
     # Mirrors the full PartialCloseouts::Reconcile#validate! contract so an
     # assessment that parses but violates the reconciler's per-gap rules is
@@ -94,11 +123,56 @@ module Llm
     # `assessment["next_action"].to_h` and `Present_criterion#merge` would
     # raise NoMethodError on render).
     def valid_assessment?(parsed)
-      return false unless parsed.is_a?(Hash)
+      validation_errors(parsed).empty?
+    end
 
-      gaps = parsed["gaps"]
-      gaps.is_a?(Array) && gaps.size <= MAX_GAPS && gaps.all? { |gap| valid_gap?(gap) } &&
-        valid_criteria?(parsed["criteria"]) && valid_next_action?(parsed["next_action"])
+    def validation_errors(parsed)
+      return [ invalid_field("$", "object", parsed) ] unless parsed.is_a?(Hash)
+
+      errors = gaps_validation_errors(parsed["gaps"])
+      errors.concat(criteria_validation_errors(parsed["criteria"]))
+      errors.concat(next_action_validation_errors(parsed["next_action"]))
+      errors.take(10)
+    end
+
+    def gaps_validation_errors(gaps)
+      return [ invalid_field("$.gaps", "array", gaps) ] unless gaps.is_a?(Array)
+      return [ { "path" => "$.gaps", "expected" => "at most #{MAX_GAPS} items", "actual_type" => "Array" } ] if gaps.size > MAX_GAPS
+
+      gaps.each_with_index.flat_map { |gap, index| gap_validation_errors(gap, index) }
+    end
+
+    def gap_validation_errors(gap, index)
+      path = "$.gaps[#{index}]"
+      return [ invalid_field(path, "object", gap) ] unless gap.is_a?(Hash)
+      return [ invalid_field("#{path}.criterion", "nonblank string", gap["criterion"]) ] unless gap["criterion"].is_a?(String) && gap["criterion"].present?
+      return [ invalid_field("#{path}.kind", VALID_KINDS.join(" or "), gap["kind"]) ] unless VALID_KINDS.include?(gap["kind"])
+      return [ invalid_field("#{path}.next_step", "nonblank string", gap["next_step"]) ] if gap["kind"] == "human" && gap["next_step"].to_s.strip.blank?
+      return [ { "path" => path, "expected" => "agent title or owner_issue_number", "actual_type" => "Object" } ] unless owner_resolvable?(gap)
+
+      return [] if valid_gap?(gap)
+
+      [ invalid_field(path, "valid gap object", gap) ]
+    end
+
+    def criteria_validation_errors(criteria)
+      return [] if criteria.nil?
+      return [ invalid_field("$.criteria", "array", criteria) ] unless criteria.is_a?(Array)
+      return [ { "path" => "$.criteria", "expected" => "at most #{MAX_GAPS} items", "actual_type" => "Array" } ] if criteria.size > MAX_GAPS
+
+      criteria.each_with_index.filter_map do |criterion, index|
+        invalid_field("$.criteria[#{index}]", "valid criterion object", criterion) unless valid_criterion?(criterion)
+      end
+    end
+
+    def next_action_validation_errors(next_action)
+      return [] if next_action.nil? || valid_next_action?(next_action)
+
+      [ invalid_field("$.next_action", "object with kind and explanation", next_action) ]
+    end
+
+    def invalid_field(path, expected, value)
+      { "path" => path, "expected" => expected, "actual_type" => value.class.name }
     end
 
     def valid_gap?(gap)
@@ -187,7 +261,10 @@ module Llm
 
     def schema_constrained_parse
       result = AgentHarness::Api::ChatTransport.new.call(request)
-      return nil unless result&.dig(:status) == :succeeded
+      unless result&.dig(:status) == :succeeded
+        fail_assessment!("transport_unsuccessful", "partial closeout assessment failed: transport was unsuccessful",
+          response_success: false, output_bytes: 0)
+      end
 
       result[:parsed]
     end
@@ -201,22 +278,21 @@ module Llm
         tools: :none,
         **Llm::TextMode.options
       )
-      return nil if response.respond_to?(:success?) && !response.success?
+      if response.respond_to?(:success?) && !response.success?
+        fail_assessment!("transport_unsuccessful", "partial closeout assessment failed: transport was unsuccessful",
+          response_success: false, output_bytes: response.output.to_s.bytesize)
+      end
 
       output = response.respond_to?(:output) ? response.output : response.to_s
       JSON.parse(strip_markdown_fence(output.to_s.strip))
-    rescue JSON::ParserError => e
-      Rails.logger.warn(
-        message: "llm.analyze_partial_closeout_parse_failed",
-        agent_run_id: agent_run.id,
-        error: e.message
-      )
-      nil
+    rescue JSON::ParserError
+      fail_assessment!("malformed_response", "partial closeout assessment failed: response was not valid JSON",
+        response_success: true, output_bytes: output.to_s.bytesize)
     end
 
     def request
       {
-        request_id: SecureRandom.uuid, operation: :schema, schema_name: "partial_closeout_assessment",
+        request_id: request_id, operation: :schema, schema_name: "partial_closeout_assessment",
         schema: RESPONSE_SCHEMA, schema_mode: :json_schema, timeout: { read_seconds: TIMEOUT },
         candidates: [ { provider: :anthropic, model: DEFAULT_MODEL, protocol: :messages,
           authentication_mode: :api_key, credentials: { api_key: api_key } } ],
@@ -228,6 +304,29 @@ module Llm
       ENV["ANTHROPIC_API_KEY"].to_s.strip.presence || raise(
         AgentHarness::ConfigurationError, "ANTHROPIC_API_KEY is required for schema-mode partial closeout assessment"
       )
+    end
+
+    def fail_assessment!(category, message, **metadata)
+      transport = schema_capable_request? ? "text" : "cli"
+      raise AssessmentFailure.new(
+        "#{message}; #{recovery_message(category)}",
+        failure_metadata: {
+          "category" => category, "provider" => DEFAULT_PROVIDER.to_s, "model" => DEFAULT_MODEL,
+          "request_id" => request_id, "attempt_id" => request_id, "transport" => transport,
+          "credential_context" => transport == "cli" ? "host_cli" : "host_api_key"
+        }.merge(metadata.stringify_keys)
+      )
+    end
+
+    def recovery_message(category)
+      case category
+      when "authentication"
+        "restore authentication on the closeout worker or configure an owner-authorized eligible credential, then retry"
+      when "invalid_assessment"
+        "inspect the bounded invalid fields and retry without accepting incomplete work"
+      else
+        "verify the closeout worker transport and retry"
+      end
     end
 
     def prompt

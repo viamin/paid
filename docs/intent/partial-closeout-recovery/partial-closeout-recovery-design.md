@@ -64,6 +64,22 @@ free-form PR prose never grants closing authority. Reconciliation and
 acceptance-audit paths reuse the same disposition record, retaining the normal
 owner/prerequisite workflow rather than creating a completion authority.
 
+### Assessment transport failures
+
+Closeout assessment uses the configured host-side Claude transport unless the
+operator has explicitly configured the API-key text transport. It never falls
+back between subscription and API billing modes. An unsuccessful transport,
+authentication rejection, malformed response, or structurally invalid
+assessment remains fail-closed and leaves the parent issue open. The run's
+reconciliation records a bounded diagnostic containing the failure category,
+provider, model, locally allocated request/attempt identity, and safe response
+shape metadata; structural rejections also record bounded JSON paths and
+observed types. It does not retain response content or credentials. An
+authentication diagnostic directs the operator to restore authentication on
+the closeout worker or configure an owner-authorized eligible credential before
+retrying, rather than attributing a historical failure to a different worker
+context.
+
 ### Visibility: the `partial_closeout` Inbox lane
 
 Derived lane (like `retry_limited`), not persisted state. An open, non-PR

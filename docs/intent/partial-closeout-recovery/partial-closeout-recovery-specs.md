@@ -389,6 +389,25 @@
   *Test:* `spec/services/partial_closeouts/reconcile_legacy_spec.rb`,
   `spec/services/partial_closeouts/reconcile_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-033** — When a partial-closeout assessment transport
+  is unsuccessful, raises an authentication error, returns malformed output, or
+  returns a structurally invalid assessment, the system SHALL fail closed and
+  preserve the parent issue and PR closeout as incomplete. It SHALL persist a
+  bounded, credential- and content-free diagnostic with failure category,
+  provider, model, request/attempt identity, and response shape; structural
+  failures SHALL include bounded invalid JSON paths and observed types. An
+  authentication failure SHALL identify the host-side closeout credential
+  context and provide recovery to restore that worker authentication or use an
+  owner-authorized eligible credential before retrying. The system SHALL NOT
+  silently switch subscription-backed CLI use to API-key billing or weaken
+  assessment acceptance checks.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/temporal/activities/reconcile_partial_closeout_activity.rb`,
+  `app/services/partial_closeouts/reconcile_legacy.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_legacy_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-019** — When `PartialCloseouts::ReconcileLegacy`
   processes a legacy partial closeout, the system SHALL ground the assessment
   in current shipped behavior and intent: a gap whose criterion is already

@@ -361,11 +361,10 @@ module PartialCloseouts
       # mislink (#4191 review).
       reconciliation = agent_run.reconciliation
       reconciliation = reconciliation.except("assessment") if reconciliation["gaps"].blank?
-      agent_run.update!(
-        reconciliation: reconciliation.merge(
-          "status" => "retryable_failure", "error" => error.message, "failed_at" => Time.current.iso8601
-        )
-      )
+      attributes = { "status" => "retryable_failure", "error" => error.message, "failed_at" => Time.current.iso8601 }
+      failure = Llm::AnalyzePartialCloseout.failure_metadata(error)
+      attributes["assessment_failure"] = failure if failure
+      agent_run.update!(reconciliation: reconciliation.merge(attributes))
     end
 
     # Two flavors of "already done":

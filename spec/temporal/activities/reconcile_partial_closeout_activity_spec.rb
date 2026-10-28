@@ -87,5 +87,22 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
         phase_key: "reconcile_partial_closeout", phase_group: "post", status: "failed"
       )
     end
+
+    # @spec PARTIAL-CLOSEOUT-033
+    it "persists an actionable assessment transport diagnostic and leaves the parent incomplete" do
+      error = Llm::AnalyzePartialCloseout::AssessmentFailure.new(
+        "partial closeout assessment authentication is required",
+        failure_metadata: { "category" => "authentication", "provider" => "claude", "model" => "claude-sonnet-4-6",
+                            "request_id" => "closeout-1", "attempt_id" => "closeout-1", "credential_context" => "host_cli" }
+      )
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(error)
+
+      expect { activity.execute(agent_run_id: run.id) }.to raise_error(error)
+
+      reconciliation = run.reload.reconciliation
+      expect(reconciliation).to include("status" => "retryable_failure", "assessment_failure" => error.failure_metadata)
+      expect(reconciliation).not_to have_key("assessment")
+      expect(parent.reload.github_state).to eq("open")
+    end
   end
 end
