@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_105147) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -3163,6 +3163,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["account_id", "position"], name: "index_onboarding_steps_on_account_id_and_position"
     t.index ["account_id", "step"], name: "index_onboarding_steps_on_account_id_and_step", unique: true
     t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
+  end
+
+  create_table "openrouter_zdr_catalog_refreshes", force: :cascade do |t|
+    t.string "catalog_name", null: false
+    t.datetime "created_at", null: false
+    t.string "error_class"
+    t.text "error_message"
+    t.datetime "last_attempted_at"
+    t.datetime "last_successful_at"
+    t.string "status", default: "never", null: false
+    t.datetime "unavailable_at"
+    t.datetime "updated_at", null: false
+    t.index ["catalog_name"], name: "index_openrouter_zdr_catalog_refreshes_on_catalog_name", unique: true
   end
 
   create_table "orchestration_decisions", comment: "Structured log of orchestration decisions for later workflow analysis and learning.", force: :cascade do |t|

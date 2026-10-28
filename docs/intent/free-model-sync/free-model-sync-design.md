@@ -98,6 +98,43 @@ The job is a daily GoodJob cron entry. It:
 - enforces single-flight concurrency
 - delegates its business work entirely to `FreeModels::Sync`
 
+### `OpenrouterZdr::Sync`
+
+The ZDR catalog is a separate synchronization path sourced from
+`GET /api/v1/endpoints/zdr`. Each endpoint payload advertises one concrete
+`model_id`; a model is eligible when at least one endpoint with that id appears
+in a successful response. Eligibility is not inferred from endpoint pricing,
+the upstream model vendor, or a provider-wide retention policy.
+
+The sync aggregates endpoint payloads by `model_id`, then upserts model
+metadata useful to runner setup. New rows are owned by
+`catalog_source: "openrouter_zdr"`; existing free-sync, seeded, and manual rows
+retain their ownership and receive only ZDR metadata. The per-model metadata
+records the observed endpoints and the successful-refresh timestamp.
+
+On a successful refresh, rows no longer represented by an endpoint lose ZDR
+eligibility. ZDR-owned rows are deactivated only when their eligibility is
+withdrawn; the free-model sync continues to own free-catalog activation and
+deactivation unchanged.
+
+`OpenrouterZdrCatalogRefresh` persists the last attempted and successful
+timestamps plus the most recent failure. An unavailable or malformed refresh
+preserves the last successful eligibility rows and marks the catalog
+unavailable. A successful empty response instead clears eligibility and records
+a successful empty snapshot.
+
+### `OpenrouterZdr::SyncJob`
+
+The ZDR sync runs daily on the maintenance queue and serializes concurrent
+executions. It delegates all catalog behavior to `OpenrouterZdr::Sync`.
+
+### `OpenrouterZdr::Catalog`
+
+The catalog query exposes eligible models together with refresh freshness. It
+uses the existing active catalog, runner compatibility, and optional project
+provider restrictions; it does not assert that runtime routing will accept the
+selected model. Runtime `provider.zdr` enforcement remains authoritative.
+
 ## Trace Notes
 
 - The provider stored on synced free rows is the upstream model-id prefix (for
@@ -105,3 +142,5 @@ The job is a daily GoodJob cron entry. It:
 - Catalog queries that mean “OpenRouter-synced free models” must therefore key
   off `catalog_source: "openrouter_sync"` plus `pricing_tier: "free"`, not a
   hard-coded provider string.
+- ZDR eligibility is endpoint-level routing evidence, not a statement about
+  Paid run-data retention and not an automatic model-selection profile.

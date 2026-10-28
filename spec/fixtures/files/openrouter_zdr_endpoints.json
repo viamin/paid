@@ -1,0 +1,26 @@
+{
+  "data": [
+    {
+      "name": "Trusted Provider | acme/paid-code",
+      "model_id": "acme/paid-code",
+      "model_name": "Acme: Paid Code",
+      "context_length": 200000,
+      "max_completion_tokens": 32000,
+      "supported_parameters": ["tools", "reasoning"],
+      "pricing": { "prompt": "0.000003", "completion": "0.000015" },
+      "provider_name": "Trusted Provider",
+      "tag": "trusted-provider"
+    },
+    {
+      "name": "Trusted Provider | acme/free-code:free",
+      "model_id": "acme/free-code:free",
+      "model_name": "Acme: Free Code",
+      "context_length": 128000,
+      "max_completion_tokens": 16000,
+      "supported_parameters": ["tools"],
+      "pricing": { "prompt": "0", "completion": "0" },
+      "provider_name": "Trusted Provider",
+      "tag": "trusted-provider"
+    }
+  ]
+}
