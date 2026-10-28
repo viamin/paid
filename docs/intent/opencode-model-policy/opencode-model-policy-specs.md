@@ -53,6 +53,21 @@
 
 ## Defaults and Display
 
+- [x] **MODEL-POLICY-015** — A runner SHALL persist an independent
+  `zero_data_retention` declaration that defaults to `false` for existing and
+  new rows. Enabling it SHALL NOT change the runner's model policy or weaken a
+  restricted project's OpenRouter ZDR routing requirement.
+- [x] **MODEL-POLICY-016** — A runner with ZDR declared SHALL expose derived
+  provenance: `openrouter_enforced` only when its active OpenRouter execution
+  runtime can apply request routing; otherwise `user_declared`; and `disabled`
+  when the declaration is off. Provider or credential changes SHALL recompute
+  that provenance without retaining an enforcement claim.
+- [x] **MODEL-POLICY-017** — Authorized runner details and MCP serialization,
+  plus runner create/update audit metadata, SHALL include the ZDR declaration
+  and provenance. The edit form SHALL permit the declaration for every runner
+  and show: “You are responsible for verifying this provider's zero data
+  retention agreement and configuration.” for user-declared provenance.
+
 - [x] **MODEL-POLICY-005** — When a `free_model_policy?` runner saves with
   blank `tier_model_ids`, `sync_direct_outbound_tier_models` SHALL curate
   them from `FreeModels::DefaultTierModels`, and
