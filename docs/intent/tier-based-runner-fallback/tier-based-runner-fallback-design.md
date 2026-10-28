@@ -128,6 +128,22 @@ Each attempt can capture:
 This keeps fallback honest: analytics can see what actually ran, not only what
 the primary selection preferred.
 
+## Preflight Container Recovery
+
+A smoke-preflight timeout is retained as a runner attempt even when execution
+preparation cleanup removes its container. Before the bounded smoke retry,
+`Activities::RunAgentActivity` reloads the run and confirms that its recorded
+container still exists and is running. It never executes that retry through a
+stale execution-environment object. If the container was removed, the original
+preflight timeout and its diagnostics are raised and recorded instead of being
+replaced by a container-not-provisioned error.
+
+The normal fallback recovery policy then decides whether a remaining candidate
+permits reprovisioning and reconnection. With an eligible fallback, the fresh
+environment is restored before the next runner is attempted; without one, no
+reprovisioning is attempted. A run that was never provisioned remains distinct
+because it has no first timeout attempt to record.
+
 ## Accepted Divergence
 
 RDR-034 described optional `selector_type: tier_only` and `model_pin` escape

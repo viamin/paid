@@ -133,3 +133,17 @@
   `AgentRuns::IssueDispatchFailureHistory`, `Issue`.
   *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`,
   `spec/services/agent_runs/issue_dispatch_failure_history_spec.rb`.
+
+- [x] **RUNNER-FALLBACK-013** — When a runner smoke preflight times out, the
+  system SHALL confirm that the run's recorded execution environment still
+  exists before its bounded retry. If preparation cleanup removed or
+  invalidated that environment, the system SHALL record the original failure as
+  `preflight_timeout` with its diagnostics and SHALL NOT replace it with a
+  `ContainerNotProvisioned` error or execute against the stale environment.
+  It SHALL reprovision and reconnect for a subsequent fallback attempt only
+  when the existing fallback-recovery policy permits a remaining candidate; a
+  genuinely never-provisioned run remains distinguishable from this
+  post-timeout loss.
+  *Code:* `Activities::RunAgentActivity#run_runner_preflight!`,
+  `#recover_container_for_fallback!`.
+  *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`.

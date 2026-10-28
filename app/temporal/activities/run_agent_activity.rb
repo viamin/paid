@@ -574,6 +574,7 @@ module Activities
               error_type: "preflight_timeout",
               error_message: e.message,
               duration_seconds: attempt_duration,
+              diagnostics: e.diagnostics,
               **resolved_run_info
             )
             logger.warn(
@@ -583,6 +584,20 @@ module Activities
               error: e.message,
               duration_seconds: attempt_duration
             )
+            # @spec RUNNER-FALLBACK-013
+            # Preparation cleanup can clear a container after a smoke timeout.
+            # Do not send the next runner into that invalidated environment;
+            # reuse the normal fallback gate so reprovisioning remains bounded
+            # by the presence of a candidate that can use it.
+            if container_unavailable_for_fallback?(agent_run)
+              break unless recover_container_for_fallback!(
+                agent_run: agent_run,
+                runner: runner,
+                error_type: "preflight_timeout",
+                error_message: e.message,
+                fallback_remaining: runners[(index + 1)..].to_a
+              )
+            end
           rescue RunnerAuthExpiredError => e
             last_error = "auth_expired"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
@@ -843,7 +858,14 @@ module Activities
         super(message)
       end
     end
-    class PreflightTimeoutError < RunnerExecutionError; end
+    class PreflightTimeoutError < RunnerExecutionError
+      attr_reader :diagnostics
+
+      def initialize(message, diagnostics: {})
+        @diagnostics = diagnostics
+        super(message)
+      end
+    end
     class RunnerInfraExecutionError < RunnerExecutionError; end
     ProviderExecutionError = RunnerExecutionError
     class RunnerTimeoutError < StandardError
@@ -1936,6 +1958,7 @@ module Activities
       raise RunnerExecutionError, "Docker exec error: #{e.message}"
     end
 
+    # @spec RUNNER-FALLBACK-013
     def run_runner_preflight!(agent_run:, execution_environment:, command_context:, runner:, execution_env:)
       # Run the runner-owned harness preflight (auth, CLI version,
       # OPENAI_BASE_URL reachability) when available — fails fast before
@@ -1979,6 +2002,13 @@ module Activities
         )
       rescue Containers::Provision::TimeoutError => e
         if smoke_attempt < 2
+          retry_environment = reconnect_smoke_retry_environment(agent_run)
+          unless retry_environment
+            reason = "Runner smoke preflight timed out after #{preflight_timeout}s; " \
+              "container unavailable before retry. Original error: #{e.message}"
+            raise_preflight_timeout!(agent_run: agent_run, runner: runner, reason: reason, diagnostics: e.diagnostics)
+          end
+
           logger.info(
             message: "agent_execution.preflight_smoke_timeout_retry",
             agent_run_id: agent_run.id,
@@ -1986,12 +2016,13 @@ module Activities
             attempt: smoke_attempt,
             preflight_timeout_seconds: preflight_timeout
           )
+          execution_environment = retry_environment
           retry
         end
         reason = "Runner smoke preflight timed out after #{preflight_timeout}s on both attempts"
         reason += " after harness preflight passed" if harness_preflight_passed
         reason += ". This points to the runner CLI path (container egress, proxy, auth wiring, or upstream API responsiveness). Original error: #{e.message}"
-        raise_preflight_timeout!(agent_run: agent_run, runner: runner, reason: reason)
+        raise_preflight_timeout!(agent_run: agent_run, runner: runner, reason: reason, diagnostics: e.diagnostics)
       end
 
       sanitized_output = smoke_output(result, prompt)
@@ -2074,6 +2105,25 @@ module Activities
       end
 
       raise_preflight_failure!(agent_run: agent_run, runner: runner, reason: reason)
+    end
+
+    # A timeout permits one smoke retry only if the run still points to a live
+    # environment. Reloading is essential because asynchronous preparation
+    # cleanup may have cleared container_id while the timed-out exec unwound.
+    # Reconnecting also prevents retrying through the now-stale service object.
+    def reconnect_smoke_retry_environment(agent_run)
+      agent_run.reload
+      return if agent_run.container_id.blank?
+
+      execution_environment = reconnect_container(agent_run)
+      execution_environment if execution_environment.container_running?
+    rescue StandardError => e
+      logger.warn(
+        message: "agent_execution.preflight_smoke_retry_container_unavailable",
+        agent_run_id: agent_run.id,
+        error: e.message
+      )
+      nil
     end
 
     # @spec RUNNER-FALLBACK-004
@@ -2736,9 +2786,9 @@ module Activities
       raise RunnerExecutionError, "Preflight check failed: #{reason}"
     end
 
-    def raise_preflight_timeout!(agent_run:, runner:, reason:)
+    def raise_preflight_timeout!(agent_run:, runner:, reason:, diagnostics: {})
       log_preflight_failure(agent_run: agent_run, runner: runner, reason: reason)
-      raise PreflightTimeoutError, "Preflight check failed: #{reason}"
+      raise PreflightTimeoutError.new("Preflight check failed: #{reason}", diagnostics: diagnostics)
     end
 
     def raise_preflight_infra_failure!(agent_run:, runner:, reason:)
