@@ -17,6 +17,21 @@ module FacetConfidence
 
       def self.call(...) = new(...).call
 
+      def self.status_for(issue)
+        status = Issues::CloseoutStatus.call(issue)
+        return status unless evaluation_notification_only?(issue)
+
+        status.dup.tap do |eligible_status|
+          eligible_status.blockers = status.blockers.reject { |blocker| blocker.code == :human_prerequisite_notification }
+        end
+      end
+
+      def self.evaluation_notification_only?(issue)
+        notifications = Notification.where(account: issue.project.account, subject: issue,
+          source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, resolved_at: nil, dismissed_at: nil)
+        notifications.exists? && notifications.where("metadata ->> 'operator_workflow' = ?", Inbox::ActionRequired::FacetConfidenceEvaluation::WORKFLOW).count == notifications.count
+      end
+
       def initialize(project:, issue:, actor:, status: nil)
         @project = project
         @issue = issue
@@ -72,7 +87,7 @@ module FacetConfidence
       attr_reader :project, :issue, :actor, :status
 
       def closeout_status
-        @status || Issues::CloseoutStatus.call(@issue)
+        @status || self.class.status_for(@issue)
       end
 
       def log_started(evaluation, resumed:)

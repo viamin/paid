@@ -155,6 +155,8 @@ assessments rather than calibrated probabilities, and that a completed
 evaluation neither closes the source issue nor enables delivery or changes the
 default 80/80 thresholds.
 
+Typed Action Required escalations for this workflow use the same persisted evaluation lifecycle rather than repeating closeout-internal terminology. They tell the maintainer that each frozen test case needs an independent judgment, show recorded and remaining counts, and link directly to the state-appropriate start, resume, judging, freeze, or completed-report surface. The link carries the validated Inbox entry context; unrelated escalation types retain their generic safe fallback.
+
 Start/Resume begins one persisted evaluation per originating closeout, pinned
 to the frozen corpus digest: repeated clicks resume the same evaluation, and a
 changed corpus digest is a new evidence generation that supersedes the old

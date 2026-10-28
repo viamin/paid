@@ -247,6 +247,48 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  it "translates a typed facet-confidence escalation into its evaluation action and preserves Inbox context" do # @spec FACET-CONFIDENCE-022
+    issue = create(:issue, project: project, github_number: 4323, paid_state: "in_progress")
+    create(:issue, :pull_request, project: project, github_number: 4324, github_state: "closed",
+      pr_review_phase: "merged", parent_issue: issue, created_at: 2.days.ago)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Remediation Required", description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.",
+      metadata: { "operator_workflow" => Inbox::ActionRequired::FacetConfidenceEvaluation::WORKFLOW })
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Independent evaluation needed", "Start evaluation")
+    expect(response.body).to include("inbox_entry_id=action_required%3A#{notification.id}")
+    action_panel = Nokogiri::HTML(response.body).at_css("[data-facet-confidence-action-required]").text
+    expect(action_panel).not_to include("blinded reference judgments", "corpus")
+  end
+
+  it "shows typed evaluation progress and the next judging action" do # @spec FACET-CONFIDENCE-022
+    issue = create(:issue, project: project, github_number: 4662, paid_state: "in_progress")
+    create(:issue, :pull_request, project: project, github_number: 4663, github_state: "closed",
+      pr_review_phase: "merged", parent_issue: issue, created_at: 2.days.ago)
+    evaluation = FacetConfidence::CloseoutEvaluation::Start.call(project: project, issue: issue, actor: user).evaluation
+    corpus_case = evaluation.corpus.cases.first
+    result = FacetConfidence::CloseoutEvaluation::RecordLabel.call(evaluation: evaluation, actor: user, case_id: corpus_case.fetch("id"),
+      judgment: { verdict: corpus_case.dig("expected", "status"), intent_band: corpus_case.dig("expected", "intent_band"),
+        technical_band: corpus_case.dig("expected", "technical_band"), readiness: corpus_case.dig("expected", "readiness"),
+        cited_evidence_reference: corpus_case.dig("expected", "must_cite") || corpus_case.fetch("evidence").first.fetch("reference"), reason: "Recorded independently." })
+    expect(result).to be_success
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      metadata: { "operator_workflow" => Inbox::ActionRequired::FacetConfidenceEvaluation::WORKFLOW })
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      project_id: project.id, kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    action_panel = Nokogiri::HTML(response.body).at_css("[data-facet-confidence-action-required]").text.squish
+    expect(action_panel).to include("Judgments recorded: 1/#{evaluation.progress[:total]}", "remaining: #{evaluation.progress[:total] - 1}")
+    expect(response.body).to include("Continue judging")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a

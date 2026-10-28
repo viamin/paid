@@ -73,6 +73,22 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation))
   end
 
+  it "starts from a typed Action Required evaluation escalation despite that workflow's own unresolved notification" do # @spec FACET-CONFIDENCE-022
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      metadata: { "operator_workflow" => Inbox::ActionRequired::FacetConfidenceEvaluation::WORKFLOW })
+
+    post project_facet_confidence_evaluations_path(project), params: {
+      issue_id: issue.id, inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+    }
+
+    evaluation = issue.facet_confidence_evaluations.last
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)))
+  end
+
   it "refuses to start for an originating work item outside the project" do
     other_project = create(:project, account: account, created_by: owner)
     other_issue = create(:issue, project: other_project, github_number: 99)

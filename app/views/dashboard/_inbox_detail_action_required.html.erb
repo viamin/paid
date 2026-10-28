@@ -1,6 +1,33 @@
 <%# @spec OPERATOR-INBOX-002B %>
 <div class="space-y-6">
   <% notification = entry.record %>
+  <% facet_evaluation = Inbox::ActionRequired::FacetConfidenceEvaluation.for(notification: notification, issue: entry.issue) %>
+  <% inbox_context = { inbox_kind: selected_kind, inbox_entry_id: entry.id }.compact %>
+  <% if facet_evaluation %>
+    <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-4" data-facet-confidence-action-required>
+      <h3 class="text-sm font-semibold text-indigo-900"><%= facet_evaluation[:title] %></h3>
+      <p class="mt-1 text-sm text-indigo-800"><%= facet_evaluation[:explanation] %></p>
+      <% if facet_evaluation[:progress] %>
+        <% progress = facet_evaluation[:progress] %>
+        <p class="mt-2 text-sm text-indigo-900">Judgments recorded: <span class="font-semibold"><%= progress[:labeled] %>/<%= progress[:total] %></span> · remaining: <span class="font-semibold"><%= progress[:total] - progress[:labeled] %></span>.</p>
+      <% end %>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <% if facet_evaluation[:evaluation] %>
+        <%= link_to facet_evaluation[:action_label],
+              project_facet_confidence_evaluation_path(entry.project, facet_evaluation[:evaluation], **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% else %>
+        <%= link_to facet_evaluation[:action_label],
+              new_project_facet_confidence_evaluation_path(entry.project, issue_id: entry.issue.id, **inbox_context),
+              data: { turbo_frame: "_top" },
+              class: "inline-flex items-center rounded-md bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" %>
+      <% end %>
+      <%= link_to inbox_issue_link_label(entry.issue), entry.issue.github_url, target: "_blank", rel: "noopener noreferrer",
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    </div>
+  <% else %>
   <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
     <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
     <% if notification.description.present? %>
@@ -60,5 +87,6 @@
             data: { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
+  <% end %>
   <% end %>
 </div>

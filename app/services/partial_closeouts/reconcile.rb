@@ -224,6 +224,8 @@ module PartialCloseouts
       metadata["evidence_submissions"] = submissions if submissions.any?
       policy_selection = replacement_policy_action(human_gaps)
       metadata["policy_selection"] = policy_selection if policy_selection
+      workflow = operator_workflow(human_gaps)
+      metadata["operator_workflow"] = workflow if workflow
 
       superseded = Array(previous&.metadata&.fetch("superseded_references", nil))
       if previous&.metadata&.fetch("prerequisite_identity", nil) != identity
@@ -231,6 +233,11 @@ module PartialCloseouts
       end
       metadata["superseded_references"] = superseded.uniq if superseded.any?
       metadata
+    end
+
+    def operator_workflow(human_gaps)
+      workflows = human_gaps.filter_map { |gap| gap["operator_workflow"] }.uniq
+      workflows.one? && workflows.first if workflows.one? && human_gaps.all? { |gap| gap["operator_workflow"] == workflows.first }
     end
 
     def reconciled_evidence_submissions(previous, occurrences)

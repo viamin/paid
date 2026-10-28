@@ -17,7 +17,7 @@ module Projects
       authorize FacetConfidenceEvaluation.new(project: @project)
       @issue = @project.issues.find(params[:issue_id])
       @existing = @issue.facet_confidence_evaluations.latest_first.first
-      @packet = FacetConfidence::CloseoutEvaluationPacket.call(issue: @issue, status: Issues::CloseoutStatus.call(@issue))
+      @packet = FacetConfidence::CloseoutEvaluationPacket.call(issue: @issue, status: FacetConfidence::CloseoutEvaluation::Start.status_for(@issue))
       @inbox_context = inbox_context
     end
 
