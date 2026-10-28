@@ -114,6 +114,18 @@ projects are eligible for automatic work selection (#4221):
   visibility.
 - Optional project filter (the dashboard's `?project_id=`).
 
+### Bounded projections
+
+The navigation badge is capped at 99, but it still needs exact lane membership
+when phase relevance or a personal removal applies. `Inbox::Count` therefore
+uses `Inbox::Queue.count`, a compact queue projection that retains only each
+request's identity, project, issue/record, and occurrence. It runs the same
+ownership, phase-relevance, and personal-suppression policy as the rendered
+list without constructing question, remediation, summary, detail, or audit
+payloads for every candidate. The rendered queue keeps its ordering joins for
+stable ordering, but preloads project records separately so a joined issue row
+does not repeat a project's audit `log_data`.
+
 Individual lanes may still consult per-issue auto-pick eligibility as part of
 their own business rule (e.g. `partial_closeout`'s stall detection calls
 `Automation::Strategies::AutoPick::DefaultCandidateSource` to decide whether

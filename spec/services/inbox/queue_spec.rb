@@ -40,6 +40,20 @@ RSpec.describe Inbox::Queue do
   # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-004 @spec INBOX-FOUNDATION-009
   # @spec INBOX-FOUNDATION-005 @spec INBOX-FOUNDATION-006
   describe ".call" do
+    # @spec INBOX-FOUNDATION-012
+    it "preloads projects outside merge and intent candidate result rows" do
+      create(:issue, :pull_request, project:, auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
+
+      merge_sql = Inbox::MergeApproval.candidates([ project.id ]).to_sql
+      intent_sql = Inbox::IntentConformance.candidates([ project.id ]).to_sql
+
+      expect(merge_sql).to include('INNER JOIN "projects"')
+      expect(intent_sql).to include('INNER JOIN "projects"')
+      expect(merge_sql).not_to include('"projects"."log_data"')
+      expect(intent_sql).not_to include('"projects"."log_data"')
+    end
+
     # @spec DESIGN-RECONCILIATION-001
     it "returns open design artifact findings as traceability-gap entries" do
       finding = create(:design_artifact_finding, project:, account: account, artifact_path: "docs/rdrs/RDR-063-example.md",

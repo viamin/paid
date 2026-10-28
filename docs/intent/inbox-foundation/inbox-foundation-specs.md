@@ -175,3 +175,14 @@
   link instead of only `index` handling it.
   *Tests:* `spec/requests/inbox_spec.rb`.
   *Code:* `app/controllers/inbox_controller.rb#redirect_for_empty_filtered_combination`.
+
+- [x] **INBOX-FOUNDATION-012** — When phase relevance or a personal removal
+  requires an exact Inbox badge count, the system SHALL use the same request
+  identity, occurrence, ownership, relevance, and suppression policy as the
+  actionable list without constructing every list/detail payload. Issue lanes
+  that join projects for predicates or ordering SHALL preload project records
+  separately, so a project's audit `log_data` SHALL NOT be selected repeatedly
+  in per-issue result rows.
+  *Tests:* `spec/services/inbox/count_spec.rb`, `spec/services/inbox/queue_spec.rb`.
+  *Code:* `app/services/inbox/count.rb`, `app/services/inbox/queue.rb`,
+  `app/services/inbox/merge_approval.rb`, `app/services/inbox/intent_conformance.rb`.
