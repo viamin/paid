@@ -107,6 +107,21 @@ RSpec.describe Automation::PhaseSettings do
       expect(result.enabled_transitions).to be_empty
     end
 
+    it "retains omitted phase defaults and subordinate controls" do
+      configure(phases: { "issue_preparation" => true, "coding" => false }, release: true, deployment: true)
+
+      described_class::Update.call(
+        project: project,
+        params: { "phases" => { "coding" => true } }
+      )
+
+      expect(settings.to_h).to include(
+        "phases" => include("issue_preparation" => true, "coding" => true),
+        "release" => true,
+        "deployment" => true
+      )
+    end
+
     it "ignores unknown phase keys so they cannot widen authorization" do
       described_class::Update.call(project: project, params: { "phases" => { "not_a_phase" => true } })
 

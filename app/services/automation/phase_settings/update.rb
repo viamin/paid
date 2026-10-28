@@ -81,7 +81,10 @@ module Automation
       end
 
       def requested_phase_enabled?(phase)
-        ActiveModel::Type::Boolean.new.cast(requested_phase(phase))
+        value = requested_phase(phase)
+        return current.phase_enabled?(phase) if value.nil?
+
+        ActiveModel::Type::Boolean.new.cast(value)
       end
     end
   end

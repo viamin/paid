@@ -34,6 +34,20 @@ RSpec.describe WorkItemContinuationGrant do
     expect(grant).not_to be_valid
   end
 
+  it "requires an actor from the project's account" do
+    grant = build(:work_item_continuation_grant, created_by: nil)
+
+    expect(grant).not_to be_valid
+    expect(grant.errors[:created_by]).to be_present
+  end
+
+  it "rejects an actor from another account" do
+    grant = build(:work_item_continuation_grant, created_by: create(:user, account: create(:account)))
+
+    expect(grant).not_to be_valid
+    expect(grant.errors[:created_by]).to include("must belong to the project's account")
+  end
+
   describe "completion" do
     it "completes when the endpoint's work lands" do
       grant = create(:work_item_continuation_grant, project:, issue:)
