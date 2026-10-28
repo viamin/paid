@@ -219,10 +219,10 @@ must be materialized as the CLI credentials file; they are never reduced to a
 bare access token. The request never silently changes to API-key/text-mode
 billing.
 Failed attempts persist only a bounded category, provider/model, request and
-attempt identities, plus invalid-field paths/types for structural failures.
-They retain no provider response content or credential material, and an
-authentication failure names reconnecting the account Claude credential as the
-recovery action.
+attempt identities, plus invalid-field paths/types for structural failures and
+a normalized, redacted, bounded transport diagnostic. They retain no raw
+provider response content or credential material, and an authentication failure
+names reconnecting the account Claude credential as the recovery action.
 
 The `partial-closeout-reconciliation-v1` Temporal patch only intercepts new
 workflows. Pre-patch runs — including the 2026-09-17 / 2026-09-22 /

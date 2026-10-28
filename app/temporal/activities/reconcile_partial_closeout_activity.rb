@@ -27,11 +27,38 @@ module Activities
       ))
       raise
     rescue StandardError => e
-      agent_run&.update!(reconciliation: agent_run.reconciliation.merge("status" => "retryable_failure", "error" => e.message))
+      agent_run&.update!(reconciliation: agent_run.reconciliation.merge("status" => "retryable_failure", "error" => failure_diagnostic(e)))
       raise
     end
 
     private
+
+    # A transport failure from `Llm::AnalyzePartialCloseout` carries its
+    # failure category, provider/model, and request identity in
+    # `AgentHarness::Error#context` (see that class's `transport_failure!`)
+    # so a retryable auth/provider failure stays diagnosable and recoverable
+    # per #4655, instead of persisting only the formatted message string.
+    # Raised harness errors (including CLI authentication failures) can carry
+    # raw provider output in their message with no context at all. Sanitize
+    # every message at this persistence boundary, and only retain the known
+    # transport metadata after applying the same bounded sanitization.
+    def failure_diagnostic(error)
+      message = sanitized_diagnostic(error.message)
+      return message unless error.is_a?(AgentHarness::Error) && error.context.present?
+
+      safe_transport_context(error.context).merge("message" => message)
+    end
+
+    def safe_transport_context(context)
+      context.stringify_keys.slice("transport", "provider", "model", "request_id", "category", "detail")
+        .each_with_object({}) do |(key, value), safe_context|
+          safe_context[key] = sanitized_diagnostic(value) if value.present?
+        end
+    end
+
+    def sanitized_diagnostic(value)
+      AgentRun::ErrorMessageSanitizer.call(text: value).presence || "assessment failure"
+    end
 
     # The workflow cannot query the database (deterministic replay), so the
     # activity result must tell it whether any gaps remain. The persisted

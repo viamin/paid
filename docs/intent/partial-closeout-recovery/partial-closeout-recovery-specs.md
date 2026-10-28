@@ -11,8 +11,9 @@
   It SHALL NOT inject a native Claude credentials JSON payload as a bare access
   token. When the request cannot obtain a valid assessment,
   it SHALL remain fail-closed and persist a bounded failure category,
-  provider/model, request and attempt identities, and structural invalid-field
-  paths/types where applicable; it SHALL not persist response content or
+  provider/model, request and attempt identities, structural invalid-field
+  paths/types where applicable, and only a normalized, redacted, bounded
+  transport diagnostic; it SHALL not persist raw response content or
   credentials. Authentication failures SHALL state the authorized credential
   recovery action rather than being reported as a generic malformed assessment.
   *Code:* `app/services/llm/analyze_partial_closeout.rb`,

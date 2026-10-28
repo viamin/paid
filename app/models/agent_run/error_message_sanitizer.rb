@@ -7,9 +7,8 @@ class AgentRun
   # sites go through this class so the redaction pipeline lives in one place.
   class ErrorMessageSanitizer
     def self.call(text:)
-      return nil if text.blank?
-
       normalized = normalize_encoding(text.to_s)
+      return nil if normalized.blank?
       redacted = Knowledge::Redaction::Redactor.call(text: normalized).clean_text
       redacted = redact_secrets(redacted)
       redacted.truncate(MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH)
