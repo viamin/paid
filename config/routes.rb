@@ -538,6 +538,9 @@ Rails.application.routes.draw do
         post :resolve
       end
     end
+    resources :chat_turns, only: [] do
+      post :request_recovery, on: :member
+    end
     resources :chat_diagrams, only: [] do
       resources :comments, controller: "chat_diagram_comments", only: :create
     end

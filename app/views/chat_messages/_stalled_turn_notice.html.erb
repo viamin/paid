@@ -1,0 +1,14 @@
+<div class="mx-auto max-w-2xl rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900" data-chat-stalled-turn-notice>
+  <p class="font-semibold">Turn needs attention</p>
+  <p class="mt-1"><%= message.content %></p>
+  <% pending_ids = Array(message.metadata["pending_confirmation_message_ids"]) %>
+  <% if pending_ids.any? %>
+    <p class="mt-2"><%= link_to "Review pending confirmations", "#chat-message-#{pending_ids.first}", class: "font-medium underline" %></p>
+  <% end %>
+  <% turn = message.chat_turn %>
+  <% if turn&.status == "stalled" && turn.recovery_requested_at.nil? %>
+    <%= button_to "Request safe recovery review", request_recovery_chat_session_chat_turn_path(message.chat_session, turn), method: :post, class: "mt-3 rounded bg-amber-700 px-3 py-1.5 font-semibold text-white hover:bg-amber-800" %>
+  <% elsif turn&.recovery_requested_at.present? %>
+    <p class="mt-2 font-medium">Recovery review requested. No tool calls were replayed.</p>
+  <% end %>
+</div>

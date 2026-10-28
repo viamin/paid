@@ -57,10 +57,14 @@ RSpec.describe ChatSessions::SendMessage do
   end
 
   describe ".call" do
-    it "persists the user message" do
+    # @spec CHAT-TURN-RECOVERY-001
+    it "persists the user message with a completed durable turn" do
       expect {
         described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
       }.to change { chat_session.messages.where(role: "user").count }.by(1)
+
+      turn = chat_session.chat_turns.last
+      expect(turn).to have_attributes(status: "completed", user_message: chat_session.messages.where(role: "user").last)
     end
 
     # @spec PARTIAL-CLOSEOUT-017 — a conversational "yes" must never be

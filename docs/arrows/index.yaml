@@ -150,6 +150,14 @@ arrows:
     status: PARTIAL
     audited: 2026-10-22
     next: "Chat entry/reuse, conversation linkage, rollout setting, diagram cards, comments, durable per-question progress, adaptive clarification and final-answer submission all ship with passing tests (001-009, 011, 013-019). Remaining: bounded investigations — budget and execution-policy enforcement, authorization before overage, progress and cancellation, plus the investigation slice of transport parity (010, 012) — remain planned under #4317 while #4568 has re-taken implementation scope; reconcile these concurrent claims before delivery."
+  chat-turn-recovery:
+    title: Chat Turn Recovery
+    path: docs/intent/chat-turn-recovery/chat-turn-recovery-design.md
+    specs: docs/intent/chat-turn-recovery/chat-turn-recovery-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: OK
+    next: "Add opt-in automatic recovery only for classified infrastructure failures with idempotent replay checkpoints."
   facet-confidence:
     title: Facet Confidence and Adaptive Clarification
     path: docs/intent/facet-confidence/facet-confidence-design.md

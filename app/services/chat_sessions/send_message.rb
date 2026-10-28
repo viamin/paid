@@ -15,7 +15,7 @@ module ChatSessions
   class SendMessage
     include FallbackLoop
 
-    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
+    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id, :chat_turn,
       :transport_attempt_message
 
     MAX_CONTENT_LENGTH = 12_000
@@ -43,10 +43,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn!
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      assistant_message ? chat_turn.complete! : chat_turn.await_confirmation!
       update_session_activity
       assistant_message
+    rescue StandardError
+      chat_turn&.fail!(classification: "infrastructure")
+      raise
     end
 
     private
@@ -134,6 +139,18 @@ module ChatSessions
       )
     end
 
+    # @spec CHAT-TURN-RECOVERY-001
+    def start_turn!
+      @chat_turn = ChatTurn.find_or_create_by!(user_message: transport_attempt_message) do |turn|
+        now = Time.current
+        turn.chat_session = chat_session
+        turn.status = "streaming"
+        turn.started_at = now
+        turn.last_activity_at = now
+      end
+      transport_attempt_message.update!(chat_turn: @chat_turn) unless transport_attempt_message.chat_turn_id == @chat_turn.id
+    end
+
     # A conversational reply (e.g. "yes") is not a confirmation. When a write
     # tool still awaits explicit approval, persist a durable notice stating
     # that this message is not an approval, naming the pending action(s), and
@@ -150,6 +167,7 @@ module ChatSessions
       message = chat_session.messages.create!(
         role: "system",
         content: pending_confirmation_notice_content(tool_names),
+        chat_turn: chat_turn,
         metadata: {
           "pending_confirmation_notice" => true,
           "tool_names" => tool_names,
