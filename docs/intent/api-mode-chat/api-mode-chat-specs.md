@@ -1,5 +1,19 @@
 # EARS Specs: API-Mode Interactive Chat
 
+- [x] **CHAT-API-027** — When a persisted user chat message starts processing,
+  Paid SHALL create a durable turn lifecycle record and record terminal
+  completion, failure, or a confirmation pause. A maintenance sweep SHALL mark
+  only a non-terminal turn with no durable activity past the configured
+  threshold as `stalled`, excluding rate-limited sessions and pending human
+  confirmations. It SHALL preserve the transcript and persist one actionable
+  in-transcript notice; it SHALL not fabricate a successful assistant reply or
+  replay a tool call.
+  *Tests:* `spec/models/chat_turn_spec.rb`,
+  `spec/services/chat_turns/detect_stalled_spec.rb`,
+  `spec/services/chat_sessions/send_message_spec.rb`.
+  *Code:* `ChatTurn`, `ChatTurns::DetectStalled`,
+  `ChatSessions::SendMessage`.
+
 - [x] **CHAT-API-026** — When non-free-policy API-key chat creates a session,
   executes a legacy Automatic session, or switches to a fallback runner, Paid
   SHALL use the same curated Low/Medium/High resolver. It SHALL default new and

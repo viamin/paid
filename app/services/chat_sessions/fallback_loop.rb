@@ -43,7 +43,7 @@ module ChatSessions
         on_chunk: on_chunk,
         on_message_persisted: on_message_persisted,
         stream_message_id: stream_message_id
-      }.merge(extra_agent_loop_kwargs)
+      }.merge(chat_turn: (chat_turn if respond_to?(:chat_turn))).merge(extra_agent_loop_kwargs)
     end
 
     # Hosts may override to pass additional kwargs into AgentLoop (e.g. a

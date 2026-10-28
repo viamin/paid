@@ -20,10 +20,10 @@ module ChatSessions
     TOKEN_BUDGET_SOFT_STOP_PROMPT = "You've reached the token budget for this chat session. Summarize what you've found so far and suggest what the user should do next. Do not call any more tools."
     TOKEN_BUDGET_SOFT_STOP_FALLBACK_MESSAGE = "I've reached the token budget for this chat session. Please increase the session token limit or start a new chat to continue."
 
-    attr_reader :chat_session, :actor, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id,
+    attr_reader :chat_session, :actor, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id, :chat_turn,
       :created_message_ids
 
-    def initialize(chat_session:, actor: chat_session.created_by, llm_client:, on_chunk: nil, on_message_persisted: nil, stream_message_id: nil,
+    def initialize(chat_session:, actor: chat_session.created_by, llm_client:, on_chunk: nil, on_message_persisted: nil, stream_message_id: nil, chat_turn: nil,
       token_budget: nil)
       @chat_session = chat_session
       @actor = actor
@@ -31,6 +31,7 @@ module ChatSessions
       @on_chunk = on_chunk
       @on_message_persisted = on_message_persisted
       @stream_message_id = stream_message_id
+      @chat_turn = chat_turn
       @created_message_ids = []
       @token_budget_override = token_budget
     end
@@ -218,12 +219,14 @@ module ChatSessions
     # and persists the result. Shared by the inline (read-only) path and the
     # read-only portion of a mixed batch that pauses for write confirmation.
     def process_tool_call(tool_call, provider_state: nil, tool_call_batch_id: nil)
+      chat_turn&.touch_activity!
       persist_tool_call_message(tool_call, provider_state:, tool_call_batch_id:)
 
       tool_result = dispatch_tool(name: tool_call[:name], arguments: parse_tool_arguments(tool_call))
       persist_tool_result_message(tool_call, tool_result)
       tool_result
     end
+
 
     def pending_write_tool?(tool_calls)
       tool_calls.any? { |tool_call| Tools::Registry.write_tool?(tool_call[:name]) }

@@ -26,6 +26,25 @@ path:
 - tool-call orchestration for read-only and write tools
 - token usage attribution and surfaced totals
 - write-tool pause/resume behavior in the chat loop
+- durable turn lifecycle and conservative stalled-turn detection
+
+### Durable turn lifecycle
+
+Each persisted user message has one `ChatTurn` record. The record progresses
+from `pending` to `streaming` and finishes as `completed` or `failed`; a
+maintenance sweep may classify an otherwise non-terminal record as `stalled`.
+`abandoned` is reserved for a future explicit user action. The sweep uses the
+last *durable* activity timestamp rather than browser streaming state, and its
+timeout is configurable through `CHAT_TURN_STALL_TIMEOUT_SECONDS` (ten minutes
+by default). Rate-limit pauses and pending write confirmations are excluded:
+they already have durable, user-actionable recovery semantics.
+
+Stalling never asserts success and never restarts the model or a tool. It saves
+a transcript notice that points to the originating user message, explains that
+completed tool evidence is retained and the rest is unknown, and directs the
+user to review confirmations before sending another message. Automatic replay
+is deferred until individual tool idempotency contracts and checkpoint-based
+recovery are available.
 
 ## Scope Boundary
 
