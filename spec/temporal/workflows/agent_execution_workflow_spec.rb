@@ -1457,6 +1457,18 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
       end
     end
 
+    # @spec NO-OUTPUT-ISSUE-007
+    it "allows harness retries and reconciliation to finish within the activity deadline" do
+      stub_new_pr_creation_with_reconciliation(
+        { agent_run_id: 42, status: "reconciled", gaps_remain: false }
+      )
+
+      workflow.execute(input)
+
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::ReconcilePartialCloseoutActivity, { agent_run_id: 42 }, timeout: 600)
+    end
+
     it "reconciles remaining gaps before completing the parent issue" do
       call_order = []
       stub_new_pr_creation_with_reconciliation(

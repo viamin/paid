@@ -76,6 +76,82 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
       expect(Notification.where(subject: parent, blocking: true)).to exist
     end
 
+    # @spec NO-OUTPUT-ISSUE-007
+    it "keeps an unsuccessful empty transport response retryable without persisting an assessment" do
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      response = AgentHarness::Response.new(output: "", exit_code: 1, duration: 1,
+        provider: :claude, error: "OAuth session expired")
+      allow(AgentHarness).to receive(:send_message).and_return(response)
+
+      expect { activity.execute(agent_run_id: run.id) }
+        .to raise_error(Llm::AnalyzePartialCloseout::AssessmentFailure, /transport returned an unsuccessful response/)
+
+      run.reload
+      expect(run.reconciliation.fetch("status")).to eq("retryable_failure")
+      expect(run.reconciliation.fetch("error")).to include("transport returned an unsuccessful response")
+      expect(run.reconciliation.fetch("assessment_failure")).to include(
+        "transport" => "cli", "provider" => "claude", "detail" => "OAuth session expired"
+      )
+      expect(run.reconciliation).not_to have_key("assessment")
+      expect(parent.reload.paid_state).to eq("in_progress")
+      expect(parent.issue_dependencies).to be_empty
+      expect(client).not_to have_received(:update_issue)
+    end
+
+    # @spec NO-OUTPUT-ISSUE-007
+    it "persists the analyzer's structured transport context instead of only its formatted message" do
+      transport_error = AgentHarness::Error.new(
+        "partial closeout assessment failed: schema transport: API credential expired",
+        context: { transport: "schema", category: :authentication, provider: :anthropic, model: "claude-sonnet-4-6",
+                    request_id: "req-123", detail: "API credential expired" }
+      )
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(transport_error)
+
+      expect { activity.execute(agent_run_id: run.id) }.to raise_error(AgentHarness::Error)
+
+      expect(run.reload.reconciliation).to include(
+        "status" => "retryable_failure",
+        "error" => {
+          "transport" => "schema", "category" => "authentication", "provider" => "anthropic",
+          "model" => "claude-sonnet-4-6", "request_id" => "req-123", "detail" => "API credential expired",
+          "message" => "partial closeout assessment failed: schema transport: API credential expired"
+        }
+      )
+    end
+
+    # @spec NO-OUTPUT-ISSUE-007
+    it "redacts and bounds a raised harness authentication error without context" do
+      secret = "sk-ant-api03-" + "a" * 80
+      error = AgentHarness::AuthenticationError.new("Claude authentication failed: #{secret}" + "x" * 600)
+      stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
+      allow(AgentHarness).to receive(:send_message).and_raise(error)
+
+      expect { activity.execute(agent_run_id: run.id) }.to raise_error(AgentHarness::Error)
+
+      reconciliation = run.reload.reconciliation
+      diagnostic = reconciliation.fetch("assessment_failure")
+      expect(diagnostic).to include("transport" => "harness", "transport_category" => "authentication")
+      expect(diagnostic.fetch("detail")).not_to include(secret)
+      expect(diagnostic.fetch("detail")).to include("[REDACTED:")
+      expect(diagnostic.fetch("detail").length).to be <= AgentRun::MAX_RUNNER_ATTEMPT_ERROR_MESSAGE_LENGTH
+      expect(reconciliation).not_to have_key("assessment")
+    end
+
+    # @spec NO-OUTPUT-ISSUE-007
+    it "persists a safe structural path diagnostic for an invalid assessment" do
+      error = AgentHarness::Error.new(
+        "partial closeout assessment failed: invalid assessment structure at gaps[0].kind: expected one of agent, human"
+      )
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(error)
+
+      expect { activity.execute(agent_run_id: run.id) }.to raise_error(AgentHarness::Error)
+
+      expect(run.reload.reconciliation.fetch("error")).to eq(
+        "partial closeout assessment failed: invalid assessment structure at gaps[0].kind: expected one of agent, human"
+      )
+      expect(run.reconciliation).not_to have_key("assessment")
+    end
+
     it "records a retryable failure and re-raises when reconciliation fails" do
       allow(Llm::AnalyzePartialCloseout).to receive(:call).and_return({ "gaps" => [] })
       allow(PartialCloseouts::Reconcile).to receive(:call).and_raise(GithubClient::Error, "github unavailable")
