@@ -296,11 +296,18 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       # @spec NO-OUTPUT-ISSUE-007
       it "preserves schema transport failures separately from invalid assessments" do
         allow(chat_transport).to receive(:call).and_return(
-          status: :failed, parsed: nil, error: { category: :authentication, message: "API credential expired" }
+          status: :failed, parsed: nil, request_id: "req-123", provider: :anthropic, model: described_class::DEFAULT_MODEL,
+          error: { category: :authentication, message: "API credential expired" }
         )
 
         expect { described_class.call(agent_run: agent_run) }
-          .to raise_error(AgentHarness::Error, /partial closeout assessment failed.*schema transport.*API credential expired/)
+          .to raise_error(AgentHarness::Error) { |error|
+            expect(error.message).to match(/partial closeout assessment failed.*schema transport.*API credential expired/)
+            expect(error.context).to include(
+              transport: "schema", category: :authentication, provider: :anthropic,
+              model: described_class::DEFAULT_MODEL, request_id: "req-123"
+            )
+          }
       end
 
       it "raises when the schema result did not succeed" do

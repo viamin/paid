@@ -189,7 +189,9 @@ module Llm
     def schema_constrained_parse
       result = AgentHarness::Api::ChatTransport.new.call(request)
       unless result&.dig(:status) == :succeeded
-        transport_failure!("schema", result&.dig(:error, :message))
+        transport_failure!("schema", provider: result&.dig(:provider), model: result&.dig(:model),
+          request_id: result&.dig(:request_id), category: result&.dig(:error, :category),
+          detail: result&.dig(:error, :message))
       end
 
       result[:parsed]
@@ -205,7 +207,9 @@ module Llm
         **Llm::TextMode.options
       )
       if response.respond_to?(:success?) && !response.success?
-        transport_failure!("CLI", response.respond_to?(:error) ? response.error : nil)
+        transport_failure!("CLI", provider: response.respond_to?(:provider) ? response.provider : nil,
+          model: response.respond_to?(:model) ? response.model : nil,
+          detail: response.respond_to?(:error) ? response.error : nil)
       end
 
       output = response.respond_to?(:output) ? response.output : response.to_s
@@ -215,10 +219,19 @@ module Llm
       raise AgentHarness::Error, "partial closeout assessment failed: invalid JSON response", cause: nil
     end
 
+    # Retains the failure category, provider/model, and request identity
+    # alongside the sanitized diagnostic (as `AgentHarness::Error#context`)
+    # instead of collapsing the transport failure to a formatted string, so
+    # `ReconcilePartialCloseoutActivity` can persist enough structure for
+    # retryable auth/provider failures to be recovered and diagnosed (#4655).
     # @spec NO-OUTPUT-ISSUE-007
-    def transport_failure!(transport, detail)
+    def transport_failure!(transport, provider: nil, model: nil, request_id: nil, category: nil, detail: nil)
       diagnostic = AgentRun::ErrorMessageSanitizer.call(text: detail).presence || "no successful response"
-      raise AgentHarness::Error, "partial closeout assessment failed: #{transport} transport: #{diagnostic}"
+      raise AgentHarness::Error.new(
+        "partial closeout assessment failed: #{transport} transport: #{diagnostic}",
+        context: { transport: transport, provider: provider, model: model, request_id: request_id,
+                    category: category, detail: diagnostic }.compact
+      )
     end
 
     def request

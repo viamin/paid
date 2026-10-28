@@ -86,11 +86,36 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
       expect { activity.execute(agent_run_id: run.id) }
         .to raise_error(AgentHarness::Error, /CLI transport: OAuth session expired/)
 
-      expect(run.reload.reconciliation).to include("status" => "retryable_failure", "error" => /OAuth session expired/)
+      run.reload
+      expect(run.reconciliation.fetch("status")).to eq("retryable_failure")
+      expect(run.reconciliation.fetch("error")).to include(
+        "transport" => "CLI", "provider" => "claude", "detail" => /OAuth session expired/
+      )
       expect(run.reconciliation).not_to have_key("assessment")
       expect(parent.reload.paid_state).to eq("in_progress")
       expect(parent.issue_dependencies).to be_empty
       expect(client).not_to have_received(:update_issue)
+    end
+
+    # @spec NO-OUTPUT-ISSUE-007
+    it "persists the analyzer's structured transport context instead of only its formatted message" do
+      transport_error = AgentHarness::Error.new(
+        "partial closeout assessment failed: schema transport: API credential expired",
+        context: { transport: "schema", category: :authentication, provider: :anthropic, model: "claude-sonnet-4-6",
+                    request_id: "req-123", detail: "API credential expired" }
+      )
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(transport_error)
+
+      expect { activity.execute(agent_run_id: run.id) }.to raise_error(AgentHarness::Error)
+
+      expect(run.reload.reconciliation).to include(
+        "status" => "retryable_failure",
+        "error" => {
+          "transport" => "schema", "category" => "authentication", "provider" => "anthropic",
+          "model" => "claude-sonnet-4-6", "request_id" => "req-123", "detail" => "API credential expired",
+          "message" => "partial closeout assessment failed: schema transport: API credential expired"
+        }
+      )
     end
 
     it "records a retryable failure and re-raises when reconciliation fails" do

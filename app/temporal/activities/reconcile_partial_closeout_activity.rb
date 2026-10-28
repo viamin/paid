@@ -21,11 +21,24 @@ module Activities
           gaps_remain: gaps_remain?(agent_run) }
       end
     rescue StandardError => e
-      agent_run&.update!(reconciliation: agent_run.reconciliation.merge("status" => "retryable_failure", "error" => e.message))
+      agent_run&.update!(reconciliation: agent_run.reconciliation.merge("status" => "retryable_failure", "error" => failure_diagnostic(e)))
       raise
     end
 
     private
+
+    # A transport failure from `Llm::AnalyzePartialCloseout` carries its
+    # failure category, provider/model, and request identity in
+    # `AgentHarness::Error#context` (see that class's `transport_failure!`)
+    # so a retryable auth/provider failure stays diagnosable and recoverable
+    # per #4655, instead of persisting only the formatted message string.
+    # Other errors reaching this rescue (e.g. `GithubClient::Error`) carry
+    # no such context and keep persisting their plain message.
+    def failure_diagnostic(error)
+      return error.message unless error.is_a?(AgentHarness::Error) && error.context.present?
+
+      error.context.stringify_keys.merge("message" => error.message)
+    end
 
     # The workflow cannot query the database (deterministic replay), so the
     # activity result must tell it whether any gaps remain. The persisted
