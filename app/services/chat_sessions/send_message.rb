@@ -16,11 +16,11 @@ module ChatSessions
     include FallbackLoop
 
     attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
-      :transport_attempt_message
+      :transport_attempt_message, :chat_turn
 
     MAX_CONTENT_LENGTH = 12_000
 
-    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
+    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil, chat_turn: nil)
       @chat_session = chat_session
       @actor = actor
       @content = content
@@ -28,6 +28,7 @@ module ChatSessions
       @on_message_persisted = on_message_persisted
       @llm_client = llm_client
       @stream_message_id = stream_message_id
+      @chat_turn = chat_turn
     end
 
     def self.call(...)
@@ -43,10 +44,15 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      start_turn!
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
-      assistant_message = run_with_fallbacks
+      assistant_message = ChatTurn.with_current(chat_turn) { run_with_fallbacks }
+      assistant_message ? chat_turn.complete! : chat_turn.await_confirmation!
       update_session_activity
       assistant_message
+    rescue StandardError => error
+      chat_turn&.fail!(classification: error.class.name) unless chat_turn&.state.in?(%w[completed failed stalled])
+      raise
     end
 
     private
@@ -111,6 +117,12 @@ module ChatSessions
 
     def persist_user_message
       @transport_attempt_message = existing_user_message || create_user_message
+      @chat_turn ||= @transport_attempt_message.chat_turn || ChatTurn.create!(
+        chat_session: chat_session,
+        user_message: @transport_attempt_message,
+        activity_at: Time.current
+      )
+      @transport_attempt_message.update!(chat_turn: @chat_turn) unless @transport_attempt_message.chat_turn_id == @chat_turn.id
 
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
@@ -172,6 +184,11 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    # @spec CHAT-TURN-001
+    def start_turn!
+      chat_turn.start! unless chat_turn.state == "streaming"
     end
 
     # Reuse the pre-loop budget baseline so the mid-loop guard does not issue a
