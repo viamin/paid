@@ -32,6 +32,16 @@ RSpec.describe Inbox::Queue do
   # without hitting the network; tests that exercise context loading override
   # this to return real comment fixtures.
   let(:github_client) { instance_double(GithubClient, issue_comments: []) }
+  let(:issue_lane_kinds) do
+    [
+      described_class::CLARIFYING_QUESTIONS_KIND,
+      described_class::MANUAL_REVIEW_KIND,
+      described_class::RETRY_LIMITED_KIND,
+      described_class::TEST_REVIEW_PENDING_KIND,
+      described_class::MERGE_APPROVAL_KIND,
+      described_class::INTENT_CONFORMANCE_KIND
+    ]
+  end
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
@@ -1261,6 +1271,25 @@ RSpec.describe Inbox::Queue do
       end
 
       expect(multi_row_queries).to eq(single_row_queries)
+    end
+
+    # @spec OPERATOR-INBOX-022
+    it "preloads project audit data separately from issue lane rows" do
+      project.update!(log_data: { "audit_history" => "x" * 100_000 })
+      create_needs_input(body: questions_body)
+      create_manual_review_issue(github_number: 221)
+      create_retry_limited_issue(github_number: 222)
+      create_tdd_test_review_pr(github_number: 223)
+      create_merge_approval_pr(github_number: 224)
+      create_intent_conformance_pr(github_number: 225)
+
+      issue_lane_kinds.each do |kind|
+        issue_query = capture_queries { described_class.call(user:, kind:) }
+          .find { |sql| sql.start_with?("SELECT \"issues\".* FROM \"issues\"") }
+
+        expect(issue_query).to be_present
+        expect(issue_query).not_to include("\"projects\".\"log_data\"")
+      end
     end
 
     # @spec FEATURE-APPROVAL-013 @spec CONFIDENCE-DELIVERY-016
