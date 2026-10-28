@@ -11,13 +11,14 @@ class WorkItemContinuationGrant < ApplicationRecord
 
   belongs_to :project
   belongs_to :issue
-  belongs_to :created_by, class_name: "User", optional: true
+  belongs_to :created_by, class_name: "User"
   belongs_to :revoked_by, class_name: "User", optional: true
 
   validates :start_phase, presence: true, inclusion: { in: Automation::Phases::ALL }
   validates :endpoint, presence: true, inclusion: { in: Automation::Phases::CONTINUATION_ENDPOINTS }
   validates :source, presence: true, inclusion: { in: SOURCES }
   validate :endpoint_follows_start_phase
+  validate :work_and_actors_belong_to_project_scope
 
   scope :active, -> { where(revoked_at: nil, completed_at: nil) }
   scope :revoked, -> { where.not(revoked_at: nil) }
@@ -68,5 +69,21 @@ class WorkItemContinuationGrant < ApplicationRecord
     return if start_phase.blank? || endpoint.blank?
 
     errors.add(:endpoint, "must be the start phase or a later delivery phase") if covered_phases.empty?
+  end
+
+  # A grant is authority, so its work and every human actor must remain inside
+  # the project tenant even when it is created outside the controller path.
+  # @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-009
+  def work_and_actors_belong_to_project_scope
+    errors.add(:issue, "must belong to the grant project") if issue && issue.project_id != project_id
+    validate_actor_scope(:created_by, created_by)
+    validate_actor_scope(:revoked_by, revoked_by)
+  end
+
+  def validate_actor_scope(attribute, actor)
+    return unless actor && project
+    return if actor.account_id == project.account_id
+
+    errors.add(attribute, "must belong to the project account")
   end
 end

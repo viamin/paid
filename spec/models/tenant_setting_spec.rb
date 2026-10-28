@@ -3,6 +3,34 @@
 require "rails_helper"
 
 RSpec.describe TenantSetting do
+  describe "automation phases rollout rollback" do
+    # @spec AUTOMATION-PHASES-014
+    it "rejects disabling the tenant rollout while an active grant exists" do
+      setting = create(:tenant_setting, features: { "automation_phases" => true })
+      project = create(:project, account: setting.account)
+      create(:work_item_continuation_grant, project:, issue: create(:issue, project:))
+
+      setting.features = setting.features.merge("automation_phases" => false)
+
+      expect(setting).not_to be_valid
+      expect(setting.errors[:features]).to include(
+        "cannot disable automation_phases while active continuation grants exist"
+      )
+    end
+
+    # @spec AUTOMATION-PHASES-014
+    it "allows rollback after every grant is completed or revoked" do
+      setting = create(:tenant_setting, features: { "automation_phases" => true })
+      project = create(:project, account: setting.account)
+      create(:work_item_continuation_grant, project:, issue: create(:issue, project:), completed_at: Time.current)
+      create(:work_item_continuation_grant, project:, issue: create(:issue, project:), revoked_at: Time.current)
+
+      setting.features = setting.features.merge("automation_phases" => false)
+
+      expect(setting).to be_valid
+    end
+  end
+
   describe "label integration defaults" do
     it "applies the tenant default to newly created projects" do
       account = create(:account)

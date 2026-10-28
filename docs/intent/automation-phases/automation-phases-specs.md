@@ -106,9 +106,12 @@
 - [x] **AUTOMATION-PHASES-014** — The phase model SHALL be gated by the
   default-off `automation_phases` feature flag read through
   `FeatureFlags.enabled?(:automation_phases, project:)`, and while the flag is
-  off the pre-existing execution and Inbox policies SHALL remain in force.
-  *Tests:* `spec/services/automation/rollout_guard_spec.rb`
-  *Code:* `FeatureFlags`, `Automation::RolloutGuard`
+  off the pre-existing execution and Inbox policies SHALL remain in force, and
+  the authorized tenant rollout surface SHALL reject disabling the flag while
+  any project in that account has an active continuation grant.
+  *Tests:* `spec/services/automation/rollout_guard_spec.rb`,
+  `spec/models/tenant_setting_spec.rb`
+  *Code:* `FeatureFlags`, `Automation::RolloutGuard`, `TenantSetting`
 
 - [x] **AUTOMATION-PHASES-015** — The system SHALL derive preview phase
   defaults from each project's currently effective capabilities without

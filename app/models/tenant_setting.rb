@@ -201,6 +201,7 @@ class TenantSetting < ApplicationRecord
     numericality: { only_integer: true, greater_than_or_equal_to: 0, less_than_or_equal_to: PG_INT_MAX },
     allow_nil: true
   validate :validate_features_is_hash
+  validate :prevent_automation_phases_rollback_with_active_grants
   validate :validate_configuration_namespaces
   validate :validate_default_budgets
   validate :validate_agent_settings
@@ -470,6 +471,26 @@ class TenantSetting < ApplicationRecord
     return if features.is_a?(Hash)
 
     errors.add(:features, "must be a JSON object")
+  end
+
+  # The legacy policy cannot interpret continuation authority issued during an
+  # automation-phases pilot. Complete or revoke every grant before rollback.
+  # @spec AUTOMATION-PHASES-014
+  def prevent_automation_phases_rollback_with_active_grants
+    return unless automation_phases_being_disabled?
+    return unless account_active_continuation_grants?
+
+    errors.add(:features, "cannot disable automation_phases while active continuation grants exist")
+  end
+
+  def automation_phases_being_disabled?
+    will_save_change_to_features? &&
+      features_in_database["automation_phases"] == true &&
+      features["automation_phases"] == false
+  end
+
+  def account_active_continuation_grants?
+    WorkItemContinuationGrant.active.joins(:project).where(projects: { account_id: }).exists?
   end
 
   def validate_configuration_namespaces

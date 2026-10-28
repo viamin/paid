@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_151403) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -4529,7 +4529,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   create_table "work_item_continuation_grants", force: :cascade do |t|
     t.datetime "completed_at", comment: "When the endpoint's work landed. A completed grant is not reactivated by reopening work."
     t.datetime "created_at", null: false
-    t.bigint "created_by_id"
+    t.bigint "created_by_id", null: false
     t.string "endpoint", null: false, comment: "Last phase the grant covers: issue_preparation, coding, or merge."
     t.bigint "issue_id", null: false
     t.bigint "project_id", null: false

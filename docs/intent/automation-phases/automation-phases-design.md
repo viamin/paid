@@ -35,6 +35,13 @@ every policy decision reads it through `Automation::RolloutGuard.enabled?`
 `Automation::EffectivePolicy` returns a permitted `legacy_policy` decision, so
 existing execution and Inbox behavior is untouched.
 
+The authorized tenant feature-flag surface may enable a coordinated pilot only
+after the migration preview has been reviewed. It refuses to disable the flag
+while any project in the account has an active continuation grant; operators
+must first let those grants complete or explicitly revoke them and reconcile
+affected queued work. This prevents legacy policy from silently ignoring
+authority that was issued under the phase model.
+
 ## Project phase defaults
 
 `projects.automation_phase_settings` (jsonb) stores:
