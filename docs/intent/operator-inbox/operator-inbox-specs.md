@@ -88,6 +88,8 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
 
+  When that notification explicitly declares the `facet_confidence_closeout_evaluation` action workflow for an issue, the Inbox SHALL not expose its raw internal title, description, or remediation copy as the operator-facing escalation. It SHALL explain that a maintainer must independently review each test case, record judgments, and freeze the completed set; show recorded and remaining judgment progress when an evaluation exists; and route its state-specific primary action to the existing authorized evaluation flow while preserving validated Inbox context. Untyped notifications and typed workflows that are unavailable for their subject SHALL retain the generic rendering.
+
 - [x] **OPERATOR-INBOX-002C** — When an open pull request's review phase is
   `escalated` and its project is within the operator's authorized Inbox
   visibility (`INBOX-FOUNDATION-006` — account isolation plus owner

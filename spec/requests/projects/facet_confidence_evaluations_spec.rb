@@ -214,6 +214,44 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response.body).to include("Open evaluation and report")
   end
 
+  # @spec OPERATOR-INBOX-002B FACET-CONFIDENCE-022
+  it "keeps a typed Action Required escalation actionable through evaluation progress and freeze" do
+    notification = create(
+      :notification,
+      :error,
+      account: account,
+      subject: issue,
+      source: "facet_confidence_closeout_evaluation",
+      blocking: true,
+      title: "Internal closeout escalation",
+      description: "Internal workflow details",
+      metadata: { "action_workflow" => "facet_confidence_closeout_evaluation" }
+    )
+    context = {
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      inbox_sort: "newest",
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+    }
+
+    get inbox_entry_path(context[:inbox_entry_id], project_id: project.id, kind: context[:inbox_kind], sort: context[:inbox_sort])
+    expect(response.body).to include("Start evaluation")
+
+    post project_facet_confidence_evaluations_path(project), params: { issue_id: issue.id, **context }
+    evaluation = issue.facet_confidence_evaluations.find_by!(issue_id: issue.id)
+    expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, evaluation, **context))
+
+    get inbox_entry_path(context[:inbox_entry_id], project_id: project.id, kind: context[:inbox_kind], sort: context[:inbox_sort])
+    expect(response.body).to include("Continue judging", "Progress: 0 of #{evaluation.progress[:total]} judgments recorded")
+
+    label_all!(evaluation)
+    get inbox_entry_path(context[:inbox_entry_id], project_id: project.id, kind: context[:inbox_kind], sort: context[:inbox_sort])
+    expect(response.body).to include("Freeze judgments", "All judgments are recorded. Freeze the completed set.")
+
+    post freeze_project_facet_confidence_evaluation_path(project, evaluation, **context)
+    get inbox_entry_path(context[:inbox_entry_id], project_id: project.id, kind: context[:inbox_kind], sort: context[:inbox_sort])
+    expect(response.body).to include("View completed evaluation", "The completed set is frozen.")
+  end
+
   it "keeps the entry point blocked while the closeout records an unresolved prerequisite" do
     prerequisite = create(:issue, project: project, github_number: 41, github_state: "open")
     create(:issue_dependency, issue: issue, depends_on_issue: prerequisite)

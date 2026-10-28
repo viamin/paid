@@ -171,6 +171,17 @@ absent, the description is also the entry summary. `Notifications::Publish`
 rejects a blocking notification that has neither a non-blank description nor
 remediation guidance, so every Action Required entry has meaningful context.
 
+An explicitly declared `action_workflow` may replace that generic presentation
+without interpreting notification prose. The
+`facet_confidence_closeout_evaluation` workflow is valid only for an issue
+subject and routes to its existing authorized start/resume evaluation screen.
+Its Inbox presentation uses plain language: an operator independently reviews
+each test case, records a judgment, and freezes the completed set. It reports
+recorded and remaining judgments and changes the primary action as work moves
+from start, to continued judging, to freezing, to viewing the completed
+evaluation. The link carries only validated Inbox kind, sort, and entry
+context; untyped or unsupported notifications retain the generic fallback.
+
 ### `merge_approval`
 
 Backed by the PR scanner's persisted current-head policy snapshot on `Issue`.

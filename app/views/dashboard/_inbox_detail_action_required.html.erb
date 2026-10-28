@@ -1,19 +1,54 @@
 <%# @spec OPERATOR-INBOX-002B %>
 <div class="space-y-6">
   <% notification = entry.record %>
-  <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
-    <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
-    <% if notification.description.present? %>
-      <p class="mt-1 text-sm text-rose-800"><%= notification.description %></p>
-    <% end %>
-    <% if entry.summary.present? && entry.summary != notification.description %>
-      <p class="mt-2 text-sm text-rose-800"><%= entry.summary %></p>
-    <% elsif notification.description.blank? %>
-      <p class="mt-1 text-sm text-rose-800">A human action is required before work can continue.</p>
-    <% end %>
-  </div>
+  <% workflow = entry.action_required_workflow %>
+  <% inbox_context = {
+       inbox_kind: selected_kind,
+       inbox_sort: params[:sort].presence_in(Inbox::Queue::SORTS.keys),
+       inbox_entry_id: entry.id
+     }.compact %>
+  <% if workflow %>
+    <div class="rounded-xl border border-rose-200 bg-rose-50 p-4" data-action-required-workflow="facet-confidence-closeout-evaluation">
+      <h3 class="text-sm font-semibold text-rose-900"><%= workflow.title %></h3>
+      <p class="mt-1 text-sm text-rose-800"><%= workflow.explanation %></p>
+      <% if workflow.evaluation %>
+        <p class="mt-2 text-sm text-rose-800">
+          Progress: <%= workflow.progress[:labeled] %> of <%= workflow.progress[:total] %> judgments recorded ·
+          <%= workflow.progress[:remaining] %> remaining.
+        </p>
+      <% end %>
+      <p class="mt-2 text-sm font-medium text-rose-900"><%= workflow.remaining_action %></p>
+    </div>
+    <div class="flex flex-wrap items-center gap-3">
+      <% workflow_path = if workflow.evaluation
+           project_facet_confidence_evaluation_path(entry.project, workflow.evaluation, **inbox_context)
+         else
+           new_project_facet_confidence_evaluation_path(entry.project, issue_id: entry.issue.id, **inbox_context)
+         end %>
+      <%= link_to workflow.action_label,
+            workflow_path,
+            data: { turbo_frame: "_top" },
+            class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
+      <%= link_to inbox_issue_link_label(entry.issue),
+            entry.issue.github_url,
+            target: "_blank",
+            rel: "noopener noreferrer",
+            class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
+    </div>
+  <% else %>
+    <div class="rounded-xl border border-rose-200 bg-rose-50 p-4">
+      <h3 class="text-sm font-semibold text-rose-900">Remediation Required</h3>
+      <% if notification.description.present? %>
+        <p class="mt-1 text-sm text-rose-800"><%= notification.description %></p>
+      <% end %>
+      <% if entry.summary.present? && entry.summary != notification.description %>
+        <p class="mt-2 text-sm text-rose-800"><%= entry.summary %></p>
+      <% elsif notification.description.blank? %>
+        <p class="mt-1 text-sm text-rose-800">A human action is required before work can continue. Review the available details and take the next action described there.</p>
+      <% end %>
+    </div>
 
-  <% if entry.tasks.any? %>
+  <% if !workflow && entry.tasks.any? %>
     <div class="space-y-3">
       <h3 class="text-sm font-semibold text-gray-900">Remediation Steps</h3>
       <ol class="space-y-2 text-sm text-gray-600">
@@ -24,7 +59,7 @@
     </div>
   <% end %>
 
-  <% if entry.action_url.present? && entry.action_url != inbox_entry_path(entry) %>
+  <% if !workflow && entry.action_url.present? && entry.action_url != inbox_entry_path(entry) %>
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to "Open linked action",
             entry.action_url,
@@ -45,7 +80,7 @@
               class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50" %>
       <% end %>
     </div>
-  <% elsif entry.issue %>
+  <% elsif !workflow && entry.issue %>
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to inbox_issue_link_label(entry.issue),
             entry.issue.github_url,
@@ -53,12 +88,13 @@
             rel: "noopener noreferrer",
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
-  <% elsif notification.subject.is_a?(AgentRun) %>
+  <% elsif !workflow && notification.subject.is_a?(AgentRun) %>
     <div class="flex flex-wrap items-center gap-3">
       <%= link_to "View Agent Run",
             project_agent_run_path(notification.subject.project, notification.subject),
             data: { turbo_frame: "_top" },
             class: "inline-flex items-center rounded-md bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-500" %>
     </div>
+  <% end %>
   <% end %>
 </div>

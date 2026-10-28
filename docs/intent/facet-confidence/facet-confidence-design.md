@@ -140,7 +140,8 @@ and remain not established until the operator-executed runs exist.
 
 ## Closeout evaluation entry point
 
-A partial-closeout Inbox item that needs this measurement renders its current
+A partial-closeout Inbox item or an explicitly typed Action Required escalation
+that needs this measurement renders its current
 evaluation packet before an operator starts work: the originating work item,
 project, accepted-design/source revision, frozen corpus digest, rubric and
 model identities, and corpus input-evidence revisions. This is an operator

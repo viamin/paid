@@ -110,6 +110,18 @@ module Inbox
         kind == ACTION_REQUIRED_KIND
       end
 
+      # @spec OPERATOR-INBOX-002B @spec FACET-CONFIDENCE-022
+      def action_required_workflow
+        return unless action_required?
+
+        @action_required_workflow ||= Inbox::ActionRequiredWorkflow.call(notification: record, issue: issue)
+      end
+
+      def facet_confidence_closeout_evaluation_required?
+        action_required? && issue.present? && record.metadata["action_workflow"] ==
+          Inbox::ActionRequiredWorkflow::FACET_CONFIDENCE_CLOSEOUT_EVALUATION
+      end
+
       def escalated_pr?
         kind == ESCALATED_PR_KIND
       end
@@ -218,6 +230,8 @@ module Inbox
       end
 
       def title
+        return "Human evaluation needed" if facet_confidence_closeout_evaluation_required?
+
         title_text.presence || issue&.title || record.try(:title)
       end
 
@@ -595,7 +609,7 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
+          summary_text: action_required_summary(notification, issue: issue),
           title_text: notification.title,
           action_url: notification.action_url
         )
@@ -1038,6 +1052,13 @@ module Inbox
       return steps if steps.any?
 
       Array(notification.metadata["recommended_action"])
+    end
+
+    def action_required_summary(notification, issue:)
+      return "A maintainer must independently review every test case and complete the evaluation." if issue &&
+        notification.metadata["action_workflow"] == Inbox::ActionRequiredWorkflow::FACET_CONFIDENCE_CLOSEOUT_EVALUATION
+
+      notification.metadata["recommended_action"].presence || notification.description
     end
 
     def notification_context(notification)

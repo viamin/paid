@@ -247,6 +247,64 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec OPERATOR-INBOX-002B FACET-CONFIDENCE-022
+  it "translates a typed closeout-evaluation escalation and routes it into the evaluation" do
+    issue = create(:issue, project: project, github_number: 4323, title: "Closeout evidence")
+    notification = create(
+      :notification,
+      :error,
+      account: account,
+      subject: issue,
+      source: "facet_confidence_closeout_evaluation",
+      blocking: true,
+      title: "Remediation Required — Independent maintainers have entered and frozen the blinded reference judgments",
+      description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.",
+      metadata: { "action_workflow" => "facet_confidence_closeout_evaluation" }
+    )
+
+    get inbox_entry_path(
+      entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      project_id: project.id,
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      sort: "newest"
+    )
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Human evaluation needed")
+    expect(response.body).to include("independently reviews each test case, records a judgment, and freezes the completed set")
+    expect(response.body).to include("Start evaluation")
+    expect(response.body).to include(new_project_facet_confidence_evaluation_path(
+      project,
+      issue_id: issue.id,
+      inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      inbox_sort: "newest",
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)
+    ).gsub("&", "&amp;"))
+    expect(response.body).to include("View Issue")
+    expect(response.body).not_to include("blinded reference judgments")
+  end
+
+  # @spec OPERATOR-INBOX-002B FACET-CONFIDENCE-022
+  it "keeps the generic fallback when a typed evaluation workflow has no originating issue" do
+    notification = create(
+      :notification,
+      :error,
+      account: account,
+      subject: project,
+      source: "facet_confidence_closeout_evaluation",
+      blocking: true,
+      title: "Evaluation unavailable",
+      description: "Review the recorded escalation and resolve its prerequisite.",
+      metadata: { "action_workflow" => "facet_confidence_closeout_evaluation" }
+    )
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification), kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Remediation Required", notification.description)
+    expect(response.body).not_to include("Human evaluation needed")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a
