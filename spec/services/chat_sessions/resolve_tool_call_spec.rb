@@ -97,6 +97,19 @@ RSpec.describe ChatSessions::ResolveToolCall do
       expect(result.content).to eq("Done.")
     end
 
+    it "completes the originating turn after persisting the resumed response" do # @spec CHAT-TURN-RECOVERY-005
+      user_message = create(:chat_message, chat_session: chat_session, role: "user")
+      turn = ChatTurn.create!(chat_session: chat_session, user_message:, checkpoint_message: tool_call_message,
+        status: "streaming", last_activity_at: 1.minute.ago)
+
+      result = described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: llm_client
+      )
+
+      expect(turn.reload).to have_attributes(status: "completed", checkpoint_message: result, completed_at: be_present)
+    end
+
     # @spec QUESTION-EXPLORATION-003 QUESTION-EXPLORATION-012
     it "links a presented diagram to its persisted tool result" do
       diagram = create(:chat_diagram, chat_session: chat_session)

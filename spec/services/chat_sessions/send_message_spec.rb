@@ -63,6 +63,21 @@ RSpec.describe ChatSessions::SendMessage do
       }.to change { chat_session.messages.where(role: "user").count }.by(1)
     end
 
+    it "does not execute a duplicate stream after its turn is already claimed" do # @spec CHAT-TURN-RECOVERY-005
+      user_message = create(:chat_message, chat_session: chat_session, role: "user")
+      ChatTurn.create!(chat_session: chat_session, user_message:, checkpoint_message: user_message,
+        stream_message_id: "stream-123", status: "streaming", last_activity_at: Time.current)
+
+      expect(llm_client).not_to receive(:call)
+
+      result = described_class.call(
+        chat_session: chat_session, content: "Hello", llm_client: llm_client, stream_message_id: "stream-123"
+      )
+
+      expect(result).to be_nil
+      expect(chat_session.messages.where(role: "user").count).to eq(1)
+    end
+
     # @spec PARTIAL-CLOSEOUT-017 — a conversational "yes" must never be
     # treated, displayed, or replayed as approval of a pending write tool.
     describe "with a pending write-tool confirmation" do

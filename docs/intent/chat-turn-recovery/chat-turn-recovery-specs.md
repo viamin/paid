@@ -18,6 +18,14 @@
   *Test:* `spec/services/chat_turns/detect_stalls_spec.rb`.
   *Code:* `ChatTurns::DetectStalls`, `ChatMessage#chat_turn_stalled_notice?`.
 
+- [x] **CHAT-TURN-RECOVERY-005** — When duplicate delivery uses the same
+  browser stream identifier, the system SHALL allow only one worker to claim
+  and execute the turn; confirmation resolution SHALL continue and complete
+  the originating turn rather than creating an unrelated lifecycle.
+  *Test:* `spec/services/chat_sessions/send_message_spec.rb`,
+  `spec/services/chat_sessions/resolve_tool_call_spec.rb`.
+  *Code:* `ChatTurn#claim_processing!`, `ChatSessions::ResolveToolCall`.
+
 - [D] **CHAT-TURN-RECOVERY-004** — Automatic replay remains deferred until a
   tool declares an idempotency/checkpoint contract. Recovery of an ambiguous
   model stop or any possible side effect requires an explicit, deduplicated,
