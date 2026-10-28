@@ -81,7 +81,12 @@ reports evidence, coverage time, and an explicit state: `missing_tree`,
 Issue coverage preloads shared project records in a separate query rather than
 joining full project rows into the issue result. Project audit history must not
 be repeated for every issue: PostgreSQL results and their Ruby string copies
-would otherwise multiply that history by the synchronized issue count.
+would otherwise multiply that history by the synchronized issue count. A single
+reconciliation execution keeps a bounded, minimal issue-fact snapshot for each
+account-authorized project it reaches. The snapshot is reused for every
+artifact at that execution's pinned revisions; it batches canonical manifests
+and exact-backlink evidence, retains no issue ORM graph, and is discarded when
+the execution ends.
 
 PR synchronization schedules repository reconciliation after a fixed 30-second
 coalescing window. Scheduling and coalescing happen after the synchronization
@@ -92,9 +97,10 @@ invocation and one running invocation per project and reconciliation scope.
 Repeated syncs share the queued invocation; a sync during execution may enqueue
 one follow-up that reads the latest synchronized state. The window is not
 extended by subsequent syncs, so continuous activity cannot starve coverage.
-The daily sweep remains a backstop. Each execution records start/end resident
-memory, process peak resident memory, allocated-object delta, elapsed time and
-completion status without logging issue bodies or artifact content. These are
+The daily sweep remains a backstop. Each execution records artifact and covered
+issue counts, start/end resident memory, process peak resident memory,
+allocated-object delta, elapsed time and completion status without logging
+issue bodies or artifact content. These are
 process-wide measurements, so concurrent work can contribute to their deltas.
 Unavailable process-memory readings leave RSS fields empty and never prevent
 reconciliation or mask its original failure.

@@ -11,6 +11,18 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
   end
 
+  def rdr_artifact(number, revision, body)
+    FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-#{number}.md", revision:, body:
+    )
+  end
+
+  def issue_queries
+    queries = []
+    ActiveSupport::Notifications.subscribed(->(event) { queries << event.payload[:sql] }, "sql.active_record") { yield }
+    queries.grep(/SELECT .* FROM "issues"/)
+  end
+
   let(:project) { create(:project, owner: "acme", repo: "widget") }
   let(:feature_intent) { create(:feature_intent, project:) }
   let(:design_pr) { create(:feature_intent_design_pr, feature_intent:, pull_request_number: 100, draft: false) }
@@ -102,6 +114,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
       expect(Rails.logger).to have_received(:info).with(hash_including(
         message: "feature_intents.reconciliation_finished", project_id: project.id,
         status: "completed", allocated_objects: be >= 0, duration_ms: be >= 0,
+        artifacts_reconciled: be >= 0, issues_covered: be >= 0,
         rss_before_kb: be_a(Integer).or(be_nil), rss_after_kb: be_a(Integer).or(be_nil),
         process_peak_rss_kb: be_a(Integer).or(be_nil)
       ))
@@ -212,6 +225,26 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     expect(issue_queries).not_to be_empty
     expect(issue_queries.grep(/"projects"\."log_data"/)).to be_empty
     expect(DesignArtifactFinding.count).to eq(0)
+  end
+
+  # @spec DESIGN-RECONCILIATION-001
+  it "reuses one bounded issue snapshot across multiple RDR artifacts" do
+    shared_project = create(:project, account: project.account, owner: "shared", repo: "platform")
+    artifacts = [ rdr_artifact(101, "a" * 40, "Implements #101"),
+                  rdr_artifact(102, "b" * 40, "Implements shared/platform#102"),
+                  rdr_artifact(103, "c" * 40, "Implements #103") ]
+    [ [ project, 101 ], [ shared_project, 102 ], [ project, 103 ] ].each do |covered_project, number|
+      create(:issue, project: covered_project, github_number: number)
+    end
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery(artifacts))
+
+    covered = issue_queries { described_class.perform_now(project.id) }
+
+    expect(covered.count).to eq(2)
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.pluck(:issue_identity)).to contain_exactly(
+      "acme/widget#101", "shared/platform#102", "acme/widget#103"
+    )
   end
 
   it "uses a stored Paid feature-intent link without requiring a document repair" do
