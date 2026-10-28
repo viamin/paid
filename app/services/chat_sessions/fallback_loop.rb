@@ -42,8 +42,15 @@ module ChatSessions
         llm_client: llm_client,
         on_chunk: on_chunk,
         on_message_persisted: on_message_persisted,
-        stream_message_id: stream_message_id
+        stream_message_id: stream_message_id,
+        replay_guard: replay_guard
       }.merge(extra_agent_loop_kwargs)
+    end
+
+    # Recovery supplies a replay guard so a resumed turn cannot re-run a tool
+    # that already completed. Ordinary turns have none.
+    def replay_guard
+      nil
     end
 
     # Hosts may override to pass additional kwargs into AgentLoop (e.g. a

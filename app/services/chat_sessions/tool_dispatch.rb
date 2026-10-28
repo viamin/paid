@@ -19,7 +19,10 @@ module ChatSessions
       chat_session.created_by
     end
 
-    def dispatch_tool(name:, arguments:)
+    def dispatch_tool(name:, arguments:, tool_call_id: nil)
+      replayed = replayed_tool_result(name:, arguments:, tool_call_id:)
+      return replayed if replayed
+
       return dispatch_container_tool(name:, arguments:) if Tools::Registry.requires_container?(name)
 
       normalize_tool_dispatch_result(name:) do
@@ -30,6 +33,20 @@ module ChatSessions
           session: chat_session
         )
       end
+    end
+
+    # Recovery continues from the durable checkpoint, so a tool call that
+    # already completed inside the turn must not run again. The guard returns
+    # the recorded outcome instead of dispatching the tool a second time.
+    # @spec CHAT-TURN-RECOVERY-010
+    def replayed_tool_result(name:, arguments:, tool_call_id:)
+      return nil unless replay_guard
+
+      replay_guard.result_for(name:, arguments:, tool_call_id:)
+    end
+
+    def replay_guard
+      nil
     end
 
     def dispatch_container_tool(name:, arguments:)

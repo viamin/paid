@@ -40,7 +40,16 @@ class TenantSetting < ApplicationRecord
     # When true (default), a chat session paused by a runner rate limit
     # (CHAT-API-017) is automatically resumed — the message that hit the
     # rate limit is resent — once the runner's rate limit window clears.
-    "chat_auto_resume_rate_limited" => true
+    "chat_auto_resume_rate_limited" => true,
+    # How long a chat turn may stay silent before the stall detector treats it
+    # as stalled. The platform floor is 10 minutes; a tenant may wait longer
+    # but never less.
+    "chat_stall_threshold_seconds" => 600,
+    # When true (default), a turn stalled by an infrastructure failure (no
+    # output, no side-effecting tool) is recovered automatically, bounded by the
+    # turn's recovery budget. Turn recovery that needs a human decision is
+    # never automatic.
+    "chat_automatic_stall_recovery" => true
   }.freeze
   DEFAULT_QUALITY_THRESHOLDS = Project::DEFAULT_QUALITY_GATE_SETTINGS.freeze
   DEFAULT_AGENT_SETTINGS = {
@@ -361,8 +370,19 @@ class TenantSetting < ApplicationRecord
 
   # @spec CHAT-API-017
   def chat_auto_resume_rate_limited
-    ActiveModel::Type::Boolean.new.cast(effective_chat_settings["chat_auto_resume_rate_limited"])
+    effective_chat_settings["chat_auto_resume_rate_limited"]
   end
+
+  # @spec CHAT-TURN-RECOVERY-004
+  def chat_stall_threshold_seconds
+    effective_chat_settings["chat_stall_threshold_seconds"].to_i
+  end
+
+  # @spec CHAT-TURN-RECOVERY-008
+  def chat_automatic_stall_recovery
+    ActiveModel::Type::Boolean.new.cast(effective_chat_settings["chat_automatic_stall_recovery"])
+  end
+
 
   def chat_settings=(value)
     merged_features = normalize_hash(features)
@@ -561,6 +581,13 @@ class TenantSetting < ApplicationRecord
       val = chat["chat_clone_timeout"]
       unless val.is_a?(Integer) && val >= 10 && val <= 600
         errors.add(:features, "chat_settings.chat_clone_timeout must be an integer between 10 and 600")
+      end
+    end
+
+    if chat.key?("chat_stall_threshold_seconds") && chat["chat_stall_threshold_seconds"].present?
+      val = chat["chat_stall_threshold_seconds"]
+      unless val.is_a?(Integer) && val >= 60 && val <= 3600
+        errors.add(:features, "chat_settings.chat_stall_threshold_seconds must be an integer between 60 and 3600")
       end
     end
   end

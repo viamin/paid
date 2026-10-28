@@ -50,15 +50,34 @@ module ChatSessions
       prepare_resolution!
       on_tool_call_resolved&.call(tool_call_message)
 
-      if post_dispatch_confirmation?
+      assistant_message = if post_dispatch_confirmation?
         resolve_post_dispatch_confirmation!
       else
         resolve_pending_tool_call!
         resume_loop_unless_other_pending
       end
+      complete_turn(assistant_message)
+      assistant_message
     end
 
     private
+
+    # The turn a confirmation belongs to is the turn that asked for the tool.
+    # Resolving it continues that turn instead of starting a new one.
+    # @spec CHAT-TURN-RECOVERY-002
+    def complete_turn(assistant_message)
+      return unless assistant_message&.role == "assistant" && assistant_message.content.present?
+
+      turn = open_turn
+      turn&.complete!
+    end
+
+    def open_turn
+      user_message = originating_user_message
+      return nil unless user_message
+
+      ChatTurns::OpenTurn.call(chat_session: chat_session, user_message: user_message)
+    end
 
     # Keep the initial turn's user row for transport attempt accounting. A
     # confirmation can be resolved while a newer turn is being sent, so using

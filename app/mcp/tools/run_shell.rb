@@ -21,6 +21,9 @@ module Tools
     def self.tool_name = "run_shell"
     def self.write_operation? = true
     def self.requires_container? = true
+    # A shell command may run for up to MAX_TIMEOUT seconds, so a chat turn
+    # waiting on one is working, not stalled.
+    def self.long_running? = true
 
     def self.description
       "Execute a shell command inside the workspace container."

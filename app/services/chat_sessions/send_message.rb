@@ -16,11 +16,12 @@ module ChatSessions
     include FallbackLoop
 
     attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
-      :transport_attempt_message
+      :transport_attempt_message, :replay_guard
 
     MAX_CONTENT_LENGTH = 12_000
 
-    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
+    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil,
+      resume_user_message: nil, replay_guard: nil)
       @chat_session = chat_session
       @actor = actor
       @content = content
@@ -28,6 +29,8 @@ module ChatSessions
       @on_message_persisted = on_message_persisted
       @llm_client = llm_client
       @stream_message_id = stream_message_id
+      @resume_user_message = resume_user_message
+      @replay_guard = replay_guard
     end
 
     def self.call(...)
@@ -43,13 +46,23 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      turn = open_turn
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      complete_turn(turn, assistant_message)
       update_session_activity
       assistant_message
+    rescue StandardError => error
+      fail_turn(turn, error)
+      raise
     end
 
     private
+
+    # The user message a recovery continues from. Reusing it keeps the turn's
+    # durable checkpoint intact: the resumed turn appends to the same
+    # transcript instead of starting a second request.
+    attr_reader :resume_user_message
 
     def resume_session_if_needed!
       return unless chat_session.status == "closed"
@@ -110,7 +123,7 @@ module ChatSessions
     end
 
     def persist_user_message
-      @transport_attempt_message = existing_user_message || create_user_message
+      @transport_attempt_message = resume_user_message || existing_user_message || create_user_message
 
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
@@ -174,11 +187,54 @@ module ChatSessions
       )
     end
 
+    # The durable turn this message opened (or, for a recovery, the turn that
+    # already owns the message).
+    # @spec CHAT-TURN-RECOVERY-001
+    def open_turn
+      ChatTurns::OpenTurn.call(chat_session: chat_session, user_message: transport_attempt_message)
+    end
+
+    # A turn reaches a terminal outcome only when the loop produced a final
+    # assistant message. A loop that paused for a write-tool confirmation
+    # returns no message and the turn stays open until the confirmation is
+    # resolved.
+    # @spec CHAT-TURN-RECOVERY-002
+    def complete_turn(turn, assistant_message)
+      return unless turn
+      return unless assistant_message&.role == "assistant" && assistant_message.content.present?
+
+      turn.complete!
+    end
+
+    # A turn that raised is failed, not stalled: the error is a terminal
+    # outcome. A rate limit is the exception — the session is paused and
+    # resumes the same turn later, so the turn stays open.
+    # @spec CHAT-TURN-RECOVERY-003
+    def fail_turn(turn, error)
+      return unless turn
+
+      classification = failure_classification(error)
+      return if classification.nil?
+
+      turn.fail!(classification: classification)
+    end
+
+    def failure_classification(error)
+      case error
+      when ChatSessions::TokenLimitExceededError then "budget_exhausted"
+      when AgentHarness::RateLimitError then nil
+      when AgentHarness::Error then "provider_timeout"
+      else "unexpected_error"
+      end
+    end
+
     # Reuse the pre-loop budget baseline so the mid-loop guard does not issue a
     # second SUM query per turn. Only forward when a limit is configured; a nil
     # baseline means "unlimited" and AgentLoop re-derives nil cheaply.
     def extra_agent_loop_kwargs
-      @token_budget ? { token_budget: @token_budget } : {}
+      kwargs = @token_budget ? { token_budget: @token_budget } : {}
+      kwargs[:replay_guard] = replay_guard if replay_guard
+      kwargs
     end
   end
 end

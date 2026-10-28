@@ -5,6 +5,7 @@ class ChatMessage < ApplicationRecord
   TOOL_STATUSES = %w[pending approved denied].freeze
 
   before_validation :set_external_id, on: :create
+  after_create_commit :record_chat_turn_activity
 
   belongs_to :chat_session
   has_one :chat_diagram, dependent: :nullify
@@ -89,13 +90,29 @@ class ChatMessage < ApplicationRecord
     metadata.is_a?(Hash) && metadata["pending_confirmation_notice"] == true
   end
 
+  # @spec CHAT-TURN-RECOVERY-007
+  # Server-injected system notice persisted when a turn is classified as
+  # stalled or abandoned. Rendered as a persistent, non-collapsed notice that
+  # names what completed, what is still unknown, and offers the recovery
+  # action.
+  def stalled_turn_notice?
+    metadata.is_a?(Hash) && metadata["stalled_turn_notice"] == true
+  end
+
+  # The durable turn this message opened, when it is a user message.
+  def chat_turn
+    return nil unless role == "user"
+
+    ChatTurn.find_by(user_message_id: id)
+  end
+
   # @spec CHAT-API-024
   def groupable_tool?
     (tool_name.present? || role == "tool") && !pending_confirmation? && !transcript_notice?
   end
 
   def transcript_notice?
-    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice?
+    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice? || stalled_turn_notice?
   end
 
   private
@@ -106,5 +123,21 @@ class ChatMessage < ApplicationRecord
 
   def set_external_id
     self.external_id ||= SecureRandom.uuid
+  end
+
+  # Every persisted message is evidence that the turn it belongs to is alive.
+  # The stall detector reads that evidence to tell a quiet turn from a stalled
+  # one.
+  # @spec CHAT-TURN-RECOVERY-001
+  def record_chat_turn_activity
+    ChatTurns::RecordActivity.call(message: self)
+  rescue StandardError => error
+    Rails.logger.warn(
+      message: "chat_message.turn_activity_failed",
+      chat_session_id: chat_session_id,
+      message_id: id,
+      error_class: error.class.name,
+      error: error.message
+    )
   end
 end

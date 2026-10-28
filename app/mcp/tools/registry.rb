@@ -179,6 +179,13 @@ module Tools
         find(name)&.auto_approve_eligible? ? true : false
       end
 
+      # Whether this tool may legitimately run for a long time. A chat turn
+      # waiting on such a tool is not a stall.
+      # @spec CHAT-TURN-RECOVERY-006
+      def long_running?(name)
+        find(name)&.long_running? ? true : false
+      end
+
       def resolve_confirmation(name:, decision:, pending_result:, user:, session:)
         registry = registry_for(name)
         raise ArgumentError, "Unknown tool: #{name}" unless registry

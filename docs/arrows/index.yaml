@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-24
+last_updated: 2026-10-28
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,15 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  chat-turn-recovery:
+    title: Chat Turn Recovery
+    path: docs/intent/chat-turn-recovery/chat-turn-recovery-design.md
+    specs: docs/intent/chat-turn-recovery/chat-turn-recovery-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: OK
+    audited: 2026-10-28
+    next: "Monitor classification and recovery event rates before considering workflow-backed orchestration."
   dependency-declarations:
     title: Dependency Declarations
     path: docs/intent/dependency-declarations/dependency-declarations-design.md

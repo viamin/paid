@@ -21,10 +21,10 @@ module ChatSessions
     TOKEN_BUDGET_SOFT_STOP_FALLBACK_MESSAGE = "I've reached the token budget for this chat session. Please increase the session token limit or start a new chat to continue."
 
     attr_reader :chat_session, :actor, :llm_client, :on_chunk, :on_message_persisted, :stream_message_id,
-      :created_message_ids
+      :created_message_ids, :replay_guard
 
     def initialize(chat_session:, actor: chat_session.created_by, llm_client:, on_chunk: nil, on_message_persisted: nil, stream_message_id: nil,
-      token_budget: nil)
+      token_budget: nil, replay_guard: nil)
       @chat_session = chat_session
       @actor = actor
       @llm_client = llm_client
@@ -33,6 +33,7 @@ module ChatSessions
       @stream_message_id = stream_message_id
       @created_message_ids = []
       @token_budget_override = token_budget
+      @replay_guard = replay_guard
     end
 
     # @return [ChatMessage, nil] the final assistant message, or +nil+ when the
@@ -220,7 +221,7 @@ module ChatSessions
     def process_tool_call(tool_call, provider_state: nil, tool_call_batch_id: nil)
       persist_tool_call_message(tool_call, provider_state:, tool_call_batch_id:)
 
-      tool_result = dispatch_tool(name: tool_call[:name], arguments: parse_tool_arguments(tool_call))
+      tool_result = dispatch_tool(name: tool_call[:name], arguments: parse_tool_arguments(tool_call), tool_call_id: tool_call[:id])
       persist_tool_result_message(tool_call, tool_result)
       tool_result
     end
@@ -312,9 +313,9 @@ module ChatSessions
       name = tool_call[:name]
       arguments = parse_tool_arguments(tool_call)
 
-      return dispatch_tool(name: name, arguments: arguments.merge("confirmed" => true)) unless Tools::Registry.post_dispatch_confirmation?(name)
+      return dispatch_tool(name: name, arguments: arguments.merge("confirmed" => true), tool_call_id: tool_call[:id]) unless Tools::Registry.post_dispatch_confirmation?(name)
 
-      draft_result = dispatch_tool(name: name, arguments: arguments)
+      draft_result = dispatch_tool(name: name, arguments: arguments, tool_call_id: tool_call[:id])
       return draft_result unless ready_for_post_dispatch_confirmation?(draft_result)
 
       resolve_tool_confirmation(name: name, decision: :approve, pending_result: draft_result)

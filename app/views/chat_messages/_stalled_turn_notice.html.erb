@@ -1,0 +1,35 @@
+<%# @spec CHAT-TURN-RECOVERY-007 %>
+<% turn_id = message.metadata["chat_turn_id"] %>
+<% revision = message.metadata["revision"] %>
+<% replay_safe = message.metadata["replay_safe"] %>
+<% tool_message_ids = Array(message.metadata["tool_message_ids"]) %>
+<div class="flex justify-center" data-message-id="<%= message.id %>">
+  <article class="mx-auto max-w-2xl rounded-md bg-rose-50 px-4 py-3 text-sm text-rose-900 ring-1 ring-rose-200">
+    <div class="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-rose-700">
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" aria-hidden="true">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" />
+      </svg>
+      Turn stalled
+    </div>
+    <div class="whitespace-pre-wrap break-words leading-6"><%= message.content.to_s %></div>
+    <% if turn_id.present? %>
+      <div class="mt-2 flex flex-wrap items-center gap-2">
+        <%= button_to "Resume this turn",
+              recover_chat_session_chat_turn_path(message.chat_session, turn_id),
+              method: :post,
+              params: { revision: revision },
+              class: "inline-flex items-center rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-rose-800 shadow-sm ring-1 ring-rose-300 hover:bg-rose-100 focus:outline-none focus:ring-2 focus:ring-rose-500" %>
+        <span class="text-xs text-rose-700">
+          <%= replay_safe ? "Continues from the last recorded step." : "Needs your confirmation: this turn already ran a write action." %>
+        </span>
+        <% if tool_message_ids.any? %>
+          <% tool_message_ids.each do |tool_message_id| %>
+            <%= link_to "View tool details",
+                  "#chat-message-#{tool_message_id}",
+                  class: "text-xs font-medium text-rose-800 underline hover:text-rose-950" %>
+          <% end %>
+        <% end %>
+      </div>
+    <% end %>
+  </article>
+</div>

@@ -99,6 +99,14 @@ module Tools
       false
     end
 
+    # Whether dispatching this tool may legitimately take a long time (for
+    # example a shell command inside the workspace container). The chat stall
+    # detector uses the declaration to tell a quiet turn that is still working
+    # apart from one that stopped.
+    def self.long_running?
+      false
+    end
+
     def self.available_to?(user:)
       user.present?
     end
