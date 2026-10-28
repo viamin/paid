@@ -247,7 +247,12 @@ Maintenance scans are report-only. A user can select findings to create
 bounded repair issues or normal PR-creation runs, preserving source-report
 links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
-outside the initial scope and requires a separately approved policy.
+outside the initial scope and requires a separately approved policy. The
+reviewable optimization-family prerequisite in
+[`maintenance-optimization-recipes`](../intent/maintenance-optimization-recipes/maintenance-optimization-recipes-design.md)
+defines a proposed per-run, off-by-default exception for bounded non-security
+repair handoff; it remains pending owner acceptance and does not alter this
+draft's report-only default.
 
 ### PR integration
 

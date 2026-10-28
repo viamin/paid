@@ -158,4 +158,7 @@
       back to its source maintenance report and finding.
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
-      an explicit user selection.
+      an explicit user selection, except through an accepted and elected
+      `MAINT-OPT` optimization policy that still uses the same bounded repair
+      pathway and all of its authorization, freshness, budget, and idempotency
+      gates.

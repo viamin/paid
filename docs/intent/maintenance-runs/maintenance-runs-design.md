@@ -208,6 +208,7 @@ shipped code in
 | Checkout access for batch analyzers | Subject to #4604's required live evidence, native CLI analyzers use `execute_in_execution_environment`; `tool_sidecar` is reserved for network-service-shaped analyzers | Require every analyzer to become a `tool_sidecar` network service; extend RDR-073 with a bind-mounted sidecar variant | The named first-delivery analyzers are CLI tools, not services, and static inspection identifies the existing execution-environment contract as the candidate path. #4604 must validate that path in the agent image before an adapter ships; a bind-mount extension is deferred unless that evidence shows a specific future recipe needs it. |
 | Finding identity and report evidence | Project- and recipe-scoped canonical finding from claim + affected symbols, with immutable report-specific occurrences | A report-owned finding; line-number-based identity | Line numbers shift on unrelated edits, and a report-owned row cannot represent a recurring finding without destroying an earlier report. Canonical identity prevents duplicate repair work while immutable occurrences retain each pinned run's evidence (RDR-075 draft, Evidence and reporting). |
 | Repair handoff | Separate, explicitly authorized issue/PR-creation run selecting specific findings | Automatic cleanup during the scan itself | Combining investigation with repair authorization risks oversized, unreviewed changes; keeping them separate makes the requested investigation and the authorized change both explicit (RDR-075 draft, Alternatives Considered). |
+| Optimization-family automatic handoff | A separately accepted per-run policy may pre-authorize bounded, non-security repair handoff while retaining every M04 authorization, freshness, budget, and idempotency gate | Tenant-wide enablement; repair as an unqualified report-completion side effect | The base capability remains report-only. The narrow exception is owned by the draft `maintenance-optimization-recipes` leaf and must not make scan execution itself a repair authority. |
 
 ## Open Questions & Future Decisions
 
@@ -242,8 +243,9 @@ shipped code in
 - Not a tool marketplace, matching engine, or provisioning system — that is
   RDR-073's territory, consumed here, not duplicated.
 - Not an automatic-repair mechanism — a scan never deletes source code or
-  opens a PR as a side effect; repair is a separate, explicitly authorized
-  run.
+  opens a PR as a side effect. A separately accepted optimization policy may
+  request the same separate, bounded repair handoff without a per-finding
+  click; it never authorizes deletion or bypasses the repair pathway.
 - Not a blocking PR-review gate — advisory PR integration (reusing
   maintenance evidence) is a later, separately approved policy decision,
   not part of this LLD's first-delivery scope.
@@ -262,3 +264,5 @@ shipped code in
   native CLI analyzer invocation inside the execution environment
 - `app/models/agent_run.rb` — `execute_in_execution_environment`,
   `cleanup_execution_environment`
+- [maintenance optimization recipes LLD](../maintenance-optimization-recipes/maintenance-optimization-recipes-design.md)
+  — draft catalog, semantic assessment, and bounded automatic-handoff policy
