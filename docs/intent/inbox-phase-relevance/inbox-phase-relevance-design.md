@@ -67,6 +67,13 @@ Hiding never resolves, clears, comments, or changes readiness.
 `removed`), and `Inbox::Count` / `Inbox::Availability` derive from the same
 call so lists, counts, badges, and indicators cannot disagree.
 
+The badge uses indexed lane counts while no visible project is phase-governed.
+When personal removals exist in that mode, it resolves only the removed request
+keys and compares their current occurrences before subtracting them; it does
+not construct the full typed queue. Issue lanes may join `projects` for
+predicates and ordering, but preload project records in a separate query so a
+project's audit history is not selected once for every issue row.
+
 ## Personal removal
 
 `inbox_removals` stores `(user, request_key, occurrence, phase, entry_kind,

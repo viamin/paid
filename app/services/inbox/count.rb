@@ -35,12 +35,20 @@ module Inbox
     # When any visible project runs the phase model, the count comes from the
     # same scope-filtered queue the list renders, so the badge can never
     # disagree with the list about phase relevance. Personal removal is
-    # rollout-independent and requires the same exact count. Otherwise the
-    # cheap SQL approximation is unchanged.
+    # rollout-independent, but resolving each removed request directly keeps
+    # its occurrence semantics exact without building every entry payload.
+    # Otherwise the cheap SQL approximation is unchanged.
+    # @spec INBOX-PHASE-RELEVANCE-011
     def compute_count
       return governed_count if phase_model_governed?
-      return governed_count if personal_removals?
 
+      count = candidate_count
+      return count unless personal_removals?
+
+      [ count - personally_removed_count, 0 ].max.clamp(0, DISPLAY_CAP)
+    end
+
+    def candidate_count
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
         retry_limited_count + change_intent_draft_count + partial_closeout_count +
@@ -65,7 +73,21 @@ module Inbox
     end
 
     def personal_removals?
-      InboxRemoval.active.where(user: user).exists?
+      active_removals.exists?
+    end
+
+    # A removal suppresses only the matching current occurrence. Resolve the
+    # removal's one typed lane rather than materializing the complete queue;
+    # stale, resolved, or superseded rows therefore do not affect the badge.
+    def personally_removed_count
+      active_removals.sum do |removal|
+        entry = Inbox::Queue.find_entry(user:, entry_id: removal.request_key)
+        entry && removal.suppresses?(Inbox::RequestIdentity.occurrence_for(entry)) ? 1 : 0
+      end
+    end
+
+    def active_removals
+      @active_removals ||= InboxRemoval.active.where(user: user)
     end
 
     def needs_input_count

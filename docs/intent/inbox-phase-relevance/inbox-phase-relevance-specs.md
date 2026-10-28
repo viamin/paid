@@ -84,3 +84,15 @@
   to phase-owned requests.
   *Tests:* `spec/services/inbox/removals_spec.rb`
   *Code:* `Inbox::Removals::RestoreOnPhaseEnablement`, `Inbox::PhaseRelevance`
+
+- [x] **INBOX-PHASE-RELEVANCE-011** — When no visible project is governed by
+  the automation-phases rollout, `Inbox::Count` SHALL preserve current-
+  occurrence personal-removal suppression by resolving only active removal
+  request keys, SHALL NOT materialize the complete typed Inbox queue solely to
+  compute the badge, and SHALL retain the existing display cap. Inbox issue
+  lanes that join projects for predicates or order SHALL preload projects
+  separately so project audit payloads are not repeated in per-issue result
+  rows.
+  *Tests:* `spec/services/inbox/count_spec.rb`, `spec/services/inbox/queue_spec.rb`
+  *Code:* `Inbox::Count`, `Inbox::Queue`, `Inbox::MergeApproval`,
+  `Inbox::IntentConformance`
