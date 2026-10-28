@@ -28,6 +28,19 @@ RSpec.describe Inbox::IntentConformance do
   end
 
   describe ".call" do
+    # @spec INBOX-PHASE-RELEVANCE-011
+    it "keeps candidate project joins without selecting project audit history" do
+      candidate_sql = [
+        Inbox::MergeApproval.candidates([ project.id ]).to_sql,
+        described_class.candidates([ project.id ]).to_sql
+      ]
+
+      candidate_sql.each do |statement|
+        expect(statement).to include("JOIN \"projects\"")
+        expect(statement).not_to include("\"projects\".\"log_data\"")
+      end
+    end
+
     it "returns nil when the PR is not open" do
       issue = blocked_issue(github_state: "closed")
 

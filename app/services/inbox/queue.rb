@@ -450,7 +450,7 @@ module Inbox
     end
 
     def clarifying_question_entries
-      ordered_clarifying_issues.filter_map do |issue|
+      preloaded_issues(ordered_clarifying_issues).filter_map do |issue|
         questions = self.class.questions_for(issue)
         next if questions.empty?
 
@@ -484,7 +484,6 @@ module Inbox
 
         Issue
           .joins(:project)
-          .includes(:project)
           .where(project_id: ids, paid_state: "needs_input", github_state: "open")
           .then { |scope| only_record(scope) }
           .order(Arel.sql("issues.needs_input_since ASC NULLS LAST"))
@@ -549,7 +548,7 @@ module Inbox
 
     # @spec OPERATOR-INBOX-002K
     def merge_approval_entries
-      candidate_entries = merge_approval_issues.map do |issue|
+      candidate_entries = preloaded_issues(merge_approval_issues).map do |issue|
         Entry.new(
           id: "#{MERGE_APPROVAL_KIND}:#{issue.id}",
           kind: MERGE_APPROVAL_KIND,
@@ -613,7 +612,7 @@ module Inbox
 
     # @spec INTENT-CONFORMANCE-006
     def intent_conformance_entries
-      intent_conformance_issues.filter_map do |issue|
+      preloaded_issues(intent_conformance_issues).filter_map do |issue|
         snapshot = Inbox::IntentConformance.call(issue)
         next unless snapshot
 
@@ -687,7 +686,7 @@ module Inbox
     # and escalated_pr do, rather than a separate notification.
     # @spec OPERATOR-INBOX-002D
     def manual_review_entries
-      ordered_manual_review_issues.map do |issue|
+      preloaded_issues(ordered_manual_review_issues).map do |issue|
         Entry.new(
           id: "#{MANUAL_REVIEW_KIND}:#{issue.id}",
           kind: MANUAL_REVIEW_KIND,
@@ -713,7 +712,6 @@ module Inbox
 
       Issue
         .joins(:project)
-        .includes(:project)
         .where(project_id: ids, paid_state: "manual_review", github_state: "open")
         .then { |scope| only_record(scope) }
         .order(Arel.sql("issues.manual_review_started_at ASC NULLS LAST"))
@@ -787,7 +785,7 @@ module Inbox
     # can render the Push Blocked vs Retry Cap badge split (#3902).
     # @spec OPERATOR-INBOX-002E
     def retry_limited_entries
-      ordered_retry_limited_issues.map do |issue|
+      preloaded_issues(ordered_retry_limited_issues).map do |issue|
         Entry.new(
           id: "#{RETRY_LIMITED_KIND}:#{issue.id}",
           kind: RETRY_LIMITED_KIND,
@@ -810,7 +808,6 @@ module Inbox
 
       Issue
         .joins(:project)
-        .includes(:project)
         .where(project_id: ids, github_state: "open")
         .where.not(runner_retry_abandoned_at: nil)
         .then { |scope| only_record(scope) }
@@ -894,7 +891,7 @@ module Inbox
     # the gate label, without waiting for the follow-up phase transition.
     # @spec OPERATOR-INBOX-002J
     def test_review_pending_entries
-      ordered_test_review_pending_issues.map do |issue|
+      preloaded_issues(ordered_test_review_pending_issues).map do |issue|
         Entry.new(
           id: "#{TEST_REVIEW_PENDING_KIND}:#{issue.id}",
           kind: TEST_REVIEW_PENDING_KIND,
@@ -921,7 +918,6 @@ module Inbox
         self.class.test_review_pending_issues(ids)
           .then { |scope| only_record(scope) }
           .joins(:project)
-          .includes(:project)
           .order("issues.github_updated_at ASC")
           .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
       end
@@ -1065,6 +1061,16 @@ module Inbox
 
     def runner_projects_by_user_id
       @runner_projects_by_user_id ||= scoped_projects.group_by(&:created_by_id)
+    end
+
+    # Order and visibility predicates still join projects, but loading that
+    # joined relation must not select projects.log_data once per issue. A
+    # separate preload shares each project record across its issue entries.
+    # @spec INBOX-PHASE-RELEVANCE-011
+    def preloaded_issues(scope)
+      issues = scope.to_a
+      ActiveRecord::Associations::Preloader.new(records: issues, associations: :project).call
+      issues
     end
   end
 end

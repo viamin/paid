@@ -67,6 +67,16 @@ Hiding never resolves, clears, comments, or changes readiness.
 `removed`), and `Inbox::Count` / `Inbox::Availability` derive from the same
 call so lists, counts, badges, and indicators cannot disagree.
 
+## Resource bounds
+
+Badge computation uses direct lane counts while phase relevance is not enabled.
+If a user has active personal removals, it re-resolves only those persisted
+request identities to apply occurrence-aware suppression; it does not build
+unrelated list entries. Issue-backed lanes retain project joins for predicates
+and ordering, then preload distinct projects in a separate query so a project's
+audit history is not selected once per issue. API pagination remains bounded at
+the serialization boundary and does not alter Inbox visibility.
+
 ## Personal removal
 
 `inbox_removals` stores `(user, request_key, occurrence, phase, entry_kind,

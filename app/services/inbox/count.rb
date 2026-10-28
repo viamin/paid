@@ -31,7 +31,7 @@ module Inbox
 
     attr_reader :user
 
-    # @spec INBOX-PHASE-RELEVANCE-005 @spec INBOX-PHASE-RELEVANCE-009
+    # @spec INBOX-PHASE-RELEVANCE-005 @spec INBOX-PHASE-RELEVANCE-009 @spec INBOX-PHASE-RELEVANCE-011
     # When any visible project runs the phase model, the count comes from the
     # same scope-filtered queue the list renders, so the badge can never
     # disagree with the list about phase relevance. Personal removal is
@@ -39,8 +39,21 @@ module Inbox
     # cheap SQL approximation is unchanged.
     def compute_count
       return governed_count if phase_model_governed?
-      return governed_count if personal_removals?
+      return personally_filtered_count if personal_removals?
 
+      ungoverned_count
+    end
+
+    # Personal removal is independent of the phase rollout.  Rebuilding the
+    # entire queue to find a handful of removed requests made a cache miss
+    # instantiate every Inbox entry, including every issue's project. Recheck
+    # only the persisted removal identities instead; this keeps occurrence
+    # semantics exact without materializing unrelated entry payloads.
+    def personally_filtered_count
+      [ ungoverned_count - active_suppression_count, 0 ].max
+    end
+
+    def ungoverned_count
       needs_input_count + open_plan_review_count + merge_approval_count + action_required_count +
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
         retry_limited_count + change_intent_draft_count + partial_closeout_count +
@@ -66,6 +79,20 @@ module Inbox
 
     def personal_removals?
       InboxRemoval.active.where(user: user).exists?
+    end
+
+    def active_suppression_count
+      InboxRemoval.active.where(user: user, entry_kind: Inbox::Queue::KINDS).find_each.count do |removal|
+        entry = removal_entry(removal)
+        entry && removal.suppresses?(Inbox::RequestIdentity.occurrence_for(entry))
+      end
+    end
+
+    def removal_entry(removal)
+      kind, record_id = removal.request_key.to_s.split(":", 2)
+      return unless kind == removal.entry_kind && record_id&.match?(/\A[0-9]+\z/)
+
+      Inbox::Queue.new(user:, kind:, record_id:).entries.first
     end
 
     def needs_input_count
