@@ -35,6 +35,11 @@ every policy decision reads it through `Automation::RolloutGuard.enabled?`
 `Automation::EffectivePolicy` returns a permitted `legacy_policy` decision, so
 existing execution and Inbox behavior is untouched.
 
+The authorized project feature-flag surface refuses to disable the rollout for
+a project with active continuation grants. Operators must finish or explicitly
+revoke those grants and reconcile affected queued work before rollback, because
+legacy policy cannot interpret the grant records.
+
 ## Project phase defaults
 
 `projects.automation_phase_settings` (jsonb) stores:
@@ -93,6 +98,7 @@ after the phase decision by the existing paths.
 (issue), starting phase, endpoint, author, source, creation time, completion,
 and revocation. `WorkItemContinuationGrant#covers_phase?` walks the delivery
 chain; `#active?` requires neither completion nor revocation.
+The author and work item must belong to the grant's project tenant.
 
 `Automation::ContinuationGrantLookup.resolve(work_item:)` resolves the chain
 from any work item in the delivery chain — the issue, its pull requests'

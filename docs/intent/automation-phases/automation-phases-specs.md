@@ -68,7 +68,8 @@
 
 - [x] **AUTOMATION-PHASES-009** — The system SHALL require permission to
   delegate the actions a grant covers, so automating through merge requires
-  permission to delegate merge, and SHALL reject unauthorized grant requests.
+  permission to delegate merge, SHALL bind the grant actor and work item to the
+  scoped project tenant, and SHALL reject unauthorized grant requests.
   *Tests:* `spec/requests/projects/agent_runs_continuation_spec.rb`
   *Code:* `Automation::ManualStart::Plan`, `ProjectPolicy`
 
@@ -106,7 +107,8 @@
 - [x] **AUTOMATION-PHASES-014** — The phase model SHALL be gated by the
   default-off `automation_phases` feature flag read through
   `FeatureFlags.enabled?(:automation_phases, project:)`, and while the flag is
-  off the pre-existing execution and Inbox policies SHALL remain in force.
+  off the pre-existing execution and Inbox policies SHALL remain in force;
+  project rollback SHALL be blocked while continuation grants remain active.
   *Tests:* `spec/services/automation/rollout_guard_spec.rb`
   *Code:* `FeatureFlags`, `Automation::RolloutGuard`
 

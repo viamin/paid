@@ -8,6 +8,7 @@ module Automation
   # @spec AUTOMATION-PHASES-014
   module RolloutGuard
     FLAG = :automation_phases
+    ActiveGrantsError = Class.new(StandardError)
 
     module_function
 
@@ -20,6 +21,19 @@ module Automation
     def enabled_project_ids(project_ids)
       Project.where(id: project_ids).includes(account: :tenant_setting)
         .filter_map { |project| project.id if enabled?(project) }
+    end
+
+    # A legacy-policy rollback cannot interpret continuation grants. Require an
+    # operator to finish or revoke every grant before disabling the pilot.
+    # @spec AUTOMATION-PHASES-014
+    def ensure_disable_allowed!(project = nil)
+      grants = WorkItemContinuationGrant.active
+      grants = grants.where(project:) if project
+      grant_ids = grants.limit(10).pluck(:id)
+      return if grant_ids.empty?
+
+      raise ActiveGrantsError,
+        "Finish or revoke active continuation grants before rollback (grant ids: #{grant_ids.join(", ")})."
     end
   end
 end

@@ -145,6 +145,7 @@ class FeatureFlags
 
     def disable!(flag_name, project: nil, actor: nil)
       resolved_actor = resolve_actor(project:, actor:)
+      enforce_rollback_guard!(flag_name, project:, actor:)
 
       unless resolved_actor
         # Flipper's boolean-gate disable already calls clear(feature), which
@@ -220,6 +221,13 @@ class FeatureFlags
       return actor if actor
 
       nil
+    end
+
+    def enforce_rollback_guard!(flag_name, project:, actor:)
+      return unless definition(flag_name).name == Automation::RolloutGuard::FLAG
+      return if actor
+
+      Automation::RolloutGuard.ensure_disable_allowed!(project)
     end
 
     def update_percentage_gate(flipper_feature, gate, percentage)

@@ -34,6 +34,26 @@ RSpec.describe WorkItemContinuationGrant do
     expect(grant).not_to be_valid
   end
 
+  it "requires an auditable author in the project tenant" do
+    missing_actor = build(:work_item_continuation_grant, project:, issue:, created_by: nil)
+    outside_actor = build(
+      :work_item_continuation_grant,
+      project:,
+      issue:,
+      created_by: create(:user, account: create(:account))
+    )
+
+    expect(missing_actor).not_to be_valid
+    expect(outside_actor).not_to be_valid
+  end
+
+  it "requires the work item to belong to the scoped project" do
+    other_issue = create(:issue, project: create(:project, account:))
+    grant = build(:work_item_continuation_grant, project:, issue: other_issue, created_by: user)
+
+    expect(grant).not_to be_valid
+  end
+
   describe "completion" do
     it "completes when the endpoint's work lands" do
       grant = create(:work_item_continuation_grant, project:, issue:)
