@@ -159,3 +159,78 @@
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
       an explicit user selection.
+
+## Optimization Recipe Family (Tracks #4492)
+
+- [ ] **MAINT-080**: The system shall provide a code-defined optimization
+      catalog with stable keys, descriptions, metric hints, and recipe
+      pointers for Performance, Design / Architecture, Code Duplication,
+      Security Hardening, Cost / Resource Efficiency, Maintainability /
+      Readability, and Test Coverage & Quality; adding a type shall require a
+      catalog/recipe entry rather than an enum migration. [#4493]
+- [ ] **MAINT-081**: The system shall expose equivalent optimization-type
+      selection through the UI, authenticated API, and MCP start surfaces,
+      shall allow no selection, and shall treat an unmapped selection as a
+      custom-objective maintenance run rather than rejecting it. [#4493]
+- [ ] **MAINT-082**: The system shall persist the selected optimization type
+      or custom objective with the maintenance run's immutable snapshot and
+      retain it across retries. [#4493]
+- [ ] **MAINT-083**: The system shall define Code Duplication,
+      Maintainability / Readability, and Performance recipes with their
+      objective, investigation instructions, applicable evidence collectors,
+      validation guidance, and metric hints. [#4494]
+- [ ] **MAINT-084**: When an optimization finding recommends consolidation
+      or change, the system shall obtain its semantic assessment through
+      `agent_harness` with structured recommendation, supporting evidence,
+      counterevidence, scope rationale, and named confidence tier; it shall
+      not treat similarity, lack of static references, or raw tool confidence
+      as sufficient semantic evidence. [#4494]
+- [ ] **MAINT-085**: When an optimization recipe has no applicable tool, the
+      system shall complete it as a prompt-first investigation and shall
+      disclose that coverage and evidence provenance honestly in the report.
+      [#4494]
+- [ ] **MAINT-086**: The system shall permit supporting inspection outside
+      requested scope only to substantiate a recommendation, shall disclose
+      that inspection, and shall require explicit human authorization before
+      any repair expands the selected finding's scope. [#4494]
+
+## Conditional Optimization Repair Queueing (Tracks #4492)
+
+- [ ] **MAINT-090**: The system shall default every maintenance run to
+      report-only and shall accept a conditional auto-queue election only for
+      an authorized optimization run at start, through equivalent UI,
+      authenticated API, and MCP surfaces; omission shall remain report-only.
+      [#4495]
+- [ ] **MAINT-091**: The system shall persist an elected named confidence tier
+      and explicit per-repair cost/time budgets in the immutable optimization
+      run snapshot; a tier shall be an `agent_harness` semantic-assessment
+      category, not a calibrated numeric probability or forecast of repair
+      success. [#4495]
+- [ ] **MAINT-092**: Before conditionally queueing a repair, the system shall
+      deterministically verify the immutable election, current repair-path
+      authorization, an eligible non-security category, a well-formed
+      `agent_harness` assessment that satisfies the elected tier, explicit
+      budget, and absence of existing repair work for the canonical finding
+      identity. [#4495]
+- [ ] **MAINT-093**: If a conditionally queued repair's checkout revision has
+      changed since its source report, then the system shall revalidate the
+      selected finding before repair work begins; failed or stale revalidation
+      shall be visible and shall not authorize or silently discard repair work.
+      [#4495]
+- [ ] **MAINT-094**: The system shall preserve the selected finding's approved
+      scope, source report/finding provenance, and elected per-repair budgets
+      on each conditionally queued repair run, and shall preserve evidence on
+      budget exhaustion. [#4495]
+- [ ] **MAINT-095**: The system shall exclude Security Hardening findings from
+      conditional auto-queueing and shall keep them report-only plus manually
+      selectable until a separately accepted security-repair policy authorizes
+      otherwise. [#4496]
+- [ ] **MAINT-096**: Where `maintenance_runs` is disabled, the system shall
+      not admit a new conditional auto-queue or enqueue a new conditional
+      repair, and shall not cancel active repair runs or delete reports.
+      [#4495]
+- [ ] **MAINT-097**: The system shall define Security Hardening, Cost /
+      Resource Efficiency, Design / Architecture, and Test Coverage & Quality
+      as staged optimization recipes through the catalog, and shall reconcile
+      the test-quality recipe with RDR-075's existing test-quality intent
+      rather than duplicate it. [#4496]

@@ -249,6 +249,47 @@ links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
 outside the initial scope and requires a separately approved policy.
 
+### Optimization recipe and bounded-repair policy prerequisite
+
+The optimization recipe family is a proposed extension of this maintenance
+contract, tracked by [#4492](https://github.com/viamin/paid/issues/4492).
+The umbrella is coordination only; its executable prerequisite deliverables
+are [#4493](https://github.com/viamin/paid/issues/4493) (catalog and menu),
+[#4494](https://github.com/viamin/paid/issues/4494) (initial recipes),
+[#4495](https://github.com/viamin/paid/issues/4495) (bounded auto-queue
+policy), and [#4496](https://github.com/viamin/paid/issues/4496) (staged
+follow-on recipes). Their reviewable LID contract is owned by
+[#4636](https://github.com/viamin/paid/issues/4636).
+
+The optimization policy does not change the report-only default. An owner may
+elect, at the start of one optimization run, to auto-queue only a qualifying
+bounded repair through the existing repair handoff. The election is off by
+default, is persisted with its named confidence threshold and per-repair
+cost/time budgets, and is never a tenant-wide or recipe default. The report
+remains complete even where no finding qualifies, and every non-queued finding
+remains available for manual selection.
+
+Semantic assessment of a finding, including whether its evidence satisfies
+the elected confidence threshold, belongs to `agent_harness` and must return a
+structured assessment with cited evidence and counterevidence. A confidence
+threshold is a named assessment tier, not a calibrated numerical probability
+or a claim of repair success. Code may validate that the structured result and
+election are present and enforce deterministic authorization, category,
+budget, freshness, and idempotency gates; it must not infer confidence from
+tool output or text heuristics.
+
+Before queueing, the system must verify the immutable run election, current
+authorization, an eligible non-security category, the structured assessment,
+the per-repair budget, and the absence of an existing repair for the canonical
+finding identity. It must revalidate evidence against the repair checkout when
+the target revision has moved, preserve the finding's scope, and record the
+source report/finding and gate outcome. A failed or stale revalidation is a
+visible non-queue outcome. Security findings remain report-only and
+manual-selection-only until a separately accepted security-repair policy.
+This prerequisite is documentation only while RDR-075 and its LID artifacts
+remain pending acceptance; it neither enables maintenance nor authorizes
+rollout.
+
 ### PR integration
 
 The evidence and verification components should be reusable for PR audits.
@@ -310,6 +351,10 @@ Recurring schedules remain explicitly opt-in after rollout.
    this recommendation, and validation of the tool handoff assumptions.
    Update the HLD and create the maintenance LLD/EARS segment and arrow
    references before implementation. Resolve storage/API contracts there.
+   Before any optimization-family implementation, merge the accepted catalog,
+   recipe-selection, semantic-assessment, and bounded-repair policy intent
+   from #4636; #4492 is tracking only and does not substitute for those
+   executable prerequisites.
 2. **Manual maintenance lifecycle:** maintenance goal, admission and rollout
    guard, objective/scope/guidance snapshots, report-only execution and
    successful empty outcomes. Provide UI and API/MCP entry points together.
