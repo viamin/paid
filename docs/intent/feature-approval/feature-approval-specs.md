@@ -294,6 +294,17 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   `app/jobs/feature_intents/reconcile_design_artifacts_job.rb`,
   `app/jobs/feature_intents/design_artifact_reconciliation_sweep_job.rb`.
 
+- [x] **DESIGN-RECONCILIATION-003** — When one reconciliation sweep examines
+  multiple design artifacts, the system SHALL construct and reuse one
+  job-scoped, minimal issue-fact snapshot per account-authorized project for
+  that sweep. It SHALL batch exact-backlink and canonical-manifest evidence,
+  select only fields needed for reconciliation, and discard raw ORM issue
+  graphs after snapshot construction. The snapshot SHALL NOT be reused across
+  sweeps or revisions; unavailable authorized-project coverage SHALL remain
+  unverifiable.
+  *Tests:* `spec/jobs/feature_intents/reconcile_design_artifacts_job_spec.rb`.
+  *Code:* `FeatureIntents::ReconcileDesignArtifactsJob`.
+
 - [x] **ISSUE-TREE-001** — When a feature-planning run creates or adopts
   implementation issues, the system SHALL persist an issue-tree manifest on
   its `FeatureIntent`, keyed by stable task identity and containing expected
