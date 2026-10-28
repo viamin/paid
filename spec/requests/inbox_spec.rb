@@ -247,6 +247,46 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  # @spec OPERATOR-INBOX-002L FACET-CONFIDENCE-022
+  it "translates a facet-confidence evaluation escalation into a state-specific Inbox action" do
+    issue, notification = create_facet_confidence_evaluation_escalation(github_number: 4323)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Evaluation needed", "Review each test case independently")
+    expect(response.body).to include("0 of", "judgments recorded", "Start evaluation")
+    expect(response.body).not_to include("blinded reference judgments", "corpus")
+    expect(response.body).to include(new_project_facet_confidence_evaluation_path(project,
+      issue_id: issue.id, inbox_kind: Inbox::Queue::ACTION_REQUIRED_KIND,
+      inbox_entry_id: entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification)).gsub("&", "&amp;"))
+  end
+
+  # @spec OPERATOR-INBOX-002L FACET-CONFIDENCE-022
+  it "shows remaining judgments and a continue action without claiming unfinished work is complete" do
+    issue = create(:issue, project: project, github_number: 4662)
+    corpus_path = FacetConfidence::CloseoutEvaluationPacket::MANIFEST_PATH
+    evaluation = FacetConfidenceEvaluation.create!(project: project, issue: issue, created_by: user, status: "labeling",
+      corpus_path: corpus_path, corpus_digest: FacetConfidence::Corpus.new(path: corpus_path).content_digest,
+      corpus_version: "facet-confidence-corpus-v1", rubric_version: "facet-confidence-v1",
+      model_version: "claude-sonnet-4-6", source_revision: "intent-sha")
+    FacetConfidenceEvaluationLabel.create!(facet_confidence_evaluation: evaluation,
+      recorded_by: user, case_id: evaluation.corpus.case_ids.first, state: "labeled",
+      verdict: "completed", intent_band: "below_threshold", technical_band: "below_threshold",
+      readiness: "not_ready", cited_evidence_reference: "sync-sketch-statement", reason: "Independent review.",
+      recorded_at: Time.current)
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: "facet_confidence.closeout_evaluation", blocking: true, title: "Remediation Required",
+      description: "Internal copy", metadata: { "remediation_type" => "facet_confidence_closeout_evaluation" })
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification),
+      kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response.body).to include("Continue judging", "judgments recorded", "remaining")
+    expect(response.body).not_to include("Judgments are frozen")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a
@@ -2047,6 +2087,15 @@ RSpec.describe "Inbox" do
         "remediation_steps" => [ "Open the quality dashboard", "Resume manually or adjust thresholds" ]
       }
     )
+  end
+
+  def create_facet_confidence_evaluation_escalation(github_number:)
+    issue = create(:issue, project: project, github_number: github_number, title: "Evaluate facet confidence")
+    notification = create(:notification, :error, account: account, subject: issue,
+      source: "facet_confidence.closeout_evaluation", blocking: true, title: "Remediation Required",
+      description: "Independent maintainers have entered and frozen the blinded reference judgments for the facet-confidence corpus.",
+      metadata: { "remediation_type" => "facet_confidence_closeout_evaluation" })
+    [ issue, notification ]
   end
 
   def stale_approval_snapshot

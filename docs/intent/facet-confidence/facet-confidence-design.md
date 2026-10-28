@@ -174,3 +174,12 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+An Action Required notification may explicitly identify this workflow with the
+`facet_confidence_closeout_evaluation` remediation type. Inbox translates that
+typed escalation into plain language and derives its title, explanation,
+progress, and next action from persisted evaluation state rather than repeating
+notification prose. It uses the same authorized originating issue and fixed
+Inbox return context as the ordinary closeout entry point. Notifications
+without this explicit type remain generic Action Required items; Inbox does
+not infer a workflow from human-written notification text.

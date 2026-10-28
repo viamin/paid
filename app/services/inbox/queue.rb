@@ -88,6 +88,7 @@ module Inbox
       :action_url,
       :guidance,
       :closeout_status,
+      :action_required_workflow,
       keyword_init: true
     ) do
       def to_param
@@ -580,11 +581,14 @@ module Inbox
     end
 
     # @spec OPERATOR-INBOX-002B
+    # @spec OPERATOR-INBOX-002L FACET-CONFIDENCE-022
     def action_required_entries
       visible_blocking_notifications.filter_map do |notification|
         project, issue = notification_context(notification)
         next unless project
         next if project_filter_excludes?(project)
+
+        workflow = Inbox::ActionRequired::FacetConfidenceEvaluation.call(notification:, issue:)
 
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
@@ -595,9 +599,10 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
-          action_url: notification.action_url
+          summary_text: workflow&.explanation || notification.metadata["recommended_action"].presence || notification.description,
+          title_text: workflow&.title || notification.title,
+          action_url: notification.action_url,
+          action_required_workflow: workflow
         )
       end
     end

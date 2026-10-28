@@ -88,6 +88,17 @@
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/services/inbox/count_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** — When an Action Required notification carries
+  a recognized typed remediation, Inbox SHALL render that workflow's derived
+  human-facing title, explanation, progress, and authorized primary action
+  instead of presenting opaque producer copy as the only instruction. The
+  generic notification detail remains the safe fallback for unrecognized or
+  malformed remediation types.
+  *Code:* `app/services/inbox/action_required/facet_confidence_evaluation.rb`,
+  `app/services/inbox/queue.rb`,
+  `app/views/dashboard/_inbox_detail_action_required.html.erb`.
+  *Test:* `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002C** — When an open pull request's review phase is
   `escalated` and its project is within the operator's authorized Inbox
   visibility (`INBOX-FOUNDATION-006` — account isolation plus owner
