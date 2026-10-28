@@ -23,6 +23,13 @@ labels to PRs created by completed `create_pr` agent runs:
   do not re-add.
 - **Priority inheritance**: missing priority labels are backfilled even when
   auto-add labels is disabled.
+- **Interrupted closeout**: a bounded seven-day pass repairs missing run-to-PR
+  linkage when a locally synced open PR has a source parent and exactly one
+  matching terminal `create_pr` run, and that parent has exactly one unlinked
+  open PR. Ambiguous matches are left untouched. Linkage recovered this way
+  admits the PR to the normal scanner but does not restore automation labels,
+  because absence alone cannot distinguish failed post-processing from an
+  intentional operator removal.
 
 ## Code
 

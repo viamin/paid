@@ -403,7 +403,8 @@ module Activities
       end
 
       if project.auto_scan_prs
-        return candidate_prs.where("labels @> ?", [ project.automation_label_name ].to_json)
+        labeled = candidate_prs.where("labels @> ?", [ project.automation_label_name ].to_json)
+        return labeled.or(paid_linked_scannable_prs(project, candidate_prs))
       end
 
       labels = [

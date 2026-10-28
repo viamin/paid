@@ -17,3 +17,18 @@
   *Code:* `RecoverMissingPullRequestLabelsJob#missing_labels`.
   *Test:* `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`
   ("preserves manual opt-out").
+
+- [x] **PR-LABEL-RECOVERY-003** — While a locally synced open pull request was
+  linked to a source issue but failure, timeout, cancellation, retry, or
+  interrupted post-processing left its terminal `create_pr` run without a PR
+  number, the hourly recovery job SHALL inspect at most 500 PRs created within
+  seven days and SHALL repair the run-to-PR number and URL only for a unique
+  source/run match. Recovery SHALL be idempotent, SHALL leave ambiguous
+  matches untouched, and SHALL NOT restore missing automation labels solely
+  because linkage was repaired. The repaired agent-owned linkage SHALL admit
+  the PR to normal scanning so existing bounded stall detection can distinguish
+  active work, ordinary CI/review waits, and stopped execution.
+  *Code:* `PullRequests::RecoverMissingLinkage#call`,
+  `Activities::ScanPaidPrsActivity#activation_scannable_prs`.
+  *Test:* `spec/jobs/recover_missing_pull_request_labels_job_spec.rb`,
+  `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.

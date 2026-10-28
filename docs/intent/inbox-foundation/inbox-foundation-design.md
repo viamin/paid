@@ -88,7 +88,9 @@ Today three kinds exist:
   enter `paid_state: "needs_input"` just to become visible. An open ready PR
   with `paid-hold-review` is also a `:merge_approval` entry, irrespective of
   its ordinary blocker snapshot, because the label is an explicit request for
-  human action.
+  human action. An explicit hold remains authoritative when Paid's internal
+  review phase is stale: surfacing it does not change the phase or imply that
+  the pull request is merge-ready.
 
 Future kinds (`:paused_run_decision`)
 plug in by registering an entry-finder that contributes rows to the same

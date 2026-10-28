@@ -21,8 +21,9 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
   )
 
   CANDIDATE_WINDOW = 24.hours
-
   def perform
+    PullRequests::RecoverMissingLinkage.call
+
     recovered = 0
     skipped = 0
     failed = 0
@@ -137,6 +138,7 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
     inherited_missing = inheritable_priority_labels(project, agent_run)
       .reject { |l| synced_pr.has_label?(l) }
 
+    return inherited_missing if agent_run.reconciliation["pull_request_link_recovered"]
     return inherited_missing unless project.auto_add_labels_enabled?
 
     generated = project.generated_label_name

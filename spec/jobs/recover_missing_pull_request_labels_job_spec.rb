@@ -4,6 +4,19 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe RecoverMissingPullRequestLabelsJob do
+  def create_unlinked_pr_and_run(project)
+    source = create(:issue, project: project)
+    run = create(:agent_run, :failed, project: project, issue: source, goal: "create_pr", completed_at: 1.hour.ago)
+    pull_request = create(
+      :issue, :pull_request, project: project, parent_issue: source,
+      github_number: 4716,
+      github_html_url: "https://github.com/viamin/paid/pull/4716",
+      github_created_at: 90.minutes.ago,
+      labels: []
+    )
+    [ run, pull_request ]
+  end
+
   describe "#perform" do
     let(:project) { create(:project, owner: "viamin", repo: "paid") }
     let(:github_client) { instance_double(GithubClient) }
@@ -309,6 +322,42 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
       described_class.perform_now
 
       expect(github_client).to have_received(:add_labels_to_issue).once
+    end
+
+    it "recovers unique missing linkage from trusted local source evidence without restoring labels" do # @spec PR-LABEL-RECOVERY-003
+      run, pull_request = create_unlinked_pr_and_run(project)
+
+      described_class.perform_now
+
+      expect(run.reload).to have_attributes(
+        pull_request_number: 4716,
+        pull_request_url: pull_request.github_html_url
+      )
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+      expect(run.reconciliation).to include("pull_request_link_recovered" => true)
+    end
+
+    it "does not guess linkage when a source has multiple unlinked open PRs" do # @spec PR-LABEL-RECOVERY-003
+      source = create(:issue, project: project)
+      run = create(:agent_run, :timeout, project: project, issue: source, goal: "create_pr", completed_at: 1.hour.ago)
+      create(:issue, :pull_request, project: project, parent_issue: source, github_number: 4715, labels: [])
+      create(:issue, :pull_request, project: project, parent_issue: source, github_number: 4716, labels: [])
+
+      described_class.perform_now
+
+      expect(run.reload.pull_request_number).to be_nil
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
+    it "recovers linkage idempotently" do # @spec PR-LABEL-RECOVERY-003
+      source = create(:issue, project: project)
+      run = create(:agent_run, :cancelled, project: project, issue: source, goal: "create_pr", completed_at: 1.hour.ago)
+      create(:issue, :pull_request, project: project, parent_issue: source, github_number: 4685, labels: [])
+
+      2.times { described_class.perform_now }
+
+      expect(run.reload.pull_request_number).to eq(4685)
+      expect(github_client).not_to have_received(:add_labels_to_issue)
     end
   end
 end

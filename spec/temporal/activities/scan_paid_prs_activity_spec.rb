@@ -1126,6 +1126,50 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       end
     end
 
+    context "when an unlabeled PR has recovered Paid-run linkage" do
+      let(:source_issue) { create(:issue, project: project) }
+      let(:pr_issue) do
+        create(
+          :issue, :pull_request, project: project, parent_issue: source_issue,
+          github_number: 42, labels: [], paid_state: "completed"
+        )
+      end
+
+      before do
+        pr_issue
+        create(
+          :agent_run,
+          :failed,
+          project: project,
+          issue: source_issue,
+          goal: "create_pr",
+          pull_request_number: 42,
+          pull_request_url: "https://github.com/#{project.full_name}/pull/42",
+          reconciliation: { "pull_request_link_recovered" => true }
+        )
+        allow(github_client).to receive_messages(
+          pull_request: OpenStruct.new(
+            draft: true,
+            head: OpenStruct.new(sha: "abc123"),
+            mergeable: true,
+            user: OpenStruct.new(login: "viamin")
+          ),
+          commit: OpenStruct.new(commit: OpenStruct.new(committer: OpenStruct.new(date: 2.hours.ago))),
+          check_runs_for_ref: [ { name: "rspec", conclusion: "failure" } ],
+          review_threads: [],
+          pull_request_reviews: [],
+          issue_comments: [],
+          recent_issue_comments: []
+        )
+      end
+
+      it "keeps the agent-owned PR in the normal bounded scan" do # @spec PR-LABEL-RECOVERY-003
+        result = activity.execute(project_id: project.id)
+
+        expect(automation_scan_results(result).first[:pr_number]).to eq(42)
+      end
+    end
+
     context "when an automation-labeled PR was created by an untrusted user" do
       let(:pr_issue) do
         create(:issue, :pull_request,
