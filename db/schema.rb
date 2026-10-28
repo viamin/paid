@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_101024) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -809,6 +809,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
 
   create_table "chat_messages", force: :cascade do |t|
     t.bigint "chat_session_id", null: false
+    t.bigint "chat_turn_id", comment: "Turn whose durable transcript evidence includes this message."
     t.text "content"
     t.datetime "created_at", null: false
     t.uuid "external_id", default: -> { "gen_random_uuid()" }, null: false
@@ -825,6 +826,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.datetime "updated_at", null: false
     t.index ["chat_session_id", "created_at"], name: "index_chat_messages_on_chat_session_id_and_created_at"
     t.index ["chat_session_id"], name: "index_chat_messages_on_chat_session_id"
+    t.index ["chat_turn_id"], name: "index_chat_messages_on_chat_turn_id"
     t.index ["external_id"], name: "index_chat_messages_on_external_id", unique: true
     t.index ["role"], name: "index_chat_messages_on_role"
     t.index ["tool_status"], name: "index_chat_messages_on_tool_status", where: "((tool_status)::text = 'pending'::text)"
@@ -884,6 +886,49 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["rate_limited_until"], name: "index_chat_sessions_on_rate_limited_until"
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
+  end
+
+  create_table "chat_turn_recovery_attempts", comment: "Auditable and deduplicated requests to recover stalled chat turns.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "chat_turn_id", null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.integer "duplicate_prevention_count", default: 0, null: false
+    t.string "outcome"
+    t.bigint "requested_by_id", null: false
+    t.integer "source_revision", null: false
+    t.datetime "started_at"
+    t.string "status", default: "queued", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id"], name: "index_chat_turn_recovery_attempts_on_account_id"
+    t.index ["chat_turn_id", "source_revision"], name: "index_chat_turn_recoveries_on_turn_and_revision", unique: true
+    t.index ["chat_turn_id"], name: "index_chat_turn_recovery_attempts_on_chat_turn_id"
+    t.index ["requested_by_id"], name: "index_chat_turn_recovery_attempts_on_requested_by_id"
+  end
+
+  create_table "chat_turns", comment: "Durable lifecycle and recovery checkpoint for one user-initiated chat turn.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.bigint "chat_session_id", null: false
+    t.string "classification"
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "detected_stalled_at"
+    t.bigint "initiated_by_id"
+    t.datetime "last_activity_at", null: false
+    t.integer "lock_version", default: 0, null: false
+    t.string "pause_reason"
+    t.boolean "side_effects_completed", default: false, null: false
+    t.string "status", default: "pending", null: false
+    t.string "stream_message_id", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_message_id"
+    t.index ["account_id", "status", "last_activity_at"], name: "index_chat_turns_on_account_id_and_status_and_last_activity_at"
+    t.index ["account_id"], name: "index_chat_turns_on_account_id"
+    t.index ["chat_session_id", "stream_message_id"], name: "index_chat_turns_on_chat_session_id_and_stream_message_id", unique: true
+    t.index ["chat_session_id"], name: "index_chat_turns_on_chat_session_id"
+    t.index ["initiated_by_id"], name: "index_chat_turns_on_initiated_by_id"
+    t.index ["status", "last_activity_at"], name: "index_chat_turns_on_status_and_last_activity_at"
+    t.index ["user_message_id"], name: "index_chat_turns_on_user_message_id"
   end
 
   create_table "clarifying_question_progresses", comment: "Durable per-question exploration progress and attributable answer evidence.", force: :cascade do |t|
@@ -4671,6 +4716,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   add_foreign_key "chat_investigations", "projects"
   add_foreign_key "chat_investigations", "users", column: "created_by_id"
   add_foreign_key "chat_messages", "chat_sessions"
+  add_foreign_key "chat_messages", "chat_turns"
   add_foreign_key "chat_session_projects", "chat_sessions"
   add_foreign_key "chat_session_projects", "projects"
   add_foreign_key "chat_sessions", "accounts"
@@ -4679,6 +4725,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "chat_turn_recovery_attempts", "accounts"
+  add_foreign_key "chat_turn_recovery_attempts", "chat_turns"
+  add_foreign_key "chat_turn_recovery_attempts", "users", column: "requested_by_id"
+  add_foreign_key "chat_turns", "accounts"
+  add_foreign_key "chat_turns", "chat_messages", column: "user_message_id"
+  add_foreign_key "chat_turns", "chat_sessions"
+  add_foreign_key "chat_turns", "users", column: "initiated_by_id"
   add_foreign_key "clarifying_question_progresses", "accounts"
   add_foreign_key "clarifying_question_progresses", "chat_sessions"
   add_foreign_key "clarifying_question_progresses", "issues"

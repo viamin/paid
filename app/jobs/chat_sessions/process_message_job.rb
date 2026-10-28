@@ -9,11 +9,13 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     job.send(:broadcast_error, chat_session_id, stream_message_id, "Session no longer exists") if chat_session_id
   end
 
-  def perform(chat_session_id:, content:, stream_message_id:, actor_id: nil)
+  def perform(chat_session_id:, content:, stream_message_id:, actor_id: nil, chat_turn_id: nil, recovery_attempt_id: nil)
     # @spec CHAT-API-002, CHAT-API-022
     chat_session = ChatSession.find(chat_session_id)
     actor = chat_session.account.users.find(actor_id || chat_session.created_by_id)
     stream_name = "chat_session:#{chat_session.id}"
+    chat_turn = chat_session.chat_turns.find_by(id: chat_turn_id)
+    recovery_attempt = start_recovery(recovery_attempt_id)
 
     chunk_sequence = 0
 
@@ -22,6 +24,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       actor: actor,
       content: content,
       stream_message_id: stream_message_id,
+      chat_turn: chat_turn,
       on_message_persisted: ->(message, stream_message_id: nil) {
         broadcast_persisted_message(stream_name, message, stream_message_id: stream_message_id)
       },
@@ -44,6 +47,7 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
         output: assistant_message&.tokens_output
       }
     })
+    complete_recovery(recovery_attempt, assistant_message)
   rescue ArgumentError => e
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue NotImplementedError => e
@@ -82,9 +86,31 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
       error: e.message
     )
     broadcast_error(chat_session_id, stream_message_id, "An unexpected error occurred")
+  ensure
+    fail_recovery(recovery_attempt_id) if recovery_attempt_id
   end
 
   private
+
+  def start_recovery(recovery_attempt_id)
+    return unless recovery_attempt_id
+
+    ChatTurnRecoveryAttempt.find(recovery_attempt_id).tap do |attempt|
+      attempt.update!(status: "running", started_at: Time.current)
+    end
+  end
+
+  def complete_recovery(attempt, assistant_message)
+    return unless attempt
+
+    outcome = assistant_message ? "completed" : "awaiting_confirmation"
+    attempt.update!(status: "completed", outcome:, completed_at: Time.current)
+  end
+
+  def fail_recovery(recovery_attempt_id)
+    attempt = ChatTurnRecoveryAttempt.find_by(id: recovery_attempt_id, status: "running")
+    attempt&.update!(status: "failed", outcome: "processing_error", completed_at: Time.current)
+  end
 
   def broadcast_persisted_message(stream_name, message, stream_message_id: nil)
     # @spec CHAT-API-002

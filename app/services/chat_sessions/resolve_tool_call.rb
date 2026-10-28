@@ -23,19 +23,22 @@ module ChatSessions
 
     attr_reader :chat_session, :actor, :tool_call_message, :decision, :llm_client,
       :on_chunk, :on_message_persisted, :on_tool_call_resolved, :stream_message_id,
-      :transport_attempt_message
+      :transport_attempt_message, :chat_turn
 
     def initialize(chat_session:, actor: chat_session.created_by, tool_call_message:, decision:, llm_client: nil, on_chunk: nil,
       on_message_persisted: nil, on_tool_call_resolved: nil, stream_message_id: nil)
       @chat_session = chat_session
       @actor = actor
       @tool_call_message = tool_call_message
+      @chat_turn = tool_call_message.chat_turn
       @decision = decision.to_sym
       @llm_client = llm_client
-      @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @downstream_chunk = on_chunk
+      @downstream_message_persisted = on_message_persisted
+      @on_chunk = method(:record_chunk)
+      @on_message_persisted = method(:record_message)
       @on_tool_call_resolved = on_tool_call_resolved
-      @stream_message_id = stream_message_id
+      @stream_message_id = stream_message_id || chat_turn&.stream_message_id
       @transport_attempt_message = originating_user_message
     end
 
@@ -48,14 +51,20 @@ module ChatSessions
       # @spec API-CONVERSATION-DELEGATION-004
       validate_decision!
       prepare_resolution!
+      resume_turn!
       on_tool_call_resolved&.call(tool_call_message)
 
-      if post_dispatch_confirmation?
+      assistant_message = if post_dispatch_confirmation?
         resolve_post_dispatch_confirmation!
       else
         resolve_pending_tool_call!
         resume_loop_unless_other_pending
       end
+      conclude_turn(assistant_message)
+      assistant_message
+    rescue StandardError
+      chat_turn&.fail!("confirmation_recovery_error") if @turn_resumed
+      raise
     end
 
     private
@@ -191,6 +200,7 @@ module ChatSessions
 
     def persist_tool_result(result)
       message = chat_session.messages.create!(
+        chat_turn: chat_turn,
         role: "tool",
         content: result.to_json,
         tool_result: result,
@@ -217,6 +227,29 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001 CHAT-TURN-RECOVERY-003
+    def resume_turn!
+      chat_turn&.update!(status: "streaming", pause_reason: nil, last_activity_at: Time.current)
+      @turn_resumed = chat_turn.present?
+    end
+
+    def record_chunk(chunk)
+      chat_turn&.record_activity!
+      @downstream_chunk&.call(chunk)
+    end
+
+    def record_message(message, **kwargs)
+      message.update!(chat_turn: chat_turn) if chat_turn && message.chat_turn_id != chat_turn.id
+      chat_turn&.record_activity!
+      @downstream_message_persisted&.call(message, **kwargs)
+    end
+
+    def conclude_turn(assistant_message)
+      return unless chat_turn
+
+      assistant_message ? chat_turn.complete! : chat_turn.pause_for_confirmation!
     end
   end
 end

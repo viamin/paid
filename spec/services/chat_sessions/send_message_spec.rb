@@ -116,6 +116,29 @@ RSpec.describe ChatSessions::SendMessage do
       }.to change { chat_session.messages.where(role: "assistant").count }.by(1)
     end
 
+    # @spec CHAT-TURN-RECOVERY-001
+    it "persists a completed lifecycle and links the turn transcript" do
+      result = described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client,
+        stream_message_id: "stream-123")
+
+      turn = chat_session.chat_turns.find_by!(stream_message_id: "stream-123")
+      expect(turn).to have_attributes(status: "completed", user_message_id: be_present)
+      expect(turn.messages).to include(result, turn.user_message)
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001
+    it "records a classified failure after the user message is durable" do
+      failing_client = ->(*) { raise AgentHarness::Error, "provider stopped" }
+
+      expect {
+        described_class.call(chat_session: chat_session, content: "Hello", llm_client: failing_client,
+          stream_message_id: "stream-failed")
+      }.to raise_error(AgentHarness::Error)
+
+      expect(chat_session.chat_turns.find_by!(stream_message_id: "stream-failed"))
+        .to have_attributes(status: "failed", classification: "provider_error")
+    end
+
     it "returns the assistant message" do
       result = described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
 

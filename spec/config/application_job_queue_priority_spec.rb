@@ -44,6 +44,7 @@ RSpec.describe ApplicationJob, :no_db do
         ApplyRemediationDecisionJob
         AuditEventRetentionJob
         BillingPeriodManagementJob
+        ChatTurnStallSweepJob
         DependencyBackfillJob
         DispatchCircuitBreakerRecoveryJob
         DockerDiskCleanupJob

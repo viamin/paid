@@ -1,0 +1,25 @@
+<% turn = message.chat_turn %>
+<div class="mx-auto max-w-3xl rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" role="alert">
+  <div class="font-semibold">This turn needs attention</div>
+  <p class="mt-1"><%= message.content %></p>
+
+  <% tool_message_ids = Array(message.metadata["tool_message_ids"]) %>
+  <% if tool_message_ids.any? %>
+    <div class="mt-3">
+      Preserved tool evidence:
+      <% tool_message_ids.each_with_index do |message_id, index| %>
+        <%= ", " unless index.zero? %><%= link_to "tool result ##{message_id}", "#chat-message-#{message_id}", class: "underline" %>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if turn&.status == "stalled" %>
+    <%= button_to "Resume from checkpoint",
+          resume_chat_session_chat_turn_path(turn.chat_session, turn),
+          params: { expected_revision: turn.lock_version },
+          class: "mt-3 rounded-md bg-amber-700 px-3 py-2 font-medium text-white hover:bg-amber-800",
+          form: { data: { turbo_confirm: "Resume this turn? Review recorded tool results first; external side effects may be ambiguous." } } %>
+  <% elsif turn %>
+    <p class="mt-3 font-medium">Recovery status: <%= turn.status.humanize %></p>
+  <% end %>
+</div>

@@ -52,6 +52,8 @@ class Account < ApplicationRecord
   has_many :service_containers, dependent: :destroy
   has_many :egress_allowlist_entries, dependent: :destroy
   has_many :chat_sessions, dependent: :destroy
+  has_many :chat_turns, dependent: :destroy
+  has_many :chat_turn_recovery_attempts, dependent: :destroy
   has_many :chat_investigations, dependent: :destroy
   has_many :clarifying_question_progresses, dependent: :destroy
   has_many :explicit_preferences, dependent: :destroy

@@ -16,18 +16,22 @@ module ChatSessions
     include FallbackLoop
 
     attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
-      :transport_attempt_message
+      :transport_attempt_message, :chat_turn
 
     MAX_CONTENT_LENGTH = 12_000
 
-    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil, llm_client: nil, stream_message_id: nil)
+    def initialize(chat_session:, actor: chat_session.created_by, content:, on_chunk: nil, on_message_persisted: nil,
+      llm_client: nil, stream_message_id: nil, chat_turn: nil)
       @chat_session = chat_session
       @actor = actor
       @content = content
-      @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @downstream_chunk = on_chunk
+      @downstream_message_persisted = on_message_persisted
+      @on_chunk = method(:record_chunk)
+      @on_message_persisted = method(:record_message)
       @llm_client = llm_client
-      @stream_message_id = stream_message_id
+      @stream_message_id = stream_message_id.presence || SecureRandom.uuid
+      @chat_turn = chat_turn
     end
 
     def self.call(...)
@@ -42,11 +46,16 @@ module ChatSessions
       check_token_limit!
       resume_session_if_needed!
 
+      start_turn!
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
       update_session_activity
+      conclude_turn(assistant_message)
       assistant_message
+    rescue StandardError => error
+      chat_turn&.fail!(failure_classification(error))
+      raise
     end
 
     private
@@ -111,6 +120,7 @@ module ChatSessions
 
     def persist_user_message
       @transport_attempt_message = existing_user_message || create_user_message
+      chat_turn.update!(user_message: transport_attempt_message) unless chat_turn.user_message_id
 
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)
@@ -172,6 +182,41 @@ module ChatSessions
       chat_session.update!(
         idle_timeout_at: ChatSession::IDLE_TIMEOUT_DURATION.from_now
       )
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001 CHAT-TURN-RECOVERY-005
+    def start_turn!
+      @chat_turn ||= chat_session.chat_turns.find_or_initialize_by(stream_message_id: stream_message_id)
+      raise ArgumentError, "Chat turn has already concluded" if chat_turn.persisted? && chat_turn.terminal?
+
+      chat_turn.assign_attributes(account: chat_session.account, initiated_by: actor, status: "streaming",
+        pause_reason: nil, last_activity_at: Time.current)
+      chat_turn.save!
+    end
+
+    def record_chunk(chunk)
+      chat_turn&.record_activity!
+      @downstream_chunk&.call(chunk)
+    end
+
+    def record_message(message, **kwargs)
+      message.update!(chat_turn: chat_turn) if chat_turn && message.chat_turn_id != chat_turn.id
+      chat_turn&.record_activity!
+      @downstream_message_persisted&.call(message, **kwargs)
+    end
+
+    def conclude_turn(assistant_message)
+      assistant_message ? chat_turn.complete! : chat_turn.pause_for_confirmation!
+    end
+
+    def failure_classification(error)
+      return "client_disconnect" if error.is_a?(IOError)
+      return "budget_exhausted" if error.is_a?(TokenLimitExceededError)
+      return "provider_timeout" if error.is_a?(Timeout::Error)
+      return "rate_limited" if error.is_a?(AgentHarness::RateLimitError)
+      return "provider_error" if error.is_a?(AgentHarness::Error)
+
+      "application_error"
     end
 
     # Reuse the pre-loop budget baseline so the mid-loop guard does not issue a
