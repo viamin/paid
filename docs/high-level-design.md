@@ -336,6 +336,15 @@ evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
 building a second provisioning path, and keeps investigation separate from
 any repair: a scan never mutates source code or opens a PR on its own.
+Its proposed optimization recipe family is a code-defined, extensible catalog
+of report-only investigations. A project owner may select a curated recipe or
+provide a custom objective, while free-form scope bounds recommendations rather
+than the supporting evidence needed to assess them. A separately proposed,
+per-run election may later queue only bounded optimization repairs; semantic
+assessment belongs to `agent_harness`, while authorization, budgets,
+idempotency, revision revalidation, and the security-category exclusion remain
+deterministic control-plane gates. It is off by default and is not an approval
+to implement or roll out automatic repair.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending

@@ -247,7 +247,12 @@ Maintenance scans are report-only. A user can select findings to create
 bounded repair issues or normal PR-creation runs, preserving source-report
 links and revalidating evidence against the repair checkout. No scan directly
 deletes source code or opens repair PRs as a side effect. Automatic repair is
-outside the initial scope and requires a separately approved policy.
+outside the initial scope and requires a separately approved policy. The
+reviewable optimization-family policy in `maintenance-runs` is such a proposed
+exception only: it is a per-run, off-by-default pre-authorization to queue
+bounded non-security repairs after report completion. It does not alter the
+base manual-selection contract, enable runtime behavior, or become accepted
+until the RDR/LID review gate accepts the precise policy.
 
 ### PR integration
 

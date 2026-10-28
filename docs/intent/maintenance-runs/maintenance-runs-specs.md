@@ -158,4 +158,64 @@
       back to its source maintenance report and finding.
 - [ ] **MAINT-073**: The system shall never create a repair issue or
       PR-creation run as a direct side effect of a maintenance scan without
-      an explicit user selection.
+      an explicit user selection, except where the separately elected,
+      optimization-only auto-queue policy satisfies MAINT-085 through
+      MAINT-088.
+
+## Optimization Recipe Family and Proposed Auto-Queue Exception
+
+- [ ] **MAINT-080**: The system shall expose a code-defined optimization
+      catalog containing Performance, Design / Architecture, Code Duplication,
+      Security Hardening, Cost / Resource Efficiency, Maintainability /
+      Readability, and Test Coverage & Quality; adding a type shall require a
+      catalog/recipe entry rather than an enum migration. *(#4493)*
+- [ ] **MAINT-081**: When an authorized user starts an optimization
+      maintenance run through the UI, authenticated API, or MCP surface, the
+      system shall apply the same authorization and `maintenance_runs` guard,
+      accept an optional catalog selection with optional free-text scope and
+      guidance, and allow a valid custom objective when a selection has no
+      catalog mapping. *(#4493)*
+- [ ] **MAINT-082**: The system shall snapshot an optimization run's selected
+      catalog key and resolved recipe version with its objective, scope, and
+      guidance, and shall retain those values across retries. *(#4493)*
+- [ ] **MAINT-083**: The Code Duplication, Maintainability / Readability, and
+      Performance recipes shall supply their objective, instructions,
+      applicable evidence collectors, validation guidance, and metric hints;
+      a recommendation to consolidate or delete shall not rest on analyzer
+      output alone. *(#4494)*
+- [ ] **MAINT-084**: When an optimization recipe has no applicable collector,
+      the system shall complete its prompt-first assessment through
+      `agent_harness` and report the resulting coverage limitation and
+      evidence honestly rather than representing it as tool-backed coverage.
+      *(#4494)*
+- [ ] **MAINT-085**: When an authorized user explicitly elects the proposed
+      optimization auto-queue policy at run start, the system shall snapshot
+      that per-run election, policy revision, confidence selection-rule value,
+      assessment-schema revision, and explicit per-repair cost/time caps;
+      when omitted, the run shall remain report-only. *(#4495)*
+- [ ] **MAINT-086**: Before an elected optimization auto-queue creates a
+      repair, the system shall obtain a bounded structured semantic assessment
+      through `agent_harness`; it shall treat unavailable, malformed, or
+      indeterminate assessments as ineligible, shall preserve the finding for
+      manual selection, and shall not assign evidence meaning with framework
+      text heuristics or calibrated numeric assumptions. *(#4495)*
+- [ ] **MAINT-087**: Before dispatching an elected optimization repair, the
+      system shall deterministically enforce the maintenance admission policy,
+      per-run election, non-security category, open canonical finding,
+      selection-rule result, explicit per-repair budget, and an idempotency
+      key derived from the elected run and canonical finding identity. *(#4495)*
+- [ ] **MAINT-088**: When an elected optimization repair target differs from
+      its source report revision, the system shall revalidate the finding
+      against the repair checkout before applying its recommendation; a stale
+      or failed revalidation shall be visible and shall not authorize repair.
+      The repair shall retain report/finding provenance and shall not broaden
+      the finding's recommendation scope. *(#4495)*
+- [ ] **MAINT-089**: The system shall never auto-queue a Security Hardening
+      finding; security repairs shall remain report-only and manually selected
+      until a separately accepted security policy authorizes them. *(#4496)*
+- [ ] **MAINT-090**: The Cost / Resource Efficiency, Design / Architecture,
+      and Test Coverage & Quality recipes shall register through the
+      optimization catalog, report prompt-first evidence honestly where no
+      credible collector exists, and reconcile test-quality work with the
+      maintenance test-quality recipe rather than creating a duplicate
+      contract. *(#4496)*
