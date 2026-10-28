@@ -94,8 +94,13 @@
   `hold_for_review` equivalent, `Inbox::Queue` SHALL return it as a
   `merge_approval` entry with a human-review summary even when its local review
   phase is stale or uninitialized and when its ordinary auto-merge blocker
-  snapshot is absent or has other blockers. This visibility exception SHALL
-  NOT advance the review phase or assert merge readiness.
+  snapshot is absent or has other blockers. An open `draft` pull request with
+  neither hold marker SHALL likewise remain visible, with a distinct stalled-
+  execution reason, only when an exact project-and-PR-number match finds a
+  terminally unsuccessful `create_pr` run whose completion timestamp (or
+  update timestamp when completion is absent) is within 30 days. These
+  visibility exceptions SHALL NOT advance the review phase or assert merge
+  readiness.
   *Tests:* `spec/services/inbox/queue_spec.rb`.
   *Code:* `app/services/inbox/merge_approval.rb`.
 

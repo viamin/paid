@@ -89,9 +89,13 @@ Today three kinds exist:
   `paid-hold-review` is also a `:merge_approval` entry, irrespective of its
   ordinary blocker snapshot or local review phase, because the label is an
   explicit request for human action. In ignored label-integration mode, the
-  local `hold_for_review` equivalent carries the same meaning. This is a
-  visibility exception only: it neither declares the PR merge-ready nor
-  advances its review phase.
+  local `hold_for_review` equivalent carries the same meaning. An open PR
+  still in the `draft` phase is also a `:merge_approval` entry when an exact
+  project-and-PR-number match finds a terminally unsuccessful `create_pr` run
+  in the last 30 days. This bounded recovery case makes interrupted
+  finalization visible with its own reason, without treating the stale phase as
+  merge readiness. These are visibility exceptions only: neither declares the
+  PR merge-ready nor advances its review phase.
 
 Future kinds (`:paused_run_decision`)
 plug in by registering an entry-finder that contributes rows to the same

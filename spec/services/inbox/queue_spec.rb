@@ -395,6 +395,22 @@ RSpec.describe Inbox::Queue do
       expect(entries.map(&:issue)).not_to include(pr)
     end
 
+    it "surfaces a stale draft PR after its creating run terminates without finalization" do # @spec INBOX-FOUNDATION-008
+      stalled_pr = create_stalled_draft_pr(github_number: 44)
+      expired_pr = create_stalled_draft_pr(github_number: 45, completed_at: 31.days.ago)
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries.map(&:issue)).to include(stalled_pr)
+      expect(entries.map(&:issue)).not_to include(expired_pr)
+      entry = entries.find { |candidate| candidate.issue == stalled_pr }
+      expect(entry).to have_attributes(
+        summary_text: "Automation stopped before review readiness"
+      )
+      expect(entry.guidance.fetch(:instruction)).to include("has not confirmed this pull request is merge-ready")
+      expect(stalled_pr.reload.pr_review_phase).to eq("draft")
+    end
+
     # @spec OPERATOR-INBOX-002B @spec NOTIFICATION-SEVERITY-008
     it "returns typed entries for visible blocking notifications" do
       notification = create_action_required_notification
@@ -1683,6 +1699,14 @@ RSpec.describe Inbox::Queue do
         not_evaluated: []
       )
     )
+  end
+
+  def create_stalled_draft_pr(github_number:, completed_at: Time.current)
+    pr = create(:issue, :pull_request, project: project, github_number: github_number,
+      pr_review_phase: "draft", labels: [], auto_merge_evaluated_at: nil, auto_merge_blockers: nil)
+    create(:agent_run, :timeout, project: project, pull_request_number: pr.github_number,
+      goal: "create_pr", completed_at: completed_at)
+    pr
   end
 
   def create_intent_conformance_pr(github_number: 50)
