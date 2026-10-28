@@ -89,12 +89,39 @@
   *Tests:* `spec/services/dashboard/needs_input_queue_spec.rb`.
   *Code:* `app/services/dashboard/needs_input_queue.rb`.
 
-- [x] **INBOX-FOUNDATION-008** — When an open ready pull request has the
-  structured `paid-hold-review` label, `Inbox::Queue` SHALL return it as a
-  `merge_approval` entry with a human-review summary even if its ordinary
-  auto-merge blocker snapshot is absent or has other blockers.
+- [x] **INBOX-FOUNDATION-008** — When an open pull request has the structured
+  `paid-hold-review` label, or the equivalent local hold in ignored label mode,
+  `Inbox::Queue` SHALL return it as a `merge_approval` entry with a human-review
+  summary regardless of its stale or uninitialized internal review phase,
+  ordinary auto-merge blocker snapshot, or creating-run metadata. The entry
+  SHALL remain subject to project visibility and merge-permission gates;
+  surfacing it SHALL not authorize a merge or promote its phase.
   *Tests:* `spec/services/inbox/queue_spec.rb`.
   *Code:* `app/services/inbox/merge_approval.rb`.
+
+- [x] **INBOX-FOUNDATION-012** — When an authorized operator can see an open
+  held pull request, the merge-approval lane SHALL preserve that explicit human
+  decision request even when the local phase is `draft`/uninitialized, GitHub
+  labels are absent, or the creating run failed, timed out, was cancelled, or
+  never recorded a pull-request number. The structured hold SHALL remain the
+  reason and its clearing action SHALL be review/release on GitHub; recovery
+  SHALL not restore labels that a human intentionally removed.
+  *Tests:* `spec/services/inbox/queue_spec.rb`.
+  *Code:* `app/services/inbox/merge_approval.rb`.
+
+- [x] **INBOX-FOUNDATION-013** — When an open pull request in an own-repository
+  Paid automation scope has remained unchanged for at least 24 hours, has no
+  active responsible PR workflow, and lacks a complete current assessment,
+  `Inbox::Queue` SHALL expose one idempotent `merge_approval` entry describing
+  stalled execution and a concrete manual recovery action. The lane SHALL
+  exclude PRs with an active workflow or a complete pending/failed CI, review,
+  security, dependency, conflict, or policy assessment; it SHALL never claim
+  merge readiness or change the internal phase. The same candidate predicate
+  SHALL feed the list, badge, filter availability, API, and chat projections.
+  *Tests:* `spec/services/inbox/queue_spec.rb`, `spec/services/inbox/count_spec.rb`,
+  `spec/services/inbox/availability_spec.rb`, `spec/requests/inbox_spec.rb`.
+  *Code:* `app/services/inbox/merge_approval.rb`, `app/services/inbox/queue.rb`,
+  `app/services/inbox/count.rb`, `app/services/inbox/availability.rb`.
 
 - [x] **INBOX-FOUNDATION-011** — When an authorized operator can see an open,
   ready pull request in a project with `auto_merge_mode: off`, the PR scanner

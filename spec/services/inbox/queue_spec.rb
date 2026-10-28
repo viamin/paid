@@ -168,6 +168,175 @@ RSpec.describe Inbox::Queue do
       )
     end
 
+    # @spec INBOX-FOUNDATION-012
+    it "surfaces an explicit hold even when the internal phase is stale" do
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 42,
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry).to have_attributes(
+        issue: pr,
+        summary_text: "Human review requested before merging"
+      )
+    end
+
+    # @spec INBOX-FOUNDATION-013
+    it "surfaces a bounded stalled PR without labels or a run-to-PR link" do
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 43,
+        pr_review_phase: "draft",
+        labels: [],
+        github_updated_at: 2.days.ago,
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+      create(:agent_run, :failed, project: project, issue: nil, custom_prompt: "Create PR",
+        goal: "create_pr", pull_request_number: nil, pull_request_url: nil)
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry.summary).to include("stalled")
+      expect(entry.guidance.fetch(:instruction)).to include("manual run")
+      expect(entry.guidance.fetch(:automatic_merge_active)).to be(true)
+    end
+
+    # @spec INBOX-FOUNDATION-013
+    it "does not call a PR stalled while an active PR workflow owns it" do
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 44,
+        pr_review_phase: "draft",
+        labels: [],
+        github_updated_at: 2.days.ago,
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+      create(:agent_run, :running, project: project, issue: nil,
+        source_pull_request_number: pr.github_number)
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries).to be_empty
+    end
+
+    # @spec INBOX-FOUNDATION-013
+    it "does not relabel an assessed PR with a pending machine blocker as stalled" do
+      create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 45,
+        pr_review_phase: "draft",
+        labels: [],
+        github_updated_at: 2.days.ago,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(
+          failed: [ blocker(signal: "checks_green", reason_code: "checks_not_green") ],
+          not_evaluated: []
+        )
+      )
+
+      expect(described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)).to be_empty
+    end
+
+    # @spec INBOX-FOUNDATION-013 LABEL-CONTROL-004
+    it "does not call an old PR stalled after a human removed automation" do
+      create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 46,
+        pr_review_phase: "draft",
+        labels: [ project.generated_label_name ],
+        github_updated_at: 2.days.ago,
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      expect(described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)).to be_empty
+    end
+
+    # @spec INBOX-FOUNDATION-013
+    it "uses a recent terminal create run as bounded evidence for a newly synced unlabeled PR" do
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 47,
+        pr_review_phase: "draft",
+        labels: [],
+        github_updated_at: Time.current,
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+      create(:agent_run, :failed, project: project, issue: nil, custom_prompt: "Create PR",
+        goal: "create_pr", pull_request_number: nil, pull_request_url: nil)
+
+      expect(described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole.issue).to eq(pr)
+    end
+
+    # @spec INBOX-FOUNDATION-013
+    it "does not relabel pending CI or review blockers as stalled execution" do
+      create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 45,
+        pr_review_phase: "draft",
+        github_updated_at: 2.days.ago,
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(
+          failed: [ blocker(signal: "ci_passed", reason_code: "checks_pending") ],
+          not_evaluated: []
+        )
+      )
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries).to be_empty
+    end
+
+    # @spec INBOX-FOUNDATION-013
+    it "clears a stalled entry once a current assessment resumes ownership" do
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        github_number: 46,
+        pr_review_phase: "draft",
+        github_updated_at: 2.days.ago,
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      expect(described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+        .map(&:issue)).to eq([ pr ])
+
+      pr.update!(
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(
+          failed: [ blocker(signal: "ci_passed", reason_code: "checks_pending") ],
+          not_evaluated: []
+        )
+      )
+
+      expect(described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)).to be_empty
+    end
+
     # @spec INBOX-PHASE-RELEVANCE-003
     it "keeps merge approvals accessible in Disabled phases when merge is disabled" do
       FeatureFlags.enable!(:automation_phases, project:)

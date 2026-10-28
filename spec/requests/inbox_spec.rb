@@ -906,6 +906,28 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("so Paid can merge it on the next PR scan")
   end
 
+  # @spec INBOX-FOUNDATION-012 INBOX-FOUNDATION-013 OPERATOR-INBOX-002L
+  it "renders stale held and unlabeled PRs with recovery guidance" do
+    held = create_inbox_recovery_pr(title: "Held while finalization failed",
+      labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ])
+    stalled = create_inbox_recovery_pr(title: "Unlabeled stalled PR", github_updated_at: 2.days.ago)
+
+    get inbox_path
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include(held.title, stalled.title, "Human review requested before merging")
+
+    visit_merge_approval_entry(stalled)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Paid automation stopped", "start a manual run", "does not authorize a merge")
+  end
+
+  def create_inbox_recovery_pr(title:, labels: [], github_updated_at: Time.current)
+    create(:issue, :pull_request, project: project, title:, github_updated_at:, pr_review_phase: "draft",
+      labels:, auto_merge_evaluated_at: nil, auto_merge_blockers: nil)
+  end
+
   # @spec OPERATOR-INBOX-002K
   # Regression for #4519: when both the owner and the configured manual
   # reviewer approvals are stale (or when the manual reviewer's stale

@@ -84,6 +84,25 @@ RSpec.describe Inbox::Availability do
       )
     end
 
+    # @spec INBOX-FOUNDATION-013
+    it "offers the merge-approval filter for a stale unlabeled PR" do
+      create(
+        :issue,
+        :pull_request,
+        project: project_a,
+        github_number: 302,
+        pr_review_phase: "draft",
+        github_updated_at: 2.days.ago,
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      availability = described_class.call(user: user)
+
+      expect(availability.kind_counts[Inbox::Queue::MERGE_APPROVAL_KIND]).to eq(1)
+      expect(availability.available_projects).to contain_exactly(project_a)
+    end
+
     it "agrees with the queue and badge on stalled partial closeouts" do # @spec PARTIAL-CLOSEOUT-002
       issue = create(:issue, project: project_a, github_number: 300, paid_state: "in_progress")
       create(

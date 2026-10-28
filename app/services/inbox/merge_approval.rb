@@ -3,6 +3,10 @@
 module Inbox
   class MergeApproval
     APPROVAL_SIGNALS = %w[owner_approved reviews_fresh].freeze
+    STALL_WINDOW = 24.hours
+    FAILED_CREATE_PR_WINDOW = 24.hours
+    ACTIVE_WORKFLOW_STATUSES = AgentRun::UNFINISHED_STATUSES
+    TERMINAL_CREATE_PR_STATUSES = AgentRun::TERMINAL_FAILURE_STATUSES
 
     def self.call(issue, phase_authorized: nil)
       new(issue, phase_authorized:).call
@@ -14,7 +18,7 @@ module Inbox
     # instantiation per open, ready PR on the account. Shared by
     # `Inbox::Count` and `Inbox::Availability` so the candidate definition
     # can't drift between the badge, the filters dialog, and the queue.
-    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-004
+    # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 INBOX-FOUNDATION-012 INBOX-FOUNDATION-013 OPERATOR-INBOX-002K LABEL-CONTROL-004
     def self.candidates(project_ids)
       Issue
         .joins(:project)
@@ -23,21 +27,32 @@ module Inbox
           project_id: project_ids,
           is_pull_request: true,
           github_state: "open",
-          pr_review_phase: "ready",
           merge_permission_rejected_at: nil
         )
-        .where(candidate_conditions)
+        .where(
+          candidate_conditions,
+          hold_label: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ].to_json,
+          stalled_since: STALL_WINDOW.ago,
+          failed_run_since: FAILED_CREATE_PR_WINDOW.ago,
+          terminal_statuses: TERMINAL_CREATE_PR_STATUSES,
+          active_statuses: ACTIVE_WORKFLOW_STATUSES
+        )
     end
 
     def self.candidate_conditions
-      Issue.sanitize_sql_array([
-        "(projects.label_integration_mode <> 'ignored' AND issues.labels @> :hold_label::jsonb) OR " \
+      "(projects.label_integration_mode <> 'ignored' AND issues.labels @> :hold_label::jsonb) OR " \
           "(projects.label_integration_mode = 'ignored' AND issues.hold_for_review = TRUE) OR (" \
           "issues.auto_merge_evaluated_at IS NOT NULL AND " \
           "issues.auto_merge_blockers IS NOT NULL AND (" \
-          "projects.auto_merge_mode = 'off' OR projects.owner_reviewer_login IS NOT NULL))",
-        hold_label: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ].to_json
-      ])
+          "projects.auto_merge_mode = 'off' OR projects.owner_reviewer_login IS NOT NULL)) OR (" \
+          "projects.pr_target = 'own_repo' AND (issues.github_updated_at <= :stalled_since OR EXISTS (" \
+          "SELECT 1 FROM agent_runs WHERE agent_runs.project_id = issues.project_id " \
+          "AND agent_runs.goal = 'create_pr' AND agent_runs.status IN (:terminal_statuses) " \
+          "AND agent_runs.updated_at >= :failed_run_since)) AND NOT EXISTS (" \
+          "SELECT 1 FROM agent_runs WHERE agent_runs.project_id = issues.project_id " \
+          "AND (agent_runs.source_pull_request_number = issues.github_number OR " \
+          "agent_runs.pull_request_number = issues.github_number OR agent_runs.issue_id = issues.id) " \
+          "AND agent_runs.status IN (:active_statuses)))"
     end
     private_class_method :candidate_conditions
 
@@ -63,6 +78,7 @@ module Inbox
 
       def summary
         return "Human review requested before merging" if held_for_review?
+        return "Paid automation stalled before PR reconciliation" if stalled?
         return "Approval is stale for the current revision" if stale_approval?
         return "Human review required before manual merge" if manual_merge? && approval_required?
         return "Manual merge decision required" if manual_merge?
@@ -92,6 +108,10 @@ module Inbox
 
       private
 
+      def stalled?
+        MergeApproval.stalled?(issue)
+      end
+
       def stale_approval?
         blockers.any? { |blocker| blocker["signal"] == "reviews_fresh" }
       end
@@ -118,6 +138,7 @@ module Inbox
 
       def guidance_heading
         return "Human review is on hold" if held_for_review?
+        return "Paid automation stopped" if stalled?
         return "Approval is stale for the current revision" if stale_approval?
         return "Manual merge decision on GitHub" if manual_merge?
 
@@ -126,10 +147,15 @@ module Inbox
 
       def guidance_instruction
         return held_review_instruction if held_for_review?
+        return stalled_instruction if stalled?
         return stale_approval_instruction if stale_approval?
         return "Review the current changes and make the manual merge decision on GitHub. Paid will not merge this pull request automatically." if manual_merge?
 
         "Approve the current revision on GitHub. Paid will reevaluate it on a later scan, subject to all remaining checks and policy."
+      end
+
+      def stalled_instruction
+        "Paid stopped progressing this pull request before it reconciled its current state. Review the current changes and start a manual run or resolve the automation failure; this entry does not authorize a merge."
       end
 
       def held_review_instruction
@@ -146,9 +172,29 @@ module Inbox
       end
 
       def display_blockers
-        blockers.map do |blocker|
-          blocker.merge("next_action" => blocker_next_action(blocker))
+        blockers.present? ? blockers.map { |blocker| display_blocker(blocker) } : [ synthetic_blocker ]
+      end
+
+      def synthetic_blocker
+        if held_for_review?
+          {
+            "signal" => "human_review_hold",
+            "status" => "failed",
+            "sanitized_message" => "Human review was explicitly requested.",
+            "next_action" => held_review_instruction
+          }
+        else
+          {
+            "signal" => "automation_stalled",
+            "status" => "failed",
+            "sanitized_message" => "Paid automation stopped before reconciling this pull request.",
+            "next_action" => stalled_instruction
+          }
         end
+      end
+
+      def display_blocker(blocker)
+        blocker.merge("next_action" => blocker_next_action(blocker))
       end
 
       def blocker_next_action(blocker)
@@ -211,9 +257,10 @@ module Inbox
     attr_reader :issue, :phase_authorized
 
     def candidate?
-      # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-004
+      # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 INBOX-FOUNDATION-012 INBOX-FOUNDATION-013 OPERATOR-INBOX-002K LABEL-CONTROL-004
       return false unless reviewable_pr?
       return true if held_for_review?
+      return true if stalled?
       return false if manual_merge? && automatic_merge_active?
 
       manual_merge? ? manual_action_required? : approval_only_blockers?
@@ -222,9 +269,57 @@ module Inbox
     def reviewable_pr?
       issue.is_pull_request? &&
         issue.github_state == "open" &&
-        issue.pr_review_phase == "ready" &&
-        (manual_merge? || automatic_merge_configured?) &&
-        !issue.merge_permission_rejected?
+        !issue.merge_permission_rejected? &&
+        (issue.ready_phase? || held_for_review? || stalled?) &&
+        (manual_merge? || automatic_merge_configured? || held_for_review? || stalled?)
+    end
+
+    # @spec INBOX-FOUNDATION-013
+    def self.stalled?(issue)
+      return false unless issue.is_pull_request? && issue.github_state == "open"
+      return false unless issue.project.pr_target == "own_repo"
+      return false if issue.auto_merge_evaluated_at.present? || issue.auto_merge_blockers.present?
+      return false unless automation_scope?(issue)
+      return false if active_workflow?(issue)
+      return false unless old_or_failed_create_run?(issue)
+
+      missing_reconciliation_marker?(issue)
+    end
+
+    def self.automation_scope?(issue)
+      issue.project.auto_add_labels_enabled? ||
+        issue.project.auto_merge_mode != "off" ||
+        issue.has_label?(issue.project.automation_label_name)
+    end
+
+    def self.active_workflow?(issue)
+      AgentRun.where(project_id: issue.project_id, status: ACTIVE_WORKFLOW_STATUSES)
+        .where(
+          "source_pull_request_number = :number OR pull_request_number = :number OR issue_id = :issue_id",
+          number: issue.github_number,
+          issue_id: issue.id
+        ).exists?
+    end
+
+    def self.old_or_failed_create_run?(issue)
+      return true if issue.github_updated_at.present? && issue.github_updated_at <= STALL_WINDOW.ago
+
+      AgentRun.where(
+        project_id: issue.project_id,
+        goal: "create_pr",
+        status: TERMINAL_CREATE_PR_STATUSES
+      ).where("updated_at >= ?", FAILED_CREATE_PR_WINDOW.ago).exists?
+    end
+
+    def self.missing_reconciliation_marker?(issue)
+      return false unless issue.project.auto_add_labels_enabled?
+      return false if issue.has_label?(issue.project.generated_label_name)
+
+      issue.pr_review_phase.in?(%w[draft restarted])
+    end
+
+    def stalled?
+      self.class.stalled?(issue)
     end
 
     def held_for_review?

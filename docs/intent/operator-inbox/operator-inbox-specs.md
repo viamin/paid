@@ -27,6 +27,16 @@
   *Code:* `app/services/inbox/queue.rb`, `app/services/inbox/merge_approval.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** — When an open PR is explicitly held, or is a
+  bounded stale PR in Paid automation scope with no active responsible
+  workflow, the `merge_approval` entry SHALL identify whether the operator is
+  being asked for a human hold decision or to recover stalled execution. Its
+  summary, detail guidance, API payload, and chat context SHALL not describe
+  the PR as merge-ready; the entry SHALL clear when the hold clears, an active
+  workflow resumes, a complete assessment is recorded, or the PR closes.
+  *Code:* `app/services/inbox/merge_approval.rb`, `app/services/inbox/queue.rb`.
+  *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002K** — When an open ready PR belongs to an authorized
   project with auto-merge off, the system SHALL surface the same
   `merge_approval` lane without relying on permission to execute an automatic
