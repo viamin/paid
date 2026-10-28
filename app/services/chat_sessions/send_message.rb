@@ -16,7 +16,7 @@ module ChatSessions
     include FallbackLoop
 
     attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
-      :transport_attempt_message
+      :transport_attempt_message, :chat_turn
 
     MAX_CONTENT_LENGTH = 12_000
 
@@ -25,9 +25,10 @@ module ChatSessions
       @actor = actor
       @content = content
       @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @downstream_message_callback = on_message_persisted
+      @on_message_persisted = method(:record_persisted_message)
       @llm_client = llm_client
-      @stream_message_id = stream_message_id
+      @stream_message_id = stream_message_id || SecureRandom.uuid
     end
 
     def self.call(...)
@@ -42,14 +43,65 @@ module ChatSessions
       check_token_limit!
       resume_session_if_needed!
 
+      start_turn!
       persist_user_message
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
       update_session_activity
+      conclude_turn!(assistant_message)
       assistant_message
+    rescue AgentHarness::RateLimitError => error
+      mark_turn_interrupted!("rate_limited", "rate_limit", error)
+      raise
+    rescue IOError => error
+      mark_turn_interrupted!("abandoned", "client_disconnect", error)
+      raise
+    rescue StandardError => error
+      mark_turn_interrupted!("failed", failure_classification(error), error)
+      raise
     end
 
     private
+
+    # @spec CHAT-API-027
+    def start_turn!
+      @chat_turn = chat_session.chat_turns.find_or_create_by!(stream_id: stream_message_id) do |turn|
+        turn.account = chat_session.account
+        turn.initiated_by = actor
+        turn.status = "pending"
+        turn.last_activity_at = Time.current
+        turn.lease_expires_at = (ChatTurns::StallSweepJob.stall_threshold * 2).from_now
+      end
+      chat_turn.update!(status: "streaming", lease_expires_at: (ChatTurns::StallSweepJob.stall_threshold * 2).from_now,
+        failure_classification: nil, failure_message: nil)
+    end
+
+    def record_persisted_message(message, **kwargs)
+      chat_turn&.record_activity!(message)
+      @downstream_message_callback&.call(message, **kwargs)
+    end
+
+    def conclude_turn!(assistant_message)
+      if assistant_message
+        chat_turn.complete!
+      else
+        chat_turn.update!(status: "awaiting_confirmation", lease_expires_at: nil, last_activity_at: Time.current)
+      end
+    end
+
+    def mark_turn_interrupted!(status, classification, error)
+      return unless chat_turn&.persisted?
+
+      chat_turn.update!(status:, failure_classification: classification,
+        failure_message: error.message, lease_expires_at: nil, last_activity_at: Time.current,
+        audit_events: chat_turn.audit_events + [ {
+          "event" => status, "classification" => classification, "at" => Time.current.iso8601
+        } ])
+    end
+
+    def failure_classification(error)
+      error.is_a?(AgentHarness::Error) ? "infrastructure_failure" : "application_failure"
+    end
 
     def resume_session_if_needed!
       return unless chat_session.status == "closed"
@@ -111,6 +163,7 @@ module ChatSessions
 
     def persist_user_message
       @transport_attempt_message = existing_user_message || create_user_message
+      chat_turn.update!(user_message: transport_attempt_message)
 
       chat_session.generate_title_from_content!
       on_message_persisted&.call(transport_attempt_message)

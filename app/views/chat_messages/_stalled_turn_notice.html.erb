@@ -1,0 +1,8 @@
+<div class="mx-auto max-w-3xl rounded-md border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950" data-message-id="<%= message.id %>">
+  <p class="font-semibold">This turn needs attention</p>
+  <p class="mt-1"><%= message.content %></p>
+  <%= button_to "Resume safely", recover_chat_session_chat_turn_path(message.chat_session, message.metadata["chat_turn_id"]),
+    params: { revision: message.metadata["chat_turn_revision"] },
+    class: "mt-3 rounded-md bg-amber-700 px-3 py-1.5 font-medium text-white hover:bg-amber-800",
+    form: { data: { turbo_confirm: "Resume from the saved checkpoint? Review completed tool actions first; Paid will not blindly replay them." } } %>
+</div>

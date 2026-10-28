@@ -96,6 +96,7 @@ class ChatMessagesController < ApplicationController
         chat_session: @chat_session,
         actor: current_user,
         content: params[:content],
+        stream_message_id: message_id,
         on_chunk: ->(chunk) {
           chunk_sequence += 1
           write_sse_event("message_chunk", { message_id: message_id, content: chunk, sequence: chunk_sequence })
@@ -137,7 +138,8 @@ class ChatMessagesController < ApplicationController
       ChatSessions::SendMessage.call(
         chat_session: @chat_session,
         actor: current_user,
-        content: params[:content]
+        content: params[:content],
+        stream_message_id: SecureRandom.uuid
       )
     end
 

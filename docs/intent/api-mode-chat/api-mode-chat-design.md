@@ -165,6 +165,17 @@ What ships today:
   provider error creates a durable transcript notice and requires a user to
   correct the runner configuration or resend rather than retrying a permanent
   authentication or configuration failure indefinitely
+- every accepted send owns a durable `ChatTurn` lifecycle record. Persisted
+  messages advance its activity checkpoint, a periodic server sweep classifies
+  inactive non-terminal turns, and confirmation/rate-limit pauses remain
+  explicit non-stalled states. A stalled turn retains its transcript evidence
+  and gains a visible system notice; it is never inferred to have succeeded.
+- recovery claims a stalled turn under a row lock and optimistic revision,
+  records the actor and attempt, and resumes from the original durable user
+  message/checkpoint. Ambiguous stops and any turn with a completed write tool
+  require an explicit user action. Automatic recovery is limited to
+  infrastructure classifications whose checkpoint explicitly declares replay
+  safe; the first slice declares no tool-bearing checkpoint replay safe.
 - `ChatSessions::BuildLlmClient` raises the OpenAI-compatible transport
   `max_tokens` cap to 16,384 for direct-provider z.ai chat runners so GLM
   responses are not truncated by the transport default
@@ -225,3 +236,6 @@ What ships today:
   tool segments such as `chat-tool-confirmation`.
 - **Not unrestricted cross-project execution.** Every chat/tool path remains
   account-scoped and Pundit-checked.
+- **Not whole-turn replay.** Recovery reuses the original turn identity and
+  persisted transcript; it does not create a second user message or blindly
+  dispatch prior tool calls.

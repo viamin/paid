@@ -62,6 +62,59 @@
 > Testable claims for the shipped API-mode portion of interactive chat. Status
 > markers: `[x]` implemented · `[ ]` active gap · `[D]` deferred.
 
+- [x] **CHAT-API-027** — When a chat send is accepted, Paid SHALL persist one
+  durable turn with pending/streaming/completed/failed/stalled/abandoned
+  lifecycle state, a last-activity checkpoint, and a terminal classification;
+  a paused tool confirmation or rate-limit wait SHALL be represented explicitly
+  and SHALL NOT be eligible for stall detection.
+  *Tests:* `spec/models/chat_turn_spec.rb`,
+  `spec/services/chat_sessions/send_message_spec.rb`,
+  `spec/services/chat_sessions/resolve_tool_call_spec.rb`.
+  *Code:* `ChatTurn`, `ChatSessions::SendMessage#start_turn!`,
+  `ChatSessions::ResolveToolCall#call`.
+
+- [x] **CHAT-API-028** — When a non-terminal chat turn has no durable activity
+  beyond the configured stall threshold and has no live pause lease, a
+  server-side sweep SHALL atomically classify it as stalled without representing
+  it as successful, while preserving its user message and partial transcript.
+  *Tests:* `spec/models/chat_turn_spec.rb`,
+  `spec/services/chat_turns/classify_stalled_spec.rb`.
+  *Code:* `ChatTurns::StallSweepJob`, `ChatTurns::ClassifyStalled`.
+
+- [x] **CHAT-API-029** — When a turn becomes stalled, Paid SHALL persist and
+  broadcast an in-transcript notice that explains the known checkpoint,
+  completed side-effecting tools, and unknown outcome, and offers an authorized
+  explicit recovery action linked to the original turn.
+  *Test:* `spec/services/chat_turns/classify_stalled_spec.rb`.
+  *Code:* `ChatTurns::ClassifyStalled`,
+  `chat_messages/_stalled_turn_notice.html.erb`.
+
+- [x] **CHAT-API-030** — When an authorized user requests stalled-turn recovery,
+  Paid SHALL require the current turn revision, atomically claim at most one
+  recovery, retain the original turn identity and user message, and record the
+  actor, attempt, outcome, and duplicate-prevention event.
+  *Tests:* `spec/services/chat_turns/request_recovery_spec.rb`,
+  `spec/requests/chat_turns_spec.rb`.
+  *Code:* `ChatTurns::RequestRecovery`, `ChatTurns::RecoverJob`,
+  `ChatTurnsController#recover`.
+
+- [x] **CHAT-API-031** — When recovery safety is ambiguous or a side-effecting
+  tool completed, Paid SHALL require explicit user confirmation and SHALL NOT
+  blindly replay tool calls. Automatic recovery SHALL be bounded and available
+  only for a classified infrastructure failure whose durable checkpoint opts in
+  to replay safety.
+  *Tests:* `spec/models/chat_turn_spec.rb`, `spec/requests/chat_turns_spec.rb`.
+  *Code:* `ChatTurn#automatically_recoverable?`,
+  `chat_messages/_stalled_turn_notice.html.erb`.
+
+- [x] **CHAT-API-032** — When chat turn lifecycle, stall detection, or recovery
+  changes, Paid SHALL retain queryable classification/detection/recovery fields
+  and structured audit events including whether side-effecting tools completed.
+  *Tests:* `spec/services/chat_turns/classify_stalled_spec.rb`,
+  `spec/services/chat_turns/request_recovery_spec.rb`.
+  *Code:* `ChatTurn`, `ChatTurns::ClassifyStalled`,
+  `ChatTurns::RequestRecovery`, `ChatTurns::RecoverJob`.
+
 - [x] **CHAT-API-001** — When a user creates or opens an API-mode chat session,
   the system SHALL persist and expose an active inline chat session with a
   system prompt and session/message routes, defaulting to

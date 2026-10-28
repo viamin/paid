@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_014635) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -886,6 +886,44 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["status"], name: "index_chat_sessions_on_status"
   end
 
+  create_table "chat_turns", comment: "Durable lifecycle and recovery state for one accepted chat send.", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.jsonb "audit_events", default: [], null: false
+    t.bigint "chat_session_id", null: false
+    t.jsonb "checkpoint", default: {}, null: false
+    t.boolean "checkpoint_replay_safe", default: false, null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.string "failure_classification"
+    t.text "failure_message"
+    t.bigint "initiated_by_id", null: false
+    t.datetime "last_activity_at", null: false
+    t.datetime "lease_expires_at"
+    t.integer "lock_version", default: 0, null: false
+    t.bigint "notice_message_id"
+    t.integer "recovery_attempts", default: 0, null: false
+    t.datetime "recovery_finished_at"
+    t.datetime "recovery_requested_at"
+    t.bigint "recovery_requested_by_id"
+    t.boolean "side_effecting_tools_completed", default: false, null: false
+    t.string "stall_classification"
+    t.datetime "stalled_at"
+    t.string "status", default: "pending", null: false
+    t.string "stream_id", null: false
+    t.datetime "updated_at", null: false
+    t.bigint "user_message_id"
+    t.index ["account_id"], name: "index_chat_turns_on_account_id"
+    t.index ["audit_events"], name: "index_chat_turns_on_audit_events", using: :gin
+    t.index ["chat_session_id", "stream_id"], name: "index_chat_turns_on_chat_session_id_and_stream_id", unique: true
+    t.index ["chat_session_id"], name: "index_chat_turns_on_chat_session_id"
+    t.index ["initiated_by_id"], name: "index_chat_turns_on_initiated_by_id"
+    t.index ["notice_message_id"], name: "index_chat_turns_on_notice_message_id"
+    t.index ["recovery_requested_by_id"], name: "index_chat_turns_on_recovery_requested_by_id"
+    t.index ["stall_classification"], name: "index_chat_turns_on_stall_classification"
+    t.index ["status", "last_activity_at"], name: "index_chat_turns_on_status_and_last_activity_at"
+    t.index ["user_message_id"], name: "index_chat_turns_on_user_message_id"
+  end
+
   create_table "clarifying_question_progresses", comment: "Durable per-question exploration progress and attributable answer evidence.", force: :cascade do |t|
     t.bigint "account_id", null: false
     t.text "answer", comment: "Latest draft or final human answer; nil means unresolved."
@@ -1439,7 +1477,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["resolution_actor_id"], name: "index_design_artifact_findings_on_resolution_actor_id"
     t.index ["resolution_issue_id"], name: "index_design_artifact_findings_on_resolution_issue_id"
     t.check_constraint "state::text = ANY (ARRAY['missing_tree'::character varying::text, 'partial_tree'::character varying::text, 'stale_metadata'::character varying::text, 'deferred'::character varying::text, 'unverifiable'::character varying::text])", name: "chk_design_artifact_findings_state"
-    t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'assigned'::character varying::text, 'deferred'::character varying::text, 'dismissed'::character varying::text, 'resolved'::character varying::text])", name: "chk_design_artifact_findings_status"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying, 'assigned'::character varying, 'deferred'::character varying, 'dismissed'::character varying, 'resolved'::character varying]::text[])", name: "chk_design_artifact_findings_status"
   end
 
   create_table "dispatch_circuit_breakers", comment: "Account-level dispatch circuit breaker that halts scheduling when all providers fail simultaneously", force: :cascade do |t|
@@ -3264,7 +3302,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["project_id", "pull_request_number", "status"], name: "idx_page_load_findings_pr_status"
     t.index ["project_id"], name: "index_page_load_regression_findings_on_project_id"
     t.check_constraint "followup_attempts >= 0", name: "chk_page_load_findings_attempts_non_negative"
-    t.check_constraint "status::text = ANY (ARRAY['open'::character varying::text, 'resolved'::character varying::text, 'superseded'::character varying::text])", name: "chk_page_load_findings_status_valid"
+    t.check_constraint "status::text = ANY (ARRAY['open'::character varying, 'resolved'::character varying, 'superseded'::character varying]::text[])", name: "chk_page_load_findings_status_valid"
   end
 
   create_table "pending_install_claims", comment: "Server-side claims tying a freshly-returned GitHub App installation to a Paid account, so the signed `installation` webhook can finalize the GithubInstallation row for a first-time install into a brand-new org where the existing signals (project owner match, prior installation row) cannot resolve the account.", force: :cascade do |t|
@@ -4679,6 +4717,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "chat_turns", "accounts"
+  add_foreign_key "chat_turns", "chat_messages", column: "notice_message_id", on_delete: :nullify
+  add_foreign_key "chat_turns", "chat_messages", column: "user_message_id", on_delete: :nullify
+  add_foreign_key "chat_turns", "chat_sessions"
+  add_foreign_key "chat_turns", "users", column: "initiated_by_id"
+  add_foreign_key "chat_turns", "users", column: "recovery_requested_by_id"
   add_foreign_key "clarifying_question_progresses", "accounts"
   add_foreign_key "clarifying_question_progresses", "chat_sessions"
   add_foreign_key "clarifying_question_progresses", "issues"
@@ -5791,8 +5835,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
        LANGUAGE sql
        STABLE
       AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
         SELECT NULLIF(current_setting('paid.current_account_id', true), '')::bigint
       $function$
   SQL
@@ -5803,8 +5845,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
        LANGUAGE sql
        STABLE
       AS $function$
-        -- @spec POSTGRESQL-PERSISTENCE-007
-        -- version: 1
         SELECT current_setting('paid.bypass_tenant_rls', true) = 'true'
       $function$
   SQL
@@ -5900,14 +5940,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
       CREATE TRIGGER logidze_on_exception_incidents BEFORE INSERT OR UPDATE ON public.exception_incidents FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{occurrence_count,last_occurred_at,backtrace,context}')
   SQL
 
-  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
-  SQL
-
-  create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
-      CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
-  SQL
-
   create_trigger :logidze_on_feature_intent_facet_directions, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_feature_intent_facet_directions BEFORE INSERT OR UPDATE ON public.feature_intent_facet_directions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at')
   SQL
@@ -5942,10 +5974,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
 
   create_trigger :logidze_on_mcp_server_definitions, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_mcp_server_definitions BEFORE INSERT OR UPDATE ON public.mcp_server_definitions FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{env}')
-  SQL
-
-  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
-      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
   SQL
 
   create_trigger :logidze_on_orchestration_strategies, sql_definition: <<-SQL
@@ -6014,5 +6042,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
 
   create_trigger :logidze_on_users, sql_definition: <<-SQL
       CREATE TRIGGER logidze_on_users BEFORE INSERT OR UPDATE ON public.users FOR EACH ROW WHEN ((COALESCE(current_setting('logidze.disabled'::text, true), ''::text) <> 'on'::text)) EXECUTE FUNCTION logidze_logger('null', 'updated_at', '{encrypted_password,reset_password_token,reset_password_sent_at,remember_created_at}')
+  SQL
+
+  create_trigger :validate_strategy_version_scope, sql_definition: <<-SQL
+      CREATE TRIGGER validate_strategy_version_scope BEFORE INSERT OR UPDATE OF project_id, strategy_version_id ON public.orchestration_decisions FOR EACH ROW EXECUTE FUNCTION validate_orchestration_decision_strategy_version_scope()
+  SQL
+
+  create_trigger :prevent_feature_intent_approval_revision_update, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_update BEFORE UPDATE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
+  SQL
+
+  create_trigger :prevent_feature_intent_approval_revision_delete, sql_definition: <<-SQL
+      CREATE TRIGGER prevent_feature_intent_approval_revision_delete BEFORE DELETE ON public.feature_intent_approval_revisions FOR EACH ROW EXECUTE FUNCTION prevent_feature_intent_approval_revision_mutation()
   SQL
 end

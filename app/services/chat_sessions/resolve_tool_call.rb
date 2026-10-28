@@ -33,10 +33,12 @@ module ChatSessions
       @decision = decision.to_sym
       @llm_client = llm_client
       @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @downstream_message_callback = on_message_persisted
       @on_tool_call_resolved = on_tool_call_resolved
       @stream_message_id = stream_message_id
       @transport_attempt_message = originating_user_message
+      @chat_turn = chat_session.chat_turns.find_by(user_message: @transport_attempt_message)
+      @on_message_persisted = method(:record_persisted_message)
     end
 
     def self.call(...)
@@ -50,15 +52,34 @@ module ChatSessions
       prepare_resolution!
       on_tool_call_resolved&.call(tool_call_message)
 
-      if post_dispatch_confirmation?
+      @chat_turn&.update!(status: "streaming",
+        lease_expires_at: (ChatTurns::StallSweepJob.stall_threshold * 2).from_now)
+      assistant_message = if post_dispatch_confirmation?
         resolve_post_dispatch_confirmation!
       else
         resolve_pending_tool_call!
         resume_loop_unless_other_pending
       end
+      conclude_turn!(assistant_message)
+      assistant_message
     end
 
     private
+
+    def record_persisted_message(message, **kwargs)
+      @chat_turn&.record_activity!(message)
+      @downstream_message_callback&.call(message, **kwargs)
+    end
+
+    def conclude_turn!(assistant_message)
+      return unless @chat_turn
+
+      if assistant_message
+        @chat_turn.complete!
+      else
+        @chat_turn.update!(status: "awaiting_confirmation", lease_expires_at: nil)
+      end
+    end
 
     # Keep the initial turn's user row for transport attempt accounting. A
     # confirmation can be resolved while a newer turn is being sent, so using

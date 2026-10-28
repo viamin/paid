@@ -97,7 +97,7 @@ module Api
 
       def stream_send
         stream(message_start: { model: @chat_session.model }) do |message_id, on_chunk, on_message_persisted, _on_resolved|
-          send_message(on_chunk:, on_message_persisted:)
+          send_message(stream_message_id: message_id, on_chunk:, on_message_persisted:)
         end
       end
 
@@ -128,9 +128,10 @@ module Api
         response.headers["X-Accel-Buffering"] = "no"
       end
 
-      def send_message(on_chunk: nil, on_message_persisted: nil)
+      def send_message(stream_message_id: SecureRandom.uuid, on_chunk: nil, on_message_persisted: nil)
         with_chat_session_tenant_context do
-          ChatSessions::SendMessage.call(chat_session: @chat_session, actor: current_user, content: params[:content], on_chunk:, on_message_persisted:)
+          ChatSessions::SendMessage.call(chat_session: @chat_session, actor: current_user,
+            content: params[:content], stream_message_id:, on_chunk:, on_message_persisted:)
         end
       end
 
