@@ -4,6 +4,21 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-034** — When a bounded partial-closeout assessment
+  cannot be obtained, Paid SHALL persist a bounded diagnostic containing its
+  category, provider, model, transport, request and attempt identities, and
+  structural invalid-field paths/types where applicable, without response
+  content or credentials. An authentication failure SHALL give an actionable
+  host-side credential recovery instruction and SHALL NOT silently switch from
+  subscription-backed CLI credentials to API billing. The parent issue SHALL
+  remain open, its PR evidence SHALL be followed up through the partial-closeout
+  path, and the existing bounded retry path SHALL be available after recovery;
+  no unavailable or structurally invalid assessment may authorize completion.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/temporal/activities/reconcile_partial_closeout_activity.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-032** — When an authorized technical-prerequisite
       validation is prepared from a partial-closeout item, the system SHALL
       inspect compatible execution hosts through the existing backend scheduler

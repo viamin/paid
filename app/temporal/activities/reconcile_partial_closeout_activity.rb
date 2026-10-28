@@ -4,7 +4,7 @@ module Activities
   class ReconcilePartialCloseoutActivity < BaseActivity
     activity_name "ReconcilePartialCloseout"
 
-    def execute(input) # @spec NO-OUTPUT-ISSUE-007
+    def execute(input) # @spec NO-OUTPUT-ISSUE-007 PARTIAL-CLOSEOUT-034
       agent_run = AgentRun.find(input.fetch(:agent_run_id))
       track_phase(agent_run_id: agent_run.id, phase_key: "reconcile_partial_closeout",
         phase_group: "post", agent_run: agent_run) do
@@ -20,6 +20,9 @@ module Activities
         { agent_run_id: agent_run.id, status: agent_run.reload.reconciliation.fetch("status"),
           gaps_remain: gaps_remain?(agent_run) }
       end
+    rescue Llm::AnalyzePartialCloseout::AssessmentFailure => e
+      persist_assessment_failure(agent_run, e)
+      { agent_run_id: agent_run.id, status: "retryable_failure", gaps_remain: true }
     rescue StandardError => e
       agent_run&.update!(reconciliation: agent_run.reconciliation.merge("status" => "retryable_failure", "error" => e.message))
       raise
@@ -47,6 +50,24 @@ module Activities
           agent_run.update!(reconciliation: agent_run.reconciliation.merge("assessment" => assessment))
         end
       end
+    end
+
+    def persist_assessment_failure(agent_run, error)
+      diagnostic = error.diagnostic
+      agent_run.update!(
+        reconciliation: agent_run.reconciliation.merge(
+          "status" => "retryable_failure",
+          "error" => diagnostic.fetch("recovery"),
+          "assessment_failure" => diagnostic,
+          "failed_at" => Time.current.iso8601
+        )
+      )
+      logger.warn(
+        message: "partial_closeouts.assessment_unavailable",
+        agent_run_id: agent_run.id,
+        issue_id: agent_run.issue_id,
+        assessment_failure: diagnostic.except("recovery")
+      )
     end
   end
 end

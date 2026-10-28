@@ -87,5 +87,27 @@ RSpec.describe Activities::ReconcilePartialCloseoutActivity do
         phase_key: "reconcile_partial_closeout", phase_group: "post", status: "failed"
       )
     end
+
+    # @spec PARTIAL-CLOSEOUT-034
+    it "keeps the parent open and records an actionable retry when assessment authentication is unavailable" do
+      diagnostic = {
+        "category" => "authentication", "provider" => "claude", "model" => "claude-sonnet-4-6",
+        "transport" => "cli", "request_id" => "request-1", "attempt_id" => "attempt-1",
+        "recovery" => "Authenticate the host-side Claude CLI used by closeout assessment."
+      }
+      failure = Llm::AnalyzePartialCloseout::AssessmentFailure.new(diagnostic)
+      allow(Llm::AnalyzePartialCloseout).to receive(:call).and_raise(failure)
+      allow(PartialCloseouts::Reconcile).to receive(:call)
+
+      result = activity.execute(agent_run_id: run.id)
+
+      expect(result).to include(agent_run_id: run.id, status: "retryable_failure", gaps_remain: true)
+      expect(run.reload.reconciliation).to include(
+        "status" => "retryable_failure",
+        "assessment_failure" => diagnostic,
+        "error" => diagnostic.fetch("recovery")
+      )
+      expect(PartialCloseouts::Reconcile).not_to have_received(:call)
+    end
   end
 end

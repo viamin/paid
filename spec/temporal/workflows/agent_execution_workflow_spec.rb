@@ -1521,6 +1521,20 @@ RSpec.describe Workflows::AgentExecutionWorkflow do # @spec TEMPORAL-ORCHESTRATI
         .with(Activities::PostPartialCloseoutEvidenceActivity, any_args)
     end
 
+    # @spec PARTIAL-CLOSEOUT-034
+    it "posts PR evidence without completing the parent when assessment transport is unavailable" do
+      stub_new_pr_creation_with_reconciliation({ agent_run_id: 42, status: "retryable_failure", gaps_remain: true })
+
+      workflow.execute(input)
+
+      expect(workflow).not_to have_received(:run_activity)
+        .with(Activities::UpdateIssueWithPrActivity, any_args)
+      expect(workflow).to have_received(:run_activity)
+        .with(Activities::PostPartialCloseoutEvidenceActivity,
+          { agent_run_id: 42, pull_request_url: "https://github.com/o/r/pull/99" },
+          timeout: 30)
+    end
+
     it "does not run the partial evidence activity on a full closeout" do
       stub_new_pr_creation_with_reconciliation({ agent_run_id: 42, status: "reconciled", gaps_remain: false })
 

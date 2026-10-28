@@ -64,6 +64,19 @@ free-form PR prose never grants closing authority. Reconciliation and
 acceptance-audit paths reuse the same disposition record, retaining the normal
 owner/prerequisite workflow rather than creating a completion authority.
 
+### Assessment transport failures
+
+Closeout assessment diagnostics distinguish unavailable transport or
+authentication from invalid assessment structure. They retain only bounded
+category, provider/model, transport, request/attempt identity, and, for
+structural validation, field paths and types; response content and credentials
+are never persisted. CLI assessment remains subscription-backed unless an
+authorized `ANTHROPIC_API_KEY` explicitly selects the existing API path, so a
+missing host-side Claude login is surfaced with recovery guidance rather than
+silently changing billing. An unavailable assessment fails closed: reconciliation
+records a retryable failure, leaves the parent issue open, and allows the PR
+evidence/follow-up path to run. A later bounded retry reassesses after recovery.
+
 ### Visibility: the `partial_closeout` Inbox lane
 
 Derived lane (like `retry_limited`), not persisted state. An open, non-PR
