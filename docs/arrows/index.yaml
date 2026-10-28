@@ -743,8 +743,8 @@ arrows:
     parent: PAID
     taxonomy: runtime
     status: MAPPED
-    sampled: 2026-10-24
-    next: "Draft LLD/EARS only; RDR-075 remains Status: Draft (merged to main via #4308) and no implementation exists. #4604 revalidated its tool-handoff evidence environment on 2026-10-24: no Docker client, socket, or alternate local engine was available, so critical assumption 2's native-analyzer and sidecar artifacts remain uncollected. Move both validations to a Docker-capable environment; do not release #4328-#4333 before design acceptance and that evidence."
+    sampled: 2026-10-28
+    next: "Draft LLD/EARS only; RDR-075 remains Status: Draft (merged to main via #4308) and no implementation exists. #4604 revalidated its tool-handoff evidence environment on 2026-10-28: no Docker client, socket, alternate local engine, or configured remote backend was available, so critical assumption 2's native-analyzer and sidecar artifacts remain uncollected. Move both validations to a Docker-capable environment; do not release #4328-#4333 before design acceptance and that evidence."
   marketplace-tool-sidecars:
     title: Marketplace Tool Sidecars
     path: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-design.md
