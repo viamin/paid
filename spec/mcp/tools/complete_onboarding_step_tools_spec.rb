@@ -79,6 +79,19 @@ RSpec.describe Tools::CompleteOnboardingStep do
     expect(listed_runner).to include("health" => "rate_limited", "last_checked_at" => checked_at)
   end
 
+  # @spec RUNNER-ZDR-004
+  it "includes ZDR declaration provenance without exposing credentials" do
+    api_key = create(:provider_api_key, user:, api_service_type: "openrouter")
+    runner = create(:runner, user:, runner_key: "opencode", auth_type: "api_key", provider_api_key: api_key, zdr: true,
+      config: { "opencode" => { "api_provider" => "openrouter", "model" => "model" } })
+
+    result = Tools::ListRunners.new(user:, session:).call
+    listed_runner = result.fetch(:runners).find { |item| item.fetch("id") == runner.id }
+
+    expect(listed_runner.fetch("zdr")).to eq(enabled: true, provenance: "openrouter", runtime_enforcement: "not_verified")
+    expect(listed_runner.to_s).not_to include(api_key.api_key)
+  end
+
   it "does not permit another user's provider API key" do
     other = create(:user, :owner, account: create(:account))
     key = create(:provider_api_key, user: other)

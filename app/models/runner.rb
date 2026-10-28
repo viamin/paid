@@ -200,6 +200,20 @@ class Runner < ApplicationRecord
     integration_credential&.category == "llm_provider" && integration_credential&.active?
   end
 
+  # The saved declaration is deliberately separate from model selection. Its
+  # provenance is derived from the active credential so replacing a credential
+  # cannot leave a stale claim that OpenRouter will enforce it.
+  # @spec RUNNER-ZDR-002 RUNNER-ZDR-003
+  def zdr_configuration
+    return { enabled: false, provenance: "none", runtime_enforcement: "not_applicable" } unless zdr?
+
+    {
+      enabled: true,
+      provenance: zdr_openrouter? ? "openrouter" : "user_declared",
+      runtime_enforcement: "not_verified"
+    }
+  end
+
   def proxy_route_compatible?(provider)
     required_api_service_type == provider.to_s
   end
@@ -870,6 +884,11 @@ class Runner < ApplicationRecord
   end
 
   private
+
+  def zdr_openrouter?
+    provider_api_key&.api_service_type == OPENROUTER_FREE_MODEL_PROVIDER ||
+      direct_outbound_api_provider == OPENROUTER_FREE_MODEL_PROVIDER
+  end
 
   # Registers the user-entered direct-outbound model id in the LlmModel catalog
   # with catalog_source: "manual" so downstream selection has a row to resolve

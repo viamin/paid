@@ -4,6 +4,25 @@ require "rails_helper"
 require "securerandom"
 
 RSpec.describe Runner do
+  describe "ZDR declaration" do
+    # @spec RUNNER-ZDR-001 RUNNER-ZDR-002 RUNNER-ZDR-003
+    it "defaults off and derives unverified provenance from the current API key" do
+      user = create(:user)
+      openrouter_key = create(:provider_api_key, user:, api_service_type: "openrouter")
+      anthropic_key = create(:provider_api_key, user:, api_service_type: "anthropic")
+      runner = create(:runner, user:, runner_key: "opencode", auth_type: "api_key", provider_api_key: openrouter_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "model" } })
+
+      expect(runner.zdr).to be(false)
+
+      runner.update!(zdr: true)
+      expect(runner.zdr_configuration).to eq(enabled: true, provenance: "openrouter", runtime_enforcement: "not_verified")
+
+      runner.update!(provider_api_key: anthropic_key, config: { "opencode" => { "api_provider" => "anthropic", "model" => "anthropic-model" } })
+      expect(runner.zdr_configuration).to eq(enabled: true, provenance: "user_declared", runtime_enforcement: "not_verified")
+    end
+  end
+
   describe ".update_fallback_flags" do
     let(:user) { create(:user) }
 

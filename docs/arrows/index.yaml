@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-24
+last_updated: 2026-10-28
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -364,6 +364,15 @@ arrows:
     taxonomy: catalog
     status: OK
     audited: 2026-08-03
+  runner-zdr-declaration:
+    title: Runner Zero Data Retention Declaration
+    path: docs/intent/runner-zdr-declaration/runner-zdr-declaration-design.md
+    specs: docs/intent/runner-zdr-declaration/runner-zdr-declaration-specs.md
+    parent: PAID
+    taxonomy: configuration
+    status: OK
+    audited: 2026-10-28
+    next: "Pass the OpenRouter declaration to request-time execution before representing runtime enforcement as verified."
   direct-outbound-model-catalog:
     title: Direct-Outbound Model Catalog Coverage
     path: docs/intent/direct-outbound-model-catalog/direct-outbound-model-catalog-design.md

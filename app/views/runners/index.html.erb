@@ -50,6 +50,7 @@
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Runner</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Status</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Auth</th>
+          <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">ZDR</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Agent Runs</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500">Chat</th>
           <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500" title="Fallback applies only to the uses enabled for each runner (agent runs, chat). It never enables a use on its own.">Fallback</th>
@@ -98,6 +99,16 @@
                 <span class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">Subscription</span>
               <% else %>
                 <span class="inline-flex items-center rounded-full bg-purple-100 px-2 py-0.5 text-xs font-medium text-purple-700">API Key</span>
+              <% end %>
+            </td>
+            <%# @spec RUNNER-ZDR-004 %>
+            <td class="px-4 py-3 text-sm text-gray-700">
+              <% zdr = runner.zdr_configuration %>
+              <% if zdr[:enabled] %>
+                <span class="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700"><%= zdr[:provenance] == "openrouter" ? "OpenRouter ZDR" : "ZDR declared" %></span>
+                <p class="mt-1 text-xs text-gray-500">Runtime enforcement unverified</p>
+              <% else %>
+                <span class="text-gray-400">Off</span>
               <% end %>
             </td>
             <td class="px-4 py-3 text-sm text-gray-700">

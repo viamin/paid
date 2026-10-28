@@ -85,6 +85,21 @@ RSpec.describe "Runners" do
     }
   end
 
+  # @spec RUNNER-ZDR-001 RUNNER-ZDR-005
+  it "permits a ZDR declaration and explains the external-provider responsibility" do
+    sign_in user
+    api_key = create(:provider_api_key, user:, api_service_type: "anthropic")
+    allow(RunnerSupport).to receive(:addable_runner_keys).and_return(%w[opencode])
+
+    get new_runner_path(form_variant: "api_key", runner_key: "opencode")
+
+    expect(response.body).to include("You are responsible for verifying this provider's zero data retention agreement and configuration.")
+
+    post runners_path, params: { runner: direct_outbound_runner_params(runner_key: "opencode", api_key_id: api_key.id, model: "model").merge(zdr: true) }
+
+    expect(Runner.order(:id).last).to have_attributes(zdr: true)
+  end
+
   def enable_runner_model_policy_form_for(user)
     user.account.tenant_setting!.update!(
       features: user.account.tenant_setting!.features.merge("runner_model_policy_form" => true)

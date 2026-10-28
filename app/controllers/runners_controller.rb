@@ -91,7 +91,7 @@ class RunnersController < ApplicationController
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
-      audit_event("runner.created", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
+      audit_event("runner.created", metadata: runner_audit_metadata)
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_created_notice
       else
@@ -119,7 +119,7 @@ class RunnersController < ApplicationController
     validate_container_executable!
 
     if @runner.errors.none? && @runner.save
-      audit_event("runner.updated", metadata: { runner_name: @runner.display_name, runner_key: @runner.runner_key })
+      audit_event("runner.updated", metadata: runner_audit_metadata)
       if reconcile_settings!
         redirect_to resource_index_path, notice: resource_updated_notice
       else
@@ -222,7 +222,12 @@ class RunnersController < ApplicationController
     @runner = policy_scope(resource_model_class).find(params[:id])
   end
 
-  # @spec MODEL-POLICY-008
+  # @spec RUNNER-ZDR-004
+  def runner_audit_metadata
+    { runner_name: @runner.display_name, runner_key: @runner.runner_key, zdr: @runner.zdr_configuration }
+  end
+
+  # @spec MODEL-POLICY-008 RUNNER-ZDR-001
   def runner_params
     raw_params = params.fetch(:runner)
     permitted = [
@@ -234,6 +239,7 @@ class RunnersController < ApplicationController
       :agent_co_author_trailer,
       :monthly_token_budget,
       :weight,
+      :zdr,
       :model_selection_choice,
       :custom_model_id
     ]
