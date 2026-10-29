@@ -104,7 +104,7 @@ module Inbox
       @projects_with_items ||= begin
         ids = kind ? matrix[kind].keys : matrix.values.flat_map(&:keys).uniq
         if @entries
-          @entries.map(&:project).uniq(&:id).select { |candidate| ids.include?(candidate.id) }
+          @entries.flat_map { |entry| projects_for(entry) }.uniq(&:id).select { |candidate| ids.include?(candidate.id) }
             .sort_by { |candidate| [ candidate.owner, candidate.repo ] }
         else
           Project.where(id: ids).order(:owner, :repo).to_a
@@ -118,9 +118,7 @@ module Inbox
     def matrix
       # @spec OPERATOR-INBOX-016 @spec INBOX-PHASE-RELEVANCE-005
       if @entries
-        return @matrix ||= Inbox::Queue::KINDS.index_with do |entry_kind|
-          @entries.select { |entry| entry.kind == entry_kind }.map { |entry| entry.project.id }.tally
-        end
+        return @matrix ||= matrix_from(@entries)
       end
 
       @matrix ||= Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) do
@@ -134,8 +132,20 @@ module Inbox
 
     def matrix_from(entries)
       Inbox::Queue::KINDS.index_with do |entry_kind|
-        entries.select { |entry| entry.kind == entry_kind }.filter_map { |entry| entry.project&.id }.tally
+        entries.select { |entry| entry.kind == entry_kind }.flat_map { |entry| entry_project_ids(entry) }.tally
       end
+    end
+
+    def entry_project_ids(entry)
+      return entry.record.project_ids if entry.kind == Inbox::Queue::DEPENDENCY_CYCLE_KIND
+
+      [ entry.project&.id ].compact
+    end
+
+    def projects_for(entry)
+      return entry.record.issues.map(&:project) if entry.kind == Inbox::Queue::DEPENDENCY_CYCLE_KIND
+
+      [ entry.project ].compact
     end
 
     def governed_project_ids
@@ -173,8 +183,8 @@ module Inbox
 
     def dependency_cycle_by_project
       Inbox::Queue.call(user:, kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND)
-        .group_by { |entry| entry.project.id }
-        .transform_values(&:size)
+        .flat_map { |entry| entry_project_ids(entry) }
+        .tally
     end
 
     def needs_input_by_project
