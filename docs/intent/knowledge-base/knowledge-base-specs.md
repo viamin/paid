@@ -55,7 +55,10 @@
   SHALL support exact retrieval through PostgreSQL identifier/trigram matching,
   semantic retrieval through PostgreSQL lexical search plus Qdrant vector
   search when available, and hybrid retrieval that merges and reranks both
-  result sets.
+  result sets. Each retrieval path SHALL apply the requested limit to its
+  deterministic chunk ordering before materializing chunk content, artifact
+  metadata, or link associations, and SHALL obtain link-ranking counts through
+  SQL aggregation rather than loading link records.
   *Code:* `app/services/knowledge/search.rb`,
   `app/services/knowledge/search/exact.rb`,
   `app/services/knowledge/search/semantic.rb`,
