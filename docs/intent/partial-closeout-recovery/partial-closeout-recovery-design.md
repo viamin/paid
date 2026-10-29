@@ -146,7 +146,7 @@ move when an agent run starts or finishes, when a no-code-required outcome
 appears, when a skip label changes, or when runner configuration changes the
 tier feasibility set; and a display-only projection cannot authorize work,
 because the continuation preflight and the dequeue recheck still decide
-admission live. `PARTIAL-CLOSEOUT-034` and `PARTIAL-CLOSEOUT-035` state the
+admission live. `PARTIAL-CLOSEOUT-037` and `PARTIAL-CLOSEOUT-038` state the
 proposed contract.
 
 ### Recovery: `IssueContinuationRequest` (scoped authorization)
