@@ -41,7 +41,8 @@ module Api
         entry = Inbox::FindEntry.call(user: current_user, entry_id: params[:entry_id])
         return render_entry_not_found unless entry
 
-        render json: { entry: InboxEntrySerializer.render(entry, user: current_user) }
+        render json: { entry: InboxEntrySerializer.render(entry, user: current_user,
+          history_limit: params[:history_limit], history_cursor: params[:history_cursor].presence) }
       end
 
       # @spec MOBILE-API-009 QUESTION-EXPLORATION-012

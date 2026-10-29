@@ -20,8 +20,11 @@
   evidence link; a prior failed run SHALL remain visible without replacing a
   later completed result or current progress. Scanner-observed owner approval,
   pending manual merge, approval invalidation by a newer revision, and later
-  reapproval SHALL be separate, replay-safe events. Inbox list and count
-  queries SHALL NOT load per-row history or make live GitHub calls.
+  reapproval SHALL be separate, replay-safe events derived from explicit
+  scanner approval evidence rather than blocker exhaustion. API detail clients
+  SHALL be able to advance the bounded timeline with a dedicated history
+  cursor and limit. Inbox list and count queries SHALL NOT load per-row history
+  or make live GitHub calls.
   *Code:* `app/services/inbox/action_history.rb`,
   `app/services/inbox/action_history_page.rb`,
   `app/services/inbox/merge_assessment_history_recorder.rb`,
@@ -30,9 +33,11 @@
 
 - [x] **OPERATOR-INBOX-023** — When Paid records an Inbox removal or restore,
   it SHALL append a deduplicated, subject-keyed Paid event without changing the
-  underlying work. When no durable local evidence exists for a legacy subject,
-  the detail and API SHALL identify that interval as incomplete rather than
-  fabricate GitHub history from current state.
+  underlying work. When a subject's persisted coverage boundary starts after
+  its GitHub lifetime, the detail and API SHALL continue to identify the prior
+  interval as incomplete after newer events arrive rather than treating any
+  event as proof of complete coverage or fabricating GitHub history from
+  current state.
   *Code:* `app/services/inbox/history_recorder.rb`,
   `app/services/inbox/removals.rb`.
   *Test:* `spec/models/inbox_history_event_spec.rb`,

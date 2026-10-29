@@ -8,25 +8,25 @@ module Inbox
   class MergeAssessmentHistoryRecorder
     def self.call(...) = new(...).call
 
-    def initialize(issue:, previous_snapshot:, snapshot:, scanned_at:, head_sha:)
+    def initialize(issue:, previous_snapshot:, snapshot:, scanned_at:, head_sha:, approval_evidence: {})
       @issue = issue
-      @previous_snapshot = previous_snapshot&.deep_stringify_keys
       @snapshot = snapshot&.deep_stringify_keys
       @scanned_at = scanned_at
       @head_sha = head_sha
+      @approval_evidence = approval_evidence.deep_stringify_keys
     end
 
     def call
-      return if snapshot.blank? || snapshot == previous_snapshot
+      return if snapshot.blank?
 
       record_invalidation if stale_approval?
-      record_approval if approval_complete?
+      record_approval if explicit_approval?
       record_manual_merge if approval_complete? && manual_merge?
     end
 
     private
 
-    attr_reader :head_sha, :issue, :previous_snapshot, :scanned_at, :snapshot
+    attr_reader :approval_evidence, :head_sha, :issue, :scanned_at, :snapshot
 
     def record_invalidation
       evidence = stale_blocker.fetch("approval_evidence", {})
@@ -37,8 +37,8 @@ module Inbox
     end
 
     def record_approval
-      record("approval", "Owner approval recorded", issue.project.owner_reviewer_login || "GitHub",
-        "github", "completed", head_sha)
+      record("approval", "Owner approval recorded", approval_evidence.fetch("approver_login"),
+        "github", "completed", approval_evidence.fetch("approved_revision"))
     end
 
     def record_manual_merge
@@ -64,6 +64,10 @@ module Inbox
 
     def approval_complete?
       failed_blockers.empty? && Array(snapshot["not_evaluated"]).empty?
+    end
+
+    def explicit_approval?
+      approval_evidence.present? && approval_evidence["approved_revision"] == head_sha
     end
 
     def failed_blockers

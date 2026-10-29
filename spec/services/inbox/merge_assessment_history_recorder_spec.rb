@@ -10,6 +10,7 @@ RSpec.describe Inbox::MergeAssessmentHistoryRecorder do
   end
   let(:issue) { create(:issue, :pull_request, project:) }
   let(:fresh) { { "failed" => [], "not_evaluated" => [] } }
+  let(:old_approval) { { "approver_login" => "octocat", "approved_revision" => "old-sha" } }
   let(:stale) do
     {
       "failed" => [ {
@@ -28,9 +29,11 @@ RSpec.describe Inbox::MergeAssessmentHistoryRecorder do
 
   # @spec OPERATOR-INBOX-022
   it "records approval, manual-merge pending, invalidation, and reapproval by revision" do
-    described_class.call(issue:, previous_snapshot: nil, snapshot: fresh, scanned_at: 3.minutes.ago, head_sha: "old-sha")
+    described_class.call(issue:, previous_snapshot: nil, snapshot: fresh, scanned_at: 3.minutes.ago,
+      head_sha: "old-sha", approval_evidence: old_approval)
     described_class.call(issue:, previous_snapshot: fresh, snapshot: stale, scanned_at: 2.minutes.ago, head_sha: "new-sha")
-    described_class.call(issue:, previous_snapshot: stale, snapshot: fresh, scanned_at: 1.minute.ago, head_sha: "new-sha")
+    described_class.call(issue:, previous_snapshot: stale, snapshot: fresh, scanned_at: 1.minute.ago,
+      head_sha: "new-sha", approval_evidence: old_approval.merge("approved_revision" => "new-sha"))
 
     events = InboxHistoryEvent.where(project:).newest_first
     expect(events.pluck(Arel.sql("metadata->>'action'"))).to contain_exactly(
@@ -53,5 +56,14 @@ RSpec.describe Inbox::MergeAssessmentHistoryRecorder do
     end
 
     expect(InboxHistoryEvent.where(project:).count).to eq(1)
+  end
+
+  # @spec OPERATOR-INBOX-022
+  it "does not infer owner approval from a blocker-free assessment" do
+    described_class.call(issue:, previous_snapshot: nil,
+      snapshot: { "failed" => [], "not_evaluated" => [] }, scanned_at: Time.current, head_sha: "new-sha")
+
+    expect(InboxHistoryEvent.where(project:).pluck(Arel.sql("metadata->>'action'")))
+      .to contain_exactly("Manual merge pending")
   end
 end

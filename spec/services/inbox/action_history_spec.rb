@@ -30,6 +30,22 @@ RSpec.describe Inbox::ActionHistory do
     expect(described_class.call(entry:).incomplete).to be(true)
   end
 
+  # @spec OPERATOR-INBOX-023
+  it "keeps pre-ledger coverage incomplete after the first durable event" do
+    issue.update_column(:action_history_started_at, issue.github_created_at + 1.hour)
+    create(:inbox_history_event, account: project.account, project:,
+      subject_key: "issue:#{project.id}:#{issue.github_number}", metadata: { action: "Removed from Inbox" })
+
+    expect(described_class.call(entry:).incomplete).to be(true)
+  end
+
+  # @spec OPERATOR-INBOX-023
+  it "marks history complete when its persisted boundary covers the subject lifetime" do
+    issue.update_column(:action_history_started_at, issue.github_created_at)
+
+    expect(described_class.call(entry:).incomplete).to be(false)
+  end
+
   # @spec OPERATOR-INBOX-022
   it "returns every event exactly once across pages" do
     21.times do |index|

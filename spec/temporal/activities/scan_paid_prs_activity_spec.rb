@@ -641,7 +641,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       it "persists current-head manual-merge assessment while auto-merge is off without scheduling a merge" do
         project.update!(auto_merge_mode: "off", owner_reviewer_login: "viamin")
         pr_issue.update!(pr_review_phase: "ready")
-        stub_owner_approval_ready_signals(review_freshness: :fresh)
+        stub_owner_approval_ready_signals(review_freshness: :fresh, approved_revision: "abc123")
 
         result = activity.execute(project_id: project.id)
 

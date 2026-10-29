@@ -8,17 +8,19 @@ module Api
     # splitting them into per-kind classes would scatter the `oneOf`
     # dispatch this spec requires across a dozen single-method files.
     class InboxEntrySerializer
-      def self.render(entry, user: nil)
-        new(entry, user:).render
+      def self.render(entry, user: nil, history_limit: nil, history_cursor: nil)
+        new(entry, user:, history_limit:, history_cursor:).render
       end
 
       def self.render_list(entry)
         new(entry).render_list
       end
 
-      def initialize(entry, user: nil)
+      def initialize(entry, user: nil, history_limit: nil, history_cursor: nil)
         @entry = entry
         @user = user
+        @history_limit = history_limit
+        @history_cursor = history_cursor
       end
 
       def render
@@ -31,7 +33,7 @@ module Api
 
       private
 
-      attr_reader :entry, :user
+      attr_reader :entry, :history_cursor, :history_limit, :user
 
       def common_fields
         {
@@ -53,7 +55,8 @@ module Api
 
       # @spec OPERATOR-INBOX-022
       def history_payload
-        history = Inbox::ActionHistory.call(entry:, user:)
+        history = Inbox::ActionHistory.call(entry:, user:, limit: history_limit || Inbox::ActionHistory::DEFAULT_LIMIT,
+          before: history_cursor)
         {
           history: history.events.map { |event|
             { id: event.id, action: event.action, actor: event.actor, source: event.source, result: event.result,

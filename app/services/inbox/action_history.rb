@@ -63,8 +63,7 @@ module Inbox
 
     def legacy_coverage?
       entry.issue.present? &&
-        !InboxHistoryEvent.for_subject(account: entry.project.account, subject_key:).exists? &&
-        !runs.exists?
+        (entry.issue.action_history_started_at.nil? || entry.issue.action_history_started_at > entry.issue.github_created_at)
     end
   end
 end
