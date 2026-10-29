@@ -339,16 +339,12 @@ RUN if [ -z "${KILOCODE_INSTALL_COMMAND}" ]; then \
 # preflight timeout). The migration is a local SQLite operation that runs on
 # first `kilo run` regardless of model auth, so warming needs no credentials.
 #
-# `kilo run` opens an interactive session that never exits on its own, so we
-# cap it with `timeout`, which cleanly terminates kilo and its child binary
-# once the migration has had time to run (verified: no orphaned processes, DB
-# fully migrated). We deliberately do NOT pattern-kill "kilo": this RUN's own
-# shell argv contains "kilo", so `pkill -f kilo` would also kill the build
-# shell. The window is generous — the migration was ~60s on a heavily loaded
-# runtime host, and build hosts are far less contended — and `timeout` always
-# runs the full window because the session never exits. The next RUN fails
-# loudly if the migrated DB is absent, rather than shipping a regressed
-# (unwarmed) image. Mirrors the OpenCode pre-seed below.
+# `kilo session list` opens and migrates the local database without invoking a
+# model or waiting for credentials. Unlike `kilo run`, it exits as soon as the
+# local migration completes, so a contract update cannot leave the seed absent
+# merely because the model-backed command never reached database setup. The
+# timeout still bounds a broken migration. The next RUN fails loudly if the
+# migrated DB is absent, rather than shipping a regressed (unwarmed) image.
 #
 # The pre-seeded DB is copied to /opt/kilo-seed so it survives the tmpfs mount
 # that Provision#host_config places at /home/agent/.local/share/kilo at
@@ -356,7 +352,7 @@ RUN if [ -z "${KILOCODE_INSTALL_COMMAND}" ]; then \
 # the tmpfs after the container starts.
 USER agent
 RUN mkdir -p /home/agent/.local/share/kilo \
-    && timeout -k 10s 120s kilo run "OK" > /dev/null 2>&1 || true
+    && timeout -k 10s 120s kilo session list > /dev/null 2>&1
 USER root
 # @spec CONTAINER-RUNTIME-029
 # @kilocode/cli renamed its SQLite database file from kilo-rc.db to kilo.db
