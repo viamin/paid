@@ -21,7 +21,7 @@ module Activities
 
       quality_metrics = build_quality_metrics(quality_metrics_data)
 
-      options = { mutation_count: mutation_count }
+      options = { mutation_count: mutation_count, project: Project.find_by(id: input[:project_id]) }
       options[:strategies] = strategies if strategies.present?
 
       mutations = with_periodic_heartbeat("generate_mutations", prompt_id: prompt_id, mutation_count: mutation_count) do

@@ -24,6 +24,7 @@ RSpec.describe AgentRun::ErrorMessageSanitizer do
 
     it "normalizes invalid UTF-8 and strips NUL bytes" do
       expect(described_class.call(text: "boom\xFF".b)).to eq("boom\uFFFD")
+      expect(described_class.call(text: "boom\xFF")).to eq("boom\uFFFD")
       expect(described_class.call(text: "a\x00b")).to eq("ab")
     end
 

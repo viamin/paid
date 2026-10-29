@@ -725,6 +725,25 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include("Claude Code")
       end
 
+      # @spec LAYERED-VERIFY-015 LAYERED-VERIFY-024
+      it "shows a layered-verification audit coverage report" do
+        obligation = create(:layered_verification_obligation, project:, external_identity: "PAYMENTS-017")
+        agent_run = create(:agent_run, :completed, project:, goal: "layered_verification_audit",
+          external_metadata: { "layered_verification" => { "coverage" => {} } })
+        result = create(:layered_verification_check_result, obligation:, agent_run:,
+          execution_state: "completed", obligation_coverage: "supported")
+        agent_run.update!(external_metadata: { "layered_verification" => {
+            "coverage" => { obligation.id.to_s => {
+              "obligation_coverage" => "supported", "check_result_ids" => [ result.id ]
+            } }
+          } })
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include("Verification coverage", "PAYMENTS-017", "Supported")
+        expect(response.body).to include("Check result ##{result.id}", "Completed")
+      end
+
       it "masks the auth refresh token input when a browser auth URL is available" do
         agent_run = create(:agent_run, :auth_expired, project: project, auth_provider: "claude")
         without_partial_double_verification do

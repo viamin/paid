@@ -2171,7 +2171,7 @@ RSpec.describe AgentRun do
       end
 
       before do
-        allow(AgentHarness).to receive(:send_message).and_return(response)
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
       end
 
       it "delegates to AgentRuns::Execute without timeout by default" do
@@ -2230,6 +2230,26 @@ RSpec.describe AgentRun do
     end
 
     describe "#prompt_for_goal" do
+      # @spec LAYERED-VERIFY-010 LAYERED-VERIFY-013 LAYERED-VERIFY-024
+      it "builds an assessment-only prompt for an issue-less layered-verification audit" do
+        project = create(:project)
+        obligation = create(:layered_verification_obligation, project:, external_identity: "CHECKOUT-001")
+        audit_metadata = {
+          "obligation_ids" => [ obligation.id ], "target_revision" => "abc123",
+          "budget" => { "max_minutes" => 15 },
+          "plan" => { obligation.id.to_s => { "selected_checks" => [ "spec_to_code" ], "fit" => "mapped specification" } }
+        }
+        agent_run = build(
+          :agent_run, project:, issue: nil, goal: "layered_verification_audit",
+          external_metadata: { "layered_verification" => audit_metadata }
+        )
+
+        prompt = agent_run.send(:prompt_for_goal)
+
+        expect(prompt).to include("Layered-verification audit", "CHECKOUT-001", "abc123", "spec_to_code")
+        expect(prompt).to include("Do not modify", "Do not start or request a repair")
+      end
+
       it "builds the lid planning prompt from project context and stored plan docs" do
         project = create(:project)
         agent_run = build(

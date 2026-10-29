@@ -23,8 +23,6 @@ module FacetConfidence
 
     def call
       corpus_cases = AssessmentCorpusLedger.load_corpus(corpus_path)
-      ensure_assessor_model!(corpus_cases)
-
       AssessmentCorpusLedger.with_ledger_lock(ledger_path) do
         corpus_cases.filter_map do |corpus_case|
           run_case(corpus_case) unless covered_case_ids.include?(corpus_case.fetch("id"))
@@ -42,17 +40,11 @@ module FacetConfidence
       end
     end
 
-    def ensure_assessor_model!(corpus_cases)
-      corpus_models = corpus_cases.map { |corpus_case| corpus_case.fetch("model_version") }.uniq
-      return if corpus_models == [ FeatureIntents::AssessFacet::MODEL_VERSION ]
-
-      raise PinnedModelMismatch, "frozen corpus model #{corpus_models.join(', ')} does not match assessor model #{FeatureIntents::AssessFacet::MODEL_VERSION}"
-    end
-
     def run_case(corpus_case)
       assessment = build_assessment(corpus_case)
       assessor = FeatureIntents::AssessFacet.new(assessment: assessment)
       result = assessor.call
+      ensure_assessor_model!(corpus_case, result) unless result.status == "failed"
       event = event_for(corpus_case, result, response_status: assessor.response_status, cost_cents: cost_cents_for!(assessor, result),
         retry_of_event_id: failed_run_event_ids[corpus_case.fetch("id")])
       AssessmentCorpusLedger.append_locked!(ledger_path:, corpus_path:, event:)
@@ -63,6 +55,14 @@ module FacetConfidence
       assessment&.destroy!
       FeatureIntentFacetEvidence.where(feature_intent_facet: facet).delete_all if facet
       feature_intent&.destroy!
+    end
+
+    def ensure_assessor_model!(corpus_case, result)
+      expected_model = corpus_case.fetch("model_version")
+      actual_model = result.model_version
+      return if actual_model == expected_model
+
+      raise PinnedModelMismatch, "frozen corpus model #{expected_model} does not match assessor model #{actual_model}"
     end
 
     def build_assessment(corpus_case)
@@ -123,7 +123,7 @@ module FacetConfidence
         "type" => "assessment_run",
         "case_id" => corpus_case.fetch("id"),
         "rubric_version" => FeatureIntents::AssessFacet::RUBRIC_VERSION,
-        "model_version" => FeatureIntents::AssessFacet::MODEL_VERSION,
+        "model_version" => result.status == "failed" ? corpus_case.fetch("model_version") : result.model_version,
         "input_revision" => corpus_case.fetch("evidence_revision"),
         "status" => ledger_status(result, response_status),
         "retry_of_event_id" => retry_of_event_id,

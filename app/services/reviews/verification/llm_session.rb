@@ -16,7 +16,6 @@ module Reviews
     class LlmSession
       include Llm::OutputNormalizer
 
-      DEFAULT_MODEL = "claude-sonnet-4-6"
       TIMEOUT = 180
 
       # @param operation [String] usage label, e.g. +"verified_review.find"+
@@ -24,7 +23,8 @@ module Reviews
       # @param invalid_output_error [Class] raised when output is not a JSON object
       # @param on_usage [Proc, nil] receives
       #   +{ tokens_input:, tokens_output:, llm_model:, operation: }+ per call
-      def initialize(operation:, error_class:, invalid_output_error:, on_usage: nil)
+      def initialize(operation:, error_class:, invalid_output_error:, on_usage: nil, project: nil)
+        @project = project
         @operation = operation
         @error_class = error_class
         @invalid_output_error = invalid_output_error
@@ -33,7 +33,7 @@ module Reviews
 
       # @return [Hash] the parsed JSON object (string keys)
       def request_json(prompt)
-        response = AgentHarness.send_message(prompt, **harness_options)
+        response = Llm::Request.call(prompt: prompt, project: @project, timeout: TIMEOUT)
         raise @error_class, "#{@operation} LLM call failed: #{response.error}" unless response.success?
 
         report_usage(response)
@@ -41,17 +41,6 @@ module Reviews
       end
 
       private
-
-      def harness_options
-        {
-          provider: :claude,
-          model: DEFAULT_MODEL,
-          timeout: TIMEOUT,
-          tools: :none,
-          dangerous_mode: false,
-          **Llm::TextMode.options
-        }
-      end
 
       def report_usage(response)
         return unless @on_usage

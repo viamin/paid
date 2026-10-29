@@ -11,6 +11,13 @@ require "rails_helper"
 # @spec INTENT-MERGE-GUARD-007
 # @spec INTENT-MERGE-GUARD-008
 RSpec.describe IntentConformance::VerifyAtMerge do
+  before { configure_llm_routing(project: project)
+project.account.tenant_setting!.update!(features: {
+      "approved_intent_amendments" => true,
+      "intent_conformance_enforcement" => true
+    })
+   }
+
   let(:project) { create(:project) }
   let(:issue) { create(:issue, :pull_request, project: project) }
   let(:feature_intent) { create(:feature_intent, project: project, status: "released", approved_design_revision: "rev1") }
@@ -20,12 +27,6 @@ RSpec.describe IntentConformance::VerifyAtMerge do
     described_class.call(project: project, issue: issue, pr_head_sha: current_head)
   end
 
-  before do
-    project.account.tenant_setting!.update!(features: {
-      "approved_intent_amendments" => true,
-      "intent_conformance_enforcement" => true
-    })
-  end
 
   # @spec INTENT-MERGE-GUARD-001
   context "when the issue is not linked to a feature intent" do
@@ -217,7 +218,7 @@ RSpec.describe IntentConformance::VerifyAtMerge do
           .with("acme/widgets", "base_sha", current_head).and_return(comparison)
         allow(github_client).to receive(:compare_summary)
           .with("acme/widgets", "base_sha", superseding_head).and_return(comparison)
-        allow(AgentHarness).to receive(:send_message).and_return(
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
           instance_double(AgentHarness::Response,
             success?: true,
             output: { outcome: "within_scope", cited_design_claims: [], cited_diff_locations: [], reasoning_summary: "OK" }.to_json,

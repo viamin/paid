@@ -25,6 +25,10 @@
            egress_security_events: @egress_security_events,
            egress_denied_event_count: @egress_denied_event_count %>
 
+    <% if @agent_run.layered_verification_audit_goal? && @agent_run.external_metadata.dig("layered_verification", "coverage").present? %>
+      <%= render "agent_runs/layered_verification_coverage", agent_run: @agent_run %>
+    <% end %>
+
     <%# Action buttons are rendered outside the Turbo broadcast target so that
         live updates (which re-render _detail without user-specific locals)
         do not wipe policy-gated controls like Cancel and Retry.

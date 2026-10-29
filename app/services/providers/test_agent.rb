@@ -217,7 +217,7 @@ module Providers
           prepare_kilocode_config!(run) if kilocode_direct_outbound?
 
           started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-          response = AgentHarness.send_message(
+          response = AgentHarness.conductor.execute_direct(
             @diagnostic_prompt,
             provider: harness_provider_name,
             executor: executor,

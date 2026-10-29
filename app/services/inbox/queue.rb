@@ -16,6 +16,7 @@ module Inbox
     TEST_REVIEW_PENDING_KIND = "test_review_pending"
     PROJECT_SETUP_PENDING_KIND = "project_setup_pending"
     TRACEABILITY_GAP_KIND = "traceability_gap"
+    LAYERED_VERIFICATION_FINDING_KIND = "layered_verification_finding"
     DEFAULT_SORT = "oldest"
     # RDR-077 §5 scopes: the default actionable list, the requests held back by
     # a disabled phase, and the requests this user personally removed.
@@ -41,7 +42,8 @@ module Inbox
       PARTIAL_CLOSEOUT_KIND,
       TEST_REVIEW_PENDING_KIND,
       PROJECT_SETUP_PENDING_KIND,
-      TRACEABILITY_GAP_KIND
+      TRACEABILITY_GAP_KIND,
+      LAYERED_VERIFICATION_FINDING_KIND
     ].freeze
     KIND_LABELS = KINDS.to_h { |kind| [ kind, kind.titleize ] }.merge(
       ESCALATED_PR_KIND => "Blocked PRs",
@@ -152,6 +154,10 @@ module Inbox
         kind == TRACEABILITY_GAP_KIND
       end
 
+      def layered_verification_finding?
+        kind == LAYERED_VERIFICATION_FINDING_KIND
+      end
+
       # Lane chips default to the kind name, but an unverifiable finding is an
       # access/coverage problem and must not wear the traceability-gap label.
       # @spec OPERATOR-INBOX-020
@@ -219,7 +225,7 @@ module Inbox
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
           intent_conformance? || feature_decision? || retry_limited? || change_intent_draft? || partial_closeout? ||
-          test_review_pending? || project_setup_pending? || traceability_gap?
+          test_review_pending? || project_setup_pending? || traceability_gap? || layered_verification_finding?
 
         "#{tasks.size} proposed tasks"
       end
@@ -407,6 +413,7 @@ module Inbox
         entries.concat(test_review_pending_entries) if include_kind?(TEST_REVIEW_PENDING_KIND)
         entries.concat(project_setup_pending_entries) if include_kind?(PROJECT_SETUP_PENDING_KIND)
         entries.concat(traceability_gap_entries) if include_kind?(TRACEABILITY_GAP_KIND)
+        entries.concat(layered_verification_finding_entries) if include_kind?(LAYERED_VERIFICATION_FINDING_KIND)
         entries_by_id = entries.index_by(&:id)
         Inbox::PhaseOwnership.for_entries(entries).each do |entry_id, ownership|
           entries_by_id.fetch(entry_id).instance_variable_set(:@phase_ownership, ownership)
@@ -477,7 +484,7 @@ module Inbox
 
         Issue
           .joins(:project)
-          .includes(:project)
+          .preload(:project)
           .where(project_id: ids, paid_state: "needs_input", github_state: "open")
           .then { |scope| only_record(scope) }
           .order(Arel.sql("issues.needs_input_since ASC NULLS LAST"))
@@ -706,7 +713,7 @@ module Inbox
 
       Issue
         .joins(:project)
-        .includes(:project)
+        .preload(:project)
         .where(project_id: ids, paid_state: "manual_review", github_state: "open")
         .then { |scope| only_record(scope) }
         .order(Arel.sql("issues.manual_review_started_at ASC NULLS LAST"))
@@ -803,7 +810,7 @@ module Inbox
 
       Issue
         .joins(:project)
-        .includes(:project)
+        .preload(:project)
         .where(project_id: ids, github_state: "open")
         .where.not(runner_retry_abandoned_at: nil)
         .then { |scope| only_record(scope) }
@@ -914,7 +921,7 @@ module Inbox
         self.class.test_review_pending_issues(ids)
           .then { |scope| only_record(scope) }
           .joins(:project)
-          .includes(:project)
+          .preload(:project)
           .order("issues.github_updated_at ASC")
           .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
       end
@@ -965,6 +972,19 @@ module Inbox
           summary_text: traceability_summary(finding),
           title_text: traceability_title(finding),
           action_url: nil
+        )
+      end
+    end
+
+    # @spec LAYERED-VERIFY-015
+    def layered_verification_finding_entries
+      scope = project ? project.layered_verification_findings : LayeredVerificationFinding.where(project: scoped_projects)
+      only_record(scope.where(status: %w[open deferred]).includes(:project, :obligation, :agent_run).order(:created_at, :id)).map do |finding|
+        Entry.new(
+          id: "#{LAYERED_VERIFICATION_FINDING_KIND}:#{finding.id}", kind: LAYERED_VERIFICATION_FINDING_KIND,
+          project: finding.project, issue: nil, record: finding, waiting_since: finding.created_at,
+          questions: [], tasks: [], title_text: "Verification finding: #{finding.obligation.scope_description}",
+          summary_text: finding.decision["question"].presence || "Verification evidence needs a decision.", action_url: nil
         )
       end
     end

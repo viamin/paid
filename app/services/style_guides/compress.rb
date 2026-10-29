@@ -10,7 +10,6 @@ module StyleGuides
   class CompressionError < StandardError; end
 
   class Compress
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 120
 
     # Default maximum raw content size sent to the LLM for compression.
@@ -38,7 +37,8 @@ module StyleGuides
 
     attr_reader :style_guide
 
-    def initialize(style_guide:)
+    def initialize(style_guide:, user: nil)
+      @routing_user = user
       @style_guide = style_guide
     end
 
@@ -46,7 +46,7 @@ module StyleGuides
       new(...).call
     end
 
-    def call
+    def call # @spec LLM-ROUTING-004
       compressed = compress_content
       metadata = build_metadata(compressed)
 
@@ -73,16 +73,9 @@ module StyleGuides
         fallback: -> { FALLBACK_PROMPT }
       )
 
-      response = AgentHarness.send_message(
-        "#{header}\n\n#{raw}",
-        provider: :claude,
-        model: DEFAULT_MODEL,
-        timeout: TIMEOUT,
-        dangerous_mode: false,
-        tools: :none,
-        **Llm::TextMode.options
-      )
+      response = Llm::Request.call(prompt: "#{header}\n\n#{raw}", project: style_guide.project, account: style_guide.account, user: @routing_user, timeout: TIMEOUT)
 
+      @response_model = response.model if response.respond_to?(:model)
       validate_response!(response)
       response.output
     end
@@ -106,7 +99,7 @@ module StyleGuides
 
       meta = {
         "compressed_at" => Time.current.iso8601,
-        "model" => DEFAULT_MODEL,
+        "model" => @response_model,
         "raw_length" => raw_bytes,
         "raw_content_sha256" => Digest::SHA256.hexdigest(style_guide.raw_content),
         "raw_content_updated_at" => raw_content_written_at.iso8601,

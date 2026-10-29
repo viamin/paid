@@ -9,7 +9,6 @@ module Features
     # the established needs-input lifecycle.
     # @spec FEATURE-CREATION-001 @spec FEATURE-CREATION-002 @spec FEATURE-CREATION-008
     class Analyze
-      DEFAULT_MODEL = "claude-sonnet-4-6"
       TIMEOUT = 60
       MAX_CONTEXT_RESULTS = 8
       MAX_QUESTION_COUNT = 5
@@ -70,14 +69,7 @@ module Features
       end
 
       def call
-        response = AgentHarness.send_message(
-          prompt,
-          provider: :claude,
-          model: DEFAULT_MODEL,
-          timeout: TIMEOUT,
-          tools: :none,
-          **Llm::TextMode.options
-        )
+        response = Llm::Request.call(prompt: prompt, project: project, agent_run: agent_run, timeout: TIMEOUT)
         raise InvalidResponse, "feature clarification analysis failed: #{response.error}" unless response.success?
 
         result_from(response.output)

@@ -30,7 +30,7 @@ module Knowledge
         next if runner.blank?
 
         Entry.new(
-          runner: runner,
+          runner: Runner.routing_key?(runner) ? Runner.for_identifier(owner, runner)&.runner_key : runner,
           role: index.zero? ? "Primary" : "Fallback #{index}",
           readiness: RunnerReadiness.call(owner:, operation:, runner:)
         )
@@ -41,7 +41,7 @@ module Knowledge
       setting = owner.settings
       return [ setting.kb_embedding_runner, *Array(setting.kb_embedding_fallback_runners) ] if operation == :embedding
 
-      [ setting.kb_chat_runner, *Array(setting.kb_chat_fallback_runners) ]
+      Llm::RunnerSelection.candidates(user: owner).map(&:routing_key)
     end
   end
 end

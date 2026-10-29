@@ -4,6 +4,42 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-031** — When Paid assesses closeout for an agent
+  run, it SHALL use that run's effective configured runner, policy-permitted
+  tier model, and configured credentials through `agent_harness`,
+  without requiring a particular provider or consulting unrelated host API
+  keys. It SHALL reuse an existing isolated environment; report-only host
+  calls SHALL use the runner's explicit API credential or native subscription
+  with conflicting API variables unset. Managed subscription credentials
+  without an isolated environment and missing or disabled configuration SHALL
+  fail explicitly rather than select an implicit provider.
+  *Code:* `app/services/llm/request.rb`,
+  `app/services/llm/analyze_partial_closeout.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/services/llm/request_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-030** — When Paid requests a partial-closeout
+  assessment, it SHALL supply the JSON response contract to CLI subscription
+  callers, identify unsuccessful transport responses using safe
+  status metadata without provider payloads or credentials, and classify
+  harness authentication exceptions into bounded retry diagnostics. Transport
+  failure SHALL remain a failure rather than acceptance evidence.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-034** — When a partial-closeout request cannot obtain
+  a valid assessment from the run's configured runner, it SHALL remain
+  fail-closed and persist a bounded failure category, actual provider/model
+  provenance when available, request and attempt identities, and structural
+  invalid-field paths/types where applicable; it SHALL not persist response
+  content or credentials. Authentication failures SHALL state the configured
+  credential recovery action rather than being reported as a generic malformed
+  assessment.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/temporal/activities/reconcile_partial_closeout_activity.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-032** — When an authorized technical-prerequisite
       validation is prepared from a partial-closeout item, the system SHALL
       inspect compatible execution hosts through the existing backend scheduler

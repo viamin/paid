@@ -55,7 +55,7 @@ module Strategies
         },
         "llm_fallback" => {
           "prompt_slug" => Activities::DecomposeFeatureActivity::PROMPT_SLUG,
-          "model" => Activities::DecomposeFeatureActivity::DEFAULT_MODEL,
+          "model_selection" => "configured_runner",
           "timeout_seconds" => Activities::DecomposeFeatureActivity::TIMEOUT,
           "max_tasks" => Activities::DecomposeFeatureActivity::MAX_TASKS
         },

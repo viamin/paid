@@ -76,7 +76,7 @@ RSpec.describe "UserSettings" do
         get edit_user_settings_path
 
         expect(response.body).to include("Embedding Configuration", "Decision Drafting Configuration", "Knowledge OpenAI", "Knowledge Anthropic")
-        expect(response.body).to include("Fallback runners are tried in the listed order", "effective owner", "Manage API keys")
+        expect(response.body).to include("eligible fallback runners are tried in the listed order", "effective owner", "manage API keys")
         expect(response.body).to include('name="user_setting[kb_embedding_runner]"', 'name="user_setting[kb_embedding_fallback_runners_csv]"')
         expect(response.body).to include('name="user_setting[kb_chat_runner]"', 'name="user_setting[kb_chat_fallback_runners_csv]"')
       end

@@ -243,15 +243,7 @@
             <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Explicitly selects the saved key for embeddings. Automatic retains legacy behavior: newest matching saved key, then platform fallback. The key must match the selected runner.</p>
           </div>
 
-          <div>
-            <%= form.label :kb_chat_provider_api_key_id, "Decision Drafting API Key", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>
-            <div class="mt-2">
-              <%= form.select :kb_chat_provider_api_key_id,
-                options_for_select([["Automatic (legacy credential selection)", ""]] + current_user.provider_api_keys.ordered.map { |key| ["#{key.name} (#{key.display_api_service_type})", key.id] }, @user_setting.kb_chat_provider_api_key_id),
-                {}, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6" %>
-            </div>
-            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Explicitly selects the API-billed key for host and container drafting. Automatic retains legacy behavior: newest matching saved key, then platform fallback.</p>
-          </div>
+          <p class="text-xs text-gray-500 dark:text-gray-400">Application text and decision drafting use the credentials configured on the selected runner. A subscription runner does not require a separate API key.</p>
 
           <div>
             <%= form.label :kb_embedding_model, "Embedding Model", class: "block text-sm font-medium leading-6 text-gray-900 dark:text-gray-100" %>

@@ -5,10 +5,15 @@ require "rails_helper"
 # @spec SESSION-SUMMARY-002
 # @spec SESSION-SUMMARY-006
 RSpec.describe Llm::GenerateSessionSummary do
-  let(:project) { create(:project) }
-  let(:issue) { create(:issue, project: project) }
-  let(:agent_run) { create(:agent_run, :completed, project: project, issue: issue) }
-
+  # @spec LLM-ROUTING-006
+  let(:legacy_response) do
+    response = Object.new
+    json = llm_json
+    response.define_singleton_method(:output) { json }
+    response.define_singleton_method(:success?) { true }
+    response
+  end
+  let(:parsed_payload) { JSON.parse(llm_json) }
   let(:llm_json) do
     {
       summary: "Implemented rate limiting and added tests.",
@@ -20,29 +25,37 @@ RSpec.describe Llm::GenerateSessionSummary do
       learnings: [ "Rate limit config lives in config/rate_limits.yml." ]
     }.to_json
   end
+  let(:agent_run) { create(:agent_run, :completed, project: project, issue: issue) }
+  let(:issue) { create(:issue, project: project) }
+  let(:project) { create(:project) }
 
-  let(:parsed_payload) { JSON.parse(llm_json) }
+  after { Current.user = nil }
 
-  let(:legacy_response) do
-    response = Object.new
-    json = llm_json
-    response.define_singleton_method(:output) { json }
-    response.define_singleton_method(:success?) { true }
-    response
-  end
-
-  before do
-    allow(Llm::TextMode).to receive_messages(options: {}, enabled?: false)
-    allow(AgentHarness).to receive(:send_message).and_return(legacy_response)
+  before { configure_llm_routing(project: project)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(legacy_response)
     agent_run.log!("stdout", "Implemented rate limiting for the public API.")
+   }
+
+  it "does not reuse the completed run's retained container" do
+    agent_run.update!(container_id: "stopped-container")
+
+    expect(described_class.call(agent_run: agent_run)).to be_present
+    expect(AgentHarness.conductor).to have_received(:execute_direct)
   end
+
+
+
+
+
+
+
 
   describe ".call" do
     it "returns nil when the agent run has no transcript" do
       empty_agent_run = create(:agent_run, :completed, project: project, issue: issue)
 
       expect(described_class.call(agent_run: empty_agent_run)).to be_nil
-      expect(AgentHarness).not_to have_received(:send_message)
+      expect(AgentHarness.conductor).not_to have_received(:execute_direct)
     end
 
     it "returns a populated result from the parsed LLM response" do
@@ -58,75 +71,6 @@ RSpec.describe Llm::GenerateSessionSummary do
       expect(result.response).to eq(legacy_response)
     end
 
-    context "when API-key authentication is configured" do
-      let(:chat_transport) { instance_double(AgentHarness::Api::ChatTransport, call: schema_result) }
-
-      let(:schema_result) do
-        {
-          status: :succeeded,
-          content: llm_json,
-          parsed: parsed_payload
-        }
-      end
-
-      before do
-        stub_const("ENV", ENV.to_hash.merge("ANTHROPIC_API_KEY" => "sk-ant-test-key"))
-        allow(Llm::TextMode).to receive(:enabled?).and_return(true)
-        allow(AgentHarness::Api::ChatTransport).to receive(:new).and_return(chat_transport)
-      end
-
-      it "routes through the schema-constrained ChatTransport and skips fence/quote cleanup" do
-        described_class.call(agent_run: agent_run)
-
-        expect(chat_transport).to have_received(:call) do |request|
-          expect(request[:operation]).to eq(:schema)
-          expect(request[:schema_name]).to eq("agent_run_session_summary")
-          expect(request[:schema]).to eq(described_class::RESPONSE_SCHEMA)
-          expect(request[:schema_mode]).to eq(:json_schema)
-          expect(request[:timeout]).to eq(read_seconds: described_class::TIMEOUT)
-          expect(request[:candidates].first).to include(
-            provider: :anthropic,
-            model: described_class::DEFAULT_MODEL,
-            authentication_mode: :api_key
-          )
-        end
-        expect(AgentHarness).not_to have_received(:send_message)
-      end
-
-      it "uses the schema-constrained parsed value as the result summary" do
-        result = described_class.call(agent_run: agent_run)
-
-        expect(result.summary).to eq("Implemented rate limiting and added tests.")
-        expect(result.files_touched).to eq(%w[app/services/rate_limiter.rb spec/services/rate_limiter_spec.rb])
-      end
-
-      it "returns nil when the schema result is missing" do
-        allow(chat_transport).to receive(:call).and_return(nil)
-
-        expect(described_class.call(agent_run: agent_run)).to be_nil
-      end
-
-      it "returns nil when the schema result did not succeed" do
-        allow(chat_transport).to receive(:call).and_return(status: :failed, parsed: nil, error: { code: :invalid_schema })
-
-        expect(described_class.call(agent_run: agent_run)).to be_nil
-      end
-
-      it "returns nil when the schema result omits the required summary" do
-        allow(chat_transport).to receive(:call).and_return(
-          status: :succeeded,
-          parsed: { "decisions" => [ "x" ] }
-        )
-
-        expect(described_class.call(agent_run: agent_run)).to be_nil
-      end
-
-      it "returns nil when no API key is configured despite text mode reporting enabled" do
-        stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
-
-        expect(described_class.call(agent_run: agent_run)).to be_nil
-      end
-    end
 
     it "returns nil when the provider call is unsuccessful" do
       allow(legacy_response).to receive(:success?).and_return(false)
@@ -162,7 +106,7 @@ RSpec.describe Llm::GenerateSessionSummary do
 
       described_class.call(agent_run: leaky_agent_run)
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("[REDACTED").and(
           satisfy { |s| !s.include?("ghp_abcdefghijklmnopqrstuvwxyz0123456789") }
         ),
@@ -176,7 +120,7 @@ RSpec.describe Llm::GenerateSessionSummary do
 
       described_class.call(agent_run: leaky_agent_run)
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("[REDACTED").and(
           satisfy { |s| !s.include?("eyJabc.eyJdef.ghiJKL") && !s.include?("\x00") }
         ),
@@ -191,7 +135,7 @@ RSpec.describe Llm::GenerateSessionSummary do
 
       described_class.call(agent_run: leaky_agent_run)
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("[REDACTED").and(
           satisfy { |s| !s.include?("ghp_abcdefghijklmnopqrstuvwxyz0123456789") }
         ),
@@ -206,7 +150,7 @@ RSpec.describe Llm::GenerateSessionSummary do
 
       described_class.call(agent_run: leaky_agent_run)
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("[REDACTED").and(
           satisfy { |s| !s.include?("ghp_abcdefghijklmnopqrstuvwxyz0123456789") }
         ),

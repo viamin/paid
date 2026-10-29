@@ -160,4 +160,4 @@
       PR-creation run as a direct side effect of a maintenance scan without
       an explicit user selection; an explicit election captured at run start
       counts as such a selection, and that election is itself never a
-      tenant-wide, project-wide, or recipe-wide default.
+      tenant-wide, project-wide, or recipe-wide setting.

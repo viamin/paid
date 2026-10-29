@@ -3,6 +3,9 @@
 require "rails_helper"
 
 RSpec.describe StyleGuideCompressionJob do
+  before { configure_llm_routing() }
+  after { Current.user = nil }
+
   let(:style_guide) { create(:style_guide, :global, raw_content: "# Ruby Style Guide\n\n- Use snake_case") }
 
   describe "#perform" do
@@ -13,13 +16,13 @@ RSpec.describe StyleGuideCompressionJob do
           exit_code: 0,
           duration: 2.5,
           provider: :claude,
-          model: "claude-sonnet-4-6",
+          model: "configured-mid",
           tokens: { input: 500, output: 100, total: 600 }
         )
       end
 
       before do
-        allow(AgentHarness).to receive(:send_message).and_return(response)
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
       end
 
       it "compresses the style guide and persists the result" do
@@ -28,7 +31,7 @@ RSpec.describe StyleGuideCompressionJob do
         style_guide.reload
         expect(style_guide.compressed_content).to eq("- snake_case for methods")
         expect(style_guide.compression_metadata).to include(
-          "model" => "claude-sonnet-4-6",
+          "model" => "configured-mid",
           "raw_length" => style_guide.raw_content.bytesize
         )
       end
@@ -36,7 +39,7 @@ RSpec.describe StyleGuideCompressionJob do
 
     context "when AgentHarness raises an error" do
       before do
-        allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::Error, "LLM unavailable")
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(AgentHarness::Error, "LLM unavailable")
       end
 
       it "logs the error and does not raise" do
@@ -56,13 +59,13 @@ RSpec.describe StyleGuideCompressionJob do
           exit_code: 0,
           duration: 1.0,
           provider: :claude,
-          model: "claude-sonnet-4-6",
+          model: "configured-mid",
           tokens: { input: 500, output: 0, total: 500 }
         )
       end
 
       before do
-        allow(AgentHarness).to receive(:send_message).and_return(response)
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
       end
 
       it "logs the compression error and does not raise" do

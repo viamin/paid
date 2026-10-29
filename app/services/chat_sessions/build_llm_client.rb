@@ -4,10 +4,8 @@ module ChatSessions
   class BuildLlmClient
     ANTHROPIC_SERVICE_TYPE = "anthropic"
     ANTHROPIC_BASE_URL = "https://api.anthropic.com"
-    ANTHROPIC_DEFAULT_MODEL = "claude-sonnet-4-20250514"
     GOOGLE_SERVICE_TYPE = "google"
     GOOGLE_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai"
-    GOOGLE_DEFAULT_MODEL = "gemini-2.5-flash"
 
     def self.call(chat_session:, actor: chat_session.created_by, message: nil)
       new(chat_session: chat_session, actor: actor, message: message).call

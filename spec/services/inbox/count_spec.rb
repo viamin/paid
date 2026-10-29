@@ -42,6 +42,37 @@ RSpec.describe Inbox::Count do
       expect(Inbox::Queue.call(user:)).to be_empty
     end
 
+    # @spec INBOX-PHASE-RELEVANCE-009
+    it "resolves only removed requests when the phase rollout is off" do
+      allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))
+      removed = create(:issue, :needs_input, project:, github_state: "open",
+        needs_input_questions: [ "Which behavior?" ])
+      create(:issue, :needs_input, project:, github_state: "open",
+        needs_input_questions: [ "Still visible?" ])
+      Inbox::Removals::Remove.call(entry: Inbox::Queue.find_entry(
+        user:, entry_id: "#{Inbox::Queue::CLARIFYING_QUESTIONS_KIND}:#{removed.id}"
+      ), user:)
+
+      expect(described_class.call(user:)).to eq(1)
+    end
+
+    # @spec INBOX-PHASE-RELEVANCE-009 @spec FEATURE-APPROVAL-013
+    # The feature-decision lane is counted through Inbox::Queue.call, which
+    # already drops suppressed entries, so its removals must not be subtracted
+    # a second time. The badge must stay equal to the rendered list.
+    it "does not double-subtract a removed feature decision while the phase rollout is off" do
+      allow(GithubClient).to receive(:new).and_return(instance_double(GithubClient, issue_comments: []))
+      create(:issue, :needs_input, project:, github_state: "open",
+        needs_input_questions: [ "Still visible?" ])
+      feature_intent = create(:feature_intent, :ready_for_approval, project:)
+      Inbox::Removals::Remove.call(entry: Inbox::Queue.find_entry(
+        user:, entry_id: "#{Inbox::Queue::FEATURE_DECISION_KIND}:#{feature_intent.id}"
+      ), user:)
+
+      expect(described_class.call(user:)).to eq(Inbox::Queue.call(user:).size)
+      expect(described_class.call(user:)).to eq(1)
+    end
+
     # @spec DESIGN-RECONCILIATION-001
     it "counts open traceability gaps and invalidates after resolution" do
       finding = create(:design_artifact_finding, project: project, account: account)

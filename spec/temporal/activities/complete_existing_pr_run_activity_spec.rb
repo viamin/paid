@@ -4,6 +4,31 @@ require "ostruct"
 require "rails_helper"
 
 RSpec.describe Activities::CompleteExistingPrRunActivity do
+  before { configure_llm_routing(project: project)
+allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive(:pull_request)
+      .with(project.full_name, 42)
+      .and_return(pr_data)
+    allow(github_client).to receive(:add_comment)
+    allow(github_client).to receive(:add_labels_to_issue)
+    allow(github_client).to receive(:remove_label_from_issue)
+    allow(github_client).to receive(:update_pull_request)
+    allow(github_client).to receive(:issue).with(project.full_name, 42).and_return(
+      OpenStruct.new(
+        id: 4242,
+        number: 42,
+        title: "PR title",
+        body: "PR body",
+        state: "open",
+        labels: [],
+        pull_request: OpenStruct.new(html_url: "https://github.com/#{project.full_name}/pull/42"),
+        user: OpenStruct.new(login: "viamin"),
+        created_at: Time.zone.parse("2026-04-14 00:00:00 UTC"),
+        updated_at: Time.zone.parse("2026-04-14 00:01:00 UTC")
+      )
+    )
+   }
+
   let(:project) { create(:project) }
   let(:issue) { create(:issue, :pull_request, project: project) }
   let(:agent_run) do
@@ -40,30 +65,6 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
   end
   let(:summary_base_sha) { agent_run.external_metadata["pre_run_head_sha"] }
 
-  before do
-    allow(GithubClient).to receive(:new).and_return(github_client)
-    allow(github_client).to receive(:pull_request)
-      .with(project.full_name, 42)
-      .and_return(pr_data)
-    allow(github_client).to receive(:add_comment)
-    allow(github_client).to receive(:add_labels_to_issue)
-    allow(github_client).to receive(:remove_label_from_issue)
-    allow(github_client).to receive(:update_pull_request)
-    allow(github_client).to receive(:issue).with(project.full_name, 42).and_return(
-      OpenStruct.new(
-        id: 4242,
-        number: 42,
-        title: "PR title",
-        body: "PR body",
-        state: "open",
-        labels: [],
-        pull_request: OpenStruct.new(html_url: "https://github.com/#{project.full_name}/pull/42"),
-        user: OpenStruct.new(login: "viamin"),
-        created_at: Time.zone.parse("2026-04-14 00:00:00 UTC"),
-        updated_at: Time.zone.parse("2026-04-14 00:01:00 UTC")
-      )
-    )
-  end
 
   describe "#execute" do
     it "marks the agent run as completed with existing PR details" do
@@ -193,7 +194,7 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
       expect(github_client).not_to receive(:add_comment)
       # Quiet mode skips summary generation as well — no LLM tokens are spent
       # on building a comment body the suppression layer would drop anyway.
-      expect(AgentHarness).not_to receive(:send_message)
+      expect(AgentHarness.conductor).not_to receive(:execute_direct)
 
       activity.execute(agent_run_id: agent_run.id)
 
@@ -241,7 +242,7 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
 
     it "skips the comment when summary generation fails" do
       enable_summary_comments
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         instance_double(
           AgentHarness::Response,
           success?: false,
@@ -261,7 +262,7 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
 
     it "tracks tokens even when summary generation returns a blank body" do
       enable_summary_comments
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         instance_double(
           AgentHarness::Response,
           success?: true,
@@ -509,7 +510,7 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
     allow(github_client).to receive(:compare_summary)
       .with(project.full_name, base_sha, agent_run.result_commit_sha)
       .and_return(summary_comparison)
-    allow(AgentHarness).to receive(:send_message).and_return(summary_response)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(summary_response)
   end
 
   def allow_conflict_repair_comparisons(base_files:, result_files:)
@@ -527,7 +528,7 @@ RSpec.describe Activities::CompleteExistingPrRunActivity do
   end
 
   def allow_scope_assessment(approved:, base_paths:, repair_paths:, explanation: "Repair is in scope")
-    allow(AgentHarness).to receive(:send_message).and_return(
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
       instance_double(
         AgentHarness::Response,
         success?: true,

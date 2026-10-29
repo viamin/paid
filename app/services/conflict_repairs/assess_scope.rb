@@ -8,7 +8,6 @@ module ConflictRepairs
   # an author-side edit belongs to the already-approved PR task.
   # @spec AUTO-MERGE-010
   class AssessScope
-    MODEL = "claude-sonnet-4-6"
     TIMEOUT = 45
     MAX_COMPARE_FILES = 300
     Result = Data.define(:status, :explanation, :base_imported_paths, :repair_authored_paths) do
@@ -60,7 +59,7 @@ module ConflictRepairs
     def call
       return unavailable("Repair comparison may be truncated") if comparisons_may_be_truncated?
 
-      response = AgentHarness.send_message(prompt, provider: :claude, model: MODEL, timeout: TIMEOUT, tools: :none, **Llm::TextMode.options)
+      response = Llm::Request.call(prompt: prompt, agent_run: @agent_run, timeout: TIMEOUT)
       return unavailable("Scope assessment did not complete") unless response.success?
 
       result_from(response.output) || unavailable("Scope assessment returned an invalid response")

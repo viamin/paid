@@ -4,6 +4,11 @@ require "rails_helper"
 
 # @spec DESIGN-RECONCILIATION-001
 RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
+  before { configure_llm_routing(project: project)
+response = instance_double(AgentHarness::Response, success?: false, output: nil)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
+   }
+
   def discovery(artifacts, complete: true)
     FeatureIntents::DiscoverRdrArtifacts::Discovery.new(
       artifacts:, revision: "a" * 40, coverage_complete: complete,
@@ -15,10 +20,6 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
   let(:feature_intent) { create(:feature_intent, project:) }
   let(:design_pr) { create(:feature_intent_design_pr, feature_intent:, pull_request_number: 100, draft: false) }
 
-  before do
-    response = instance_double(AgentHarness::Response, success?: false, output: nil)
-    allow(AgentHarness).to receive(:send_message).and_return(response)
-  end
 
   # @spec DESIGN-RECONCILIATION-002
   describe "coalescing", :good_job do
@@ -229,7 +230,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
     response = instance_double(AgentHarness::Response, success?: true,
       output: '{"issue_identity":"acme/widget#101","explanation":"It implements this design."}')
-    allow(AgentHarness).to receive(:send_message).and_return(response)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
     create(:issue, project:, github_number: 101, title: "Implement design", body: "Implementation work")
 

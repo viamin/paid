@@ -4,6 +4,8 @@ require "rails_helper"
 
 # @spec DESIGN-RECONCILIATION-001
 RSpec.describe FeatureIntents::ReconcileDesignArtifacts do
+  before { configure_llm_routing(project: project) }
+
   let(:project) { create(:project, owner: "acme", repo: "widget") }
   let(:issues) do
     [
@@ -45,7 +47,7 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifacts do
   it "assesses semantic candidates before escalating an unlinked artifact" do
     allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
     response = instance_double(AgentHarness::Response, success?: true, output: '{"issue_identity":"acme/widget#10","explanation":"Candidate implements the RDR scope"}')
-    allow(AgentHarness).to receive(:send_message).and_return(response)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
 
     result = described_class.call(
       project:, revision: "a" * 40,

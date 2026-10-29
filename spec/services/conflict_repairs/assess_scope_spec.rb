@@ -4,6 +4,9 @@ require "rails_helper"
 
 # @spec AUTO-MERGE-010
 RSpec.describe ConflictRepairs::AssessScope do
+  before { configure_llm_routing(project: agent_run.project) }
+  after { Current.user = nil }
+
   let(:agent_run) { create(:agent_run, :running, custom_prompt: "Resolve the merge conflict without broadening the PR") }
   let(:base_comparison) { comparison("docs/base.md") }
   let(:result_comparison) { comparison("docs/base.md", "app/models/provider.rb") }
@@ -30,7 +33,7 @@ RSpec.describe ConflictRepairs::AssessScope do
 
   it "fails closed before assessment when a comparison can be truncated" do
     comparison_at_limit = comparison(*(1..described_class::MAX_COMPARE_FILES).map { |number| "app/file_#{number}.rb" })
-    expect(AgentHarness).not_to receive(:send_message)
+    expect(AgentHarness.conductor).not_to receive(:execute_direct)
 
     result = described_class.call(agent_run:, base_comparison: comparison_at_limit, result_comparison:)
 
@@ -54,7 +57,7 @@ RSpec.describe ConflictRepairs::AssessScope do
   end
 
   it "fails closed for malformed JSON" do
-    allow(AgentHarness).to receive(:send_message).and_return(response("not JSON"))
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response("not JSON"))
 
     result = described_class.call(agent_run:, base_comparison:, result_comparison:)
 
@@ -63,7 +66,7 @@ RSpec.describe ConflictRepairs::AssessScope do
 
   it "fails closed for non-boolean approval values" do
     output = { approved: "true", base_imported_paths: [ "docs/base.md" ], repair_authored_paths: [ "app/models/provider.rb" ] }.to_json
-    allow(AgentHarness).to receive(:send_message).and_return(response(output))
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response(output))
 
     result = described_class.call(agent_run:, base_comparison:, result_comparison:)
 
@@ -71,7 +74,7 @@ RSpec.describe ConflictRepairs::AssessScope do
   end
 
   it "fails closed when the harness does not complete the assessment" do
-    allow(AgentHarness).to receive(:send_message).and_return(instance_double(AgentHarness::Response, success?: false))
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(instance_double(AgentHarness::Response, success?: false))
 
     result = described_class.call(agent_run:, base_comparison:, result_comparison:)
 
@@ -79,7 +82,7 @@ RSpec.describe ConflictRepairs::AssessScope do
   end
 
   it "fails closed when the harness raises an error" do
-    allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::Error, "provider timeout")
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(AgentHarness::Error, "provider timeout")
 
     result = described_class.call(agent_run:, base_comparison:, result_comparison:)
 
@@ -99,7 +102,7 @@ RSpec.describe ConflictRepairs::AssessScope do
       base_imported_paths:,
       repair_authored_paths:
     }.to_json
-    allow(AgentHarness).to receive(:send_message).and_return(response(output))
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response(output))
   end
 
   def response(output)

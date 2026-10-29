@@ -23,8 +23,14 @@ class ProjectsController < ApplicationController
 
   # @spec DEPENDABOT-COVERAGE-001
   # @spec PROJECT-DASHBOARD-METRICS-001
+  # @spec LAYERED-VERIFY-014
   def show
     authorize @project
+    @layered_verification_audit_available = Tools::RequestLayeredVerificationAudit.available_for_project?(
+      user: current_user,
+      project: @project
+    )
+    @layered_verification_obligations = @project.layered_verification_obligations.order(:external_identity).load if @layered_verification_audit_available
     @dashboard_metrics = ProjectDashboardMetrics::Snapshot.fetch(project: @project)
     @open_dependabot_alert_coverages = @project.dependabot_alert_coverages
       .where(alert_state: "open")

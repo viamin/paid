@@ -452,8 +452,15 @@ module Activities
         agent_timeout_seconds: user_settings&.agent_timeout_seconds || AGENT_TIMEOUT_DEFAULT,
         issue_goal_timeout_seconds: user_settings&.issue_goal_timeout_seconds || Activities::RunAgentActivity::DEFAULT_ISSUE_GOAL_TIMEOUT,
         max_execution_seconds: effective_max_execution_seconds(agent_run.project, user_settings),
+        audit_timeout_seconds: audit_timeout_seconds(agent_run),
         paused: policy_evaluation.paused
       }
+    end
+
+    def audit_timeout_seconds(agent_run)
+      return unless agent_run.layered_verification_audit_goal?
+
+      agent_run.external_metadata.dig("layered_verification", "budget", "max_minutes").to_i.minutes.to_i
     end
 
     def record_schedule_to_start_metric(agent_run)

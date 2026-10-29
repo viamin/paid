@@ -8,7 +8,7 @@ module LayeredVerification
       # @spec LAYERED-VERIFY-001
       # @spec LAYERED-VERIFY-002
       # @spec LAYERED-VERIFY-003
-      Result = Data.define(:framework, :external_identity, :external_revision, :offers)
+      Result = Data.define(:framework, :external_identity, :external_revision, :canonical_source_path, :offers)
 
       def self.call(...)
         new(...).call
@@ -21,7 +21,12 @@ module LayeredVerification
       end
 
       def call
-        return Result.new(framework: "lid", external_identity: nil, external_revision: nil, offers: []) if lid_project?
+        if lid_project?
+          return Result.new(
+            framework: "lid", external_identity: nil, external_revision: nil,
+            canonical_source_path: nil, offers: []
+          )
+        end
 
         okf_reference || offered_cir
       end
@@ -43,6 +48,7 @@ module LayeredVerification
           framework: "okf",
           external_identity: relative_path,
           external_revision: Digest::SHA256.file(path).hexdigest,
+          canonical_source_path: relative_path,
           offers: []
         )
       end
@@ -52,6 +58,7 @@ module LayeredVerification
           framework: "paid_offered_cir",
           external_identity: nil,
           external_revision: nil,
+          canonical_source_path: nil,
           offers: %w[okf_compatible_cir lid]
         )
       end

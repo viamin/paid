@@ -135,6 +135,9 @@
               Trigger Run
             <% end %>
           <% end %>
+          <% if @layered_verification_audit_available %>
+            <%= render "projects/layered_verification_audit_request", project: @project, obligations: @layered_verification_obligations %>
+          <% end %>
           <% if FeatureFlags.enabled?(:apple_verification_workers, project: @project) %>
             <%= link_to "Apple Verification", project_apple_verification_path(@project), class: "inline-flex items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50", data: { testid: "apple-verification-link" } %>
           <% end %>
