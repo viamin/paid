@@ -81,7 +81,9 @@
   SHALL pass the effective routing through their provider runtime where
   supported; Pi and OMP OpenRouter paths SHALL remain visibly unsupported.
 - [x] **MODEL-POLICY-020** — Runner fallbacks and retries SHALL preserve a
-  previously required ZDR policy. An OpenRouter fallback qualifies only with
+  previously required ZDR policy. A fallback's declaration SHALL become
+  required when that fallback becomes the active route, without disqualifying
+  candidates ahead of it. An OpenRouter fallback qualifies only with
   request-routing enforcement; a non-OpenRouter fallback qualifies only with
   an explicit user ZDR declaration. If no qualifying route exists, selection
   SHALL stop without sending the prompt.

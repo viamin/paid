@@ -99,7 +99,10 @@ consumes request-routing metadata; other providers qualify only through the
 runner's explicit user declaration, whose provenance remains `user_declared`.
 
 Agent reroutes snapshot an existing ZDR requirement before unbinding their
-runner and admit only eligible fallbacks. API chat is visibly blocked for an
+runner and admit only eligible fallbacks. A fallback's declaration does not
+change the requirement for candidates ahead of it; it joins the effective
+requirement when that fallback becomes the active route and is preserved for
+later attempts. API chat is visibly blocked for an
 effective OpenRouter ZDR requirement because the current agent-harness chat
 transport cannot consume provider-routing metadata. Container execution and
 container smoke tests use the runtime metadata where supported; Pi and OMP

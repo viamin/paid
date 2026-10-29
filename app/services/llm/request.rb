@@ -17,7 +17,7 @@ module Llm
       @timeout = timeout
     end
 
-    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 MODEL-POLICY-015 MODEL-POLICY-016 PARTIAL-CLOSEOUT-031
+    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-020 PARTIAL-CLOSEOUT-031
       unless @user && (!@account || @user.account_id == @account.id)
         raise AgentHarness::ConfigurationError, "No owning user for this LLM request"
       end
@@ -30,15 +30,18 @@ module Llm
       end
       raise AgentHarness::ConfigurationError, "No eligible configured runner for this LLM request" if runners.empty?
 
-      @required_zdr = @project&.restricted? || runners.any?(&:zero_data_retention?)
-      runners = runners.select do |runner|
-        runner.effective_privacy_policy(project: @project, required_zdr: @required_zdr).eligible
-      end
-      raise AgentHarness::ConfigurationError, "No eligible configured runner can satisfy the required zero data retention policy" if runners.empty?
+      @required_zdr = @project&.restricted? || runners.first.zero_data_retention?
 
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
       response = error = nil
+      eligible_route = false
       runners.each do |runner|
+        candidate_required_zdr = @required_zdr || runner.zero_data_retention?
+        policy = runner.effective_privacy_policy(project: @project, required_zdr: candidate_required_zdr)
+        next unless policy.eligible
+
+        eligible_route = true
+        @required_zdr = candidate_required_zdr
         remaining = (deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)).ceil
         raise AgentHarness::TimeoutError, "LLM request timeout exhausted" if remaining <= 0
 
@@ -51,6 +54,10 @@ module Llm
         error = failure
       end
       raise error if error
+      unless eligible_route
+        raise AgentHarness::ConfigurationError,
+          "No eligible configured runner can satisfy the required zero data retention policy"
+      end
 
       response
     end

@@ -51,6 +51,22 @@ RSpec.describe ChatSessions::FallbackLoop, type: :service do
     expect(chat_session.reload.runner).to eq(original_runner)
   end
 
+  # @spec MODEL-POLICY-020
+  it "preserves ZDR after a ZDR fallback becomes the active route" do
+    configure_minimax_runner_with_429_response
+    zdr_fallback = create(:runner, :api_key, user: user, runner_key: "claude", zero_data_retention: true,
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+    non_zdr_fallback = create(:runner, :api_key, user: user, runner_key: "claude",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+    ChatFallbackCatalog.seed_low_tier_model(model_id: "claude-haiku-4-5")
+    user.settings.update_columns(
+      kb_chat_fallback_runners: [ zdr_fallback.routing_key, non_zdr_fallback.routing_key ]
+    )
+
+    expect(capture_send_message_error(chat_session)).to be_a(AgentHarness::RateLimitError)
+    expect(chat_session.reload.runner).to eq(zdr_fallback)
+  end
+
   def fallback_host(session)
     Class.new do
       include ChatSessions::FallbackLoop

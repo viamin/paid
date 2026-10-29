@@ -35,6 +35,7 @@ module ChatSessions
         raise unless fallback_runner
 
         attempted_runners << fallback_runner
+        required_zdr ||= fallback_runner.zero_data_retention?
         discard_partial_attempt(agent_loop&.created_message_ids)
         switch_to_fallback_runner(fallback_runner, e)
       end
