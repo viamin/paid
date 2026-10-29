@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-28
+last_updated: 2026-10-29
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -105,6 +105,15 @@ arrows:
     status: OK
     audited: 2026-10-23
     next: "Extend normalized pipeline-event ingestion when a CI provider exposes more detailed timing data."
+  operational-supervisor:
+    title: Operational Supervisor
+    path: docs/intent/operational-supervisor/operational-supervisor-design.md
+    specs: docs/intent/operational-supervisor/operational-supervisor-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: MAPPED
+    sampled: 2026-10-29
+    next: "Planning held: implement the default-off shadow-observation tree (#4708-#4714); do not enable runtime mitigation."
   agent-instruction-navigation:
     title: Agent Instruction Navigation
     path: docs/intent/agent-instruction-navigation/agent-instruction-navigation-design.md
