@@ -48,6 +48,7 @@ module AgentRuns
         exclude_runner_ids: exclude_runner_ids,
         disabled_runner_ids: disabled_runner_ids,
         effective_runner: agent_run.effective_runner,
+        required_zdr: agent_run.external_metadata.to_h["zdr_required"],
         logger: logger
       )
 

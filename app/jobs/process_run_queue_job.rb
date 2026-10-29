@@ -492,6 +492,7 @@ class ProcessRunQueueJob < ApplicationJob
     available_at: nil, park_reason: nil)
     original_id = agent_run.runner_id
     cache_key = reroute_cache_key(agent_run, original_id)
+    snapshot_zdr_requirement!(agent_run)
 
     if reroute_cache.key?(cache_key)
       cached = reroute_cache[cache_key]
@@ -534,6 +535,14 @@ class ProcessRunQueueJob < ApplicationJob
         skipped_ids.add(agent_run.id)
       end
     end
+  end
+
+  def snapshot_zdr_requirement!(agent_run)
+    policy = agent_run.runner&.effective_privacy_policy(project: agent_run.project)
+    return unless policy&.zdr_required
+    return if agent_run.external_metadata.to_h["zdr_required"] == true
+
+    agent_run.update_columns(external_metadata: agent_run.external_metadata.to_h.merge("zdr_required" => true))
   end
 
   def apply_cached_reroute(agent_run, cached)

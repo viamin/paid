@@ -116,6 +116,24 @@ RSpec.describe Containers::ChatSessionManager do
       manager.execute_agent_command(prompt: "Fix the bug")
     end
 
+    # @spec MODEL-POLICY-023
+    it "uses a reference-only restricted project for runner execution policy" do
+      runner = create(:runner, user: chat_session.created_by, runner_key: "codex")
+      restricted_project = create(:project, account: account, data_classification: "restricted")
+      chat_session.chat_session_projects.create!(project: restricted_project, context_type: "reference")
+      chat_session.update!(runner: runner)
+
+      expect(Runners::HarnessExecutionPlan).to receive(:call).with(
+        runner: runner,
+        prompt: "Fix the bug",
+        options: {},
+        provider_runtime: nil,
+        project: restricted_project
+      )
+
+      manager.execute_agent_command(prompt: "Fix the bug")
+    end
+
     it "passes plan.env to container exec" do
       allow(Runners::HarnessExecutionPlan).to receive(:for_runner_key)
         .and_return(Runners::HarnessExecutionPlan::Result.new(

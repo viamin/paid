@@ -78,6 +78,27 @@ RSpec.describe FreeModels::SelectChatModel do
     expect(described_class.call(runner: runner, project: project)).to eq(eligible)
   end
 
+  # A confidential project maps to OpenRouter `data_collection: "deny"`, which
+  # the API chat transport cannot carry (it builds no provider routing). The
+  # guard must reject it there even though confidential does not require ZDR.
+  # @spec CHAT-API-019
+  it "rejects a confidential project on the API transport that cannot carry provider routing" do
+    project = create(:project, account: user.account, data_classification: "confidential")
+    session = create(:chat_session, account: user.account, project: project, created_by: user)
+
+    expect { described_class.for_session(runner: runner, chat_session: session, transport: :api) }
+      .to raise_error(ChatSessions::LlmClientConfigurationError, /privacy routing/)
+  end
+
+  # @spec CHAT-API-019
+  it "allows a confidential project on the container transport that carries provider routing" do
+    eligible = free_model
+    project = create(:project, account: user.account, data_classification: "confidential")
+    session = create(:chat_session, account: user.account, project: project, created_by: user)
+
+    expect(described_class.for_session(runner: runner, chat_session: session, transport: :container)).to eq(eligible)
+  end
+
   # @spec CHAT-API-019
   %w[pi omp].each do |runner_key|
     it "rejects sensitive container chat on #{runner_key} without supported privacy routing" do

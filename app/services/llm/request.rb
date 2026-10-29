@@ -17,7 +17,7 @@ module Llm
       @timeout = timeout
     end
 
-    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 MODEL-POLICY-015 MODEL-POLICY-016 PARTIAL-CLOSEOUT-031
+    def call # @spec LLM-ROUTING-001 LLM-ROUTING-002 LLM-ROUTING-003 LLM-ROUTING-005 MODEL-POLICY-015 MODEL-POLICY-016 MODEL-POLICY-024 PARTIAL-CLOSEOUT-031
       unless @user && (!@account || @user.account_id == @account.id)
         raise AgentHarness::ConfigurationError, "No owning user for this LLM request"
       end
@@ -30,9 +30,19 @@ module Llm
       end
       raise AgentHarness::ConfigurationError, "No eligible configured runner for this LLM request" if runners.empty?
 
+      @required_zdr = @project&.restricted? || agent_run&.external_metadata.to_h["zdr_required"] == true ||
+        runners.first.zero_data_retention?
+
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
       response = error = nil
+      eligible_route = false
       runners.each do |runner|
+        candidate_required_zdr = @required_zdr || runner.zero_data_retention?
+        policy = runner.effective_privacy_policy(project: @project, required_zdr: candidate_required_zdr)
+        next unless policy.eligible
+
+        eligible_route = true
+        @required_zdr = candidate_required_zdr
         remaining = (deadline - Process.clock_gettime(Process::CLOCK_MONOTONIC)).ceil
         raise AgentHarness::TimeoutError, "LLM request timeout exhausted" if remaining <= 0
 
@@ -45,6 +55,10 @@ module Llm
         error = failure
       end
       raise error if error
+      unless eligible_route
+        raise AgentHarness::ConfigurationError,
+          "No eligible configured runner can satisfy the required zero data retention policy"
+      end
 
       response
     end
@@ -138,14 +152,18 @@ module Llm
         end
         resolved = Runners::ResolveTierModel::Result.new(model_id: @model)
       end
-      configured = runner.agent_harness_runner_runtime(project: @project) unless runner.free_model_policy?
+      configured = runner.agent_harness_runner_runtime(project: @project, required_zdr: @required_zdr) unless runner.free_model_policy?
       if configured && resolved.failure? && resolved.error_type == :missing_model
         @policy_model_id = runner.direct_outbound_model_id.presence || configured.model
         return configured
       end
       raise AgentHarness::ConfigurationError, "No permitted model for this LLM request: #{resolved.error}" if resolved.failure?
       @policy_model_id = resolved.model_id
-      return runner.free_model_policy_runner_runtime(project: @project, model_id: resolved.model_id) if runner.free_model_policy?
+      if runner.free_model_policy?
+        return runner.free_model_policy_runner_runtime(
+          project: @project, model_id: resolved.model_id, required_zdr: @required_zdr
+        )
+      end
 
       AgentHarness::ProviderRuntime.new(
         model: runner.qualified_model_for(resolved.model_id),
