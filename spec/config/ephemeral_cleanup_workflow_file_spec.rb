@@ -3,7 +3,10 @@
 require "rails_helper"
 require "psych"
 
-RSpec.describe "Ephemeral Cleanup workflow", :no_db do
+class EphemeralCleanupWorkflowFile < Pathname
+end
+
+RSpec.describe EphemeralCleanupWorkflowFile, :no_db do
   # @spec EPHEMERAL-CLEANUP-001
   it "labels cleanup pull requests for Paid before requesting auto-merge" do
     workflow = Psych.safe_load_file(Rails.root.join(".github/workflows/ephemeral-cleanup.yml"), aliases: true)

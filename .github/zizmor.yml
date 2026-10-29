@@ -21,9 +21,9 @@ rules:
       # persisted credential: it commits a cleanup change and pushes it back
       # to `main` (`git push origin "$branch"`). Setting
       # `persist-credentials: false` here would break that push. The
-      # workflow only runs on a schedule (no `pull_request` trigger), so
-      # there is no untrusted-PR exposure.
-      - ephemeral-cleanup.yml:35
+      # workflow checks out trusted `main` after a pull request closes; it
+      # never checks out or executes pull-request head content.
+      - ephemeral-cleanup.yml:36
 
   dangerous-triggers:
     ignore:
