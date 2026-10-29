@@ -19,7 +19,8 @@ module Issues
     Inputs = Struct.new(:evidence_by_issue_id, :technical_evidence_by_issue_id, :prerequisites_by_issue_id,
       :open_requests_by_issue_id, :active_run_issue_ids, :feature_links_by_issue_id,
       :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id,
-      :open_native_children_by_issue_id, :prerequisite_notifications_by_issue_id, keyword_init: true)
+      :open_native_children_by_issue_id, :prerequisite_notifications_by_issue_id,
+      :external_prerequisite_states_by_notification_id, keyword_init: true)
 
     # Blockers that are deliberate operator states or active work rather than
     # a partial-closeout stall; the lane must not surface them.
@@ -105,6 +106,7 @@ module Issues
 
         IssueAnalysisBackoffResetContext.call(project: project_issues.first.project)
       end
+      prerequisite_notifications = prerequisite_notifications_for(issues)
       Inputs.new(
         evidence_by_issue_id: CloseoutEvidence.results_for(issues),
         technical_evidence_by_issue_id: TechnicalPrerequisites::Evidence.records_for_issues(issues),
@@ -115,7 +117,10 @@ module Issues
         analysis_backoff_reset_by_project_id: reset_at,
         scanner_attempts_by_issue_id: scanner_attempts,
         open_native_children_by_issue_id: open_native_children_for(issues),
-        prerequisite_notifications_by_issue_id: prerequisite_notifications_for(issues)
+        prerequisite_notifications_by_issue_id: prerequisite_notifications,
+        external_prerequisite_states_by_notification_id: PartialCloseouts::ExternalPrerequisites.states_for_notifications(
+          prerequisite_notifications.values.flatten
+        )
       )
     end
 
@@ -142,7 +147,7 @@ module Issues
       SQL
         source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
         subject_type: "Issue", subject_id: issues.map(&:id), resolved_at: nil, dismissed_at: nil
-      ).order(:id).to_a.group_by(&:subject_id)
+      ).preload(subject: [ :project, :issue_dependencies ]).order(:id).to_a.group_by(&:subject_id)
     end
     private_class_method :prerequisite_notifications_for
 
@@ -395,18 +400,51 @@ module Issues
       return [] if notifications.empty?
 
       ids = notifications.map { |notification| "##{notification.id}" }
+      external = notifications.flat_map { |notification| external_prerequisite_states(notification, inputs:) }
       [ Blocker.new(
-        code: :human_prerequisite_notification,
-        message: "Active partial-closeout human prerequisite notification#{'s' if notifications.many?} (#{ids.join(', ')}) requires unresolved human evidence or a human decision before continuation.",
-        evidence: { "notifications" => notifications.map { |notification| notification_evidence(notification) }, "links" => notifications.filter_map { |notification| evidence_link("Notification ##{notification.id}", notification.action_url) } },
-        recovery: prerequisite_notification_recovery(notifications)
+        code: external.any? ? :prerequisite_notification : :human_prerequisite_notification,
+        message: prerequisite_notification_message(notifications, ids, external),
+        evidence: { "notifications" => notifications.map { |notification| notification_evidence(notification) },
+          "external_prerequisites" => external,
+          "links" => notifications.filter_map { |notification| evidence_link("Notification ##{notification.id}", notification.action_url) } +
+            external.filter_map { |state| evidence_link(state.fetch("reference"), state["url"]) } },
+        recovery: prerequisite_notification_recovery(notifications, external)
       ) ]
     end
 
-    def self.prerequisite_notification_recovery(notifications)
+    def self.external_prerequisite_states(notification, inputs: nil)
+      return inputs.external_prerequisite_states_by_notification_id.fetch(notification.id, []) if inputs
+
+      PartialCloseouts::ExternalPrerequisites.states_for(notification)
+    end
+    private_class_method :external_prerequisite_states
+
+    def self.prerequisite_notification_message(notifications, ids, external)
+      human = notifications.any? do |notification|
+        PartialCloseouts::ExternalPrerequisites.human_evidence_required?(notification)
+      end
+      external_message = external.map do |state|
+        owner = state["owner"].present? ? " owned by @#{state["owner"]}" : ""
+        "External prerequisite #{state.fetch("reference")} is #{state.fetch("state")}#{owner}."
+      end.join(" ")
+      return external_message unless human
+
+      "#{external_message} Active partial-closeout human prerequisite notification#{'s' if notifications.many?} " \
+        "(#{ids.join(', ')}) requires unresolved human evidence or a human decision before continuation."
+    end
+    private_class_method :prerequisite_notification_message
+
+    def self.prerequisite_notification_recovery(notifications, external = [])
       policy_steps = notifications.filter_map { |notification| notification.metadata.dig("policy_selection", "next_step") }
       guidance = "Supply and record the requested human decision or evidence at the listed notification route."
       guidance += " Replacement policy action: #{policy_steps.join(' ')}" if policy_steps.any?
+      external_guidance = external.map { |state| state.fetch("recovery") }.uniq.join(" ")
+      only_external = notifications.all? do |notification|
+        !PartialCloseouts::ExternalPrerequisites.human_evidence_required?(notification)
+      end
+      return "#{external_guidance} Do not resolve it manually while the external state is unavailable." if policy_steps.empty? && only_external
+
+      guidance += " #{external_guidance}" if external_guidance.present?
       "#{guidance} Dismiss or resolve it only after that prerequisite is genuinely satisfied; never replace a team policy with solo review silently."
     end
     private_class_method :prerequisite_notification_recovery

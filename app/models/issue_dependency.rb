@@ -62,7 +62,7 @@ class IssueDependency < ApplicationRecord
   #
   # Owner/repo are compared case-insensitively because
   # IssueDependency#normalize_external_ref downcases the dep side on
-  # write, while Project.owner/name preserve their original casing.
+  # write, while Project.owner/repo preserve their original casing.
   EXTERNAL_RESOLUTION_JOIN_SQL = <<~SQL.squish.freeze
     LEFT JOIN projects ext_project
       ON ext_project.account_id = ? AND
