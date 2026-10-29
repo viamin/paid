@@ -1046,10 +1046,12 @@ module Projects
       @effective_policy_notice = plan&.notice
     end
 
-    # @spec AUTOMATION-PHASES-011
+    # @spec AUTOMATION-PHASES-010 @spec AUTOMATION-PHASES-011 — selection_summary
+    # names the endpoint under review even when the changed policy permits no
+    # later phase, matching the form's own notice.
     def updated_policy_alert(plan)
       "This project's automation settings changed since you opened this form. " \
-        "Review the updated automation notice and submit again. #{plan.notice.summary}"
+        "Review the updated automation notice and submit again. #{plan.notice.selection_summary}"
     end
 
     def resolve_blocked_by_issue_ids

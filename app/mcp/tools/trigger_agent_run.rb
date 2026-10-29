@@ -112,7 +112,11 @@ module Tools
         issue_id: run.issue_id,
         project_id: run.project_id,
         created_at: run.created_at,
-        effective_policy_notice: plan&.notice&.summary
+        # @spec AUTOMATION-PHASES-010 — selection_summary always names the
+        # endpoint under review, even when no later phase is project-enabled,
+        # so the MCP client can confirm what it submitted. #summary drops the
+        # endpoint in the no-later-phase case.
+        effective_policy_notice: plan&.notice&.selection_summary
       }
     rescue ActiveRecord::RecordNotUnique => e
       raise unless duplicate_active_issue_run?(e)
@@ -151,10 +155,14 @@ module Tools
       )
     end
 
+    # @spec AUTOMATION-PHASES-010 @spec AUTOMATION-PHASES-011 — the review
+    # payload names the endpoint under review via selection_summary so the
+    # client can verify the selection even when the current policy permits no
+    # later phase.
     def policy_review(plan)
       {
         review_required: true,
-        effective_policy_notice: plan.notice.summary,
+        effective_policy_notice: plan.notice.selection_summary,
         continuation_notice_signature: plan.signature
       }
     end

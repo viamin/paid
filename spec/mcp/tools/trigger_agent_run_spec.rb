@@ -71,6 +71,46 @@ RSpec.describe Tools::TriggerAgentRun do
       expect(result.fetch(:effective_policy_notice)).to include("Merge phase setting")
     end
 
+    it "names the selected endpoint even when no later phase is project-enabled" do # @spec AUTOMATION-PHASES-010
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => true, "merge" => false },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      })
+      plan = Automation::ManualStart::Plan.call(project:, user:, phase: "coding")
+
+      result = tool.call(
+        project_id: project.id, issue_id: issue.id, confirmed: true,
+        continuation_authorized: true, continuation_endpoint: "coding",
+        continuation_notice_signature: plan.signature
+      )
+
+      notice = result.fetch(:effective_policy_notice)
+      expect(notice).to include("You selected automation through Coding.")
+      expect(notice).to include("Paid stops after the action you selected")
+    end
+
+    it "names the selected endpoint in the review payload when policy changed since the notice" do # @spec AUTOMATION-PHASES-010 @spec AUTOMATION-PHASES-011
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => true, "merge" => false },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      })
+
+      result = tool.call(
+        project_id: project.id, issue_id: issue.id, confirmed: true,
+        continuation_authorized: true, continuation_endpoint: "coding",
+        continuation_notice_signature: "stale-signature"
+      )
+
+      expect(result).to include(review_required: true)
+      notice = result.fetch(:effective_policy_notice)
+      expect(notice).to include("You selected automation through Coding.")
+      expect(notice).to include("Paid stops after the action you selected")
+    end
+
     it "enqueues ProcessRunQueueJob" do
       expect {
         tool.call(project_id: project.id, issue_id: issue.id, confirmed: true)
