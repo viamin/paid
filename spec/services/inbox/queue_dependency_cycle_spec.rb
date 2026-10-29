@@ -34,4 +34,26 @@ RSpec.describe Inbox::Queue do
 
     expect(entries).to be_empty
   end
+
+  # @spec AUTO-PICK-QUEUE-015
+  it "surfaces a recreated cycle after the prior occurrence was personally removed" do
+    user = create(:user)
+    project = create(:project, account: user.account, created_by: user)
+    first = create(:issue, project:, github_state: "open")
+    second = create(:issue, project:, github_state: "open")
+    create(:issue_dependency, issue: first, depends_on_issue: second)
+    removed_edge = create(:issue_dependency, issue: second, depends_on_issue: first)
+    original_entry = described_class.call(user:, kind: described_class::DEPENDENCY_CYCLE_KIND).sole
+    Inbox::Removals::Remove.call(entry: original_entry, user:)
+
+    removed_edge.destroy!
+    expect(described_class.call(user:, kind: described_class::DEPENDENCY_CYCLE_KIND)).to be_empty
+
+    create(:issue_dependency, issue: second, depends_on_issue: first)
+    recreated_entry = described_class.call(user:, kind: described_class::DEPENDENCY_CYCLE_KIND).sole
+
+    expect(recreated_entry.id).to eq(original_entry.id)
+    expect(Inbox::RequestIdentity.occurrence_for(recreated_entry))
+      .not_to eq(Inbox::RequestIdentity.occurrence_for(original_entry))
+  end
 end

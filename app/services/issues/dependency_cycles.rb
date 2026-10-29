@@ -13,7 +13,9 @@ module Issues
   class DependencyCycles
     class CoverageUnavailable < StandardError; end
 
-    Cycle = Data.define(:account, :issues, :path, :downstream_issues, :detected_at) do
+    Edge = Data.define(:id, :from_id, :to_id)
+
+    Cycle = Data.define(:account, :issues, :path, :downstream_issues, :detected_at, :occurrence) do
       def fingerprint
         Digest::SHA256.hexdigest(issues.map(&:id).sort.join(":"))[0, 20]
       end
@@ -56,19 +58,19 @@ module Issues
         .where(depends_on_issue: { github_state: "open" })
         .where.not(depends_on_issue: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
         .excluding_parent_references
-        .pluck(:issue_id, :depends_on_issue_id)
-        .select { |from, to| nodes.key?(from) && nodes.key?(to) }
+        .pluck(:id, :issue_id, :depends_on_issue_id)
+        .filter_map { |id, from, to| Edge.new(id:, from_id: from, to_id: to) if nodes.key?(from) && nodes.key?(to) }
     end
 
     def adjacency
-      @adjacency ||= edges.group_by(&:first).transform_values { |pairs| pairs.map(&:last) }
+      @adjacency ||= edges.group_by(&:from_id).transform_values { |group| group.map(&:to_id) }
     end
 
     # Kosaraju's two linear passes are intentionally iterative: a large legacy
     # import must not consume the Ruby stack while producing an operator alert.
     def components
       order = finish_order(adjacency)
-      reverse = edges.group_by(&:last).transform_values { |pairs| pairs.map(&:first) }
+      reverse = edges.group_by(&:to_id).transform_values { |group| group.map(&:from_id) }
       visited = Set.new
       order.reverse_each.each_with_object([]) do |id, result|
         next unless visited.add?(id)
@@ -116,7 +118,14 @@ module Issues
       path_ids = cycle_path(component.first, ids)
       Cycle.new(account:, issues: component.map { |id| nodes.fetch(id) }.sort_by(&:id),
         path: path_ids.map { |id| nodes.fetch(id) },
-        downstream_issues: downstream_for(ids), detected_at: component.map { |id| nodes.fetch(id).updated_at }.min)
+        downstream_issues: downstream_for(ids), detected_at: component.map { |id| nodes.fetch(id).updated_at }.min,
+        occurrence: cycle_occurrence(ids))
+    end
+
+    def cycle_occurrence(ids)
+      dependency_ids = edges.filter_map { |edge| edge.id if ids.include?(edge.from_id) && ids.include?(edge.to_id) }
+      digest = Digest::SHA256.hexdigest(dependency_ids.sort.join(":"))
+      "state:dependency_cycle:#{digest}"
     end
 
     def cycle_path(start, ids)
@@ -135,7 +144,7 @@ module Issues
     end
 
     def downstream_for(cycle_ids)
-      reverse = edges.group_by(&:last).transform_values { |pairs| pairs.map(&:first) }
+      reverse = edges.group_by(&:to_id).transform_values { |group| group.map(&:from_id) }
       seen = cycle_ids.dup
       stack = cycle_ids.flat_map { |id| reverse.fetch(id, []) }
       until stack.empty?

@@ -111,7 +111,7 @@
   remove; the occurrence clears only after a later synchronization observes an
   acyclic persisted graph. Personal Inbox removal SHALL affect only that
   occurrence for that operator.
-  *Tests:* `spec/services/inbox/dependency_cycle_spec.rb`,
+  *Tests:* `spec/services/inbox/queue_dependency_cycle_spec.rb`,
   `spec/services/issues/dependency_cycles_spec.rb`.
   *Code:* `Inbox::Queue`, `Dashboard::HeldWorkDetails`,
   `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`.

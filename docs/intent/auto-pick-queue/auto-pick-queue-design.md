@@ -68,13 +68,15 @@ through a bounded maintenance sweep. The effective graph includes resolved
 cross-project references and follows the same open-state and child-to-parent
 contextual-reference exclusions as readiness.
 
-Each strongly connected group produces one deterministic Inbox occurrence. It
-shows an exact cycle path, linked projects/issues, and the count of downstream
-open work held by the group. Paid never selects an edge to remove: the operator
-reviews the declarations on GitHub and removes or corrects the appropriate
-declaration. The occurrence remains until a subsequent synchronization observes
-an acyclic persisted graph. A failed reconciliation is logged as unavailable;
-it is not treated as proof that no cycles exist.
+Each strongly connected group produces one deterministic Inbox request keyed by
+its members. Its occurrence is derived from the persisted dependency rows, so a
+group that becomes acyclic and later recurs is a fresh occurrence even when its
+members are unchanged. It shows an exact cycle path, linked projects/issues,
+and the count of downstream open work held by the group. Paid never selects an
+edge to remove: the operator reviews the declarations on GitHub and removes or
+corrects the appropriate declaration. The occurrence remains until a subsequent
+synchronization observes an acyclic persisted graph. A failed reconciliation is
+logged as unavailable; it is not treated as proof that no cycles exist.
 
 ## Tier-infeasibility gating
 

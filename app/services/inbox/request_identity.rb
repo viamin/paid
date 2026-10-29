@@ -18,8 +18,10 @@ module Inbox
 
     # Token compared against stored removals. Timestamps are rendered with
     # microsecond precision so two occurrences in the same second still differ.
+    # @spec AUTO-PICK-QUEUE-015
     def occurrence_for(entry)
       return project_setup_occurrence(entry) if entry.project_setup_pending?
+      return entry.record.occurrence if entry.dependency_cycle?
 
       entry.waiting_since&.utc&.iso8601(6) || "unknown"
     end

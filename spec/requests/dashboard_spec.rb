@@ -1010,7 +1010,8 @@ RSpec.describe "Dashboard" do
       queries = capture_queries { get dashboard_eligibility_breakdown_path }
 
       cycle_edge_queries = queries.count do |sql|
-        sql.include?('SELECT "issue_dependencies"."issue_id", "issue_dependencies"."depends_on_issue_id"')
+        sql.include?('SELECT "issue_dependencies"."id", "issue_dependencies"."issue_id", ' \
+          '"issue_dependencies"."depends_on_issue_id"')
       end
       expect(cycle_edge_queries).to eq(1)
     end
