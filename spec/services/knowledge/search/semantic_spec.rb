@@ -85,6 +85,30 @@ RSpec.describe Knowledge::Search::Semantic do
 
         expect(results.map { |r| r[:artifact_type] }).to all(eq("route"))
       end
+
+      # @spec KNOWLEDGE-003
+      it "limits lexical chunks before aggregating their link counts" do
+        chunks = create_list(:knowledge_chunk, 10,
+          knowledge_artifact: route_artifact,
+          project: project,
+          chunk_type: "context",
+          content: "bounded lexical result")
+        link_target = create(:knowledge_chunk,
+          knowledge_artifact: route_artifact,
+          project: project,
+          chunk_type: "evidence",
+          content: "link target")
+        chunks.each_with_index do |chunk, index|
+          chunk.update!(sequence: index)
+          create(:knowledge_link, source_chunk: chunk, target_chunk: link_target)
+          create(:knowledge_link, source_chunk: link_target, target_chunk: chunk)
+        end
+
+        results = described_class.call(project: project, query: "bounded lexical result", limit: 5)[:results]
+
+        expect(results.map { |result| result[:chunk_id] }).to eq(chunks.sort_by(&:id).first(5).map(&:id))
+        expect(results.map { |result| result[:link_count] }).to all(eq(2))
+      end
     end
 
     context "with vector search unavailable" do
