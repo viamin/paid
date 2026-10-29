@@ -22,6 +22,10 @@
   `catalog_source == "openrouter_sync"` rows (synced free models), so the
   dropdown offers the Pareto row and synced free models alongside other
   OpenRouter rows.
+- [x] **RUNNER-MODEL-OPTIONS-007** — When an OpenRouter caller explicitly
+  requests `zdr_eligible: true`, the system SHALL use only active advertised
+  ZDR candidate models and SHALL still apply the existing runner compatibility
+  filter; default model options and request-time routing SHALL remain unchanged.
 
 ## Free Policy Entry
 

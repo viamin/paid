@@ -52,6 +52,11 @@ auth_type)`. It returns an ordered list of `Entry` values:
      `tier_model_ids_must_be_runner_compatible` validation enforces at save
      time. `unknown` compatibility results stay selectable: compatibility
      that cannot be asserted statically must not hide catalog rows.
+   - An OpenRouter caller may explicitly pass `zdr_eligible: true` to use the
+     advertised endpoint-backed ZDR candidate subset from
+     `OpenrouterZdr::EligibleModels`. This is a setup-time filter only: it
+     retains the same compatibility filtering and does not change default
+     options, project policy, or request-time ZDR routing enforcement.
 3. **Custom sentinel** (always trailing, `kind: :custom`): value
    `LlmModel::CUSTOM_MODEL_OPTION` with a "Custom model ID…" label.
    Selecting it reveals the existing freeform text input and keeps the
