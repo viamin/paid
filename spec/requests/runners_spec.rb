@@ -1787,9 +1787,17 @@ RSpec.describe "Runners" do
 
       get edit_runner_path(runner)
 
-      expect(response).to have_http_status(:ok)
+      doc = Nokogiri::HTML(response.body)
+      model_search = doc.at_css("#runner_model_search")
+      model_select = doc.at_css("#runner_model_selection_choice")
+      custom_model_field = doc.at_css("[data-runner-form-target='customModelField']")
+
       expect(response.body).to include('data-runner-form-zdr-catalog-setup-state-value="loading"')
-      expect(response.body).not_to include('option value="free" selected')
+      expect(model_search["disabled"]).to eq("disabled")
+      expect(model_select["disabled"]).to eq("disabled")
+      expect(model_select.css("option").map { |option| option["value"] }).to eq([ "" ])
+      expect(custom_model_field.key?("hidden")).to be(true)
+      expect(custom_model_field.at_css("input")["disabled"]).to eq("disabled")
     end
 
     # @spec MODEL-POLICY-005
