@@ -7,8 +7,8 @@ module Tools
     def self.tool_name = "resolve_issue_closeout"
     def self.write_operation? = true
     def self.description
-      "Resolve a stalled partial closeout as complete against its current evidence. Records an internal attestation: " \
-        "the GitHub issue stays open for a human to close, and new terminal evidence can resurface it. " \
+      "Close a stalled partial closeout on GitHub only after its current acceptance audit satisfies every criterion. " \
+        "The action rechecks revisions, prerequisites, scanner verification, and GitHub state; failures remain retryable. " \
         "The reason must be a specific rationale referencing the recorded evidence, not a canned sentence. " \
         "Requires confirmation."
     end

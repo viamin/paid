@@ -332,7 +332,7 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     expect(described_class.call(issue.reload).stalled?).to be(false)
   end
 
-  it "is not stalled when resolved complete against the current evidence generation" do
+  it "remains stalled when locally resolved but GitHub is still open" do # @spec PARTIAL-CLOSEOUT-037
     merged_partial_pr(number: 12)
     issue.update!(
       closeout_resolved_at: 1.hour.ago,
@@ -340,7 +340,7 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
       closeout_resolved_by_id: create(:user, account: account).id
     )
 
-    expect(described_class.call(issue.reload).stalled?).to be(false)
+    expect(described_class.call(issue.reload).stalled?).to be(true)
   end
 
   it "is stalled again after a resolution when newer terminal evidence arrives" do

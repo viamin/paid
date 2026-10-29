@@ -1535,24 +1535,22 @@ class Issue < ApplicationRecord
     closeout_resolved_at.present?
   end
 
-  # Records the operator's attestation that the recorded closeout evidence
-  # (merged partial PR / no-code outcome) completes this issue. The digest
-  # scopes the dismissal to one evidence generation: newer terminal evidence
-  # re-surfaces the partial_closeout inbox entry, and repeated GitHub sync
-  # cannot recreate the suppressed item because sync writes no state here.
-  # Deliberately does NOT write to GitHub — the issue stays open there for a
-  # human to close; Paid only stops surfacing it.
-  # @spec PARTIAL-CLOSEOUT-006
+  # Records the authorized GitHub closeout after the close API confirms the
+  # action. The Inbox is derived from GitHub's open state, never suppressed by
+  # this local audit record alone.
+  # @spec PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-037
   def resolve_closeout!(actor:, evidence_digest:)
     update!(
       paid_state: "completed",
+      github_state: "closed",
+      closed_at: Time.current,
       closeout_resolved_at: Time.current,
       closeout_resolution_digest: evidence_digest,
       closeout_resolved_by: actor
     )
 
     Rails.logger.info(
-      message: "issue.closeout_resolved",
+      message: "issue.closeout_closed",
       component: "agent_execution",
       issue_id: id,
       project_id: project_id,

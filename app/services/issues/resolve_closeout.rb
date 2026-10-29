@@ -20,7 +20,7 @@ module Issues
       @reason = reason.to_s.strip
     end
 
-    def call # @spec PARTIAL-CLOSEOUT-006
+    def call # @spec PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-037
       return failure(:invalid_reason, "A closeout reason is required.") if reason.blank?
       return failure(:generic_reason, "Enter a specific completion rationale that references the recorded evidence " \
         "(for example which merged PRs or no-code declaration cover each acceptance criterion).") if canned_reason?
@@ -44,10 +44,42 @@ module Issues
     def resolve
       evidence = CloseoutEvidence.call(issue)
       return failure(:not_stalled, "This issue has no terminal closeout evidence.") unless evidence.present? && issue.github_state == "open"
+      return failure(:audit_pending, "A current acceptance audit is required before GitHub can be closed.") unless accepted_assessment?
+      return failure(:open_prerequisites, "Current prerequisites or required verification still block GitHub closure.") if closure_blocked?
+      return failure(:github_unavailable, "GitHub closure could not be verified; retry Close on GitHub from this Inbox item.") unless github_open?
 
       supersede_open_continuation
+      updated = client.update_issue(issue.project.full_name, issue.github_number, state: "closed", state_reason: "completed")
+      return failure(:github_unavailable, "GitHub did not confirm closure; retry Close on GitHub from this Inbox item.") unless github_closed?(updated)
+
       issue.resolve_closeout!(actor:, evidence_digest: evidence.digest)
       Result.new(issue:)
+    rescue GithubClient::Error
+      failure(:github_failed, "GitHub closure failed; retry Close on GitHub from this Inbox item.")
+    end
+
+    def accepted_assessment?
+      assessment = PartialCloseouts::Assessment.call(issue)
+      assessment.closeout_state == "accepted_awaiting_github_closure" &&
+        PartialCloseouts::SourceClosureDisposition.call(issue:, assessment: assessment.assessment)["disposition"] == PartialCloseouts::SourceClosureDisposition::CLOSE
+    end
+
+    def closure_blocked?
+      status = CloseoutStatus.call(issue)
+      status.blockers.any? { |blocker| blocker.code.in?(%i[unmet_prerequisites scanner_verification_pending scanner_verification_retryable scanner_verification_failed open_native_children human_prerequisite_notification]) }
+    end
+
+    def github_open?
+      remote = client.issue(issue.project.full_name, issue.github_number)
+      remote.respond_to?(:state) && remote.state == "open"
+    end
+
+    def github_closed?(remote)
+      remote.respond_to?(:state) && remote.state == "closed"
+    end
+
+    def client
+      @client ||= issue.project.client || raise(GithubClient::Error, "No GitHub client is configured")
     end
 
     # RequestContinuation takes this same issue lock while it atomically creates

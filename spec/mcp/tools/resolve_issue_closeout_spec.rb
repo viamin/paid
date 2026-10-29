@@ -16,6 +16,21 @@ RSpec.describe Tools::ResolveIssueCloseout do # @spec PARTIAL-CLOSEOUT-007
 
   before { merged_pr }
 
+  let(:github_client) { instance_double(GithubClient) }
+
+  before do
+    allow_any_instance_of(Project).to receive(:client).and_return(github_client)
+    allow(github_client).to receive(:issue).and_return(Struct.new(:state).new("open"))
+    allow(github_client).to receive(:update_issue).and_return(Struct.new(:state).new("closed"))
+  end
+
+  def accepted_audit
+    run = create(:agent_run, :completed, project:, issue:)
+    run.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(run, {
+      "criteria" => [ { "criterion" => "the work", "state" => "satisfied" } ], "gaps" => []
+    }) })
+  end
+
   describe ".write_operation?" do
     it "is a write operation" do
       expect(described_class.write_operation?).to be(true)
@@ -24,6 +39,7 @@ RSpec.describe Tools::ResolveIssueCloseout do # @spec PARTIAL-CLOSEOUT-007
 
   describe "#call" do
     it "resolves the issue complete against the recorded evidence with the same audit as the inbox action" do
+      accepted_audit
       result = tool.call(project_id: project.id, issue_id: issue.id, reason: "Merged PR #81 covers it.", confirmed: true)
 
       issue.reload

@@ -212,19 +212,19 @@ admission under the scoped lift, or the project is explicitly paused.
 `ProcessRunQueueJob` already rechecks every candidate before claim, keeps the
 budget check (`CostBudgets::Check`) and feature-intent admission at run start.
 
-### Resolve-complete (evidence-gated dismissal)
+### GitHub closure (evidence-gated operator action)
 
-`Issues::ResolveCloseout` records the operator's attestation that the recorded
-evidence completes the issue: stamps `closeout_resolved_at`,
-`closeout_resolution_digest` (the generation it resolves), and the actor, sets
-`paid_state = completed`, and leaves the GitHub issue open. The lane item is
-suppressed while the digest matches; new terminal evidence is a new
-generation and re-creates the item. Repeated sync cannot recreate a
-dismissed/resolved item without new evidence because nothing is persisted by
-sync for this lane — it is derived from evidence, and the dismissal is
-digest-scoped. Resolution takes the issue lock shared by continuation creation,
-supersedes any open authorization, and cancels its unclaimed queued run before
-recording completion, so a continuation cannot dispatch after the attestation.
+`Issues::ResolveCloseout` keeps every open source issue visible in the
+partial-closeout lane. The pane distinguishes `audit pending`, `accepted and
+awaiting GitHub closure`, and `unmet criteria`. An authorized operator may use
+the close action only for an accepted assessment. At the action boundary Paid
+rechecks source and intent revisions, criterion satisfaction, dependencies and
+human prerequisites, scanner verification, and GitHub's open state before it
+requests GitHub closure. A successful response records the actor, rationale,
+and evidence digest and marks the local issue closed, clearing the derived
+Inbox item. A stale or blocked request refuses without mutation; a GitHub API
+failure retains the item and its exact **Close on GitHub** retry route.
+Reopening or new terminal evidence follows the normal current-assessment path.
 
 ### Surfaces
 

@@ -314,19 +314,28 @@
   `app/jobs/process_run_queue_job.rb`.
   *Test:* `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-006** — When an authorized user resolves a stalled
+- [x] **PARTIAL-CLOSEOUT-006** — When an authorized user closes a stalled
   issue as complete, the system SHALL require closeout evidence, SHALL record
   the actor, a required reason, and the evidence digest it resolves against
   (`closeout_resolved_at`, `closeout_resolution_digest`,
   `closeout_resolved_by_id`), SHALL set `paid_state` to `completed`, and SHALL
-  NOT write to GitHub. The resolution SHALL suppress the inbox entry only
-  while the digest matches the current evidence generation; repeated GitHub
-  sync SHALL NOT recreate the suppressed item without new evidence, and new
-  terminal evidence SHALL recreate it. Resolution and continuation creation
+  recheck a current fully-satisfied criterion assessment, source and intent
+  revisions, open prerequisites, scanner verification, and GitHub state before
+  closing on GitHub. An open issue SHALL remain actionable until GitHub confirms
+  closure; stale, unmet, unknown, blocked, and API-failed closure requests SHALL
+  retain an actionable item with the exact fresh-audit, prerequisite, work, or
+  retry route. Resolution and continuation creation
   SHALL serialize on the issue: resolving SHALL supersede an open continuation
   authorization and cancel its unclaimed queued run before recording the
   resolution, so no continuation can dispatch after the issue is declared
   complete.
+
+- [x] **PARTIAL-CLOSEOUT-037** — When an open issue has a current acceptance
+  audit, the partial-closeout Inbox SHALL distinguish `audit pending`,
+  `accepted and awaiting GitHub closure`, and `unmet criteria`. An internal
+  attestation SHALL NOT suppress an open issue; only observed GitHub closure
+  clears it. The Inbox, controller, and MCP close action SHALL use the same
+  current-assessment and retry semantics.
   *Code:* `app/services/issues/resolve_closeout.rb`, `app/models/issue.rb`.
   *Test:* `spec/services/issues/resolve_closeout_spec.rb`,
   `spec/services/inbox/queue_spec.rb`.
