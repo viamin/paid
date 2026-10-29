@@ -399,7 +399,7 @@ module Issues
           next
         end
 
-        next if would_create_cycle?(dep_issue, adj)
+        next if would_create_cycle?(dep_issue)
 
         new_local_deps[dep_issue.id] = issue.issue_dependencies.create!(
           depends_on_issue: dep_issue,
@@ -455,7 +455,7 @@ module Issues
               update_deployment_flag(just_created, requires_deployment)
               next
             end
-            next if would_create_cycle?(dep_issue, adj)
+            next if would_create_cycle?(dep_issue)
 
             issue.issue_dependencies.create!(
               depends_on_issue: dep_issue,
@@ -631,12 +631,12 @@ module Issues
       issue.issue_dependencies.where(combined).delete_all
     end
 
-    def would_create_cycle?(dep_issue, adjacency)
-      return false unless Issues::DetectCycle.call(from_issue: dep_issue, target_issue_id: issue.id, adjacency: adjacency)
-
+    def would_create_cycle?(dep_issue)
       cycle = Issues::DependencyCycle.call(
         IssueDependency.new(issue: issue, depends_on_issue: dep_issue, cycle_provenance: "github_sync")
       )
+      return false unless cycle.cycle?
+
       Rails.logger.warn(
         message: "dependency_graph.cycle_rejected",
         account_id: issue.project.account_id,

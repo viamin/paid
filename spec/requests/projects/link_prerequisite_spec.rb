@@ -97,7 +97,7 @@ RSpec.describe "Link prerequisite from the partial closeout pane" do # @spec PAR
 
     post link_prerequisite_project_agent_runs_path(project), params: { issue_id: issue.id, depends_on: "#41" }
 
-    expect(flash[:alert]).to include("already depends on this issue")
+    expect(flash[:alert]).to include("would create a dependency cycle: #40 -> #41 -> #40")
     expect(issue.reload.body).to eq("Original body.")
     expect(issue.issue_dependencies).to be_empty
     expect(github_client).not_to have_received(:issue)
