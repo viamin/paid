@@ -142,6 +142,12 @@ module Issues
       new(issue: nil, body: body, comments: comments).extract
     end
 
+    def extract
+      local_deps, cross_deps = resolve_dependencies
+
+      [ local_deps, cross_deps ]
+    end
+
     def call
       raise ArgumentError, "issue is required" if issue.nil?
 
@@ -169,12 +175,6 @@ module Issues
       kept_local_ids = new_local_deps.keys.to_set | new_cross_refs[:resolved_ids]
       remove_stale_local_deps(current_local_by_id.keys.to_set, kept_local_ids)
       remove_stale_external_deps(current_external_by_key.keys.to_set, new_cross_refs[:external_keys])
-    end
-
-    def extract
-      local_deps, cross_deps = resolve_dependencies
-
-      [ local_deps, cross_deps ]
     end
 
     # Processes body then comments in the order given. Within a single comment,
