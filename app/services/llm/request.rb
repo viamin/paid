@@ -144,14 +144,18 @@ module Llm
         end
         resolved = Runners::ResolveTierModel::Result.new(model_id: @model)
       end
-      configured = runner.agent_harness_runner_runtime(project: @project) unless runner.free_model_policy?
+      configured = runner.agent_harness_runner_runtime(project: @project, required_zdr: @required_zdr) unless runner.free_model_policy?
       if configured && resolved.failure? && resolved.error_type == :missing_model
         @policy_model_id = runner.direct_outbound_model_id.presence || configured.model
         return configured
       end
       raise AgentHarness::ConfigurationError, "No permitted model for this LLM request: #{resolved.error}" if resolved.failure?
       @policy_model_id = resolved.model_id
-      return runner.free_model_policy_runner_runtime(project: @project, model_id: resolved.model_id) if runner.free_model_policy?
+      if runner.free_model_policy?
+        return runner.free_model_policy_runner_runtime(
+          project: @project, model_id: resolved.model_id, required_zdr: @required_zdr
+        )
+      end
 
       AgentHarness::ProviderRuntime.new(
         model: runner.qualified_model_for(resolved.model_id),

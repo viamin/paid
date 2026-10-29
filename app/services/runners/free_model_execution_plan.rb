@@ -12,10 +12,11 @@ module Runners
       new(...).call
     end
 
-    def initialize(runner:, model_id:, project:)
+    def initialize(runner:, model_id:, project:, required_zdr: nil)
       @runner = runner
       @model_id = model_id
       @project = project
+      @required_zdr = required_zdr
     end
 
     # @spec FREE-MODEL-001
@@ -27,7 +28,7 @@ module Runners
           "(got #{@runner.required_api_service_type.inspect})"
       end
 
-      privacy_policy = @runner.effective_privacy_policy(project: @project)
+      privacy_policy = @runner.effective_privacy_policy(project: @project, required_zdr: @required_zdr)
       unless privacy_policy.eligible
         raise AgentHarness::ConfigurationError,
           "The selected runner cannot enforce the required zero data retention policy before sending an OpenRouter request"

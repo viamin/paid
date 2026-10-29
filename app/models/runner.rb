@@ -624,10 +624,14 @@ class Runner < ApplicationRecord
     [ "sh", "-lc", script, "--", prompt ]
   end
 
-  def agent_harness_runner_runtime(project: nil)
-    ensure_effective_privacy_policy_supported!(project)
-    return free_model_policy_runner_runtime(project: project, model_id: free_policy_default_model_id) if direct_outbound_free_policy?
-    return opencode_runner_runtime(project: project) if opencode_direct_outbound?
+  def agent_harness_runner_runtime(project: nil, required_zdr: nil)
+    privacy_policy = ensure_effective_privacy_policy_supported!(project, required_zdr: required_zdr)
+    if direct_outbound_free_policy?
+      return free_model_policy_runner_runtime(
+        project: project, model_id: free_policy_default_model_id, required_zdr: privacy_policy.zdr_required
+      )
+    end
+    return opencode_runner_runtime(project: project, required_zdr: privacy_policy.zdr_required) if opencode_direct_outbound?
     return pi_runner_runtime if pi_agent_harness_runtime?
     return omp_runner_runtime if omp_agent_harness_runtime?
 
@@ -1845,7 +1849,7 @@ class Runner < ApplicationRecord
     direct_outbound_llm_model_provider
   end
 
-  def opencode_runner_runtime(project: nil)
+  def opencode_runner_runtime(project: nil, required_zdr: nil)
     model_id = opencode_qualified_model
     raise ArgumentError, "Missing OpenCode model id for runner #{id || runner_key}" if model_id.blank?
 
@@ -1895,7 +1899,7 @@ class Runner < ApplicationRecord
       env: env,
       unset_env: opencode_direct_outbound_unset_env(env),
       metadata: {
-        config: opencode_runtime_metadata_config(api_config, provider_config, project)
+        config: opencode_runtime_metadata_config(api_config, provider_config, project, required_zdr: required_zdr)
       }
     )
   end
@@ -1947,7 +1951,7 @@ class Runner < ApplicationRecord
     qualified.delete_prefix("#{prefix}/")
   end
 
-  def opencode_runtime_metadata_config(api_config, provider_config, project)
+  def opencode_runtime_metadata_config(api_config, provider_config, project, required_zdr: nil)
     provider_metadata = {}
 
     unless provider_config.empty?
@@ -1962,7 +1966,7 @@ class Runner < ApplicationRecord
 
     if project.present? && api_config[:service_type] == OPENROUTER_FREE_MODEL_PROVIDER
       provider_metadata["openrouter"] = provider_metadata.fetch("openrouter", {}).merge(
-        build_provider_routing(project, zero_data_retention: zero_data_retention_enforced?)
+        build_provider_routing(project, zero_data_retention: required_zdr == true)
       )
     end
 
@@ -2012,16 +2016,18 @@ class Runner < ApplicationRecord
   end
   private :openrouter_provider_runtime
 
-  def free_model_policy_runner_runtime(project:, model_id:)
-    free_policy_direct_outbound_runtime(project: project, model_id: model_id)
+  def free_model_policy_runner_runtime(project:, model_id:, required_zdr: nil)
+    free_policy_direct_outbound_runtime(project: project, model_id: model_id, required_zdr: required_zdr)
   end
   public :free_model_policy_runner_runtime
 
-  def free_policy_direct_outbound_runtime(project:, model_id:)
+  def free_policy_direct_outbound_runtime(project:, model_id:, required_zdr: nil)
     model_id ||= free_policy_default_model_id
     raise ArgumentError, "#{runner_key} runner has no resolvable free model" if model_id.blank?
 
-    config = Runners::FreeModelExecutionPlan.call(runner: self, model_id: model_id, project: project).config
+    config = Runners::FreeModelExecutionPlan.call(
+      runner: self, model_id: model_id, project: project, required_zdr: required_zdr
+    ).config
 
     case runner_key
     when "kilocode"
@@ -2035,9 +2041,9 @@ class Runner < ApplicationRecord
     end
   end
 
-  def ensure_effective_privacy_policy_supported!(project)
-    policy = effective_privacy_policy(project: project)
-    return if policy.eligible
+  def ensure_effective_privacy_policy_supported!(project, required_zdr: nil)
+    policy = effective_privacy_policy(project: project, required_zdr: required_zdr)
+    return policy if policy.eligible
 
     raise AgentHarness::ConfigurationError,
       "The selected runner cannot enforce the required zero data retention policy. Choose an OpenRouter route with request routing support or a runner with an explicit ZDR declaration."

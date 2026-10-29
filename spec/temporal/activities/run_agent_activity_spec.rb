@@ -1126,6 +1126,20 @@ RSpec.describe Activities::RunAgentActivity do
       )
     end
 
+    # @spec MODEL-POLICY-020
+    it "preserves a snapshotted ZDR requirement in a fallback OpenRouter runtime" do
+      opencode_context = build_opencode_context(user)
+      agent_run.update!(external_metadata: agent_run.external_metadata.merge("zdr_required" => true))
+      create(:model_selection, agent_run: agent_run,
+        llm_model: create(:llm_model, model_id: "openrouter/pareto-code", provider: "openrouter"))
+
+      runtime = activity.send(:selected_runner_runtime, opencode_context.runner_candidate, user, agent_run)
+
+      expect(runtime.metadata[:config]["provider"]).to eq(
+        { "openrouter" => { data_collection: "deny", zdr: true } }
+      )
+    end
+
     it "preserves OpenRouter provider routing for migrated pareto runs" do # @spec MODEL-POLICY-009
       api_key = create(:runner_api_key, user: user, api_service_type: "openrouter", api_key: "sk-openrouter-secret")
       project.update!(data_classification: "restricted")

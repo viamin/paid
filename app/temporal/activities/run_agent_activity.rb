@@ -972,7 +972,10 @@ module Activities
 
     def selected_runner_runtime(runner_candidate, user, agent_run)
       runner_entry = runner_entry_for(runner_candidate, user) if runner_candidate
-      configured_runtime = runner_entry&.free_model_policy? ? nil : runner_entry&.agent_harness_runner_runtime(project: agent_run&.project)
+      required_zdr = agent_run&.external_metadata.to_h["zdr_required"]
+      configured_runtime = runner_entry&.free_model_policy? ? nil : runner_entry&.agent_harness_runner_runtime(
+        project: agent_run&.project, required_zdr: required_zdr
+      )
 
       resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user)
       if resolved_model&.failure? && !runner_entry&.free_model_policy? && !direct_outbound_runner?(runner_candidate, user)
@@ -990,7 +993,9 @@ module Activities
             "#{runner_entry.runner_key} runner #{runner_entry.id} has no resolvable free model for this run"
         end
 
-        return runner_entry.free_model_policy_runner_runtime(project: agent_run&.project, model_id: model_id)
+        return runner_entry.free_model_policy_runner_runtime(
+          project: agent_run&.project, model_id: model_id, required_zdr: required_zdr
+        )
       end
 
       return configured_runtime if configured_runtime && model_id.blank?

@@ -849,7 +849,24 @@ RSpec.describe Runner do
 
         runtime = runner.agent_harness_runner_runtime(project: Struct.new(:data_classification).new("internal"))
 
-        expect(runtime.metadata.fetch(:config).dig("provider", "openrouter")).to eq(data_collection: "allow", zdr: true)
+        expect(runtime.metadata.fetch(:config).dig("provider", "openrouter")).to eq(data_collection: "deny", zdr: true)
+      end
+
+      # @spec MODEL-POLICY-018
+      it "adds ZDR routing when a restricted project requires it and the runner declaration is off" do
+        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+        runner.assign_attributes(
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          zero_data_retention: false,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "meta-llama/llama-4-maverick" } }
+        )
+        project = build(:project, data_classification: "restricted")
+
+        runtime = runner.agent_harness_runner_runtime(project: project)
+
+        expect(runtime.metadata.fetch(:config).dig("provider", "openrouter")).to eq(data_collection: "deny", zdr: true)
       end
 
       # @spec MODEL-POLICY-016

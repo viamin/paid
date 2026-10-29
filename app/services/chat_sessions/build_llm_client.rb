@@ -29,6 +29,7 @@ module ChatSessions
       unless api_key.present?
         raise LlmClientConfigurationError, missing_api_key_message(provider)
       end
+      ensure_api_chat_privacy_supported!(provider)
 
       case provider_service_type(provider)
       when ANTHROPIC_SERVICE_TYPE
@@ -74,7 +75,6 @@ module ChatSessions
     end
 
     def openai_compatible_client(provider, api_key)
-      ensure_api_chat_privacy_supported!(provider)
       # @spec CHAT-API-007
       service_type = provider_service_type(provider)
       config = Runner::DIRECT_OUTBOUND_API_PROVIDERS.values.find { |c| c[:service_type] == service_type }
@@ -140,12 +140,18 @@ module ChatSessions
     # a prompt with metadata the transport cannot consume.
     # @spec MODEL-POLICY-019
     def ensure_api_chat_privacy_supported!(provider)
-      policy = provider.effective_privacy_policy(project: chat_session.project)
+      project = chat_session.llm_policy_projects.find(&:restricted?)
+      policy = provider.effective_privacy_policy(project: project)
       return unless policy.zdr_required
-      return unless provider.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER
+
+      if provider.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER
+        raise LlmClientConfigurationError,
+          "This chat transport cannot enforce the required OpenRouter zero data retention policy. Use container chat or choose a user-declared ZDR provider."
+      end
+      return if policy.eligible
 
       raise LlmClientConfigurationError,
-        "This chat transport cannot enforce the required OpenRouter zero data retention policy. Use container chat or choose a user-declared ZDR provider."
+        "The selected chat runner cannot satisfy the required zero data retention policy without an explicit ZDR declaration."
     end
 
     def persist_curated_model!(runner)
