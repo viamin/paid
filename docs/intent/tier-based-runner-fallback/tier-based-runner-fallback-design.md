@@ -128,6 +128,16 @@ Each attempt can capture:
 This keeps fallback honest: analytics can see what actually ran, not only what
 the primary selection preferred.
 
+### Smoke timeout recovery
+
+A smoke timeout is recorded as `preflight_timeout` before any fallback policy
+is evaluated. A same-runner smoke retry is allowed only while its execution
+environment remains live. If preparation cleanup invalidates that environment,
+the original timeout is preserved rather than replaced by a secondary
+"No container provisioned" error. When another fallback runner remains, the
+existing recovery policy reprovisions and reconnects before that runner starts;
+without a fallback, recovery is not attempted.
+
 ## Provider Subscription Usage Limits
 
 Provider-state classification is owned by `agent-harness`. When it reports a

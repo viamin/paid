@@ -216,6 +216,17 @@
   *Code:* `AgentRun#provision_execution_environment`,
   `AgentRun#provision_via_runner`, `AgentRun#reuse_or_reconcile_via_runner`
 
+- [x] **CONTAINER-RUNTIME-050** — When a runner smoke preflight times out and
+  preparation cleanup has removed or invalidated its execution environment,
+  the system SHALL preserve and record the original failure as a
+  `preflight_timeout` and SHALL NOT retry against the cleared or stale
+  environment. It SHALL retry the smoke only when that environment remains
+  live. Reprovisioning is permitted only through the runner-fallback recovery
+  policy before a remaining fallback runner begins; otherwise the timeout and
+  its diagnostics remain the terminal evidence.
+  *Tests:* `spec/temporal/activities/run_agent_activity_spec.rb`.
+  *Code:* `Activities::RunAgentActivity#run_runner_preflight!`.
+
 - [x] **CONTAINER-RUNTIME-017** — The system SHALL isolate networking policy
   from Docker network implementation by carrying an
   `ExecutionRunners::NetworkingPolicy` (mode `:proxy_restricted`,

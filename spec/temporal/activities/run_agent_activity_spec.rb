@@ -3856,6 +3856,27 @@ expect(container_service).to receive(:execute).with(
         expect(container_service).to have_received(:execute).twice
       end
 
+      # @spec CONTAINER-RUNTIME-050, RUNNER-FALLBACK-014
+      it "preserves the original timeout when preparation cleanup removed the environment" do
+        opencode_provider = create_opencode_provider_for(user)
+        allow(container_service).to receive(:execute) do
+          AgentRun.where(id: agent_run.id).update_all(container_id: nil)
+          raise Containers::Provision::TimeoutError, "Command timed out after 60 seconds"
+        end
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.to raise_error(described_class::PreflightTimeoutError, /execution environment was removed before retry.*Original error: Command timed out/)
+
+        expect(container_service).to have_received(:execute).once
+      end
+
       # @spec RUNNER-FALLBACK-003
       it "classifies a preflight streaming-event abort as an execution error, not rate_limited" do
         opencode_provider = create_opencode_provider_for(user)
@@ -4578,6 +4599,51 @@ expect(container_service).to receive(:execute).with(
         agent_run.reload
         expect(result).to include(success: true, final_runner: "cursor")
         expect_timeout_fallback_recovery(agent_run)
+      end
+    end
+
+    # @spec CONTAINER-RUNTIME-050, RUNNER-FALLBACK-014
+    context "when smoke preflight cleanup removes the container before fallback" do
+      before do
+        user.runners.find_or_create_by!(runner_key: "cursor")
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ "cursor" ])
+        allow(activity).to receive(:run_runner_preflight!).and_call_original
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false,
+          has_changes_since?: false
+        )
+
+        execute_calls = 0
+        allow(container_service).to receive(:execute) do
+          execute_calls += 1
+          if execute_calls == 1
+            AgentRun.where(id: agent_run.id).update_all(container_id: nil)
+            raise Containers::Provision::TimeoutError, "Command timed out after 60 seconds"
+          end
+
+          exec_success
+        end
+        allow(agent_run).to receive(:provision_execution_environment) { agent_run.update!(container_id: "reprovisioned-123") }
+        allow(Containers::Provision).to receive(:reconnect) do |agent_run:, container_id:|
+          raise "unexpected container id #{container_id}" unless [ "abc123", "reprovisioned-123" ].include?(container_id)
+
+          container_service
+        end
+      end
+
+      it "records the timeout and reprovisions only for the fallback runner" do
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        expect(result).to include(success: true, final_runner: "cursor")
+        expect(agent_run.reload.runners_attempted).to contain_exactly(
+          hash_including("runner" => "claude_code", "success" => false, "error_type" => "preflight_timeout"),
+          hash_including("runner" => "cursor", "success" => true)
+        )
+        expect(agent_run.runners_attempted).not_to include(
+          hash_including("error_message" => a_string_matching(/No container provisioned/))
+        )
+        expect(container_service).to have_received(:execute).exactly(3).times
       end
     end
 

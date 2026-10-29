@@ -249,6 +249,18 @@ fresh. A data migration backfills `runner_handle` from existing
 The column is also added to `container_pool_entries` and `service_containers`
 so future pool and service-container code can store runner handles.
 
+### Smoke timeout environment continuity
+
+Runner smoke preflight may use temporary preparation files whose cleanup runs
+after a timeout. That cleanup can discover the environment has stopped and
+clear its persisted handle. A smoke retry therefore first confirms that the
+recorded execution environment is still live. It retries only that live
+environment; it never executes against a cleared or stale handle. The original
+timeout remains the classified and recorded failed attempt. If a later fallback
+runner is available, the runner-fallback recovery policy may reprovision and
+reconnect before that distinct runner begins; without that policy, no
+reprovision is attempted and the timeout diagnostics remain terminal evidence.
+
 ### Supporting services, MCP sidecars, and the browser container (historical execution-runner workstream, #3343)
 
 Postgres/Redis/Selenium service containers, `docker_image` MCP sidecars, and
