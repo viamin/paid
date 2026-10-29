@@ -2006,6 +2006,7 @@ module Activities
 
       prompt = runner_preflight_prompt_for(runner)
       preflight_timeout = preflight_timeout_seconds_for(command_context.runner_candidate, command_context.user)
+      smoke_environment_id = agent_run.container_id
 
       smoke_attempt = 0
       result = begin
@@ -2019,7 +2020,11 @@ module Activities
           prompt: prompt
         )
       rescue Containers::Provision::TimeoutError => e
-        environment_available = smoke_attempt < 2 && smoke_retry_environment_available?(agent_run, execution_environment)
+        environment_available = smoke_attempt < 2 && smoke_retry_environment_available?(
+          agent_run,
+          execution_environment,
+          container_id: smoke_environment_id
+        )
         if environment_available
           logger.info(
             message: "agent_execution.preflight_smoke_timeout_retry",
@@ -2787,8 +2792,8 @@ module Activities
       raise PreflightTimeoutError.new("Preflight check failed: #{reason}", diagnostics: diagnostics)
     end
 
-    def smoke_retry_environment_available?(agent_run, execution_environment)
-      agent_run.reload.container_id.present? && execution_environment.container_running?
+    def smoke_retry_environment_available?(agent_run, execution_environment, container_id:)
+      agent_run.reload.container_id == container_id && execution_environment.container_running?
     rescue ActiveRecord::RecordNotFound
       false
     end
