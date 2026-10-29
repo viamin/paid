@@ -106,7 +106,7 @@ RSpec.describe AgentImageBuildScript, :no_db do
 
     # @spec CONTAINER-RUNTIME-031
     it "allows enough time for a cold contract-owned CLI rebuild and both smoke suites" do
-      expect(workflow.dig("jobs", "agent-image", "timeout-minutes")).to eq(45)
+      expect(workflow.dig("jobs", "agent-image", "timeout-minutes")).to eq(60)
     end
 
     # The action ref is asserted as an opaque 40-character SHA instead of a
