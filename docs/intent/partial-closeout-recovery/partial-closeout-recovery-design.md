@@ -147,6 +147,15 @@ URL, comment, upload, green run, or dismissed alert is never acceptance proof.
 A changed source revision makes the submission stale. Only a current,
 explicitly sufficient assessment may release that occurrence; personal
 dismissal remains a distinct scheduling action, never evidence satisfaction.
+After recording a pending submission, a low-priority background validation job
+passes the prerequisite criterion, durable references, artifact URL, and
+explanation to the configured `agent_harness` runner. These fields are
+untrusted claims and are fenced in the prompt as data, never treated as
+instructions. The validator accepts only the exact `sufficient` or
+`insufficient` dispositions and a bounded reason; transport, parsing, and
+concurrency failures fail closed as `unavailable`, and a changed source
+revision remains `stale`. The job applies its result only to the matching
+current submission and never stores raw model output.
 Active notifications created before occurrence-level metadata are represented as
 one compatible occurrence using their persisted aggregate identity, references,
 and operator guidance. A valid submission atomically upgrades that occurrence

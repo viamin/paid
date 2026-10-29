@@ -24,11 +24,13 @@ module PartialCloseouts
     end
 
     def call
-      notification.with_lock do
+      result = notification.with_lock do
         validate!
         PrerequisiteOccurrences.upgrade!(notification)
         record_submission!
       end
+      ValidateSubmittedEvidenceJob.perform_later(notification.id, prerequisite_identity) if result.outcome == "pending_validation"
+      result
     end
 
     private

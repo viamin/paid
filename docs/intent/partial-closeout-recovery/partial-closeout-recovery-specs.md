@@ -639,3 +639,20 @@
   *Test:* `spec/services/partial_closeouts/submit_evidence_spec.rb`,
   `spec/requests/projects/closeout_evidence_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-035** — When a current prerequisite evidence
+  submission is recorded, Paid SHALL asynchronously assess the submitted
+  artifact reference and explanation through `agent_harness`, treating both as
+  untrusted claims and never as instructions or acceptance authority. The
+  submission SHALL remain `pending_validation` until the assessor returns an
+  exact, structurally valid disposition; only `sufficient` or `insufficient`
+  may be produced by a valid response, while transport, parsing, or stale
+  revision failures SHALL persist `unavailable` or `stale` and SHALL never
+  satisfy the prerequisite. The persisted outcome SHALL be applied only to the
+  matching current submission and SHALL include a bounded human-readable
+  reason without persisting raw model output.
+  *Code:* `app/jobs/partial_closeouts/validate_submitted_evidence_job.rb`,
+  `app/services/partial_closeouts/validate_submitted_evidence.rb`,
+  `app/services/partial_closeouts/submit_evidence.rb`.
+  *Test:* `spec/services/partial_closeouts/validate_submitted_evidence_spec.rb`,
+  `spec/services/partial_closeouts/submit_evidence_spec.rb`.
