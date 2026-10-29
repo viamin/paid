@@ -45,6 +45,8 @@ export default class extends Controller {
     authType: String,
     modelPolicyFormEnabled: Boolean,
     modelOptions: String,
+    zdrModelOptions: String,
+    zdrCatalogSetupState: String,
     initialApiServiceType: String,
   }
 
@@ -66,10 +68,13 @@ export default class extends Controller {
     "tierSelect",
     "modelSettings",
     "modelSelect",
+    "modelSearch",
     "customModelField",
     "customModelInput",
     "configField",
     "kilocodePreflightField",
+    "zdrCheckbox",
+    "zdrStatus",
   ]
 
   connect() {
@@ -82,6 +87,11 @@ export default class extends Controller {
   get modelOptionsMap() {
     this._modelOptionsMap ||= parseJson(this.modelOptionsValue, {})
     return this._modelOptionsMap
+  }
+
+  get zdrModelOptionsMap() {
+    this._zdrModelOptionsMap ||= parseJson(this.zdrModelOptionsValue, {})
+    return this._zdrModelOptionsMap
   }
 
   // Runner keys with a model dropdown (Runner-side FORM_MODEL_RUNNER_KEYS),
@@ -146,6 +156,10 @@ export default class extends Controller {
     }
   }
 
+  refreshZdrState() {
+    this.refreshFeatureFlaggedModelForm(this.currentRunnerKey(), this.runnerApiKeyMode())
+  }
+
   syncModelConfig() {
     if (!this.modelPolicyFormEnabledValue) return
 
@@ -191,8 +205,10 @@ export default class extends Controller {
       return
     }
 
-    this.populateModelOptions(runnerKey, serviceType)
-    this.disableModelControls(!serviceType)
+    const zdrSetup = this.zdrOpenrouterSetup(serviceType)
+    this.populateModelOptions(runnerKey, serviceType, zdrSetup)
+    this.disableModelControls(!serviceType || (zdrSetup && !this.zdrCatalogReady()))
+    this.updateZdrStatus(serviceType, zdrSetup)
     this.syncModelConfig()
   }
 
@@ -253,8 +269,8 @@ export default class extends Controller {
     }
   }
 
-  populateModelOptions(runnerKey, serviceType) {
-    const options = this.modelOptionsMap[runnerKey]?.[serviceType] || []
+  populateModelOptions(runnerKey, serviceType, zdrSetup = this.zdrOpenrouterSetup(serviceType)) {
+    const options = this.modelOptionsFor(runnerKey, serviceType, zdrSetup)
     const currentValue = this.currentModelSelectionValue(options)
 
     this.modelSelectTarget.innerHTML = ""
@@ -285,6 +301,62 @@ export default class extends Controller {
 
     this.modelSelectTarget.value = currentValue
     this.toggleCustomModelField(currentValue === CUSTOM_OPTION)
+    if (this.hasModelSearchTarget) this.filterModelOptions()
+  }
+
+  filterModelOptions() {
+    if (!this.hasModelSelectTarget || !this.hasModelSearchTarget) return
+
+    const query = this.modelSearchTarget.value.trim().toLowerCase()
+    Array.from(this.modelSelectTarget.options).forEach((option) => {
+      if (!option.value) return
+      option.hidden = query !== "" && !option.textContent.toLowerCase().includes(query)
+    })
+  }
+
+  modelOptionsFor(runnerKey, serviceType, zdrSetup) {
+    if (zdrSetup) return this.zdrModelOptionsMap[runnerKey] || []
+
+    return this.modelOptionsMap[runnerKey]?.[serviceType] || []
+  }
+
+  zdrOpenrouterSetup(serviceType) {
+    return this.hasZdrCheckboxTarget && this.zdrCheckboxTarget.checked && serviceType === "openrouter"
+  }
+
+  zdrCatalogReady() {
+    return this.zdrCatalogSetupStateValue === "ready"
+  }
+
+  updateZdrStatus(serviceType, zdrSetup) {
+    if (!this.hasZdrStatusTarget) return
+
+    if (!this.hasZdrCheckboxTarget || !this.zdrCheckboxTarget.checked) {
+      this.zdrStatusTarget.textContent = "ZDR is off."
+    } else if (!zdrSetup) {
+      this.zdrStatusTarget.textContent = "You are responsible for verifying this provider's zero data retention agreement and configuration."
+    } else if (!this.zdrCatalogReady()) {
+      this.zdrStatusTarget.textContent = this.zdrCatalogMessage()
+    } else if (this.openrouterRuntimeCanEnforce()) {
+      this.zdrStatusTarget.textContent = "OpenRouter endpoint eligibility is verified. Select a concrete ZDR model; OpenRouter enforcement applies after save."
+    } else {
+      this.zdrStatusTarget.textContent = "OpenRouter endpoint eligibility is verified, but this runtime is user-declared rather than OpenRouter-enforced."
+    }
+  }
+
+  zdrCatalogMessage() {
+    const state = this.zdrCatalogSetupStateValue
+    const messages = {
+      loading: "OpenRouter ZDR catalog is loading; model selection is unavailable.",
+      unavailable: "OpenRouter ZDR catalog is unavailable; model selection is unavailable.",
+      stale: "OpenRouter ZDR catalog is stale; refresh it before selecting a model.",
+      empty: "OpenRouter ZDR catalog has no eligible models."
+    }
+    return messages[state] || "OpenRouter ZDR catalog is unavailable; model selection is unavailable."
+  }
+
+  openrouterRuntimeCanEnforce() {
+    return this.currentRunnerKey() === "opencode"
   }
 
   currentModelSelectionValue(options) {
