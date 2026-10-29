@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe Tools::TriggerAgentRun do
   let(:account) { create(:account) }
-  let(:user) { create(:user, :member, account: account) }
+  let(:user) { create(:user, :owner, account: account) }
   let(:session) { create(:chat_session, account: account, created_by: user) }
   let(:tool) { described_class.new(user: user, session: session) }
 
@@ -29,6 +29,12 @@ RSpec.describe Tools::TriggerAgentRun do
 
       expect(goals).not_to include(*AgentRun::LAYERED_VERIFICATION_GOALS)
     end
+
+    it "offers the shared continuation authorization contract" do # @spec AUTOMATION-PHASES-010
+      properties = described_class.input_schema.fetch(:properties)
+
+      expect(properties).to include(:continuation_authorized, :continuation_endpoint, :continuation_notice_signature)
+    end
   end
 
   describe "#call" do
@@ -44,6 +50,25 @@ RSpec.describe Tools::TriggerAgentRun do
 
       run = AgentRun.find(result[:id])
       expect(run.agent_type).to be_present
+    end
+
+    it "creates a scoped continuation grant and returns the effective-policy notice" do # @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-010
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => false, "merge" => true },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      })
+      plan = Automation::ManualStart::Plan.call(project:, user:, phase: "coding")
+
+      result = tool.call(
+        project_id: project.id, issue_id: issue.id, confirmed: true,
+        continuation_authorized: true, continuation_endpoint: "coding",
+        continuation_notice_signature: plan.signature
+      )
+
+      expect(WorkItemContinuationGrant.last).to have_attributes(issue:, start_phase: "coding", endpoint: "coding", created_by: user)
+      expect(result.fetch(:effective_policy_notice)).to include("Merge phase setting")
     end
 
     it "enqueues ProcessRunQueueJob" do

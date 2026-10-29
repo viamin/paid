@@ -62,6 +62,15 @@ class WorkItemContinuationGrant < ApplicationRecord
     update!(revoked_at: Time.current, revoked_by: user)
   end
 
+  # @spec AUTOMATION-PHASES-009
+  def extend_to!(endpoint:)
+    return false unless active?
+    return false unless Automation::Phases.endpoints_for(start_phase).include?(endpoint.to_s)
+    return false unless covered_phases.exclude?(endpoint.to_s)
+
+    update!(endpoint:)
+  end
+
   private
 
   def endpoint_follows_start_phase

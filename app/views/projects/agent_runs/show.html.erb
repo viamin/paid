@@ -25,6 +25,41 @@
            egress_security_events: @egress_security_events,
            egress_denied_event_count: @egress_denied_event_count %>
 
+    <% if @continuation_phase %>
+      <section class="mt-6 rounded-lg border border-gray-200 bg-white p-4">
+        <h2 class="text-sm font-semibold text-gray-900">Automation authority</h2>
+        <p class="mt-1 text-sm text-gray-700">
+          <%= Automation::Phases.label(@continuation_phase) %> is currently
+          <strong><%= @continuation_authority.permitted? ? "permitted" : "not permitted" %></strong>
+          <% if @continuation_authority.source %> through <%= @continuation_authority.source.to_s.humanize.downcase %>.<% end %>
+        </p>
+        <% if @continuation_grants.any? %>
+          <ul class="mt-3 space-y-2 text-sm text-gray-700">
+            <% @continuation_grants.each do |grant| %>
+              <li class="rounded border border-gray-100 p-3">
+                <p><strong>Continuation grant:</strong> <%= Automation::Phases.label(grant.start_phase) %> → <%= Automation::Phases.label(grant.endpoint) %>.</p>
+                <p class="mt-1 text-xs text-gray-500">Revoking this grant removes only its exception; project defaults may independently permit this work.</p>
+                <% if policy(@project).update? %>
+                  <div class="mt-2 flex flex-wrap gap-2">
+                    <%= button_to "Revoke", continuation_grant_project_automation_phases_path(@project, grant), method: :delete, class: "rounded border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700", form: { data: { turbo_confirm: "Revoke this continuation grant? Project settings may still permit this work." } } %>
+                    <% endpoints = Automation::Phases.endpoints_for(grant.start_phase) - grant.covered_phases %>
+                    <% if endpoints.any? %>
+                      <%= form_with url: extend_continuation_grant_project_automation_phases_path(@project, grant), method: :patch, class: "flex items-center gap-2" do %>
+                        <%= select_tag :endpoint, options_for_select(endpoints.map { |endpoint| [ Automation::Phases.label(endpoint), endpoint ] }), class: "rounded border-gray-300 px-2 py-1 text-xs" %>
+                        <%= submit_tag "Extend", class: "rounded border border-gray-300 px-3 py-1 text-xs font-semibold text-gray-700" %>
+                      <% end %>
+                    <% end %>
+                  </div>
+                <% end %>
+              </li>
+            <% end %>
+          </ul>
+        <% else %>
+          <p class="mt-2 text-sm text-gray-500">No active continuation grant covers this work. Project defaults can still permit automatic work.</p>
+        <% end %>
+      </section>
+    <% end %>
+
     <% if @agent_run.layered_verification_audit_goal? && @agent_run.external_metadata.dig("layered_verification", "coverage").present? %>
       <%= render "agent_runs/layered_verification_coverage", agent_run: @agent_run %>
     <% end %>
