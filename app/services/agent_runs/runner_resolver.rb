@@ -212,6 +212,7 @@ module AgentRuns
     def runner_compatible_with_model?(runner, model_id)
       return true if runner.blank?
       return true if model_id.blank?
+      return false unless runner_runnable?(runner)
 
       result = Runners::ModelCompatibility.call(
         runner_key: runner.runner_key,

@@ -236,6 +236,30 @@ RSpec.describe AgentRuns::RunnerResolver do
     end
 
     context "with RDR-040 compatibility-aware fallback ordering" do
+      # @spec MODEL-POLICY-024
+      it "skips privacy-ineligible runners before probing model compatibility" do
+        allow(RunnerSupport).to receive(:container_executable_runner_keys).and_return(%w[omp pi])
+        allow(RunnerSupport).to receive(:container_executable_runner_key?) do |runner_key|
+          %w[omp pi].include?(runner_key)
+        end
+
+        project = create(:project)
+        owner = project.created_by
+        openrouter_key = create(:provider_api_key, user: owner, api_service_type: "openrouter")
+        create(:runner, :api_key, user: owner, runner_key: "omp", provider_api_key: openrouter_key,
+          zero_data_retention: true,
+          config: { "omp" => { "api_provider" => "openrouter", "model" => "openai/gpt-oss-20b" } })
+        deepseek_key = create(:provider_api_key, user: owner, api_service_type: "deepseek")
+        eligible_runner = create(:runner, :api_key, user: owner, runner_key: "pi", provider_api_key: deepseek_key,
+          zero_data_retention: true,
+          config: { "pi" => { "api_provider" => "deepseek", "model" => "deepseek-chat" } })
+        project.update!(model_preferences: project.model_preferences.merge("required_model_id" => "deepseek-chat"))
+
+        runner_id, = described_class.call(project: project, goal: "create_pr", required_zdr: true)
+
+        expect(runner_id).to eq(eligible_runner.id)
+      end
+
       it "picks a runner compatible with the project's required model" do
         account = create(:account, slug: "rdr040-pref-#{SecureRandom.hex(4)}")
         owner = create(:user, :owner, account: account, email: "rdr040-pref-#{SecureRandom.hex(4)}@example.com")
