@@ -99,4 +99,13 @@ RSpec.describe WorkItemContinuationGrant do
       expect(described_class.active).to contain_exactly(active)
     end
   end
+
+  describe "#extend_to!" do
+    it "extends an active grant only to a later applicable endpoint" do # @spec AUTOMATION-PHASES-009
+      grant = create(:work_item_continuation_grant, start_phase: "coding", endpoint: "coding")
+
+      expect(grant.extend_to!(endpoint: "merge")).to be(true)
+      expect(grant.reload.endpoint).to eq("merge")
+    end
+  end
 end

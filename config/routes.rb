@@ -295,6 +295,7 @@ Rails.application.routes.draw do
     resource :automation_phases, only: [ :show, :update ], controller: "projects/automation_phases" do
       get :preview
       delete "continuation_grants/:id", to: "projects/automation_phases#revoke_grant", as: :continuation_grant
+      patch "continuation_grants/:id", to: "projects/automation_phases#extend_grant", as: :extend_continuation_grant
     end
     resource :cost_snapshot, only: [ :show ], controller: "projects/cost_snapshots"
     resource :cost_dashboard, only: [ :show ], controller: "projects/cost_dashboards"
