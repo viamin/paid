@@ -25,7 +25,9 @@ module Issues
 
       Issue.transaction do
         issue.lock!
+        return Result.new(status: :invalid, message: "This issue is no longer waiting for reopen review.") unless issue.reopen_review_pending?
         return Result.new(status: :stale, message: "The issue changed after this review opened. Refresh and validate the current revision.") unless current_revision?
+        return Result.new(status: :active_work, message: "An existing run must be reconciled before this reopen review can resume work.") if active_run?
 
         AccountActivityEvent.create!(
           account: issue.project.account, actor:, subject: issue, action: "issue.updated",

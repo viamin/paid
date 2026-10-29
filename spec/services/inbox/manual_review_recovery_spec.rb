@@ -26,6 +26,18 @@ RSpec.describe Inbox::ManualReviewRecovery do
   end
 
   # @spec OPERATOR-INBOX-002L
+  it "returns the target issue for a deployment-pending local dependency" do
+    dependency = create(:issue, project:, is_pull_request: true, github_state: "closed", deployed_at: nil)
+    issue = create(:issue, project:, paid_state: "manual_review", manual_review_reason: "deployment pending")
+    issue.issue_dependencies.create!(depends_on_issue: dependency, requires_deployment: true)
+
+    recovery = described_class.call(issue:)
+
+    expect(recovery.kind).to eq(:dependency)
+    expect(recovery.dependency).to eq(dependency)
+  end
+
+  # @spec OPERATOR-INBOX-002L
   it "classifies a scanner recurrence from its remediation attempt" do
     issue = create(:issue, project:, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
       paid_state: "manual_review")
@@ -37,6 +49,15 @@ RSpec.describe Inbox::ManualReviewRecovery do
   # @spec OPERATOR-INBOX-002L
   it "keeps an unprovenanced manual-review hold visibly unknown" do
     issue = create(:issue, project:, paid_state: "manual_review", manual_review_reason: "operator note")
+
+    expect(described_class.call(issue:).kind).to eq(:unknown)
+  end
+
+  # @spec OPERATOR-INBOX-002L
+  it "does not treat a historical enhancement run as provenance for a newer hold" do
+    issue = create(:issue, project:)
+    create(:agent_run, :completed, project:, issue:, goal: "enhance_issue", created_at: 1.day.ago)
+    issue.update!(paid_state: "manual_review", manual_review_reason: "A newer producer needs operator review.")
 
     expect(described_class.call(issue:).kind).to eq(:unknown)
   end

@@ -376,11 +376,12 @@ admission without creating an enhancement run. Current local, deployment, or
 external dependency records select a dependency wait with a link to its owner
 or reference; acknowledgement cannot clear that hold. Current scanner
 remediation-attempt state selects scanner evidence and its existing
-verification recovery. Enhancement questions, an enhancement run, or a legacy
-exact enhancement stop message select the existing answer form and enhancement
-retry. An unprovenanced hold remains visibly unknown and offers no speculative
-action. Each recovery checks unfinished work before clearing a hold so it
-cannot overlap queued or running work.
+verification recovery. Current enhancement questions or a legacy exact
+enhancement stop message select the existing answer form and enhancement retry;
+a historical enhancement run alone is not provenance for the current hold. An
+unprovenanced hold remains visibly unknown and offers no speculative action.
+Each recovery checks unfinished work before clearing a hold so it cannot overlap
+queued or running work.
 
 `Dashboard::EligibilityBreakdown` names `manual_review` as its own bucket
 (previously it fell into the unnamed `other_excluded` remainder), so the

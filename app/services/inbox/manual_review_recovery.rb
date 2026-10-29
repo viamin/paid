@@ -33,7 +33,11 @@ module Inbox
     attr_reader :issue
 
     def blocking_dependency
-      issue.blocking_issues.first || issue.blocking_deployment_dependencies.first || issue.blocking_external_dependencies.first
+      issue.blocking_issues.first || deployment_dependency_issue || issue.blocking_external_dependencies.first
+    end
+
+    def deployment_dependency_issue
+      issue.blocking_deployment_dependencies.first&.depends_on_issue
     end
 
     def scanner_recurrence?
@@ -43,7 +47,6 @@ module Inbox
 
     def enhancement_hold?
       issue.needs_input_questions.present? ||
-        issue.agent_runs.where(goal: "enhance_issue").order(created_at: :desc, id: :desc).first.present? ||
         legacy_enhancement_stop?
     end
 
