@@ -247,6 +247,7 @@ RSpec.describe ProjectWorkflowManager do
 
       expect(temporal_client).not_to have_received(:workflow_handle)
         .with("github-poll-#{inactive_project.id}")
+      expect(temporal_client).not_to have_received(:start_workflow)
     end
 
     it "continues processing other projects when one fails" do

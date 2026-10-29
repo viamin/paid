@@ -97,12 +97,12 @@ row-level-security policies enabled and a runtime role that does not bypass
 RLS (`script/inbox/measure_partial_closeout_lane.rb`; the recorded run is
 `docs/performance/partial-closeout-lane-2026-10-28.json`):
 
-| Projects with a stall | `eligible_scope` evaluations per consumer | SQL statements per consumer | SQL time per consumer |
+| Projects with a stall | `eligible_scope` evaluations per measured path | SQL statements per measured path | SQL time per measured path |
 | --- | --- | --- | --- |
-| 1 | 2 | 24–32 | 0.02–0.2 s |
-| 5 | 10 | 140–161 | 0.8–1.0 s |
-| 10 | 20 | 275–296 | 1.8–2.0 s |
-| 20 | 40 | 545–566 | 3.5–5.2 s |
+| 1 | 2 | 1–32 | 2.29–215.04 ms |
+| 5 | 10 | 140–161 | 755.66–977.57 ms |
+| 10 | 20 | 275–296 | 1,766.98–1,969.26 ms |
+| 20 | 40 | 545–566 | 3,491.42–5,222.79 ms |
 
 The cost is per project, not per stall: batching inside one invocation
 (`PARTIAL-CLOSEOUT-026`) keeps the query count flat in the number of
