@@ -58,10 +58,7 @@ module PartialCloseouts
     end
 
     def replace_duplicate(submissions, entry)
-      index = submissions.index { |submission| duplicate_submission?(submission) }
-      return submissions + [ entry ] unless index
-
-      submissions.dup.tap { |updated| updated[index] = entry }
+      submissions.reject { |submission| duplicate_submission?(submission) } + [ entry ]
     end
 
     def duplicate_submission?(submission)

@@ -115,4 +115,19 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
       include("prerequisite_identity" => identity, "evidence_url" => attributes[:evidence_url])
     )
   end
+
+  it "treats a repeated submission as the current one even if a different occurrence was submitted in between" do # @spec PARTIAL-CLOSEOUT-033
+    other_identity = "occurrence-2"
+    notification.update!(metadata: { "prerequisites" => [ { "identity" => identity }, { "identity" => other_identity } ] })
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+
+    described_class.call(**attributes)
+    described_class.call(notification:, actor:, prerequisite_identity: other_identity,
+      evidence_url: "https://evidence.example.test/other", explanation: "Other report attached.")
+    result = described_class.call(**attributes)
+
+    submissions = notification.reload.metadata.fetch("evidence_submissions")
+    expect(submissions.last).to include("prerequisite_identity" => identity, "submission_id" => result.submission_id)
+  end
 end
