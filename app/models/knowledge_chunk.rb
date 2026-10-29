@@ -25,6 +25,13 @@ class KnowledgeChunk < ApplicationRecord
   scope :by_project, ->(project_id) { where(project_id: project_id) }
   scope :for_project, ->(project) { where(project: project) }
   scope :ordered, -> { order(:sequence) }
+  scope :with_link_count, -> {
+    select(<<~SQL.squish)
+      #{table_name}.*,
+      ((SELECT COUNT(*) FROM knowledge_links WHERE source_chunk_id = #{table_name}.id) +
+       (SELECT COUNT(*) FROM knowledge_links WHERE target_chunk_id = #{table_name}.id)) AS link_count
+    SQL
+  }
   scope :full_text_search, ->(query) {
     rank_expr = "ts_rank(content_tsvector, plainto_tsquery('pg_catalog.english', #{connection.quote(query)}))"
     where("content_tsvector @@ plainto_tsquery('pg_catalog.english', ?)", query)

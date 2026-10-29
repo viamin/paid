@@ -42,7 +42,8 @@ module Knowledge
             .where(knowledge_artifacts: { artifact_type: artifact_type })
         end
 
-        chunks.includes(:outgoing_links, :incoming_links, knowledge_artifact: { collector_run: :project_version })
+        chunks.with_link_count
+          .includes(knowledge_artifact: { collector_run: :project_version })
           .limit(limit)
           .map { |chunk| format_chunk_result(chunk, score: chunk.relevance_rank&.to_f) }
       end
@@ -116,7 +117,8 @@ module Knowledge
           .where(id: chunk_ids)
           .active
           .for_project(project)
-          .includes(:outgoing_links, :incoming_links, knowledge_artifact: { collector_run: :project_version })
+          .with_link_count
+          .includes(knowledge_artifact: { collector_run: :project_version })
 
         chunks_by_id = chunks.index_by(&:id)
 
@@ -169,7 +171,7 @@ module Knowledge
           end_line: end_line_for(artifact),
           collector_run_id: artifact.collector_run_id,
           status: artifact.status,
-          link_count: chunk.outgoing_links.size + chunk.incoming_links.size,
+          link_count: chunk.link_count.to_i,
           created_at: chunk.created_at
         }
       end
