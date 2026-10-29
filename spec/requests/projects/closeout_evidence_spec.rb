@@ -73,7 +73,7 @@ RSpec.describe "Project closeout evidence" do
 
     expect(notification.reload).to be_active
     expect(notification.metadata.fetch("evidence_submissions").sole).to include(
-      "outcome" => "unavailable", "reason" => "Evidence validation returned an invalid structured result."
+      "outcome" => "unavailable", "reason" => "Semantic validation returned an invalid result."
     )
   end
 
