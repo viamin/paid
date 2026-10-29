@@ -180,7 +180,10 @@
   Inbox SHALL classify its recovery from durable producer provenance rather
   than from the rendered reason: the dedicated reopen-review gate, unresolved
   dependency records, scanner remediation-attempt status, and enhancement
-  provenance each select their existing recovery path. Unknown provenance
+  provenance each select their existing recovery path. Clarifying-question
+  answers and enhancement retries SHALL be available only when enhancement
+  provenance selects that recovery path; retained questions SHALL NOT clear a
+  newer non-enhancement hold. Unknown provenance
   SHALL remain visible and offer no speculative retry. Reopen review SHALL
   show the current GitHub revision and require an authorized, non-blank
   revision-bound validation reason before recording the decision and returning

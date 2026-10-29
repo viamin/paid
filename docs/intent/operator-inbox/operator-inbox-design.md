@@ -331,7 +331,10 @@ listing). The detail pane then renders the same answer form
 `clarifying_questions` entries use (shared partial, sans the agent-context
 sidebar, which is scoped to the `clarifying_questions` kind), plus the "Start
 enhancement run" action, so answering the questions the agent asked on its
-final round is itself an operator-triggered manual review. Submitting posts
+final round is itself an operator-triggered manual review. Both affordances are
+available only when enhancement provenance selects that recovery; questions
+retained from an earlier enhancement round must not clear a newer dependency,
+scanner, reopen-review, or unknown hold. Submitting posts
 the standard answer-marker comment and calls
 `ClarifyingQuestions::ClearNeedsInput`, which now also treats
 `paid_state == "manual_review"` as a clearable source state: it resets
