@@ -5596,6 +5596,22 @@ expect(container_service).to receive(:execute).with(
         expect(result[:final_runner]).to eq("cursor")
       end
 
+      # @spec MODEL-POLICY-024
+      it "preserves an unsnapshotted bound runner ZDR requirement across runtime fallback" do
+        primary = user.runners.find_by!(runner_key: "claude", auth_type: "subscription")
+        primary.update!(zero_data_retention: true)
+        agent_run.update!(runner: primary)
+        user.settings.update!(fallback_runners: [ user.runners.find_by!(runner_key: "cursor").routing_key ])
+        allow(container_service).to receive(:execute).and_return(rate_limit_failure)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(AgentHarness::ConfigurationError, /cannot enforce the required zero data retention policy/)
+
+        expect(container_service).to have_received(:execute).once
+        expect(agent_run.reload.external_metadata["zdr_required"]).to be(true)
+      end
+
       it "falls back to the next runner on docker exec failures" do
         call_count = 0
         allow(container_service).to receive(:execute) do |_cmd, **_opts|

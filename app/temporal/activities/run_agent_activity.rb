@@ -203,6 +203,7 @@ module Activities
         end
 
         user_settings = resolve_user_settings(agent_run)
+        snapshot_bound_runner_zdr_requirement!(agent_run)
         @model_recoveries = {}
         @resolved_tier_model_cache = {}
         @issue_runner_retry_cap_exhausted = false
@@ -1016,6 +1017,15 @@ module Activities
         unset_env: configured_runtime.unset_env,
         metadata: configured_runtime.metadata
       )
+    end
+
+    # @spec MODEL-POLICY-024
+    def snapshot_bound_runner_zdr_requirement!(agent_run)
+      policy = agent_run.runner&.effective_privacy_policy(project: agent_run.project)
+      return unless policy&.zdr_required
+      return if agent_run.external_metadata.to_h["zdr_required"] == true
+
+      agent_run.update!(external_metadata: agent_run.external_metadata.to_h.merge("zdr_required" => true))
     end
 
     def runtime_cache_key(runtime)
