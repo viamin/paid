@@ -647,7 +647,7 @@
   unavailable, so the install path stays compatible with older runners.
   The image SHALL also distinguish: missing `omp` on `PATH`, a
   non-executable `omp` launcher, and a Bun version mismatch after install.
-  The agent-image workflow SHALL allow 60 minutes for a cold rebuild so a
+  The agent-image workflow SHALL allow 90 minutes for a cold rebuild so a
   contract update can complete every installation layer and both smoke suites.
   *Tests:* `spec/config/agent_image_build_script_spec.rb`.
   *Code:* `docker/agent/Dockerfile`, `.github/workflows/agent-image.yml`.
