@@ -809,13 +809,13 @@ class RunnersController < ApplicationController
 
   def prepare_model_policy_form_state
     @runner_model_policy_form_enabled = runner_model_policy_form_enabled?
+    @zdr_catalog_setup_state ||= OpenrouterZdrCatalog.current.setup_state
+    @zdr_model_options_map_json ||= zdr_model_options_map.to_json
     return unless @runner_model_policy_form_enabled
 
     # Memoized: this can be invoked twice in one request (load_runner_options,
     # then preserve_submitted_runner_key_in_options on a create failure).
     @runner_model_options_map_json ||= model_options_map.to_json
-    @zdr_catalog_setup_state ||= OpenrouterZdrCatalog.current.setup_state
-    @zdr_model_options_map_json ||= zdr_model_options_map.to_json
   end
 
   # omp shares Pi's upstream API providers (Runner::OMP_API_PROVIDERS is the

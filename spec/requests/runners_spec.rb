@@ -1800,6 +1800,30 @@ RSpec.describe "Runners" do
       expect(custom_model_field.at_css("input")["disabled"]).to eq("disabled")
     end
 
+    it "renders only verified ZDR models in the default legacy form" do # @spec RUNNER-MODEL-OPTIONS-008 @spec RUNNER-MODEL-OPTIONS-009
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      create(:openrouter_zdr_model, model_id: "anthropic/claude-sonnet-4")
+      KnownDirectOutboundModels.seed_model(model_id: "anthropic/claude-sonnet-4", provider: "anthropic")
+      OpenrouterZdrCatalog.current.update!(last_successful_at: Time.current)
+      runner = user.runners.create!(
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+      runner.update_column(:zero_data_retention, true)
+
+      get edit_runner_path(runner)
+
+      doc = Nokogiri::HTML(response.body)
+      model_select = doc.at_css("#runner_config_opencode_model")
+
+      expect(response).to have_http_status(:ok)
+      expect(model_select.css("option").map { |option| option["value"] }).to eq([ "", "anthropic/claude-sonnet-4" ])
+      expect(model_select["disabled"]).to be_nil
+      expect(response.body).not_to include("moonshotai/kimi-k2-0905</option>")
+    end
+
     # @spec MODEL-POLICY-005
     it "renders the free-tier picker for a flagged specific-model OpenCode runner so it can be revealed on switch to free" do
       seed_openrouter_model_dropdown_catalog

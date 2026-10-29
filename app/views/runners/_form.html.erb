@@ -329,7 +329,9 @@
          service_types: direct_outbound_service_types,
          auth_type: runner.auth_type,
          current_model_id: runner.opencode_model_id,
-         free_model_policy: runner.runner_key == "opencode" && runner.free_model_policy?
+         free_model_policy: runner.runner_key == "opencode" && runner.free_model_policy?,
+         openrouter_zdr: zdr_openrouter_setup,
+         zdr_catalog_ready: zdr_catalog_setup_state == "ready"
        ) %>
     <% opencode_model_options = opencode_model_options_by_service_type.fetch(opencode_service_type, []) %>
     <% opencode_model_options_json = model_options_by_service_type_json(opencode_model_options_by_service_type, opencode_service_type, opencode_model_options) %>
@@ -381,7 +383,9 @@
          service_types: direct_outbound_service_types,
          auth_type: runner.auth_type,
          current_model_id: runner.kilocode_model_id,
-         free_model_policy: runner.runner_key == "kilocode" && runner.free_model_policy?
+         free_model_policy: runner.runner_key == "kilocode" && runner.free_model_policy?,
+         openrouter_zdr: zdr_openrouter_setup,
+         zdr_catalog_ready: zdr_catalog_setup_state == "ready"
        ) %>
     <% kilocode_model_options = kilocode_model_options_by_service_type.fetch(kilocode_service_type, []) %>
     <% kilocode_model_options_json = model_options_by_service_type_json(kilocode_model_options_by_service_type, kilocode_service_type, kilocode_model_options) %>
@@ -447,7 +451,9 @@
          service_types: pi_service_types,
          auth_type: runner.auth_type,
          current_model_id: runner.pi_model_id,
-         free_model_policy: runner.runner_key == "pi" && runner.free_model_policy?
+         free_model_policy: runner.runner_key == "pi" && runner.free_model_policy?,
+         openrouter_zdr: zdr_openrouter_setup,
+         zdr_catalog_ready: zdr_catalog_setup_state == "ready"
        ) %>
     <% pi_runner_model_options = pi_runner_model_options_by_service_type.fetch(pi_service_type, []) %>
     <% pi_runner_model_options_json = model_options_by_service_type_json(pi_runner_model_options_by_service_type, pi_service_type, pi_runner_model_options) %>
@@ -500,7 +506,9 @@
          service_types: pi_service_types,
          auth_type: runner.auth_type,
          current_model_id: runner.omp_model_id,
-         free_model_policy: runner.runner_key == "omp" && runner.free_model_policy?
+         free_model_policy: runner.runner_key == "omp" && runner.free_model_policy?,
+         openrouter_zdr: zdr_openrouter_setup,
+         zdr_catalog_ready: zdr_catalog_setup_state == "ready"
        ) %>
     <% omp_model_options = omp_model_options_by_service_type.fetch(omp_service_type, []) %>
     <% omp_model_options_json = model_options_by_service_type_json(omp_model_options_by_service_type, omp_service_type, omp_model_options) %>

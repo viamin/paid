@@ -88,6 +88,14 @@ class RunnerFormControllerNodeHarness
       });
 
       controller.authTypeValue = "api_key";
+      controller.modelPolicyFormEnabledValue = false;
+      controller.zdrCatalogSetupStateValue = "ready";
+      controller.zdrModelOptionsValue = JSON.stringify({
+        opencode: [{ label: "Claude Sonnet 4 ZDR", value: "anthropic/claude-sonnet-4", kind: "model" }]
+      });
+      controller.hasZdrCheckboxTarget = true;
+      controller.zdrCheckboxTarget = { checked: false };
+      controller.hasZdrStatusTarget = false;
       controller.hasApiKeySelectTarget = true;
       controller.apiKeySelectTarget = apiKeySelect;
       controller.apiKeyOptionTargets = apiKeyOptions;
@@ -155,6 +163,29 @@ class RunnerFormControllerNodeHarness
       if (harness.opencodeModelSelect.options.some((option) => option.value === "moonshotai/kimi-k2-0905")) {
         throw new Error("Expected anthropic key change to clear openrouter-only models");
       }
+
+      harness.apiKeyOptions.forEach((option) => {
+        option.selected = false;
+      });
+      harness.apiKeyOptions[1].selected = true;
+      harness.apiKeySelect.value = "1";
+      harness.apiKeySelect.selectedOptions = [selectedOption(harness.apiKeyOptions, "1")];
+      harness.controller.zdrCheckboxTarget.checked = true;
+
+      harness.controller.refreshZdrState();
+
+      if (harness.opencodeModelSelect.options[1]?.value !== "anthropic/claude-sonnet-4") {
+        throw new Error(`Expected legacy ZDR mode to use only verified models, saw ${harness.opencodeModelSelect.options.map((option) => option.value).join(",")}`);
+      }
+
+      harness.controller.zdrCatalogSetupStateValue = "stale";
+      harness.controller.refreshZdrState();
+      if (!harness.opencodeModelSelect.disabled || harness.opencodeModelSelect.options.length !== 1) {
+        throw new Error("Expected legacy ZDR mode to fail closed when the catalog is stale");
+      }
+
+      harness.controller.zdrCatalogSetupStateValue = "ready";
+      harness.controller.zdrCheckboxTarget.checked = false;
 
       harness.apiKeyOptions.forEach((option) => {
         option.selected = false;

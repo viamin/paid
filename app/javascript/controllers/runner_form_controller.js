@@ -141,6 +141,8 @@ export default class extends Controller {
     } else {
       this.refreshLegacySettings(runnerKey, isApiKey)
       this.refreshDynamicModelOptions(runnerKey)
+      const serviceType = this.selectedApiServiceType()
+      this.updateZdrStatus(serviceType, this.zdrOpenrouterSetup(serviceType))
     }
     this.refreshTierSettings(runnerKey)
   }
@@ -157,7 +159,13 @@ export default class extends Controller {
   }
 
   refreshZdrState() {
-    this.refreshFeatureFlaggedModelForm(this.currentRunnerKey(), this.runnerApiKeyMode())
+    if (this.modelPolicyFormEnabledValue) {
+      this.refreshFeatureFlaggedModelForm(this.currentRunnerKey(), this.runnerApiKeyMode())
+    } else {
+      this.refreshDynamicModelOptions(this.currentRunnerKey())
+      const serviceType = this.selectedApiServiceType()
+      this.updateZdrStatus(serviceType, this.zdrOpenrouterSetup(serviceType))
+    }
   }
 
   syncModelConfig() {
@@ -472,12 +480,14 @@ export default class extends Controller {
       const matches = currentRunnerKey === runnerKey && this.runnerApiKeyMode()
       const serviceType = this.requiredApiServiceTypeFor(currentRunnerKey)
       const optionsByServiceType = this.modelOptionsByServiceType(select)
-      const options = serviceType ? optionsByServiceType[serviceType] || [] : []
+      const zdrSetup = this.zdrOpenrouterSetup(serviceType)
+      const options = this.legacyModelOptions(currentRunnerKey, serviceType, optionsByServiceType, zdrSetup)
       const selectedValue = select.value
       const manualInput = this.manualModelInputFor(currentRunnerKey)
       const customValue = select.dataset.customModelValue || ""
 
-      this.replaceDynamicModelOptions(select, options, serviceType)
+      this.replaceDynamicModelOptions(select, options, serviceType, zdrSetup)
+      select.value = ""
 
       const values = options.map((option) => option[1])
       if (values.includes(selectedValue)) {
@@ -487,7 +497,7 @@ export default class extends Controller {
         select.value = customValue
       }
 
-      const manualEntry = matches && Boolean(serviceType) && select.value === customValue
+      const manualEntry = !zdrSetup && matches && Boolean(serviceType) && select.value === customValue
 
       select.hidden = manualEntry
       select.disabled = !matches || !serviceType || options.length === 0 || manualEntry
@@ -498,6 +508,14 @@ export default class extends Controller {
         manualInput.disabled = !manualEntry
       }
     })
+  }
+
+  legacyModelOptions(runnerKey, serviceType, optionsByServiceType, zdrSetup) {
+    if (!serviceType) return []
+    if (!zdrSetup) return optionsByServiceType[serviceType] || []
+    if (!this.zdrCatalogReady()) return []
+
+    return (this.zdrModelOptionsMap[runnerKey] || []).map((option) => [option.label, option.value, option.kind])
   }
 
   manualModelInputFor(runnerKey) {
@@ -571,9 +589,9 @@ export default class extends Controller {
     }
   }
 
-  replaceDynamicModelOptions(select, options, serviceType) {
+  replaceDynamicModelOptions(select, options, serviceType, zdrSetup = false) {
     const placeholder = !serviceType ? "Select an API key first" :
-      select.dataset.optionalModel === "true" ? "Use provider default" : "Select a model"
+      select.dataset.optionalModel === "true" && !zdrSetup ? "Use provider default" : "Select a model"
     select.options.length = 0
     select.add(new Option(placeholder, ""))
 
