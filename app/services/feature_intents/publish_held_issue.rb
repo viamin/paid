@@ -50,6 +50,7 @@ module FeatureIntents
       return Result.new(issue: nil, link: nil, reused: false, speculative_alternatives: []) unless feature_intent.confidence_driven?
 
       issue, reused = with_publication_lock { publish_issue }
+      validate_dependencies!(issue)
       attach_parent(issue)
       # Dependency edges are recorded before the feature link so
       # AttachFromAgentRun can mirror them as in-tree prerequisite edges.
@@ -281,6 +282,19 @@ module FeatureIntents
       end
     end
 
+    def validate_dependencies!(issue)
+      dependencies.grep(Issue).each do |dependency|
+        next if IssueDependency.exists?(issue: issue, depends_on_issue: dependency)
+
+        proposed = IssueDependency.new(
+          issue: issue,
+          depends_on_issue: dependency,
+          declaration_source: "feature_intent_publication"
+        )
+        proposed.validate!
+      end
+    end
+
     # Attach prerequisite issues before their dependent so AttachFromAgentRun
     # can record the IssueDependency as an in-tree prerequisite edge.
     def link_dependency_issue(dependency)
@@ -292,7 +306,11 @@ module FeatureIntents
     # publication edge surfaces as RecordInvalid rather than RecordNotUnique;
     # an already-recorded edge is the desired idempotent outcome.
     def persist_dependency!(issue, dependency)
-      IssueDependency.create!(issue: issue, depends_on_issue: dependency)
+      IssueDependency.create!(
+        issue: issue,
+        depends_on_issue: dependency,
+        declaration_source: "feature_intent_publication"
+      )
     rescue ActiveRecord::RecordInvalid => error
       raise unless duplicate_dependency?(error)
 

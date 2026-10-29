@@ -157,6 +157,38 @@ RSpec.describe IssueDependency do
       expect(dep).not_to be_valid
       expect(dep.errors[:base]).to include("cannot reference both a local issue and an external issue")
     end
+
+    it "rejects a two-node cycle with its complete path and source" do # @spec DEPENDENCY-DECLARATIONS-008
+      project = create(:project)
+      issue_a = create(:issue, project: project, github_number: 47561)
+      issue_b = create(:issue, project: project, github_number: 47562)
+      create(:issue_dependency, issue: issue_a, depends_on_issue: issue_b)
+
+      dependency = build(:issue_dependency, issue: issue_b, depends_on_issue: issue_a,
+                          declaration_source: "inbox_action")
+
+      expect(dependency).not_to be_valid
+      expect(dependency.errors[:depends_on_issue].join).to include(
+        "#{issue_b.id} -> #{issue_a.id} -> #{issue_b.id}",
+        "source: inbox_action"
+      )
+    end
+
+    it "rejects a multi-node cycle while retaining the parent-reference exception" do # @spec DEPENDENCY-DECLARATIONS-008
+      project = create(:project)
+      issue_a = create(:issue, project: project)
+      issue_b = create(:issue, project: project)
+      issue_c = create(:issue, project: project)
+      create(:issue_dependency, issue: issue_a, depends_on_issue: issue_b)
+      create(:issue_dependency, issue: issue_b, depends_on_issue: issue_c)
+
+      cycle = build(:issue_dependency, issue: issue_c, depends_on_issue: issue_a)
+      expect(cycle).not_to be_valid
+      expect(cycle.errors[:depends_on_issue].join).to include("#{issue_c.id} -> #{issue_a.id} -> #{issue_b.id} -> #{issue_c.id}")
+
+      issue_c.update!(parent_issue: issue_a)
+      expect(build(:issue_dependency, issue: issue_c, depends_on_issue: issue_a)).to be_valid
+    end
   end
 
   describe "#external?" do

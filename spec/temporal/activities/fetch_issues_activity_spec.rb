@@ -3498,5 +3498,19 @@ RSpec.describe Activities::FetchIssuesActivity do
       expect(stale.depends_on_repo).to be_nil
       expect(stale.depends_on_number).to be_nil
     end
+
+    it "rejects promotion when resolving an external reference would close a cycle" do # @spec DEPENDENCY-DECLARATIONS-008
+      target = create(:issue, project: project, github_number: 9101)
+      dependent = create(:issue, project: project)
+      create(:issue_dependency, issue: target, depends_on_issue: dependent)
+      stale = dependent.issue_dependencies.create!(
+        depends_on_owner: project.owner.downcase,
+        depends_on_repo: project.repo.downcase,
+        depends_on_number: target.github_number
+      )
+
+      expect(activity.send(:resolve_external_dependencies, project, [ target.github_number ])).to be(false)
+      expect(stale.reload).to be_external
+    end
   end
 end

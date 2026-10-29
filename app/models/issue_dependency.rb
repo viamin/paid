@@ -15,8 +15,11 @@ class IssueDependency < ApplicationRecord
   validate :must_have_local_or_external_ref
   validate :local_and_external_mutually_exclusive
   validate :local_dep_within_same_account
+  validate :does_not_create_blocking_cycle
 
   before_validation :normalize_external_ref
+
+  attr_accessor :declaration_source
 
   # A dependency edge pointing at the dependent's own umbrella (parent
   # issue) is a contextual parent reference, not a prerequisite: the
@@ -94,6 +97,7 @@ class IssueDependency < ApplicationRecord
     joins(issue: :project)
       .where(projects: { account_id: account.id })
       .where.not(depends_on_issue_id: nil)
+      .excluding_parent_references
       .pluck(:issue_id, :depends_on_issue_id)
       .group_by(&:first)
       .transform_values { |pairs| pairs.map(&:last) }
@@ -160,6 +164,50 @@ class IssueDependency < ApplicationRecord
     return if issue.project.account_id == depends_on_issue.project.account_id
 
     errors.add(:depends_on_issue, "must belong to the same account")
+  end
+
+  # An account-row lock makes graph validation and persistence one serialized
+  # operation even when independent syncs propose conflicting edges.
+  # @spec DEPENDENCY-DECLARATIONS-008
+  def does_not_create_blocking_cycle
+    return unless local?
+    return unless new_record? || will_save_change_to_depends_on_issue_id?
+    return if issue&.parent_issue_id == depends_on_issue_id
+    return unless issue&.project&.account
+
+    issue.project.account.with_lock do
+      path = cycle_path
+      next unless path
+
+      errors.add(:depends_on_issue, "would create dependency cycle: #{path.join(' -> ')} (source: #{declaration_source || 'direct_write'})")
+      Rails.logger.warn(
+        message: "issue_dependency.cycle_rejected",
+        account_id: issue.project.account_id,
+        issue_id: issue_id,
+        depends_on_issue_id: depends_on_issue_id,
+        cycle_path: path,
+        source: declaration_source || "direct_write"
+      )
+    end
+  end
+
+  def cycle_path
+    adjacency = self.class.account_adjacency(issue.project.account)
+    adjacency[issue_id] = Array(adjacency[issue_id]).reject { |id| id == depends_on_issue_id } unless new_record?
+    path_from(depends_on_issue_id, issue_id, adjacency)&.prepend(issue_id)
+  end
+
+  def path_from(start_id, target_id, adjacency)
+    queue = [ [ start_id, [ start_id ] ] ]
+    visited = Set.new
+
+    while (entry = queue.shift)
+      current_id, path = entry
+      next unless visited.add?(current_id)
+      return path if current_id == target_id
+
+      Array(adjacency[current_id]).each { |next_id| queue << [ next_id, path + [ next_id ] ] }
+    end
   end
 
   def normalize_external_ref

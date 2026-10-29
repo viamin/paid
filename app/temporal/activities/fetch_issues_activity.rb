@@ -1026,9 +1026,8 @@ module Activities
       client = project.client
       deadline = monotonic_now + parse_budget_seconds
 
-      # Compute adjacency once before the loop for cycle detection. Within this
-      # sync batch, deps created by earlier iterations won't be visible for cycle
-      # detection until the next full sync — an acceptable trade-off vs N×DB reads.
+      # IssueDependency owns cycle validation at the account-scoped write
+      # boundary, so additions earlier in this batch are immediately visible.
       adjacency = IssueDependency.account_adjacency(project.account)
       parent_child_changed = false
 
@@ -1265,6 +1264,7 @@ module Activities
         end
 
         begin
+          dep.declaration_source = "external_reference_resolution"
           dep.update!(
             depends_on_issue: resolved_issue,
             depends_on_owner: nil,

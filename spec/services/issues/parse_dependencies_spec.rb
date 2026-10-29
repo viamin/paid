@@ -136,7 +136,7 @@ RSpec.describe Issues::ParseDependencies do
       expect { described_class.call(issue: issue) }.not_to change(IssueDependency, :count)
     end
 
-    it "skips dependencies that would create a cycle" do
+    it "rolls back the declaration set when a dependency would create a cycle" do # @spec DEPENDENCY-DECLARATIONS-009
       issue_a = create(:issue, project: project, github_number: 9001)
       issue_b = create(:issue, project: project, github_number: 9002,
                        body: "Depends on #9001")
@@ -144,8 +144,10 @@ RSpec.describe Issues::ParseDependencies do
       described_class.call(issue: issue_b)
       expect(issue_b.dependencies).to contain_exactly(issue_a)
 
-      issue_a.update!(body: "Depends on #9002")
-      described_class.call(issue: issue_a)
+      create(:issue, project: project, github_number: 9003)
+      issue_a.update!(body: "Depends on #9003, #9002")
+
+      expect(described_class.call(issue: issue_a)).to be(false)
       expect(issue_a.dependencies.reload).to be_empty
     end
 

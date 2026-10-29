@@ -45,12 +45,20 @@ Auto-Pick edges when an issue is synchronized and is also called directly by
 comment bodies. This prevents a stale association from bypassing an unresolved
 live declaration.
 
+Every local `IssueDependency` write also validates the account-scoped blocking
+graph at the model boundary. The account row lock serializes concurrent graph
+writes; parent references remain contextual rather than blocking. Parser
+reconciliation is transactional, so a rejected declaration does not partially
+replace persisted edges. Rejections include the complete cycle path and source
+in structured durable diagnostics.
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |
 | --- | --- | --- | --- |
 | Bare-reference admission | Markdown list grammar only within dependency sections | Parse all section prose; semantic keyword heuristics | List syntax is deterministic, intentional, and avoids making an implementation inventory a merge gate. |
 | Consumer contract | One shared extractor | Separate Auto-Pick and Auto-Merge parsers | Both gates must interpret the same declaration text identically. |
+| Cycle invariant boundary | `IssueDependency` validation serialized by account | Parser-only checks; caller-specific checks | Direct publishers and later external-reference resolution share the same write boundary, and concurrent writes cannot pass independent stale snapshots. |
 
 ## References
 

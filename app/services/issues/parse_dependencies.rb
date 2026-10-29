@@ -145,6 +145,27 @@ module Issues
     def call
       raise ArgumentError, "issue is required" if issue.nil?
 
+      ActiveRecord::Base.transaction { synchronize! }
+    rescue ActiveRecord::RecordInvalid => error
+      Rails.logger.warn(
+        message: "issue_dependency.declaration_rejected",
+        issue_id: issue.id,
+        project_id: issue.project_id,
+        source: "github_declaration",
+        error: error.message
+      )
+      false
+    end
+
+    def extract
+      local_deps, cross_deps = resolve_dependencies
+
+      [ local_deps, cross_deps ]
+    end
+
+    private
+
+    def synchronize!
       local_deps, cross_deps = extract
 
       current_deps = issue.issue_dependencies.to_a
@@ -164,14 +185,6 @@ module Issues
       remove_stale_local_deps(current_local_by_id.keys.to_set, kept_local_ids)
       remove_stale_external_deps(current_external_by_key.keys.to_set, new_cross_refs[:external_keys])
     end
-
-    def extract
-      local_deps, cross_deps = resolve_dependencies
-
-      [ local_deps, cross_deps ]
-    end
-
-    private
 
     # Processes body then comments in the order given. Within a single comment,
     # removals take precedence over additions. Across comments, a later
@@ -380,8 +393,6 @@ module Issues
       missing_numbers = referenced_numbers.reject { |number| project_issues.key?(number) }
       DependencyBackfillJob.perform_later(issue.project_id, missing_numbers) if missing_numbers.any?
 
-      adj = adjacency || IssueDependency.account_adjacency(issue.project.account)
-
       referenced_numbers.each do |number|
         dep_issue = project_issues[number]
         next unless dep_issue
@@ -395,11 +406,10 @@ module Issues
           next
         end
 
-        next if would_create_cycle?(dep_issue, adj)
-
         new_local_deps[dep_issue.id] = issue.issue_dependencies.create!(
           depends_on_issue: dep_issue,
-          requires_deployment: requires_deployment
+          requires_deployment: requires_deployment,
+          declaration_source: "github_declaration"
         )
       end
 
@@ -414,8 +424,6 @@ module Issues
       return { resolved_ids: resolved_ids, external_keys: external_keys } if cross_deps.empty?
 
       account = issue.project.account
-      adj = adjacency || IssueDependency.account_adjacency(account)
-
       cross_refs = cross_deps.keys
       project_lookup = build_project_lookup(account, cross_refs)
       issues_by_project = build_issue_lookup(project_lookup, cross_refs)
@@ -449,11 +457,10 @@ module Issues
               update_deployment_flag(just_created, requires_deployment)
               next
             end
-            next if would_create_cycle?(dep_issue, adj)
-
             issue.issue_dependencies.create!(
               depends_on_issue: dep_issue,
-              requires_deployment: requires_deployment
+              requires_deployment: requires_deployment,
+              declaration_source: "github_declaration"
             )
             next
           end
@@ -623,8 +630,5 @@ module Issues
       issue.issue_dependencies.where(combined).delete_all
     end
 
-    def would_create_cycle?(dep_issue, adjacency)
-      Issues::DetectCycle.call(from_issue: dep_issue, target_issue_id: issue.id, adjacency: adjacency)
-    end
   end
 end

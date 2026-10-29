@@ -31,7 +31,12 @@ module Issues
         return failure(:unknown_issue,
           "Paid has no local record of ##{number} yet — run a project sync first, then link the prerequisite.")
       end
-      if Issues::DetectCycle.call(from_issue: prerequisite, target_issue_id: issue.id)
+      proposed_dependency = IssueDependency.new(
+        issue: issue,
+        depends_on_issue: prerequisite,
+        declaration_source: "inbox_action"
+      )
+      unless proposed_dependency.valid?
         return failure(:cycle, "##{number} already depends on this issue — linking it here would create a dependency cycle.")
       end
 
