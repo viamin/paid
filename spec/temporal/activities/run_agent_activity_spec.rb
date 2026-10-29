@@ -4687,7 +4687,7 @@ expect(container_service).to receive(:execute).with(
         end
       end
 
-      it "does not reprovision for a fallback the main loop would skip anyway" do # @spec RUNNER-FALLBACK-014
+      it "does not reprovision for a fallback the main loop would skip anyway" do # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-050
         expect(agent_run).not_to receive(:provision_execution_environment)
 
         expect {
@@ -4736,7 +4736,7 @@ expect(container_service).to receive(:execute).with(
         end
       end
 
-      it "does not reprovision for a fallback the runner loop skips for tier resolution" do # @spec RUNNER-FALLBACK-014
+      it "does not reprovision for a fallback the runner loop skips for tier resolution" do # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-050
         expect(agent_run).not_to receive(:provision_execution_environment)
 
         expect {
