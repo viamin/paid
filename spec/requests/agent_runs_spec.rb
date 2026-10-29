@@ -2296,6 +2296,7 @@ RSpec.describe "AgentRuns" do
         run = AgentRun.last
         expect(run).to have_attributes(goal: "bootstrap_readiness", trigger_type: "manual", status: "queued")
         expect(run.custom_prompt).to include("CI is required.")
+        expect(response).to redirect_to(project_agent_run_path(project, run))
       end
 
       it "does not queue a second unfinished bootstrap attempt" do

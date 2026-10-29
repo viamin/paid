@@ -88,7 +88,9 @@ prefix: PROJECT-READINESS
   unfinished bootstrap run for that project, SHALL not automatically retry a
   terminal bootstrap attempt, and SHALL leave a failed attempt's readiness
   entry visible for a new explicit trigger, including its failure reason and
-  a link to the run details.
+  a link to the run details. A successful Inbox trigger SHALL open the queued
+  run's detail page; a refused trigger SHALL return to the Inbox with its
+  admission reason.
   It SHALL re-evaluate only after GitHub reports that the bootstrap PR merged,
   so the next snapshot is target-branch evidence.
   *Code:* `Projects::Readiness::Bootstrap`, `Projects::AgentRunsController`,

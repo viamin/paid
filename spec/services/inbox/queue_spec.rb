@@ -249,6 +249,24 @@ RSpec.describe Inbox::Queue do
       entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
 
       expect(entry).to have_attributes(issue: pr, summary_text: "Manual merge decision required")
+      expect(entry.guidance.fetch(:instruction)).to include("Approval alone does not clear this Inbox item")
+    end
+
+    # @spec OPERATOR-INBOX-002K
+    it "shows the manual merge action after a failed attempt is superseded by a ready PR" do
+      project.update!(auto_merge_mode: "off", auto_pick_enabled: false)
+      pr = create(:issue, :pull_request, project:, github_number: 46, pr_review_phase: "ready",
+        auto_merge_evaluated_at: Time.current,
+        auto_merge_blockers: snapshot_hash(failed: [], not_evaluated: []))
+      create(:agent_run, :failed, project:, goal: "create_pr", pull_request_number: pr.github_number,
+        completed_at: 1.day.ago)
+      create(:agent_run, :completed, project:, goal: "create_pr", pull_request_number: pr.github_number,
+        completed_at: Time.current)
+
+      entry = described_class.call(user:, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry).to have_attributes(issue: pr, summary_text: "Manual merge decision required")
+      expect(entry.guidance.fetch(:instruction)).to include("Approval alone does not clear this Inbox item")
     end
 
     # @spec AUTO-MERGE-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K

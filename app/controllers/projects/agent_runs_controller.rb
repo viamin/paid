@@ -290,7 +290,7 @@ module Projects
       authorize @project, :run_agent?
       run = Projects::Readiness::Bootstrap.call(project: @project, user: current_user)
       audit_event("agent_run.created", metadata: { agent_run_id: run.id, project_name: @project.name, goal: run.goal })
-      redirect_to project_path(@project), notice: "Agent run queued. It will start automatically when a slot opens."
+      redirect_to project_agent_run_path(@project, run), notice: "Bootstrap run queued. It will start automatically when a slot opens."
     rescue Projects::Readiness::Bootstrap::NotReadyError,
            Projects::Readiness::Bootstrap::ActiveRunError,
            Projects::Readiness::Bootstrap::BudgetExceededError,

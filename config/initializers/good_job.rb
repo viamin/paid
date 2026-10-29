@@ -198,6 +198,11 @@ Rails.application.configure do
       class: "DependencyCycleReconciliationJob",
       description: "Reconcile persisted effective dependency cycles"
     },
+    partial_closeout_acceptance_audit_sweep: {
+      cron: "11-59/15 * * * *",
+      class: "PartialCloseoutAcceptanceAuditSweepJob",
+      description: "Queue one report-only audit per eligible merged closeout evidence generation"
+    },
     analyze_issue_followup_backfill: {
       cron: "15 * * * *",
       class: "AnalyzeIssueFollowupBackfillJob",

@@ -53,7 +53,9 @@
   stale configured manual reviewer approval (#4519). With automatic merge
   inactive, guidance SHALL direct the operator to review the current changes
   and make the manual merge decision on GitHub; re-approval alone SHALL NOT
-  be described as triggering a Paid merge. With automatic merge active, it
+  be described as triggering a Paid merge or clearing the Inbox item. A prior
+  failed execution SHALL NOT replace manual-merge guidance after a PR reaches
+  `ready` with a current policy assessment. With automatic merge active, it
   SHALL say that current-revision approval causes a later scan to reevaluate
   subject to remaining checks and policy, not promise a merge. The web
   detail, API, chat context, and displayed blocker next actions SHALL use
