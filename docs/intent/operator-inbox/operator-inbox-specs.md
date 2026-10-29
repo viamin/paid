@@ -18,9 +18,13 @@
   than Inbox entry identity. Each event SHALL expose its action, actor/source,
   attempted or completed/failed result, time, relevant revision, and safe
   evidence link; a prior failed run SHALL remain visible without replacing a
-  later completed result or current progress. Inbox list and count queries
-  SHALL NOT load per-row history or make live GitHub calls.
+  later completed result or current progress. Scanner-observed owner approval,
+  pending manual merge, approval invalidation by a newer revision, and later
+  reapproval SHALL be separate, replay-safe events. Inbox list and count
+  queries SHALL NOT load per-row history or make live GitHub calls.
   *Code:* `app/services/inbox/action_history.rb`,
+  `app/services/inbox/action_history_page.rb`,
+  `app/services/inbox/merge_assessment_history_recorder.rb`,
   `app/serializers/api/v1/inbox_entry_serializer.rb`.
   *Test:* `spec/services/inbox/action_history_spec.rb`.
 

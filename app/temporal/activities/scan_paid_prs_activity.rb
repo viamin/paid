@@ -4056,11 +4056,17 @@ module Activities
 
       attributes = { last_pr_scan_at: scanned_at }
       if staged_this_pass
+        previous_snapshot = issue.auto_merge_blockers
         attributes[:auto_merge_blockers] = snapshot
         attributes[:auto_merge_evaluated_at] = snapshot.present? ? scanned_at : nil
         attributes[:last_scanned_head_sha] = head_sha if head_sha.present?
       end
-      issue.update_columns(attributes)
+      Issue.transaction do
+        issue.update_columns(attributes)
+        if staged_this_pass
+          Inbox::MergeAssessmentHistoryRecorder.call(issue:, previous_snapshot:, snapshot:, scanned_at:, head_sha:)
+        end
+      end
       Dashboard::CacheVersion.bump(issue.project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE) if staged_this_pass
     end
 

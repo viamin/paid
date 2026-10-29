@@ -87,6 +87,12 @@ loaded only for a selected detail; list and badge queries do no history or live
 GitHub work. Missing pre-ledger coverage is explicitly marked incomplete rather
 than synthesized from a current label or PR snapshot.
 
+The PR scanner writes revision-keyed approval evidence at the same persistence
+boundary as its merge assessment. Owner approval, manual-merge pending state,
+and approval invalidation are separate events; reapproval of a newer revision
+therefore remains visible after the invalidated attempt. Scanner replay of the
+same assessed revision is idempotent.
+
 Issue-backed lanes retain their project joins when project predicates or
 ordering require them, but preload projects separately. This keeps one shared
 project object per project while preventing a project audit-history payload

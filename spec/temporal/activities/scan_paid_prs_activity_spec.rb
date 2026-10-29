@@ -647,6 +647,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
 
         expect(pr_issue.reload.auto_merge_blockers).to eq("failed" => [], "not_evaluated" => [])
         expect(pr_issue.auto_merge_evaluated_at).to be_present
+        expect(InboxHistoryEvent.where(project:).pluck(Arel.sql("metadata->>'action'")))
+          .to include("Owner approval recorded", "Manual merge pending")
         expect(automation_scan_results(result)).to be_empty
       end
 
@@ -672,6 +674,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             "current_revision" => "current-revision"
           )
         )
+        expect(InboxHistoryEvent.find_by!(project:, event_key: "merge-assessment:invalidation:current-revision").result)
+          .to eq("failed")
       end
 
       # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
