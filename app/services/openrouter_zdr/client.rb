@@ -31,7 +31,7 @@ module OpenrouterZdr
 
     def validate_endpoints!(endpoints)
       raise ParseError, "OpenRouter ZDR endpoints response did not include a data array" unless endpoints.is_a?(Array)
-      raise ParseError, "OpenRouter ZDR endpoint did not include a model_id" unless endpoints.all? { |endpoint| endpoint.is_a?(Hash) && endpoint["model_id"].present? }
+      raise ParseError, "OpenRouter ZDR endpoint did not include a model_id" unless endpoints.all? { |endpoint| endpoint.is_a?(Hash) && endpoint["model_id"].is_a?(String) && endpoint["model_id"].present? }
 
       endpoints
     end
