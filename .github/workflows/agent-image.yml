@@ -51,7 +51,7 @@ jobs:
     runs-on: ubuntu-latest
     # A contract-owned CLI update invalidates several expensive image layers.
     # Leave sufficient headroom for a cold rebuild plus both smoke suites.
-    timeout-minutes: 35
+    timeout-minutes: 45
     outputs:
       image_relevant: ${{ steps.changes.outputs.image_relevant }}
     env:
