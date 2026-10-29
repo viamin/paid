@@ -8,20 +8,21 @@ module Api
     # splitting them into per-kind classes would scatter the `oneOf`
     # dispatch this spec requires across a dozen single-method files.
     class InboxEntrySerializer
-      def self.render(entry)
-        new(entry).render
+      def self.render(entry, user: nil)
+        new(entry, user:).render
       end
 
       def self.render_list(entry)
         new(entry).render_list
       end
 
-      def initialize(entry)
+      def initialize(entry, user: nil)
         @entry = entry
+        @user = user
       end
 
       def render
-        common_fields.merge(kind_payload)
+        common_fields.merge(kind_payload).merge(history_payload)
       end
 
       def render_list
@@ -30,7 +31,7 @@ module Api
 
       private
 
-      attr_reader :entry
+      attr_reader :entry, :user
 
       def common_fields
         {
@@ -48,6 +49,19 @@ module Api
         return unless entry.project
 
         { id: entry.project.id, owner: entry.project.owner, repo: entry.project.repo, name: entry.project.full_name }
+      end
+
+      # @spec OPERATOR-INBOX-022
+      def history_payload
+        history = Inbox::ActionHistory.call(entry:, user:)
+        {
+          history: history.events.map { |event|
+            { id: event.id, action: event.action, actor: event.actor, source: event.source, result: event.result,
+              occurred_at: event.occurred_at.iso8601, revision: event.revision, evidence_url: event.evidence_url }
+          },
+          history_incomplete: history.incomplete,
+          history_next_cursor: history.next_cursor
+        }
       end
 
       # One branch per Inbox::Queue::KINDS kind, keyed on each entry's actual

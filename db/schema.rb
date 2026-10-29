@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_29_221250) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2352,6 +2352,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
     t.index ["priority", "scheduled_at"], name: "index_good_jobs_on_priority_scheduled_at_unfinished_unlocked", where: "((finished_at IS NULL) AND (locked_by_id IS NULL))"
     t.index ["queue_name", "scheduled_at"], name: "index_good_jobs_on_queue_name_and_scheduled_at", where: "(finished_at IS NULL)"
     t.index ["scheduled_at"], name: "index_good_jobs_on_scheduled_at", where: "(finished_at IS NULL)"
+  end
+
+  create_table "inbox_history_events", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "actor_label", null: false
+    t.datetime "created_at", null: false
+    t.string "event_key", null: false
+    t.string "evidence_url"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "occurred_at", null: false
+    t.bigint "project_id", null: false
+    t.string "result", null: false
+    t.string "revision"
+    t.string "source", null: false
+    t.string "subject_key", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "subject_key", "event_key"], name: "index_inbox_history_events_dedup", unique: true
+    t.index ["account_id", "subject_key", "occurred_at"], name: "index_inbox_history_events_subject_time"
+    t.index ["account_id"], name: "index_inbox_history_events_on_account_id"
+    t.index ["project_id"], name: "index_inbox_history_events_on_project_id"
   end
 
   create_table "inbox_removals", force: :cascade do |t|
@@ -4898,6 +4918,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
   add_foreign_key "github_installations", "accounts"
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
+  add_foreign_key "inbox_history_events", "accounts"
+  add_foreign_key "inbox_history_events", "projects"
   add_foreign_key "inbox_removals", "projects"
   add_foreign_key "inbox_removals", "users"
   add_foreign_key "inbox_request_ownerships", "projects"

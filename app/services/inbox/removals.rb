@@ -31,6 +31,8 @@ module Inbox
             cleared_at: nil
           )
           removal.save!
+          HistoryRecorder.call(entry:, event_key: "inbox-removed:#{removal.id}:#{removal.removed_at.to_f}",
+            action: "Removed from Inbox", actor: user, result: "completed", occurred_at: removal.removed_at)
           Dashboard::CacheVersion.bump(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
         end
       end
@@ -56,7 +58,12 @@ module Inbox
         removed = InboxRemoval.active.where(user:, request_key: Inbox::RequestIdentity.key_for(entry))
         return 0 unless removed.exists?
 
-        removed.find_each(&:clear!)
+        removed.find_each do |removal|
+          next unless removal.clear!
+
+          HistoryRecorder.call(entry:, event_key: "inbox-restored:#{removal.id}:#{removal.cleared_at.to_f}",
+            action: "Restored to Inbox", actor: user, result: "completed", occurred_at: removal.cleared_at)
+        end
         Dashboard::CacheVersion.bump(user.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
       end
 

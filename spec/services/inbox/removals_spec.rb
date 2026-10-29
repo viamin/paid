@@ -66,6 +66,21 @@ RSpec.describe Inbox::Removals do
       expect(InboxRemoval.where(user:, request_key: "clarifying_questions:#{issue.id}").count).to eq(1)
     end
 
+    # @spec OPERATOR-INBOX-023
+    it "records remove, restore, and a fresh-occurrence return against the stable issue" do
+      remove!
+      removed_entry = entry(scope: Inbox::Queue::REMOVED_SCOPE)
+      Inbox::Removals::Restore.call(entry: removed_entry, user:)
+      remove!
+      issue.update!(needs_input_since: Time.current + 5.minutes)
+
+      Inbox::ActionHistory.call(entry: entry, user:)
+
+      expect(InboxHistoryEvent.where(subject_key: "issue:#{project.id}:#{issue.github_number}").pluck(:metadata)).to include(
+        include("action" => "Removed from Inbox"), include("action" => "Restored to Inbox"), include("action" => "Returned to Inbox")
+      )
+    end
+
     # @spec INBOX-PHASE-RELEVANCE-008
     it "persists removals for distinct requests sharing an occurrence" do
       occurrence = Time.current

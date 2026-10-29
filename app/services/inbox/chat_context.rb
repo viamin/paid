@@ -5,7 +5,7 @@ module Inbox
   # Nothing here is inserted into a session prompt at open time.
   # @spec QUESTION-EXPLORATION-014
   class ChatContext
-    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout].freeze
+    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout action_history].freeze
 
     def self.call(...)
       new(...).call
@@ -97,6 +97,19 @@ module Inbox
 
       chat_session.project.agent_runs.where(issue:).order(created_at: :desc).limit(5).includes(:agent_run_logs).map do |run|
         { id: run.id, status: run.status, output: run.agent_run_logs.map(&:content) }
+      end
+    end
+
+    # @spec OPERATOR-INBOX-022
+    # The contextual chat gets the same source attribution as the detail
+    # timeline, without untrusted GitHub text or secret-bearing run logs.
+    def action_history
+      return [] unless issue
+
+      subject_key = "issue:#{chat_session.project_id}:#{issue.github_number}"
+      InboxHistoryEvent.for_subject(account: chat_session.account, subject_key:).newest_first.limit(20).map do |event|
+        { action: event.metadata.fetch("action", event.event_key), actor: event.actor_label, source: event.source,
+          result: event.result, occurred_at: event.occurred_at, revision: event.revision, evidence_url: event.evidence_url }
       end
     end
 
