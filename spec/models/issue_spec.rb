@@ -205,7 +205,7 @@ RSpec.describe Issue do
       end
 
       context "with an external dep that points at a sibling project in the same account" do
-        let(:sibling_project) { create(:project, account: project.account, owner: "viamin", name: "agent-harness") }
+        let(:sibling_project) { create(:project, account: project.account, owner: "viamin", repo: "agent-harness") }
         let(:issue) { create(:issue, project: project) }
 
         it "includes the issue when the external dep's target is closed" do
@@ -253,7 +253,7 @@ RSpec.describe Issue do
         end
 
         it "matches case-insensitively across owner/repo casing" do
-          sibling_project.update!(owner: "ViaMin", name: "Agent-Harness")
+          sibling_project.update!(owner: "ViaMin", repo: "Agent-Harness")
           create(:issue, project: sibling_project, github_number: 42, github_state: "closed")
           create(:issue_dependency, issue: issue, depends_on_issue: nil,
                                     depends_on_owner: "viamin", depends_on_repo: "agent-harness",
@@ -263,7 +263,7 @@ RSpec.describe Issue do
         end
 
         it "stays blocked when the matching project is in a different account" do
-          other_account_project = create(:project, owner: "viamin", name: "agent-harness")
+          other_account_project = create(:project, owner: "viamin", repo: "agent-harness")
           create(:issue, project: other_account_project, github_number: 42, github_state: "closed")
           create(:issue_dependency, issue: issue, depends_on_issue: nil,
                                     depends_on_owner: "viamin", depends_on_repo: "agent-harness",
@@ -1410,7 +1410,7 @@ RSpec.describe Issue do
     end
 
     it "returns true when an external dep resolves to a closed issue in a sibling project" do
-      sibling = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      sibling = create(:project, account: project.account, owner: "viamin", repo: "agent-harness")
       create(:issue, project: sibling, github_number: 42, github_state: "closed")
       issue = create(:issue, project: project)
       create(:issue_dependency, issue: issue, depends_on_issue: nil,
@@ -1421,7 +1421,7 @@ RSpec.describe Issue do
     end
 
     it "returns false when an external dep resolves to an open issue in a sibling project" do
-      sibling = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      sibling = create(:project, account: project.account, owner: "viamin", repo: "agent-harness")
       create(:issue, project: sibling, github_number: 42, github_state: "open")
       issue = create(:issue, project: project)
       create(:issue_dependency, issue: issue, depends_on_issue: nil,
@@ -2206,7 +2206,7 @@ RSpec.describe Issue do
     end
 
     it "returns :eligible when an external dep resolves to a closed sibling-project issue" do
-      sibling = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      sibling = create(:project, account: project.account, owner: "viamin", repo: "agent-harness")
       create(:issue, project: sibling, github_number: 42, github_state: "closed")
       issue = create(:issue, project: project, github_state: "open")
       create(:issue_dependency, issue: issue, depends_on_issue: nil,
