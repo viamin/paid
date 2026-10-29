@@ -149,3 +149,13 @@
   *Dependency:* `viamin/agent-harness#517`.
   *Target code:* `Activities::RunAgentActivity`, `RunnerState`.
   *Target test:* `spec/temporal/activities/run_agent_activity_spec.rb`.
+
+- [x] **RUNNER-FALLBACK-014** — When a runner smoke preflight times out, the
+  system SHALL retry that smoke only after confirming that the run's execution
+  environment remains available. If preparation cleanup invalidated the
+  environment, the system SHALL retain the original timeout and diagnostics as
+  the failed attempt's `preflight_timeout` outcome, SHALL NOT replace it with
+  `ContainerNotProvisioned`, and MAY reprovision only through the existing
+  fallback recovery policy before a later eligible runner executes.
+  *Code:* `Activities::RunAgentActivity#run_runner_preflight!`.
+  *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`.

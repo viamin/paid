@@ -82,6 +82,14 @@ Subscription runner health tests use the explicit mid-tier model when configured
 with the same compatibility resolution and credential isolation. Invalid model
 configuration is surfaced instead of falling back to a different CLI default.
 
+Smoke retries are bounded to the execution environment that produced the
+timeout. Before retrying a timed-out smoke, the activity confirms that the
+persisted environment reference remains present and the connected environment
+is running. Cleanup may have removed the environment while handling the first
+timeout; that path records the original preflight timeout and diagnostics and
+does not issue a second smoke against an invalidated container. Normal fallback
+recovery may provision fresh infrastructure only for a later eligible runner.
+
 ## Durable Model Compatibility Recovery
 
 An explicit provider rejection of a model for the configured authentication

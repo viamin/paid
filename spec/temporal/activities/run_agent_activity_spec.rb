@@ -3838,7 +3838,7 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
-      it "retries the smoke execution once on timeout before raising PreflightTimeoutError" do
+      it "retries the smoke execution once when the execution environment remains live" do # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-049
         opencode_provider = create_opencode_provider_for(user)
         timeout_error = Containers::Provision::TimeoutError.new("Command timed out after 60 seconds")
         allow(container_service).to receive(:execute).and_raise(timeout_error)
@@ -3854,6 +3854,7 @@ expect(container_service).to receive(:execute).with(
         }.to raise_error(described_class::PreflightTimeoutError, /timed out.*on both attempts/)
 
         expect(container_service).to have_received(:execute).twice
+        expect(container_service).to have_received(:container_running?).once
       end
 
       # @spec RUNNER-FALLBACK-003
@@ -3898,6 +3899,32 @@ expect(container_service).to receive(:execute).with(
         }.not_to raise_error
 
         expect(container_service).to have_received(:execute).twice
+      end
+
+      it "preserves the first timeout and its diagnostics when cleanup invalidates the container" do # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-049
+        opencode_provider = create_opencode_provider_for(user)
+        timeout_error = Containers::Provision::TimeoutError.new(
+          "Command timed out after 60 seconds",
+          diagnostics: { "elapsed_seconds" => 60, "output_received" => true }
+        )
+        allow(container_service).to receive(:execute) do
+          AgentRun.where(id: agent_run.id).update_all(container_id: nil)
+          raise timeout_error
+        end
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: opencode_provider,
+            user: user
+          )
+        }.to raise_error(described_class::PreflightTimeoutError, /after 1 attempt because the execution environment is unavailable/) { |error|
+          expect(error.diagnostics).to include("elapsed_seconds" => 60, "output_received" => true)
+        }
+
+        expect(container_service).to have_received(:execute).once
       end
 
       it "uses a runner-specific preflight timeout override for opencode" do
@@ -4578,6 +4605,63 @@ expect(container_service).to receive(:execute).with(
         agent_run.reload
         expect(result).to include(success: true, final_runner: "cursor")
         expect_timeout_fallback_recovery(agent_run)
+      end
+    end
+
+    context "when a preflight timeout invalidates the container before fallback" do
+      before do
+        user.runners.find_or_create_by!(runner_key: "cursor")
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ "cursor" ])
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false,
+          has_changes_since?: false
+        )
+        allow(activity).to receive(:run_runner_preflight!).and_call_original
+        allow(activity).to receive(:run_harness_preflight!)
+
+        execute_calls = 0
+        allow(container_service).to receive(:execute) do
+          execute_calls += 1
+          if execute_calls == 1
+            AgentRun.where(id: agent_run.id).update_all(container_id: nil)
+            raise Containers::Provision::TimeoutError.new(
+              "smoke timed out",
+              diagnostics: { "elapsed_seconds" => 60, "output_received" => true }
+            )
+          end
+
+          exec_success
+        end
+        allow(agent_run).to receive(:provision_execution_environment) do
+          agent_run.update!(container_id: "reprovisioned-123")
+        end
+        allow(Containers::Provision).to receive(:reconnect) do |agent_run:, container_id:|
+          raise "unexpected container id #{container_id}" unless [ "abc123", "reprovisioned-123" ].include?(container_id)
+
+          container_service
+        end
+      end
+
+      it "records the preflight timeout and recovers only for the fallback runner" do # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-049
+        result = activity.execute(agent_run_id: agent_run.id)
+
+        agent_run.reload
+        expect(result).to include(success: true, final_runner: "cursor")
+        expect(agent_run.runners_attempted).to contain_exactly(
+          hash_including(
+            "runner" => "claude_code",
+            "success" => false,
+            "error_type" => "preflight_timeout",
+            "error_message" => a_string_matching(/smoke timed out/)
+          ),
+          hash_including("runner" => "cursor", "success" => true)
+        )
+        expect(agent_run.runners_attempted).not_to include(
+          hash_including("error_message" => a_string_matching(/No container provisioned/))
+        )
+        expect(agent_run.container_id).to eq("reprovisioned-123")
+        expect(container_service).to have_received(:execute).exactly(3).times
       end
     end
 
