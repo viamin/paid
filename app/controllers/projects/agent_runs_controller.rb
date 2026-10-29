@@ -487,19 +487,14 @@ module Projects
         return
       end
 
-      if issue.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
-        redirect_to safe_return_target || dashboard_path,
-          alert: "An existing queued or running run must be reconciled before resuming this hold."
-        return
-      end
-
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
         success_path: safe_return_target || dashboard_path,
         custom_prompt: nil,
         goal: "enhance_issue",
-        priority_tier: nil
+        priority_tier: nil,
+        exclusive_issue_recovery: true
       )
     end
 
@@ -544,12 +539,6 @@ module Projects
         return
       end
 
-      if issue.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
-        redirect_to safe_return_target || dashboard_path,
-          alert: "An existing queued or running run must be reconciled before resuming this hold."
-        return
-      end
-
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
@@ -557,7 +546,8 @@ module Projects
         custom_prompt: nil,
         goal: "create_pr",
         priority_tier: nil,
-        run_label: "scanner remediation"
+        run_label: "scanner remediation",
+        exclusive_issue_recovery: true
       )
     end
 
@@ -1230,6 +1220,11 @@ module Projects
       external_metadata = external_metadata.merge("plan_docs" => plan_docs) if plan_docs.any?
 
       ActiveRecord::Base.transaction do
+        # Issue-scoped creation shares the recovery lock: a recovery that
+        # checks all goals cannot race another controller action creating a
+        # differently-goaled run for the same issue.
+        issue.lock! if issue
+
         # @spec LABEL-CONTROL-007 — In ignored mode any manual run against a
         # specific issue or PR marks it as Paid's to work on; auto-pick on
         # the same project will pick it up without waiting for a label.
@@ -1746,7 +1741,7 @@ module Projects
       redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."
     end
 
-    def create_enhance_issue_runs_and_redirect(issue_ids:, on_error_path:, custom_prompt:, goal:, priority_tier:, success_path: project_path(@project), run_label: "issue enhancement")
+    def create_enhance_issue_runs_and_redirect(issue_ids:, on_error_path:, custom_prompt:, goal:, priority_tier:, success_path: project_path(@project), run_label: "issue enhancement", exclusive_issue_recovery: false)
       budget_result = CostBudgets::Check.call(@project)
       unless budget_result[:allowed]
         redirect_to on_error_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
@@ -1759,20 +1754,22 @@ module Projects
         return
       end
 
-      # Filter out issues that already have an active (unfinished) run of
-      # this same goal, so a dedup check against a different goal's run
-      # (e.g. enhance_issue) never masks a genuinely new request.
-      active_issue_ids = @project.agent_runs
-        .where(issue_id: issues.map(&:id), goal: goal, status: AgentRun::UNFINISHED_STATUSES)
-        .pluck(:issue_id)
-      issues = issues.where.not(id: active_issue_ids) if active_issue_ids.any?
-      if issues.empty?
-        redirect_to on_error_path, alert: "All selected issues already have an active #{run_label} run."
-        return
-      end
-
       github_sync_args_list = []
+      active_run_alert = nil
       ActiveRecord::Base.transaction do
+        issues = issues.order(:id).lock.to_a
+        active_runs = @project.agent_runs.where(issue_id: issues.map(&:id), status: AgentRun::UNFINISHED_STATUSES)
+        active_runs = active_runs.where(goal: goal) unless exclusive_issue_recovery
+        active_issue_ids = active_runs.pluck(:issue_id).to_set
+        issues.reject! { |issue| active_issue_ids.include?(issue.id) }
+
+        if issues.empty?
+          active_run_alert = exclusive_issue_recovery ?
+            "An existing queued or running run must be reconciled before resuming this hold." :
+            "All selected issues already have an active #{run_label} run."
+          raise ActiveRecord::Rollback
+        end
+
         issues.each do |issue|
           create_agent_run(
             issue: issue,
@@ -1784,6 +1781,11 @@ module Projects
           sync_args = apply_priority_label(issue, priority_tier) if priority_tier
           github_sync_args_list << [ issue, sync_args ] if sync_args
         end
+      end
+
+      if active_run_alert
+        redirect_to on_error_path, alert: active_run_alert
+        return
       end
 
       github_sync_args_list.each do |issue, (label_name, stale_labels)|
