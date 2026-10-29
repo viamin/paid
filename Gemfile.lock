@@ -120,7 +120,7 @@ GEM
     addressable (2.9.0)
       public_suffix (>= 2.0.2, < 8.0)
     afm (1.0.1)
-    agent-harness (0.44.22)
+    agent-harness (0.44.27)
       json_schemer (~> 2.4)
       logger (>= 1.6, < 2.0)
       ruby_llm (~> 2.0)
@@ -828,7 +828,7 @@ PLATFORMS
   x86_64-linux-musl
 
 DEPENDENCIES
-  agent-harness (= 0.44.22)
+  agent-harness (= 0.44.27)
   avo (= 4.3.5)
   aws-sdk-s3
   bootsnap
@@ -921,7 +921,7 @@ CHECKSUMS
   adamantium (0.2.0) sha256=5379dc1090ec6ce115eaed4271a2056f3b72ee94d1ff866a169bbb37a3c8c504
   addressable (2.9.0) sha256=7fdf6ac3660f7f4e867a0838be3f6cf722ace541dd97767fa42bc6cfa980c7af
   afm (1.0.1) sha256=4fc98c6ea9cad60c25ae12bad517513b0d6fdbedc099e25be88bf47977b7d879
-  agent-harness (0.44.22) sha256=1590258c411ccfa0dc11c89eaaa41f96998c17fafae58bf2a1fb481f36c37d5a
+  agent-harness (0.44.27) sha256=fdd1ea5b518540cfe19c1a1d0d9682c3b879fde09ae8a8004d55d7304854b750
   amazing_print (2.0.0) sha256=2e36aba46ac78d37ed27ca0e2056afe3583183bb5c64f157c246b267355e5d6a
   anima (0.3.2) sha256=467f775e5c7721f1ac19c0efcef2ca56489b9673809371b12514a77e11cbfc00
   ast (2.4.3) sha256=954615157c1d6a382bc27d690d973195e79db7f55e9765ac7c481c60bdb4d383
