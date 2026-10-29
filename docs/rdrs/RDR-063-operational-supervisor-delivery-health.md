@@ -21,11 +21,16 @@ The missing capability is observation of whether delivery is degrading across th
 
 ## Decision
 
-Select a staged, account-scoped design:
+Select a staged, account-scoped design with project-scoped enablement:
 
 1. First ship only a disabled-by-default **shadow observation** path: deterministic sanitized snapshots, `agent_harness` semantic classification, durable incidents, and authorized operator visibility.
 2. Store supervisor incidents and snapshots as first-class records. Existing Notifications and Inbox entries are rebuildable projections, not the source of truth, because they cannot provide the required typed provenance, lifecycle, dedupe, retention, and future mitigation audit trail.
 3. Defer every autonomous action. After shadow evidence, a separately reviewed amendment may select either existing PR escalation or one supervisor-owned, expiring Auto-Pick-only new-issue-admission lease. The valid decision is to keep observation-only mode.
+
+An account snapshot is a collection restricted to projects whose
+`operational_supervisor` flag is enabled. Account-level rollups derive only
+from that collection. A disabled project's facts, targets, and projections do
+not enter a snapshot, LLM analysis, incident, or operator-visible projection.
 
 External notification delivery is out of scope. Urgent visibility must work in the Paid dashboard/Inbox without Slack, email, webhooks, or PagerDuty.
 
@@ -41,7 +46,7 @@ Mechanical aggregation and safety limits may be deterministic. No hard-coded sco
 
 ## Incident, metrics, and lifecycle
 
-`SupervisorSnapshot` retains a bounded, typed, sanitized digest and metric provenance. `SupervisorIncident` retains a Rails-derived fingerprint, affected IDs, sanitized evidence, severity/category, status (`open`, `waiting_for_human`, `mitigated`, `resolved`, `dismissed`), first/last seen timestamps, model/prompt/policy identities, and an append-only action/audit trail. It deduplicates per account and fingerprint; it never retains raw model output.
+`SupervisorSnapshot` retains a bounded, typed, sanitized digest, included-project provenance, metric provenance, creation time, and retention expiry. It is purged after its recorded retention interval. `SupervisorIncident` retains a Rails-derived fingerprint, affected IDs, sanitized evidence, severity/category, status (`open`, `waiting_for_human`, `mitigated`, `resolved`, `dismissed`), first/last seen timestamps, model/prompt/policy identities, and an append-only action/audit trail. It deduplicates per account and fingerprint; it never retains raw model output.
 
 Metrics must name their window, denominator, inclusion rule, and unavailable state. Initial metrics are issue-to-PR conversion, PR-to-merge conversion, cost per merged PR, rework runs per PR, Paid-authored PR commit count, stage age, guardrail/escalation rate, and queue starvation. A zero or unavailable denominator is represented as unavailable, never as success or failure.
 
@@ -51,14 +56,15 @@ No action is enabled by this RDR. If post-shadow review selects a candidate, the
 
 ## Rollout Guard
 
-The implementation SHALL define `operational_supervisor` in `FeatureFlags::DEFINITIONS`, default off, and read it through `FeatureFlags.enabled?(:operational_supervisor, project:)`. The authorized project feature-flag surface is the only enablement surface. A pilot may enable shadow observation only after the snapshot boundary, incident contract, authorization, dashboard projection, and supervisor health checks are verified.
+The implementation SHALL define `operational_supervisor` in `FeatureFlags::DEFINITIONS`, default off, and read it through `FeatureFlags.enabled?(:operational_supervisor, project:)`. The authorized project feature-flag surface is the only enablement surface. Before collecting a project's facts, creating an account snapshot, invoking `agent_harness`, creating or updating an incident, or projecting visibility, Rails SHALL apply that project gate. An account with no enabled projects performs none of those operations. A pilot may enable shadow observation only after the snapshot boundary, incident contract, authorization, dashboard projection, and supervisor health checks are verified.
 
-Rollback disables the flag and stops future analysis; it does not erase sanitized incident/audit evidence. Cleanup removes the flag only after final audit verifies the accepted default posture, retention/reconciliation behavior, and any separately approved mitigation path. No mitigation can be enabled by rolling out shadow mode.
+Rollback disables the flag and stops future snapshot construction, LLM analysis, incident creation or update, and projection for that project; it does not erase sanitized incident/audit evidence. Cleanup removes the flag only after final audit verifies the accepted default posture, retention/reconciliation behavior, and any separately approved mitigation path. No mitigation can be enabled by rolling out shadow mode.
 
 ## Measurable acceptance
 
 - Fixture-backed boundary tests prove forbidden content cannot enter snapshots, LLM prompts, incidents, audit evidence, or projections.
 - Shadow mode is default-off and cannot mutate admission, Auto-Pick, follow-up, queue priority, settings, or external systems.
+- A disabled project contributes no facts or targets to an account snapshot or finding, and has no supervisor projection; an account with no enabled projects incurs no snapshot, LLM, or incident work.
 - Validated findings are account-scoped, deduplicated, auditable, and visible to authorized operators with last-success/last-failure supervisor health.
 - Unknown LLM fields, invalid targets, and failed authorization/preconditions produce no mutation.
 - Metric windows, denominators, unavailable states, deterministic top-N bounds, and retention are tested.
