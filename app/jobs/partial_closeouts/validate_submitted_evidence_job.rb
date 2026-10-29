@@ -8,9 +8,9 @@ module PartialCloseouts
     discard_on ActiveRecord::RecordNotFound
 
     # @spec PARTIAL-CLOSEOUT-035
-    def perform(notification_id, prerequisite_identity)
+    def perform(notification_id, prerequisite_identity, submission_id)
       notification = Notification.find(notification_id)
-      ValidateSubmittedEvidence.call(notification:, prerequisite_identity:)
+      ValidateSubmittedEvidence.call(notification:, prerequisite_identity:, submission_id:)
     end
 
     private

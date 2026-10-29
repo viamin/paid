@@ -19,14 +19,17 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     expect(result.outcome).to eq("pending_validation")
     expect(notification.reload).to be_active
     expect(notification.metadata.fetch("evidence_submissions").last).to include("actor_id" => actor.id,
-      "prerequisite_identity" => identity, "outcome" => "pending_validation")
+      "prerequisite_identity" => identity, "outcome" => "pending_validation", "submission_id" => be_present)
   end
 
   it "queues semantic validation after recording the pending submission" do # @spec PARTIAL-CLOSEOUT-035
-    expect {
-      described_class.call(notification:, actor:, prerequisite_identity: identity,
-        evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached.")
-    }.to have_enqueued_job(PartialCloseouts::ValidateSubmittedEvidenceJob).with(notification.id, identity)
+    described_class.call(notification:, actor:, prerequisite_identity: identity,
+      evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached.")
+    submission_id = notification.reload.metadata.fetch("evidence_submissions").sole.fetch("submission_id")
+
+    expect(PartialCloseouts::ValidateSubmittedEvidenceJob).to have_been_enqueued.with(
+      notification.id, identity, submission_id
+    )
   end
 
   it "upgrades a legacy prerequisite notification before recording its evidence" do # @spec PARTIAL-CLOSEOUT-033

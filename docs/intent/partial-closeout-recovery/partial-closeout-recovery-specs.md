@@ -652,7 +652,9 @@
   matching current submission and SHALL include a bounded human-readable
   reason without persisting raw model output.
   *Code:* `app/jobs/partial_closeouts/validate_submitted_evidence_job.rb`,
+  `app/services/partial_closeouts/fetch_evidence_artifact.rb`,
   `app/services/partial_closeouts/validate_submitted_evidence.rb`,
   `app/services/partial_closeouts/submit_evidence.rb`.
-  *Test:* `spec/services/partial_closeouts/validate_submitted_evidence_spec.rb`,
+  *Test:* `spec/services/partial_closeouts/fetch_evidence_artifact_spec.rb`,
+  `spec/services/partial_closeouts/validate_submitted_evidence_spec.rb`,
   `spec/services/partial_closeouts/submit_evidence_spec.rb`.

@@ -9,7 +9,7 @@ module PartialCloseouts
   # @spec PARTIAL-CLOSEOUT-033
   class SubmitEvidence
     OUTCOMES = %w[pending_validation sufficient insufficient stale unavailable].freeze
-    Result = Data.define(:outcome, :reason, :notification) do
+    Result = Data.define(:outcome, :reason, :notification, :submission_id) do
       def sufficient? = outcome == "sufficient"
     end
 
@@ -29,7 +29,9 @@ module PartialCloseouts
         PrerequisiteOccurrences.upgrade!(notification)
         record_submission!
       end
-      ValidateSubmittedEvidenceJob.perform_later(notification.id, prerequisite_identity) if result.outcome == "pending_validation"
+      if result.outcome == "pending_validation"
+        ValidateSubmittedEvidenceJob.perform_later(notification.id, prerequisite_identity, result.submission_id)
+      end
       result
     end
 
@@ -48,11 +50,11 @@ module PartialCloseouts
 
     def record_submission!
       submissions = Array(notification.metadata["evidence_submissions"])
-      entry = { "prerequisite_identity" => prerequisite_identity, "evidence_url" => evidence_url,
+      entry = { "submission_id" => SecureRandom.uuid, "prerequisite_identity" => prerequisite_identity, "evidence_url" => evidence_url,
                 "explanation" => explanation, "actor_id" => actor.id, "submitted_at" => Time.current.iso8601,
                 "source_revision" => occurrence.fetch("source_revision", nil), "outcome" => outcome, "reason" => reason }
       notification.update!(metadata: notification.metadata.merge("evidence_submissions" => replace_duplicate(submissions, entry)))
-      Result.new(outcome:, reason:, notification:)
+      Result.new(outcome:, reason:, notification:, submission_id: entry.fetch("submission_id"))
     end
 
     def replace_duplicate(submissions, entry)
