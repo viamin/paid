@@ -372,24 +372,33 @@
   </div>
 
   <% if policy(entry.project).run_agent? %>
-    <div class="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
-      <h3 class="text-sm font-semibold text-gray-900">Close on GitHub</h3>
-      <details class="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-600">
-        <summary class="cursor-pointer font-medium text-gray-700">What this does — and does not — do</summary>
-        <ul class="mt-2 list-disc space-y-1 pl-5">
-          <li><strong>Completing a run</strong> is evidence about one execution: a merged PR or no-code declaration.</li>
-          <li><strong>Closing this issue</strong> rechecks the current criterion assessment, evidence and intent revisions,
-            prerequisites, scanner verification, and GitHub state before sending the authorized GitHub close action.</li>
-          <li>If GitHub rejects or cannot complete the action, this item remains visible with this exact retry path.</li>
-        </ul>
-      </details>
-      <%= form_with url: resolve_closeout_project_agent_runs_path(entry.project),
+    <% if entry.project.upstream_pr_target? %>
+      <div class="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4">
+        <h3 class="text-sm font-semibold text-gray-900">Close on upstream GitHub</h3>
+        <p class="text-sm text-gray-600">
+          Paid does not mutate upstream issues. Use <strong>View on GitHub</strong> above to close this issue directly
+          in the upstream repository after confirming its acceptance evidence.
+        </p>
+      </div>
+    <% else %>
+      <div class="space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
+        <h3 class="text-sm font-semibold text-gray-900">Close on GitHub</h3>
+        <details class="rounded-md border border-gray-200 bg-white p-3 text-sm text-gray-600">
+          <summary class="cursor-pointer font-medium text-gray-700">What this does — and does not — do</summary>
+          <ul class="mt-2 list-disc space-y-1 pl-5">
+            <li><strong>Completing a run</strong> is evidence about one execution: a merged PR or no-code declaration.</li>
+            <li><strong>Closing this issue</strong> rechecks the current criterion assessment, evidence and intent revisions,
+              prerequisites, scanner verification, and GitHub state before sending the authorized GitHub close action.</li>
+            <li>If GitHub rejects or cannot complete the action, this item remains visible with this exact retry path.</li>
+          </ul>
+        </details>
+        <%= form_with url: resolve_closeout_project_agent_runs_path(entry.project),
             data: { turbo_frame: "_top" },
             class: "flex flex-col gap-2" do |form| %>
-        <%= form.hidden_field :issue_id, value: issue.id %>
-        <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
-        <%= form.label :reason, "Completion rationale", for: "closeout_reason_#{issue.id}", class: "text-sm font-medium text-gray-700" %>
-        <%= form.text_area :reason,
+          <%= form.hidden_field :issue_id, value: issue.id %>
+          <%= form.hidden_field :return_to, value: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) %>
+          <%= form.label :reason, "Completion rationale", for: "closeout_reason_#{issue.id}", class: "text-sm font-medium text-gray-700" %>
+          <%= form.text_area :reason,
               id: "closeout_reason_#{issue.id}",
               required: true,
               maxlength: 2000,
@@ -397,16 +406,17 @@
               placeholder: "Which merged PRs or no-code declaration cover each acceptance criterion, and what evidence proves it?",
               aria: { describedby: "closeout_reason_help_#{issue.id}" },
               class: "min-w-0 w-full resize-y rounded-md border-gray-300 text-sm shadow-sm focus:border-violet-500 focus:ring-violet-500" %>
-        <p id="closeout_reason_help_<%= issue.id %>" class="text-xs text-gray-500">
-          Write a specific rationale that references the recorded evidence. The canned sentence alone is refused.
-        </p>
-        <%= form.submit "Close on GitHub",
+          <p id="closeout_reason_help_<%= issue.id %>" class="text-xs text-gray-500">
+            Write a specific rationale that references the recorded evidence. The canned sentence alone is refused.
+          </p>
+          <%= form.submit "Close on GitHub",
               id: "closeout_submit_#{issue.id}",
               class: "inline-flex self-start items-center rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-700 ring-1 ring-inset ring-gray-300 hover:bg-gray-50",
               data: { turbo_confirm: "Close ##{issue.github_number} on GitHub against the current acceptance audit? " \
                 "Paid will refuse if criteria, revisions, prerequisites, scanner verification, or GitHub state changed.", turbo_frame: "_top" } %>
-      <% end %>
-    </div>
+        <% end %>
+      </div>
+    <% end %>
 
     <div class="space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-4">
       <h3 class="text-sm font-semibold text-gray-900">Request a deliberate continuation</h3>

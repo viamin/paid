@@ -161,6 +161,21 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     expect(issue.reload.github_state).to eq("open")
   end
 
+  it "refuses to close an upstream issue through the project fork" do # @spec PARTIAL-CLOSEOUT-006 UPSTREAM-ISSUE-008
+    project.update!(pr_target: "upstream", upstream_full_name: "upstream/alpha")
+    merged_partial_pr(number: 12)
+    accepted_audit
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result.code).to eq(:upstream_managed)
+    expect(result.message).to include("directly on the upstream repository")
+    expect(github_client).not_to have_received(:issue)
+    expect(github_client).not_to have_received(:update_issue)
+    expect(issue.reload.github_state).to eq("open")
+    expect(issue.closeout_resolved_at).to be_nil
+  end
+
   it "keeps the actionable item retryable when GitHub rejects closure" do # @spec PARTIAL-CLOSEOUT-037
     merged_partial_pr(number: 12)
     accepted_audit

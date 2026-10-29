@@ -21,7 +21,7 @@ module Issues
       @client = client
     end
 
-    def call # @spec PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-037
+    def call # @spec PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-037 UPSTREAM-ISSUE-008
       return failure(:invalid_reason, "A closeout reason is required.") if reason.blank?
       return failure(:generic_reason, "Enter a specific completion rationale that references the recorded evidence " \
         "(for example which merged PRs or no-code declaration cover each acceptance criterion).") if canned_reason?
@@ -43,6 +43,8 @@ module Issues
     end
 
     def resolve
+      return failure(:upstream_managed, "Paid does not mutate upstream issues; close this issue directly on the upstream repository.") if issue.project.upstream_pr_target?
+
       evidence = CloseoutEvidence.call(issue)
       return failure(:not_stalled, "This issue has no terminal closeout evidence.") unless evidence.present? && issue.github_state == "open"
       if issue.source == Issue::SYNTHETIC_CODE_SCANNING_SOURCE

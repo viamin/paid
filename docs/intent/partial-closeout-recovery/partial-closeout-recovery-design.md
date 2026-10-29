@@ -227,7 +227,13 @@ failure retains the item and its exact **Close on GitHub** retry route.
 Synthetic code-scanning records have no corresponding GitHub Issue, so this
 action refuses them with scanner-reconciliation guidance; their source closure
 is observed from an authoritative code-scanning snapshot by
-`SecurityAlerts::ReconcileResolved`. Reopening or new terminal evidence follows
+`SecurityAlerts::ReconcileResolved`.
+Upstream-target projects read their source issues from another repository, which
+Paid does not mutate. The Inbox therefore replaces the close action with a
+direct upstream-GitHub route, and the shared controller and MCP service refuse
+the action before reading or writing through the fork client.
+
+Reopening or new terminal evidence follows
 the normal current-assessment path.
 
 ### Surfaces

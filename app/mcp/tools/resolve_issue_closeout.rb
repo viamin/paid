@@ -9,6 +9,7 @@ module Tools
     def self.description
       "Close a stalled partial closeout on GitHub only after its current acceptance audit satisfies every criterion. " \
         "The action rechecks revisions, prerequisites, scanner verification, and GitHub state; failures remain retryable. " \
+        "Upstream-target projects must be closed directly on the upstream repository. " \
         "The reason must be a specific rationale referencing the recorded evidence, not a canned sentence. " \
         "Requires confirmation."
     end

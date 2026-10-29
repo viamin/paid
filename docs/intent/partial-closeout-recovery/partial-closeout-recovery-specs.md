@@ -328,6 +328,9 @@
   close action with guidance to wait for or repair authoritative scanner
   reconciliation; source closure for those records SHALL be observed from an
   authoritative code-scanning snapshot rather than the GitHub Issues API.
+  An upstream-target project SHALL refuse this action without contacting its
+  fork repository and SHALL retain the item with a direct upstream-GitHub
+  closure route.
   Resolution and continuation creation
   SHALL serialize on the issue: resolving SHALL supersede an open continuation
   authorization and cancel its unclaimed queued run before recording the

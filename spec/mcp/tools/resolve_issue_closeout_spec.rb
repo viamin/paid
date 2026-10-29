@@ -13,15 +13,15 @@ RSpec.describe Tools::ResolveIssueCloseout do # @spec PARTIAL-CLOSEOUT-007
     create(:issue, :pull_request, project: project, github_number: 81, github_state: "closed",
       pr_review_phase: "merged", parent_issue_id: issue.id, created_at: 2.days.ago)
   end
-
-  before { merged_pr }
-
   let(:github_client) { instance_double(GithubClient) }
 
   before do
-    allow_any_instance_of(Project).to receive(:client).and_return(github_client)
-    allow(github_client).to receive(:issue).and_return(Struct.new(:state).new("open"))
-    allow(github_client).to receive(:update_issue).and_return(Struct.new(:state).new("closed"))
+    merged_pr
+    allow(GithubClient).to receive(:new).and_return(github_client)
+    allow(github_client).to receive_messages(
+      issue: Struct.new(:state).new("open"),
+      update_issue: Struct.new(:state).new("closed")
+    )
   end
 
   def accepted_audit
@@ -61,6 +61,18 @@ RSpec.describe Tools::ResolveIssueCloseout do # @spec PARTIAL-CLOSEOUT-007
       expect {
         tool.call(project_id: project.id, issue_id: plain.id, reason: "Done.", confirmed: true)
       }.to raise_error(ArgumentError, /no terminal closeout evidence/)
+    end
+
+    it "refuses upstream issue closure without contacting the project fork" do # @spec PARTIAL-CLOSEOUT-007 UPSTREAM-ISSUE-008
+      project.update!(pr_target: "upstream", upstream_full_name: "upstream/alpha")
+      accepted_audit
+
+      expect {
+        tool.call(project_id: project.id, issue_id: issue.id, reason: "Merged PR #81 covers it.", confirmed: true)
+      }.to raise_error(ArgumentError, /directly on the upstream repository/)
+
+      expect(github_client).not_to have_received(:issue)
+      expect(github_client).not_to have_received(:update_issue)
     end
   end
 end

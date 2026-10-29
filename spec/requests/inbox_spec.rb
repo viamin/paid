@@ -484,6 +484,24 @@ RSpec.describe "Inbox" do
       expect(response.body).not_to match(/type="hidden"[^>]*name="reason"/)
     end
 
+    it "routes upstream issues to GitHub without rendering the fork-close action" do # @spec PARTIAL-CLOSEOUT-006 UPSTREAM-ISSUE-008
+      project.update!(pr_target: "upstream", upstream_full_name: "upstream/alpha")
+      upstream_issue = create(:issue, project: project, github_number: 512, paid_state: "in_progress")
+      create(:issue, :pull_request, project: project, github_number: 513, github_state: "closed",
+        pr_review_phase: "merged", parent_issue: upstream_issue, created_at: 2.days.ago)
+
+      get inbox_entry_path(
+        entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, upstream_issue),
+        project_id: project.id,
+        kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND
+      )
+
+      expect(response).to have_http_status(:ok)
+
+      expect(response.body).to include("Close on upstream GitHub", "Paid does not mutate upstream issues")
+      expect(response.body).not_to include(resolve_closeout_project_agent_runs_path(project))
+    end
+
     it "explains the continuation authorization semantics with examples" do
       render_guided_pane
 
