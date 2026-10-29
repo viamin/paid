@@ -304,6 +304,7 @@ export default class extends Controller {
     if (this.hasModelSearchTarget) this.filterModelOptions()
   }
 
+  // @spec RUNNER-MODEL-OPTIONS-009
   filterModelOptions() {
     if (!this.hasModelSelectTarget || !this.hasModelSearchTarget) return
 
@@ -312,6 +313,45 @@ export default class extends Controller {
       if (!option.value) return
       option.hidden = query !== "" && !option.textContent.toLowerCase().includes(query)
     })
+    this.setActiveModelOption(null)
+    this.modelSearchTarget.setAttribute("aria-expanded", (this.visibleModelOptions().length > 0).toString())
+  }
+
+  navigateModelOptions(event) {
+    if (!this.hasModelSelectTarget || this.modelSelectTarget.disabled) return
+
+    const options = this.visibleModelOptions()
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault()
+      this.moveActiveModelOption(options, event.key === "ArrowDown" ? 1 : -1)
+    } else if (event.key === "Enter" && this.activeModelOption) {
+      event.preventDefault()
+      this.modelSelectTarget.value = this.activeModelOption.value
+      this.modelSelectTarget.dispatchEvent(new Event("change", { bubbles: true }))
+    }
+  }
+
+  visibleModelOptions() {
+    return Array.from(this.modelSelectTarget.options).filter((option) => option.value && !option.hidden && !option.disabled)
+  }
+
+  moveActiveModelOption(options, direction) {
+    if (options.length === 0) return
+
+    const currentIndex = options.indexOf(this.activeModelOption)
+    const nextIndex = currentIndex < 0 ? (direction > 0 ? 0 : options.length - 1) : (currentIndex + direction + options.length) % options.length
+    this.setActiveModelOption(options[nextIndex])
+  }
+
+  setActiveModelOption(option) {
+    this.activeModelOption = option
+    if (!option) {
+      this.modelSearchTarget.removeAttribute("aria-activedescendant")
+      return
+    }
+
+    option.id ||= `runner-model-option-${this.modelOptionId = (this.modelOptionId || 0) + 1}`
+    this.modelSearchTarget.setAttribute("aria-activedescendant", option.id)
   }
 
   modelOptionsFor(runnerKey, serviceType, zdrSetup) {
@@ -384,6 +424,10 @@ export default class extends Controller {
 
   disableModelControls(disabled) {
     if (this.hasModelSelectTarget) this.modelSelectTarget.disabled = disabled
+    if (this.hasModelSearchTarget) {
+      this.modelSearchTarget.disabled = disabled
+      this.modelSearchTarget.setAttribute("aria-expanded", (!disabled && this.visibleModelOptions().length > 0).toString())
+    }
 
     const showCustom = !disabled && this.hasModelSelectTarget && this.modelSelectTarget.value === CUSTOM_OPTION
     this.toggleCustomModelField(showCustom)

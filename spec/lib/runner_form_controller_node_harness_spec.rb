@@ -12,6 +12,12 @@ class RunnerFormControllerNodeHarness
         return null;
       }
     };
+    global.Event = class Event {
+      constructor(type, options = {}) {
+        this.type = type;
+        this.bubbles = options.bubbles;
+      }
+    };
 
     const source = fs.readFileSync("app/javascript/controllers/runner_form_controller.js", "utf8");
     const transformed = source
@@ -194,8 +200,51 @@ class RunnerFormControllerNodeHarness
       }
     }
 
+    function runComboboxHarness() {
+      const { controller } = buildController();
+      const attributes = {};
+      const options = [
+        { value: "", textContent: "Select a model", hidden: false, disabled: false },
+        { value: "anthropic/claude", textContent: "Claude Sonnet", hidden: false, disabled: false },
+        { value: "openai/gpt", textContent: "GPT", hidden: false, disabled: false }
+      ];
+      let changeEvent;
+
+      controller.hasModelSelectTarget = true;
+      controller.hasModelSearchTarget = true;
+      controller.modelSelectTarget = {
+        options,
+        value: "",
+        disabled: false,
+        dispatchEvent(event) { changeEvent = event; }
+      };
+      controller.modelSearchTarget = {
+        value: "claude",
+        setAttribute(name, value) { attributes[name] = value; },
+        removeAttribute(name) { delete attributes[name]; }
+      };
+
+      controller.filterModelOptions();
+      if (!options[2].hidden || attributes["aria-expanded"] !== "true") {
+        throw new Error("Expected model search to expose only matching options and expand the combobox");
+      }
+
+      let arrowPrevented = false;
+      controller.navigateModelOptions({ key: "ArrowDown", preventDefault() { arrowPrevented = true; } });
+      if (!arrowPrevented || attributes["aria-activedescendant"] !== options[1].id) {
+        throw new Error("Expected ArrowDown to activate the first filtered model option");
+      }
+
+      let enterPrevented = false;
+      controller.navigateModelOptions({ key: "Enter", preventDefault() { enterPrevented = true; } });
+      if (!enterPrevented || controller.modelSelectTarget.value !== "anthropic/claude" || changeEvent?.type !== "change" || !changeEvent.bubbles) {
+        throw new Error("Expected Enter to select the active filtered model and dispatch a bubbling change event");
+      }
+    }
+
     try {
       runHarness();
+      runComboboxHarness();
     } catch (error) {
       console.error(error.message || error);
       process.exit(1);
@@ -208,7 +257,7 @@ class RunnerFormControllerNodeHarness
 end
 
 RSpec.describe RunnerFormControllerNodeHarness, :no_db do
-  # @spec DIRECT-OUTBOUND-CATALOG-007
+  # @spec DIRECT-OUTBOUND-CATALOG-007, RUNNER-MODEL-OPTIONS-009
   it "refreshes direct-outbound model options from the selected API key service type" do
     stdout, stderr, status = described_class.run
 

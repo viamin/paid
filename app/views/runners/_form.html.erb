@@ -18,7 +18,7 @@
      Runners::ModelOptions.call(
        runner_key: runner.runner_key,
        api_provider: initial_api_service_type,
-       zdr_eligible: zdr_openrouter_setup && @zdr_catalog_setup_state == "ready"
+       zdr_eligible: zdr_openrouter_setup && zdr_catalog_setup_state == "ready"
      )
    else
      []
@@ -49,8 +49,8 @@
       runner_form_auth_type_value: runner.auth_type,
       runner_form_model_policy_form_enabled_value: runner_model_policy_form_enabled,
       runner_form_model_options_value: runner_model_options_map_json,
-      runner_form_zdr_model_options_value: @zdr_model_options_map_json,
-      runner_form_zdr_catalog_setup_state_value: @zdr_catalog_setup_state,
+      runner_form_zdr_model_options_value: zdr_model_options_map_json,
+      runner_form_zdr_catalog_setup_state_value: zdr_catalog_setup_state,
       runner_form_initial_api_service_type_value: initial_api_service_type
     } do |form| %>
   <% direct_outbound_service_types = Runner::DIRECT_OUTBOUND_API_PROVIDERS.values.map { |config| config[:service_type] }.uniq %>
@@ -260,14 +260,18 @@
                  placeholder="Search models"
                  class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
                  data-runner-form-target="modelSearch"
-                 data-action="input->runner-form#filterModelOptions"
-                 aria-controls="runner_model_selection_choice">
+                 data-action="input->runner-form#filterModelOptions keydown->runner-form#navigateModelOptions"
+                 role="combobox"
+                 aria-autocomplete="list"
+                 aria-controls="runner_model_selection_choice"
+                 aria-expanded="false">
           <select id="runner_model_selection_choice"
                   name="runner[model_selection_choice]"
                   class="mt-2 block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6"
                   data-runner-form-target="modelSelect"
                   data-initial-model-selection="<%= selected_model_choice %>"
                   data-action="change->runner-form#refreshModelState"
+                  role="listbox"
                   aria-label="Model selection">
             <option value="">Select a model</option>
             <% initial_model_options.reject(&:model?).each do |option| %>
