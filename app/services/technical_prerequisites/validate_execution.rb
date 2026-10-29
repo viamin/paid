@@ -163,6 +163,7 @@ module TechnicalPrerequisites
         "recorded_at" => Time.current.iso8601,
         **runtime_image_evidence,
         "requested_checkout" => agent_run.base_commit_sha,
+        "criterion" => agent_run.external_metadata.dig(RECIPE_KEY, "criterion"),
         "checkout" => nil,
         "tool_identity" => agent_run.tool_sidecar_snapshot.map { |tool| tool.slice("name", "image", "version") },
         "cleanup" => { "attempted" => true }

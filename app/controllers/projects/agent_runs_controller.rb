@@ -406,7 +406,25 @@ module Projects
         return
       end
 
-      result = TechnicalPrerequisites::StartValidation.call(source_run:, requirement:, actor: current_user)
+      selected_tool_name = nil
+      if params[:criterion].present?
+        assessment = PartialCloseouts::Assessment.call(source_run.issue)
+        action = TechnicalPrerequisites::InboxActions.call(
+          project: @project, actor: current_user, assessment:, source_run:
+        ).find do |candidate|
+          candidate.ready? && candidate.requirement.id == requirement.id &&
+            candidate.criterion["criterion"] == params[:criterion]
+        end
+        unless action
+          redirect_to safe_return_target || dashboard_path,
+            alert: "This validation action is no longer prepared for the current acceptance assessment. Run a fresh audit."
+          return
+        end
+        selected_tool_name = action.criterion["validation_tool_name"] if action.criterion["validation_kind"] == "tool_sidecar"
+      end
+
+      result = TechnicalPrerequisites::StartValidation.call(source_run:, requirement:, actor: current_user,
+        criterion: params[:criterion].presence, tool_name: selected_tool_name)
       if result.success?
         redirect_to project_agent_run_path(@project, result.agent_run), notice: result.message
       else

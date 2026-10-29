@@ -62,9 +62,18 @@
       execution SHALL stop cooperatively before the next provisioning or
       command boundary and SHALL clean up any environment already provisioned.
       When the partial-closeout Inbox pane has a validation record, it SHALL
-      render the latest outcome and its exact setup action alongside the
-      reviewed-recipe retry control.
+      render the latest outcome and its exact setup action. For each unmet or
+      unknown criterion that the current closeout assessment classifies as
+      requiring technical validation, the
+      Inbox SHALL present one named, reviewed-recipe action when its selected
+      requirement, pinned source run, and exact required tool attachment are ready;
+      otherwise it SHALL state the specific setup action. It SHALL not show a
+      generic recipe picker or present unrelated project checks as acceptance
+      validation. A stale assessment SHALL require a fresh audit before any
+      criterion-specific validation action is offered.
       *Code:* `app/services/technical_prerequisites/capability_inspection.rb`,
+      `app/services/technical_prerequisites/inbox_actions.rb`,
+      `app/services/llm/analyze_partial_closeout.rb`,
       `app/services/technical_prerequisites/start_validation.rb`,
       `app/services/technical_prerequisites/validate_execution.rb`,
       `app/jobs/technical_prerequisite_validation_job.rb`,
@@ -75,6 +84,7 @@
       `spec/services/technical_prerequisites/start_validation_spec.rb`,
       `spec/jobs/technical_prerequisite_validation_job_spec.rb`,
       `spec/requests/projects/technical_prerequisite_validations_spec.rb`,
+      `spec/services/llm/analyze_partial_closeout_spec.rb`,
       `spec/requests/inbox_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-029** — When Paid publishes or repairs a source-issue

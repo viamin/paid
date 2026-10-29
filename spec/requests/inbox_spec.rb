@@ -593,8 +593,69 @@ RSpec.describe "Inbox" do
 
       expect(response.body).to include("Latest technical prerequisite validation", "Unavailable")
       expect(response.body).to include("Request scoped pilot authorization to enable marketplace_tool_sidecars for this project.")
-      expect(response.body).to include("Retry prerequisite validation")
-      expect(response.body).to include(validate_technical_prerequisite_project_agent_runs_path(project))
+      expect(response.body).to include("Run an acceptance audit to prepare a criterion-specific validation action")
+      expect(response.body).not_to include("Retry prerequisite validation")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    it "offers the reviewed validation for its unmet criterion without a recipe picker" do
+      source_run = create(:agent_run, :completed, project:, issue: guided_issue, base_commit_sha: "a" * 40)
+      relevant = create(:pre_commit_requirement, project:, account:, name: "Native analyzer smoke test", command: "bin/validate-analyzer")
+      create(:pre_commit_requirement, project:, account:, name: "Unrelated mutation suite", command: "bin/mutant")
+      guided_evidence
+      source_run.update!(reconciliation: { "assessment" => {
+        "source_revision" => PartialCloseouts::Assessment.source_revision_for(guided_issue),
+        "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(guided_issue),
+        "criteria" => [ { "criterion" => "Native analyzer runs on the pinned checkout", "state" => "unmet",
+          "validation_kind" => "native", "validation_requirement_id" => relevant.id } ]
+      } })
+
+      render_guided_pane
+
+      expect(response.body).to include("Run Native analyzer smoke test", "Native analyzer runs on the pinned checkout")
+      expect(response.body).not_to include("Unrelated mutation suite", "Select a recipe", "Run prerequisite validation")
+      form = Nokogiri::HTML(response.body).at_css("form[action='#{validate_technical_prerequisite_project_agent_runs_path(project)}']")
+      expect(form.at_css("input[name='requirement_id']")["value"]).to eq(relevant.id.to_s)
+    end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    it "shows the setup action when a sidecar criterion has no prepared attachment" do
+      source_run = create(:agent_run, :completed, project:, issue: guided_issue, base_commit_sha: "a" * 40)
+      AgentRun.where(id: source_run.id).update_all(tool_sidecar_snapshot: [ { "name" => "unrelated-tool" } ])
+      recipe = create(:pre_commit_requirement, project:, account:, name: "Sidecar endpoint check", command: "bin/check-sidecar")
+      guided_evidence
+      source_run.update!(reconciliation: { "assessment" => {
+        "source_revision" => PartialCloseouts::Assessment.source_revision_for(guided_issue),
+        "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(guided_issue),
+        "criteria" => [ { "criterion" => "Sidecar responds from the paired run", "state" => "unmet",
+          "validation_kind" => "tool_sidecar", "validation_tool_name" => "expected-tool",
+          "validation_requirement_id" => recipe.id } ]
+      } })
+
+      render_guided_pane
+
+      expect(Nokogiri::HTML(response.body).text).to include("Attach the criterion's allowlisted tool sidecar to a pinned run")
+      expect(response.body).to include("Request scoped pilot authorization")
+      expect(response.body).not_to include("Run Sidecar endpoint check")
+    end
+
+    # @spec PARTIAL-CLOSEOUT-032
+    it "does not offer an unrelated project check for an unknown technical criterion" do
+      source_run = create(:agent_run, :completed, project:, issue: guided_issue, base_commit_sha: "a" * 40)
+      create(:pre_commit_requirement, project:, account:, name: "Mutation suite", command: "bin/mutant")
+      guided_evidence
+      source_run.update!(reconciliation: { "assessment" => {
+        "source_revision" => PartialCloseouts::Assessment.source_revision_for(guided_issue),
+        "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(guided_issue),
+        "criteria" => [ { "criterion" => "Native analyzer execution evidence", "state" => "unknown",
+          "validation_kind" => "native" } ]
+      } })
+
+      render_guided_pane
+
+      expect(response.body).to include("Prepare a reviewed validation recipe for this criterion")
+      expect(response.body).to include("Configure reviewed checks")
+      expect(response.body).not_to include("Run Mutation suite")
     end
   end
 
