@@ -3682,7 +3682,7 @@ module Activities
       end
 
       reprovision_container_for_fallback!(agent_run)
-        logger.info(
+      logger.info(
         message: "agent_execution.container_reprovisioned_for_fallback",
         agent_run_id: agent_run.id,
         runner: runner,

@@ -4713,7 +4713,9 @@ expect(container_service).to receive(:execute).with(
       before do
         incompatible_model = create(:llm_model, :openai, model_id: "gpt-incompatible-fallback", tier: "mid")
         fallback_runner = user.runners.find_or_create_by!(runner_key: "cursor")
-        fallback_runner.update!(tier_models: {}, tier_model_ids: { "mid" => incompatible_model.model_id })
+        # Simulate a stale persisted mapping from before compatibility validation
+        # rejected this provider/model pairing.
+        fallback_runner.update_columns(tier_models: {}, tier_model_ids: { "mid" => incompatible_model.model_id })
         create(:model_selection, agent_run: agent_run,
           llm_model: create(:llm_model, model_id: "claude-fallback-primary", provider: "anthropic", tier: "mid"), tier: "mid")
         user.settings.update!(fallback_enabled: true, fallback_runners: [ "cursor" ])
@@ -4742,8 +4744,7 @@ expect(container_service).to receive(:execute).with(
 
         agent_run.reload
         expect(agent_run.runners_attempted).to contain_exactly(
-          hash_including("runner" => "claude_code", "success" => false, "error_type" => "preflight_timeout"),
-          hash_including("runner" => "cursor", "success" => false, "error_type" => "configuration_error")
+          hash_including("runner" => "claude_code", "success" => false, "error_type" => "preflight_timeout")
         )
         expect(agent_run.runners_attempted).not_to include(
           hash_including("error_message" => a_string_matching(/No container provisioned/))
