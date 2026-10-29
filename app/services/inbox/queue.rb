@@ -17,6 +17,7 @@ module Inbox
     PROJECT_SETUP_PENDING_KIND = "project_setup_pending"
     TRACEABILITY_GAP_KIND = "traceability_gap"
     LAYERED_VERIFICATION_FINDING_KIND = "layered_verification_finding"
+    DEPENDENCY_CYCLE_KIND = "dependency_cycle"
     DEFAULT_SORT = "oldest"
     # RDR-077 §5 scopes: the default actionable list, the requests held back by
     # a disabled phase, and the requests this user personally removed.
@@ -43,7 +44,8 @@ module Inbox
       TEST_REVIEW_PENDING_KIND,
       PROJECT_SETUP_PENDING_KIND,
       TRACEABILITY_GAP_KIND,
-      LAYERED_VERIFICATION_FINDING_KIND
+      LAYERED_VERIFICATION_FINDING_KIND,
+      DEPENDENCY_CYCLE_KIND
     ].freeze
     KIND_LABELS = KINDS.to_h { |kind| [ kind, kind.titleize ] }.merge(
       ESCALATED_PR_KIND => "Blocked PRs",
@@ -51,7 +53,8 @@ module Inbox
       CHANGE_INTENT_DRAFT_KIND => "CIR Drafts",
       PARTIAL_CLOSEOUT_KIND => "Partial closeouts",
       PROJECT_SETUP_PENDING_KIND => "Project setup",
-      TRACEABILITY_GAP_KIND => "Traceability gaps"
+      TRACEABILITY_GAP_KIND => "Traceability gaps",
+      DEPENDENCY_CYCLE_KIND => "Dependency cycles"
     ).freeze
 
     # The TDD red-phase gate label (RDR-056): test-writing runs apply it to
@@ -158,6 +161,10 @@ module Inbox
         kind == LAYERED_VERIFICATION_FINDING_KIND
       end
 
+      def dependency_cycle?
+        kind == DEPENDENCY_CYCLE_KIND
+      end
+
       # Lane chips default to the kind name, but an unverifiable finding is an
       # access/coverage problem and must not wear the traceability-gap label.
       # @spec OPERATOR-INBOX-020
@@ -225,7 +232,7 @@ module Inbox
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
           intent_conformance? || feature_decision? || retry_limited? || change_intent_draft? || partial_closeout? ||
-          test_review_pending? || project_setup_pending? || traceability_gap? || layered_verification_finding?
+          test_review_pending? || project_setup_pending? || traceability_gap? || layered_verification_finding? || dependency_cycle?
 
         "#{tasks.size} proposed tasks"
       end
@@ -279,7 +286,9 @@ module Inbox
     # @spec OPERATOR-INBOX-015
     def self.find_entry(user:, entry_id:, project: nil, kind: nil)
       entry_kind, record_id = entry_id.to_s.split(":", 2)
-      return unless KINDS.include?(entry_kind) && record_id&.match?(/\A[0-9]+\z/)
+      valid_record_id = record_id&.match?(/\A[0-9]+\z/) ||
+        (entry_kind == DEPENDENCY_CYCLE_KIND && record_id&.match?(/\A[0-9]+(?:-[0-9]+)*\z/))
+      return unless KINDS.include?(entry_kind) && valid_record_id
       return if kind.present? && kind != entry_kind
 
       new(user:, project:, kind: entry_kind, record_id:).find_entry(entry_id.to_s)
@@ -419,6 +428,7 @@ module Inbox
         entries.concat(project_setup_pending_entries) if include_kind?(PROJECT_SETUP_PENDING_KIND)
         entries.concat(traceability_gap_entries) if include_kind?(TRACEABILITY_GAP_KIND)
         entries.concat(layered_verification_finding_entries) if include_kind?(LAYERED_VERIFICATION_FINDING_KIND)
+        entries.concat(dependency_cycle_entries) if include_kind?(DEPENDENCY_CYCLE_KIND)
         entries_by_id = entries.index_by(&:id)
         Inbox::PhaseOwnership.for_entries(entries).each do |entry_id, ownership|
           entries_by_id.fetch(entry_id).instance_variable_set(:@phase_ownership, ownership)
@@ -434,6 +444,36 @@ module Inbox
 
     def include_kind?(entry_kind)
       kind.blank? || kind == entry_kind
+    end
+
+    # A component-derived ID is stable while its membership is stable. Unlike an
+    # issue row it is intentionally not suppressible by an unrelated issue's
+    # Inbox removal, and disappears only when the persisted effective graph no
+    # longer contains the component.
+    # @spec DEPENDENCY-CYCLE-001
+    def dependency_cycle_entries
+      ids = scoped_projects.map(&:id)
+      return [] if ids.empty?
+
+      Issues::EffectiveDependencyCycles.call(account: user.account).filter_map do |cycle|
+        visible_issues = cycle.issues.select { |issue| ids.include?(issue.project_id) }
+        next if visible_issues.empty?
+        next if @record_id && @record_id != cycle.key
+
+        representative = visible_issues.min_by(&:id)
+        Entry.new(
+          id: "#{DEPENDENCY_CYCLE_KIND}:#{cycle.key}",
+          kind: DEPENDENCY_CYCLE_KIND,
+          project: representative.project,
+          issue: nil,
+          record: cycle,
+          waiting_since: cycle.issues.map(&:updated_at).min,
+          questions: [], tasks: [],
+          summary_text: "#{cycle.issues.size}-issue dependency cycle holding #{cycle.downstream_issues.size} downstream #{'issue'.pluralize(cycle.downstream_issues.size)}.",
+          title_text: "Dependency cycle in #{cycle.issues.map { |issue| "##{issue.github_number}" }.join(' → ')}",
+          action_url: nil
+        )
+      end
     end
 
     def sort_entries(entries)

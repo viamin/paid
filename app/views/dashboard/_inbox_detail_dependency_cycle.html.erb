@@ -1,0 +1,26 @@
+<%# @spec DEPENDENCY-CYCLE-001 %>
+<% cycle = entry.record %>
+<div class="space-y-5 text-sm text-gray-700">
+  <div class="rounded-md border border-red-200 bg-red-50 p-4">
+    <h3 class="font-semibold text-red-900">Work cannot progress until this cycle is corrected</h3>
+    <p class="mt-1">Paid will keep the affected work held. Review the declared dependency on GitHub and remove or correct the specific declaration; Paid does not choose an edge to remove.</p>
+  </div>
+
+  <div>
+    <h3 class="font-semibold text-gray-900">Cycle path</h3>
+    <ol class="mt-2 list-decimal space-y-1 pl-5">
+      <% cycle.edges.each do |edge| %>
+        <li>
+          <%= link_to "#{edge.from.project.full_name}##{edge.from.github_number}", edge.from.github_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+          declares a dependency on
+          <%= link_to "#{edge.to.project.full_name}##{edge.to.github_number}", edge.to.github_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-500" %>.
+        </li>
+      <% end %>
+    </ol>
+  </div>
+
+  <div>
+    <h3 class="font-semibold text-gray-900">Downstream work held</h3>
+    <p class="mt-1"><%= pluralize(cycle.downstream_issues.size, "open issue") %> outside this cycle depend on it.</p>
+  </div>
+</div>

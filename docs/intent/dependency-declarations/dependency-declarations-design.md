@@ -47,6 +47,22 @@ live declaration.
 
 ## Decisions & Alternatives
 
+## Existing-cycle recovery
+
+The persisted effective blocking graph is audited account-wide. Its vertices
+are open blocking issues; its edges are local declarations and qualified
+references that resolve to a project in the same account. Parent references
+and targets already treated as nonblocking by admission remain outside this
+projection. Strongly connected components are recovery occurrences, not work
+items: one component has one stable Inbox identity and shows a concrete path,
+the owning declarations, and the open downstream work it holds. The Dashboard
+also renders the component outside its capped per-issue held-work detail.
+
+Recovery is deliberately declarative. Paid directs an operator to inspect and
+remove or correct the named GitHub declaration, but never guesses which edge is
+wrong. An occurrence is derived from the synchronized persisted graph and is
+therefore removed only when that graph no longer contains the component.
+
 | Decision | Chosen | Alternatives Considered | Rationale |
 | --- | --- | --- | --- |
 | Bare-reference admission | Markdown list grammar only within dependency sections | Parse all section prose; semantic keyword heuristics | List syntax is deterministic, intentional, and avoids making an implementation inventory a merge gate. |

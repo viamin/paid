@@ -45,7 +45,7 @@ module Inbox
         escalated_pr_count + manual_review_count + intent_conformance_count + feature_decision_count +
         retry_limited_count + change_intent_draft_count + partial_closeout_count +
         test_review_pending_count + project_setup_pending_count + traceability_gap_count +
-        layered_verification_finding_count
+        layered_verification_finding_count + dependency_cycle_count
       return count unless personal_removals?
 
       [ count - suppressed_removal_count, 0 ].max
@@ -208,6 +208,14 @@ module Inbox
     # @spec LAYERED-VERIFY-015
     def layered_verification_finding_count
       LayeredVerificationFinding.where(project_id: visible_project_ids, status: %w[open deferred]).count
+    end
+
+    # Components, not member issues, are the actionable recovery unit.
+    # @spec DEPENDENCY-CYCLE-001
+    def dependency_cycle_count
+      Issues::EffectiveDependencyCycles.call(account: user.account).count do |cycle|
+        cycle.issues.any? { |issue| visible_project_ids.include?(issue.project_id) }
+      end
     end
 
     # Shares the exact lane computation with Inbox::Queue

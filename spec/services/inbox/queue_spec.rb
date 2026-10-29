@@ -50,6 +50,22 @@ RSpec.describe Inbox::Queue do
   # @spec INBOX-FOUNDATION-003 @spec INBOX-FOUNDATION-004 @spec INBOX-FOUNDATION-009
   # @spec INBOX-FOUNDATION-005 @spec INBOX-FOUNDATION-006
   describe ".call" do
+    # @spec DEPENDENCY-CYCLE-001
+    it "surfaces one stable actionable entry for a dependency cycle" do
+      first = create(:issue, project:, github_state: "open", paid_state: "new")
+      second = create(:issue, project:, github_state: "open", paid_state: "new")
+      create(:issue_dependency, issue: first, depends_on_issue: second)
+      create(:issue_dependency, issue: second, depends_on_issue: first)
+
+      entry = described_class.call(user: user, kind: described_class::DEPENDENCY_CYCLE_KIND).sole
+
+      expect(entry).to have_attributes(
+        id: "dependency_cycle:#{[ first.id, second.id ].sort.join('-')}",
+        title: "Dependency cycle in ##{first.github_number} → ##{second.github_number}"
+      )
+      expect(entry.record.edges.map { |edge| [ edge.from, edge.to ] }).to eq([ [ first, second ], [ second, first ] ])
+    end
+
     # @spec DESIGN-RECONCILIATION-001
     it "returns open design artifact findings as traceability-gap entries" do
       finding = create(:design_artifact_finding, project:, account: account, artifact_path: "docs/rdrs/RDR-063-example.md",

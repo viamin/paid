@@ -7,6 +7,7 @@ module Dashboard
       :project, :total_open, :eligible, :needs_input,
       :skip_label, :completed, :in_progress, :manual_review, :other_excluded,
       :queued, :active, :paused, :unseeded, :held_issues, :diagnostic_state,
+      :dependency_cycles,
       keyword_init: true
     )
 
@@ -39,12 +40,14 @@ module Dashboard
       inputs = projects.to_h { |project| [ project.id, breakdown_inputs(project, tier_feasibility) ] }
       excluded = inputs.values.map { |input| input.fetch(:excluded) }.reduce(&:or)
       held_issues = HeldWorkDetails.call(excluded:, projects:)
+      dependency_cycles = Issues::EffectiveDependencyCycles.call(account: user.account)
       projects.map do |project|
         breakdown_for(
           project,
           input: inputs.fetch(project.id),
           handoff_counts: handoff_counts,
-          held_issues: held_issues.fetch(project.id, [])
+          held_issues: held_issues.fetch(project.id, []),
+          dependency_cycles: dependency_cycles.select { |cycle| cycle.issues.any? { |issue| issue.project_id == project.id } }
         )
       end
     end
@@ -85,7 +88,7 @@ module Dashboard
     end
 
     # @spec OPERATOR-INBOX-002D QUEUE-HANDOFF-001 QUEUE-HANDOFF-002 QUEUE-HANDOFF-003
-    def breakdown_for(project, input:, handoff_counts:, held_issues:)
+    def breakdown_for(project, input:, handoff_counts:, held_issues:, dependency_cycles:)
       eligible_count = input.fetch(:eligible_count)
       excluded = input.fetch(:excluded)
       excluded_total, in_progress, completed, analyzable = input.fetch(:row)
@@ -109,6 +112,7 @@ module Dashboard
         paused: paused,
         unseeded: unseeded,
         held_issues: held_issues,
+        dependency_cycles: dependency_cycles,
         diagnostic_state: diagnostic_state(
           project:, unseeded:, queued:, active:, paused:, total_open: eligible_count + excluded_total
         )
