@@ -63,6 +63,34 @@ RSpec.describe ChatSessions::SendMessage do
       }.to change { chat_session.messages.where(role: "user").count }.by(1)
     end
 
+    # @spec CHAT-TURN-RECOVERY-005
+    it "does not replay a stalled turn when a delivery job is retried" do
+      user_message = create(:chat_message, chat_session: chat_session,
+        role: "user", content: "Hello", metadata: { "stream_message_id" => "retry-1" })
+      create(:chat_turn, :stalled, chat_session: chat_session, user_message: user_message)
+
+      expect(llm_client).not_to receive(:call)
+
+      expect {
+        described_class.call(chat_session: chat_session, content: "Hello",
+          stream_message_id: "retry-1", llm_client: llm_client)
+      }.to raise_error(ChatTurn::RecoveryRequiredError)
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001
+    it "does not enter the agent loop when another delivery claimed the pending turn" do
+      user_message = create(:chat_message, chat_session: chat_session,
+        role: "user", content: "Hello", metadata: { "stream_message_id" => "overlap-1" })
+      create(:chat_turn, chat_session: chat_session, user_message: user_message)
+
+      expect(llm_client).not_to receive(:call)
+
+      expect {
+        described_class.call(chat_session: chat_session, content: "Hello",
+          stream_message_id: "overlap-1", llm_client: llm_client)
+      }.to raise_error(ChatTurn::RecoveryRequiredError)
+    end
+
     # @spec PARTIAL-CLOSEOUT-017 — a conversational "yes" must never be
     # treated, displayed, or replayed as approval of a pending write tool.
     describe "with a pending write-tool confirmation" do
@@ -848,6 +876,89 @@ RSpec.describe ChatSessions::SendMessage do
         )
       end
     end
+  end
+
+  # @spec CHAT-TURN-RECOVERY-001
+  describe "chat turn tracking" do
+    it "creates a pending-turned-streaming turn and completes it on a normal send" do
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: llm_client)
+
+      user_message = chat_session.messages.where(role: "user").first
+      turn = ChatTurn.find_by(user_message: user_message)
+      expect(turn).to be_present
+      expect(turn.status).to eq("completed")
+      expect(turn.completed_at).to be_present
+    end
+
+    it "marks write_tool_dispatched once the loop pauses for a write-tool confirmation" do
+      allow(Tools::Registry).to receive_messages(write_tool?: true, post_dispatch_confirmation?: false)
+
+      described_class.call(
+        chat_session: chat_session,
+        content: "Search for test",
+        llm_client: build_stateful_llm_client([ tool_response(content: "Let me search for that.", tokens_input: 100, tokens_output: 50) ])
+      )
+
+      user_message = chat_session.messages.where(role: "user").first
+      turn = ChatTurn.find_by(user_message: user_message)
+      expect(turn.write_tool_dispatched).to be(true)
+      expect(turn.status).to eq("streaming")
+    end
+
+    # @spec CHAT-TURN-RECOVERY-004
+    it "leaves an ordinary provider loop unclassified for automatic recovery" do
+      observed_turn = nil
+      inspecting_client = lambda do |_conversation, **_kwargs|
+        observed_turn = ChatTurn.find_by!(chat_session: chat_session)
+        llm_response
+      end
+
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: inspecting_client)
+
+      expect(observed_turn.metadata["recovery_classification"]).to be_nil
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001 @spec CHAT-TURN-RECOVERY-002
+    it "refreshes the durable attempt heartbeat while chunks are streaming" do
+      started_at = Time.current
+      observed_heartbeat = nil
+      before_chunk = lambda do
+        travel ChatTurn::HEARTBEAT_INTERVAL + 1.second
+        observed_heartbeat = ChatTurn.find_by!(chat_session: chat_session).attempt_heartbeat_at
+      end
+      client = heartbeat_streaming_client(before_chunk, llm_response)
+
+      described_class.call(chat_session: chat_session, content: "Hello", llm_client: client)
+
+      heartbeat = ChatTurn.find_by!(chat_session: chat_session).attempt_heartbeat_at
+
+      expect(observed_heartbeat).to be_within(1.second).of(started_at)
+      expect(heartbeat).to be > started_at
+    end
+
+    it "fails the turn and re-raises when the loop raises an unexpected error" do
+      failing_client = instance_double(Proc)
+      allow(failing_client).to receive(:call).and_raise(AgentHarness::Error, "provider down")
+
+      expect {
+        described_class.call(chat_session: chat_session, content: "Hello", llm_client: failing_client)
+      }.to raise_error(AgentHarness::Error)
+
+      user_message = chat_session.messages.where(role: "user").first
+      turn = ChatTurn.find_by(user_message: user_message)
+      expect(turn.status).to eq("failed")
+      expect(turn.failure_classification).to eq("provider_error")
+    end
+  end
+
+  def heartbeat_streaming_client(before_chunk, response)
+    Class.new do
+      define_method(:call) do |_conversation, on_chunk: nil|
+        before_chunk.call
+        on_chunk&.call("Still working")
+        response
+      end
+    end.new
   end
 
   def expect_follow_up_tool_round_trip(conversation)

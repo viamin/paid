@@ -193,4 +193,53 @@ RSpec.describe ChatChannel do
       expect(transmissions.last).to include("type" => "error", "message" => "Message exceeds maximum length")
     end
   end
+
+  describe "#recover_stalled_turn" do
+    let(:chat_turn) { create(:chat_turn, :stalled, chat_session: chat_session) }
+
+    before do
+      subscribe(session_id: chat_session.id)
+    end
+
+    # @spec CHAT-TURN-RECOVERY-005 @spec CHAT-TURN-RECOVERY-006
+    it "claims recovery and enqueues the recovery job" do
+      expect(ChatTurns::RecoverStalledTurnJob).to receive(:perform_later).with(
+        hash_including(chat_turn_id: chat_turn.id, actor_id: user.id, triggered_by: "manual")
+      )
+
+      perform :recover_stalled_turn, chat_turn_id: chat_turn.id
+
+      expect(chat_turn.reload.status).to eq("streaming")
+    end
+
+    it "rejects a second concurrent recovery request for the same turn" do
+      chat_turn.claim_recovery!(triggered_by: "automatic")
+
+      expect(ChatTurns::RecoverStalledTurnJob).not_to receive(:perform_later)
+
+      perform :recover_stalled_turn, chat_turn_id: chat_turn.id
+
+      expect(transmissions.last).to include("type" => "error", "message" => "This turn is already being recovered")
+    end
+
+    it "rejects users who cannot send chat messages" do
+      viewer = create(:user, :viewer, account: account)
+      stub_connection current_user: viewer
+      subscribe(session_id: chat_session.id)
+
+      expect(ChatTurns::RecoverStalledTurnJob).not_to receive(:perform_later)
+
+      perform :recover_stalled_turn, chat_turn_id: chat_turn.id
+
+      expect(transmissions.last).to include("type" => "error", "message" => "You are not authorized to resume this conversation")
+    end
+
+    it "errors when the turn does not exist" do
+      expect(ChatTurns::RecoverStalledTurnJob).not_to receive(:perform_later)
+
+      perform :recover_stalled_turn, chat_turn_id: -1
+
+      expect(transmissions.last).to include("type" => "error", "message" => "Stalled turn not found")
+    end
+  end
 end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_28_220000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -886,6 +886,42 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_220000) do
     t.index ["rate_limited_until"], name: "index_chat_sessions_on_rate_limited_until"
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
+  end
+
+  create_table "chat_turn_lifecycle_events", comment: "Append-only audit trail of stall classification, recovery attempts, and outcomes for a chat turn (#4680). Rows are never updated after insert.", force: :cascade do |t|
+    t.bigint "actor_id", comment: "The user who triggered the event, when it was human-initiated (e.g. a manual Resume click)."
+    t.bigint "chat_session_id", null: false
+    t.bigint "chat_turn_id", null: false
+    t.datetime "created_at", null: false
+    t.string "event_name", null: false, comment: "Dotted event name, e.g. chat_turn.stall_detected, chat_turn.recovery_attempted."
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "occurred_at", null: false
+    t.index ["actor_id"], name: "index_chat_turn_lifecycle_events_on_actor_id"
+    t.index ["chat_session_id"], name: "index_chat_turn_lifecycle_events_on_chat_session_id"
+    t.index ["chat_turn_id", "occurred_at"], name: "idx_on_chat_turn_id_occurred_at_87ddf0bbe7"
+    t.index ["chat_turn_id"], name: "index_chat_turn_lifecycle_events_on_chat_turn_id"
+    t.index ["event_name"], name: "index_chat_turn_lifecycle_events_on_event_name"
+  end
+
+  create_table "chat_turns", comment: "Durable lifecycle tracking for one chat turn (#4680), from the triggering user message to a terminal outcome or stall.", force: :cascade do |t|
+    t.datetime "attempt_heartbeat_at", comment: "Throttled durable liveness lease for the currently executing provider loop."
+    t.bigint "chat_session_id", null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.string "failure_classification", comment: "Set when status is failed: rate_limited, provider_error, budget_exhausted, validation_error, unsupported_configuration, or unexpected_error."
+    t.datetime "last_activity_at", null: false, comment: "Last durable checkpoint (a persisted message), not raw streaming chunks."
+    t.jsonb "metadata", default: {}, null: false
+    t.integer "recovery_attempts", default: 0, null: false
+    t.datetime "recovery_locked_at"
+    t.datetime "stall_detected_at"
+    t.datetime "started_at", null: false
+    t.string "status", default: "pending", null: false, comment: "pending, streaming, completed, failed, stalled, or abandoned."
+    t.datetime "updated_at", null: false
+    t.bigint "user_message_id", null: false
+    t.boolean "write_tool_dispatched", default: false, null: false, comment: "True once any write tool call has been persisted for this turn; gates eligibility for automatic (unconfirmed) recovery."
+    t.index ["chat_session_id"], name: "index_chat_turns_on_chat_session_id"
+    t.index ["status", "last_activity_at"], name: "index_chat_turns_on_status_and_last_activity_at"
+    t.index ["user_message_id"], name: "index_chat_turns_on_user_message_id", unique: true
   end
 
   create_table "clarifying_question_progresses", comment: "Durable per-question exploration progress and attributable answer evidence.", force: :cascade do |t|
@@ -4703,6 +4739,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_220000) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "chat_turn_lifecycle_events", "chat_sessions"
+  add_foreign_key "chat_turn_lifecycle_events", "chat_turns"
+  add_foreign_key "chat_turn_lifecycle_events", "users", column: "actor_id"
+  add_foreign_key "chat_turns", "chat_messages", column: "user_message_id"
+  add_foreign_key "chat_turns", "chat_sessions"
   add_foreign_key "clarifying_question_progresses", "accounts"
   add_foreign_key "clarifying_question_progresses", "chat_sessions"
   add_foreign_key "clarifying_question_progresses", "issues"

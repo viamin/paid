@@ -77,6 +77,30 @@ class ChatChannel < ApplicationCable::Channel
     transmit_event("error", { message: "An unexpected error occurred" })
   end
 
+  # @spec CHAT-TURN-RECOVERY-005 @spec CHAT-TURN-RECOVERY-006
+  def recover_stalled_turn(data)
+    return unless @chat_session
+
+    TenantContext.with_system_access do
+      chat_turn = @chat_session.chat_turns.find_by(id: data["chat_turn_id"])
+      return transmit_event("error", { message: "Stalled turn not found" }) unless chat_turn
+      return transmit_event("error", { message: "You are not authorized to resume this conversation" }) unless authorized_to_send_messages?
+
+      unless chat_turn.claim_recovery!(triggered_by: "manual", actor: current_user)
+        return transmit_event("error", { message: "This turn is already being recovered" })
+      end
+
+      ChatTurns::RecoverStalledTurnJob.perform_later(
+        chat_turn_id: chat_turn.id,
+        actor_id: current_user.id,
+        triggered_by: "manual"
+      )
+    end
+  rescue StandardError => e
+    Rails.logger.error(message: "chat_channel.recover_stalled_turn_failed", session_id: @chat_session&.id, error: e.message)
+    transmit_event("error", { message: "An unexpected error occurred" })
+  end
+
   private
 
   def find_session
