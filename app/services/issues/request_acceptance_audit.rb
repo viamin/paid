@@ -10,15 +10,17 @@ module Issues
 
     def self.call(...) = new(...).call
 
-    def initialize(issue:, actor:)
+    def initialize(issue:, actor:, origin: :operator)
       @issue = issue
       @actor = actor
+      @origin = origin
     end
 
     def call
       RequestContinuation.call(
         issue:,
         actor:,
+        origin:,
         reason: REASON,
         goal: "analyze_issue",
         continuation_mode: "acceptance_audit"
@@ -27,6 +29,6 @@ module Issues
 
     private
 
-    attr_reader :actor, :issue
+    attr_reader :actor, :issue, :origin
   end
 end
