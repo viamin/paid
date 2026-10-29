@@ -238,11 +238,15 @@ RSpec.describe ProjectWorkflowManager do
     end
 
     it "skips inactive projects" do
-      create(:project, :inactive)
+      inactive_project = create(:project, :inactive)
+      workflow_handle = instance_double(Temporalio::Client::WorkflowHandle)
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:terminate)
 
       described_class.restart_all_polling(reason: "deploy")
 
-      expect(temporal_client).not_to have_received(:start_workflow)
+      expect(temporal_client).not_to have_received(:workflow_handle)
+        .with("github-poll-#{inactive_project.id}")
     end
 
     it "continues processing other projects when one fails" do

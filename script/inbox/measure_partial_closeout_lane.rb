@@ -50,6 +50,7 @@ module Script
 
       PROJECT_COUNTS = [ 1, 5, 10, 20 ].freeze
       IGNORED_QUERY_NAMES = %w[SCHEMA TRANSACTION CACHE].freeze
+      EXPLAIN_PREFIX = "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ".freeze
 
       def self.call(...)
         new(...).call
@@ -178,20 +179,20 @@ module Script
         project = Project.order(:id).last
         scope = Automation::Strategies::AutoPick::DefaultCandidateSource.eligible_scope(project)
         sql = scope.to_sql
-        simple_sql = "SELECT \"issues\".* FROM \"issues\" WHERE \"issues\".\"project_id\" = #{project.id}"
+        simple_scope = Issue.where(project_id: project.id)
 
         {
           "sql_bytes" => sql.bytesize,
           "exists_clauses" => sql.scan("EXISTS").size,
-          "tenant_policies_applied" => plan_report(sql),
-          "tenant_policies_bypassed" => with_tenant_bypass { plan_report(sql) },
-          "simple_statement_with_policies" => plan_report(simple_sql),
-          "simple_statement_with_policies_bypassed" => with_tenant_bypass { plan_report(simple_sql) }
+          "tenant_policies_applied" => plan_report(scope),
+          "tenant_policies_bypassed" => with_tenant_bypass { plan_report(scope) },
+          "simple_statement_with_policies" => plan_report(simple_scope),
+          "simple_statement_with_policies_bypassed" => with_tenant_bypass { plan_report(simple_scope) }
         }
       end
 
-      def plan_report(sql)
-        plan = ActiveRecord::Base.connection.select_all("EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) #{sql}").rows.first.first
+      def plan_report(scope)
+        plan = ActiveRecord::Base.connection.raw_connection.exec(EXPLAIN_PREFIX + scope.to_sql).first.fetch("QUERY PLAN")
         parsed = JSON.parse(plan).first
         {
           "planning_ms" => parsed["Planning Time"],
