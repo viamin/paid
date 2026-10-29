@@ -15,6 +15,7 @@ module OpenrouterZdr
     end
 
     # @spec FREE-MODEL-SYNC-009
+    # @spec FREE-MODEL-SYNC-012
     def call
       response = connection.get
       raise ResponseError, "OpenRouter ZDR endpoints request failed with status #{response.status}" unless response.success?
@@ -22,7 +23,7 @@ module OpenrouterZdr
       validate_endpoints!(JSON.parse(response.body.to_s).fetch("data"))
     rescue KeyError, TypeError, JSON::ParserError => e
       raise ParseError, "OpenRouter ZDR endpoints response was invalid: #{e.message}"
-    rescue Faraday::TimeoutError, Faraday::ConnectionFailed => e
+    rescue Faraday::Error => e
       raise Error, "OpenRouter ZDR endpoints request failed: #{e.message}"
     end
 

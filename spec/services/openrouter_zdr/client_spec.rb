@@ -10,4 +10,13 @@ RSpec.describe OpenrouterZdr::Client do
 
     expect { described_class.call }.to raise_error(OpenrouterZdr::Client::ParseError, /model_id/)
   end
+
+  # @spec FREE-MODEL-SYNC-012
+  it "normalizes TLS failures as client errors" do
+    stub_request(:get, "https://openrouter.ai/api/v1/endpoints/zdr")
+      .to_raise(Faraday::SSLError.new("certificate verify failed"))
+
+    expect { described_class.call }
+      .to raise_error(OpenrouterZdr::Client::Error, /certificate verify failed/)
+  end
 end
