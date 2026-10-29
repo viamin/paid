@@ -24,7 +24,9 @@ RSpec.describe PartialCloseouts::Advance do
     expect(result.scheduled?).to be(true)
     expect(result.agent_run.trigger_type).to eq("automatic")
     expect(result.agent_run.auto_pick).to be(true)
-    expect(result.agent_run.continuation_request.reason).to include("fresh acceptance audit")
+    expect(result.agent_run.goal).to eq("analyze_issue")
+    expect(result.agent_run.continuation_request.evidence["continuation_mode"]).to eq("acceptance_audit")
+    expect(result.agent_run.continuation_request.reason).to include("report-only acceptance audit")
     expect(run.reload.reconciliation.dig("advance", "outcome")).to eq("scheduled")
   end
 
@@ -77,6 +79,6 @@ RSpec.describe PartialCloseouts::Advance do
     expect(first.scheduled?).to be(true)
     expect(second.scheduled?).to be(true)
     expect(IssueContinuationRequest.where(issue: issue).count).to eq(1)
-    expect(issue.agent_runs.where(goal: "create_pr").count).to eq(2)
+    expect(issue.agent_runs.where(goal: "analyze_issue").count).to eq(1)
   end
 end

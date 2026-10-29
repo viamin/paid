@@ -684,3 +684,18 @@
   *Test:* `spec/services/partial_closeouts/fetch_evidence_artifact_spec.rb`,
   `spec/services/partial_closeouts/validate_submitted_evidence_spec.rb`,
   `spec/services/partial_closeouts/submit_evidence_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-037** — When an open partial closeout has merged-PR or
+  no-code evidence and its acceptance assessment is missing or stale, Paid
+  SHALL automatically queue one report-only acceptance audit for that evidence
+  generation after normal auto-pick, budget, trust, pause, dependency, and
+  continuation guards pass. A completed, failed, cancelled, or operator-requested
+  audit for the same generation SHALL prevent another automatic attempt; new
+  terminal evidence MAY permit one new audit. The sweep SHALL bound new audits
+  per project and SHALL not close the GitHub issue, authorize implementation,
+  or bypass a human prerequisite.
+  *Code:* `app/services/partial_closeouts/auto_audit.rb`,
+  `app/jobs/partial_closeout_acceptance_audit_sweep_job.rb`,
+  `app/services/issues/request_acceptance_audit.rb`.
+  *Test:* `spec/services/partial_closeouts/auto_audit_spec.rb`,
+  `spec/jobs/partial_closeout_acceptance_audit_sweep_job_spec.rb`.
