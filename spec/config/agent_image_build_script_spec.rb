@@ -104,6 +104,11 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include("env:\n      PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD: \"true\"")
     end
 
+    # @spec CONTAINER-RUNTIME-031
+    it "allows enough time for a cold contract-owned CLI rebuild and both smoke suites" do
+      expect(workflow.dig("jobs", "agent-image", "timeout-minutes")).to eq(35)
+    end
+
     # The action ref is asserted as an opaque 40-character SHA instead of a
     # hardcoded pin: Dependabot owns the GitHub Action bump, so naming the exact
     # commit here would turn every bump into a spec edit while asserting nothing

@@ -49,7 +49,9 @@ jobs:
       || contains(fromJson('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
       || contains(fromJson('["dependabot[bot]","renovate[bot]","github-actions[bot]","paid-agents[bot]"]'), github.event.pull_request.user.login)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # A contract-owned CLI update invalidates several expensive image layers.
+    # Leave sufficient headroom for a cold rebuild plus both smoke suites.
+    timeout-minutes: 35
     outputs:
       image_relevant: ${{ steps.changes.outputs.image_relevant }}
     env:
