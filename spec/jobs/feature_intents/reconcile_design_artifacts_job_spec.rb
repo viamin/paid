@@ -260,6 +260,22 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
   end
 
+  # @spec DESIGN-RECONCILIATION-003
+  it "reconciles trusted issues from an account-authorized upstream project" do
+    external_project = create(:project, :upstream_pr_target, account: project.account,
+      owner: "acme", repo: "external")
+    create(:issue, project: external_project, github_number: 201, github_creator_login: "acme")
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-102-external.md", revision: "a" * 40,
+      body: "## Related Issues\n- acme/external#201\n"
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    expect { described_class.perform_now(project.id) }.not_to raise_error
+
+    expect(DesignArtifactFinding.count).to eq(0)
+  end
+
   it "uses a stored Paid feature-intent link without requiring a document repair" do
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
     linked_issue = create(:issue, project:, github_number: 101)

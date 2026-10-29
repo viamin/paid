@@ -152,7 +152,7 @@ module FeatureIntents
     # job.  In particular, it does not retain an Active Record graph for every
     # synchronized issue or repeat the same query for every design artifact.
     class IssueCoverageSnapshot
-      PROJECT_FIELDS = %i[id account_id owner repo allowed_github_usernames pr_target github_installation_id].freeze
+      PROJECT_FIELDS = %i[id account_id owner repo allowed_github_usernames pr_target upstream_full_name github_installation_id].freeze
       ISSUE_FIELDS = %i[id project_id github_number github_state title body github_updated_at github_creator_login is_pull_request].freeze
 
       def initialize(project:, artifacts:, relationship_text:)
