@@ -94,16 +94,33 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     expect(result.outcome).to eq("pending_validation")
   end
 
-  it "updates an identical submission instead of recording a retry twice" do # @spec PARTIAL-CLOSEOUT-033
+  it "does not enqueue duplicate validation for an identical submission retry" do # @spec PARTIAL-CLOSEOUT-033
     attributes = { notification:, actor:, prerequisite_identity: identity,
                    evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
 
-    described_class.call(**attributes)
-    described_class.call(**attributes)
+    expect {
+      described_class.call(**attributes)
+      described_class.call(**attributes)
+    }.to have_enqueued_job(PartialCloseouts::ValidateEvidenceJob)
+      .with(notification.id, identity, attributes[:evidence_url], attributes[:explanation]).exactly(1).times
 
     expect(notification.reload.metadata.fetch("evidence_submissions")).to contain_exactly(
       include("prerequisite_identity" => identity, "evidence_url" => attributes[:evidence_url])
     )
+  end
+
+  it "preserves an identical insufficient submission without revalidating it" do # @spec PARTIAL-CLOSEOUT-033
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+    described_class.call(**attributes)
+    PartialCloseouts::ReconcileEvidence.call(**attributes.except(:actor), outcome: "insufficient", validator: actor)
+
+    result = nil
+    expect { result = described_class.call(**attributes) }
+      .not_to have_enqueued_job(PartialCloseouts::ValidateEvidenceJob)
+
+    expect(result.outcome).to eq("insufficient")
+    expect(notification.reload.metadata.fetch("evidence_submissions").sole).to include("outcome" => "insufficient")
   end
 
   it "reconciles validated sufficient evidence and releases a completed blocker" do # @spec PARTIAL-CLOSEOUT-033

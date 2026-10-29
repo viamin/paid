@@ -631,9 +631,11 @@
   `stale`. Validation SHALL retrieve the artifact through the bounded,
   public-address-only transport and perform the semantic sufficiency judgment
   through `agent_harness`; retrieval, execution, and structured-output failures
-  SHALL reconcile to `unavailable`. Only current sufficient results for every occurrence may resolve the
-  blocking notification; insufficient, unavailable, or stale results SHALL keep
-  the blocker active. An active legacy prerequisite notification without a
+  SHALL reconcile to `unavailable`. An identical retry SHALL preserve its
+  recorded disposition and SHALL NOT schedule another validation. Only current
+  sufficient results for every occurrence may resolve the blocking notification;
+  insufficient, unavailable, or stale results SHALL keep the blocker active. An
+  active legacy prerequisite notification without a
   `prerequisites` array SHALL expose its one persisted prerequisite identity as
   a compatible occurrence and atomically upgrade it with the current source
   revision before recording the submission. The unresolved notification remains

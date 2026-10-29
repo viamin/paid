@@ -151,6 +151,9 @@ persisted as unavailable rather than leaving the submission pending forever.
 A changed source revision makes the submission stale. Only a current,
 explicitly sufficient assessment may release that occurrence; personal
 dismissal remains a distinct scheduling action, never evidence satisfaction.
+An identical retry preserves the recorded disposition and does not schedule a
+second validation; an operator submits changed evidence to request a new
+assessment.
 Active notifications created before occurrence-level metadata are represented as
 one compatible occurrence using their persisted aggregate identity, references,
 and operator guidance. A valid submission atomically upgrades that occurrence
