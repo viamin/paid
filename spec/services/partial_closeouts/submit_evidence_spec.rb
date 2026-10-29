@@ -105,4 +105,42 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
       include("prerequisite_identity" => identity, "evidence_url" => attributes[:evidence_url])
     )
   end
+
+  it "does not release an occurrence until reconciliation marks current evidence sufficient" do # @spec PARTIAL-CLOSEOUT-033
+    described_class.call(notification:, actor:, prerequisite_identity: identity,
+      evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached.")
+    result = PartialCloseouts::ReconcileEvidence.call(notification:, prerequisite_identity: identity,
+      outcome: "insufficient", reason: "The artifact does not cover the approved scope.")
+
+    expect(result).not_to be_released
+    expect(notification.reload).to be_active
+    expect(notification.metadata.fetch("evidence_submissions").sole).to include("outcome" => "insufficient")
+  end
+
+  it "releases the guard only after every current occurrence is sufficient" do # @spec PARTIAL-CLOSEOUT-033
+    second_identity = "occurrence-2"
+    notification.update!(metadata: { "prerequisites" => [ { "identity" => identity }, { "identity" => second_identity } ] })
+    attributes = { notification:, actor:, evidence_url: "https://evidence.example.test/report", explanation: "Validated report." }
+    described_class.call(prerequisite_identity: identity, **attributes)
+    described_class.call(prerequisite_identity: second_identity, **attributes)
+
+    PartialCloseouts::ReconcileEvidence.call(notification:, prerequisite_identity: identity,
+      outcome: "sufficient", reason: "The first occurrence reconciled.")
+    expect(notification.reload).to be_active
+
+    result = PartialCloseouts::ReconcileEvidence.call(notification:, prerequisite_identity: second_identity,
+      outcome: "sufficient", reason: "The second occurrence reconciled.")
+
+    expect(result).to be_released
+    expect(notification.reload.resolved_at).to be_present
+    expect(notification.metadata.fetch("released_by")).to eq("reconciled_evidence")
+  end
+
+  it "rejects a sufficient release without a pending submission" do # @spec PARTIAL-CLOSEOUT-033
+    expect {
+      PartialCloseouts::ReconcileEvidence.call(notification:, prerequisite_identity: identity,
+        outcome: "sufficient", reason: "No evidence was submitted.")
+    }.to raise_error(ArgumentError, "prerequisite evidence has not been submitted")
+    expect(notification.reload).to be_active
+  end
 end
