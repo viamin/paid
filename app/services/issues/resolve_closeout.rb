@@ -14,10 +14,11 @@ module Issues
 
     def self.call(...) = new(...).call
 
-    def initialize(issue:, actor:, reason:)
+    def initialize(issue:, actor:, reason:, client: nil)
       @issue = issue
       @actor = actor
       @reason = reason.to_s.strip
+      @client = client
     end
 
     def call # @spec PARTIAL-CLOSEOUT-006 PARTIAL-CLOSEOUT-037
@@ -50,11 +51,14 @@ module Issues
       end
       return failure(:audit_pending, "A current acceptance audit is required before GitHub can be closed.") unless accepted_assessment?
       return failure(:open_prerequisites, "Current prerequisites or required verification still block GitHub closure.") if closure_blocked?
-      return failure(:github_unavailable, "GitHub closure could not be verified; retry Close on GitHub from this Inbox item.") unless github_open?
+      remote_state = remote_github_state
+      return failure(:github_unavailable, "GitHub closure could not be verified; retry Close on GitHub from this Inbox item.") unless remote_state.in?(%w[open closed])
 
       supersede_open_continuation
-      updated = client.update_issue(issue.project.full_name, issue.github_number, state: "closed", state_reason: "completed")
-      return failure(:github_unavailable, "GitHub did not confirm closure; retry Close on GitHub from this Inbox item.") unless github_closed?(updated)
+      if remote_state == "open"
+        updated = client.update_issue(issue.project.full_name, issue.github_number, state: "closed", state_reason: "completed")
+        return failure(:github_unavailable, "GitHub did not confirm closure; retry Close on GitHub from this Inbox item.") unless github_closed?(updated)
+      end
 
       issue.resolve_closeout!(actor:, evidence_digest: evidence.digest)
       Result.new(issue:)
@@ -73,9 +77,9 @@ module Issues
       status.blockers.any? { |blocker| blocker.code.in?(%i[unmet_prerequisites scanner_verification_pending scanner_verification_retryable scanner_verification_failed open_native_children human_prerequisite_notification]) }
     end
 
-    def github_open?
+    def remote_github_state
       remote = client.issue(issue.project.full_name, issue.github_number)
-      remote.respond_to?(:state) && remote.state == "open"
+      remote.state if remote.respond_to?(:state)
     end
 
     def github_closed?(remote)

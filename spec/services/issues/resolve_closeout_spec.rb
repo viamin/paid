@@ -42,7 +42,7 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     accepted_audit
     digest = Issues::CloseoutEvidence.call(issue).digest
 
-    result = described_class.call(issue: issue, actor: user, reason: "Merged PR #12 covers the remainder.")
+    result = described_class.call(issue: issue, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
 
     expect(result.success?).to be(true)
     issue.reload
@@ -55,7 +55,7 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
   end
 
   it "requires closeout evidence" do
-    result = described_class.call(issue: issue, actor: user, reason: "done")
+    result = described_class.call(issue: issue, actor: user, reason: "done", client: github_client)
 
     expect(result.success?).to be(false)
     expect(result.code).to eq(:not_stalled)
@@ -67,7 +67,7 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     merged_partial_pr(number: 12)
     accepted_audit
 
-    result = described_class.call(issue: issue, actor: user, reason: " ")
+    result = described_class.call(issue: issue, actor: user, reason: " ", client: github_client)
 
     expect(result.code).to eq(:invalid_reason)
   end
@@ -79,7 +79,7 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     merged_partial_pr(number: 12)
     accepted_audit
 
-    result = described_class.call(issue: issue, actor: user, reason: "Operator attests the recorded closeout evidence completes ##{issue.github_number}.")
+    result = described_class.call(issue: issue, actor: user, reason: "Operator attests the recorded closeout evidence completes ##{issue.github_number}.", client: github_client)
 
     expect(result.success?).to be(false)
     expect(result.code).to eq(:generic_reason)
@@ -94,7 +94,8 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     result = described_class.call(
       issue: issue,
       actor: user,
-      reason: "Merged PR #12 plus the recorded no-code declaration cover every acceptance criterion in the issue body."
+      reason: "Merged PR #12 plus the recorded no-code declaration cover every acceptance criterion in the issue body.",
+      client: github_client
     )
 
     expect(result.success?).to be(true)
@@ -104,7 +105,7 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     merged_partial_pr(number: 12)
     accepted_audit
 
-    described_class.call(issue: issue, actor: user, reason: "Merged PR #12 covers the remainder.")
+    described_class.call(issue: issue, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
 
     event = account.account_activity_events.where(action: "issue.closeout_resolved").last
     expect(event).to be_present
@@ -119,7 +120,7 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
     run = create(:agent_run, project: project, issue: issue, continuation_request: request, goal: "create_pr", status: "queued")
 
-    result = described_class.call(issue: issue, actor: user, reason: "The merged PR completes the issue.")
+    result = described_class.call(issue: issue, actor: user, reason: "The merged PR completes the issue.", client: github_client)
 
     expect(result).to be_success
     expect(issue.reload.paid_state).to eq("completed")
@@ -132,7 +133,7 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     merged_partial_pr(number: 12)
     issue.update!(github_state: "closed", closed_at: Time.current)
 
-    result = described_class.call(issue: issue.reload, actor: user, reason: "done")
+    result = described_class.call(issue: issue.reload, actor: user, reason: "done", client: github_client)
 
     expect(result.success?).to be(false)
   end
@@ -140,7 +141,7 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
   it "refuses closure until a current audit accepts every criterion" do # @spec PARTIAL-CLOSEOUT-037
     merged_partial_pr(number: 12)
 
-    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.")
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
 
     expect(result.code).to eq(:audit_pending)
     expect(github_client).not_to have_received(:update_issue)
@@ -151,7 +152,7 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     merged_partial_pr(number: 12)
     accepted_audit
 
-    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the scanner finding.")
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the scanner finding.", client: github_client)
 
     expect(result.code).to eq(:scanner_managed)
     expect(result.message).to include("authoritative code-scanning snapshot")
@@ -165,10 +166,36 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     accepted_audit
     allow(github_client).to receive(:update_issue).and_raise(GithubClient::Error, "timeout")
 
-    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.")
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
 
     expect(result.code).to eq(:github_failed)
     expect(result.message).to include("retry Close on GitHub")
+    expect(issue.reload.github_state).to eq("open")
+  end
+
+  it "reconciles an observed GitHub closure without requesting closure again" do # @spec PARTIAL-CLOSEOUT-037
+    merged_partial_pr(number: 12)
+    accepted_audit
+    allow(github_client).to receive(:issue).and_return(Struct.new(:state).new("closed"))
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result).to be_success
+    expect(github_client).not_to have_received(:update_issue)
+    expect(issue.reload.github_state).to eq("closed")
+    expect(issue.paid_state).to eq("completed")
+    expect(issue.closeout_resolved_by).to eq(user)
+  end
+
+  it "keeps the actionable item retryable when GitHub state is unavailable" do # @spec PARTIAL-CLOSEOUT-037
+    merged_partial_pr(number: 12)
+    accepted_audit
+    allow(github_client).to receive(:issue).and_return(Object.new)
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result.code).to eq(:github_unavailable)
+    expect(github_client).not_to have_received(:update_issue)
     expect(issue.reload.github_state).to eq("open")
   end
 end
