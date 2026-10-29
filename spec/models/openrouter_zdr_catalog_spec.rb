@@ -17,7 +17,11 @@ RSpec.describe OpenrouterZdrCatalog do
       catalog.update!(last_successful_at: Time.current)
       expect(catalog.setup_state).to eq("empty")
 
-      create(:openrouter_zdr_model, model_id: "vendor/eligible")
+      model = create(:llm_model, :inactive, model_id: "vendor/eligible")
+      create(:openrouter_zdr_model, model_id: model.model_id)
+      expect(catalog.setup_state).to eq("empty")
+
+      model.update!(active: true)
       expect(catalog.setup_state).to eq("ready")
       expect(catalog).to be_ready_for_setup
     end

@@ -22,7 +22,7 @@ class OpenrouterZdrCatalog < ApplicationRecord
     return "unavailable" unless available?
     return "loading" if last_successful_at.nil?
     return "stale" if last_successful_at < SETUP_STALE_AFTER.ago
-    return "empty" unless OpenrouterZdrModel.exists?
+    return "empty" unless OpenrouterZdr::EligibleModels.models.exists?
 
     "ready"
   end
