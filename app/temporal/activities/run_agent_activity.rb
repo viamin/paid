@@ -584,18 +584,21 @@ module Activities
               error: e.message,
               duration_seconds: attempt_duration
             )
+            fallback_remaining = eligible_fallback_candidates(
+              runners[(index + 1)..].to_a,
+              agent_run: agent_run,
+              user_settings: user_settings,
+              runner_states: runner_states
+            )
+            break if fallback_remaining.blank?
+
             if container_unavailable_for_fallback?(agent_run)
               break unless recover_container_for_fallback!(
                 agent_run: agent_run,
                 runner: runner,
                 error_type: "preflight_timeout",
                 error_message: e.message,
-                fallback_remaining: eligible_fallback_candidates(
-                  runners[(index + 1)..].to_a,
-                  agent_run: agent_run,
-                  user_settings: user_settings,
-                  runner_states: runner_states
-                )
+                fallback_remaining: fallback_remaining
               )
             end
           rescue RunnerAuthExpiredError => e
@@ -1958,7 +1961,7 @@ module Activities
       raise RunnerExecutionError, "Docker exec error: #{e.message}"
     end
 
-    # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-049
+    # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-050
     def run_runner_preflight!(agent_run:, execution_environment:, command_context:, runner:, execution_env:)
       # Run the runner-owned harness preflight (auth, CLI version,
       # OPENAI_BASE_URL reachability) when available — fails fast before

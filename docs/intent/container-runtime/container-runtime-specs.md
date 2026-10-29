@@ -864,7 +864,7 @@
   *Tests:* `spec/services/network_policy_spec.rb`
   *Code:* `NetworkPolicy.create_network`, `NetworkPolicy.ensure_network!`
 
-- [x] **CONTAINER-RUNTIME-049** — When execution-preparation cleanup removes a
+- [x] **CONTAINER-RUNTIME-050** — When execution-preparation cleanup removes a
   run's environment after a smoke timeout, retry orchestration SHALL confirm
   the persisted environment reference and live environment state before issuing
   another smoke command. An unavailable environment SHALL preserve the timeout

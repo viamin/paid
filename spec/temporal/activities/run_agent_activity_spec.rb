@@ -3838,7 +3838,7 @@ expect(container_service).to receive(:execute).with(
         )
       end
 
-      it "retries the smoke execution once when the execution environment remains live" do # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-049
+      it "retries the smoke execution once when the execution environment remains live" do # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-050
         opencode_provider = create_opencode_provider_for(user)
         timeout_error = Containers::Provision::TimeoutError.new("Command timed out after 60 seconds")
         allow(container_service).to receive(:execute).and_raise(timeout_error)
@@ -3901,7 +3901,7 @@ expect(container_service).to receive(:execute).with(
         expect(container_service).to have_received(:execute).twice
       end
 
-      it "preserves the first timeout and its diagnostics when cleanup invalidates the container" do # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-049
+      it "preserves the first timeout and its diagnostics when cleanup invalidates the container" do # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-050
         timeout_error = Containers::Provision::TimeoutError.new(
           "Command timed out after 60 seconds",
           diagnostics: { "elapsed_seconds" => 60, "output_received" => true }
@@ -4130,6 +4130,7 @@ expect(container_service).to receive(:execute).with(
       it "opens the runner circuit after three consecutive preflight timeouts and skips later runs during cooldown" do
         runner = user.runners.find_by!(runner_key: "claude")
         user.settings.update!(circuit_breaker_failure_threshold: 10)
+        allow(Containers::Provision).to receive(:reconnect).and_return(container_service)
         allow(activity).to receive(:run_agent_with_runner).and_raise(
           described_class::PreflightTimeoutError,
           "Preflight check failed: Runner smoke preflight timed out after 30s"
@@ -4642,7 +4643,7 @@ expect(container_service).to receive(:execute).with(
         end
       end
 
-      it "records the preflight timeout and recovers only for the fallback runner" do # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-049
+      it "records the preflight timeout and recovers only for the fallback runner" do # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-050
         result = activity.execute(agent_run_id: agent_run.id)
 
         agent_run.reload
