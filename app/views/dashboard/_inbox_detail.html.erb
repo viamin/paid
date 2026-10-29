@@ -36,6 +36,9 @@
 </div>
 
 <div class="px-4 py-5 sm:px-6">
+  <% if entry.issue %>
+    <%= render "dashboard/inbox_workflow_milestones", projection: Inbox::WorkflowProjection.call(issue: entry.issue) %>
+  <% end %>
   <% if entry.clarifying_questions? %>
     <%= render "dashboard/inbox_detail_clarifying_questions",
           entry: entry,

@@ -51,6 +51,7 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       payload = described_class.render(entry)
 
       expect(payload).to include(blockers: guidance.fetch(:blockers), guidance: guidance)
+      expect(payload.fetch(:workflow)).to include(:milestones, :current)
     end
 
     it "serializes action_required with its remediation steps" do

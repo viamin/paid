@@ -1,0 +1,26 @@
+<%# @spec OPERATOR-INBOX-023 %>
+<% current = projection.current %>
+<section class="mb-6 rounded-xl border border-sky-200 bg-sky-50 p-4" aria-labelledby="workflow-milestones-heading">
+  <h3 id="workflow-milestones-heading" class="text-sm font-semibold text-sky-950">Workflow milestones</h3>
+  <% if current %>
+    <p class="mt-1 text-sm font-medium text-sky-900" role="status">
+      Next action: <%= current.fetch(:next_action) %>
+    </p>
+  <% end %>
+  <ol class="mt-3 flex flex-wrap gap-2" aria-label="Workflow milestones">
+    <% projection.milestones.each do |milestone| %>
+      <%= tag.li(**(milestone == current ? { aria: { current: "step" } } : {})) do %>
+        <details class="rounded-md border border-sky-200 bg-white px-2 py-1 text-xs text-sky-950">
+          <summary class="cursor-pointer"><%= milestone.fetch(:label) %>: <%= milestone.fetch(:state).humanize %></summary>
+          <div class="mt-2 space-y-1 text-sky-900">
+            <p><%= milestone.fetch(:next_action) %></p>
+            <% if milestone[:revision] %><p>Revision: <code><%= milestone[:revision] %></code></p><% end %>
+            <% if milestone[:actor] %><p>Who can act: <%= milestone[:actor] %></p><% end %>
+            <% Array(milestone[:evidence]).each do |evidence| %><p>Evidence: <%= evidence["sanitized_message"] || evidence["signal"] %></p><% end %>
+            <% if milestone[:url] %><%= link_to "View workflow on GitHub", milestone[:url], target: "_blank", rel: "noopener noreferrer", class: "font-medium underline" %><% end %>
+          </div>
+        </details>
+      <% end %>
+    <% end %>
+  </ol>
+</section>

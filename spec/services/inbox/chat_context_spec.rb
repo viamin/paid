@@ -29,6 +29,15 @@ RSpec.describe Inbox::ChatContext do
     expect(chat_session.messages).to be_empty
   end
 
+  it "returns the same typed workflow projection only when explicitly requested" do
+    # @spec OPERATOR-INBOX-023
+    issue.update!(is_pull_request: true, pr_review_phase: "ready")
+
+    context = described_class.call(chat_session:, user:, sections: [ :workflow ])
+
+    expect(context.fetch("workflow")).to include(:milestones, :current)
+  end
+
   it "rejects context access after comment permission is removed" do
     # @spec QUESTION-EXPLORATION-014
     chat_session

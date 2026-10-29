@@ -439,6 +439,24 @@ bump, and PR label writes are rare relative to issue traffic.
 
 ## Shared planning-decision context
 
+## Workflow milestones
+
+`Inbox::WorkflowProjection` is the read-only, typed status contract for an
+issue or pull request. It turns persisted workflow facts — linked feature
+approval, strict-TDD verdict, review phase, auto-merge assessment, and merge
+policy — into independently actionable gates. It does not query GitHub or
+perform a semantic assessment. The selected Inbox pane renders its compact
+milestone strip plus expandable gate evidence from this projection; the Inbox
+API and contextual chat return the same payload. This deliberately makes the
+manual-merge gate separate from owner approval, even when the latter is
+complete. Queue construction and count queries do not invoke it, preserving
+their bounded local-query cost.
+
+The accessible strip uses text state labels as well as visual treatment,
+semantic list/headings, an `aria-current` current gate, and a screen-reader
+status summary. Expanded gates keep simultaneous blockers separate instead of
+inventing an execution order.
+
 `feature_decision` remains one feature-scoped Inbox entry even when its open
 decision holds several linked implementation tasks. `Inbox::FeatureDecisionContext`
 projects the already-authoritative `FeatureDecisionReadiness` result alongside

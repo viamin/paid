@@ -5,7 +5,7 @@ module Inbox
   # Nothing here is inserted into a session prompt at open time.
   # @spec QUESTION-EXPLORATION-014
   class ChatContext
-    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout].freeze
+    SECTIONS = %w[work_item comments review_comments labels queue_metadata agent_run_output record partial_closeout workflow].freeze
 
     def self.call(...)
       new(...).call
@@ -98,6 +98,13 @@ module Inbox
       chat_session.project.agent_runs.where(issue:).order(created_at: :desc).limit(5).includes(:agent_run_logs).map do |run|
         { id: run.id, status: run.status, output: run.agent_run_logs.map(&:content) }
       end
+    end
+
+    # @spec OPERATOR-INBOX-023
+    def workflow
+      return {} unless issue
+
+      Inbox::WorkflowProjection.call(issue:).to_h
     end
 
     # Record-backed lanes are not necessarily issue-backed. Resolve them when

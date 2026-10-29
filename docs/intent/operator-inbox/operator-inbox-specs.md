@@ -734,6 +734,26 @@
   `app/services/inbox/intent_conformance.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`.
 
+- [x] **OPERATOR-INBOX-023** — When an Inbox item is backed by an issue or
+  pull request, the system SHALL expose one typed workflow projection to the
+  detail pane, supported Inbox API, and requested contextual-chat record. The
+  projection SHALL label each applicable design, test-review, implementation,
+  code-review, owner-approval, and merge gate as completed, current, waiting,
+  blocked, stale, not-applicable, or unknown; it SHALL preserve independently
+  outstanding gates rather than implying they are linear. Its current gate
+  SHALL state the exact next action and distinguish manual merge from approval.
+  Each gate SHALL carry its evidence, revision, actor, and relevant surface
+  link when available. The Inbox list and count SHALL NOT build this projection
+  or make remote calls per row.
+  *Code:* `app/services/inbox/workflow_projection.rb`,
+  `app/views/dashboard/_inbox_workflow_milestones.html.erb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb`,
+  `app/services/inbox/chat_context.rb`.
+  *Test:* `spec/services/inbox/workflow_projection_spec.rb`,
+  `spec/views/dashboard/inbox_workflow_milestones_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
+  `spec/services/inbox/chat_context_spec.rb`.
+
 - [x] **OPERATOR-INBOX-020** — The traceability-gap Inbox lane, its badge
   count, filter availability, detail and direct-link access, and the supported
   API surfaces SHALL share one actionability rule with reconciliation and the

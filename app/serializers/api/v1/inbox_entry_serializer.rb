@@ -21,7 +21,7 @@ module Api
       end
 
       def render
-        common_fields.merge(kind_payload)
+        common_fields(workflow: true).merge(kind_payload)
       end
 
       def render_list
@@ -32,8 +32,8 @@ module Api
 
       attr_reader :entry
 
-      def common_fields
-        {
+      def common_fields(workflow: false)
+        fields = {
           id: entry.id,
           kind: entry.kind,
           waiting_since: entry.waiting_since&.iso8601,
@@ -42,6 +42,8 @@ module Api
           summary: entry.summary,
           action_url: entry.action_url
         }
+        fields[:workflow] = Inbox::WorkflowProjection.call(issue: entry.issue).to_h if workflow && entry.issue
+        fields
       end
 
       def project
