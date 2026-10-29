@@ -88,7 +88,19 @@ The projection is a read model, not a second admission authority:
 ### Read model
 
 The projection is stored per project, matching the unit the lane already
-batches on, and carries one row per stalled issue:
+batches on. A project-level checkpoint records every recomputation, including
+an empty result:
+
+| Field | Meaning |
+| --- | --- |
+| `project_id` | the owning project and unique checkpoint identity |
+| `computed_at` | when the last successful projection was committed; null until one succeeds |
+| `generation` | identity of the last successful atomic replacement |
+| `input_watermark` | the newest admission-relevant input included in that computation |
+| `last_failure_at` | when the latest failed attempt occurred, if any |
+| `last_failure` | bounded failure metadata for operator diagnosis, if any |
+
+Stalled-issue rows belong to that checkpoint:
 
 | Field | Meaning |
 | --- | --- |
@@ -97,11 +109,15 @@ batches on, and carries one row per stalled issue:
 | `evidence_digest` | the outcome-generation digest the stall was computed against |
 | `status` | the recorded outcome and the reason continuation cannot proceed |
 | `blockers` | the additive structured blockers `CloseoutStatus` produces |
-| `computed_at` | when the projection was last recomputed |
+| `projection_generation` | the checkpoint generation that produced the row |
 
-A project with no stalled issue has no rows; the absence of rows is the
-"nothing is stalled" answer, and a stale row is removed by the recomputation
-that supersedes it.
+A successful recomputation atomically replaces the project's stalled-issue
+rows and advances its checkpoint. A project with no stalled issue therefore
+has a successful checkpoint and zero child rows; zero rows without a
+successful checkpoint means the project has not been evaluated successfully.
+The checkpoint row may still carry failure metadata from an unsuccessful
+initial attempt. A stale row is removed by the successful recomputation that
+supersedes it.
 
 ### Triggers
 
@@ -118,19 +134,29 @@ admission or lane membership:
 - admission-relevant runner configuration (the tier feasibility set),
 - feature-intent release and design-revision state.
 
-A project-level sweep recomputes any project whose inputs changed since its
-last projection, so a missed trigger self-heals rather than stranding a stall.
+A project-level sweep compares admission-relevant inputs with each checkpoint's
+`input_watermark` and recomputes any project whose inputs changed since its
+last successful projection. Projects without a successful checkpoint are
+always due, so a missed trigger or interrupted initial backfill self-heals
+rather than stranding a stall.
 
 ### Freshness and failure semantics
 
 - The projection is advisory about *presence* and *reason*; the live preflight
   is authoritative about *admission*.
-- A recomputation that fails leaves the previous projection in place and
-  records the failure; it never deletes rows on failure.
+- A recomputation that fails leaves the previous checkpoint and its child rows
+  in place and records bounded failure metadata; it never deletes rows or
+  advances `computed_at` / `input_watermark` on failure.
 - A recomputation that succeeds removes the rows for issues that are no longer
-  stalled, so the lane never shows an issue the live scope would admit.
-- The projection records `computed_at`, so a consumer can distinguish "no
-  stall" from "not evaluated yet".
+  stalled and advances the checkpoint in the same transaction, so the lane
+  never observes new checkpoint metadata with old membership.
+- A successful checkpoint with zero child rows means "evaluated with no
+  stalls." An absent checkpoint or one with null `computed_at` means "not
+  evaluated successfully yet"; the reader reports that project as unevaluated
+  and uses the existing live path for it until a recomputation succeeds.
+  Initial flag enablement schedules the recomputation before switching that
+  project to projection reads, so this fallback is limited to interrupted
+  bootstrap or checkpoint loss.
 
 ### Tenant isolation
 
@@ -142,23 +168,27 @@ runs under the owning account's tenant context.
 
 `Inbox::Queue`, `Inbox::Count`, and `Inbox::Availability` read one shared
 projection reader, so the lane list, the nav badge, and the filter matrix can
-never disagree about whether an issue is stalled. The reader performs no
-`eligible_scope` evaluation.
+never disagree about whether an issue is stalled. For a project with a
+successful checkpoint, the reader performs no `eligible_scope` evaluation;
+the explicitly unevaluated fallback above preserves the current live path.
 
 ## Rollout Guard
 
 The proposal ships behind a `FeatureFlags` key, `partial_closeout_lane_read_model`,
 defaulting to off. While it is off the lane keeps evaluating live admission.
 Enablement is per project, matching how `Automation::RolloutGuard` exposes
-other staged behaviors. Rollback is disabling the flag, which restores the
-live path with no schema change and no data migration of operator-visible
-state. The key is added to `FeatureFlags::DEFINITIONS` by the implementation
-issue, not by this proposal.
+other staged behaviors. Enabling first schedules an initial recomputation and
+switches the project to projection reads only after its checkpoint commits;
+until then the project remains on the live path. Rollback is disabling the
+flag, which restores the live path with no schema change and no data migration
+of operator-visible state. The key is added to `FeatureFlags::DEFINITIONS` by
+the implementation issue, not by this proposal.
 
 ## Validation criteria
 
-- An Inbox index render for an operator whose projects have stalls issues no
-  `eligible_scope` evaluation, and the lane's entries match the projection.
+- An Inbox index render for an operator whose projects have successful
+  checkpoints issues no `eligible_scope` evaluation, and the lane's entries
+  match the projection.
 - `Inbox::Queue`, `Inbox::Count`, and `Inbox::Availability` report the same
   membership for the same operator.
 - A continuation requested from a projected lane entry is still decided by the
@@ -168,6 +198,10 @@ issue, not by this proposal.
   it.
 - A failed recomputation keeps the previous projection and does not delete
   rows.
+- A successfully evaluated project with no stalls has a non-null `computed_at`
+  and zero child rows; an absent or never-successful checkpoint is
+  distinguishable and remains on the live path until its initial computation
+  commits.
 - Another account's project never appears in the projection or the lane.
 
 ## Alternatives considered

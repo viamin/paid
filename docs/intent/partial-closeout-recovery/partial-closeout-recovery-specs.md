@@ -182,7 +182,10 @@
   issue's closeout evidence, blocking runs, continuation request, explicit
   holds, or admission-relevant runner configuration change; SHALL remove a
   projected stall that the live admission scope no longer holds; SHALL keep the
-  previous projection when a recomputation fails; and SHALL keep
+  previous projection when a recomputation fails; SHALL atomically persist a
+  project checkpoint for every successful recomputation, including an empty
+  result, so an evaluated project with no stalls is distinguishable from an
+  unevaluated project; and SHALL keep
   `DefaultCandidateSource.eligible_scope` as the final admission authority at
   continuation preflight, at the dequeue recheck, and at run start. The
   projection SHALL be tenant-isolated and SHALL never grant a continuation or
@@ -197,8 +200,11 @@
 - [ ] **PARTIAL-CLOSEOUT-035** — Pending the owner decision recorded for #4558,
   the partial-closeout lane's list, nav-badge count, and filter matrix SHALL
   read one shared projection reader and SHALL report the same lane membership
-  for the same operator; an Inbox index render SHALL evaluate no
-  `DefaultCandidateSource.eligible_scope` on its request path; and an
+  for the same operator; for each project with a successful projection
+  checkpoint, an Inbox index render SHALL evaluate no
+  `DefaultCandidateSource.eligible_scope` on its request path; a project with
+  no successful checkpoint SHALL remain on the live path until a recomputation
+  succeeds; and an
   operator action taken from a projected lane entry SHALL still be decided by
   the live scoped continuation preflight.
   *Issue:* #4558.

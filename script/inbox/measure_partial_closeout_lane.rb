@@ -150,6 +150,10 @@ module Script
       # Runs the block with SQL and `eligible_scope` instrumentation and
       # reports what it cost.
       def measure_call
+        connection = ActiveRecord::Base.connection
+        # Each consumer normally starts in a separate request query-cache
+        # context; do not let an earlier measurement warm a later one.
+        connection.clear_query_cache
         statements = []
         subscriber = lambda do |_name, started, finished, _id, payload|
           next if IGNORED_QUERY_NAMES.include?(payload[:name]) || payload[:cached]
@@ -158,7 +162,9 @@ module Script
         end
         EligibleScopeProbe.calls = 0
         started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
-        ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") { yield }
+        ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+          connection.uncached { yield }
+        end
         wall_ms = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1_000
 
         {
