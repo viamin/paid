@@ -133,3 +133,19 @@
   `AgentRuns::IssueDispatchFailureHistory`, `Issue`.
   *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`,
   `spec/services/agent_runs/issue_dispatch_failure_history_spec.rb`.
+
+- [ ] **RUNNER-FALLBACK-013** — When `agent-harness` reports a structured
+  provider subscription usage limit for a runner attempt, the system SHALL
+  record that public attempt as `rate_limited`, mark the corresponding
+  `RunnerState` unavailable until the provider-supplied reset time or a bounded
+  subscription-limit retry window, and continue to eligible fallback runners.
+  When every eligible runner is limited, the system SHALL park the run for
+  recovery rather than report a generic execution or preflight failure.
+  Diagnostics and notifications SHALL distinguish subscription usage limits
+  from metered credit exhaustion, SHALL NOT tell subscription users to top up a
+  metered balance, and SHALL NOT retain credentials or raw provider response
+  bodies. Paid SHALL consume the public `agent-harness` result and SHALL NOT
+  add provider-specific CLI parsing or direct provider calls.
+  *Dependency:* `viamin/agent-harness#517`.
+  *Target code:* `Activities::RunAgentActivity`, `RunnerState`.
+  *Target test:* `spec/temporal/activities/run_agent_activity_spec.rb`.
