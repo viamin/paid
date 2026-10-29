@@ -14,12 +14,15 @@ module FacetConfidence
         new(notification).then { _1 if _1.applicable? }
       end
 
-      def self.active_for?(issue)
-        Notification.active.where(
-          account: issue.project.account,
-          subject: issue,
-          source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE
-        ).any? { |notification| notification.metadata["workflow"] == WORKFLOW }
+      # CloseoutStatus groups every active human-prerequisite notification for
+      # one issue into one blocker. Only clear that blocker when every recorded
+      # notification is this workflow; otherwise a generic human prerequisite
+      # remains an unrelated, fail-closed blocker.
+      def self.resolves_blocker?(blocker)
+        return false unless blocker.code == :human_prerequisite_notification
+
+        notifications = Array(blocker.evidence&.fetch("notifications", nil))
+        notifications.any? && notifications.all? { |notification| notification.dig("metadata", "workflow") == WORKFLOW }
       end
 
       def initialize(notification)

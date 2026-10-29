@@ -70,7 +70,9 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::Start do
       title: "Independent evaluation needed", description: "Internal wording is not used by the Inbox presentation.",
       metadata: { "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW })
     escalation = Issues::CloseoutStatus::Blocker.new(code: :human_prerequisite_notification,
-      message: "The evaluation is waiting for an independent maintainer.", evidence: { "notification_id" => notification.id }, recovery: "Start evaluation.")
+      message: "The evaluation is waiting for an independent maintainer.",
+      evidence: { "notifications" => [ { "notification_id" => notification.id, "metadata" => notification.metadata } ] },
+      recovery: "Start evaluation.")
     unrelated = Issues::CloseoutStatus::Blocker.new(code: :unmet_prerequisites,
       message: "#4316 is open", evidence: {}, recovery: "Complete #4316.")
 
@@ -84,6 +86,27 @@ RSpec.describe FacetConfidence::CloseoutEvaluation::Start do
 
     expect(result).not_to be_success
     expect(result.error).to include("#4316 is open")
+  end
+
+  it "keeps a combined human-notification blocker when one notification is unrelated" do
+    typed_notification = create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      metadata: { "workflow" => FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW })
+    blocker = Issues::CloseoutStatus::Blocker.new(
+      code: :human_prerequisite_notification,
+      message: "Two human prerequisites remain.",
+      evidence: { "notifications" => [
+        { "notification_id" => typed_notification.id, "metadata" => typed_notification.metadata },
+        { "notification_id" => 99_999, "metadata" => {} }
+      ] },
+      recovery: "Complete both prerequisites."
+    )
+
+    result = described_class.call(project:, issue:, actor: owner,
+      status: instance_double(Issues::CloseoutStatus::Result, blockers: [ blocker ]))
+
+    expect(result).not_to be_success
+    expect(result.error).to include("Two human prerequisites remain.")
   end
 
   it "refuses an originating work item outside the project" do

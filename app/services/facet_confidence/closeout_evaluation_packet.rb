@@ -49,8 +49,6 @@ module FacetConfidence
       end
     end
 
-    def evaluation_escalation_blocker?(blocker)
-      blocker.code == :human_prerequisite_notification && CloseoutEvaluation::InboxEscalation.active_for?(issue)
-    end
+    def evaluation_escalation_blocker?(blocker) = CloseoutEvaluation::InboxEscalation.resolves_blocker?(blocker)
   end
 end

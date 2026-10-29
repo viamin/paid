@@ -78,9 +78,7 @@ module FacetConfidence
       # The typed escalation is cleared by this exact evaluation. It must not
       # block its own authorized start, while every unrelated closeout blocker
       # continues to fail closed.
-      def evaluation_escalation_blocker?(blocker)
-        blocker.code == :human_prerequisite_notification && InboxEscalation.active_for?(@issue)
-      end
+      def evaluation_escalation_blocker?(blocker) = InboxEscalation.resolves_blocker?(blocker)
 
       def log_started(evaluation, resumed:)
         Rails.logger.info(
