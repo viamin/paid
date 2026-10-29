@@ -47,6 +47,20 @@ RSpec.describe Inbox::ManualReviewRecovery do
   end
 
   # @spec OPERATOR-INBOX-002L
+  it "offers new-remediation authorization only for a scanner-confirmed recurrence, not a still-pending attempt" do
+    confirmed_issue = create(:issue, project:, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+      paid_state: "manual_review")
+    create(:code_scanning_remediation_attempt, issue: confirmed_issue, status: "verification_failed")
+
+    pending_issue = create(:issue, project:, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+      paid_state: "manual_review")
+    create(:code_scanning_remediation_attempt, issue: pending_issue, status: "verification_blocked")
+
+    expect(described_class.call(issue: confirmed_issue).authorize_new_remediation?).to be(true)
+    expect(described_class.call(issue: pending_issue).authorize_new_remediation?).to be(false)
+  end
+
+  # @spec OPERATOR-INBOX-002L
   it "keeps an unprovenanced manual-review hold visibly unknown" do
     issue = create(:issue, project:, paid_state: "manual_review", manual_review_reason: "operator note")
 

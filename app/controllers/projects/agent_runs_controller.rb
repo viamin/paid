@@ -519,6 +519,48 @@ module Projects
       redirect_to safe_return_target || dashboard_path, **(result.success? ? { notice: result.message } : { alert: result.message })
     end
 
+    # A scanner-confirmed recurrence (`verification_failed`) is the one
+    # scanner hold that is an operator decision rather than a wait for the
+    # automatic verifier: it queues one new create_pr run, scoped exactly
+    # like resume_manual_review's enhancement retry. `verification_blocked`
+    # (still pending/insufficient evidence) is refused here because
+    # SecurityAlerts::VerifyMergedRemediationAttempts already revisits it on
+    # the next scan (EAGER-QUEUE-013); a competing manually-triggered fix PR
+    # would race that verifier.
+    # @spec OPERATOR-INBOX-002L
+    def authorize_scanner_remediation
+      authorize @project, :run_agent?
+
+      issue = resolve_manual_review_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = Inbox::ManualReviewRecovery.call(issue:)
+      unless recovery.authorize_new_remediation?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This manual-review hold has no scanner-confirmed recurrence to authorize new remediation for."
+        return
+      end
+
+      if issue.agent_runs.where(status: AgentRun::UNFINISHED_STATUSES).exists?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "An existing queued or running run must be reconciled before resuming this hold."
+        return
+      end
+
+      create_enhance_issue_runs_and_redirect(
+        issue_ids: [ issue.id ],
+        on_error_path: safe_return_target || dashboard_path,
+        success_path: safe_return_target || dashboard_path,
+        custom_prompt: nil,
+        goal: "create_pr",
+        priority_tier: nil,
+        run_label: "scanner remediation"
+      )
+    end
+
     # Operator-driven counterpart to
     # RunAgentActivity#clear_issue_runner_retry_abandonment: clears
     # runner_retry_abandoned_at / runner_retry_abandon_reason so the issue
@@ -1704,7 +1746,7 @@ module Projects
       redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."
     end
 
-    def create_enhance_issue_runs_and_redirect(issue_ids:, on_error_path:, custom_prompt:, goal:, priority_tier:, success_path: project_path(@project))
+    def create_enhance_issue_runs_and_redirect(issue_ids:, on_error_path:, custom_prompt:, goal:, priority_tier:, success_path: project_path(@project), run_label: "issue enhancement")
       budget_result = CostBudgets::Check.call(@project)
       unless budget_result[:allowed]
         redirect_to on_error_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
@@ -1717,13 +1759,15 @@ module Projects
         return
       end
 
-      # Filter out issues that already have active (unfinished) enhance_issue runs
+      # Filter out issues that already have an active (unfinished) run of
+      # this same goal, so a dedup check against a different goal's run
+      # (e.g. enhance_issue) never masks a genuinely new request.
       active_issue_ids = @project.agent_runs
-        .where(issue_id: issues.map(&:id), goal: "enhance_issue", status: AgentRun::UNFINISHED_STATUSES)
+        .where(issue_id: issues.map(&:id), goal: goal, status: AgentRun::UNFINISHED_STATUSES)
         .pluck(:issue_id)
       issues = issues.where.not(id: active_issue_ids) if active_issue_ids.any?
       if issues.empty?
-        redirect_to on_error_path, alert: "All selected issues already have active enhancement runs."
+        redirect_to on_error_path, alert: "All selected issues already have an active #{run_label} run."
         return
       end
 
@@ -1749,9 +1793,9 @@ module Projects
       ProcessRunQueueJob.perform_later
 
       notice = if issues.size == 1
-        "Agent run queued for issue enhancement."
+        "Agent run queued for #{run_label}."
       else
-        "#{issues.size} agent runs queued for issue enhancement."
+        "#{issues.size} agent runs queued for #{run_label}."
       end
       redirect_to success_path, notice: notice
     rescue NoRunnableRunnerError => e

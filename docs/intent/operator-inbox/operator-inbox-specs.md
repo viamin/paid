@@ -187,10 +187,17 @@
   the issue to normal admission; it SHALL not create an enhancement run.
   Dependency holds SHALL link to their owner/reference and remain held until
   that dependency resolves. Scanner recurrence SHALL retain scanner evidence
-  and its verification recovery. Only enhancement holds retain the existing
-  question form and enhancement retry. Before any enhancement retry or reopen
-  decision clears a hold, the service SHALL refuse when queued or running work
-  for the issue still needs reconciliation.
+  and its verification recovery: a `verification_failed` attempt (the scanner
+  reconfirmed the finding in a matching post-merge analysis) SHALL expose an
+  "Authorize new remediation" action that queues one new create_pr run and
+  returns the issue to normal admission; a `verification_blocked` attempt
+  (pending or insufficient evidence) SHALL NOT offer that action, since
+  `SecurityAlerts::VerifyMergedRemediationAttempts` already revisits it on the
+  next scan and a competing manually-triggered fix PR would race that
+  verifier. Only enhancement holds retain the existing question form and
+  enhancement retry. Before any enhancement retry, scanner remediation
+  authorization, or reopen decision clears a hold, the service SHALL refuse
+  when queued or running work for the issue still needs reconciliation.
   *Code:* `app/services/inbox/manual_review_recovery.rb`,
   `app/services/issues/resolve_reopen_review.rb`,
   `app/controllers/projects/agent_runs_controller.rb`,

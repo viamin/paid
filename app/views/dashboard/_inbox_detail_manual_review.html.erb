@@ -8,8 +8,10 @@
         This issue was reopened after closure. Record a current-revision intent decision before Paid evaluates supported continuation.
       <% elsif recovery.dependency? %>
         Work remains held by an unresolved dependency. This acknowledgement cannot waive that dependency.
+      <% elsif recovery.authorize_new_remediation? %>
+        Scanner evidence confirms the finding recurred after the merged fix. Review the evidence below, then authorize one new remediation run if another fix attempt is appropriate.
       <% elsif recovery.scanner? %>
-        Scanner evidence found the remediation incomplete. Review the evidence; the scanner's supported verification recovery remains in control.
+        Scanner verification is still pending or incomplete. No operator action is needed; the verifier revisits it on the next scan.
       <% elsif recovery.enhancement? && entry.questions.any? %>
         Paid stopped enhancing this issue and preserved its latest clarifying questions. Answer them below to resume, or start a new enhancement run.
       <% elsif recovery.enhancement? %>
@@ -73,6 +75,19 @@
         <%= link_to "Open dependency ##{dependency.github_number}", dependency.github_url, target: "_blank", rel: "noopener noreferrer", class: "mt-2 inline-block font-semibold underline" %>
       <% else %>
         <p class="mt-1"><%= dependency.external_ref %> must resolve before this issue can be reevaluated.</p>
+      <% end %>
+    </div>
+  <% elsif recovery.authorize_new_remediation? %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-4">
+      <h3 class="text-sm font-semibold text-amber-900">Authorize new remediation</h3>
+      <p class="mt-1 text-sm text-amber-800">The scanner confirmed this finding recurred after the merged fix. Starting a new remediation run queues one more create-PR attempt; only do this if another fix attempt is appropriate.</p>
+      <% if policy(entry.project).run_agent? %>
+        <%= button_to "Start remediation run",
+              authorize_scanner_remediation_project_agent_runs_path(entry.project, issue_id: entry.issue.id),
+              method: :post,
+              params: { return_to: inbox_path(**inbox_query_params(project: scoped_project, kind: selected_kind)) },
+              class: "mt-3 inline-flex items-center rounded-md bg-amber-700 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-amber-600",
+              form: { data: { turbo_confirm: "Queue one new remediation run for #{entry.project.full_name}##{entry.issue.github_number}?", turbo_frame: "_top" } } %>
       <% end %>
     </div>
   <% elsif recovery.unknown? %>

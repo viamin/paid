@@ -5,12 +5,18 @@ module Inbox
   # is presentation context, not an authority to select a recovery path.
   # @spec OPERATOR-INBOX-002L
   class ManualReviewRecovery
-    Recovery = Data.define(:kind, :dependency) do
+    Recovery = Data.define(:kind, :dependency, :scanner_attempt) do
       def enhancement? = kind == :enhancement
       def reopen_review? = kind == :reopen_review
       def dependency? = kind == :dependency
       def scanner? = kind == :scanner
       def unknown? = kind == :unknown
+
+      # Only a scanner-confirmed recurrence (`verification_failed`) is an
+      # operator decision to authorize new remediation; `verification_blocked`
+      # stays with the automatic verifier (EAGER-QUEUE-013), which revisits it
+      # on the next scan without a competing manually-triggered fix PR.
+      def authorize_new_remediation? = scanner? && scanner_attempt&.status == "verification_failed"
     end
 
     def self.call(...) = new(...).call
@@ -20,12 +26,12 @@ module Inbox
     end
 
     def call
-      return Recovery.new(kind: :reopen_review, dependency: nil) if issue.reopen_review_pending?
-      return Recovery.new(kind: :dependency, dependency: blocking_dependency) if blocking_dependency
-      return Recovery.new(kind: :scanner, dependency: nil) if scanner_recurrence?
-      return Recovery.new(kind: :enhancement, dependency: nil) if enhancement_hold?
+      return Recovery.new(kind: :reopen_review, dependency: nil, scanner_attempt: nil) if issue.reopen_review_pending?
+      return Recovery.new(kind: :dependency, dependency: blocking_dependency, scanner_attempt: nil) if blocking_dependency
+      return Recovery.new(kind: :scanner, dependency: nil, scanner_attempt: scanner_attempt) if scanner_recurrence?
+      return Recovery.new(kind: :enhancement, dependency: nil, scanner_attempt: nil) if enhancement_hold?
 
-      Recovery.new(kind: :unknown, dependency: nil)
+      Recovery.new(kind: :unknown, dependency: nil, scanner_attempt: nil)
     end
 
     private
@@ -41,8 +47,11 @@ module Inbox
     end
 
     def scanner_recurrence?
-      issue.code_scanning_remediation_attempts.latest_per_issue
-        .where(status: %w[verification_failed verification_blocked]).exists?
+      scanner_attempt&.status.in?(%w[verification_failed verification_blocked])
+    end
+
+    def scanner_attempt
+      @scanner_attempt ||= issue.code_scanning_remediation_attempts.latest_per_issue.first
     end
 
     def enhancement_hold?

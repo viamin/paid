@@ -2795,6 +2795,97 @@ RSpec.describe "AgentRuns" do
     end
   end
 
+  describe "POST /projects/:project_id/agent_runs/authorize_scanner_remediation" do
+    let(:recurrent_issue) do
+      create(:issue, project: project, github_number: 4732, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+        paid_state: "manual_review", manual_review_reason: "Code-scanning alert #1 recurred.")
+    end
+
+    before { create(:code_scanning_remediation_attempt, issue: recurrent_issue, status: "verification_failed") }
+
+    context "when not authenticated" do
+      # @spec OPERATOR-INBOX-002L
+      it "redirects to the sign in page" do
+        post authorize_scanner_remediation_project_agent_runs_path(project), params: { issue_id: recurrent_issue.id }
+
+        expect(response).to redirect_to(new_user_session_path)
+        expect(recurrent_issue.reload.paid_state).to eq("manual_review")
+      end
+    end
+
+    context "when authenticated without permission to run agents" do
+      let(:outsider) { create(:user) }
+
+      before { sign_in outsider }
+
+      # @spec OPERATOR-INBOX-002L
+      it "refuses to queue a run" do
+        post authorize_scanner_remediation_project_agent_runs_path(project), params: { issue_id: recurrent_issue.id }
+
+        expect(response).not_to have_http_status(:ok)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      # @spec OPERATOR-INBOX-002L
+      it "queues a manual create_pr run for the scanner-confirmed recurrence and clears the hold" do
+        expect {
+          post authorize_scanner_remediation_project_agent_runs_path(project), params: { issue_id: recurrent_issue.id }
+        }.to change(AgentRun, :count).by(1)
+
+        agent_run = AgentRun.last
+        expect(agent_run.issue).to eq(recurrent_issue)
+        expect(agent_run.goal).to eq("create_pr")
+        expect(agent_run.trigger_type).to eq("manual")
+        expect(recurrent_issue.reload.paid_state).to eq("in_progress")
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "refuses a scanner attempt that is still pending verification, not confirmed recurrent" do
+        pending_issue = create(:issue, project: project, github_number: 4733,
+          source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE, paid_state: "manual_review")
+        create(:code_scanning_remediation_attempt, issue: pending_issue, status: "verification_blocked")
+
+        expect {
+          post authorize_scanner_remediation_project_agent_runs_path(project), params: { issue_id: pending_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(pending_issue.reload.paid_state).to eq("manual_review")
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "refuses a non-scanner manual-review hold" do
+        enhancement_issue = create(:issue, project: project, github_number: 4734, paid_state: "manual_review",
+          manual_review_reason: "Round limit reached.")
+
+        expect {
+          post authorize_scanner_remediation_project_agent_runs_path(project), params: { issue_id: enhancement_issue.id }
+        }.not_to change(AgentRun, :count)
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "refuses when queued work for the issue still needs reconciliation" do
+        create(:agent_run, :queued, project: project, issue: recurrent_issue)
+
+        expect {
+          post authorize_scanner_remediation_project_agent_runs_path(project), params: { issue_id: recurrent_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("must be reconciled")
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "refuses when no issue is selected" do
+        post authorize_scanner_remediation_project_agent_runs_path(project), params: {}
+
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:alert]).to eq("Please select an issue.")
+      end
+    end
+  end
+
   describe "POST /projects/:project_id/agent_runs/clear_retry_abandonment" do
     let(:capped_issue) do
       create(:issue,
