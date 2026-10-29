@@ -9,7 +9,7 @@ module PartialCloseouts
   # @spec PARTIAL-CLOSEOUT-033
   class SubmitEvidence
     OUTCOMES = %w[pending_validation sufficient insufficient stale unavailable].freeze
-    Result = Data.define(:outcome, :reason, :notification, :new_submission) do
+    Result = Data.define(:outcome, :reason, :notification, :submission_id, :new_submission) do
       def sufficient? = outcome == "sufficient"
       def new_submission? = new_submission
     end
@@ -30,7 +30,7 @@ module PartialCloseouts
         PrerequisiteOccurrences.upgrade!(notification)
         record_submission!
       end
-      enqueue_validation if result.new_submission? && result.outcome == "pending_validation"
+      enqueue_validation(result) if result.new_submission? && result.outcome == "pending_validation"
       result
     end
 
@@ -50,17 +50,29 @@ module PartialCloseouts
     def record_submission!
       submissions = Array(notification.metadata["evidence_submissions"])
       existing_submission = submissions.find { |submission| duplicate_submission?(submission) }
-      return result_for(existing_submission, new_submission: false) if existing_submission
+      return result_for(existing_submission, new_submission: false) if existing_submission&.key?("submission_id")
+      return assign_submission_id!(submissions, existing_submission) if existing_submission
 
-      entry = { "prerequisite_identity" => prerequisite_identity, "evidence_url" => evidence_url,
+      entry = { "submission_id" => SecureRandom.uuid, "prerequisite_identity" => prerequisite_identity, "evidence_url" => evidence_url,
                 "explanation" => explanation, "actor_id" => actor.id, "submitted_at" => Time.current.iso8601,
                 "source_revision" => occurrence.fetch("source_revision", nil), "outcome" => outcome, "reason" => reason }
       notification.update!(metadata: notification.metadata.merge("evidence_submissions" => submissions + [ entry ]))
       result_for(entry, new_submission: true)
     end
 
+    def assign_submission_id!(submissions, submission)
+      identified_submission = submission.merge("submission_id" => SecureRandom.uuid)
+      identified_submissions = submissions.dup
+      identified_submissions[identified_submissions.index(submission)] = identified_submission
+      notification.update!(metadata: notification.metadata.merge(
+        "evidence_submissions" => identified_submissions
+      ))
+      result_for(identified_submission, new_submission: identified_submission["outcome"] == "pending_validation")
+    end
+
     def result_for(submission, new_submission:)
-      Result.new(outcome: submission.fetch("outcome"), reason: submission.fetch("reason"), notification:, new_submission:)
+      Result.new(outcome: submission.fetch("outcome"), reason: submission.fetch("reason"), notification:,
+        submission_id: submission.fetch("submission_id"), new_submission:)
     end
 
     def duplicate_submission?(submission)
@@ -97,8 +109,8 @@ module PartialCloseouts
       false
     end
 
-    def enqueue_validation
-      ValidateEvidenceJob.perform_later(notification.id, prerequisite_identity, evidence_url, explanation)
+    def enqueue_validation(result)
+      ValidateSubmittedEvidenceJob.perform_later(notification.id, prerequisite_identity, result.submission_id)
     end
 
     def occurrence

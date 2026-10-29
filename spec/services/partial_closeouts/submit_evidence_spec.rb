@@ -19,7 +19,17 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     expect(result.outcome).to eq("pending_validation")
     expect(notification.reload).to be_active
     expect(notification.metadata.fetch("evidence_submissions").last).to include("actor_id" => actor.id,
-      "prerequisite_identity" => identity, "outcome" => "pending_validation")
+      "prerequisite_identity" => identity, "outcome" => "pending_validation", "submission_id" => be_present)
+  end
+
+  it "queues semantic validation after recording the pending submission" do # @spec PARTIAL-CLOSEOUT-036
+    described_class.call(notification:, actor:, prerequisite_identity: identity,
+      evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached.")
+    submission_id = notification.reload.metadata.fetch("evidence_submissions").sole.fetch("submission_id")
+
+    expect(PartialCloseouts::ValidateSubmittedEvidenceJob).to have_been_enqueued.with(
+      notification.id, identity, submission_id
+    )
   end
 
   it "upgrades a legacy prerequisite notification before recording its evidence" do # @spec PARTIAL-CLOSEOUT-033
@@ -101,11 +111,44 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     expect {
       described_class.call(**attributes)
       described_class.call(**attributes)
-    }.to have_enqueued_job(PartialCloseouts::ValidateEvidenceJob)
-      .with(notification.id, identity, attributes[:evidence_url], attributes[:explanation]).exactly(1).times
+    }.to have_enqueued_job(PartialCloseouts::ValidateSubmittedEvidenceJob).exactly(1).times
 
     expect(notification.reload.metadata.fetch("evidence_submissions")).to contain_exactly(
       include("prerequisite_identity" => identity, "evidence_url" => attributes[:evidence_url])
+    )
+  end
+
+  it "assigns an immutable ID before validating a matching legacy pending submission" do # @spec PARTIAL-CLOSEOUT-036
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+    notification.update!(metadata: notification.metadata.merge("evidence_submissions" => [ {
+      "prerequisite_identity" => identity, "evidence_url" => attributes[:evidence_url],
+      "explanation" => attributes[:explanation], "outcome" => "pending_validation", "reason" => "Awaiting validation."
+    } ]))
+
+    result = nil
+    expect { result = described_class.call(**attributes) }
+      .to have_enqueued_job(PartialCloseouts::ValidateSubmittedEvidenceJob)
+
+    expect(result.submission_id).to be_present
+    expect(notification.reload.metadata.fetch("evidence_submissions").sole.fetch("submission_id")).to eq(result.submission_id)
+  end
+
+  it "preserves an identical submission when another occurrence is submitted between retries" do # @spec PARTIAL-CLOSEOUT-033
+    other_identity = "occurrence-2"
+    notification.update!(metadata: { "prerequisites" => [ { "identity" => identity }, { "identity" => other_identity } ] })
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+
+    described_class.call(**attributes)
+    described_class.call(notification:, actor:, prerequisite_identity: other_identity,
+      evidence_url: "https://evidence.example.test/other", explanation: "Other report attached.")
+    result = described_class.call(**attributes)
+
+    submissions = notification.reload.metadata.fetch("evidence_submissions")
+    expect(submissions).to contain_exactly(
+      include("prerequisite_identity" => identity, "submission_id" => result.submission_id),
+      include("prerequisite_identity" => other_identity)
     )
   end
 
@@ -117,7 +160,7 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
 
     result = nil
     expect { result = described_class.call(**attributes) }
-      .not_to have_enqueued_job(PartialCloseouts::ValidateEvidenceJob)
+      .not_to have_enqueued_job(PartialCloseouts::ValidateSubmittedEvidenceJob)
 
     expect(result.outcome).to eq("insufficient")
     expect(notification.reload.metadata.fetch("evidence_submissions").sole).to include("outcome" => "insufficient")
