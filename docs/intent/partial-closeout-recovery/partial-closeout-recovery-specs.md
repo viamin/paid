@@ -324,7 +324,11 @@
   closing on GitHub. An open issue SHALL remain actionable until GitHub confirms
   closure; stale, unmet, unknown, blocked, and API-failed closure requests SHALL
   retain an actionable item with the exact fresh-audit, prerequisite, work, or
-  retry route. Resolution and continuation creation
+  retry route. Synthetic code-scanning records SHALL refuse the GitHub Issue
+  close action with guidance to wait for or repair authoritative scanner
+  reconciliation; source closure for those records SHALL be observed from an
+  authoritative code-scanning snapshot rather than the GitHub Issues API.
+  Resolution and continuation creation
   SHALL serialize on the issue: resolving SHALL supersede an open continuation
   authorization and cancel its unclaimed queued run before recording the
   resolution, so no continuation can dispatch after the issue is declared

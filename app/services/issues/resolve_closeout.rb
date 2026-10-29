@@ -44,6 +44,10 @@ module Issues
     def resolve
       evidence = CloseoutEvidence.call(issue)
       return failure(:not_stalled, "This issue has no terminal closeout evidence.") unless evidence.present? && issue.github_state == "open"
+      if issue.source == Issue::SYNTHETIC_CODE_SCANNING_SOURCE
+        return failure(:scanner_managed, "This record has no GitHub Issue to close. Wait for or repair the next " \
+          "authoritative code-scanning snapshot so scanner reconciliation can observe source closure.")
+      end
       return failure(:audit_pending, "A current acceptance audit is required before GitHub can be closed.") unless accepted_assessment?
       return failure(:open_prerequisites, "Current prerequisites or required verification still block GitHub closure.") if closure_blocked?
       return failure(:github_unavailable, "GitHub closure could not be verified; retry Close on GitHub from this Inbox item.") unless github_open?

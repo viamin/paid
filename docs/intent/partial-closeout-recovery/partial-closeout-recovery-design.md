@@ -224,7 +224,11 @@ requests GitHub closure. A successful response records the actor, rationale,
 and evidence digest and marks the local issue closed, clearing the derived
 Inbox item. A stale or blocked request refuses without mutation; a GitHub API
 failure retains the item and its exact **Close on GitHub** retry route.
-Reopening or new terminal evidence follows the normal current-assessment path.
+Synthetic code-scanning records have no corresponding GitHub Issue, so this
+action refuses them with scanner-reconciliation guidance; their source closure
+is observed from an authoritative code-scanning snapshot by
+`SecurityAlerts::ReconcileResolved`. Reopening or new terminal evidence follows
+the normal current-assessment path.
 
 ### Surfaces
 

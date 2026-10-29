@@ -10,9 +10,11 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
   let(:github_client) { instance_double(GithubClient) }
 
   before do
-    allow_any_instance_of(Project).to receive(:client).and_return(github_client)
-    allow(github_client).to receive(:issue).and_return(Struct.new(:state).new("open"))
-    allow(github_client).to receive(:update_issue).and_return(Struct.new(:state).new("closed"))
+    allow(project).to receive(:client).and_return(github_client)
+    allow(github_client).to receive_messages(
+      issue: Struct.new(:state).new("open"),
+      update_issue: Struct.new(:state).new("closed")
+    )
   end
 
   def merged_partial_pr(number:)
@@ -142,6 +144,20 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
 
     expect(result.code).to eq(:audit_pending)
     expect(github_client).not_to have_received(:update_issue)
+  end
+
+  it "routes synthetic scanner records to authoritative alert reconciliation" do # @spec PARTIAL-CLOSEOUT-006
+    issue.update!(source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
+    merged_partial_pr(number: 12)
+    accepted_audit
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the scanner finding.")
+
+    expect(result.code).to eq(:scanner_managed)
+    expect(result.message).to include("authoritative code-scanning snapshot")
+    expect(github_client).not_to have_received(:issue)
+    expect(github_client).not_to have_received(:update_issue)
+    expect(issue.reload.github_state).to eq("open")
   end
 
   it "keeps the actionable item retryable when GitHub rejects closure" do # @spec PARTIAL-CLOSEOUT-037
