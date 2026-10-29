@@ -178,6 +178,48 @@ RSpec.describe Inbox::Queue do
       )
     end
 
+    # @spec INBOX-FOUNDATION-008
+    it "surfaces an explicit review hold when the synced PR phase is still draft" do
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry).to have_attributes(
+        issue: pr,
+        summary_text: "Human review requested before merging",
+        waiting_since: pr.github_updated_at
+      )
+      expect(pr.reload.pr_review_phase).to eq("draft")
+    end
+
+    # @spec INBOX-FOUNDATION-008 LABEL-CONTROL-004
+    it "surfaces the local review hold when label integration is ignored" do
+      project.update!(label_integration_mode: "ignored")
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        pr_review_phase: "draft",
+        hold_for_review: true,
+        labels: [],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry).to have_attributes(issue: pr, summary_text: "Human review requested before merging")
+      expect(pr.reload.pr_review_phase).to eq("draft")
+    end
+
     # @spec INBOX-PHASE-RELEVANCE-003
     it "keeps merge approvals accessible in Disabled phases when merge is disabled" do
       FeatureFlags.enable!(:automation_phases, project:)
@@ -361,6 +403,22 @@ RSpec.describe Inbox::Queue do
       entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
 
       expect(entries.map(&:issue)).not_to include(pr)
+    end
+
+    it "surfaces a stale draft PR after its creating run terminates without finalization" do # @spec INBOX-FOUNDATION-008
+      stalled_pr = create_stalled_draft_pr(github_number: 44)
+      expired_pr = create_stalled_draft_pr(github_number: 45, completed_at: 31.days.ago)
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries.map(&:issue)).to include(stalled_pr)
+      expect(entries.map(&:issue)).not_to include(expired_pr)
+      entry = entries.find { |candidate| candidate.issue == stalled_pr }
+      expect(entry).to have_attributes(
+        summary_text: "Automation stopped before review readiness"
+      )
+      expect(entry.guidance.fetch(:instruction)).to include("has not confirmed this pull request is merge-ready")
+      expect(stalled_pr.reload.pr_review_phase).to eq("draft")
     end
 
     # @spec OPERATOR-INBOX-002B @spec NOTIFICATION-SEVERITY-008
@@ -1285,7 +1343,7 @@ RSpec.describe Inbox::Queue do
 
       issue_lane_kinds.each do |kind|
         issue_query = capture_queries { described_class.call(user:, kind:) }
-          .find { |sql| sql.start_with?("SELECT \"issues\".* FROM \"issues\"") }
+          .find { |sql| sql.match?(/\ASELECT "issues"\.\*(?:,| FROM)/) }
 
         expect(issue_query).to be_present
         expect(issue_query).not_to include("\"projects\".\"log_data\"")
@@ -1670,6 +1728,14 @@ RSpec.describe Inbox::Queue do
         not_evaluated: []
       )
     )
+  end
+
+  def create_stalled_draft_pr(github_number:, completed_at: Time.current)
+    pr = create(:issue, :pull_request, project: project, github_number: github_number,
+      pr_review_phase: "draft", labels: [], auto_merge_evaluated_at: nil, auto_merge_blockers: nil)
+    create(:agent_run, :timeout, project: project, pull_request_number: pr.github_number,
+      goal: "create_pr", completed_at: completed_at)
+    pr
   end
 
   def create_intent_conformance_pr(github_number: 50)

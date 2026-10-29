@@ -3,6 +3,8 @@
 module Inbox
   class MergeApproval
     APPROVAL_SIGNALS = %w[owner_approved reviews_fresh].freeze
+    STALLED_EXECUTION_WINDOW = 30.days
+    STALLED_EXECUTION_STATUSES = AgentRun::TERMINAL_FAILURE_STATUSES.freeze
 
     def self.call(issue, phase_authorized: nil)
       new(issue, phase_authorized:).call
@@ -16,30 +18,45 @@ module Inbox
     # can't drift between the badge, the filters dialog, and the queue.
     # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-004
     def self.candidates(project_ids)
+      stalled_execution_condition = self.stalled_execution_condition
+
       Issue
         .joins(:project)
         .preload(:project)
+        .select(Issue.arel_table[Arel.star], Arel.sql("(#{stalled_execution_condition}) AS stalled_execution_candidate"))
         .where(
           project_id: project_ids,
           is_pull_request: true,
           github_state: "open",
-          pr_review_phase: "ready",
           merge_permission_rejected_at: nil
         )
-        .where(candidate_conditions)
+        .where(candidate_conditions(stalled_execution_condition))
     end
 
-    def self.candidate_conditions
+    def self.candidate_conditions(stalled_execution_condition)
       Issue.sanitize_sql_array([
-        "(projects.label_integration_mode <> 'ignored' AND issues.labels @> :hold_label::jsonb) OR " \
+          "(projects.label_integration_mode <> 'ignored' AND issues.labels @> :hold_label::jsonb) OR " \
           "(projects.label_integration_mode = 'ignored' AND issues.hold_for_review = TRUE) OR (" \
-          "issues.auto_merge_evaluated_at IS NOT NULL AND " \
+          "issues.pr_review_phase = 'ready' AND issues.auto_merge_evaluated_at IS NOT NULL AND " \
           "issues.auto_merge_blockers IS NOT NULL AND (" \
-          "projects.auto_merge_mode = 'off' OR projects.owner_reviewer_login IS NOT NULL))",
+          "projects.auto_merge_mode = 'off' OR projects.owner_reviewer_login IS NOT NULL)) OR " \
+          "(issues.pr_review_phase = 'draft' AND #{stalled_execution_condition})",
         hold_label: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ].to_json
       ])
     end
     private_class_method :candidate_conditions
+
+    def self.stalled_execution_condition
+      Issue.sanitize_sql_array([
+        "EXISTS (SELECT 1 FROM agent_runs WHERE agent_runs.project_id = issues.project_id " \
+        "AND agent_runs.goal = 'create_pr' AND agent_runs.pull_request_number = issues.github_number " \
+        "AND agent_runs.status IN (:stalled_statuses) " \
+        "AND COALESCE(agent_runs.completed_at, agent_runs.updated_at) >= :cutoff)",
+        stalled_statuses: STALLED_EXECUTION_STATUSES,
+        cutoff: STALLED_EXECUTION_WINDOW.ago
+      ])
+    end
+    private_class_method :stalled_execution_condition
 
     def initialize(issue, phase_authorized: nil)
       @issue = issue
@@ -49,20 +66,22 @@ module Inbox
     def call
       return unless candidate?
 
-      Snapshot.new(issue:, blockers: failed_blockers, phase_authorized:)
+      Snapshot.new(issue:, blockers: failed_blockers, phase_authorized:, stalled_execution: stalled_execution?)
     end
 
     class Snapshot
-      attr_reader :blockers, :issue, :phase_authorized
+      attr_reader :blockers, :issue, :phase_authorized, :stalled_execution
 
-      def initialize(issue:, blockers:, phase_authorized: nil)
+      def initialize(issue:, blockers:, phase_authorized: nil, stalled_execution: false)
         @issue = issue
         @blockers = blockers
         @phase_authorized = phase_authorized
+        @stalled_execution = stalled_execution
       end
 
       def summary
         return "Human review requested before merging" if held_for_review?
+        return "Automation stopped before review readiness" if stalled_execution?
         return "Approval is stale for the current revision" if stale_approval?
         return "Human review required before manual merge" if manual_merge? && approval_required?
         return "Manual merge decision required" if manual_merge?
@@ -100,6 +119,10 @@ module Inbox
         issue.held_for_review?
       end
 
+      def stalled_execution?
+        stalled_execution
+      end
+
       def manual_merge?
         !automatic_merge_active?
       end
@@ -118,6 +141,7 @@ module Inbox
 
       def guidance_heading
         return "Human review is on hold" if held_for_review?
+        return "Automation stopped before review readiness" if stalled_execution?
         return "Approval is stale for the current revision" if stale_approval?
         return "Manual merge decision on GitHub" if manual_merge?
 
@@ -126,6 +150,7 @@ module Inbox
 
       def guidance_instruction
         return held_review_instruction if held_for_review?
+        return stalled_execution_instruction if stalled_execution?
         return stale_approval_instruction if stale_approval?
         return "Review the current changes and make the manual merge decision on GitHub. Paid will not merge this pull request automatically." if manual_merge?
 
@@ -136,6 +161,10 @@ module Inbox
         return "Review the current changes and make the manual merge decision on GitHub. Paid will not merge this pull request automatically." if manual_merge?
 
         "Review the current changes and remove the hold when automatic merging may resume."
+      end
+
+      def stalled_execution_instruction
+        "Review the current changes on GitHub. Paid has not confirmed this pull request is merge-ready and will reassess it after execution recovery completes."
       end
 
       def stale_approval_instruction
@@ -214,6 +243,8 @@ module Inbox
       # @spec AUTO-MERGE-009 INBOX-FOUNDATION-008 INBOX-FOUNDATION-011 OPERATOR-INBOX-002K LABEL-CONTROL-004
       return false unless reviewable_pr?
       return true if held_for_review?
+      return true if stalled_execution?
+      return false unless normal_reviewable_pr?
       return false if manual_merge? && automatic_merge_active?
 
       manual_merge? ? manual_action_required? : approval_only_blockers?
@@ -222,13 +253,29 @@ module Inbox
     def reviewable_pr?
       issue.is_pull_request? &&
         issue.github_state == "open" &&
-        issue.pr_review_phase == "ready" &&
-        (manual_merge? || automatic_merge_configured?) &&
         !issue.merge_permission_rejected?
+    end
+
+    def normal_reviewable_pr?
+      issue.pr_review_phase == "ready" && (manual_merge? || automatic_merge_configured?)
     end
 
     def held_for_review?
       issue.held_for_review?
+    end
+
+    def stalled_execution?
+      return @stalled_execution if defined?(@stalled_execution)
+      if issue.has_attribute?(:stalled_execution_candidate)
+        return @stalled_execution = issue.stalled_execution_candidate
+      end
+      return @stalled_execution = false unless issue.pr_review_phase == "draft"
+
+      @stalled_execution = AgentRun
+        .where(project_id: issue.project_id, goal: "create_pr", pull_request_number: issue.github_number)
+        .where(status: STALLED_EXECUTION_STATUSES)
+        .where("COALESCE(completed_at, updated_at) >= ?", STALLED_EXECUTION_WINDOW.ago)
+        .exists?
     end
 
     def approval_only_blockers?

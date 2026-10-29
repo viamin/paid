@@ -11,8 +11,9 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
     before do
       allow(GithubClient).to receive(:new).and_return(github_client)
       allow(github_client).to receive(:add_labels_to_issue)
-      allow(github_client).to receive(:issue).and_return(
-        OpenStruct.new(
+      allow(github_client).to receive_messages(
+        pull_requests: [],
+        issue: OpenStruct.new(
           id: 9001,
           number: 416,
           title: "Recovered PR",
@@ -45,6 +46,55 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
       expect(github_client).to have_received(:add_labels_to_issue)
         .with("viamin/paid", 416, [ "paid-generated", "paid-automation" ])
       expect(pull_request.reload.labels).to include("paid-generated", "paid-automation")
+    end
+
+    # @spec PR-LABEL-RECOVERY-003
+    it "links and recovers an unlabeled PR opened by a timed-out run" do
+      run = create_timed_out_run
+      pull_request = create(:issue, :pull_request,
+        project: project,
+        github_number: 416,
+        labels: [])
+      allow(github_client).to receive(:pull_requests).with(
+        "viamin/paid", state: "open", head: "viamin:agent/fix-inbox"
+      ).and_return([ OpenStruct.new(number: 416, html_url: "https://github.com/viamin/paid/pull/416") ])
+
+      described_class.perform_now
+
+      expect(run.reload).to have_attributes(
+        pull_request_number: 416,
+        pull_request_url: "https://github.com/viamin/paid/pull/416"
+      )
+      expect(github_client).to have_received(:add_labels_to_issue)
+        .with("viamin/paid", 416, [ "paid-generated", "paid-automation" ])
+      expect(pull_request.reload.labels).to include("paid-generated", "paid-automation")
+    end
+
+    # @spec PR-LABEL-RECOVERY-003
+    it "backs off branch lookups after GitHub returns no matching PR" do
+      run = create_timed_out_run
+      older_run = create_timed_out_run(completed_at: 2.hours.ago)
+
+      described_class.perform_now
+
+      expect(run.reload.pr_identity_recovery_attempted_at).to be_within(1.second).of(Time.current)
+      expect(older_run.reload.pr_identity_recovery_attempted_at).to be_within(1.second).of(Time.current)
+      expect(github_client).to have_received(:pull_requests).once
+
+      described_class.perform_now
+
+      expect(github_client).to have_received(:pull_requests).once
+    end
+
+    # @spec PR-LABEL-RECOVERY-003
+    it "retries an unmatched branch after the identity recovery backoff" do
+      run = create_timed_out_run
+      run.update!(pr_identity_recovery_attempted_at: 25.hours.ago)
+
+      described_class.perform_now
+
+      expect(github_client).to have_received(:pull_requests).once
+      expect(run.reload.pr_identity_recovery_attempted_at).to be_within(1.second).of(Time.current)
     end
 
     context "when the generated label is already present" do
@@ -226,7 +276,28 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
         .with("viamin/paid", 416, [ "paid-generated", "paid-automation" ])
     end
 
-    it "skips runs completed more than 24 hours ago" do
+    # @spec PR-LABEL-RECOVERY-001
+    it "recovers labels for a terminal run missing its completion timestamp" do
+      run = create(:agent_run, :completed,
+        project: project,
+        issue: nil,
+        custom_prompt: "Create PR",
+        goal: "create_pr",
+        pull_request_number: 416,
+        pull_request_url: "https://github.com/viamin/paid/pull/416")
+      run.update_columns(completed_at: nil, updated_at: 1.hour.ago)
+      create(:issue, :pull_request,
+        project: project,
+        github_number: 416,
+        labels: [])
+
+      described_class.perform_now
+
+      expect(github_client).to have_received(:add_labels_to_issue)
+        .with("viamin/paid", 416, [ "paid-generated", "paid-automation" ])
+    end
+
+    it "skips terminal runs outside the bounded recovery window" do
       create(:agent_run, :completed,
         project: project,
         issue: nil,
@@ -235,7 +306,7 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
         pull_request_number: 416,
         pull_request_url: "https://github.com/viamin/paid/pull/416",
         created_at: 3.days.ago,
-        completed_at: 25.hours.ago)
+        completed_at: 31.days.ago)
       create(:issue, :pull_request,
         project: project,
         github_number: 416,
@@ -309,6 +380,20 @@ RSpec.describe RecoverMissingPullRequestLabelsJob do
       described_class.perform_now
 
       expect(github_client).to have_received(:add_labels_to_issue).once
+    end
+
+    def create_timed_out_run(**attributes)
+      create(:agent_run,
+        project: project,
+        issue: nil,
+        custom_prompt: "Create PR",
+        goal: "create_pr",
+        status: "timeout",
+        completed_at: 1.hour.ago,
+        branch_name: "agent/fix-inbox",
+        pull_request_number: nil,
+        pull_request_url: nil,
+        **attributes)
     end
   end
 end

@@ -1544,6 +1544,27 @@ RSpec.describe "Runners" do
       expect(runner.reload.enabled_for_chat).to be(false)
     end
 
+    # @spec MODEL-POLICY-017
+    it "persists the ZDR declaration through the authorized runner update" do
+      runner = user.runners.create!(runner_key: "cursor")
+
+      patch runner_path(runner), params: { runner: { zero_data_retention: true } }
+
+      expect(response).to redirect_to(runners_path)
+      expect(runner.reload).to be_zero_data_retention
+      expect(runner.zero_data_retention_provenance).to eq("user_declared")
+    end
+
+    # @spec MODEL-POLICY-017
+    it "does not let another user change a runner ZDR declaration" do
+      other_runner = create(:runner, user: create(:user), runner_key: "cursor")
+
+      patch runner_path(other_runner), params: { runner: { zero_data_retention: true } }
+
+      expect(response).to have_http_status(:not_found)
+      expect(other_runner.reload).not_to be_zero_data_retention
+    end
+
     it "persists the agent_co_author_trailer on update" do
       runner = user.runners.create!(runner_key: "cursor")
       trailer = "Co-Authored-By: Cursor <noreply@cursor.sh>"

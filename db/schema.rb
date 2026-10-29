@@ -337,6 +337,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
     t.string "plan_doc_source", limit: 1000, comment: "User-named plan document (RDR/ADR/design doc path or URL) the lid_planning run treats as authored intent. Only set for lid_planning runs."
+    t.datetime "pr_identity_recovery_attempted_at", comment: "Last successful GitHub lookup that found zero or ambiguous open PRs for the run branch."
     t.string "priority_tier", limit: 10
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"
@@ -382,6 +383,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
     t.datetime "updated_at", null: false
     t.jsonb "verification_result", default: {}, null: false, comment: "Persisted interactive self-verification outcome and related artifacts for verification-enabled agent runs."
     t.string "worktree_path", limit: 500
+    t.index "status, COALESCE(completed_at, updated_at)", name: "index_agent_runs_on_status_terminal_timestamp"
     t.index ["approved_design_revision"], name: "index_agent_runs_on_approved_design_revision"
     t.index ["configuration_bundle_id"], name: "index_agent_runs_on_configuration_bundle_id"
     t.index ["continuation_request_id"], name: "index_agent_runs_on_continuation_request_id", where: "(continuation_request_id IS NOT NULL)"
@@ -4036,6 +4038,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.integer "weight", default: 1, null: false
+    t.boolean "zero_data_retention", default: false, null: false, comment: "User-selected zero data retention requirement; enforcement provenance is derived from the active runner provider and runtime."
     t.index ["auth_type"], name: "index_runners_on_auth_type"
     t.index ["discarded_at"], name: "index_runners_on_discarded_at"
     t.index ["integration_credential_id"], name: "index_runners_on_integration_credential_id"

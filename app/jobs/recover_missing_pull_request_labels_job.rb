@@ -7,8 +7,8 @@
 # assume a human intentionally removed automation to take over manually and do
 # not re-add it.
 #
-# Scheduled via GoodJob cron every hour. Only inspects runs completed in the
-# last 24 hours so query cost stays bounded as the table grows.
+# Scheduled via GoodJob cron every hour. Only inspects recently terminal runs
+# so query cost stays bounded as the table grows.
 class RecoverMissingPullRequestLabelsJob < ApplicationJob
   include GoodJob::ActiveJobExtensions::Concurrency
 
@@ -20,7 +20,8 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
     key: "recover_missing_pull_request_labels"
   )
 
-  CANDIDATE_WINDOW = 24.hours
+  CANDIDATE_WINDOW = 30.days
+  IDENTITY_RECOVERY_BACKOFF = 24.hours
 
   def perform
     recovered = 0
@@ -39,7 +40,14 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
         next
       end
 
-      synced_pr = synced_prs[[ agent_run.project_id, agent_run.pull_request_number ]]
+      agent_run = recover_pull_request_identity(agent_run)
+      unless agent_run
+        not_synced += 1
+        next
+      end
+
+      synced_pr = synced_prs[[ agent_run.project_id, agent_run.pull_request_number ]] ||
+        locally_synced_pr(agent_run)
 
       unless synced_pr
         synced_pr = backfill_synced_pr(agent_run)
@@ -85,22 +93,28 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
 
   private
 
-  # Returns one AgentRun per unique (project_id, pull_request_number),
-  # bounded to runs completed in the last 24 hours. The window must track
-  # completion, not creation: pull requests are opened when a run completes,
-  # so a run older than 24h at completion (e.g. a multi-day create_pr run)
-  # would otherwise never be eligible for label recovery.
+  # Returns one AgentRun per recorded PR or branch identity. Terminal runs may
+  # fail after GitHub accepts a PR but before its identity is persisted, so a
+  # branch is a second, exact GitHub lookup key. The bounded window prevents a
+  # historical full-table recovery scan.
   # DISTINCT ON deduplicates in SQL so we don't need an in-memory Set.
-  # Uses the (status, completed_at) index.
+  # Uses the (status, COALESCE(completed_at, updated_at)) index.
   # @spec PR-LABEL-RECOVERY-001
-  def candidate_runs # @spec PR-LABEL-RECOVERY-001 UPSTREAM-PR-005
-    AgentRun.completed.joins(:project)
+  def candidate_runs # @spec PR-LABEL-RECOVERY-001 PR-LABEL-RECOVERY-003 UPSTREAM-PR-005
+    AgentRun.joins(:project)
       .where(goal: "create_pr")
-      .where.not(pull_request_number: nil)
-      .where("agent_runs.completed_at >= ?", CANDIDATE_WINDOW.ago)
+      .where(status: AgentRun::FINISHED_STATUSES)
+      .where("COALESCE(agent_runs.completed_at, agent_runs.updated_at) >= ?", CANDIDATE_WINDOW.ago)
+      .where("agent_runs.pull_request_number IS NOT NULL OR NULLIF(agent_runs.branch_name, '') IS NOT NULL")
+      .where(
+        "agent_runs.pull_request_number IS NOT NULL OR " \
+          "agent_runs.pr_identity_recovery_attempted_at IS NULL OR " \
+          "agent_runs.pr_identity_recovery_attempted_at <= ?",
+        IDENTITY_RECOVERY_BACKOFF.ago
+      )
       .where.not(projects: { pr_target: "upstream" })
-      .select("DISTINCT ON (project_id, pull_request_number) agent_runs.*")
-      .order(:project_id, :pull_request_number, id: :desc)
+      .select("DISTINCT ON (project_id, COALESCE(pull_request_number, 0), COALESCE(branch_name, '')) agent_runs.*")
+      .order(Arel.sql("project_id, COALESCE(pull_request_number, 0), COALESCE(branch_name, ''), id DESC"))
       .preload(:issue, project: :github_token)
   end
 
@@ -109,7 +123,9 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
   # github_number values in bounded chunks to avoid building a single large
   # OR predicate in SQL.
   def prefetch_synced_prs(runs)
-    pr_keys = runs.map { |r| [ r.project_id, r.pull_request_number ] }.uniq
+    pr_keys = runs.filter_map do |run|
+      [ run.project_id, run.pull_request_number ] if run.pull_request_number.present?
+    end.uniq
 
     return {} if pr_keys.empty?
 
@@ -167,6 +183,50 @@ class RecoverMissingPullRequestLabelsJob < ApplicationJob
       error: e.message
     )
     nil
+  end
+
+  def locally_synced_pr(agent_run)
+    Issue.find_by(
+      project_id: agent_run.project_id,
+      is_pull_request: true,
+      github_number: agent_run.pull_request_number
+    )
+  end
+
+  # @spec PR-LABEL-RECOVERY-003
+  def recover_pull_request_identity(agent_run)
+    return agent_run if agent_run.pull_request_number.present?
+    return unless agent_run.branch_name.present?
+
+    matches = agent_run.project.client.pull_requests(
+      agent_run.project.full_name,
+      state: "open",
+      head: "#{agent_run.project.owner}:#{agent_run.branch_name}"
+    )
+    unless matches.one?
+      mark_branch_identity_recovery_attempted(agent_run)
+      return
+    end
+
+    pull_request = matches.first
+    agent_run.update!(pull_request_number: pull_request.number, pull_request_url: pull_request.html_url)
+    agent_run
+  rescue GithubClient::Error => e
+    Rails.logger.warn(
+      message: "agent_execution.pr_identity_recovery_failed",
+      agent_run_id: agent_run.id,
+      project_id: agent_run.project_id,
+      error: e.message
+    )
+    nil
+  end
+
+  def mark_branch_identity_recovery_attempted(agent_run)
+    AgentRun.where(
+      project_id: agent_run.project_id,
+      branch_name: agent_run.branch_name,
+      pull_request_number: nil
+    ).update_all(pr_identity_recovery_attempted_at: Time.current)
   end
 
   def inheritable_priority_labels(project, agent_run)
