@@ -247,6 +247,17 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  it "keeps an unmarked closeout notification on the generic Action Required presentation" do # @spec FACET-CONFIDENCE-022
+    notification = create(:notification, :error, account: account, subject: project,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Human evidence required", description: "Attach the measured result.", metadata: {})
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification), kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response.body).to include("Attach the measured result.")
+    expect(response.body).not_to include("Independent evaluation needed")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a
