@@ -389,21 +389,22 @@ closed owner, dismisses a scanner finding, or treats a merge as verification.
 The lane's recovery actions assume the operator already knows which action
 fits. The pane therefore carries task-oriented decision guidance (five paths:
 review the recorded criteria/evidence; continue agent-actionable work;
-create/link prerequisite work; supply human evidence; attest completion only
-when justified) and links to an in-app operator guide
+create/link prerequisite work; supply human evidence; close on GitHub only
+after a current audit accepts every criterion) and links to an in-app operator guide
 (`InboxController#partial_closeout_guide`) that explains, separately, what
-completes a run, what resolves an Inbox item internally, and what closes a
-GitHub issue or epic through a final PR — including that internal resolution
-leaves GitHub open and that new terminal evidence can resurface the item, and
+completes a run, what clears an Inbox item, and how the evidence-gated GitHub
+close action works — including that an open issue remains visible despite an
+internal attestation and that a failed close retains the same retry path, and
 that audit completion, gap transfer, and epic acceptance are distinct
 outcomes (a follow-up owner is not completed acceptance evidence; an explicit
 scope revision preserves ownership of the outstanding requirement).
 
-The resolve-complete attestation is editable: the pane collects a specific
+The close action's rationale is editable: the pane collects a specific
 completion rationale referencing evidence instead of posting a hidden canned
 reason, and `Issues::ResolveCloseout` refuses the legacy canned sentence
-structurally (no semantic approval heuristic). Actor and evidence-generation
-digest recording is unchanged.
+structurally (no semantic approval heuristic). The successful action records
+the actor and evidence-generation digest before the resulting GitHub closure
+clears the item.
 
 The continuation offer explains its authorization semantics: one run, other
 holds still apply, and the reason should describe remaining work plus the

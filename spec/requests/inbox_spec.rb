@@ -469,18 +469,18 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("Continue agent-actionable work")
       expect(response.body).to include("Link prerequisite work")
       expect(response.body).to include("Supply human evidence")
-      expect(response.body).to include("attest completion")
+      expect(response.body).to include("Close on GitHub only when a current acceptance audit")
       expect(response.body).to include(partial_closeout_guide_path)
     end
 
-    it "collects an editable rationale and separates the three completions" do
+    it "collects an editable rationale and explains the evidence-gated close action" do
       render_guided_pane
 
       expect(response.body).to include("Completion rationale")
       expect(response.body).to include("Completing a run")
-      expect(response.body).to include("Resolving this Inbox item")
-      expect(response.body).to include("Closing the GitHub issue")
-      expect(response.body).to include("The GitHub issue stays open")
+      expect(response.body).to include("Closing this issue")
+      expect(response.body).to include("current criterion assessment")
+      expect(response.body).to include("this item remains visible with this exact retry path")
       expect(response.body).not_to match(/type="hidden"[^>]*name="reason"/)
     end
 

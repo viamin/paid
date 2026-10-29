@@ -540,12 +540,12 @@
   the system SHALL show task-oriented decision guidance covering the five
   operator paths (review the recorded criteria/evidence; continue
   agent-actionable work; create/link prerequisite work; supply human evidence;
-  attest completion only when justified) and SHALL link to an in-app operator
-  guide page that explains, separately, what completes a run, what resolves an
-  Inbox item internally, and what closes a GitHub issue or epic through a
-  final PR. Both the pane and the guide SHALL state that internal resolution
-  records an attestation and leaves the GitHub issue open, and that new
-  terminal evidence can resurface the item. The guide SHALL also explain that
+  close on GitHub only after a current audit accepts every criterion) and SHALL
+  link to an in-app operator guide page that explains, separately, what
+  completes a run, what clears an Inbox item, and how the evidence-gated GitHub
+  close action works. Both the pane and the guide SHALL state that an open issue
+  remains visible despite an internal attestation and that a failed close
+  retains the same retry path. The guide SHALL also explain that
   audit completion, gap transfer to a follow-up owner, and epic acceptance are
   distinct outcomes — a follow-up owner is not completed acceptance evidence —
   and that an explicit scope revision preserves ownership of the outstanding
