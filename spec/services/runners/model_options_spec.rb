@@ -23,6 +23,9 @@ RSpec.describe Runners::ModelOptions do
           family: "claude-3", tier: "low", capability_score: 6.0)
         create(:llm_model, :inactive, model_id: "claude-retired", display_name: "Claude Retired", provider: "anthropic",
           family: "claude-3", tier: "low", capability_score: 5.0)
+        create(:llm_model, model_id: "anthropic/openrouter-only", display_name: "OpenRouter-only Claude",
+          provider: "anthropic", family: "claude-4", tier: "high", capability_score: 10.0,
+          catalog_source: "openrouter_zdr_sync")
         create(:llm_model, :openai, model_id: "gpt-other-provider", family: "gpt-5", tier: "high", capability_score: 9.9)
       end
 
@@ -122,6 +125,17 @@ RSpec.describe Runners::ModelOptions do
           %w[openrouter/pareto-code qwen/qwen3-coder deepseek/deepseek-chat-v3]
         )
       end
+
+      # @spec FREE-MODEL-SYNC-013
+      # @spec RUNNER-MODEL-OPTIONS-007
+      it "can explicitly limit the OpenRouter list to advertised ZDR candidates while retaining compatibility checks" do
+        create(:openrouter_zdr_model, model_id: "qwen/qwen3-coder")
+
+        result = described_class.call(runner_key: runner_key, api_provider: api_provider, auth_type: auth_type,
+          zdr_eligible: true)
+
+        expect(result.select(&:model?).map(&:value)).to eq([ "qwen/qwen3-coder" ])
+      end
     end
 
     context "with the free policy entry" do
@@ -219,6 +233,17 @@ RSpec.describe Runners::ModelOptions do
 
       expect(batched["openrouter"].select(&:model?).map(&:value)).to include("deepseek/deepseek-chat-v3")
       expect(batched["deepseek"].select(&:model?).map(&:value)).to eq(%w[deepseek/deepseek-chat-v3])
+    end
+
+    it "excludes endpoint-only ZDR rows from ordinary provider groups" do # @spec RUNNER-MODEL-OPTIONS-007
+      create(:llm_model, model_id: "anthropic/openrouter-only", provider: "anthropic",
+        catalog_source: "openrouter_zdr_sync")
+
+      batched = described_class.call_by_provider(runner_key: "opencode",
+        api_providers: %w[anthropic openrouter], auth_type: auth_type)
+
+      expect(batched.values.flat_map { |entries| entries.select(&:model?).map(&:value) })
+        .not_to include("anthropic/openrouter-only")
     end
   end
 end

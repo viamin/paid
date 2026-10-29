@@ -18,6 +18,12 @@ This segment covers the daily synchronization path only. Runner execution,
 rotation, and data-classification routing remain covered by their existing code
 paths and RDRs.
 
+The same catalog boundary also records OpenRouter's advertised endpoint-level
+Zero Data Retention (ZDR) eligibility. ZDR is a property of a particular
+OpenRouter endpoint, not a price tier, vendor, or a statement about Paid's own
+run-data retention. The endpoint catalog is a setup-time candidate list only;
+request-time `provider.zdr` routing remains authoritative.
+
 ## Goals
 
 - Pull OpenRouter's model catalog from `GET /api/v1/models`.
@@ -98,6 +104,40 @@ The job is a daily GoodJob cron entry. It:
 - enforces single-flight concurrency
 - delegates its business work entirely to `FreeModels::Sync`
 
+### `OpenrouterZdr::Sync`
+
+The ZDR sync fetches `GET /api/v1/endpoints/zdr` through a dedicated mechanical
+client. Each returned endpoint is grouped by its concrete `model_id`; a model
+is eligible when at least one advertised endpoint names it. The sync persists
+the endpoint payloads, count, and last-seen time in `OpenrouterZdrModel` and
+creates a catalog `LlmModel` only when the model is not already known. It does
+not replace metadata or ownership on existing seeded or free-synced rows.
+
+After a successful, structurally valid response, it removes eligibility rows
+not present in that response. It never deactivates `LlmModel` rows: the free
+sync remains the owner of free-row lifecycle and other catalog sources retain
+their own lifecycle rules.
+
+`OpenrouterZdrCatalog` is a singleton freshness record. A successful response,
+including a valid empty `data` array, records `last_successful_at` and clears
+unavailability. A transport, response, JSON, or structural failure records an
+unavailable state while preserving both the last successful timestamp and the
+last-known eligibility rows. This makes an unavailable refresh distinct from a
+newly verified empty catalog.
+
+### ZDR candidate query
+
+`OpenrouterZdr::EligibleModels` returns active `LlmModel` rows joined to the
+currently retained advertised eligibility rows together with catalog freshness.
+`Runners::ModelOptions` can explicitly request this candidate set for an
+OpenRouter setup flow; it continues to apply existing runner compatibility and
+does not change the default model list or create an automatic ZDR profile.
+
+### `OpenrouterZdr::SyncJob`
+
+The ZDR refresh runs daily on the maintenance queue with single-flight
+concurrency, staggered from the free-model refresh.
+
 ## Trace Notes
 
 - The provider stored on synced free rows is the upstream model-id prefix (for
@@ -105,3 +145,5 @@ The job is a daily GoodJob cron entry. It:
 - Catalog queries that mean “OpenRouter-synced free models” must therefore key
   off `catalog_source: "openrouter_sync"` plus `pricing_tier: "free"`, not a
   hard-coded provider string.
+- An empty ZDR response is authoritative only after it passes endpoint response
+  shape checks; failed refreshes preserve last-known results.
