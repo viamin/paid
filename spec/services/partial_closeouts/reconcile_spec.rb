@@ -60,6 +60,21 @@ RSpec.describe PartialCloseouts::Reconcile do
     expect(parent.issue_dependencies.find_by(depends_on_owner: "viamin", depends_on_repo: "agent-harness", depends_on_number: 517)).to be_present
   end
 
+  it "replays a mixed-case external dependency onto the same normalized row" do # @spec PARTIAL-CLOSEOUT-037
+    mixed_case_gap = {
+      "criterion" => "Agent harness support", "kind" => "external",
+      "next_step" => "Wait for Viamin/Agent-Harness#517 to close.",
+      "external_dependency" => { "owner" => "Viamin", "repo" => "Agent-Harness", "number" => 517 }
+    }
+
+    described_class.call(agent_run: run, assessment: gaps([ mixed_case_gap ]))
+
+    expect {
+      described_class.call(agent_run: AgentRun.find(run.id), assessment: gaps([ mixed_case_gap ]))
+    }.not_to raise_error
+    expect(parent.issue_dependencies.where(depends_on_owner: "viamin", depends_on_repo: "agent-harness", depends_on_number: 517).count).to eq(1)
+  end
+
   it "marks a dedicated facet-confidence evaluation prerequisite for its typed Inbox workflow" do # @spec FACET-CONFIDENCE-022
     described_class.call(agent_run: run, assessment: gaps([ {
       "criterion" => "Independent evaluation", "kind" => "human", "next_step" => "Record each judgment.",

@@ -97,8 +97,11 @@ module PartialCloseouts
 
     def reconcile_external_gap(gap, index)
       dependency = external_dependency(gap)
+      # IssueDependency#normalize_external_ref downcases owner/repo on write, so a
+      # mixed-case lookup here (Llm::AnalyzePartialCloseout accepts either case) would
+      # miss the already-normalized row and collide with it on create.
       IssueDependency.find_or_create_by!(issue: agent_run.issue,
-        depends_on_owner: dependency.fetch("owner"), depends_on_repo: dependency.fetch("repo"),
+        depends_on_owner: dependency.fetch("owner").downcase, depends_on_repo: dependency.fetch("repo").downcase,
         depends_on_number: dependency.fetch("number"))
       record_gap!(index, gap, status: "awaiting_external")
     end
