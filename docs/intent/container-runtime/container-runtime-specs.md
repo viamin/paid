@@ -866,8 +866,9 @@
 
 - [x] **CONTAINER-RUNTIME-050** — When execution-preparation cleanup removes a
   run's environment after a smoke timeout, retry orchestration SHALL confirm
-  the persisted environment reference and live environment state before issuing
-  another smoke command. An unavailable environment SHALL preserve the timeout
+  the persisted environment reference still identifies that same environment
+  and live environment state before issuing another smoke command. An
+  unavailable or replaced environment SHALL preserve the timeout
   classification and diagnostics, rather than producing a
   `ContainerNotProvisioned` replacement error. Fresh provisioning remains
   limited to the established fallback-recovery policy for a later eligible

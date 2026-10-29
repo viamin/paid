@@ -3940,6 +3940,29 @@ expect(container_service).to receive(:execute).with(
         expect(container_service).to have_received(:execute).once
       end
 
+      it "does not retry the stale environment when cleanup replaces its persisted container" do # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-050
+        timeout_error = Containers::Provision::TimeoutError.new(
+          "Command timed out after 60 seconds",
+          diagnostics: { "elapsed_seconds" => 60 }
+        )
+        allow(container_service).to receive(:execute) do
+          AgentRun.where(id: agent_run.id).update_all(container_id: "replacement-container")
+          raise timeout_error
+        end
+
+        expect {
+          run_direct_outbound_preflight(
+            activity: activity,
+            agent_run: agent_run,
+            container_service: container_service,
+            provider: create_opencode_provider_for(user),
+            user: user
+          )
+        }.to raise_error(described_class::PreflightTimeoutError, /after 1 attempt because the execution environment is unavailable/)
+
+        expect(container_service).to have_received(:execute).once
+      end
+
       it "uses a runner-specific preflight timeout override for opencode" do
         opencode_provider = create_opencode_provider_for(user)
         opencode_provider.update!(config: opencode_provider.config.merge("opencode" => opencode_provider.opencode_config.merge("preflight_timeout_seconds" => "90")))
