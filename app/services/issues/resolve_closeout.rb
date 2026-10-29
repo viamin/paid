@@ -54,12 +54,12 @@ module Issues
       remote_state = remote_github_state
       return failure(:github_unavailable, "GitHub closure could not be verified; retry Close on GitHub from this Inbox item.") unless remote_state.in?(%w[open closed])
 
-      supersede_open_continuation
       if remote_state == "open"
         updated = client.update_issue(issue.project.full_name, issue.github_number, state: "closed", state_reason: "completed")
         return failure(:github_unavailable, "GitHub did not confirm closure; retry Close on GitHub from this Inbox item.") unless github_closed?(updated)
       end
 
+      supersede_open_continuation
       issue.resolve_closeout!(actor:, evidence_digest: evidence.digest)
       Result.new(issue:)
     rescue GithubClient::Error
@@ -92,8 +92,8 @@ module Issues
 
     # RequestContinuation takes this same issue lock while it atomically creates
     # its authorization and queued run. Closing that authorization before the
-    # resolution means a queued run cannot be admitted after an operator has
-    # declared the issue complete.
+    # local resolution means a queued run cannot be admitted after GitHub has
+    # confirmed that the issue is complete.
     def supersede_open_continuation
       request = IssueContinuationRequest.open_for_issue(issue)
       return unless request

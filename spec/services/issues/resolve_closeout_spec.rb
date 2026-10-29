@@ -173,6 +173,21 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     expect(issue.reload.github_state).to eq("open")
   end
 
+  it "preserves an open continuation when GitHub rejects closure" do # @spec PARTIAL-CLOSEOUT-006
+    merged_partial_pr(number: 12)
+    accepted_audit
+    request = create(:issue_continuation_request, issue: issue, project: project, requested_by: user)
+    run = create(:agent_run, project: project, issue: issue, continuation_request: request, goal: "create_pr", status: "queued")
+    request_status = request.status
+    allow(github_client).to receive(:update_issue).and_raise(GithubClient::Error, "timeout")
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result.code).to eq(:github_failed)
+    expect(request.reload.status).to eq(request_status)
+    expect(run.reload.status).to eq("queued")
+  end
+
   it "reconciles an observed GitHub closure without requesting closure again" do # @spec PARTIAL-CLOSEOUT-037
     merged_partial_pr(number: 12)
     accepted_audit
