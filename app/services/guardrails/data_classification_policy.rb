@@ -114,7 +114,11 @@ module Guardrails
     end
 
     def privacy_policy
-      @privacy_policy ||= Runners::EffectivePrivacyPolicy.call(project: project, runner: agent_run.runner)
+      @privacy_policy ||= Runners::EffectivePrivacyPolicy.call(
+        project: project,
+        runner: agent_run.runner,
+        required_zdr: agent_run.external_metadata.to_h["zdr_required"]
+      )
     end
 
     def warning_message(data_collection)

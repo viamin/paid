@@ -194,6 +194,27 @@ RSpec.describe Guardrails::DataClassificationPolicy do
         expect(result.provider_data_collection).to eq("deny")
         expect(result.provider_zdr).to be_nil
       end
+
+      # @spec MODEL-POLICY-020, MODEL-POLICY-021
+      it "preserves a snapshotted ZDR requirement in routing and audit metadata" do
+        project.update!(data_classification: "internal")
+        agent_run.update!(external_metadata: { "zdr_required" => true })
+
+        result = described_class.call(agent_run: agent_run, selection: selection)
+
+        expect(result).to have_attributes(
+          requested_zdr: false,
+          effective_zdr: true,
+          zdr_provenance: "openrouter_enforced",
+          provider_data_collection: "deny",
+          provider_zdr: true
+        )
+        expect(latest_decision_for(agent_run).context).to include(
+          "requested_zdr" => false,
+          "effective_zdr" => true,
+          "zdr_provenance" => "openrouter_enforced"
+        )
+      end
     end
 
     context "when the run uses an opencode subscription runner" do
