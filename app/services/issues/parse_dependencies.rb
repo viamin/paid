@@ -143,9 +143,21 @@ module Issues
       new(issue: nil, body: body, comments: comments).extract
     end
 
+    def extract
+      local_deps, cross_deps = resolve_dependencies
+
+      [ local_deps, cross_deps ]
+    end
+
     def call
       raise ArgumentError, "issue is required" if issue.nil?
 
+      IssueDependency.transaction { synchronize_dependencies }
+    end
+
+    private
+
+    def synchronize_dependencies
       local_deps, cross_deps, provenance = resolve_dependencies
 
       current_deps = issue.issue_dependencies.to_a
@@ -171,14 +183,6 @@ module Issues
       reconcile_dependency_cycles if changed && reconcile
       changed
     end
-
-    def extract
-      local_deps, cross_deps, = resolve_dependencies
-
-      [ local_deps, cross_deps ]
-    end
-
-    private
 
     # Reconciliation reads the same persisted effective graph as admission.
     # It never edits a declaration: repair remains an explicit GitHub action.
@@ -437,13 +441,15 @@ module Issues
           next
         end
 
-        next if would_create_cycle?(dep_issue, adj)
+        next if would_create_cycle?(dep_issue)
 
         new_local_deps[dep_issue.id] = issue.issue_dependencies.create!(
           depends_on_issue: dep_issue,
           requires_deployment: requires_deployment,
-          **provenance_attributes(declaration)
+          **provenance_attributes(declaration),
+          cycle_provenance: "github_sync"
         )
+        (adj[issue.id] ||= []) << dep_issue.id
       end
 
       new_local_deps
@@ -493,13 +499,15 @@ module Issues
               update_dependency(just_created, requires_deployment, declaration)
               next
             end
-            next if would_create_cycle?(dep_issue, adj)
+            next if would_create_cycle?(dep_issue)
 
             issue.issue_dependencies.create!(
               depends_on_issue: dep_issue,
               requires_deployment: requires_deployment,
-              **provenance_attributes(declaration)
+              **provenance_attributes(declaration),
+              cycle_provenance: "github_sync"
             )
+            (adj[issue.id] ||= []) << dep_issue.id
             next
           end
         end
@@ -677,8 +685,21 @@ module Issues
       issue.issue_dependencies.where(combined).delete_all
     end
 
-    def would_create_cycle?(dep_issue, adjacency)
-      Issues::DetectCycle.call(from_issue: dep_issue, target_issue_id: issue.id, adjacency: adjacency)
+    def would_create_cycle?(dep_issue)
+      cycle = Issues::DependencyCycle.call(
+        IssueDependency.new(issue: issue, depends_on_issue: dep_issue, cycle_provenance: "github_sync")
+      )
+      return false unless cycle.cycle?
+
+      Rails.logger.warn(
+        message: "dependency_graph.cycle_rejected",
+        account_id: issue.project.account_id,
+        issue_id: issue.id,
+        depends_on_issue_id: dep_issue.id,
+        cycle_path: cycle.path,
+        source: "github_sync"
+      )
+      true
     end
   end
 end

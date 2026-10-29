@@ -56,7 +56,7 @@ RSpec.describe "Mobile inbox API" do
     visible_issue = create(:issue, project:, github_state: "open")
     hidden_issue = create(:issue, project: hidden_project, github_state: "open")
     create(:issue_dependency, issue: visible_issue, depends_on_issue: hidden_issue)
-    create(:issue_dependency, issue: hidden_issue, depends_on_issue: visible_issue)
+    create_legacy_issue_dependency(issue: hidden_issue, depends_on_issue: visible_issue)
 
     get "/api/v1/inbox", params: { kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND }, headers: headers
 
@@ -71,7 +71,7 @@ RSpec.describe "Mobile inbox API" do
     declaration_url = "https://github.com/acme/mobile/issues/1#issuecomment-9"
     create(:issue_dependency, issue: first, depends_on_issue: second,
       declaration_source: "issue_comment", declaration_url: declaration_url)
-    create(:issue_dependency, issue: second, depends_on_issue: first)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
 
     get "/api/v1/inbox", params: { kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND }, headers: headers
 

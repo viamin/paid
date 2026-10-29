@@ -10,7 +10,7 @@ RSpec.describe Inbox::Queue do
     first = create(:issue, project:, github_state: "open")
     second = create(:issue, project:, github_state: "open")
     create(:issue_dependency, issue: first, depends_on_issue: second)
-    create(:issue_dependency, issue: second, depends_on_issue: first)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
 
     entries = described_class.call(user:, kind: described_class::DEPENDENCY_CYCLE_KIND)
 
@@ -28,7 +28,7 @@ RSpec.describe Inbox::Queue do
     visible_issue = create(:issue, project: visible_project, github_state: "open")
     hidden_issue = create(:issue, project: hidden_project, github_state: "open")
     create(:issue_dependency, issue: visible_issue, depends_on_issue: hidden_issue)
-    create(:issue_dependency, issue: hidden_issue, depends_on_issue: visible_issue)
+    create_legacy_issue_dependency(issue: hidden_issue, depends_on_issue: visible_issue)
 
     entries = described_class.call(user:, kind: described_class::DEPENDENCY_CYCLE_KIND)
 
@@ -46,7 +46,7 @@ RSpec.describe Inbox::Queue do
     visible_downstream = create(:issue, project: visible_project, github_state: "open")
     hidden_downstream = create(:issue, project: hidden_project, github_state: "open")
     create(:issue_dependency, issue: first, depends_on_issue: second)
-    create(:issue_dependency, issue: second, depends_on_issue: first)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
     create(:issue_dependency, issue: visible_downstream, depends_on_issue: first)
     create(:issue_dependency, issue: hidden_downstream, depends_on_issue: visible_downstream)
 
@@ -67,14 +67,14 @@ RSpec.describe Inbox::Queue do
     first = create(:issue, project:, github_state: "open")
     second = create(:issue, project:, github_state: "open")
     create(:issue_dependency, issue: first, depends_on_issue: second)
-    removed_edge = create(:issue_dependency, issue: second, depends_on_issue: first)
+    removed_edge = create_legacy_issue_dependency(issue: second, depends_on_issue: first)
     original_entry = described_class.call(user:, kind: described_class::DEPENDENCY_CYCLE_KIND).sole
     Inbox::Removals::Remove.call(entry: original_entry, user:)
 
     removed_edge.destroy!
     expect(described_class.call(user:, kind: described_class::DEPENDENCY_CYCLE_KIND)).to be_empty
 
-    create(:issue_dependency, issue: second, depends_on_issue: first)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
     recreated_entry = described_class.call(user:, kind: described_class::DEPENDENCY_CYCLE_KIND).sole
 
     expect(recreated_entry.id).to eq(original_entry.id)

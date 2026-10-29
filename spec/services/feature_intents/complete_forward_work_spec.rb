@@ -154,7 +154,7 @@ RSpec.describe FeatureIntents::CompleteForwardWork do
     expect(client).to have_received(:create_issue)
   end
 
-  it "loads account dependency adjacency once while reconciling feature issues" do # @spec CONFIDENCE-DELIVERY-011
+  it "loads account dependency adjacency for the preflight and each persisted dependency" do # @spec CONFIDENCE-DELIVERY-011
     second_issue = create(:issue, project:, github_number: 702, body: "Second implementation")
     FeatureIntentIssue.create!(feature_intent:, issue: second_issue)
     remote_bodies[second_issue.github_number] = second_issue.body
@@ -162,7 +162,7 @@ RSpec.describe FeatureIntents::CompleteForwardWork do
 
     described_class.reconcile(feature_intent:, completion_issue:, client:)
 
-    expect(IssueDependency).to have_received(:account_adjacency).with(project.account).once
+    expect(IssueDependency).to have_received(:account_adjacency).with(project.account).exactly(3).times
   end
 
   it "refuses completion until every dependency and acceptance/release check is satisfied" do

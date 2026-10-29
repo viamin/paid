@@ -11,7 +11,9 @@ RSpec.describe Issues::DependencyCycles do
   end
 
   def connect(issues, pairs)
-    pairs.each { |from, to| create(:issue_dependency, issue: issues.fetch(from), depends_on_issue: issues.fetch(to)) }
+    pairs.each do |from, to|
+      create_legacy_issue_dependency(issue: issues.fetch(from), depends_on_issue: issues.fetch(to))
+    end
   end
 
   # @spec AUTO-PICK-QUEUE-014
@@ -44,9 +46,9 @@ RSpec.describe Issues::DependencyCycles do
     issues = graph([ 1, 2 ])
     first_url = "https://github.com/acme/repo/issues/1"
     second_url = "https://github.com/acme/repo/issues/2#issuecomment-7"
-    create(:issue_dependency, issue: issues[0], depends_on_issue: issues[1],
+    create_legacy_issue_dependency(issue: issues[0], depends_on_issue: issues[1],
       declaration_source: "issue_body", declaration_url: first_url)
-    create(:issue_dependency, issue: issues[1], depends_on_issue: issues[0],
+    create_legacy_issue_dependency(issue: issues[1], depends_on_issue: issues[0],
       declaration_source: "issue_comment", declaration_url: second_url)
 
     cycle = described_class.call(account:).sole
@@ -59,8 +61,8 @@ RSpec.describe Issues::DependencyCycles do
     local = graph([ 1, 2 ])
     other = [ create(:issue, project: other_project), create(:issue, project: other_project) ]
     connect(local, [ [ 0, 1 ], [ 1, 0 ] ])
-    create(:issue_dependency, issue: other[0], depends_on_issue: other[1])
-    create(:issue_dependency, issue: other[1], depends_on_issue: other[0])
+    create_legacy_issue_dependency(issue: other[0], depends_on_issue: other[1])
+    create_legacy_issue_dependency(issue: other[1], depends_on_issue: other[0])
     local[1].update!(paid_state: "completed")
 
     expect(described_class.call(account:)).to be_empty

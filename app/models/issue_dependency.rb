@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class IssueDependency < ApplicationRecord
+  attr_accessor :cycle_provenance
   belongs_to :issue
   belongs_to :depends_on_issue, class_name: "Issue", optional: true
 
@@ -15,6 +16,7 @@ class IssueDependency < ApplicationRecord
   validate :must_have_local_or_external_ref
   validate :local_and_external_mutually_exclusive
   validate :local_dep_within_same_account
+  validate :does_not_create_blocking_cycle
 
   before_validation :normalize_external_ref
 
@@ -65,7 +67,7 @@ class IssueDependency < ApplicationRecord
     LEFT JOIN projects ext_project
       ON ext_project.account_id = ? AND
          LOWER(ext_project.owner) = issue_dependencies.depends_on_owner AND
-         LOWER(ext_project.name) = issue_dependencies.depends_on_repo
+         LOWER(ext_project.repo) = issue_dependencies.depends_on_repo
     LEFT JOIN issues ext_issue
       ON ext_issue.project_id = ext_project.id AND
          ext_issue.github_number = issue_dependencies.depends_on_number
@@ -94,6 +96,7 @@ class IssueDependency < ApplicationRecord
     joins(issue: :project)
       .where(projects: { account_id: account.id })
       .where.not(depends_on_issue_id: nil)
+      .excluding_parent_references
       .pluck(:issue_id, :depends_on_issue_id)
       .group_by(&:first)
       .transform_values { |pairs| pairs.map(&:last) }
@@ -160,6 +163,28 @@ class IssueDependency < ApplicationRecord
     return if issue.project.account_id == depends_on_issue.project.account_id
 
     errors.add(:depends_on_issue, "must belong to the same account")
+  end
+
+  # @spec DEPENDENCY-DECLARATIONS-008
+  def does_not_create_blocking_cycle
+    result = Issues::DependencyCycle.call(self)
+    return unless result.cycle?
+
+    Rails.logger.warn(
+      message: "dependency_graph.cycle_rejected",
+      account_id: issue.project.account_id,
+      issue_id: issue_id,
+      depends_on_issue_id: depends_on_issue_id,
+      cycle_path: result.path,
+      source: cycle_provenance || "direct_write"
+    )
+    errors.add(:depends_on_issue,
+      "creates a blocking dependency cycle: #{cycle_path(result.path)} (source: #{cycle_provenance || 'direct_write'})")
+  end
+
+  def cycle_path(issue_ids)
+    numbers = Issue.where(id: issue_ids).pluck(:id, :github_number).to_h
+    issue_ids.map { |id| "##{numbers.fetch(id, id)}" }.join(" -> ")
   end
 
   def normalize_external_ref

@@ -231,7 +231,7 @@ RSpec.describe Inbox::Availability do
       first = create(:issue, project: project_a, github_state: "open")
       second = create(:issue, project: project_b, github_state: "open")
       create(:issue_dependency, issue: first, depends_on_issue: second)
-      create(:issue_dependency, issue: second, depends_on_issue: first)
+      create_legacy_issue_dependency(issue: second, depends_on_issue: first)
 
       availability = described_class.call(user: user, kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND)
 
@@ -246,7 +246,7 @@ RSpec.describe Inbox::Availability do
       first = create(:issue, project: project_a, github_state: "open")
       second = create(:issue, project: project_b, github_state: "open")
       create(:issue_dependency, issue: first, depends_on_issue: second)
-      create(:issue_dependency, issue: second, depends_on_issue: first)
+      create_legacy_issue_dependency(issue: second, depends_on_issue: first)
       entries = Inbox::Queue.call(user: user, kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND)
 
       availability = described_class.call(user: user, entries: entries)

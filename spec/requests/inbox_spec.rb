@@ -69,7 +69,7 @@ RSpec.describe "Inbox" do
     declaration_url = "https://github.com/acme/alpha/issues/1#issuecomment-42"
     create(:issue_dependency, issue: first, depends_on_issue: second,
       declaration_source: "issue_comment", declaration_url:)
-    create(:issue_dependency, issue: second, depends_on_issue: first)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
     cycle = Issues::DependencyCycles.call(account:).sole
 
     get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }

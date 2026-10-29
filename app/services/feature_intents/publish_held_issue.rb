@@ -292,7 +292,7 @@ module FeatureIntents
     # publication edge surfaces as RecordInvalid rather than RecordNotUnique;
     # an already-recorded edge is the desired idempotent outcome.
     def persist_dependency!(issue, dependency)
-      IssueDependency.create!(issue: issue, depends_on_issue: dependency)
+      IssueDependency.create!(issue: issue, depends_on_issue: dependency, cycle_provenance: "feature_intent_publication")
     rescue ActiveRecord::RecordInvalid => error
       raise unless duplicate_dependency?(error)
 

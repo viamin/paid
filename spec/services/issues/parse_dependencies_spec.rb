@@ -149,6 +149,30 @@ RSpec.describe Issues::ParseDependencies do
       expect(issue_a.dependencies.reload).to be_empty
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-008
+    it "rejects a cycle introduced by later work in the same parser batch" do
+      issue_a = create(:issue, project: project, github_number: 9011, body: "Depends on #9012")
+      issue_b = create(:issue, project: project, github_number: 9012, body: "Depends on #9011")
+      adjacency = IssueDependency.account_adjacency(project.account)
+
+      described_class.call(issue: issue_a, adjacency: adjacency)
+      described_class.call(issue: issue_b, adjacency: adjacency)
+
+      expect(issue_a.dependencies.reload).to contain_exactly(issue_b)
+      expect(issue_b.dependencies.reload).to be_empty
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-008
+    it "rejects a cycle when a supplied batch adjacency is stale" do
+      issue_a = create(:issue, project: project, github_number: 9021, body: "Depends on #9022")
+      issue_b = create(:issue, project: project, github_number: 9022)
+      create(:issue_dependency, issue: issue_b, depends_on_issue: issue_a)
+
+      described_class.call(issue: issue_a, adjacency: {})
+
+      expect(issue_a.dependencies.reload).to be_empty
+    end
+
     it "parses dependencies from a section followed by another heading" do
       dep = create(:issue, project: project, github_number: 9101)
       create(:issue, project: project, github_number: 9999)

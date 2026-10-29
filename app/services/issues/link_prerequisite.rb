@@ -31,8 +31,11 @@ module Issues
         return failure(:unknown_issue,
           "Paid has no local record of ##{number} yet — run a project sync first, then link the prerequisite.")
       end
-      if Issues::DetectCycle.call(from_issue: prerequisite, target_issue_id: issue.id)
-        return failure(:cycle, "##{number} already depends on this issue — linking it here would create a dependency cycle.")
+      cycle = Issues::DependencyCycle.call(
+        IssueDependency.new(issue: issue, depends_on_issue: prerequisite, cycle_provenance: "inbox_link_prerequisite")
+      )
+      if cycle.cycle?
+        return failure(:cycle, "Linking ##{number} would create a dependency cycle: #{cycle_path(cycle.path)}.")
       end
 
       client = issue.project.client
@@ -93,5 +96,10 @@ module Issues
     end
 
     def failure(code, message) = Result.new(code: code, message: message)
+
+    def cycle_path(issue_ids)
+      numbers = Issue.where(id: issue_ids).pluck(:id, :github_number).to_h
+      issue_ids.map { |id| "##{numbers.fetch(id, id)}" }.join(" -> ")
+    end
   end
 end

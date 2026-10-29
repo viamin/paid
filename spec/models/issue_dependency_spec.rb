@@ -53,6 +53,76 @@ RSpec.describe IssueDependency do
       expect(dep).to be_valid
     end
 
+    # @spec DEPENDENCY-DECLARATIONS-008
+    it "rejects a two-node blocking cycle with its exact path" do
+      project = create(:project)
+      issue_a = create(:issue, project: project, github_number: 701)
+      issue_b = create(:issue, project: project, github_number: 702)
+      create(:issue_dependency, issue: issue_b, depends_on_issue: issue_a)
+
+      dep = build(:issue_dependency, issue: issue_a, depends_on_issue: issue_b)
+
+      expect(dep).not_to be_valid
+      expect(dep.errors[:depends_on_issue]).to include("creates a blocking dependency cycle: #701 -> #702 -> #701 (source: direct_write)")
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-008
+    it "allows a parent dependency when the child has a contextual parent reference" do
+      project = create(:project)
+      parent = create(:issue, project: project, github_number: 705)
+      child = create(:issue, project: project, github_number: 706, parent_issue: parent)
+      create(:issue_dependency, issue: child, depends_on_issue: parent)
+
+      dep = build(:issue_dependency, issue: parent, depends_on_issue: child)
+
+      expect(dep).to be_valid
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-008
+    it "allows a parent dependency when a contextual external reference resolves locally" do
+      project = create(:project, owner: "acme", repo: "paid")
+      parent = create(:issue, project: project, github_number: 707)
+      child = create(:issue, project: project, github_number: 708, parent_issue: parent)
+      create(:issue_dependency, issue: child, depends_on_issue: nil,
+        depends_on_owner: "acme", depends_on_repo: "paid", depends_on_number: parent.github_number)
+
+      dep = build(:issue_dependency, issue: parent, depends_on_issue: child)
+
+      expect(dep).to be_valid
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-008
+    it "rejects a cross-project multi-node cycle within one account" do
+      account = create(:account)
+      first_project = create(:project, account: account)
+      second_project = create(:project, account: account)
+      issue_a = create(:issue, project: first_project, github_number: 711)
+      issue_b = create(:issue, project: second_project, github_number: 712)
+      issue_c = create(:issue, project: first_project, github_number: 713)
+      create(:issue_dependency, issue: issue_b, depends_on_issue: issue_c)
+      create(:issue_dependency, issue: issue_c, depends_on_issue: issue_a)
+
+      dep = build(:issue_dependency, issue: issue_a, depends_on_issue: issue_b)
+
+      expect(dep).not_to be_valid
+      expect(dep.errors[:depends_on_issue]).to include(a_string_including("#711 -> #712 -> #713 -> #711 (source: direct_write)"))
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-008
+    it "rejects an external declaration when its target later resolves locally" do
+      account = create(:account)
+      project_a = create(:project, account: account)
+      project_b = create(:project, account: account, owner: "acme", repo: "other")
+      issue_a = create(:issue, project: project_a, github_number: 721)
+      issue_b = create(:issue, project: project_b, github_number: 722)
+      create(:issue_dependency, issue: issue_b, depends_on_issue: issue_a)
+
+      dep = build(:issue_dependency, issue: issue_a, depends_on_owner: "acme", depends_on_repo: "other", depends_on_number: 722)
+
+      expect(dep).not_to be_valid
+      expect(dep.errors[:depends_on_issue]).to include(a_string_including("#721 -> #722 -> #721"))
+    end
+
     it "requires either a local issue or external reference" do
       issue = create(:issue)
       dep = build(:issue_dependency, issue: issue, depends_on_issue: nil,
