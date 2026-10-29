@@ -53,6 +53,20 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     )
   end
 
+  def external_prerequisite_dependent(target_project, number)
+    target = create(:issue, project: target_project, github_number: number, github_state: "open")
+    dependent = create(:issue, project:, github_state: "open", paid_state: "in_progress")
+    create(:issue_dependency, issue: dependent, depends_on_issue: nil,
+      depends_on_owner: "viamin", depends_on_repo: "agent-harness", depends_on_number: target.github_number)
+    create(:notification, :error, account:, subject: dependent,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      metadata: { "prerequisites" => [ {
+        "identity" => "agent-harness-#{target.github_number}", "kind" => "external",
+        "external_dependency" => { "owner" => "viamin", "repo" => "agent-harness", "number" => target.github_number }
+      } ] })
+    dependent
+  end
+
   it "marks an issue with merged partial evidence stalled and explains the exact reason" do
     merged_partial_pr(number: 12)
 
@@ -233,20 +247,7 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
 
   it "batch-loads external prerequisite targets for every rendered notification" do # @spec PARTIAL-CLOSEOUT-026
     target_project = create(:project, account:, owner: "viamin", repo: "agent-harness", name: "agent-harness")
-    dependents = []
-    3.times do |index|
-      target = create(:issue, project: target_project, github_number: 517 + index, github_state: "open")
-      dependent = create(:issue, project:, github_state: "open", paid_state: "in_progress")
-      create(:issue_dependency, issue: dependent, depends_on_issue: nil,
-        depends_on_owner: "viamin", depends_on_repo: "agent-harness", depends_on_number: target.github_number)
-      create(:notification, :error, account:, subject: dependent,
-        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
-        metadata: { "prerequisites" => [ {
-          "identity" => "agent-harness-#{target.github_number}", "kind" => "external",
-          "external_dependency" => { "owner" => "viamin", "repo" => "agent-harness", "number" => target.github_number }
-        } ] })
-      dependents << dependent
-    end
+    dependents = 3.times.map { |index| external_prerequisite_dependent(target_project, 517 + index) }
 
     queries = []
     subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
