@@ -560,6 +560,54 @@ RSpec.describe ProcessRunQueueJob do
       )
     end
 
+    # @spec AUTOMATION-PHASES-013
+    it "rechecks phase authorization after claiming an automatic run" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project:, github_state: "open")
+      queued_run = create(:agent_run, :queued, project:, issue:, goal: "create_pr", trigger_type: "automatic")
+      FeatureFlags.enable!(:automation_phases, project:)
+      allow(Automation::RolloutGuard).to receive(:enabled?).with(project).and_return(true)
+
+      allow(AgentRun).to receive(:claim_next_queued_run).and_wrap_original do |original, **kwargs|
+        claimed = original.call(**kwargs)
+        project.update!(Automation::PhaseSettings::SETTINGS_KEY => {
+          Automation::PhaseSettings::PHASES_KEY => { "coding" => false }
+        }) if claimed
+        claimed
+      end
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      job.perform
+
+      expect(queued_run.reload).to have_attributes(status: "cancelled", temporal_workflow_id: AgentRun::CLAIMED_SENTINEL)
+    end
+
+    # @spec AUTOMATION-PHASES-013
+    it "rechecks a revoked continuation grant after claiming an automatic run" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project:, github_state: "open")
+      queued_run = create(:agent_run, :queued, project:, issue:, goal: "create_pr", trigger_type: "automatic")
+      grant = create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
+      project.update!(Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => false }
+      })
+      FeatureFlags.enable!(:automation_phases, project:)
+      allow(Automation::RolloutGuard).to receive(:enabled?).with(project).and_return(true)
+
+      allow(AgentRun).to receive(:claim_next_queued_run).and_wrap_original do |original, **kwargs|
+        claimed = original.call(**kwargs)
+        grant.revoke! if claimed
+        claimed
+      end
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      job.perform
+
+      expect(queued_run.reload).to have_attributes(status: "cancelled", temporal_workflow_id: AgentRun::CLAIMED_SENTINEL)
+    end
+
     it "starts multiple queued runs up to user capacity" do
       project = create(:project)
       project.created_by.settings.update!(max_concurrent_runs: 2)
