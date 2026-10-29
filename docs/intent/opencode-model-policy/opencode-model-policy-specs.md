@@ -70,6 +70,12 @@
   and show: “You are responsible for verifying this provider's zero data
   retention agreement and configuration.” for user-declared provenance.
 
+- [x] **MODEL-POLICY-018** — Runner setup SHALL allow the ZDR declaration for
+  every provider. For an OpenRouter API-key setup it SHALL only save a
+  concrete advertised-ZDR, runner-compatible model while the catalog is
+  ready; for any other provider it SHALL retain the user declaration and
+  display the user-verification responsibility without claiming enforcement.
+
 - [x] **MODEL-POLICY-005** — When a `free_model_policy?` runner saves with
   blank `tier_model_ids`, `sync_direct_outbound_tier_models` SHALL curate
   them from `FreeModels::DefaultTierModels`, and

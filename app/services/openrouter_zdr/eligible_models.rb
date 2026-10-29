@@ -9,9 +9,14 @@ module OpenrouterZdr
     end
 
     # @spec FREE-MODEL-SYNC-013
+    # @spec RUNNER-MODEL-OPTIONS-009
+    def self.models
+      LlmModel.active.where(model_id: OpenrouterZdrModel.select(:model_id))
+    end
+
+    # @spec FREE-MODEL-SYNC-013
     def call
-      Result.new(models: LlmModel.active.where(model_id: OpenrouterZdrModel.select(:model_id)),
-        catalog: OpenrouterZdrCatalog.current)
+      Result.new(models: self.class.models, catalog: OpenrouterZdrCatalog.current)
     end
   end
 end
