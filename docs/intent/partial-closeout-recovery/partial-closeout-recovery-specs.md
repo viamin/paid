@@ -649,7 +649,11 @@
   `prerequisites` array SHALL expose its one persisted prerequisite identity as
   a compatible occurrence and atomically upgrade it with the current source
   revision before recording the submission. The unresolved notification remains
-  active until a current, sufficient assessment resolves that occurrence.
+  active until a current, sufficient assessment resolves that occurrence; the
+  occurrence-only release path SHALL require a matching pending submission and
+  SHALL release the parent scheduling guard only after every current occurrence
+  is reconciled as sufficient. Dismissal and generic notification resolution
+  SHALL not release that guard.
   *Code:* `app/services/partial_closeouts/submit_evidence.rb`,
   `app/services/partial_closeouts/assess_evidence.rb`,
   `app/services/partial_closeouts/reconcile_evidence.rb`,

@@ -50,13 +50,14 @@ module PartialCloseouts
       raise ArgumentError, "notification is no longer active" unless notification.active?
       raise ArgumentError, "prerequisite identity is required" if prerequisite_identity.blank?
       raise ArgumentError, "validation outcome is invalid" unless OUTCOMES.include?(requested_outcome)
-      raise ArgumentError, "submitted evidence was not found" unless submission
+      raise ArgumentError, "pending submitted evidence was not found" unless submission
     end
 
     def submission
       @submission ||= Array(notification.metadata["evidence_submissions"]).reverse.find do |candidate|
         candidate["prerequisite_identity"] == prerequisite_identity &&
-          candidate["evidence_url"] == evidence_url && candidate["explanation"] == explanation
+          candidate["evidence_url"] == evidence_url && candidate["explanation"] == explanation &&
+          candidate["outcome"] == "pending_validation"
       end
     end
 
@@ -98,17 +99,22 @@ module PartialCloseouts
     def resolve_if_complete!
       return unless all_occurrences_sufficient?
 
-      notification.update!(resolved_at: Time.current)
+      notification.update!(resolved_at: Time.current,
+        metadata: notification.metadata.merge("released_by" => "reconciled_evidence",
+          "released_at" => Time.current.iso8601))
     end
 
     def all_occurrences_sufficient?
       occurrences = PrerequisiteOccurrences.for(notification)
       occurrences.present? && occurrences.all? do |candidate|
-        Array(notification.metadata["evidence_submissions"]).any? do |candidate_submission|
-          candidate_submission["prerequisite_identity"] == candidate["identity"] &&
-            candidate_submission["outcome"] == "sufficient" &&
-            current_submission?(candidate, candidate_submission)
-        end
+        latest_submission_for(candidate)&.fetch("outcome", nil) == "sufficient"
+      end
+    end
+
+    def latest_submission_for(candidate)
+      Array(notification.metadata["evidence_submissions"]).reverse.find do |candidate_submission|
+        candidate_submission["prerequisite_identity"] == candidate["identity"] &&
+          current_submission?(candidate, candidate_submission)
       end
     end
 
