@@ -109,7 +109,7 @@ class Notification < ApplicationRecord
     return false unless subject.is_a?(Issue)
 
     resolved_now = saved_change_to_resolved_at? && attribute_before_last_save("resolved_at").nil?
-    resolved_now && metadata["released_by"] == "reconciled_evidence"
+    resolved_now && metadata["released_by"].in?(%w[reconciled_evidence external_prerequisite])
   end
 
   def enqueue_partial_closeout_subject_on_release
