@@ -328,6 +328,8 @@ Rails.application.routes.draw do
       post :toggle_auto_continue_pause, on: :collection
       post :unblock_escalation, on: :collection
       post :resume_manual_review, on: :collection
+      post :resolve_reopen_review, on: :collection
+      post :authorize_scanner_remediation, on: :collection
       post :clear_retry_abandonment, on: :collection
       get :docker_host_options, on: :collection
     end
@@ -442,6 +444,7 @@ Rails.application.routes.draw do
       get "inbox/count", to: "inbox#count"
       get "inbox/entries/:entry_id", to: "inbox#show"
       post "inbox/entries/:entry_id/chat", to: "inbox#chat"
+      post "inbox/entries/:entry_id/resolve_reopen_review", to: "inbox#resolve_reopen_review"
       # RDR-077: the same personal removal surface as the web Inbox.
       post "inbox/entries/:entry_id/remove", to: "inbox#remove_entry"
       post "inbox/entries/:entry_id/restore", to: "inbox#restore_entry"
