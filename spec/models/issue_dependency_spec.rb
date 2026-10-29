@@ -67,6 +67,31 @@ RSpec.describe IssueDependency do
     end
 
     # @spec DEPENDENCY-DECLARATIONS-008
+    it "allows a parent dependency when the child has a contextual parent reference" do
+      project = create(:project)
+      parent = create(:issue, project: project, github_number: 705)
+      child = create(:issue, project: project, github_number: 706, parent_issue: parent)
+      create(:issue_dependency, issue: child, depends_on_issue: parent)
+
+      dep = build(:issue_dependency, issue: parent, depends_on_issue: child)
+
+      expect(dep).to be_valid
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-008
+    it "allows a parent dependency when a contextual external reference resolves locally" do
+      project = create(:project, owner: "acme", repo: "paid")
+      parent = create(:issue, project: project, github_number: 707)
+      child = create(:issue, project: project, github_number: 708, parent_issue: parent)
+      create(:issue_dependency, issue: child, depends_on_issue: nil,
+        depends_on_owner: "acme", depends_on_repo: "paid", depends_on_number: parent.github_number)
+
+      dep = build(:issue_dependency, issue: parent, depends_on_issue: child)
+
+      expect(dep).to be_valid
+    end
+
+    # @spec DEPENDENCY-DECLARATIONS-008
     it "rejects a cross-project multi-node cycle within one account" do
       account = create(:account)
       first_project = create(:project, account: account)

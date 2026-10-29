@@ -96,6 +96,7 @@ class IssueDependency < ApplicationRecord
     joins(issue: :project)
       .where(projects: { account_id: account.id })
       .where.not(depends_on_issue_id: nil)
+      .excluding_parent_references
       .pluck(:issue_id, :depends_on_issue_id)
       .group_by(&:first)
       .transform_values { |pairs| pairs.map(&:last) }

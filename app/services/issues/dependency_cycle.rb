@@ -53,7 +53,10 @@ module Issues
 
     def resolved_external_edges
       IssueDependency.external_resolved_for_account(dependency.issue.project.account_id)
+        .joins(issue: :project)
+        .where(projects: { account_id: dependency.issue.project.account_id })
         .where.not(id: dependency.id)
+        .where("issues.parent_issue_id IS DISTINCT FROM ext_issue.id")
         .pluck("issue_dependencies.issue_id", "ext_issue.id")
         .select { |_from_id, to_id| to_id.present? }
     end
