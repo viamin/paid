@@ -242,6 +242,9 @@ The operating principles that tie the approaches above to day-to-day work:
 - **No silent stops.** When automation stops acting on a work item, the system
   surfaces that it stopped, why it stopped, and what clears it. A blocked state
   legible only in the database is a defect, not a quiet success.
+- **Bounded operational observation.** System-level delivery-health observation
+  may analyze only sanitized operational facts and must remain advisory unless
+  an independently reviewed, authorized, reversible action boundary exists.
 - **One LLM interface.** All application-level LLM calls flow through
   `agent_harness`; fail loudly rather than papering over provider differences
   in the control plane.

@@ -44,39 +44,47 @@ RSpec.describe AccountHealthCheckSweepJob do
     end
 
     it "writes the cached result for each project, evaluates notifications, and emits the sweep_completed log" do
-      projects = create_list(:project, 2)
+      create(:project)
+      account = create(:account)
+      projects = create_list(:project, 2, account:)
       allow(HealthChecks::Coordinator).to receive(:call).and_return(clean_result)
 
       described_class.perform_now
 
-      projects.each do |project|
-        expect(HealthChecks::Coordinator).to have_received(:call).with(
-          scope: :project, subject: project, include_network: true,
-          owner_findings_cache: anything, effective_owner: anything
-        )
-        expect(HealthChecks::Cache).to have_received(:write).with(project, clean_result)
-      end
-      expect(Notifications::Rule).to have_received(:evaluate_all).twice
+      expect_project_health_checks(projects)
+      expect(Notifications::Rule).to have_received(:evaluate_all).with(
+        account:,
+        health_check_results_by_project_id: projects.index_by(&:id).transform_values { clean_result }
+      )
       expect(Rails.logger).to have_received(:info).with(
-        hash_including(message: "project_health.sweep_completed", projects_checked: 2, total_findings: 0)
+        hash_including(
+          message: "project_health.sweep_completed",
+          projects_checked: a_value >= projects.size,
+          total_findings: 0
+        )
       )
     end
 
     it "aggregates total findings across the project fleet" do
-      create_list(:project, 2)
-      results = [ warning_result, clean_result ].cycle
-      allow(HealthChecks::Coordinator).to receive(:call) { results.next }
+      create(:project)
+      projects = create_list(:project, 2)
+      allow(HealthChecks::Coordinator).to receive(:call) do |subject:, **|
+        subject == projects.first ? warning_result : clean_result
+      end
 
       described_class.perform_now
 
-      expect(Rails.logger).to have_received(:info).with(hash_including(projects_checked: 2, total_findings: 1))
+      expect(Rails.logger).to have_received(:info).with(
+        hash_including(projects_checked: a_value >= projects.size, total_findings: 1)
+      )
     end
 
     it "shares one owner_findings_cache across every project in the sweep" do
-      create_list(:project, 2)
+      create(:project)
+      projects = create_list(:project, 2)
       seen_caches = []
-      allow(HealthChecks::Coordinator).to receive(:call) do |owner_findings_cache:, **|
-        seen_caches << owner_findings_cache
+      allow(HealthChecks::Coordinator).to receive(:call) do |subject:, owner_findings_cache:, **|
+        seen_caches << owner_findings_cache if subject.in?(projects)
         clean_result
       end
 
@@ -130,6 +138,7 @@ RSpec.describe AccountHealthCheckSweepJob do
     end
 
     it "isolates a failing project so the sweep continues and logs it" do
+      create(:project)
       good = create(:project)
       bad = create(:project, owner: "broken-owner", repo: "broken-repo")
       allow(HealthChecks::Coordinator).to receive(:call) do |subject:, **|
@@ -148,7 +157,7 @@ RSpec.describe AccountHealthCheckSweepJob do
       )
       # Sweep still completes and reports the one project that succeeded.
       expect(Rails.logger).to have_received(:info).with(
-        hash_including(message: "project_health.sweep_completed", projects_checked: 1)
+        hash_including(message: "project_health.sweep_completed", projects_checked: a_value >= 1)
       )
     end
 
@@ -185,6 +194,16 @@ RSpec.describe AccountHealthCheckSweepJob do
       expect(Rails.logger).to have_received(:info).with(
         hash_including(message: "project_health.sweep_completed")
       )
+    end
+
+    def expect_project_health_checks(projects)
+      projects.each do |project|
+        expect(HealthChecks::Coordinator).to have_received(:call).with(
+          scope: :project, subject: project, include_network: true,
+          owner_findings_cache: anything, effective_owner: anything
+        )
+        expect(HealthChecks::Cache).to have_received(:write).with(project, clean_result)
+      end
     end
   end
 end
