@@ -492,6 +492,7 @@ class ProcessRunQueueJob < ApplicationJob
     available_at: nil, park_reason: nil)
     original_id = agent_run.runner_id
     cache_key = reroute_cache_key(agent_run, original_id)
+    snapshot_zdr_requirement!(agent_run)
 
     if reroute_cache.key?(cache_key)
       cached = reroute_cache[cache_key]
@@ -504,7 +505,6 @@ class ProcessRunQueueJob < ApplicationJob
       return apply_cached_reroute(agent_run, cached) unless blocked_runner_ids.include?(cached[:runner_id])
     end
 
-    snapshot_zdr_requirement!(agent_run)
     agent_run.update_columns(runner_id: nil)
     if AgentRuns::BindRunner.call(agent_run: agent_run, exclude_runner_ids: blocked_runner_ids,
                                     disabled_runner_ids: disabled_runner_ids)

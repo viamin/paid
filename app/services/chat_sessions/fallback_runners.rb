@@ -6,7 +6,7 @@ module ChatSessions
   module FallbackRunners
     module_function
 
-    def for(chat_session:, excluding: [])
+    def for(chat_session:, excluding: [], required_zdr: false)
       # @spec CHAT-API-006
       user = chat_session.created_by
       return [] unless user&.settings
@@ -40,7 +40,7 @@ module ChatSessions
       (current_candidates + configured_candidates + automatic_candidates).uniq.select do |runner|
         free_pool_available?(runner, chat_session: chat_session) &&
           curated_low_available?(runner, chat_session: chat_session) &&
-          privacy_eligible?(runner, chat_session: chat_session)
+          privacy_eligible?(runner, chat_session: chat_session, required_zdr: required_zdr)
       end
     end
 
@@ -82,9 +82,9 @@ module ChatSessions
     end
 
     # @spec MODEL-POLICY-020
-    def privacy_eligible?(runner, chat_session:)
+    def privacy_eligible?(runner, chat_session:, required_zdr:)
       project = chat_session.llm_policy_projects.find(&:restricted?)
-      policy = runner.effective_privacy_policy(project: project)
+      policy = runner.effective_privacy_policy(project: project, required_zdr: required_zdr)
       return true unless policy.zdr_required
 
       runner.required_api_service_type != Runner::OPENROUTER_FREE_MODEL_PROVIDER && policy.eligible

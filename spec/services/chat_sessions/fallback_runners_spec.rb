@@ -37,6 +37,21 @@ RSpec.describe ChatSessions::FallbackRunners do
       expect(chat_session.reload.runner).to eq(primary_runner)
     end
 
+    # @spec MODEL-POLICY-020
+    it "preserves the originating runner's ZDR requirement for fallback eligibility" do
+      primary_runner.update!(zero_data_retention: true)
+      fallback_runner = create(:runner, :api_key, user: user, runner_key: "claude",
+        provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+      ChatFallbackCatalog.seed_low_tier_model(model_id: "claude-haiku-4-5")
+      user.settings.update_columns(kb_chat_fallback_runners: [ fallback_runner.routing_key ])
+
+      expect(described_class.for(
+        chat_session: chat_session,
+        excluding: [ primary_runner ],
+        required_zdr: true
+      )).to eq([])
+    end
+
     # @spec CHAT-API-026
     it "skips a non-free fallback whose curated Low tier is unavailable and retains a later healthy fallback" do
       claude_low = ChatFallbackCatalog.seed_low_tier_model(model_id: "claude-haiku-4-5")

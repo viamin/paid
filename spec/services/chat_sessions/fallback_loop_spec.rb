@@ -37,6 +37,20 @@ RSpec.describe ChatSessions::FallbackLoop, type: :service do
     expect(chat_session.messages.where(id: partial_message.id)).not_to exist
   end
 
+  # @spec MODEL-POLICY-020
+  it "does not weaken the originating runner's ZDR requirement after a provider error" do
+    configure_minimax_runner_with_429_response
+    original_runner = chat_session.reload.runner
+    original_runner.update!(zero_data_retention: true)
+    fallback_runner = create(:runner, :api_key, user: user, runner_key: "claude",
+      provider_api_key: create(:provider_api_key, user: user, api_service_type: "anthropic"))
+    ChatFallbackCatalog.seed_low_tier_model(model_id: "claude-haiku-4-5")
+    user.settings.update_columns(kb_chat_fallback_runners: [ fallback_runner.routing_key ])
+
+    expect(capture_send_message_error(chat_session)).to be_a(AgentHarness::RateLimitError)
+    expect(chat_session.reload.runner).to eq(original_runner)
+  end
+
   def fallback_host(session)
     Class.new do
       include ChatSessions::FallbackLoop
