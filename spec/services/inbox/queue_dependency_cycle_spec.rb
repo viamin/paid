@@ -36,6 +36,31 @@ RSpec.describe Inbox::Queue do
   end
 
   # @spec AUTO-PICK-QUEUE-015
+  it "does not expose downstream work from another owner's project" do
+    user = create(:user)
+    other_user = create(:user, account: user.account)
+    visible_project = create(:project, account: user.account, created_by: user)
+    hidden_project = create(:project, account: user.account, created_by: other_user)
+    first = create(:issue, project: visible_project, github_state: "open")
+    second = create(:issue, project: visible_project, github_state: "open")
+    visible_downstream = create(:issue, project: visible_project, github_state: "open")
+    hidden_downstream = create(:issue, project: hidden_project, github_state: "open")
+    create(:issue_dependency, issue: first, depends_on_issue: second)
+    create(:issue_dependency, issue: second, depends_on_issue: first)
+    create(:issue_dependency, issue: visible_downstream, depends_on_issue: first)
+    create(:issue_dependency, issue: hidden_downstream, depends_on_issue: visible_downstream)
+
+    account_cycle = Issues::DependencyCycles.call(account: user.account).sole
+    entry = described_class.call(user:, kind: described_class::DEPENDENCY_CYCLE_KIND).sole
+    payload = Api::V1::InboxEntrySerializer.render(entry)
+
+    expect(account_cycle.downstream_issues).to contain_exactly(visible_downstream, hidden_downstream)
+    expect(entry.record.downstream_issues).to contain_exactly(visible_downstream)
+    expect(entry.summary).to eq("1 downstream open issue remains held.")
+    expect(payload.fetch(:downstream_issues_held)).to eq(1)
+  end
+
+  # @spec AUTO-PICK-QUEUE-015
   it "surfaces a recreated cycle after the prior occurrence was personally removed" do
     user = create(:user)
     project = create(:project, account: user.account, created_by: user)

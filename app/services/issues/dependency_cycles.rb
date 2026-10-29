@@ -23,7 +23,10 @@ module Issues
       def id = "dependency_cycle:#{fingerprint}"
       def project = issues.min_by { |issue| [ issue.project.owner, issue.project.repo, issue.github_number ] }.project
       def title = "Dependency cycle across #{issues.size} issue#{'s' unless issues.one?}"
-      def summary = "#{downstream_issues.size} downstream open issue#{'s' unless downstream_issues.one?} remain held."
+      def summary
+        count = downstream_issues.size
+        "#{count} downstream open issue#{'s' unless count == 1} remain#{'s' if count == 1} held."
+      end
       def project_ids = issues.map(&:project_id).uniq
       def visible_within?(visible_project_ids) = project_ids.all? { |project_id| visible_project_ids.include?(project_id) }
       def touches?(visible_project_ids) = project_ids.any? { |project_id| visible_project_ids.include?(project_id) }

@@ -1024,6 +1024,10 @@ module Inbox
           next unless cycle.visible_within?(authorized_project_ids) && cycle.touches?(scoped_project_ids)
           next if @record_id && cycle.fingerprint != @record_id.to_s
 
+          cycle = cycle.with(downstream_issues: cycle.downstream_issues.select do |issue|
+            authorized_project_ids.include?(issue.project_id)
+          end)
+
           Entry.new(
             id: cycle.id,
             kind: DEPENDENCY_CYCLE_KIND,
