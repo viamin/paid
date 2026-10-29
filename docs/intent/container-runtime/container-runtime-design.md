@@ -735,6 +735,10 @@ baseline `bun-linux-x64-baseline.zip` asset when `/proc/cpuinfo` does not
 advertise AVX2. That keeps the Oh My Pi install path compatible with older
 `amd64` runners instead of failing inside the post-install assertions.
 
+The agent-image workflow allows 90 minutes for a cold rebuild. Contract-owned
+CLI upgrades invalidate the installation layers together, and the workflow
+must retain enough time to rebuild them and run both smoke suites.
+
 ### Warden security-scanning CLI
 
 The agent image ships [warden](https://github.com/getsentry/warden) (npm
