@@ -19,6 +19,20 @@ module Automation
       # Continuation must attach to a durable issue or pull-request work item.
       class WorkItemRequired < Error; end
 
+      GOAL_PHASES = {
+        "create_feature" => Automation::Phases::DISCOVERY,
+        "enhance_issue" => Automation::Phases::ISSUE_PREPARATION,
+        "analyze_issue" => Automation::Phases::ISSUE_PREPARATION,
+        "create_pr" => Automation::Phases::CODING,
+        "review" => Automation::Phases::CODING,
+        "create_issue" => Automation::Phases::CODING,
+        "lid_planning" => Automation::Phases::CODING
+      }.freeze
+
+      def self.phase_for_goal(goal)
+        GOAL_PHASES[goal.to_s]
+      end
+
       attr_reader :continuation_selected, :endpoint, :goal, :phase, :project, :user
 
       def self.call(...)

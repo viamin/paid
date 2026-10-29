@@ -35,6 +35,9 @@ module Tools
             description: "Named plan docs to weight the prompt (used by lid_planning). Each entry is an object with a 'name' key.",
             items: { type: "object", properties: { name: { type: "string" } }, required: %w[name] }
           },
+          continuation_authorized: { type: "boolean", description: "Unchecked by default. Authorize only this work item's automatic continuation." },
+          continuation_endpoint: { type: "string", enum: Automation::Phases::CONTINUATION_ENDPOINTS, description: "Applicable endpoint through Merge; it does not prevent independently enabled project automation." },
+          continuation_notice_signature: { type: "string", description: "Signature from the effective-policy notice. A changed policy returns an updated notice for review." },
           confirmed: { type: "boolean", description: "Must be true to execute this write operation" }
         },
         required: %w[project_id confirmed]
@@ -42,12 +45,16 @@ module Tools
     end
 
     # @spec LAYERED-VERIFY-012
-    def perform(project_id:, confirmed: false, issue_id: nil, goal: "create_pr", custom_prompt: nil, plan_docs: [])
+    # @spec AUTOMATION-PHASES-004 @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-010 @spec AUTOMATION-PHASES-011
+    def perform(project_id:, confirmed: false, issue_id: nil, goal: "create_pr", custom_prompt: nil, plan_docs: [], continuation_authorized: false, continuation_endpoint: nil, continuation_notice_signature: nil)
       raise ArgumentError, "Confirmation required: set confirmed=true to trigger an agent run" unless confirmed
       raise ArgumentError, "Layered-verification runs must be started from their dedicated entry point" if layered_verification_goal?(goal)
 
       project = project_for(project_id)
       issue = issue_id ? project.issues.find(issue_id) : nil
+      plan = manual_start_plan(project:, goal:, continuation_authorized:, continuation_endpoint:)
+      plan&.call
+      return policy_review(plan) if plan && plan.policy_changed_since?(continuation_notice_signature)
       custom_prompt = custom_prompt&.strip.presence
       named_plan_docs = Array(plan_docs).filter_map do |doc|
         next unless doc.respond_to?(:[])
@@ -75,22 +82,26 @@ module Tools
       # so a chat-triggered run is indistinguishable from a UI-triggered one.
       Issues::ActivatePaid.call(project: project, issue: issue)
 
-      run = AgentRun.create!(
-        project: project,
-        issue: issue,
-        initiating_user: current_user,
-        runner_id: runner_id,
-        agent_type: agent_type,
-        goal: goal,
-        custom_prompt: custom_prompt,
-        # @spec REVIEW-DEPTH-006 — snapshot the project's effective
-        # review_depth preset at creation time so later project changes
-        # cannot retroactively alter the run's review behavior.
-        review_depth_snapshot: project.effective_review_depth,
-        external_metadata: external_metadata,
-        status: "queued",
-        trigger_type: "manual"
-      )
+      run = ActiveRecord::Base.transaction do
+        run = AgentRun.create!(
+          project: project,
+          issue: issue,
+          initiating_user: current_user,
+          runner_id: runner_id,
+          agent_type: agent_type,
+          goal: goal,
+          custom_prompt: custom_prompt,
+          # @spec REVIEW-DEPTH-006 — snapshot the project's effective
+          # review_depth preset at creation time so later project changes
+          # cannot retroactively alter the run's review behavior.
+          review_depth_snapshot: project.effective_review_depth,
+          external_metadata: external_metadata,
+          status: "queued",
+          trigger_type: "manual"
+        )
+        plan&.build_grant(issue:) if plan&.continuation_selected
+        run
+      end
 
       ProcessRunQueueJob.perform_later
 
@@ -100,12 +111,19 @@ module Tools
         goal: run.goal,
         issue_id: run.issue_id,
         project_id: run.project_id,
-        created_at: run.created_at
+        created_at: run.created_at,
+        # @spec AUTOMATION-PHASES-010 — selection_summary always names the
+        # endpoint under review, even when no later phase is project-enabled,
+        # so the MCP client can confirm what it submitted. #summary drops the
+        # endpoint in the no-later-phase case.
+        effective_policy_notice: plan&.notice&.selection_summary
       }
     rescue ActiveRecord::RecordNotUnique => e
       raise unless duplicate_active_issue_run?(e)
 
       raise ArgumentError, "An agent run is already queued or in progress for this issue"
+    rescue Automation::ManualStart::Plan::Error => e
+      raise ArgumentError, e.message
     end
 
     private
@@ -125,6 +143,30 @@ module Tools
 
     def duplicate_active_issue_run?(error)
       (error.cause&.message || error.message).include?("idx_agent_runs_unique_active_issue")
+    end
+
+    def manual_start_plan(project:, goal:, continuation_authorized:, continuation_endpoint:)
+      return unless Automation::RolloutGuard.enabled?(project)
+
+      phase = Automation::ManualStart::Plan.phase_for_goal(goal)
+      return unless phase
+
+      Automation::ManualStart::Plan.new(
+        project:, user: current_user, phase:, goal:, endpoint: continuation_endpoint,
+        continuation_selected: continuation_authorized
+      )
+    end
+
+    # @spec AUTOMATION-PHASES-010 @spec AUTOMATION-PHASES-011 — the review
+    # payload names the endpoint under review via selection_summary so the
+    # client can verify the selection even when the current policy permits no
+    # later phase.
+    def policy_review(plan)
+      {
+        review_required: true,
+        effective_policy_notice: plan.notice.selection_summary,
+        continuation_notice_signature: plan.signature
+      }
     end
 
     # @spec FEATURE-CREATION-007 — the parsed brief is stored verbatim

@@ -83,4 +83,13 @@ RSpec.describe "Project automation phases" do
     expect(response).to redirect_to(project_automation_phases_path(project))
     expect(flash[:notice]).to eq("Grant was no longer active; nothing to revoke.")
   end
+
+  it "extends an active grant when the user may delegate the later endpoint" do # @spec AUTOMATION-PHASES-009
+    grant = create(:work_item_continuation_grant, project:, issue: create(:issue, project:), start_phase: "coding", endpoint: "coding")
+
+    patch extend_continuation_grant_project_automation_phases_path(project, grant), params: { endpoint: "merge" }
+
+    expect(response).to redirect_to(project_automation_phases_path(project))
+    expect(grant.reload.endpoint).to eq("merge")
+  end
 end

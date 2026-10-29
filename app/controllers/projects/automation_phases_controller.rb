@@ -56,6 +56,22 @@ module Projects
       end
     end
 
+    # @spec AUTOMATION-PHASES-009
+    def extend_grant
+      authorize @project, :update?
+
+      grant = @project.work_item_continuation_grants.find(params[:id])
+      plan = Automation::ManualStart::Plan.call(
+        project: @project, user: current_user, phase: grant.start_phase,
+        endpoint: params[:endpoint], continuation_selected: true
+      )
+      extended = grant.extend_to!(endpoint: plan.endpoint)
+
+      redirect_to project_automation_phases_path(@project), notice: extension_notice(extended)
+    rescue Automation::ManualStart::Plan::Error => error
+      redirect_to project_automation_phases_path(@project), alert: error.message
+    end
+
     private
 
     def set_project
@@ -86,6 +102,12 @@ module Projects
         Automation::PhaseSettings::RELEASE_KEY => permitted["release"],
         Automation::PhaseSettings::DEPLOYMENT_KEY => permitted["deployment"]
       }
+    end
+
+    def extension_notice(extended)
+      return "Continuation grant extended." if extended
+
+      "Continuation grant could not be extended; it may be inactive or already cover that endpoint."
     end
   end
 end

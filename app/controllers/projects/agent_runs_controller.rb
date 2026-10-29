@@ -31,7 +31,7 @@ module Projects
       @filter_options = available_filter_options(base_scope, cache_key: filter_options_cache_key)
     end
 
-    # @spec EXECUTION-ISOLATION-005
+    # @spec EXECUTION-ISOLATION-005 @spec AUTOMATION-PHASES-008 @spec AUTOMATION-PHASES-010
     def show
       authorize @agent_run
       @retry_runner_options = retry_runner_options_for(@agent_run)
@@ -50,6 +50,7 @@ module Projects
       @egress_security_events = egress_audit_events.recent.limit(50).load
       @egress_denied_event_count = egress_audit_events.count
       @session_summary = @agent_run.agent_run_session_summary
+      load_continuation_authority
     end
 
     def provenance
@@ -259,6 +260,13 @@ module Projects
       unless issue || source_pr_number
         redirect_to project_path(@project),
           alert: "Please select an issue or pull request."
+        return
+      end
+
+      if phase_model_governed?
+        redirect_to new_project_agent_run_path(
+          @project, goal: "create_pr", issue_id: issue&.id, pull_request_id: params[:pull_request_id]
+        )
         return
       end
 
@@ -1038,10 +1046,12 @@ module Projects
       @effective_policy_notice = plan&.notice
     end
 
-    # @spec AUTOMATION-PHASES-011
+    # @spec AUTOMATION-PHASES-010 @spec AUTOMATION-PHASES-011 — selection_summary
+    # names the endpoint under review even when the changed policy permits no
+    # later phase, matching the form's own notice.
     def updated_policy_alert(plan)
       "This project's automation settings changed since you opened this form. " \
-        "Review the updated automation notice and submit again. #{plan.notice.summary}"
+        "Review the updated automation notice and submit again. #{plan.notice.selection_summary}"
     end
 
     def resolve_blocked_by_issue_ids
@@ -1340,6 +1350,21 @@ module Projects
 
     def phase_model_governed?
       Automation::RolloutGuard.enabled?(@project)
+    end
+
+    def load_continuation_authority
+      return unless phase_model_governed?
+
+      phase = Automation::ManualStart::Plan.phase_for_goal(@agent_run.goal)
+      return unless phase
+
+      @continuation_phase = phase
+      @continuation_grants = Automation::ContinuationGrantLookup.resolve(
+        project: @project, phase:, work_item: @agent_run
+      )
+      @continuation_authority = Automation::EffectivePolicy.call(
+        project: @project, phase:, work_item: @agent_run, trigger: :automatic
+      )
     end
 
     # @spec AUTOMATION-PHASES-005
