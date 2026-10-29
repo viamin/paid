@@ -81,7 +81,16 @@ reports evidence, coverage time, and an explicit state: `missing_tree`,
 Issue coverage preloads shared project records in a separate query rather than
 joining full project rows into the issue result. Project audit history must not
 be repeated for every issue: PostgreSQL results and their Ruby string copies
-would otherwise multiply that history by the synchronized issue count.
+would otherwise multiply that history by the synchronized issue count. One
+reconciliation sweep builds a bounded, job-scoped plain issue-fact snapshot for
+each authorized project selected by its exact owner/repository pair and reuses
+it for every artifact at that sweep's pinned
+revisions. A sweep with no artifacts does not construct issue coverage. Each
+artifact receives only facts from its own referenced or
+associated projects, even when another artifact expands the sweep's authorized
+project set. The snapshot selects only reconciliation fields and batches
+canonical-manifest and exact-backlink evidence; it never retains issue ORM
+graphs or carries the snapshot into another sweep or revision.
 
 PR synchronization schedules repository reconciliation after a fixed 30-second
 coalescing window. Scheduling and coalescing happen after the synchronization
