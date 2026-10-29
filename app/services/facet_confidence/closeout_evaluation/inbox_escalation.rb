@@ -1,0 +1,91 @@
+# frozen_string_literal: true
+
+module FacetConfidence
+  module CloseoutEvaluation
+    # Typed bridge between a partial-closeout escalation and its human
+    # evaluation workflow. The marker is durable notification metadata, not
+    # an inference from notification prose, so unrelated prerequisites retain
+    # the generic Action Required presentation.
+    # @spec FACET-CONFIDENCE-022
+    class InboxEscalation
+      WORKFLOW = "facet_confidence_closeout_evaluation"
+
+      def self.for(notification)
+        new(notification).then { _1 if _1.applicable? }
+      end
+
+      # CloseoutStatus groups every active human-prerequisite notification for
+      # one issue into one blocker. Only clear that blocker when every recorded
+      # notification is this workflow; otherwise a generic human prerequisite
+      # remains an unrelated, fail-closed blocker.
+      def self.resolves_blocker?(blocker)
+        return false unless blocker.code == :human_prerequisite_notification
+
+        notifications = Array(blocker.evidence&.fetch("notifications", nil))
+        notifications.any? && notifications.all? { |notification| notification.dig("metadata", "workflow") == WORKFLOW }
+      end
+
+      def initialize(notification)
+        @notification = notification
+      end
+
+      def applicable?
+        %i[source subject metadata].all? { notification.respond_to?(_1) } &&
+          notification.source == PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE &&
+          notification.subject.is_a?(Issue) && notification.metadata["workflow"] == WORKFLOW
+      end
+
+      def evaluation
+        return @evaluation if defined?(@evaluation)
+
+        @evaluation = issue.facet_confidence_evaluations.find_by(corpus_digest: current_corpus.content_digest)
+      end
+
+      def title = "Independent evaluation needed"
+
+      def explanation
+        "This closeout is blocked until a maintainer independently reviews each frozen test case. " \
+          "Record a judgment for every case, then freeze the completed set so the closeout has human evidence."
+      end
+
+      def action_label(actor:)
+        return "Start evaluation" unless evaluation
+        return "View completed evaluation" if evaluation.frozen?
+        return "View evaluation" unless evaluation.created_by_id == actor&.id
+        return "Resume evaluation" if progress.fetch(:labeled).zero? && progress.fetch(:skipped).zero?
+        return "Freeze judgments" if remaining.zero? && progress.fetch(:skipped).zero?
+
+        "Continue judging"
+      end
+
+      def progress
+        @progress ||= evaluation&.progress || {
+          total: current_corpus.case_ids.length,
+          labeled: 0,
+          skipped: 0
+        }
+      end
+
+      def remaining
+        progress.fetch(:total) - progress.fetch(:labeled) - progress.fetch(:skipped)
+      end
+
+      def progress_message
+        return "The completed set is frozen and its report is available." if evaluation&.frozen?
+
+        message = "#{progress.fetch(:labeled)} of #{progress.fetch(:total)} judgments recorded; #{remaining} remaining."
+        if progress.fetch(:skipped).positive?
+          message += " #{progress.fetch(:skipped)} skipped case#{'s' unless progress.fetch(:skipped) == 1} must be judged before freezing."
+        end
+        message
+      end
+
+      private
+
+      attr_reader :notification
+
+      def issue = notification.subject
+      def current_corpus = @current_corpus ||= FacetConfidence::Corpus.new(path: CloseoutEvaluationPacket::MANIFEST_PATH)
+    end
+  end
+end

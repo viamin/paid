@@ -5,6 +5,7 @@ module PartialCloseouts
   class Reconcile
     MAX_GAPS = 10
     VALID_REFERENCE_KINDS = %w[policy evidence].freeze
+    VALID_WORKFLOWS = [ FacetConfidence::CloseoutEvaluation::InboxEscalation::WORKFLOW ].freeze
 
     def self.call(...)
       new(...).call
@@ -42,6 +43,7 @@ module PartialCloseouts
         # fallback would leave the prerequisite unactionable (#4119).
         raise ArgumentError, "human gap next_step is required" if human_gap?(gap) && gap["next_step"].to_s.strip.blank?
         validate_human_references!(gap) if human_gap?(gap)
+        raise ArgumentError, "human gap workflow is invalid" if human_gap?(gap) && gap["workflow"].present? && !gap["workflow"].in?(VALID_WORKFLOWS)
       end
     end
 
@@ -220,6 +222,8 @@ module PartialCloseouts
       identity = Digest::SHA256.hexdigest(JSON.generate(identities))
       metadata = { "prerequisite_identity" => identity, "references" => references,
                    "prerequisites" => human_gaps.map { |gap| prerequisite_occurrence(gap) } }
+      workflow = workflow_for(human_gaps)
+      metadata["workflow"] = workflow if workflow
       submissions = reconciled_evidence_submissions(previous, metadata.fetch("prerequisites"))
       metadata["evidence_submissions"] = submissions if submissions.any?
       policy_selection = replacement_policy_action(human_gaps)
@@ -255,7 +259,7 @@ module PartialCloseouts
     end
 
     def prerequisite_identity(gap)
-      identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection"))
+      identity = canonicalize(gap.slice("criterion", "next_step", "policy_selection", "workflow"))
       identity["references"] = Array(gap["references"])
         .map { |reference| canonicalize(reference) }
         .sort_by { |reference| JSON.generate(reference) }
@@ -290,6 +294,11 @@ module PartialCloseouts
         gap.dig("policy_selection", "next_step") if gap.dig("policy_selection", "required")
       end.uniq
       { "required" => true, "next_step" => steps.join(" ") } if steps.any?
+    end
+
+    def workflow_for(human_gaps)
+      workflows = human_gaps.filter_map { |gap| gap["workflow"].presence }.uniq
+      workflows.sole if workflows.one? && human_gaps.all? { |gap| gap["workflow"] == workflows.sole }
     end
 
     def existing_prerequisite_notification
