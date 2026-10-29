@@ -159,6 +159,7 @@ module FeatureIntents
         @project = project
         @artifacts = artifacts
         @relationship_text = relationship_text
+        @manifest_issue_links = load_manifest_issue_links
         @projects_by_repository = authorized_projects
         @projects_by_id = projects_by_repository.values.index_by(&:id)
         @facts_by_issue_id = load_facts
@@ -176,10 +177,11 @@ module FeatureIntents
 
       private
 
-      attr_reader :project, :artifacts, :relationship_text, :projects_by_repository, :projects_by_id, :facts_by_issue_id, :facts, :manifest_associations_by_path
+      attr_reader :project, :artifacts, :relationship_text, :projects_by_repository, :projects_by_id, :facts_by_issue_id,
+        :facts, :manifest_associations_by_path, :manifest_issue_links
 
       def authorized_projects
-        repositories = (referenced_repositories + associated_repositories).uniq - [ project.full_name ]
+        repositories = (referenced_repositories + associated_repositories + manifest_repositories).uniq - [ project.full_name ]
         external = Project.where(account_id: project.account_id, owner: repositories.map { |name| name.split("/").first },
           repo: repositories.map { |name| name.split("/").last }).select(*PROJECT_FIELDS).to_a
         external.append(project).index_by(&:full_name)
@@ -191,6 +193,14 @@ module FeatureIntents
 
       def associated_repositories
         artifacts.flat_map { |artifact| Array(artifact[:associated_issues]) }.filter_map { |association| association[:repository] }
+      end
+
+      # Issues reachable only through the issue-tree manifest (never named in
+      # an artifact body or stored association) still need their project
+      # authorized here, or their facts are silently unavailable when
+      # `load_manifest_associations` looks them up below.
+      def manifest_repositories
+        manifest_issue_links.map { |(_, _, owner, repo)| "#{owner}/#{repo}" }.uniq
       end
 
       def load_facts
@@ -214,14 +224,18 @@ module FeatureIntents
         end
       end
 
-      def load_manifest_associations
-        FeatureIntentIssue.joins(:feature_intent).where(feature_intents: { project_id: project.id })
-          .pluck("feature_intents.design_document_paths", :issue_id).each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(paths, issue_id), associations|
-            fact = facts_by_issue_id[issue_id]
-            next unless fact && !fact[:is_pull_request]
+      def load_manifest_issue_links
+        FeatureIntentIssue.joins(:feature_intent, issue: :project).where(feature_intents: { project_id: project.id })
+          .pluck("feature_intents.design_document_paths", :issue_id, "projects.owner", "projects.repo")
+      end
 
-            Array(paths).each { |path| associations[path] << association_for(fact, "canonical issue-tree manifest") }
-          end
+      def load_manifest_associations
+        manifest_issue_links.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(paths, issue_id, _, _), associations|
+          fact = facts_by_issue_id[issue_id]
+          next unless fact && !fact[:is_pull_request]
+
+          Array(paths).each { |path| associations[path] << association_for(fact, "canonical issue-tree manifest") }
+        end
       end
 
       def exact_backlinks(artifact)

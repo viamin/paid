@@ -303,6 +303,25 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     )
   end
 
+  # @spec DESIGN-RECONCILIATION-003
+  it "authorizes a manifest-linked issue's project even when the RDR body does not name it" do
+    external_project = create(:project, account: project.account, owner: "acme", repo: "external")
+    linked_issue = create(:issue, project: external_project, github_number: 101)
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-102-external.md", revision: "a" * 40, body: "Status: Accepted"
+    )
+    feature_intent.update!(design_document_paths: [ artifact.path ])
+    create(:feature_intent_issue, feature_intent:, issue: linked_issue)
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.sole).to have_attributes(
+      issue_identity: "acme/external#101", provenance: "canonical issue-tree manifest"
+    )
+  end
+
   it "assesses synchronized open issue candidates before creating a missing-tree finding" do
     allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
     response = instance_double(AgentHarness::Response, success?: true,
