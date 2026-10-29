@@ -490,7 +490,14 @@ RSpec.describe Issues::AutoPick do
       a = create(:issue, project: project, github_state: "open")
       b = create(:issue, project: project, github_state: "open")
       create(:issue_dependency, issue: a, depends_on_issue: b)
-      create(:issue_dependency, issue: b, depends_on_issue: a)
+      # Existing production data can predate the cycle-write validation. Keep
+      # exercising Auto-Pick's defensive handling of that legacy state.
+      IssueDependency.insert_all!([ {
+        issue_id: b.id,
+        depends_on_issue_id: a.id,
+        created_at: Time.current,
+        updated_at: Time.current
+      } ])
 
       result = described_class.new(project).call
 
