@@ -15,8 +15,8 @@ module ChatSessions
   class SendMessage
     include FallbackLoop
 
-    attr_reader :chat_session, :actor, :content, :on_chunk, :on_message_persisted, :llm_client, :stream_message_id,
-      :transport_attempt_message
+    attr_reader :chat_session, :actor, :content, :llm_client, :stream_message_id,
+      :transport_attempt_message, :chat_turn
 
     MAX_CONTENT_LENGTH = 12_000
 
@@ -25,7 +25,7 @@ module ChatSessions
       @actor = actor
       @content = content
       @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @on_message_persisted_callback = on_message_persisted
       @llm_client = llm_client
       @stream_message_id = stream_message_id
     end
@@ -43,10 +43,38 @@ module ChatSessions
       resume_session_if_needed!
 
       persist_user_message
+      # @spec CHAT-TURN-RECOVERY-001
+      @chat_turn = ChatTurn.start!(chat_session: chat_session, user_message: transport_attempt_message)
+      unless chat_turn.claim_initial_attempt!
+        raise ChatTurn::RecoveryRequiredError, "This turn already has durable activity and requires recovery."
+      end
+
       persist_pending_confirmation_notice # @spec PARTIAL-CLOSEOUT-017
       assistant_message = run_with_fallbacks
+      chat_turn.complete!(assistant_message) if assistant_message
       update_session_activity
       assistant_message
+    rescue ChatTurn::RecoveryRequiredError
+      raise
+    rescue StandardError, NotImplementedError => e
+      chat_turn&.fail!(error: e)
+      raise
+    end
+
+    # Wraps the caller-supplied callback so every message AgentLoop/FallbackLoop
+    # persists during the turn also bumps the durable checkpoint tracked by
+    # ChatTurn (#4680) — last_activity_at, and whether a write tool has been
+    # dispatched (which gates automatic recovery eligibility).
+    def on_message_persisted
+      @turn_tracking_callback ||= lambda do |message, **kwargs|
+        chat_turn&.record_activity!(message)
+        @on_message_persisted_callback&.call(message, **kwargs)
+      end
+    end
+
+    # @spec CHAT-TURN-RECOVERY-001 @spec CHAT-TURN-RECOVERY-002
+    def on_chunk
+      @heartbeat_callback ||= chat_turn&.heartbeat_callback(@on_chunk)
     end
 
     private

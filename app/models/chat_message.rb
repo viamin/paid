@@ -28,6 +28,7 @@ class ChatMessage < ApplicationRecord
       AND COALESCE(metadata -> 'rate_limit_paused', 'false'::jsonb) <> 'true'::jsonb
       AND COALESCE(metadata -> 'provider_error_notice', 'false'::jsonb) <> 'true'::jsonb
       AND COALESCE(metadata -> 'pending_confirmation_notice', 'false'::jsonb) <> 'true'::jsonb
+      AND COALESCE(metadata -> 'stalled_turn_notice', 'false'::jsonb) <> 'true'::jsonb
     SQL
   }
 
@@ -89,13 +90,23 @@ class ChatMessage < ApplicationRecord
     metadata.is_a?(Hash) && metadata["pending_confirmation_notice"] == true
   end
 
+  # @spec CHAT-TURN-RECOVERY-003
+  # A server-injected system notice persisted when ChatTurns::StallDetectorJob
+  # classifies a turn as stalled (#4680): no durable activity beyond the
+  # configured threshold, with no terminal outcome. Non-collapsed for the same
+  # reason as the other transcript notices — a stall is never represented as
+  # a successful turn.
+  def stalled_turn_notice?
+    metadata.is_a?(Hash) && metadata["stalled_turn_notice"] == true
+  end
+
   # @spec CHAT-API-024
   def groupable_tool?
     (tool_name.present? || role == "tool") && !pending_confirmation? && !transcript_notice?
   end
 
   def transcript_notice?
-    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice?
+    token_limit_error? || rate_limit_paused? || provider_error_notice? || pending_confirmation_notice? || stalled_turn_notice?
   end
 
   private

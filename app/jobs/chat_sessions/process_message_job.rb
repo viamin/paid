@@ -50,6 +50,9 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
     broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::LlmClientConfigurationError => e
     broadcast_error(chat_session_id, stream_message_id, e.message)
+  rescue ChatTurn::RecoveryRequiredError => e
+    classify_interrupted_turn!(chat_session:, stream_message_id:) if executions > 1
+    broadcast_error(chat_session_id, stream_message_id, e.message)
   rescue ChatSessions::TokenLimitExceededError => e # @spec CHAT-API-014
     broadcast_error(chat_session_id, stream_message_id, e.message,
       limit_type: e.limit_type, limit: e.limit, used: e.used)
@@ -85,6 +88,15 @@ class ChatSessions::ProcessMessageJob < ApplicationJob
   end
 
   private
+
+  # @spec CHAT-TURN-RECOVERY-004
+  def classify_interrupted_turn!(chat_session:, stream_message_id:)
+    user_message = chat_session.messages.find_by(
+      role: "user",
+      metadata: { "stream_message_id" => stream_message_id }
+    )
+    ChatTurn.active.find_by(user_message_id: user_message&.id)&.classify_replay_safe_infrastructure_failure!
+  end
 
   def broadcast_persisted_message(stream_name, message, stream_message_id: nil)
     # @spec CHAT-API-002
