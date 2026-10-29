@@ -1031,6 +1031,7 @@ module Activities
       # detection until the next full sync — an acceptable trade-off vs N×DB reads.
       adjacency = IssueDependency.account_adjacency(project.account)
       parent_child_changed = false
+      dependency_changed = false
 
       # Batch-fetch comments for all candidate issues in one GraphQL request
       # instead of N separate REST calls.
@@ -1060,12 +1061,15 @@ module Activities
         # this issue to avoid stale-removal of comment-derived deps.
         next if github_comments.nil?
 
-        comment_bodies = github_comments
+        trusted_comments = github_comments
           .select { |c| project.trusted_github_user?(c.user&.login) }
-          .map { |c| c.body.to_s }
 
-        Issues::ParseDependencies.call(issue: issue, adjacency: adjacency, comments: comment_bodies)
-        parent_child_changed |= Issues::ParseParentChild.call(issue: issue, comments: comment_bodies)
+        dependency_changed |= Issues::ParseDependencies.call(
+          issue: issue, adjacency: adjacency, comments: trusted_comments, reconcile: false
+        )
+        parent_child_changed |= Issues::ParseParentChild.call(
+          issue: issue, comments: trusted_comments.map { |comment| comment.body.to_s }
+        )
 
         stamp_relationships_parsed(issue, parsed_before)
       rescue GithubClient::RateLimitError
@@ -1086,8 +1090,14 @@ module Activities
       # ParseParentChild returns true when either child-list reconciliation or
       # inline parent declarations changed visible issue relationships.
       synced_numbers = synced_issues.filter_map { |si| si[:github_number] }
-      dependency_changed = resolve_external_dependencies(project, synced_numbers)
+      dependency_changed = resolve_external_dependencies(project, synced_numbers) || dependency_changed
+      reconcile_dependency_cycles(project.account) if dependency_changed
       parent_child_changed || dependency_changed
+    end
+
+    def reconcile_dependency_cycles(account)
+      Issues::DependencyCycles.call(account:)
+      Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
     end
 
     def relationship_parse_candidates(project)

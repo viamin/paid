@@ -949,7 +949,7 @@ components:
       allOf:
         - $ref: '#/components/schemas/InboxEntryBase'
         - type: object
-          required: [cycle_path, downstream_issues_held]
+          required: [cycle_path, cycle_edges, downstream_issues_held]
           properties:
             kind: {type: string, enum: [dependency_cycle]}
             cycle_path:
@@ -962,7 +962,25 @@ components:
                   project: {type: string}
                   number: {type: integer}
                   url: {type: string, format: uri}
+            cycle_edges:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                required: [from, to, declaration_source, declaration_url]
+                properties:
+                  from: {$ref: '#/components/schemas/DependencyCycleIssue'}
+                  to: {$ref: '#/components/schemas/DependencyCycleIssue'}
+                  declaration_source: {type: string, enum: [issue_body, issue_comment], nullable: true}
+                  declaration_url: {type: string, format: uri, nullable: true}
             downstream_issues_held: {type: integer, minimum: 0}
+    DependencyCycleIssue:
+      type: object
+      required: [project, number, url]
+      properties:
+        project: {type: string}
+        number: {type: integer}
+        url: {type: string, format: uri}
     DesignArtifactFinding:
       type: object
       required: [id, artifact_path, revision, state, evidence, covered_at, status]

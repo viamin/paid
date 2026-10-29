@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_29_194510) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2572,6 +2572,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
 
   create_table "issue_dependencies", force: :cascade do |t|
     t.datetime "created_at", null: false
+    t.string "declaration_source", comment: "GitHub surface containing the effective dependency declaration."
+    t.string "declaration_url", comment: "GitHub URL for the effective dependency declaration when available."
     t.bigint "depends_on_issue_id"
     t.integer "depends_on_number"
     t.string "depends_on_owner"

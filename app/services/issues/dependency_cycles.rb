@@ -13,9 +13,9 @@ module Issues
   class DependencyCycles
     class CoverageUnavailable < StandardError; end
 
-    Edge = Data.define(:id, :from_id, :to_id)
+    Edge = Data.define(:id, :from_id, :to_id, :declaration_source, :declaration_url)
 
-    Cycle = Data.define(:account, :issues, :path, :downstream_issues, :detected_at, :occurrence) do
+    Cycle = Data.define(:account, :issues, :path, :path_edges, :downstream_issues, :detected_at, :occurrence) do
       def fingerprint
         Digest::SHA256.hexdigest(issues.map(&:id).sort.join(":"))[0, 20]
       end
@@ -58,8 +58,10 @@ module Issues
         .where(depends_on_issue: { github_state: "open" })
         .where.not(depends_on_issue: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
         .excluding_parent_references
-        .pluck(:id, :issue_id, :depends_on_issue_id)
-        .filter_map { |id, from, to| Edge.new(id:, from_id: from, to_id: to) if nodes.key?(from) && nodes.key?(to) }
+        .pluck(:id, :issue_id, :depends_on_issue_id, :declaration_source, :declaration_url)
+        .filter_map do |id, from, to, source, url|
+          Edge.new(id:, from_id: from, to_id: to, declaration_source: source, declaration_url: url) if nodes.key?(from) && nodes.key?(to)
+        end
     end
 
     def adjacency
@@ -118,8 +120,17 @@ module Issues
       path_ids = cycle_path(component.first, ids)
       Cycle.new(account:, issues: component.map { |id| nodes.fetch(id) }.sort_by(&:id),
         path: path_ids.map { |id| nodes.fetch(id) },
+        path_edges: path_ids.each_cons(2).map { |from, to| edge_between(from, to) },
         downstream_issues: downstream_for(ids), detected_at: component.map { |id| nodes.fetch(id).updated_at }.min,
         occurrence: cycle_occurrence(ids))
+    end
+
+    def edge_between(from_id, to_id)
+      edge_index.fetch([ from_id, to_id ])
+    end
+
+    def edge_index
+      @edge_index ||= edges.index_by { |edge| [ edge.from_id, edge.to_id ] }
     end
 
     def cycle_occurrence(ids)

@@ -82,7 +82,19 @@ module Api
         cycle = entry.record
         {
           cycle_path: cycle.path.map { |issue| { project: issue.project.full_name, number: issue.github_number, url: issue.github_url } },
+          cycle_edges: cycle.path_edges.each_with_index.map do |edge, index|
+            dependency_cycle_edge_payload(edge, cycle.path[index], cycle.path[index + 1])
+          end,
           downstream_issues_held: cycle.downstream_issues.size
+        }
+      end
+
+      def dependency_cycle_edge_payload(edge, from, to)
+        {
+          from: { project: from.project.full_name, number: from.github_number, url: from.github_url },
+          to: { project: to.project.full_name, number: to.github_number, url: to.github_url },
+          declaration_source: edge.declaration_source,
+          declaration_url: edge.declaration_url
         }
       end
 

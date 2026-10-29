@@ -105,7 +105,9 @@
 - [x] **AUTO-PICK-QUEUE-015** — When reconciliation finds an effective cycle,
   Paid SHALL present one stable Inbox occurrence for the strongly connected
   group with a concrete linked cycle path, downstream-held-work count, and
-  instructions to review and correct the declared GitHub dependency. The
+  declaration provenance for each path edge when synchronization identified
+  its GitHub source. Paid SHALL provide fallback inspection guidance when
+  provenance is unavailable. The
   dashboard SHALL surface this cycle independently of its bounded held-issue
   detail list. Paid SHALL keep work held and SHALL NOT choose a declaration to
   remove; the occurrence clears only after a later synchronization observes an

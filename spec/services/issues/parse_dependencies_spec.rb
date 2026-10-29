@@ -495,6 +495,23 @@ RSpec.describe Issues::ParseDependencies do
   end
 
   describe "comment parsing" do
+    # @spec AUTO-PICK-QUEUE-015
+    it "persists the exact trusted comment as declaration provenance" do
+      dep = create(:issue, project: project, github_number: 9049)
+      issue = create(:issue, project: project, body: nil)
+      comment = GithubClient::CommentNode.new(
+        body: "Depends on #9049", html_url: "https://github.com/acme/repo/issues/1#issuecomment-42"
+      )
+
+      expect(described_class.call(issue: issue, comments: [ comment ])).to be(true)
+      expect(issue.issue_dependencies.sole).to have_attributes(
+        depends_on_issue_id: dep.id,
+        declaration_source: "issue_comment",
+        declaration_url: comment.html_url
+      )
+      expect(described_class.call(issue: issue, comments: [ comment ])).to be(false)
+    end
+
     it "parses dependencies from comments" do
       dep = create(:issue, project: project, github_number: 9050)
       issue = create(:issue, project: project, body: nil)

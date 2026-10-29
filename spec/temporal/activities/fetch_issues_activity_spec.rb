@@ -31,11 +31,12 @@ RSpec.describe Activities::FetchIssuesActivity do
     end
   end
 
-  def build_comment(login:, body:, created_at:)
+  def build_comment(login:, body:, created_at:, html_url: nil)
     GithubClient::CommentNode.new(
       created_at: created_at,
       user: GithubClient::CommentAuthor.new(login: login),
-      body: body
+      body: body,
+      html_url: html_url
     )
   end
 
@@ -2242,7 +2243,8 @@ RSpec.describe Activities::FetchIssuesActivity do
 
         allow(github_client).to receive(:issue_comments_batch).and_return(
           70 => [
-            build_comment(login: "viamin", body: "Depends on #100", created_at: 2.hours.ago),
+            build_comment(login: "viamin", body: "Depends on #100", created_at: 2.hours.ago,
+              html_url: "https://github.com/owner/repo/issues/70#issuecomment-100"),
             build_comment(login: "attacker", body: "Depends on #999", created_at: 1.hour.ago),
             build_comment(login: "trusted-dev", body: "Depends on #200", created_at: 30.minutes.ago)
           ]
@@ -2254,6 +2256,28 @@ RSpec.describe Activities::FetchIssuesActivity do
         dep_issue_ids = synced_issue.issue_dependencies.pluck(:depends_on_issue_id)
         expect(dep_issue_ids).to contain_exactly(dep_100.id, dep_200.id)
         expect(dep_issue_ids).not_to include(dep_999.id)
+        expect(synced_issue.issue_dependencies.find_by(depends_on_issue: dep_100)).to have_attributes(
+          declaration_source: "issue_comment",
+          declaration_url: "https://github.com/owner/repo/issues/70#issuecomment-100"
+        )
+      end
+
+      # @spec AUTO-PICK-QUEUE-014
+      it "reconciles the account graph once after a multi-issue dependency batch" do
+        second_github_issue = github_issue.dup
+        second_github_issue.id = 7002
+        second_github_issue.number = 71
+        github_issue.body = "Depends on #100"
+        second_github_issue.body = "Depends on #200"
+        create(:issue, project: project, github_number: 100, github_state: "open")
+        create(:issue, project: project, github_number: 200, github_state: "open")
+        stub_issues_by_label(nil => [ github_issue, second_github_issue ])
+        allow(github_client).to receive(:issue_comments_batch).and_return(70 => [], 71 => [])
+
+        queries = capture_queries { activity.execute(project_id: project.id) }
+
+        cycle_edge_queries = queries.grep(/SELECT .*issue_dependencies.*declaration_source.*declaration_url/)
+        expect(cycle_edge_queries.size).to eq(1)
       end
 
       it "skips dependency parsing when comment fetch fails" do

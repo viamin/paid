@@ -68,13 +68,18 @@ RSpec.describe "Mobile inbox API" do
   it "serializes an authorized dependency cycle and resolves its fingerprint entry ID" do
     first = create(:issue, project:, github_state: "open")
     second = create(:issue, project:, github_state: "open")
-    create(:issue_dependency, issue: first, depends_on_issue: second)
+    declaration_url = "https://github.com/acme/mobile/issues/1#issuecomment-9"
+    create(:issue_dependency, issue: first, depends_on_issue: second,
+      declaration_source: "issue_comment", declaration_url: declaration_url)
     create(:issue_dependency, issue: second, depends_on_issue: first)
 
     get "/api/v1/inbox", params: { kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND }, headers: headers
 
     entry = response.parsed_body.fetch("entries").sole
     expect(entry.fetch("cycle_path").map { |node| node.fetch("number") }).to include(first.github_number, second.github_number)
+    expect(entry.fetch("cycle_edges")).to include(
+      a_hash_including("declaration_source" => "issue_comment", "declaration_url" => declaration_url)
+    )
 
     get "/api/v1/inbox/entries/#{entry.fetch("id")}", headers: headers
 

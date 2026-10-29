@@ -39,6 +39,21 @@ RSpec.describe Issues::DependencyCycles do
     expect(cycle.downstream_issues).to contain_exactly(issues[2])
   end
 
+  # @spec AUTO-PICK-QUEUE-015
+  it "carries declaration provenance on each concrete path edge" do
+    issues = graph([ 1, 2 ])
+    first_url = "https://github.com/acme/repo/issues/1"
+    second_url = "https://github.com/acme/repo/issues/2#issuecomment-7"
+    create(:issue_dependency, issue: issues[0], depends_on_issue: issues[1],
+      declaration_source: "issue_body", declaration_url: first_url)
+    create(:issue_dependency, issue: issues[1], depends_on_issue: issues[0],
+      declaration_source: "issue_comment", declaration_url: second_url)
+
+    cycle = described_class.call(account:).sole
+
+    expect(cycle.path_edges.map(&:declaration_url)).to contain_exactly(first_url, second_url)
+  end
+
   it "keeps accounts isolated and ignores nonblocking targets" do
     other_project = create(:project)
     local = graph([ 1, 2 ])
