@@ -20,6 +20,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
   pull-requests: write
 
 concurrency:
@@ -74,9 +75,12 @@ jobs:
             -m "Ephemeral test files are meant to live only on PR branches and be removed before merge (see .ephemeral-tests/README.md). Left behind by #${MERGED_PR}; this auto-generated cleanup removes them so the \"No ephemeral tests on main\" guard goes green again."
           git push origin "$branch"
           body=$(printf 'Auto-generated cleanup. #%s merged with ephemeral test files left on `main`, which trips the **No ephemeral tests on main** guard in ci.yml.\n\nRemoving:\n```\n%s\n```\n\nSee [.ephemeral-tests/README.md](.ephemeral-tests/README.md) — these files are meant to be deleted before merge.' "$MERGED_PR" "$FILES")
+          # @spec EPHEMERAL-CLEANUP-001
           gh pr create \
             --base main \
             --head "$branch" \
             --title "fix(ci): remove stray ephemeral test files from main" \
-            --body "$body"
+            --body "$body" \
+            --label paid-automation \
+            --label paid-generated
           gh pr merge "$branch" --squash --auto --delete-branch
