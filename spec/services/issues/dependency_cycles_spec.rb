@@ -50,4 +50,13 @@ RSpec.describe Issues::DependencyCycles do
 
     expect(described_class.call(account:)).to be_empty
   end
+
+  it "reports unavailable database coverage distinctly from an acyclic graph" do
+    account
+    allow(Issue.connection).to receive(:select_all)
+      .and_raise(ActiveRecord::StatementInvalid, "temporarily unavailable")
+
+    expect { described_class.call(account:) }
+      .to raise_error(described_class::CoverageUnavailable, /temporarily unavailable/)
+  end
 end

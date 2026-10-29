@@ -539,7 +539,7 @@ components:
         type: string
         maxLength: 40
         format: inbox-entry-id
-        pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}$'
+        pattern: '^((clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}|dependency_cycle:[0-9a-f]{20})$'
         description: Opaque `kind:id` queue identifier.
         example: clarifying_questions:4241
     InboxKind:
@@ -547,7 +547,7 @@ components:
       in: query
       schema:
         type: string
-        enum: [clarifying_questions, plan_review, merge_approval, action_required, escalated_pr, manual_review, intent_conformance, feature_decision, retry_limited, change_intent_draft, partial_closeout, test_review_pending, project_setup_pending, traceability_gap]
+        enum: [clarifying_questions, plan_review, merge_approval, action_required, escalated_pr, manual_review, intent_conformance, feature_decision, retry_limited, change_intent_draft, partial_closeout, test_review_pending, project_setup_pending, traceability_gap, dependency_cycle]
     InboxSort:
       name: sort
       in: query
@@ -582,13 +582,13 @@ components:
         type: string
         maxLength: 40
         format: inbox-entry-id
-        pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}$'
+        pattern: '^((clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}|dependency_cycle:[0-9a-f]{20})$'
   schemas:
     InboxEntryId:
       type: string
       maxLength: 40
       format: inbox-entry-id
-      pattern: '^(clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}$'
+      pattern: '^((clarifying_questions|plan_review|merge_approval|action_required|escalated_pr|manual_review|intent_conformance|feature_decision|retry_limited|change_intent_draft|partial_closeout|test_review_pending|project_setup_pending|traceability_gap):[1-9][0-9]{0,18}|dependency_cycle:[0-9a-f]{20})$'
       description: Opaque `kind:id` queue identifier.
       example: clarifying_questions:4241
     ErrorEnvelope:
@@ -707,6 +707,7 @@ components:
         - $ref: '#/components/schemas/ProjectSetupPendingEntry'
         - $ref: '#/components/schemas/TraceabilityGapEntry'
         - $ref: '#/components/schemas/LayeredVerificationFindingEntry'
+        - $ref: '#/components/schemas/DependencyCycleEntry'
       discriminator:
         propertyName: kind
         mapping:
@@ -725,6 +726,7 @@ components:
           project_setup_pending: '#/components/schemas/ProjectSetupPendingEntry'
           traceability_gap: '#/components/schemas/TraceabilityGapEntry'
           layered_verification_finding: '#/components/schemas/LayeredVerificationFindingEntry'
+          dependency_cycle: '#/components/schemas/DependencyCycleEntry'
     InboxEntry:
       oneOf:
         - $ref: '#/components/schemas/ClarifyingQuestionsEntry'
@@ -742,6 +744,7 @@ components:
         - $ref: '#/components/schemas/ProjectSetupPendingEntry'
         - $ref: '#/components/schemas/TraceabilityGapEntry'
         - $ref: '#/components/schemas/LayeredVerificationFindingEntry'
+        - $ref: '#/components/schemas/DependencyCycleEntry'
       discriminator:
         propertyName: kind
         mapping:
@@ -760,6 +763,7 @@ components:
           project_setup_pending: '#/components/schemas/ProjectSetupPendingEntry'
           traceability_gap: '#/components/schemas/TraceabilityGapEntry'
           layered_verification_finding: '#/components/schemas/LayeredVerificationFindingEntry'
+          dependency_cycle: '#/components/schemas/DependencyCycleEntry'
     InboxEntryBase:
       type: object
       required: [id, kind]
@@ -941,6 +945,24 @@ components:
         - type: object
           properties:
             kind: {type: string, enum: [layered_verification_finding]}
+    DependencyCycleEntry:
+      allOf:
+        - $ref: '#/components/schemas/InboxEntryBase'
+        - type: object
+          required: [cycle_path, downstream_issues_held]
+          properties:
+            kind: {type: string, enum: [dependency_cycle]}
+            cycle_path:
+              type: array
+              minItems: 2
+              items:
+                type: object
+                required: [project, number, url]
+                properties:
+                  project: {type: string}
+                  number: {type: integer}
+                  url: {type: string, format: uri}
+            downstream_issues_held: {type: integer, minimum: 0}
     DesignArtifactFinding:
       type: object
       required: [id, artifact_path, revision, state, evidence, covered_at, status]

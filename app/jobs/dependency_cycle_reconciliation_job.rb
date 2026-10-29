@@ -13,7 +13,7 @@ class DependencyCycleReconciliationJob < ApplicationJob
     Account.find_each do |account|
       Issues::DependencyCycles.call(account:)
       Dashboard::CacheVersion.bump(account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
-    rescue ActiveRecord::StatementInvalid => error
+    rescue Issues::DependencyCycles::CoverageUnavailable => error
       Rails.logger.warn(message: "dependency_cycles.reconciliation_unavailable", account_id: account.id,
         error_class: error.class.name, error: error.message)
     end

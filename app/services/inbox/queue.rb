@@ -286,11 +286,19 @@ module Inbox
     # @spec OPERATOR-INBOX-015
     def self.find_entry(user:, entry_id:, project: nil, kind: nil)
       entry_kind, record_id = entry_id.to_s.split(":", 2)
-      return unless KINDS.include?(entry_kind) && record_id&.match?(/\A[0-9]+\z/)
+      return unless valid_record_id?(entry_kind, record_id)
       return if kind.present? && kind != entry_kind
 
       new(user:, project:, kind: entry_kind, record_id:).find_entry(entry_id.to_s)
     end
+
+    def self.valid_record_id?(entry_kind, record_id)
+      return false unless KINDS.include?(entry_kind)
+      return record_id&.match?(/\A[0-9a-f]{20}\z/) if entry_kind == DEPENDENCY_CYCLE_KIND
+
+      record_id&.match?(/\A[0-9]+\z/)
+    end
+    private_class_method :valid_record_id?
 
     # Questionless rows are invalid and repaired during sync, so keep them out
     # of every queue consumer until reconciliation clears the stale state.
@@ -1009,9 +1017,11 @@ module Inbox
     # dismissal cannot hide an unrelated issue's ordinary Inbox entry.
     # @spec AUTO-PICK-QUEUE-015
     def dependency_cycle_entries
-      scoped_projects.group_by(&:account).flat_map do |account, visible_projects|
+      visible_projects.group_by(&:account).flat_map do |account, authorized_projects|
+        authorized_project_ids = authorized_projects.map(&:id).to_set
+        scoped_project_ids = scoped_projects.map(&:id).to_set
         Issues::DependencyCycles.call(account:).filter_map do |cycle|
-          next unless cycle.issues.any? { |issue| visible_projects.include?(issue.project) }
+          next unless cycle.visible_within?(authorized_project_ids) && cycle.touches?(scoped_project_ids)
           next if @record_id && cycle.fingerprint != @record_id.to_s
 
           Entry.new(

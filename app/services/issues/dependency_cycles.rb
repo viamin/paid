@@ -11,6 +11,8 @@ module Issues
   # into local IssueDependency rows by ParseDependencies.
   # @spec AUTO-PICK-QUEUE-014
   class DependencyCycles
+    class CoverageUnavailable < StandardError; end
+
     Cycle = Data.define(:account, :issues, :path, :downstream_issues, :detected_at) do
       def fingerprint
         Digest::SHA256.hexdigest(issues.map(&:id).sort.join(":"))[0, 20]
@@ -20,6 +22,9 @@ module Issues
       def project = issues.min_by { |issue| [ issue.project.owner, issue.project.repo, issue.github_number ] }.project
       def title = "Dependency cycle across #{issues.size} issue#{'s' unless issues.one?}"
       def summary = "#{downstream_issues.size} downstream open issue#{'s' unless downstream_issues.one?} remain held."
+      def project_ids = issues.map(&:project_id).uniq
+      def visible_within?(visible_project_ids) = project_ids.all? { |project_id| visible_project_ids.include?(project_id) }
+      def touches?(visible_project_ids) = project_ids.any? { |project_id| visible_project_ids.include?(project_id) }
     end
 
     def self.call(...) = new(...).call
@@ -33,9 +38,7 @@ module Issues
 
       components.filter_map { |component| cycle_for(component) }
     rescue ActiveRecord::StatementInvalid => error
-      Rails.logger.warn(message: "dependency_cycles.coverage_unavailable", account_id: account.id,
-        error_class: error.class.name, error: error.message)
-      []
+      raise CoverageUnavailable, error.message
     end
 
     private
