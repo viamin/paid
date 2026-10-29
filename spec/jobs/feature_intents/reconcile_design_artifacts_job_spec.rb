@@ -237,6 +237,21 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
   end
 
   # @spec DESIGN-RECONCILIATION-003
+  it "does not load issue coverage when a project sweep has no design artifacts" do
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([]))
+    create(:issue, project:, github_number: 101, body: "Large synchronized issue body")
+    queries = []
+    subscriber = ->(event) { queries << event.payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.perform_now(project.id)
+    end
+
+    expect(queries.grep(/SELECT .* FROM "issues"/)).to be_empty
+    expect(DesignArtifactFinding.count).to eq(0)
+  end
+
+  # @spec DESIGN-RECONCILIATION-003
   it "scopes reused issue facts to each artifact's own projects" do
     external_project = create(:project, account: project.account, owner: "acme", repo: "external")
     create(:issue, project: external_project, github_number: 201, title: "Implement linkless design")

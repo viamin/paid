@@ -130,6 +130,8 @@ module FeatureIntents
     end
 
     def reconcile_artifacts(artifacts)
+      return if artifacts.empty?
+
       coverage = IssueCoverageSnapshot.new(project:, artifacts: artifacts.map(&:first), relationship_text: method(:relationship_text))
       artifacts.each do |artifact, revision, coverage_complete|
         reconcile(artifact, revision:, coverage_complete:, coverage:)
