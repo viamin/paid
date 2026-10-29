@@ -25,6 +25,8 @@ module PartialCloseouts
 
     def call
       notification.with_lock do
+        return unless notification.active?
+
         validate!
         entry = submission.merge(
           "outcome" => reconciled_outcome,

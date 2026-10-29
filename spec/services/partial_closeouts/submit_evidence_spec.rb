@@ -120,6 +120,18 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     )
   end
 
+  it "treats a duplicate validator completion after resolution as a no-op" do # @spec PARTIAL-CLOSEOUT-033
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+    described_class.call(**attributes)
+
+    PartialCloseouts::ReconcileEvidence.call(**attributes.except(:actor), outcome: "sufficient", validator: actor)
+    result = PartialCloseouts::ReconcileEvidence.call(**attributes.except(:actor), outcome: "sufficient", validator: actor)
+
+    expect(result).to be_nil
+    expect(notification.reload).not_to be_active
+  end
+
   it "keeps the blocker active when validation is insufficient" do # @spec PARTIAL-CLOSEOUT-033
     attributes = { notification:, actor:, prerequisite_identity: identity,
                    evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
