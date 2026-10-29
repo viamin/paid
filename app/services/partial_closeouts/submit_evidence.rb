@@ -24,11 +24,13 @@ module PartialCloseouts
     end
 
     def call
-      notification.with_lock do
+      result = notification.with_lock do
         validate!
         PrerequisiteOccurrences.upgrade!(notification)
         record_submission!
       end
+      enqueue_validation if result.outcome == "pending_validation"
+      result
     end
 
     private
@@ -92,6 +94,10 @@ module PartialCloseouts
       uri.is_a?(URI::HTTP) && uri.host.present?
     rescue URI::InvalidURIError
       false
+    end
+
+    def enqueue_validation
+      ValidateEvidenceJob.perform_later(notification.id, prerequisite_identity, evidence_url, explanation)
     end
 
     def occurrence

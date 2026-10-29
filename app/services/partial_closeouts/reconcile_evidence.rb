@@ -65,7 +65,11 @@ module PartialCloseouts
     end
 
     def source_revision_current?
-      expected = occurrence&.fetch("source_revision", nil)
+      return false unless occurrence
+
+      expected = occurrence.fetch("source_revision", nil)
+      return false unless expected == submission.fetch("source_revision", nil)
+
       expected.blank? || expected == PartialCloseouts::Assessment.source_revision_for(notification.subject)
     end
 

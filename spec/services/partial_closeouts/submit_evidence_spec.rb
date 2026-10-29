@@ -144,4 +144,18 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     expect(result.outcome).to eq("stale")
     expect(notification.reload).to be_active
   end
+
+  it "records stale when reconciliation replaces the submitted occurrence" do # @spec PARTIAL-CLOSEOUT-033
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+    described_class.call(**attributes)
+    notification.update!(metadata: notification.metadata.merge(
+      "prerequisites" => [ { "identity" => "replacement", "source_revision" => "new-revision" } ]
+    ))
+
+    result = PartialCloseouts::ReconcileEvidence.call(**attributes.except(:actor), outcome: "sufficient", validator: actor)
+
+    expect(result.outcome).to eq("stale")
+    expect(notification.reload).to be_active
+  end
 end
