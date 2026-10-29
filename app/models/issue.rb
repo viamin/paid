@@ -153,7 +153,8 @@ class Issue < ApplicationRecord
   after_commit :broadcast_current_section, on: [ :create, :destroy ]
   after_update_commit :broadcast_changed_sections
   after_update_commit :enqueue_newly_unblocked_dependents, if: :github_just_closed?
-  after_update_commit :recheck_external_partial_closeout_prerequisites, if: :external_prerequisite_state_changed?
+  after_commit :recheck_external_partial_closeout_prerequisites,
+    on: [ :create, :update ], if: :external_prerequisite_state_changed?
   # When the parent issue closes (operator action on GitHub, or a later
   # full closeout run via UpdateIssueWithPrActivity), the partial-closeout
   # prerequisite Inbox notification the operator never dismissed is stale:

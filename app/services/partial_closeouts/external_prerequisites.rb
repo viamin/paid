@@ -75,7 +75,7 @@ module PartialCloseouts
       IssueDependency.joins(issue: :project)
         .where(projects: { account_id: target.project.account_id })
         .where(depends_on_owner: target.project.owner.to_s.downcase,
-          depends_on_repo: target.project.name.to_s.downcase, depends_on_number: target.github_number)
+          depends_on_repo: target.project.repo.to_s.downcase, depends_on_number: target.github_number)
         .pluck(:issue_id)
     end
 
@@ -155,7 +155,7 @@ module PartialCloseouts
     def target_for(issue, dependency)
       owner = dependency.fetch("owner").to_s.downcase
       repo = dependency.fetch("repo").to_s.downcase
-      project = issue.project.account.projects.find_by("LOWER(owner) = ? AND LOWER(name) = ?", owner, repo)
+      project = issue.project.account.projects.find_by("LOWER(owner) = ? AND LOWER(repo) = ?", owner, repo)
       project&.issues&.find_by(github_number: dependency.fetch("number"))
     end
 

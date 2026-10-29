@@ -1338,7 +1338,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     # `Issue.ready_for_work` `blocked_by_external` rule (#2216) so the
     # scheduler honours the same resolution semantics the model uses.
     it "re-audits an epic after a same-account external dep closes" do # @spec AUTO-PICK-QUEUE-010
-      sibling_project = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      sibling_project = create(:project, account: project.account, owner: "viamin", repo: "agent-harness")
       travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
         epic = create(:issue, project: project, labels: [ "epic" ], paid_state: "completed",
           no_code_required_at: 2.hours.ago)
@@ -1397,7 +1397,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     # `Issue.ready_for_work` `blocked_by_external` rule (#2216) so the
     # scheduler honours the same resolution semantics the model uses.
     it "continues a partial ordinary issue once a same-account external dep closes" do # @spec AUTO-PICK-QUEUE-012
-      sibling_project = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      sibling_project = create(:project, account: project.account, owner: "viamin", repo: "agent-harness")
       travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
         issue = create(:issue, project: project, paid_state: "manual_review",
           partial_completion_at: 2.hours.ago, partial_completion_pr_number: 91)
@@ -1416,7 +1416,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     end
 
     it "keeps a partial ordinary issue blocked when its same-account external dep target is still open" do # @spec AUTO-PICK-QUEUE-012
-      sibling_project = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      sibling_project = create(:project, account: project.account, owner: "viamin", repo: "agent-harness")
       issue = create(:issue, project: project, paid_state: "manual_review",
         partial_completion_at: 1.hour.ago, partial_completion_pr_number: 91)
       create(:issue, :pull_request, project: project, parent_issue: issue,
@@ -1433,7 +1433,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     end
 
     it "does not re-arm a partial ordinary issue from a same-account external dep closed before its assessment" do # @spec AUTO-PICK-QUEUE-012
-      sibling_project = create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      sibling_project = create(:project, account: project.account, owner: "viamin", repo: "agent-harness")
       travel_to(Time.utc(2026, 10, 1, 12, 0, 0)) do
         issue = create(:issue, project: project, paid_state: "manual_review",
           partial_completion_at: 1.hour.ago, partial_completion_pr_number: 91)
@@ -1458,7 +1458,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
         github_state: "closed", pr_review_phase: "merged", github_number: 91)
       # Sibling project is in the same account but the matching target issue
       # is not yet synced, so the external dep cannot resolve.
-      create(:project, account: project.account, owner: "viamin", name: "agent-harness")
+      create(:project, account: project.account, owner: "viamin", repo: "agent-harness")
       issue.issue_dependencies.create!(
         depends_on_issue: nil,
         depends_on_owner: "viamin",
@@ -1470,7 +1470,7 @@ RSpec.describe Automation::Strategies::AutoPick::DefaultCandidateSource do
     end
 
     it "keeps a partial ordinary issue blocked when its external dep target lives in a different account" do # @spec AUTO-PICK-QUEUE-012
-      other_account_project = create(:project, owner: "viamin", name: "agent-harness")
+      other_account_project = create(:project, owner: "viamin", repo: "agent-harness")
       issue = create(:issue, project: project, paid_state: "manual_review",
         partial_completion_at: 1.hour.ago, partial_completion_pr_number: 91)
       create(:issue, :pull_request, project: project, parent_issue: issue,

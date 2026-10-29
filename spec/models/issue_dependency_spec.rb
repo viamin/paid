@@ -227,6 +227,22 @@ RSpec.describe IssueDependency do
     end
   end
 
+  describe ".still_blocking_external_for_account" do
+    it "resolves targets by repository slug rather than project display name" do # @spec PARTIAL-CLOSEOUT-037
+      account = create(:account)
+      source_project = create(:project, account:)
+      target_project = create(:project, account:, owner: "viamin", repo: "agent-harness", name: "Agent Harness")
+      issue = create(:issue, project: source_project)
+      create(:issue, project: target_project, github_number: 517, github_state: "closed")
+      dependency = create(:issue_dependency, issue:, depends_on_issue: nil,
+        depends_on_owner: "viamin", depends_on_repo: "agent-harness", depends_on_number: 517)
+
+      blocking = described_class.still_blocking_external_for_account(account.id)
+
+      expect(blocking).not_to include(dependency)
+    end
+  end
+
   describe "#deployment_pending?" do
     let(:project) { create(:project) }
     let(:issue) { create(:issue, project: project) }

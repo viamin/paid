@@ -24,7 +24,7 @@ RSpec.describe PartialCloseouts::ExternalPrerequisites do
   end
 
   it "releases an external wait after its tracked target closes" do # @spec PARTIAL-CLOSEOUT-037
-    target_project = create(:project, account:, owner: "viamin", repo: "agent-harness", name: "agent-harness")
+    target_project = create(:project, account:, owner: "viamin", repo: "agent-harness", name: "Agent Harness")
     target = create(:issue, project: target_project, github_number: 517, github_state: "open", paid_state: "in_progress")
     dependency = { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 }
     create(:issue_dependency, issue:, depends_on_issue: nil, **dependency_attributes(dependency))
@@ -34,6 +34,20 @@ RSpec.describe PartialCloseouts::ExternalPrerequisites do
     expect(notification.reload).to be_active
 
     target.update!(github_state: "closed")
+
+    expect(notification.reload).not_to be_active
+    expect(notification.metadata).to include("released_by" => "external_prerequisite")
+  end
+
+  it "releases an unavailable wait when its target is first synced as resolved" do # @spec PARTIAL-CLOSEOUT-037
+    target_project = create(:project, account:, owner: "viamin", repo: "agent-harness", name: "Agent Harness")
+    dependency = { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 }
+    create(:issue_dependency, issue:, depends_on_issue: nil, **dependency_attributes(dependency))
+    notification = notification_for(dependency)
+
+    expect(described_class.states_for(notification).sole).to include("state" => "unavailable")
+
+    create(:issue, project: target_project, github_number: 517, github_state: "closed", paid_state: "completed")
 
     expect(notification.reload).not_to be_active
     expect(notification.metadata).to include("released_by" => "external_prerequisite")
