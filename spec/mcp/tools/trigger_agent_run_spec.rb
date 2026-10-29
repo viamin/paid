@@ -111,6 +111,48 @@ RSpec.describe Tools::TriggerAgentRun do
       expect(notice).to include("Paid stops after the action you selected")
     end
 
+    it "returns an actionable error when the caller cannot delegate merge" do # @spec AUTOMATION-PHASES-009
+      FeatureFlags.enable!(:automation_phases, project:)
+      member = create(:user, :member, account:)
+      member_tool = described_class.new(user: member, session:)
+      plan = Automation::ManualStart::Plan.call(project:, user: member, phase: "coding", endpoint: "merge")
+
+      expect {
+        member_tool.call(
+          project_id: project.id, issue_id: issue.id, confirmed: true,
+          continuation_authorized: true, continuation_endpoint: "merge",
+          continuation_notice_signature: plan.signature
+        )
+      }.to raise_error(ArgumentError, "You do not have permission to delegate merging for this project.")
+    end
+
+    it "returns an actionable error for an endpoint unavailable to the selected goal" do # @spec AUTOMATION-PHASES-010
+      FeatureFlags.enable!(:automation_phases, project:)
+      plan = Automation::ManualStart::Plan.call(project:, user:, phase: "coding")
+
+      expect {
+        tool.call(
+          project_id: project.id, issue_id: issue.id, confirmed: true,
+          continuation_endpoint: "issue_preparation", continuation_notice_signature: plan.signature
+        )
+      }.to raise_error(ArgumentError, "Choose a continuation endpoint offered for this action.")
+    end
+
+    it "returns an actionable error and creates no run when a grant has no work item" do # @spec AUTOMATION-PHASES-005
+      FeatureFlags.enable!(:automation_phases, project:)
+      plan = Automation::ManualStart::Plan.call(project:, user:, phase: "coding")
+
+      expect {
+        expect {
+          tool.call(
+            project_id: project.id, goal: "create_issue", custom_prompt: "Investigate flaky builds.", confirmed: true,
+            continuation_authorized: true, continuation_endpoint: "coding",
+            continuation_notice_signature: plan.signature
+          )
+        }.to raise_error(ArgumentError, "Select an issue or pull request to authorize automatic continuation.")
+      }.not_to change(AgentRun, :count)
+    end
+
     it "enqueues ProcessRunQueueJob" do
       expect {
         tool.call(project_id: project.id, issue_id: issue.id, confirmed: true)

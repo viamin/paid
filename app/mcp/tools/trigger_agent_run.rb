@@ -122,6 +122,8 @@ module Tools
       raise unless duplicate_active_issue_run?(e)
 
       raise ArgumentError, "An agent run is already queued or in progress for this issue"
+    rescue Automation::ManualStart::Plan::Error => e
+      raise ArgumentError, e.message
     end
 
     private
