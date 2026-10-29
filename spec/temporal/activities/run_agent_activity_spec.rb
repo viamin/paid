@@ -4665,6 +4665,51 @@ expect(container_service).to receive(:execute).with(
       end
     end
 
+    context "when a preflight timeout invalidates the container and the only fallback is ineligible" do
+      before do
+        disabled_fallback = user.runners.find_or_create_by!(runner_key: "cursor")
+        disabled_fallback.update!(enabled_for_agent_runs: false)
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ "cursor" ])
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false,
+          has_changes_since?: false
+        )
+        allow(activity).to receive(:run_runner_preflight!).and_call_original
+        allow(activity).to receive(:run_harness_preflight!)
+
+        allow(container_service).to receive(:execute) do
+          AgentRun.where(id: agent_run.id).update_all(container_id: nil)
+          raise Containers::Provision::TimeoutError.new(
+            "smoke timed out",
+            diagnostics: { "elapsed_seconds" => 60, "output_received" => true }
+          )
+        end
+      end
+
+      it "does not reprovision for a fallback the main loop would skip anyway" do # @spec RUNNER-FALLBACK-014
+        expect(agent_run).not_to receive(:provision_execution_environment)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        agent_run.reload
+        expect(agent_run.status).to eq("failed")
+        expect(agent_run.runners_attempted).to contain_exactly(
+          hash_including(
+            "runner" => "claude_code",
+            "success" => false,
+            "error_type" => "preflight_timeout",
+            "error_message" => a_string_matching(/smoke timed out/)
+          )
+        )
+        expect(agent_run.runners_attempted).not_to include(
+          hash_including("error_message" => a_string_matching(/No container provisioned/))
+        )
+      end
+    end
+
     context "when a runner execution failure kills the container before fallback (OOM / exit 137)" do
       before do
         user.runners.find_or_create_by!(runner_key: "cursor")

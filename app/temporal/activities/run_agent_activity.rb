@@ -590,7 +590,11 @@ module Activities
                 runner: runner,
                 error_type: "preflight_timeout",
                 error_message: e.message,
-                fallback_remaining: runners[(index + 1)..].to_a
+                fallback_remaining: eligible_fallback_candidates(
+                  runners[(index + 1)..].to_a,
+                  user_settings: user_settings,
+                  runner_states: runner_states
+                )
               )
             end
           rescue RunnerAuthExpiredError => e
@@ -3637,6 +3641,27 @@ module Activities
       error_or_cause_matches?(error, Containers::Provision::ProvisionError) do |candidate|
         candidate.message.start_with?("Failed to reconnect to container:")
       end
+    end
+
+    # Filters candidates down to those the main runner loop would actually
+    # attempt, mirroring its skip checks (deleted entry, disabled for agent
+    # runs, rate limited/circuit open). Recovering a container ahead of a
+    # candidate the loop would skip anyway wastes a reprovision.
+    # @spec RUNNER-FALLBACK-014
+    def eligible_fallback_candidates(fallback_remaining, user_settings:, runner_states:)
+      Array(fallback_remaining).select do |runner_candidate|
+        fallback_candidate_eligible?(runner_candidate, user_settings: user_settings, runner_states: runner_states)
+      end
+    end
+
+    def fallback_candidate_eligible?(runner_candidate, user_settings:, runner_states:)
+      runner_entry = runner_entry_for(runner_candidate, user_settings.user)
+      return false if Runner.routing_key?(runner_candidate) && runner_entry.nil?
+      return false if runner_entry && !runner_entry.enabled_for_agent_runs?
+
+      runner = runner_command_key(runner_candidate, nil, user_settings.user)
+      runner_state_name = state_key_for(runner_candidate, runner, user_settings.user)
+      !runner_unavailable?(user_settings, runner_state_name, runner_states)
     end
 
     def recover_container_for_fallback!(agent_run:, runner:, error_type:, error_message:, fallback_remaining:)
