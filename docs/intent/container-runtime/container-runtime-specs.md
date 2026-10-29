@@ -647,8 +647,10 @@
   unavailable, so the install path stays compatible with older runners.
   The image SHALL also distinguish: missing `omp` on `PATH`, a
   non-executable `omp` launcher, and a Bun version mismatch after install.
+  The agent-image workflow SHALL allow 90 minutes for a cold rebuild so a
+  contract update can complete every installation layer and both smoke suites.
   *Tests:* `spec/config/agent_image_build_script_spec.rb`.
-  *Code:* `docker/agent/Dockerfile`.
+  *Code:* `docker/agent/Dockerfile`, `.github/workflows/agent-image.yml`.
 
 - [x] **CONTAINER-RUNTIME-032** — The system SHALL expose supporting service
   containers (Postgres, Redis, Selenium/Chromium) through the runner
@@ -866,8 +868,9 @@
 
 - [x] **CONTAINER-RUNTIME-050** — When execution-preparation cleanup removes a
   run's environment after a smoke timeout, retry orchestration SHALL confirm
-  the persisted environment reference and live environment state before issuing
-  another smoke command. An unavailable environment SHALL preserve the timeout
+  the persisted environment reference still identifies that same environment
+  and live environment state before issuing another smoke command. An
+  unavailable or replaced environment SHALL preserve the timeout
   classification and diagnostics, rather than producing a
   `ContainerNotProvisioned` replacement error. Fresh provisioning remains
   limited to the established fallback-recovery policy for a later eligible

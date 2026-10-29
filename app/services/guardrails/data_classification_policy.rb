@@ -11,6 +11,9 @@ module Guardrails
       :data_classification,
       :provider_data_collection,
       :provider_zdr,
+      :requested_zdr,
+      :effective_zdr,
+      :zdr_provenance,
       :warning_emitted,
       :warning_message
     ) do
@@ -22,7 +25,10 @@ module Guardrails
         {
           data_classification: data_classification,
           provider_data_collection: provider_data_collection,
-          provider_zdr: provider_zdr
+          provider_zdr: provider_zdr,
+          requested_zdr: requested_zdr,
+          effective_zdr: effective_zdr,
+          zdr_provenance: zdr_provenance
         }
       end
     end
@@ -47,7 +53,7 @@ module Guardrails
 
     attr_reader :agent_run, :selection
 
-    # @spec FREE-MODEL-002, FREE-MODEL-003
+    # @spec FREE-MODEL-002, FREE-MODEL-003, MODEL-POLICY-025
     def build_result
       data_collection = routing_params[:data_collection]
       zdr = routing_params[:zdr]
@@ -56,6 +62,9 @@ module Guardrails
         data_classification: project.data_classification,
         provider_data_collection: data_collection,
         provider_zdr: zdr,
+        requested_zdr: privacy_policy.runner_requires_zdr,
+        effective_zdr: privacy_policy.zdr_required,
+        zdr_provenance: privacy_policy.provenance,
         warning_emitted: warning?,
         warning_message: warning_message(data_collection)
       )
@@ -101,7 +110,15 @@ module Guardrails
     def routing_params
       return {} unless openrouter_routed?
 
-      build_provider_routing(project)
+      build_provider_routing(project, zero_data_retention: privacy_policy.zdr_required)
+    end
+
+    def privacy_policy
+      @privacy_policy ||= Runners::EffectivePrivacyPolicy.call(
+        project: project,
+        runner: agent_run.runner,
+        required_zdr: agent_run.external_metadata.to_h["zdr_required"]
+      )
     end
 
     def warning_message(data_collection)
@@ -143,6 +160,9 @@ module Guardrails
           data_classification: result.data_classification,
           provider_data_collection: result.provider_data_collection,
           provider_zdr: result.provider_zdr,
+          requested_zdr: result.requested_zdr,
+          effective_zdr: result.effective_zdr,
+          zdr_provenance: result.zdr_provenance,
           model_id: model&.model_id,
           runner_key: runner_key
         }.compact

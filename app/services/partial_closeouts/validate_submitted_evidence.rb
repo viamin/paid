@@ -5,7 +5,7 @@ require "json"
 module PartialCloseouts
   # Persists a bounded agent_harness assessment only onto the exact current
   # evidence submission whose retrieved artifact was assessed.
-  # @spec PARTIAL-CLOSEOUT-035
+  # @spec PARTIAL-CLOSEOUT-036
   class ValidateSubmittedEvidence
     include Llm::OutputNormalizer
 

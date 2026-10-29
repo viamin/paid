@@ -203,6 +203,7 @@ module Activities
         end
 
         user_settings = resolve_user_settings(agent_run)
+        snapshot_bound_runner_zdr_requirement!(agent_run)
         @model_recoveries = {}
         @resolved_tier_model_cache = {}
         @issue_runner_retry_cap_exhausted = false
@@ -972,7 +973,10 @@ module Activities
 
     def selected_runner_runtime(runner_candidate, user, agent_run)
       runner_entry = runner_entry_for(runner_candidate, user) if runner_candidate
-      configured_runtime = runner_entry&.free_model_policy? ? nil : runner_entry&.agent_harness_runner_runtime(project: agent_run&.project)
+      required_zdr = agent_run&.external_metadata.to_h["zdr_required"]
+      configured_runtime = runner_entry&.free_model_policy? ? nil : runner_entry&.agent_harness_runner_runtime(
+        project: agent_run&.project, required_zdr: required_zdr
+      )
 
       resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user)
       if resolved_model&.failure? && !runner_entry&.free_model_policy? && !direct_outbound_runner?(runner_candidate, user)
@@ -990,7 +994,9 @@ module Activities
             "#{runner_entry.runner_key} runner #{runner_entry.id} has no resolvable free model for this run"
         end
 
-        return runner_entry.free_model_policy_runner_runtime(project: agent_run&.project, model_id: model_id)
+        return runner_entry.free_model_policy_runner_runtime(
+          project: agent_run&.project, model_id: model_id, required_zdr: required_zdr
+        )
       end
 
       return configured_runtime if configured_runtime && model_id.blank?
@@ -1011,6 +1017,15 @@ module Activities
         unset_env: configured_runtime.unset_env,
         metadata: configured_runtime.metadata
       )
+    end
+
+    # @spec MODEL-POLICY-024
+    def snapshot_bound_runner_zdr_requirement!(agent_run)
+      policy = agent_run.runner&.effective_privacy_policy(project: agent_run.project)
+      return unless policy&.zdr_required
+      return if agent_run.external_metadata.to_h["zdr_required"] == true
+
+      agent_run.update!(external_metadata: agent_run.external_metadata.to_h.merge("zdr_required" => true))
     end
 
     def runtime_cache_key(runtime)
@@ -1991,6 +2006,7 @@ module Activities
 
       prompt = runner_preflight_prompt_for(runner)
       preflight_timeout = preflight_timeout_seconds_for(command_context.runner_candidate, command_context.user)
+      smoke_environment_id = agent_run.container_id
 
       smoke_attempt = 0
       result = begin
@@ -2004,7 +2020,11 @@ module Activities
           prompt: prompt
         )
       rescue Containers::Provision::TimeoutError => e
-        environment_available = smoke_attempt < 2 && smoke_retry_environment_available?(agent_run, execution_environment)
+        environment_available = smoke_attempt < 2 && smoke_retry_environment_available?(
+          agent_run,
+          execution_environment,
+          container_id: smoke_environment_id
+        )
         if environment_available
           logger.info(
             message: "agent_execution.preflight_smoke_timeout_retry",
@@ -2772,8 +2792,8 @@ module Activities
       raise PreflightTimeoutError.new("Preflight check failed: #{reason}", diagnostics: diagnostics)
     end
 
-    def smoke_retry_environment_available?(agent_run, execution_environment)
-      agent_run.reload.container_id.present? && execution_environment.container_running?
+    def smoke_retry_environment_available?(agent_run, execution_environment, container_id:)
+      agent_run.reload.container_id == container_id && execution_environment.container_running?
     rescue ActiveRecord::RecordNotFound
       false
     end

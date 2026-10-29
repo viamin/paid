@@ -144,6 +144,10 @@ explanation against that exact identity. The durable submission records actor,
 timestamp, identity, and a disposition (`pending_validation`, `sufficient`,
 `insufficient`, `stale`, or `unavailable`). A submission begins pending: a
 URL, comment, upload, green run, or dismissed alert is never acceptance proof.
+A background validator retrieves the artifact through the public-address-only,
+size-bounded research transport and delegates its semantic sufficiency judgment
+to `agent_harness`; unavailable retrieval, execution, or structured output is
+persisted as unavailable rather than leaving the submission pending forever.
 A changed source revision makes the submission stale. Only a current,
 explicitly sufficient assessment may release that occurrence; personal
 dismissal remains a distinct scheduling action, never evidence satisfaction.
@@ -156,6 +160,9 @@ instructions. The validator accepts only the exact `sufficient` or
 concurrency failures fail closed as `unavailable`, and a changed source
 revision remains `stale`. The job applies its result only to the matching
 current submission and never stores raw model output.
+An identical retry preserves the recorded disposition and does not schedule a
+second validation; an operator submits changed evidence to request a new
+assessment.
 Active notifications created before occurrence-level metadata are represented as
 one compatible occurrence using their persisted aggregate identity, references,
 and operator guidance. A valid submission atomically upgrades that occurrence
@@ -460,8 +467,11 @@ acceptance audit** action. It uses the existing scoped-continuation admission
 transaction, but records `acceptance_audit` in the request evidence and queues
 an `analyze_issue` run rather than a `create_pr` run. The workflow recognizes
 that persisted mode and invokes a dedicated audit activity which refreshes the
-criterion assessment on the run; it does not create a follow-up run, change the
-issue state, create a pull request, or authorize implementation. The normal
+criterion assessment on the run and passes that snapshot through the
+deterministic partial-closeout reconciler before completing the audit. The
+reconciler records any follow-up owner or operator prerequisite as durable
+evidence; the audit still does not create a follow-up run, change the issue
+state, create a pull request, or authorize implementation. The normal
 request/run lifecycle remains the durable progress, cancellation, failure, and
 retry surface, and the existing one-open-request and active-run constraints
 deduplicate audit requests for an evidence generation. Deduplication only

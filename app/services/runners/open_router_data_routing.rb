@@ -22,6 +22,10 @@ module Runners
         { data_collection: "allow" }
       end
 
+      # OpenRouter treats ZDR as an inference-routing requirement. A request
+      # asking for it must also deny provider data collection; allowing that
+      # flag to remain "allow" would let a runner declaration weaken privacy.
+      routing[:data_collection] = "deny" if zero_data_retention
       routing[:zdr] = true if zero_data_retention
       routing
     end

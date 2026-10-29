@@ -2098,6 +2098,30 @@ RSpec.describe ProcessRunQueueJob do
         expect(AgentRun.where(runner_id: codex_runner.id).count).to eq(3)
       end
 
+      # @spec MODEL-POLICY-024
+      it "snapshots ZDR before applying a cached reroute" do
+        stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 5)
+
+        project = create(:project)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 10)
+        original_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        original_runner.update!(zero_data_retention: true)
+        create(:runner_state, :rate_limited, user: user, runner_name: original_runner.state_key)
+        fallback_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+          provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "openai/gpt-oss-20b" } })
+        runs = 2.times.map do |index|
+          create(:agent_run, :queued, project: project, runner: original_runner,
+            created_at: (2 - index).minutes.ago)
+        end
+
+        described_class.new.perform
+
+        expect(runs.map { |run| run.reload.runner_id }).to all(eq(fallback_runner.id))
+        expect(runs.map { |run| run.external_metadata["zdr_required"] }).to all(be(true))
+      end
+
       it "does not reuse a cached reroute across projects with different resolver context" do
         owner = create(:user, :owner)
         account = owner.account

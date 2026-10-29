@@ -212,7 +212,7 @@ module Containers
           prompt: prompt,
           options: options,
           provider_runtime: free_chat_runtime,
-          project: chat_session.project
+          project: chat_session.llm_policy_project
         )
       else
         Runners::HarnessExecutionPlan.for_runner_key(
@@ -223,15 +223,13 @@ module Containers
       end
     end
 
-    # @spec MODEL-POLICY-013
+    # @spec MODEL-POLICY-013, MODEL-POLICY-023
     def free_chat_runtime
       runner = chat_session.runner
       return unless runner&.free_model_policy?
 
       model = FreeModels::SelectChatModel.for_session(runner: runner, chat_session: chat_session, transport: :container)
-      classification_order = %w[open internal confidential restricted]
-      project = chat_session.llm_policy_projects.max_by { |entry| classification_order.index(entry.data_classification) || 3 }
-      runner.free_model_policy_runner_runtime(project: project, model_id: model.model_id)
+      runner.free_model_policy_runner_runtime(project: chat_session.llm_policy_project, model_id: model.model_id)
     end
 
     # Materializes preparation file writes inside the container using

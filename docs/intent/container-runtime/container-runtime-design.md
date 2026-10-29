@@ -251,9 +251,10 @@ so future pool and service-container code can store runner handles.
 
 Smoke-preflight retry is also recovery-sensitive. A timeout can trigger
 execution-preparation cleanup that clears the persisted environment reference
-before the bounded smoke retry runs. The activity therefore confirms both the
-persisted reference and the connected environment's running state before that
-retry. If either is absent, it preserves the original preflight timeout and
+before the bounded smoke retry runs. The activity therefore confirms that the
+persisted reference still identifies the same environment and that connected
+environment is running before that retry. If either check fails, it preserves
+the original preflight timeout and
 diagnostics as the attempt outcome; it does not reconnect an invalidated
 container or turn the failure into `ContainerNotProvisioned`. Reprovisioning
 remains the fallback policy's responsibility and is performed only when a
@@ -733,6 +734,10 @@ verifies it against Bun's published `SHASUMS256.txt`, and falls back to the
 baseline `bun-linux-x64-baseline.zip` asset when `/proc/cpuinfo` does not
 advertise AVX2. That keeps the Oh My Pi install path compatible with older
 `amd64` runners instead of failing inside the post-install assertions.
+
+The agent-image workflow allows 90 minutes for a cold rebuild. Contract-owned
+CLI upgrades invalidate the installation layers together, and the workflow
+must retain enough time to rebuild them and run both smoke suites.
 
 ### Warden security-scanning CLI
 

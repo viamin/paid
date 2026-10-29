@@ -165,6 +165,16 @@
   `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`,
   `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-035** — When a report-only acceptance audit completes,
+  the system SHALL pass its persisted criterion assessment through the
+  deterministic partial-closeout reconciler before completing the audit run.
+  The reconciliation SHALL persist its terminal status and any follow-up owner
+  or operator prerequisite evidence, while the audit SHALL leave the source
+  issue state unchanged and SHALL not perform a second semantic assessment.
+  *Code:* `app/temporal/activities/run_acceptance_audit_activity.rb`,
+  `app/services/partial_closeouts/reconcile.rb`.
+  *Test:* `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-028** — When a trusted, open non-PR issue has merged
   closeout evidence and is held in `manual_review`, the bounded legacy
   reconciler SHALL perform at most one durable criterion assessment and reuse
@@ -626,12 +636,28 @@
   actor, timestamp, and explicit disposition. A URL, comment, upload, green
   run, or dismissed notification SHALL start as `pending_validation`, not as
   acceptance satisfaction; evidence for an obsolete source revision SHALL be
-  `stale`. An active legacy prerequisite notification without a
+  `stale`. A trusted validation result SHALL reconcile the matching submission
+  to `sufficient`, `insufficient`, or `unavailable`; stale evidence SHALL remain
+  `stale`. Validation SHALL retrieve the artifact through the bounded,
+  public-address-only transport and perform the semantic sufficiency judgment
+  through `agent_harness`; retrieval, execution, and structured-output failures
+  SHALL reconcile to `unavailable`. An identical retry SHALL preserve its
+  recorded disposition and SHALL NOT schedule another validation. Only current
+  sufficient results for every occurrence may resolve the blocking notification;
+  insufficient, unavailable, or stale results SHALL keep the blocker active. An
+  active legacy prerequisite notification without a
   `prerequisites` array SHALL expose its one persisted prerequisite identity as
   a compatible occurrence and atomically upgrade it with the current source
   revision before recording the submission. The unresolved notification remains
-  active until a current, sufficient assessment resolves that occurrence.
+  active until a current, sufficient assessment resolves that occurrence; the
+  occurrence-only release path SHALL require a matching pending submission and
+  SHALL release the parent scheduling guard only after every current occurrence
+  is reconciled as sufficient. Dismissal and generic notification resolution
+  SHALL not release that guard.
   *Code:* `app/services/partial_closeouts/submit_evidence.rb`,
+  `app/services/partial_closeouts/assess_evidence.rb`,
+  `app/services/partial_closeouts/reconcile_evidence.rb`,
+  `app/jobs/partial_closeouts/validate_evidence_job.rb`,
   `app/services/partial_closeouts/prerequisite_occurrences.rb`,
   `app/services/partial_closeouts/reconcile.rb`,
   `app/controllers/projects/closeout_evidence_controller.rb`,
@@ -640,7 +666,7 @@
   `spec/requests/projects/closeout_evidence_spec.rb`,
   `spec/requests/inbox_spec.rb`.
 
-- [x] **PARTIAL-CLOSEOUT-035** — When a current prerequisite evidence
+- [x] **PARTIAL-CLOSEOUT-036** — When a current prerequisite evidence
   submission is recorded, Paid SHALL asynchronously assess the submitted
   artifact reference and explanation through `agent_harness`, treating both as
   untrusted claims and never as instructions or acceptance authority. The

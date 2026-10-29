@@ -119,6 +119,51 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
   end
 
   describe ".call" do
+    # @spec MODEL-POLICY-023
+    it "blocks OpenRouter API chat for a reference-only restricted project" do
+      api_key = create(:provider_api_key, user: user, api_key: "sk-or-test-key", api_service_type: "openrouter")
+      runner = build_openai_runner(
+        user: user,
+        credential_source: { provider_api_key: api_key, integration_credential: nil },
+        service_type: "openrouter",
+        model: "moonshotai/kimi-k2"
+      )
+      session = create(:chat_session, account: account, created_by: user, runner: runner, model: "moonshotai/kimi-k2")
+      create(:chat_session_project, chat_session: session,
+        project: create(:project, account: account, data_classification: "restricted"))
+
+      expect { described_class.call(chat_session: session) }
+        .to raise_error(ChatSessions::LlmClientConfigurationError, /cannot enforce the required OpenRouter/)
+    end
+
+    # @spec MODEL-POLICY-022
+    it "blocks an undeclared non-OpenRouter API runner for restricted chat" do
+      api_key = create(:provider_api_key, user: user, api_key: "sk-openai-test-key", api_service_type: "openai")
+      runner = build_openai_runner(
+        user: user,
+        credential_source: { provider_api_key: api_key, integration_credential: nil },
+        service_type: "openai",
+        model: "gpt-5.6-luna"
+      )
+      project = create(:project, account: account, data_classification: "restricted")
+      session = create(:chat_session, account: account, created_by: user, project: project, runner: runner, model: "gpt-5.6-luna")
+
+      expect { described_class.call(chat_session: session) }
+        .to raise_error(ChatSessions::LlmClientConfigurationError, /explicit ZDR declaration/)
+    end
+
+    # @spec MODEL-POLICY-022
+    it "blocks an undeclared Anthropic API runner for restricted chat" do
+      api_key = create(:provider_api_key, user: user, api_key: "sk-ant-test-key", api_service_type: "anthropic")
+      runner = create(:runner, :api_key, user: user, runner_key: "claude", provider_api_key: api_key)
+      project = create(:project, account: account, data_classification: "restricted")
+      session = create(:chat_session, account: account, created_by: user, project: project, runner: runner,
+        model: "claude-sonnet-4-20250514")
+
+      expect { described_class.call(chat_session: session) }
+        .to raise_error(ChatSessions::LlmClientConfigurationError, /explicit ZDR declaration/)
+    end
+
     context "with an Anthropic API key runner" do
       it "returns an HttpClient with TextTransport" do
         api_key_record = create(:provider_api_key, user: user, api_key: "sk-ant-test-key", api_service_type: "anthropic")
