@@ -626,12 +626,17 @@
   actor, timestamp, and explicit disposition. A URL, comment, upload, green
   run, or dismissed notification SHALL start as `pending_validation`, not as
   acceptance satisfaction; evidence for an obsolete source revision SHALL be
-  `stale`. An active legacy prerequisite notification without a
+  `stale`. A trusted validation result SHALL reconcile the matching submission
+  to `sufficient`, `insufficient`, or `unavailable`; stale evidence SHALL remain
+  `stale`. Only current sufficient results for every occurrence may resolve the
+  blocking notification; insufficient, unavailable, or stale results SHALL keep
+  the blocker active. An active legacy prerequisite notification without a
   `prerequisites` array SHALL expose its one persisted prerequisite identity as
   a compatible occurrence and atomically upgrade it with the current source
   revision before recording the submission. The unresolved notification remains
   active until a current, sufficient assessment resolves that occurrence.
   *Code:* `app/services/partial_closeouts/submit_evidence.rb`,
+  `app/services/partial_closeouts/reconcile_evidence.rb`,
   `app/services/partial_closeouts/prerequisite_occurrences.rb`,
   `app/services/partial_closeouts/reconcile.rb`,
   `app/controllers/projects/closeout_evidence_controller.rb`,
