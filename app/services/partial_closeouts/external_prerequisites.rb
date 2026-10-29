@@ -17,8 +17,19 @@ module PartialCloseouts
       new(notification.subject).send(:refresh, notification)
     end
 
-    def self.states_for(notification)
-      new(notification.subject).states_for(notification)
+    def self.states_for(notification, targets_by_key: nil)
+      new(notification.subject).states_for(notification, targets_by_key:)
+    end
+
+    def self.states_for_notifications(notifications)
+      dependencies_by_notification_id = notifications.to_h do |notification|
+        resolver = new(notification.subject)
+        [ notification.id, resolver.external_dependencies_for(notification) ]
+      end
+      targets_by_key = targets_for_notifications(notifications, dependencies_by_notification_id)
+      notifications.to_h do |notification|
+        [ notification.id, states_for(notification, targets_by_key:) ]
+      end
     end
 
     def self.human_evidence_required?(notification)
@@ -35,9 +46,9 @@ module PartialCloseouts
       matching_notifications.filter_map { |notification| refresh(notification) }
     end
 
-    def status_for(issue, dependency)
+    def status_for(issue, dependency, targets_by_key: nil)
       reference = reference_for(dependency)
-      target_issue = target_for(issue, dependency)
+      target_issue = target_for(issue, dependency, targets_by_key:)
       return unavailable_status(reference) unless target_issue
 
       state = resolved?(target_issue) ? "resolved" : target_issue.github_state
@@ -48,10 +59,14 @@ module PartialCloseouts
       }.compact
     end
 
-    def states_for(notification)
-      external_occurrences(notification).map do |occurrence|
-        status_for(notification.subject, occurrence.fetch("external_dependency"))
+    def states_for(notification, targets_by_key: nil)
+      external_dependencies_for(notification).map do |dependency|
+        status_for(notification.subject, dependency, targets_by_key:)
       end
+    end
+
+    def external_dependencies_for(notification)
+      external_occurrences(notification).map { |occurrence| occurrence.fetch("external_dependency") }
     end
 
     def human_evidence_required?(notification)
@@ -152,11 +167,59 @@ module PartialCloseouts
       end
     end
 
-    def target_for(issue, dependency)
+    def target_for(issue, dependency, targets_by_key: nil)
+      return targets_by_key[self.class.target_key(issue.project.account_id, dependency)] if targets_by_key
+
       owner = dependency.fetch("owner").to_s.downcase
       repo = dependency.fetch("repo").to_s.downcase
       project = issue.project.account.projects.find_by("LOWER(owner) = ? AND LOWER(repo) = ?", owner, repo)
       project&.issues&.find_by(github_number: dependency.fetch("number"))
+    end
+
+    def self.targets_for_notifications(notifications, dependencies_by_notification_id)
+      requests = notifications.flat_map do |notification|
+        dependencies_by_notification_id.fetch(notification.id).map do |dependency|
+          [ notification.subject.project.account_id, dependency ]
+        end
+      end
+      return {} if requests.empty?
+
+      projects = projects_for(requests)
+      projects_by_id = projects.index_by(&:id)
+      issues = issues_for(projects_by_id, requests)
+      issues.each_with_object({}) do |issue, targets|
+        project = projects_by_id.fetch(issue.project_id)
+        targets[target_key(project.account_id,
+          { "owner" => project.owner, "repo" => project.repo, "number" => issue.github_number })] = issue
+      end
+    end
+
+    def self.projects_for(requests)
+      conditions = requests.map do |account_id, dependency|
+        Project.sanitize_sql_array([ "(account_id = ? AND LOWER(owner) = ? AND LOWER(repo) = ?)", account_id,
+          dependency.fetch("owner").to_s.downcase, dependency.fetch("repo").to_s.downcase ])
+      end
+      Project.where(conditions.uniq.join(" OR ")).select(:id, :account_id, :owner, :repo).to_a
+    end
+
+    def self.issues_for(projects_by_id, requests)
+      project_ids_by_key = projects_by_id.values.index_by do |project|
+        [ project.account_id, project.owner.to_s.downcase, project.repo.to_s.downcase ]
+      end
+      conditions = requests.filter_map do |account_id, dependency|
+        project = project_ids_by_key[[ account_id, dependency.fetch("owner").to_s.downcase, dependency.fetch("repo").to_s.downcase ]]
+        next unless project
+
+        Issue.sanitize_sql_array([ "(project_id = ? AND github_number = ?)", project.id, dependency.fetch("number") ])
+      end
+      return Issue.none if conditions.empty?
+
+      Issue.where(conditions.uniq.join(" OR "))
+    end
+
+    def self.target_key(account_id, dependency)
+      [ account_id, dependency.fetch("owner").to_s.downcase, dependency.fetch("repo").to_s.downcase,
+        dependency.fetch("number").to_s ]
     end
 
     def resolved?(issue)

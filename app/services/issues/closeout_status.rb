@@ -19,7 +19,8 @@ module Issues
     Inputs = Struct.new(:evidence_by_issue_id, :technical_evidence_by_issue_id, :prerequisites_by_issue_id,
       :open_requests_by_issue_id, :active_run_issue_ids, :feature_links_by_issue_id,
       :analysis_backoff_reset_by_project_id, :scanner_attempts_by_issue_id,
-      :open_native_children_by_issue_id, :prerequisite_notifications_by_issue_id, keyword_init: true)
+      :open_native_children_by_issue_id, :prerequisite_notifications_by_issue_id,
+      :external_prerequisite_states_by_notification_id, keyword_init: true)
 
     # Blockers that are deliberate operator states or active work rather than
     # a partial-closeout stall; the lane must not surface them.
@@ -105,6 +106,7 @@ module Issues
 
         IssueAnalysisBackoffResetContext.call(project: project_issues.first.project)
       end
+      prerequisite_notifications = prerequisite_notifications_for(issues)
       Inputs.new(
         evidence_by_issue_id: CloseoutEvidence.results_for(issues),
         technical_evidence_by_issue_id: TechnicalPrerequisites::Evidence.records_for_issues(issues),
@@ -115,7 +117,10 @@ module Issues
         analysis_backoff_reset_by_project_id: reset_at,
         scanner_attempts_by_issue_id: scanner_attempts,
         open_native_children_by_issue_id: open_native_children_for(issues),
-        prerequisite_notifications_by_issue_id: prerequisite_notifications_for(issues)
+        prerequisite_notifications_by_issue_id: prerequisite_notifications,
+        external_prerequisite_states_by_notification_id: PartialCloseouts::ExternalPrerequisites.states_for_notifications(
+          prerequisite_notifications.values.flatten
+        )
       )
     end
 
@@ -142,7 +147,7 @@ module Issues
       SQL
         source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE,
         subject_type: "Issue", subject_id: issues.map(&:id), resolved_at: nil, dismissed_at: nil
-      ).order(:id).to_a.group_by(&:subject_id)
+      ).preload(subject: [ :project, :issue_dependencies ]).order(:id).to_a.group_by(&:subject_id)
     end
     private_class_method :prerequisite_notifications_for
 
@@ -395,7 +400,7 @@ module Issues
       return [] if notifications.empty?
 
       ids = notifications.map { |notification| "##{notification.id}" }
-      external = notifications.flat_map { |notification| external_prerequisite_states(notification) }
+      external = notifications.flat_map { |notification| external_prerequisite_states(notification, inputs:) }
       [ Blocker.new(
         code: external.any? ? :prerequisite_notification : :human_prerequisite_notification,
         message: prerequisite_notification_message(notifications, ids, external),
@@ -407,7 +412,9 @@ module Issues
       ) ]
     end
 
-    def self.external_prerequisite_states(notification)
+    def self.external_prerequisite_states(notification, inputs: nil)
+      return inputs.external_prerequisite_states_by_notification_id.fetch(notification.id, []) if inputs
+
       PartialCloseouts::ExternalPrerequisites.states_for(notification)
     end
     private_class_method :external_prerequisite_states

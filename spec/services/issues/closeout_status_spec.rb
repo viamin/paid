@@ -231,6 +231,37 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     expect(blocker.recovery).to include("rechecks")
   end
 
+  it "batch-loads external prerequisite targets for every rendered notification" do # @spec PARTIAL-CLOSEOUT-026
+    target_project = create(:project, account:, owner: "viamin", repo: "agent-harness", name: "agent-harness")
+    dependents = []
+    3.times do |index|
+      target = create(:issue, project: target_project, github_number: 517 + index, github_state: "open")
+      dependent = create(:issue, project:, github_state: "open", paid_state: "in_progress")
+      create(:issue_dependency, issue: dependent, depends_on_issue: nil,
+        depends_on_owner: "viamin", depends_on_repo: "agent-harness", depends_on_number: target.github_number)
+      create(:notification, :error, account:, subject: dependent,
+        source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+        metadata: { "prerequisites" => [ {
+          "identity" => "agent-harness-#{target.github_number}", "kind" => "external",
+          "external_dependency" => { "owner" => "viamin", "repo" => "agent-harness", "number" => target.github_number }
+        } ] })
+      dependents << dependent
+    end
+
+    queries = []
+    subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+    inputs = nil
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      inputs = described_class.inputs_for(dependents)
+      dependents.each do |dependent|
+        described_class.call(dependent, eligible_issue_ids: [], continuation_eligible_issue_ids: [], inputs: inputs)
+      end
+    end
+
+    expect(inputs.external_prerequisite_states_by_notification_id.values.flatten).to all(include("state" => "open"))
+    expect(queries.grep(/FROM "projects" WHERE.*LOWER/).size).to eq(1)
+  end
+
   it "does not cross-pair batched child and notification blockers across tenants" do # @spec PARTIAL-CLOSEOUT-030
     other_account = create(:account)
     other_project = create(:project, account: other_account)
