@@ -523,6 +523,7 @@ module Runners
 
     def harness_health_check_supported?
       return false if runner.subscription?
+      return false if runner.zero_data_retention?
       api_key_name = RunnerSupport.proxy_health_check_api_key_for(runner.runner_key)
       !!(api_key_name && proxy_api_key_configured?(api_key_name))
     end

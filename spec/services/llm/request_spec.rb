@@ -50,6 +50,30 @@ RSpec.describe Llm::Request do
     expect(AgentHarness.conductor).to have_received(:execute_direct).with("Assess", hash_including(provider: :gemini, model: "gemini-mid"))
   end
 
+  # @spec LLM-ROUTING-001 MODEL-POLICY-024
+  it "does not let a ZDR fallback disqualify the non-ZDR primary" do
+    fallback = create(:runner, user: owner, runner_key: "gemini", zero_data_retention: true,
+      tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
+    owner.settings.update!(kb_chat_runner: runner.routing_key,
+      kb_chat_fallback_runners: [ fallback.routing_key ], fallback_enabled: true)
+    allow(provider).to receive(:subscription_unset_vars).and_return([])
+
+    expect(described_class.call(project: project, prompt: "Assess", timeout: 30)).to eq(response)
+
+    expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+      "Assess", hash_including(provider: :codex, model: "runner-mid")
+    ).once
+  end
+
+  # @spec MODEL-POLICY-024
+  it "preserves a snapshotted ZDR requirement after the runner declaration is disabled" do
+    run.update!(external_metadata: run.external_metadata.merge("zdr_required" => true))
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 30) }
+      .to raise_error(AgentHarness::ConfigurationError, /zero data retention policy/)
+    expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+  end
+
   # @spec LLM-ROUTING-002
   it "honors disabled automatic fallback" do
     owner.settings.update!(kb_chat_runner: runner.routing_key, fallback_enabled: false)
