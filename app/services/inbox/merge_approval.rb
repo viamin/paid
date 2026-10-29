@@ -152,13 +152,13 @@ module Inbox
         return held_review_instruction if held_for_review?
         return stalled_execution_instruction if stalled_execution?
         return stale_approval_instruction if stale_approval?
-        return "Review the current changes and make the manual merge decision on GitHub. Paid will not merge this pull request automatically." if manual_merge?
+        return "Review the current changes and make the manual merge decision on GitHub. Approval alone does not clear this Inbox item; Paid will not merge this pull request automatically." if manual_merge?
 
         "Approve the current revision on GitHub. Paid will reevaluate it on a later scan, subject to all remaining checks and policy."
       end
 
       def held_review_instruction
-        return "Review the current changes and make the manual merge decision on GitHub. Paid will not merge this pull request automatically." if manual_merge?
+        return "Review the current changes and make the manual merge decision on GitHub. Approval alone does not clear this Inbox item; Paid will not merge this pull request automatically." if manual_merge?
 
         "Review the current changes and remove the hold when automatic merging may resume."
       end
@@ -266,10 +266,11 @@ module Inbox
 
     def stalled_execution?
       return @stalled_execution if defined?(@stalled_execution)
+      return @stalled_execution = false unless issue.pr_review_phase == "draft"
+
       if issue.has_attribute?(:stalled_execution_candidate)
         return @stalled_execution = issue.stalled_execution_candidate
       end
-      return @stalled_execution = false unless issue.pr_review_phase == "draft"
 
       @stalled_execution = AgentRun
         .where(project_id: issue.project_id, goal: "create_pr", pull_request_number: issue.github_number)
