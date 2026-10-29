@@ -84,8 +84,9 @@ configuration is surfaced instead of falling back to a different CLI default.
 
 Smoke retries are bounded to the execution environment that produced the
 timeout. Before retrying a timed-out smoke, the activity confirms that the
-persisted environment reference remains present and the connected environment
-is running. Cleanup may have removed the environment while handling the first
+persisted environment reference still identifies that environment and the
+connected environment is running. Cleanup may have removed or replaced the
+environment while handling the first
 timeout; that path records the original preflight timeout and diagnostics and
 does not issue a second smoke against an invalidated container. Normal fallback
 recovery may provision fresh infrastructure only for a later eligible runner.
