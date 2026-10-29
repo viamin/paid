@@ -175,6 +175,61 @@ RSpec.describe "Mobile inbox API" do
     expect(response.parsed_body.dig("error", "code")).to eq("forbidden")
   end
 
+  # @spec ISSUE-REOPEN-REVIEW-005
+  it "records a current-revision reopen decision through the bearer Inbox surface" do
+    reopen_issue = create(:issue, project:, paid_state: "manual_review",
+      manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+      github_updated_at: Time.current.change(usec: 0))
+
+    expect {
+      post "/api/v1/inbox/entries/manual_review:#{reopen_issue.id}/resolve_reopen_review", params: {
+        revision: reopen_issue.github_updated_at.iso8601,
+        reason: "The reopened scope still needs current validation."
+      }.to_json, headers: headers.merge("Content-Type" => "application/json")
+    }.not_to change(AgentRun, :count)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body).to include("issue_id" => reopen_issue.id, "status" => "new")
+    expect(reopen_issue.reload.paid_state).to eq("new")
+    expect(AccountActivityEvent.last).to have_attributes(actor: user, subject: reopen_issue)
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-005
+  it "keeps the reopen hold when the bearer submits a stale revision" do
+    reopen_issue = create(:issue, project:, paid_state: "manual_review",
+      manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+      github_updated_at: Time.current.change(usec: 0))
+
+    post "/api/v1/inbox/entries/manual_review:#{reopen_issue.id}/resolve_reopen_review", params: {
+      revision: "stale", reason: "The reopened scope still needs current validation."
+    }.to_json, headers: headers.merge("Content-Type" => "application/json")
+
+    expect(response).to have_http_status(:unprocessable_entity)
+    expect(response.parsed_body.dig("error", "message")).to include("changed after this review")
+    expect(reopen_issue.reload).to be_reopen_review_pending
+  end
+
+  # @spec ISSUE-REOPEN-REVIEW-005
+  it "does not disclose or resolve a reopen decision without permission to run agents" do
+    reopen_issue = create(:issue, project:, paid_state: "manual_review",
+      manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+      github_updated_at: Time.current.change(usec: 0))
+    viewer = create(:user, :viewer, account:)
+    create(:project_membership, :viewer, user: viewer, project: project)
+    viewer_plaintext = "paid_pat_#{SecureRandom.urlsafe_base64(32)}"
+    PersonalAccessToken.create!(
+      user: viewer, account:, name: "Viewer", scopes: %w[inbox],
+      token_digest: PersonalAccessToken.digest(viewer_plaintext)
+    )
+
+    post "/api/v1/inbox/entries/manual_review:#{reopen_issue.id}/resolve_reopen_review", params: {
+      revision: reopen_issue.github_updated_at.iso8601, reason: "The reopened scope still needs current validation."
+    }.to_json, headers: { "Authorization" => "Bearer #{viewer_plaintext}", "Content-Type" => "application/json" }
+
+    expect(response).to have_http_status(:not_found)
+    expect(reopen_issue.reload).to be_reopen_review_pending
+  end
+
   # @spec MOBILE-API-008
   it "does not expose entries outside the bearer tenant" do
     foreign_account = create(:account)

@@ -470,7 +470,7 @@ module Projects
     # immediately instead of surviving the whole queue wait; re-entry
     # producers (parse failure, round limit, needs_input) bring it back if
     # the resumed work still needs a human decision.
-    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+    # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002L
     def resume_manual_review
       authorize @project, :run_agent?
 
@@ -480,13 +480,74 @@ module Projects
         return
       end
 
+      recovery = Inbox::ManualReviewRecovery.call(issue:)
+      unless recovery.enhancement?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This manual-review hold requires #{recovery.kind.to_s.humanize.downcase} recovery, not an enhancement retry."
+        return
+      end
+
       create_enhance_issue_runs_and_redirect(
         issue_ids: [ issue.id ],
         on_error_path: safe_return_target || dashboard_path,
         success_path: safe_return_target || dashboard_path,
         custom_prompt: nil,
         goal: "enhance_issue",
-        priority_tier: nil
+        priority_tier: nil,
+        exclusive_issue_recovery: true
+      )
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002L
+    def resolve_reopen_review
+      authorize @project, :run_agent?
+
+      issue = resolve_manual_review_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      result = Issues::ResolveReopenReview.call(
+        issue:, actor: current_user, reason: params[:reason], revision: params[:revision]
+      )
+      redirect_to safe_return_target || dashboard_path, **(result.success? ? { notice: result.message } : { alert: result.message })
+    end
+
+    # A scanner-confirmed recurrence (`verification_failed`) is the one
+    # scanner hold that is an operator decision rather than a wait for the
+    # automatic verifier: it queues one new create_pr run, scoped exactly
+    # like resume_manual_review's enhancement retry. `verification_blocked`
+    # (still pending/insufficient evidence) is refused here because
+    # SecurityAlerts::VerifyMergedRemediationAttempts already revisits it on
+    # the next scan (EAGER-QUEUE-013); a competing manually-triggered fix PR
+    # would race that verifier.
+    # @spec OPERATOR-INBOX-002L
+    def authorize_scanner_remediation
+      authorize @project, :run_agent?
+
+      issue = resolve_manual_review_issue
+      unless issue
+        redirect_to safe_return_target || dashboard_path, alert: manual_review_issue_missing_alert
+        return
+      end
+
+      recovery = Inbox::ManualReviewRecovery.call(issue:)
+      unless recovery.authorize_new_remediation?
+        redirect_to safe_return_target || dashboard_path,
+          alert: "This manual-review hold has no scanner-confirmed recurrence to authorize new remediation for."
+        return
+      end
+
+      create_enhance_issue_runs_and_redirect(
+        issue_ids: [ issue.id ],
+        on_error_path: safe_return_target || dashboard_path,
+        success_path: safe_return_target || dashboard_path,
+        custom_prompt: nil,
+        goal: "create_pr",
+        priority_tier: nil,
+        run_label: "scanner remediation",
+        exclusive_issue_recovery: true
       )
     end
 
@@ -1159,6 +1220,11 @@ module Projects
       external_metadata = external_metadata.merge("plan_docs" => plan_docs) if plan_docs.any?
 
       ActiveRecord::Base.transaction do
+        # Issue-scoped creation shares the recovery lock: a recovery that
+        # checks all goals cannot race another controller action creating a
+        # differently-goaled run for the same issue.
+        issue.lock! if issue
+
         # @spec LABEL-CONTROL-007 — In ignored mode any manual run against a
         # specific issue or PR marks it as Paid's to work on; auto-pick on
         # the same project will pick it up without waiting for a label.
@@ -1675,7 +1741,7 @@ module Projects
       redirect_to on_error_path, alert: "An unexpected error occurred. Please try again."
     end
 
-    def create_enhance_issue_runs_and_redirect(issue_ids:, on_error_path:, custom_prompt:, goal:, priority_tier:, success_path: project_path(@project))
+    def create_enhance_issue_runs_and_redirect(issue_ids:, on_error_path:, custom_prompt:, goal:, priority_tier:, success_path: project_path(@project), run_label: "issue enhancement", exclusive_issue_recovery: false)
       budget_result = CostBudgets::Check.call(@project)
       unless budget_result[:allowed]
         redirect_to on_error_path, alert: "Your project's AI budget has been reached. Please adjust your budget settings or try again later."
@@ -1688,18 +1754,22 @@ module Projects
         return
       end
 
-      # Filter out issues that already have active (unfinished) enhance_issue runs
-      active_issue_ids = @project.agent_runs
-        .where(issue_id: issues.map(&:id), goal: "enhance_issue", status: AgentRun::UNFINISHED_STATUSES)
-        .pluck(:issue_id)
-      issues = issues.where.not(id: active_issue_ids) if active_issue_ids.any?
-      if issues.empty?
-        redirect_to on_error_path, alert: "All selected issues already have active enhancement runs."
-        return
-      end
-
       github_sync_args_list = []
+      active_run_alert = nil
       ActiveRecord::Base.transaction do
+        issues = issues.order(:id).lock.to_a
+        active_runs = @project.agent_runs.where(issue_id: issues.map(&:id), status: AgentRun::UNFINISHED_STATUSES)
+        active_runs = active_runs.where(goal: goal) unless exclusive_issue_recovery
+        active_issue_ids = active_runs.pluck(:issue_id).to_set
+        issues.reject! { |issue| active_issue_ids.include?(issue.id) }
+
+        if issues.empty?
+          active_run_alert = exclusive_issue_recovery ?
+            "An existing queued or running run must be reconciled before resuming this hold." :
+            "All selected issues already have an active #{run_label} run."
+          raise ActiveRecord::Rollback
+        end
+
         issues.each do |issue|
           create_agent_run(
             issue: issue,
@@ -1713,6 +1783,11 @@ module Projects
         end
       end
 
+      if active_run_alert
+        redirect_to on_error_path, alert: active_run_alert
+        return
+      end
+
       github_sync_args_list.each do |issue, (label_name, stale_labels)|
         sync_priority_label_to_github(issue, label_name, stale_labels)
       end
@@ -1720,9 +1795,9 @@ module Projects
       ProcessRunQueueJob.perform_later
 
       notice = if issues.size == 1
-        "Agent run queued for issue enhancement."
+        "Agent run queued for #{run_label}."
       else
-        "#{issues.size} agent runs queued for issue enhancement."
+        "#{issues.size} agent runs queued for #{run_label}."
       end
       redirect_to success_path, notice: notice
     rescue NoRunnableRunnerError => e

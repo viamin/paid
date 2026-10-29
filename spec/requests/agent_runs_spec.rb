@@ -2628,6 +2628,17 @@ RSpec.describe "AgentRuns" do
         expect(response).to redirect_to(dashboard_path)
       end
 
+      # @spec ISSUE-ENHANCEMENT-011 @spec OPERATOR-INBOX-002D
+      it "refuses when queued work for the issue still needs reconciliation" do
+        create(:agent_run, :queued, project: project, issue: parked_issue)
+
+        expect {
+          post resume_manual_review_project_agent_runs_path(project), params: { issue_id: parked_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("must be reconciled")
+      end
+
       # @spec ISSUE-ENHANCEMENT-011 @spec ISSUE-ENHANCEMENT-012 @spec OPERATOR-INBOX-002D
       it "moves the issue out of manual_review at queue time, clearing the inbox lane and badge count" do
         gated_project = create(:project, account: account, github_token: github_token, created_by: user,
@@ -2748,6 +2759,140 @@ RSpec.describe "AgentRuns" do
           params: { return_to: inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND) }
 
         expect(response).to redirect_to(inbox_path(kind: Inbox::Queue::MANUAL_REVIEW_KIND))
+      end
+    end
+  end
+
+  describe "POST /projects/:project_id/agent_runs/resolve_reopen_review" do
+    let(:reopened_issue) do
+      create(:issue, project: project, github_number: 4604, paid_state: "manual_review",
+        manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+        github_updated_at: Time.current.change(usec: 0))
+    end
+
+    before { sign_in user }
+
+    # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002L
+    it "records reopen validation instead of queuing enhancement work" do
+      expect {
+        post resolve_reopen_review_project_agent_runs_path(project), params: {
+          issue_id: reopened_issue.id, revision: reopened_issue.github_updated_at.iso8601,
+          reason: "The reopened scope still needs live validation evidence."
+        }
+      }.not_to change(AgentRun, :count)
+
+      expect(reopened_issue.reload.paid_state).to eq("new")
+      expect(AccountActivityEvent.last.metadata).to include("reopen_review" => "resume_work")
+    end
+
+    # @spec ISSUE-REOPEN-REVIEW-005 @spec OPERATOR-INBOX-002L
+    it "keeps the review hold for a stale or double-submitted decision" do
+      post resolve_reopen_review_project_agent_runs_path(project), params: {
+        issue_id: reopened_issue.id, revision: "stale", reason: "Need evidence."
+      }
+      expect(reopened_issue.reload).to be_reopen_review_pending
+
+      revision = reopened_issue.github_updated_at.iso8601
+      post resolve_reopen_review_project_agent_runs_path(project), params: {
+        issue_id: reopened_issue.id, revision:, reason: "Need evidence."
+      }
+      expect(reopened_issue.reload.paid_state).to eq("new")
+
+      expect {
+        post resolve_reopen_review_project_agent_runs_path(project), params: {
+          issue_id: reopened_issue.id, revision:, reason: "Need evidence."
+        }
+      }.not_to change(AccountActivityEvent, :count)
+    end
+  end
+
+  describe "POST /projects/:project_id/agent_runs/authorize_scanner_remediation" do
+    let(:recurrent_issue) do
+      create(:issue, project: project, github_number: 4732, source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE,
+        paid_state: "manual_review", manual_review_reason: "Code-scanning alert #1 recurred.")
+    end
+
+    before { create(:code_scanning_remediation_attempt, issue: recurrent_issue, status: "verification_failed") }
+
+    context "when not authenticated" do
+      # @spec OPERATOR-INBOX-002L
+      it "redirects to the sign in page" do
+        post authorize_scanner_remediation_project_agent_runs_path(project), params: { issue_id: recurrent_issue.id }
+
+        expect(response).to redirect_to(new_user_session_path)
+        expect(recurrent_issue.reload.paid_state).to eq("manual_review")
+      end
+    end
+
+    context "when authenticated without permission to run agents" do
+      let(:outsider) { create(:user) }
+
+      before { sign_in outsider }
+
+      # @spec OPERATOR-INBOX-002L
+      it "refuses to queue a run" do
+        post authorize_scanner_remediation_project_agent_runs_path(project), params: { issue_id: recurrent_issue.id }
+
+        expect(response).not_to have_http_status(:ok)
+      end
+    end
+
+    context "when authenticated" do
+      before { sign_in user }
+
+      # @spec OPERATOR-INBOX-002L
+      it "queues a manual create_pr run for the scanner-confirmed recurrence and clears the hold" do
+        expect {
+          post authorize_scanner_remediation_project_agent_runs_path(project), params: { issue_id: recurrent_issue.id }
+        }.to change(AgentRun, :count).by(1)
+
+        agent_run = AgentRun.last
+        expect(agent_run.issue).to eq(recurrent_issue)
+        expect(agent_run.goal).to eq("create_pr")
+        expect(agent_run.trigger_type).to eq("manual")
+        expect(recurrent_issue.reload.paid_state).to eq("in_progress")
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "refuses a scanner attempt that is still pending verification, not confirmed recurrent" do
+        pending_issue = create(:issue, project: project, github_number: 4733,
+          source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE, paid_state: "manual_review")
+        create(:code_scanning_remediation_attempt, issue: pending_issue, status: "verification_blocked")
+
+        expect {
+          post authorize_scanner_remediation_project_agent_runs_path(project), params: { issue_id: pending_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(pending_issue.reload.paid_state).to eq("manual_review")
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "refuses a non-scanner manual-review hold" do
+        enhancement_issue = create(:issue, project: project, github_number: 4734, paid_state: "manual_review",
+          manual_review_reason: "Round limit reached.")
+
+        expect {
+          post authorize_scanner_remediation_project_agent_runs_path(project), params: { issue_id: enhancement_issue.id }
+        }.not_to change(AgentRun, :count)
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "refuses when queued work for the issue still needs reconciliation" do
+        create(:agent_run, :queued, :enhance_issue_goal, project: project, issue: recurrent_issue)
+
+        expect {
+          post authorize_scanner_remediation_project_agent_runs_path(project), params: { issue_id: recurrent_issue.id }
+        }.not_to change(AgentRun, :count)
+
+        expect(flash[:alert]).to include("must be reconciled")
+      end
+
+      # @spec OPERATOR-INBOX-002L
+      it "refuses when no issue is selected" do
+        post authorize_scanner_remediation_project_agent_runs_path(project), params: {}
+
+        expect(response).to redirect_to(dashboard_path)
+        expect(flash[:alert]).to eq("Please select an issue.")
       end
     end
   end

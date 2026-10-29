@@ -19,6 +19,7 @@ module Tools
       "Tools::RequestAcceptanceAudit",
       "Tools::RequestLayeredVerificationAudit",
       "Tools::ResolveIssueCloseout",
+      "Tools::ResolveReopenReview",
       "Tools::GetAgentRun",
       "Tools::ListAgentRuns",
       "Tools::CancelAgentRun",
