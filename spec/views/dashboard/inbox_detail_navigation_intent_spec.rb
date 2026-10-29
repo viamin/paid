@@ -648,7 +648,12 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
   describe "dependency_cycle" do
     INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::DEPENDENCY_CYCLE_KIND
 
-    let(:cycle) { Struct.new(:path, :downstream_issues).new([ entry_issue, entry_issue ], []) }
+    let(:cycle_edge) do
+      Struct.new(:declaration_source, :declaration_url).new("issue_comment", "https://github.com/acme/widgets/issues/42#issuecomment-1")
+    end
+    let(:cycle) do
+      Struct.new(:path, :path_edges, :downstream_issues).new([ entry_issue, entry_issue ], [ cycle_edge ], [])
+    end
     let(:entry) do
       build_entry.call(Inbox::Queue::DEPENDENCY_CYCLE_KIND,
         record: cycle, issue: nil, title_text: "Dependency cycle", summary_text: "0 downstream issues remain held.")
