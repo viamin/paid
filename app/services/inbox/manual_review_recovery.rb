@@ -12,7 +12,7 @@ module Inbox
       "Round limit reached.",
       "Structured output failed validation."
     ].freeze
-    ENHANCEMENT_ROUND_LIMIT_REASON = /\APaid reached the configured limit of \d+ enhancement re-evaluation rounds for this issue\.\z/
+    ENHANCEMENT_ROUND_LIMIT_REASON = /\APaid (?:has )?reached the configured limit of \d+ enhancement re-evaluation rounds for this issue\.\z/
 
     Recovery = Data.define(:kind, :dependency, :scanner_attempt) do
       def enhancement? = kind == :enhancement

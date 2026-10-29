@@ -4,12 +4,11 @@ module ClarifyingQuestions
   # Clears an issue's "needs input" marker once its clarifying questions have
   # been answered: removes the needs-input label on GitHub and resets
   # paid_state so the "Answer Questions" button disappears and the issue
-  # re-enters the pipeline. Also accepts a `manual_review` issue whose
-  # parked state preserved parseable clarifying questions
-  # (ISSUE-ENHANCEMENT-011) — answering those from the inbox is itself the
-  # manual review the state asks for, so it clears the same way (or, when a
-  # create_feature run is paused on the issue, resumes that run under the
-  # same manual_review-clearing state flip).
+  # re-enters the pipeline. It accepts a `manual_review` issue only when the
+  # Inbox classifies its durable provenance as enhancement recovery; retained
+  # questions never clear a newer reopen, dependency, scanner, or unknown
+  # hold. An enhancement answer can also resume a paused create_feature run
+  # under the same manual_review-clearing state flip.
   #
   # Idempotent (a no-op unless the issue is currently awaiting input) and
   # best-effort: a GitHub failure is logged but still updates local state, and
@@ -29,6 +28,7 @@ module ClarifyingQuestions
 
     def call
       return unless issue.needs_input? || issue_paid_state_needs_input? || issue_paid_state_manual_review?
+      return unless manual_review_clearable?
 
       label = project.enhance_issue_needs_input_label_name
       remove_label(label) if issue.has_label?(label)
@@ -66,6 +66,13 @@ module ClarifyingQuestions
 
     def issue_paid_state_manual_review?
       issue.respond_to?(:paid_state) && issue.paid_state == "manual_review"
+    end
+
+    # Load can reconcile an answer comment written outside the Inbox form, so
+    # it needs the same state-transition boundary as SubmitAnswers.
+    # @spec OPERATOR-INBOX-002L
+    def manual_review_clearable?
+      !issue_paid_state_manual_review? || Inbox::ManualReviewRecovery.call(issue: issue).enhancement?
     end
 
     def remove_label(label)

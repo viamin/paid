@@ -1281,6 +1281,37 @@ RSpec.describe "Projects::ClarifyingQuestions" do
       end
     end
 
+    # @spec OPERATOR-INBOX-002L @spec ISSUE-REOPEN-REVIEW-005
+    context "when a direct POST targets a reopen-review hold with retained questions" do
+      let(:questions) { [ "What is the expected behavior?", "Should this be behind a flag?" ] }
+      let(:answers) { [ "X is a feature", "Yes, by default" ] }
+      let(:issue) do
+        create(:issue, project: project, body: issue_body,
+          paid_state: "manual_review",
+          manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+          needs_input_questions: questions)
+      end
+
+      before do
+        allow(github_client).to receive(:issue_comments).and_return([ trusted_comment ])
+      end
+
+      it "keeps the hold for the revision-bound reopen decision" do
+        post project_issue_clarifying_questions_path(project, issue), params: {
+          questions: questions,
+          answers: answers
+        }
+
+        expect(response).to redirect_to(project_issue_clarifying_questions_path(project, issue))
+        expect(flash[:alert]).to include("requires reopen review recovery")
+        expect(github_client).not_to have_received(:add_comment)
+        expect(issue.reload).to have_attributes(
+          paid_state: "manual_review",
+          needs_input_questions: questions
+        )
+      end
+    end
+
     # @spec OPERATOR-INBOX-012
     context "when the question carries strict choice markers" do
       let(:single_choice_question) do
