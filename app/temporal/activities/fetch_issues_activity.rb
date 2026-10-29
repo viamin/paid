@@ -1100,10 +1100,8 @@ module Activities
 
     # @spec GITHUB-SYNC-016
     def repair_completed_open_issues(project, client)
-      return false if upstream_issue_write_skipped?(project, "add_recommend_close_label")
-
       completed_issues = project.issues
-        .where(github_state: "open", is_pull_request: false, paid_state: "completed")
+        .where(github_state: "open", is_pull_request: false, paid_state: %w[completed recommend_close])
         .to_a
       return false if completed_issues.empty?
 
@@ -1120,24 +1118,86 @@ module Activities
       completed_issues.select! { |issue| issue_ids.include?(issue.id) }
       return false if completed_issues.empty?
 
-      closing_numbers_by_pr = project.issues
+      source_prs_by_number = project.issues
         .pull_requests_only
-        .where(github_state: "open")
         .where(github_number: pr_numbers)
-        .each_with_object({}) do |pull_request, memo|
-          memo[pull_request.github_number] = pull_request.closing_referenced_issue_numbers.to_set
-        end
+        .index_by(&:github_number)
 
-      repaired = completed_issues.reject do |issue|
-        issue_pr_numbers.fetch(issue.id, []).any? do |pr_number|
-          closing_numbers_by_pr.fetch(pr_number, Set.new).include?(issue.github_number)
-        end
+      completed_issues.filter_map do |issue|
+        pull_requests = issue_pr_numbers.fetch(issue.id, []).filter_map { |number| source_prs_by_number[number] }
+        next if pull_requests.any? { |pull_request| pull_request.closing_referenced_issue_numbers.include?(issue.github_number) }
+
+        repair_non_closing_source_issue(issue, pull_requests, client, project)
+      end.any?
+    end
+
+    # The poll path uses only durable GitHub and acceptance-audit evidence. It
+    # must not turn a source PR's bookkeeping (or a premerge source-closure
+    # disposition) into a semantic completion verdict.
+    # @spec GITHUB-SYNC-016
+    def repair_non_closing_source_issue(issue, pull_requests, client, project)
+      if (pull_request = pull_requests.find { |candidate| candidate.github_state == "open" })
+        park_non_closing_issue(issue, review_pending_reason(issue, pull_request), client, project)
+      elsif final_acceptance_supported?(issue)
+        recommend_close_issues(client, project, [ issue ])
+      else
+        park_non_closing_issue(issue, acceptance_audit_reason(issue, pull_requests), client, project)
       end
-      return false if repaired.empty?
+    end
 
-      blocked, closeable = repaired.partition { |issue| !issue.ready_to_work? }
+    def park_non_closing_issue(issue, reason, client, project)
+      changed = issue.paid_state != "manual_review" || issue.manual_review_reason != reason
+      issue.update!(paid_state: "manual_review", manual_review_reason: reason) if changed
+      remove_stale_recommend_close_label(client, project, issue)
+      changed
+    end
 
-      park_dependency_blocked_issues(blocked) | recommend_close_issues(client, project, closeable)
+    def review_pending_reason(issue, pull_request)
+      prerequisite = issue.ready_to_work? ? nil : " #{dependency_blocked_reason(issue)}"
+
+      "Source PR ##{pull_request.github_number} is still open or draft and does not close this issue. " \
+        "Next action: complete review and merge PR ##{pull_request.github_number}; do not recommend issue closure yet.#{prerequisite}"
+    end
+
+    def acceptance_audit_reason(issue, pull_requests)
+      merged = pull_requests.select { |pull_request| pull_request.pr_review_phase == "merged" }
+      source = merged.last || pull_requests.last
+      prerequisite = issue.ready_to_work? ? nil : " #{dependency_blocked_reason(issue)}"
+      assessment = current_acceptance_assessment(issue)
+      return unmet_acceptance_audit_reason(source, assessment, prerequisite) if assessment
+
+      "Source PR ##{source&.github_number} merged without a closing reference. Next action: run a report-only acceptance audit " \
+        "against the current issue intent and PR evidence.#{prerequisite}"
+    end
+
+    def unmet_acceptance_audit_reason(source, assessment, prerequisite)
+      next_action = assessment.dig("next_action", "explanation").presence ||
+        "inspect the criterion evidence and complete its recorded prerequisite or focused follow-up."
+
+      "Source PR ##{source&.github_number} has a current acceptance audit that does not satisfy every criterion. " \
+        "Next action: #{next_action}#{prerequisite}"
+    end
+
+    def final_acceptance_supported?(issue)
+      assessment = current_acceptance_assessment(issue)
+      return false unless assessment
+
+      criteria = Array(assessment["criteria"]).select { |criterion| criterion.is_a?(Hash) }
+      criteria.present? && criteria.all? { |criterion| criterion["state"] == "satisfied" }
+    end
+
+    def current_acceptance_assessment(issue)
+      audit_run = issue.agent_runs.completed.where(goal: "analyze_issue").includes(:continuation_request)
+        .order(completed_at: :desc, id: :desc).detect do |run|
+          run.continuation_request&.evidence&.fetch("continuation_mode", nil) == "acceptance_audit"
+        end
+      return unless audit_run
+
+      assessment = audit_run.reconciliation.to_h.fetch("assessment", {}).deep_stringify_keys
+      return unless assessment["source_revision"] == PartialCloseouts::Assessment.source_revision_for(issue)
+      return unless assessment["intent_revision"] == PartialCloseouts::Assessment.intent_revision_for(issue)
+
+      assessment
     end
 
     # A partial implementation still blocked by an unresolved dependency is
@@ -1213,6 +1273,30 @@ module Activities
         issue_numbers: visible.map(&:github_number)
       )
       true
+    end
+
+    def remove_stale_recommend_close_label(client, project, issue)
+      label = project.label_for_stage("recommend_close") ||
+        Activities::HandleNoOutputIssueRunActivity::PAID_RECOMMEND_CLOSE_LABEL
+      return false unless issue.has_label?(label)
+
+      result = client.remove_labels_from_issue(project.full_name, issue.github_number, [ label ])
+      return false if GithubClient.label_write_suppressed?(result)
+
+      removed = result.fetch(:removed, [])
+      return false unless removed.include?(label)
+
+      issue.update_columns(labels: issue.labels - removed, updated_at: Time.current)
+      true
+    rescue GithubClient::Error => e
+      logger.warn(
+        message: "github_sync.completed_open_issue_label_removal_failed",
+        project_id: project.id,
+        issue_id: issue.id,
+        issue_number: issue.github_number,
+        error: e.message
+      )
+      false
     end
 
     def add_recommend_close_label(client, project, issue)

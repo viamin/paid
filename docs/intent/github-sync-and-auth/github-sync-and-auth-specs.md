@@ -316,20 +316,19 @@
   *Test:* `spec/services/issues/upsert_from_github_spec.rb`.
   *Code:* `app/services/issues/upsert_from_github.rb`, `app/models/issue.rb`.
 
-- [x] **GITHUB-SYNC-016** — When sync repairs an open issue whose
-  `paid_state` is stale `completed` because its most recent `create_pr` run's
-  pull request does not carry a GitHub closing reference to the issue, and
-  that issue still has an unresolved blocking dependency (a local blocking
-  issue, a deployment-pending dependency, or an unresolved external
-  dependency per `Issue#ready_to_work?`), the system SHALL NOT apply the
-  recommend-close label and SHALL NOT set `paid_state` to `recommend_close`.
-  It SHALL instead set `paid_state: "manual_review"` with a
-  `manual_review_reason` naming the unresolved dependency reference(s), so the
-  remaining work stays visible without being recommended for closure or
-  re-executed on the next sync. This repair SHALL apply identically whether
-  the non-closing pull request is still open or has since merged, and SHALL
-  be a no-op on a repeated sync once the issue is parked. An issue with no
-  unresolved dependency keeps the existing `recommend_close` repair behavior
-  unchanged.
+- [x] **GITHUB-SYNC-016** — When sync finds an open issue in a stale terminal
+  closeout state whose completed `create_pr` run has no GitHub closing
+  reference, it SHALL NOT infer completion from that absence. For a draft or
+  open PR it SHALL hold the issue in `manual_review` with the linked PR and a
+  review/merge next action. For a merged PR it SHALL hold the issue in
+  `manual_review` with a report-only acceptance-audit next action unless a
+  current completed `analyze_issue` run authorized as `acceptance_audit`
+  records every applicable criterion as satisfied. A premerge
+  `source_closure: close`, `track`, unknown, stale, failed, or unmet evidence
+  SHALL NOT recommend closure. Dependency blockers remain named prerequisites.
+  The repair SHALL be idempotent, shall not make an LLM call in sync, and
+  shall correct old `recommend_close` states before attempting to remove the
+  stale Paid label. Label removals SHALL obey project integration policy and a
+  failed or suppressed removal SHALL not undo the local corrective state.
   *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
   *Code:* `app/temporal/activities/fetch_issues_activity.rb`.

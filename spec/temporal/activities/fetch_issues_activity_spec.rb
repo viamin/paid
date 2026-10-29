@@ -359,7 +359,8 @@ RSpec.describe Activities::FetchIssuesActivity do
   end
 
   describe "#repair_completed_open_issues" do
-    it "parks completed open issues for human closeout when no open PR visibly closes them" do
+    # @spec GITHUB-SYNC-016
+    it "holds a merged tracking PR for a report-only acceptance audit" do
       issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
       create(:issue, :pull_request, :closed, project: project, github_number: 3583,
@@ -368,10 +369,82 @@ RSpec.describe Activities::FetchIssuesActivity do
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(issue.manual_review_reason).to include("acceptance audit")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "holds a draft PR for review and merge rather than recommending closure" do
+      issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, project: project, github_number: 3583,
+        body: "Tracks #3441", pr_review_phase: "draft")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(issue.manual_review_reason).to include("#3583")
+      expect(issue.manual_review_reason).to include("review and merge")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "recommends closure only after a fresh completed acceptance audit satisfies every criterion" do
+      issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, :closed, project: project, github_number: 3583,
+        body: "Tracks #3441", pr_review_phase: "merged")
+      request = create(:issue_continuation_request, :consumed, issue: issue,
+        evidence: { "continuation_mode" => "acceptance_audit" })
+      audit = create(:agent_run, :completed, project: project, issue: issue, goal: "analyze_issue",
+        continuation_request: request)
+      audit.update!(reconciliation: { "assessment" => PartialCloseouts::Assessment.snapshot(audit,
+        { "criteria" => [ { "state" => "satisfied" } ] }) })
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
       expect(issue.reload.paid_state).to eq("recommend_close")
       expect(github_client).to have_received(:add_labels_to_issue).with(
         project.full_name, issue.github_number, [ "paid-recommend-close" ]
       )
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "corrects an old recommend-close label before attempting its removal" do
+      issue = create(:issue, :recommend_close, project: project, github_number: 3441, github_state: "open",
+        labels: [ "paid-recommend-close" ])
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, project: project, github_number: 3583,
+        body: "Tracks #3441", pr_review_phase: "draft")
+      allow(github_client).to receive(:remove_labels_from_issue).and_return({ removed: [ "paid-recommend-close" ], failed: [] })
+
+      activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(github_client).to have_received(:remove_labels_from_issue).with(
+        project.full_name, issue.github_number, [ "paid-recommend-close" ]
+      )
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "keeps the corrected Inbox state when stale-label removal fails" do
+      issue = create(:issue, :recommend_close, project: project, github_number: 3441, github_state: "open",
+        labels: [ "paid-recommend-close" ])
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583,
+        reconciliation: { "source_closure" => { "disposition" => "close" } })
+      create(:issue, :pull_request, :closed, project: project, github_number: 3583,
+        body: "Tracks #3441", pr_review_phase: "merged")
+      allow(github_client).to receive(:remove_labels_from_issue).and_raise(GithubClient::Error.new("temporary failure"))
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(issue.manual_review_reason).to include("acceptance audit")
+      expect(issue.labels).to include("paid-recommend-close")
     end
 
     it "keeps completed open issues when an open PR visibly closes them" do
@@ -385,7 +458,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
-    it "ignores unrelated open PRs that close the same issue number" do
+    it "holds an issue when only an unrelated PR has a closing reference" do
       issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
       create(:issue, :pull_request, project: project, github_number: 3581, body: "Closes #3441")
@@ -393,7 +466,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be true
-      expect(issue.reload.paid_state).to eq("recommend_close")
+      expect(issue.reload.paid_state).to eq("manual_review")
     end
 
     it "does not let another issue's produced PR keep this issue completed" do
@@ -406,7 +479,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be true
-      expect(issue.reload.paid_state).to eq("recommend_close")
+      expect(issue.reload.paid_state).to eq("manual_review")
       expect(other_issue.reload.paid_state).to eq("completed")
     end
 
@@ -419,18 +492,17 @@ RSpec.describe Activities::FetchIssuesActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
-    it "keeps completed state when the visible review label cannot be added" do
+    it "does not add a review label while holding an unverified source PR" do
       issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
-      allow(github_client).to receive(:add_labels_to_issue).and_raise(GithubClient::Error.new("temporary failure"))
-
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
-      expect(changed).to be false
-      expect(issue.reload.paid_state).to eq("completed")
+      expect(changed).to be true
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
     end
 
-    it "reuses the already-resolved sync client for recommend-close labeling" do
+    it "does not use a project client while holding a merged PR for audit" do
       issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
       create(:issue, :pull_request, :closed, project: project, github_number: 3583,
@@ -440,10 +512,8 @@ RSpec.describe Activities::FetchIssuesActivity do
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be true
-      expect(issue.reload.paid_state).to eq("recommend_close")
-      expect(github_client).to have_received(:add_labels_to_issue).with(
-        project.full_name, issue.github_number, [ "paid-recommend-close" ]
-      )
+      expect(issue.reload.paid_state).to eq("manual_review")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
     end
 
     # @spec GITHUB-SYNC-016
@@ -463,26 +533,19 @@ RSpec.describe Activities::FetchIssuesActivity do
     end
 
     # @spec GITHUB-SYNC-016
-    it "parks a dependency-blocked completed open issue and enqueues an async partial-completion assessment" do # @spec AUTO-PICK-QUEUE-012
+    it "holds a dependency-blocked merged PR for an operator acceptance audit" do
       blocking_issue = create(:issue, project: project, github_number: 3870, github_state: "open")
       issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open")
       issue.issue_dependencies.create!(depends_on_issue: blocking_issue)
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 4048)
       create(:issue, :pull_request, :closed, project: project, github_number: 4048,
         body: "Tracks #3871", pr_review_phase: "merged")
-      allow(Issues::AssessPartialCompletionJob).to receive(:perform_later)
-
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
       expect(changed).to be true
       expect(issue.reload.paid_state).to eq("manual_review")
       expect(issue.manual_review_reason).to include("#3870")
-      # The semantic partial/complete verdict runs out-of-band so the
-      # 60-second poll budget is not consumed by a synchronous LLM call;
-      # the activity only persists the parking state and queues the job.
-      expect(issue.partial_completion_at).to be_nil
-      expect(Issues::AssessPartialCompletionJob).to have_received(:perform_later)
-        .with(issue.id, 4048, kind_of(ActiveSupport::TimeWithZone))
+      expect(issue.manual_review_reason).to include("acceptance audit")
       expect(github_client).not_to have_received(:add_labels_to_issue)
     end
 
@@ -522,7 +585,7 @@ RSpec.describe Activities::FetchIssuesActivity do
     end
 
     # @spec GITHUB-SYNC-016
-    it "still recommends closure for a dependency-free completed open issue alongside a dependency-blocked one" do
+    it "holds dependency-free and dependency-blocked work until audit evidence exists" do
       blocking_issue = create(:issue, project: project, github_number: 3870, github_state: "open")
       blocked_issue = create(:issue, :completed, project: project, github_number: 3871, github_state: "open")
       blocked_issue.issue_dependencies.create!(depends_on_issue: blocking_issue)
@@ -538,10 +601,8 @@ RSpec.describe Activities::FetchIssuesActivity do
 
       expect(changed).to be true
       expect(blocked_issue.reload.paid_state).to eq("manual_review")
-      expect(closeable_issue.reload.paid_state).to eq("recommend_close")
-      expect(github_client).to have_received(:add_labels_to_issue).with(
-        project.full_name, closeable_issue.github_number, [ "paid-recommend-close" ]
-      ).once
+      expect(closeable_issue.reload.paid_state).to eq("manual_review")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
     end
   end
 

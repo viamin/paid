@@ -481,6 +481,13 @@ the open authorization named, so an implementation continuation is never
 reported as an acceptance audit and vice versa. All ordinary
 continuation guards remain authoritative.
 
+GitHub polling may surface a merged non-closing source PR before that action
+has been authorized. It records a manual-review closeout hold with the linked
+PR and the acceptance-audit next action; it does not call the LLM, create a
+continuation, or treat a source-closure disposition as final acceptance. Only
+a fresh completed report-only audit with satisfied applicable criteria may
+support a later closure recommendation.
+
 ### Held-delivery reconciliation (#4614)
 
 A merged delivery record may coexist with `manual_review`, including a

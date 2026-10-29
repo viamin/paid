@@ -199,12 +199,16 @@ than emitting the redirect.
 
 `repair_completed_open_issues` guards against reading a `create_pr` run's
 terminal `completed` status as proof the source issue's acceptance criteria
-are met. Each sync re-checks open issues still carrying Paid's
-`paid_state: "completed"` whose most recent `create_pr` run recorded a pull
-request: if an open PR produced by that run carries a GitHub closing
-reference to the issue, the completed state stands. Otherwise GitHub's own
-signal says the implementation is partial, and the stale `completed` state is
-repaired.
+are met. Each sync re-checks open issues still carrying Paid's terminal
+closeout state whose completed `create_pr` run recorded a pull request. A
+GitHub closing reference remains GitHub's separate closure signal; its absence
+is not a completion verdict. A draft or open non-closing PR is work in
+progress, so the issue is held with the linked PR and its review/merge action
+visible. A merged non-closing PR is held for a report-only final acceptance
+audit unless a current completed `acceptance_audit` has recorded every
+applicable criterion as satisfied. The sync never makes an LLM call: it reads
+durable audit evidence and routes missing, stale, unknown, tracked, or unmet
+evidence to Inbox with the precise next action.
 
 A partial implementation still blocked by an unresolved dependency — an open
 local blocking issue, a deployment-pending dependency, or an unresolved
@@ -221,12 +225,14 @@ lane the rest of the system uses for other automation stops (see
 unblocks the issue for Auto-Pick through the existing dependency-state
 checks; nothing about this repair path re-polls on a timer.
 
-A partial implementation with no outstanding dependency keeps the existing
-behavior: it is recommended for closure (`paid_state: "recommend_close"`,
-mirrored to GitHub's `paid-recommend-close` label) because there is no
-further deterministic signal to wait on, so a human is asked to confirm. The
-repair reuses the sync's already-resolved `GithubClient` rather than opening
-a second credential for the cycle.
+A recommend-close state is reserved for a current final acceptance audit that
+supports every applicable criterion. A premerge source-closure disposition,
+including `close`, is evidence for the audit but is never final acceptance on
+its own. When this repair corrects an old recommend-close state, it first
+persists the correct Inbox state, then removes Paid's stale label only when
+the project's label-integration policy allows that GitHub write. A failed or
+suppressed removal leaves the local corrective state intact and is retried by
+a later sync; an operator's removed label is never re-added by this repair.
 
 ## Projects V2 abandonment
 

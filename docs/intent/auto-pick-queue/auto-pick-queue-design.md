@@ -89,6 +89,13 @@ the project issue lifecycle use the same state-neutral scope, so
 open dependencies, explicit label controls, pauses, and the durable
 no-code-required / merged-PR safeguards remain separate guards.
 
+An unverified source closeout is a separate safeguard: GitHub sync parks it
+in `manual_review` rather than `completed` or `recommend_close` until current
+final acceptance evidence exists. Because `manual_review` is not a
+non-blocking dependency state, an open issue with this hold cannot satisfy a
+dependent merely through source-PR bookkeeping; the Inbox reason names the
+linked PR, audit, or prerequisite that must happen next.
+
 The project issue list displays each issue's Paid state beside its lifecycle
 badge. The dashboard's eligibility breakdown continues to report the actual
 guards that exclude open issues, so a workflow-state drift cannot become an
