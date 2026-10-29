@@ -89,6 +89,7 @@ class RunnersController < ApplicationController
     authorize @runner
     validate_runner_key_enabled!
     validate_container_executable!
+    validate_openrouter_zdr_selection!
 
     if @runner.errors.none? && @runner.save
       audit_event("runner.created", metadata: runner_audit_metadata)
@@ -117,6 +118,7 @@ class RunnersController < ApplicationController
     load_remediation_history
     @runner.assign_attributes(runner_params)
     validate_container_executable!
+    validate_openrouter_zdr_selection!
 
     if @runner.errors.none? && @runner.save
       audit_event("runner.updated", metadata: runner_audit_metadata)
@@ -807,6 +809,8 @@ class RunnersController < ApplicationController
 
   def prepare_model_policy_form_state
     @runner_model_policy_form_enabled = runner_model_policy_form_enabled?
+    @zdr_catalog_setup_state ||= OpenrouterZdrCatalog.current.setup_state
+    @zdr_model_options_map_json ||= zdr_model_options_map.to_json
     return unless @runner_model_policy_form_enabled
 
     # Memoized: this can be invoked twice in one request (load_runner_options,
@@ -836,6 +840,19 @@ class RunnersController < ApplicationController
 
     runner_map["omp"] = runner_map["pi"] if omp_aliases_pi
     runner_map
+  end
+
+  def zdr_model_options_map
+    return {} unless @zdr_catalog_setup_state == "ready"
+
+    FORM_MODEL_RUNNER_KEYS.index_with do |runner_key|
+      Runners::ModelOptions.call(
+        runner_key: runner_key,
+        api_provider: "openrouter",
+        auth_type: "api_key",
+        zdr_eligible: true
+      ).map { |entry| { value: entry.value, label: entry.label, kind: entry.kind.to_s, family: entry.family } }
+    end
   end
 
   def supported_service_types_for(runner_key)
@@ -890,6 +907,34 @@ class RunnersController < ApplicationController
 
     @available_api_keys&.find { |api_key| api_key.id == api_key_id.to_i }&.api_service_type ||
       current_user.provider_api_keys.find_by(id: api_key_id)&.api_service_type
+  end
+
+  # The form and this boundary share the catalog-backed option source. This
+  # keeps a crafted request from turning a declaration into an unverified
+  # OpenRouter model selection while allowing existing persisted runners to
+  # retain their declaration until users edit them.
+  # @spec RUNNER-MODEL-OPTIONS-008 @spec MODEL-POLICY-018
+  def validate_openrouter_zdr_selection!
+    return unless @runner.zero_data_retention?
+    return unless FORM_MODEL_RUNNER_KEYS.include?(@runner.runner_key)
+    return unless @runner.required_api_service_type == "openrouter"
+
+    catalog = OpenrouterZdrCatalog.current
+    unless catalog.ready_for_setup?
+      @runner.errors.add(:config, "cannot verify an OpenRouter ZDR model while the eligibility catalog is #{catalog.setup_state}")
+      return
+    end
+
+    selected_model = @runner.direct_outbound_model_id
+    eligible = Runners::ModelOptions.call(
+      runner_key: @runner.runner_key,
+      api_provider: "openrouter",
+      auth_type: @runner.auth_type,
+      zdr_eligible: true
+    )
+    return if eligible.any? { |entry| entry.value == selected_model }
+
+    @runner.errors.add(:config, "must include an advertised ZDR-eligible OpenRouter model")
   end
 
   def group_api_keys_by_service_type(api_keys)

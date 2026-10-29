@@ -57,6 +57,9 @@ auth_type)`. It returns an ordered list of `Entry` values:
      `OpenrouterZdr::EligibleModels`. This is a setup-time filter only: it
      retains the same compatibility filtering and does not change default
      options, project policy, or request-time ZDR routing enforcement.
+     In the runner setup flow this subset contains concrete model entries
+     only: the free-policy and custom-id entries are deliberately omitted, so
+     ZDR setup always records an explicit endpoint-backed selection.
 3. **Custom sentinel** (always trailing, `kind: :custom`): value
    `LlmModel::CUSTOM_MODEL_OPTION` with a "Custom model ID…" label.
    Selecting it reveals the existing freeform text input and keeps the

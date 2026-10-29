@@ -136,6 +136,16 @@ RSpec.describe Runners::ModelOptions do
 
         expect(result.select(&:model?).map(&:value)).to eq([ "qwen/qwen3-coder" ])
       end
+
+      it "offers only concrete endpoint-backed models for ZDR setup" do # @spec RUNNER-MODEL-OPTIONS-008
+        create(:openrouter_zdr_model, model_id: "qwen/qwen3-coder")
+
+        result = described_class.call(runner_key: runner_key, api_provider: api_provider, auth_type: auth_type,
+          zdr_eligible: true)
+
+        expect(result.map(&:kind)).to eq([ :model ])
+        expect(result.map(&:value)).to eq([ "qwen/qwen3-coder" ])
+      end
     end
 
     context "with the free policy entry" do

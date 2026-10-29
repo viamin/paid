@@ -68,6 +68,8 @@ module Runners
     end
 
     def call
+      return model_entries if zdr_eligible?
+
       [ free_policy_entry, *model_entries, custom_entry ].compact
     end
 
