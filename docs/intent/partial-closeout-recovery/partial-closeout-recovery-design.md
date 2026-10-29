@@ -458,8 +458,11 @@ acceptance audit** action. It uses the existing scoped-continuation admission
 transaction, but records `acceptance_audit` in the request evidence and queues
 an `analyze_issue` run rather than a `create_pr` run. The workflow recognizes
 that persisted mode and invokes a dedicated audit activity which refreshes the
-criterion assessment on the run; it does not create a follow-up run, change the
-issue state, create a pull request, or authorize implementation. The normal
+criterion assessment on the run and passes that snapshot through the
+deterministic partial-closeout reconciler before completing the audit. The
+reconciler records any follow-up owner or operator prerequisite as durable
+evidence; the audit still does not create a follow-up run, change the issue
+state, create a pull request, or authorize implementation. The normal
 request/run lifecycle remains the durable progress, cancellation, failure, and
 retry surface, and the existing one-open-request and active-run constraints
 deduplicate audit requests for an evidence generation. Deduplication only

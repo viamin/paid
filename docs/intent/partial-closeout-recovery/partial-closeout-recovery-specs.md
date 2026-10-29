@@ -165,6 +165,16 @@
   `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`,
   `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
 
+- [x] **PARTIAL-CLOSEOUT-035** — When a report-only acceptance audit completes,
+  the system SHALL pass its persisted criterion assessment through the
+  deterministic partial-closeout reconciler before completing the audit run.
+  The reconciliation SHALL persist its terminal status and any follow-up owner
+  or operator prerequisite evidence, while the audit SHALL leave the source
+  issue state unchanged and SHALL not perform a second semantic assessment.
+  *Code:* `app/temporal/activities/run_acceptance_audit_activity.rb`,
+  `app/services/partial_closeouts/reconcile.rb`.
+  *Test:* `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-028** — When a trusted, open non-PR issue has merged
   closeout evidence and is held in `manual_review`, the bounded legacy
   reconciler SHALL perform at most one durable criterion assessment and reuse
