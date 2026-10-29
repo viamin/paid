@@ -574,6 +574,7 @@ module Activities
               error_type: "preflight_timeout",
               error_message: e.message,
               duration_seconds: attempt_duration,
+              diagnostics: e.diagnostics,
               **resolved_run_info
             )
             logger.warn(
@@ -583,6 +584,23 @@ module Activities
               error: e.message,
               duration_seconds: attempt_duration
             )
+            fallback_remaining = eligible_fallback_candidates(
+              runners[(index + 1)..].to_a,
+              agent_run: agent_run,
+              user_settings: user_settings,
+              runner_states: runner_states
+            )
+            break if fallback_remaining.blank?
+
+            if container_unavailable_for_fallback?(agent_run)
+              break unless recover_container_for_fallback!(
+                agent_run: agent_run,
+                runner: runner,
+                error_type: "preflight_timeout",
+                error_message: e.message,
+                fallback_remaining: fallback_remaining
+              )
+            end
           rescue RunnerAuthExpiredError => e
             last_error = "auth_expired"
             attempt_duration = (Process.clock_gettime(Process::CLOCK_MONOTONIC) - attempt_started_at).round(1)
@@ -843,7 +861,14 @@ module Activities
         super(message)
       end
     end
-    class PreflightTimeoutError < RunnerExecutionError; end
+    class PreflightTimeoutError < RunnerExecutionError
+      attr_reader :diagnostics
+
+      def initialize(message, diagnostics: {})
+        @diagnostics = diagnostics
+        super(message)
+      end
+    end
     class RunnerInfraExecutionError < RunnerExecutionError; end
     ProviderExecutionError = RunnerExecutionError
     class RunnerTimeoutError < StandardError
@@ -1936,6 +1961,7 @@ module Activities
       raise RunnerExecutionError, "Docker exec error: #{e.message}"
     end
 
+    # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-050
     def run_runner_preflight!(agent_run:, execution_environment:, command_context:, runner:, execution_env:)
       # Run the runner-owned harness preflight (auth, CLI version,
       # OPENAI_BASE_URL reachability) when available — fails fast before
@@ -1978,7 +2004,8 @@ module Activities
           prompt: prompt
         )
       rescue Containers::Provision::TimeoutError => e
-        if smoke_attempt < 2
+        environment_available = smoke_attempt < 2 && smoke_retry_environment_available?(agent_run, execution_environment)
+        if environment_available
           logger.info(
             message: "agent_execution.preflight_smoke_timeout_retry",
             agent_run_id: agent_run.id,
@@ -1988,10 +2015,14 @@ module Activities
           )
           retry
         end
-        reason = "Runner smoke preflight timed out after #{preflight_timeout}s on both attempts"
+        reason = preflight_timeout_reason(
+          preflight_timeout: preflight_timeout,
+          smoke_attempt: smoke_attempt,
+          environment_available: environment_available
+        )
         reason += " after harness preflight passed" if harness_preflight_passed
         reason += ". This points to the runner CLI path (container egress, proxy, auth wiring, or upstream API responsiveness). Original error: #{e.message}"
-        raise_preflight_timeout!(agent_run: agent_run, runner: runner, reason: reason)
+        raise_preflight_timeout!(agent_run: agent_run, runner: runner, reason: reason, diagnostics: e.diagnostics)
       end
 
       sanitized_output = smoke_output(result, prompt)
@@ -2736,9 +2767,23 @@ module Activities
       raise RunnerExecutionError, "Preflight check failed: #{reason}"
     end
 
-    def raise_preflight_timeout!(agent_run:, runner:, reason:)
+    def raise_preflight_timeout!(agent_run:, runner:, reason:, diagnostics: {})
       log_preflight_failure(agent_run: agent_run, runner: runner, reason: reason)
-      raise PreflightTimeoutError, "Preflight check failed: #{reason}"
+      raise PreflightTimeoutError.new("Preflight check failed: #{reason}", diagnostics: diagnostics)
+    end
+
+    def smoke_retry_environment_available?(agent_run, execution_environment)
+      agent_run.reload.container_id.present? && execution_environment.container_running?
+    rescue ActiveRecord::RecordNotFound
+      false
+    end
+
+    def preflight_timeout_reason(preflight_timeout:, smoke_attempt:, environment_available:)
+      return "Runner smoke preflight timed out after #{preflight_timeout}s on both attempts" if smoke_attempt > 1
+
+      reason = "Runner smoke preflight timed out after #{preflight_timeout}s after 1 attempt"
+      reason += " because the execution environment is unavailable" unless environment_available
+      reason
     end
 
     def raise_preflight_infra_failure!(agent_run:, runner:, reason:)
@@ -3602,6 +3647,30 @@ module Activities
       end
     end
 
+    # Filters candidates down to those the main runner loop would actually
+    # attempt, mirroring its skip checks (deleted entry, disabled for agent
+    # runs, rate limited/circuit open, or failed model resolution). Recovering
+    # a container ahead of a candidate the loop would skip anyway wastes a
+    # reprovision.
+    # @spec RUNNER-FALLBACK-014
+    def eligible_fallback_candidates(fallback_remaining, agent_run:, user_settings:, runner_states:)
+      Array(fallback_remaining).select do |runner_candidate|
+        fallback_candidate_eligible?(runner_candidate, agent_run: agent_run, user_settings: user_settings, runner_states: runner_states)
+      end
+    end
+
+    def fallback_candidate_eligible?(runner_candidate, agent_run:, user_settings:, runner_states:)
+      runner_entry = runner_entry_for(runner_candidate, user_settings.user)
+      return false if Runner.routing_key?(runner_candidate) && runner_entry.nil?
+      return false if runner_entry && !runner_entry.enabled_for_agent_runs?
+      resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user_settings.user)
+      return false if resolved_model&.failure? && !direct_outbound_runner?(runner_candidate, user_settings.user)
+
+      runner = runner_command_key(runner_candidate, nil, user_settings.user)
+      runner_state_name = state_key_for(runner_candidate, runner, user_settings.user)
+      !runner_unavailable?(user_settings, runner_state_name, runner_states)
+    end
+
     def recover_container_for_fallback!(agent_run:, runner:, error_type:, error_message:, fallback_remaining:)
       if Array(fallback_remaining).blank?
         logger.error(
@@ -3616,7 +3685,7 @@ module Activities
       end
 
       reprovision_container_for_fallback!(agent_run)
-        logger.info(
+      logger.info(
         message: "agent_execution.container_reprovisioned_for_fallback",
         agent_run_id: agent_run.id,
         runner: runner,
