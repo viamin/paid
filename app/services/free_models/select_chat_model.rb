@@ -14,7 +14,7 @@ module FreeModels
       unsupported_transport = transport == :api && runner.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER
       sensitive = projects.any? { |project| project.confidential? || project.restricted? }
       unsupported_free_container = sensitive && %w[pi omp].include?(runner.runner_key)
-      if (policy.zdr_required && (!policy.eligible || unsupported_transport)) || unsupported_free_container
+      if (sensitive && unsupported_transport) || (policy.zdr_required && !policy.eligible) || unsupported_free_container
         raise ChatSessions::LlmClientConfigurationError,
           "This free chat runner cannot enforce the required OpenRouter privacy routing. Choose a chat provider approved for the project's privacy requirements."
       end
