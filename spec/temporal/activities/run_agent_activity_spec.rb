@@ -3902,7 +3902,6 @@ expect(container_service).to receive(:execute).with(
       end
 
       it "preserves the first timeout and its diagnostics when cleanup invalidates the container" do # @spec RUNNER-FALLBACK-014, CONTAINER-RUNTIME-049
-        opencode_provider = create_opencode_provider_for(user)
         timeout_error = Containers::Provision::TimeoutError.new(
           "Command timed out after 60 seconds",
           diagnostics: { "elapsed_seconds" => 60, "output_received" => true }
@@ -3917,7 +3916,7 @@ expect(container_service).to receive(:execute).with(
             activity: activity,
             agent_run: agent_run,
             container_service: container_service,
-            provider: opencode_provider,
+            provider: create_opencode_provider_for(user),
             user: user
           )
         }.to raise_error(described_class::PreflightTimeoutError, /after 1 attempt because the execution environment is unavailable/) { |error|
@@ -4703,6 +4702,48 @@ expect(container_service).to receive(:execute).with(
             "error_type" => "preflight_timeout",
             "error_message" => a_string_matching(/smoke timed out/)
           )
+        )
+        expect(agent_run.runners_attempted).not_to include(
+          hash_including("error_message" => a_string_matching(/No container provisioned/))
+        )
+      end
+    end
+
+    context "when a preflight timeout invalidates the container and the only fallback cannot resolve its tier model" do
+      before do
+        incompatible_model = create(:llm_model, :openai, model_id: "gpt-incompatible-fallback", tier: "mid")
+        fallback_runner = user.runners.find_or_create_by!(runner_key: "cursor")
+        fallback_runner.update!(tier_models: {}, tier_model_ids: { "mid" => incompatible_model.model_id })
+        create(:model_selection, agent_run: agent_run,
+          llm_model: create(:llm_model, model_id: "claude-fallback-primary", provider: "anthropic", tier: "mid"), tier: "mid")
+        user.settings.update!(fallback_enabled: true, fallback_runners: [ "cursor" ])
+        allow(git_ops).to receive_messages(
+          head_sha: "pre_agent_sha_abc123",
+          commit_uncommitted_changes: false,
+          has_changes_since?: false
+        )
+        allow(activity).to receive(:run_runner_preflight!).and_call_original
+        allow(activity).to receive(:run_harness_preflight!)
+        allow(container_service).to receive(:execute) do
+          AgentRun.where(id: agent_run.id).update_all(container_id: nil)
+          raise Containers::Provision::TimeoutError.new(
+            "smoke timed out",
+            diagnostics: { "elapsed_seconds" => 60, "output_received" => true }
+          )
+        end
+      end
+
+      it "does not reprovision for a fallback the runner loop skips for tier resolution" do # @spec RUNNER-FALLBACK-014
+        expect(agent_run).not_to receive(:provision_execution_environment)
+
+        expect {
+          activity.execute(agent_run_id: agent_run.id)
+        }.to raise_error(Temporalio::Error::ApplicationError, /All runners exhausted/)
+
+        agent_run.reload
+        expect(agent_run.runners_attempted).to contain_exactly(
+          hash_including("runner" => "claude_code", "success" => false, "error_type" => "preflight_timeout"),
+          hash_including("runner" => "cursor", "success" => false, "error_type" => "configuration_error")
         )
         expect(agent_run.runners_attempted).not_to include(
           hash_including("error_message" => a_string_matching(/No container provisioned/))

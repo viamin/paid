@@ -89,6 +89,10 @@ is running. Cleanup may have removed the environment while handling the first
 timeout; that path records the original preflight timeout and diagnostics and
 does not issue a second smoke against an invalidated container. Normal fallback
 recovery may provision fresh infrastructure only for a later eligible runner.
+That eligibility mirrors the loop's deleted/disabled/availability and
+tier-model-resolution gates, while retaining the direct-outbound exception for
+tier-resolution failures, so recovery never creates an environment that no
+remaining runner can use.
 
 ## Durable Model Compatibility Recovery
 

@@ -156,6 +156,9 @@
   environment, the system SHALL retain the original timeout and diagnostics as
   the failed attempt's `preflight_timeout` outcome, SHALL NOT replace it with
   `ContainerNotProvisioned`, and MAY reprovision only through the existing
-  fallback recovery policy before a later eligible runner executes.
-  *Code:* `Activities::RunAgentActivity#run_runner_preflight!`.
+  fallback recovery policy before a later eligible runner executes. Eligibility
+  SHALL include the attempt-time tier-model resolution gate, except that
+  direct-outbound runners remain eligible when their tier resolution fails.
+  *Code:* `Activities::RunAgentActivity#run_runner_preflight!`,
+  `#eligible_fallback_candidates`.
   *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`.

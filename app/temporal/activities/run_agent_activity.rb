@@ -592,6 +592,7 @@ module Activities
                 error_message: e.message,
                 fallback_remaining: eligible_fallback_candidates(
                   runners[(index + 1)..].to_a,
+                  agent_run: agent_run,
                   user_settings: user_settings,
                   runner_states: runner_states
                 )
@@ -3645,19 +3646,22 @@ module Activities
 
     # Filters candidates down to those the main runner loop would actually
     # attempt, mirroring its skip checks (deleted entry, disabled for agent
-    # runs, rate limited/circuit open). Recovering a container ahead of a
-    # candidate the loop would skip anyway wastes a reprovision.
+    # runs, rate limited/circuit open, or failed model resolution). Recovering
+    # a container ahead of a candidate the loop would skip anyway wastes a
+    # reprovision.
     # @spec RUNNER-FALLBACK-014
-    def eligible_fallback_candidates(fallback_remaining, user_settings:, runner_states:)
+    def eligible_fallback_candidates(fallback_remaining, agent_run:, user_settings:, runner_states:)
       Array(fallback_remaining).select do |runner_candidate|
-        fallback_candidate_eligible?(runner_candidate, user_settings: user_settings, runner_states: runner_states)
+        fallback_candidate_eligible?(runner_candidate, agent_run: agent_run, user_settings: user_settings, runner_states: runner_states)
       end
     end
 
-    def fallback_candidate_eligible?(runner_candidate, user_settings:, runner_states:)
+    def fallback_candidate_eligible?(runner_candidate, agent_run:, user_settings:, runner_states:)
       runner_entry = runner_entry_for(runner_candidate, user_settings.user)
       return false if Runner.routing_key?(runner_candidate) && runner_entry.nil?
       return false if runner_entry && !runner_entry.enabled_for_agent_runs?
+      resolved_model = resolve_tier_model_for(runner_candidate, agent_run, user_settings.user)
+      return false if resolved_model&.failure? && !direct_outbound_runner?(runner_candidate, user_settings.user)
 
       runner = runner_command_key(runner_candidate, nil, user_settings.user)
       runner_state_name = state_key_for(runner_candidate, runner, user_settings.user)
