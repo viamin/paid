@@ -65,6 +65,15 @@ RSpec.describe Llm::Request do
     ).once
   end
 
+  # @spec MODEL-POLICY-020
+  it "preserves a snapshotted ZDR requirement after the runner declaration is disabled" do
+    run.update!(external_metadata: run.external_metadata.merge("zdr_required" => true))
+
+    expect { described_class.call(agent_run: run, prompt: "Assess", timeout: 30) }
+      .to raise_error(AgentHarness::ConfigurationError, /zero data retention policy/)
+    expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+  end
+
   # @spec LLM-ROUTING-002
   it "honors disabled automatic fallback" do
     owner.settings.update!(kb_chat_runner: runner.routing_key, fallback_enabled: false)

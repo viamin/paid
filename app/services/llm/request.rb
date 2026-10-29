@@ -30,7 +30,8 @@ module Llm
       end
       raise AgentHarness::ConfigurationError, "No eligible configured runner for this LLM request" if runners.empty?
 
-      @required_zdr = @project&.restricted? || runners.first.zero_data_retention?
+      @required_zdr = @project&.restricted? || agent_run&.external_metadata.to_h["zdr_required"] == true ||
+        runners.first.zero_data_retention?
 
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
       response = error = nil
