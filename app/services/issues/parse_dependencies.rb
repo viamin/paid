@@ -215,7 +215,7 @@ module Issues
 
       if body.present?
         extract_body_refs(body, local_deps, cross_deps)
-        record_provenance(provenance, local_deps, cross_deps, "issue_body", issue&.github_url)
+        record_provenance(provenance, local_deps, cross_deps, "issue_body", issue_url)
       end
 
       comments.each do |comment|
@@ -257,6 +257,10 @@ module Issues
 
     def comment_url(comment)
       comment.html_url if comment.respond_to?(:html_url)
+    end
+
+    def issue_url
+      issue.github_url if issue.respond_to?(:github_url)
     end
 
     # Merges new ref additions into the running map. A deployment flag, once
