@@ -355,10 +355,14 @@ RUN mkdir -p /home/agent/.local/share/kilo \
     && timeout -k 10s 120s kilo session list > /dev/null 2>&1
 USER root
 # @spec CONTAINER-RUNTIME-029
-# @kilocode/cli renamed its SQLite database file from kilo-rc.db to kilo.db
-# (observed going from 7.7.12 to 7.8.3); this check must track whatever
-# filename the pinned CLI version actually produces.
-RUN test -f /home/agent/.local/share/kilo/kilo.db \
+# @kilocode/cli has swapped its SQLite database filename between kilo-rc.db
+# and kilo.db across releases (observed: kilo-rc.db on 7.7.12, kilo.db on
+# 7.8.3, kilo-rc.db again on 7.8.16) — version is owned by agent-harness
+# (installation_contract), so hardcoding either name breaks on the next
+# contract-driven bump. Discover whichever *.db file the pinned CLI actually
+# produced instead of asserting one name.
+RUN kilo_db="$(find /home/agent/.local/share/kilo -maxdepth 1 -name '*.db' -print -quit)" \
+    && test -n "${kilo_db}" \
     && mkdir -p /opt/kilo-seed \
     && cp -a /home/agent/.local/share/kilo/. /opt/kilo-seed/ \
     && chown -R agent:agent /opt/kilo-seed

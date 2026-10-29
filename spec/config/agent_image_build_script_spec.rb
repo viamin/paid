@@ -197,7 +197,10 @@ RSpec.describe AgentImageBuildScript, :no_db do
     # @spec CONTAINER-RUNTIME-029
     it "verifies the current Kilocode SQLite seed after warming the CLI" do
       expect(dockerfile_source).to include('timeout -k 10s 120s kilo session list')
-      expect(dockerfile_source).to include("test -f /home/agent/.local/share/kilo/kilo.db")
+      expect(dockerfile_source).to include(
+        "find /home/agent/.local/share/kilo -maxdepth 1 -name '*.db' -print -quit"
+      )
+      expect(dockerfile_source).not_to include("test -f /home/agent/.local/share/kilo/kilo.db")
       expect(dockerfile_source).not_to include("test -f /home/agent/.local/share/kilo/kilo-rc.db")
     end
 
