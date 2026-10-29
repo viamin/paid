@@ -22,10 +22,9 @@ module PartialCloseouts
       return record(Result.new(agent_run: nil, code: :remaining_work)) if gaps.present?
       return record(Result.new(agent_run: nil, code: :automation_disabled)) unless project_gate_open?
 
-      result = Issues::RequestContinuation.call(
+      result = Issues::RequestAcceptanceAudit.call(
         issue: agent_run.issue,
         actor: agent_run.project.effective_owner,
-        reason: "Paid scheduled a fresh acceptance audit after current evidence superseded the prior partial-closeout gaps.",
         origin: :automatic
       )
       record(Result.new(agent_run: result.agent_run, code: result.code))

@@ -193,6 +193,11 @@ Rails.application.configure do
       class: "AutoPickEligibilitySweepJob",
       description: "Periodic re-evaluation of all open issues for auto-pick eligibility"
     },
+    partial_closeout_acceptance_audit_sweep: {
+      cron: "11-59/15 * * * *",
+      class: "PartialCloseoutAcceptanceAuditSweepJob",
+      description: "Queue one report-only audit per eligible merged closeout evidence generation"
+    },
     analyze_issue_followup_backfill: {
       cron: "15 * * * *",
       class: "AnalyzeIssueFollowupBackfillJob",
