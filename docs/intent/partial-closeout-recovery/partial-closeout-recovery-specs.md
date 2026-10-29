@@ -693,7 +693,9 @@
   audit for the same generation SHALL prevent another automatic attempt; new
   terminal evidence MAY permit one new audit. The sweep SHALL bound new audits
   per project and SHALL not close the GitHub issue, authorize implementation,
-  or bypass a human prerequisite.
+  or bypass a human prerequisite. A GitHub-sync repair of a merged, non-closing
+  source PR SHALL enter this evidence-backed lane rather than treating a
+  premerge source-closure disposition as final acceptance.
   *Code:* `app/services/partial_closeouts/auto_audit.rb`,
   `app/jobs/partial_closeout_acceptance_audit_sweep_job.rb`,
   `app/services/issues/request_acceptance_audit.rb`.
