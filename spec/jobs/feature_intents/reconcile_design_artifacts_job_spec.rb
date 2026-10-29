@@ -322,6 +322,21 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     )
   end
 
+  # @spec DESIGN-RECONCILIATION-003
+  it "uses an untrusted manifest-linked issue as Paid structural evidence" do
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-102-manifest.md", revision: "a" * 40, body: "Status: Accepted"
+    )
+    feature_intent.update!(design_document_paths: [ artifact.path ])
+    linked_issue = create(:issue, project:, github_number: 101, github_creator_login: "untrusted-author")
+    create(:feature_intent_issue, feature_intent:, issue: linked_issue)
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(state: "partial_tree", status: "open")
+  end
+
   it "assesses synchronized open issue candidates before creating a missing-tree finding" do
     allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
     response = instance_double(AgentHarness::Response, success?: true,

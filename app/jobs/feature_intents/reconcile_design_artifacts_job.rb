@@ -162,9 +162,10 @@ module FeatureIntents
         @manifest_issue_links = load_manifest_issue_links
         @projects_by_repository = authorized_projects
         @projects_by_id = projects_by_repository.values.index_by(&:id)
-        @facts_by_issue_id = load_facts
+        @facts_by_issue_id, @manifest_facts_by_issue_id = load_facts
         @facts = @facts_by_issue_id.values.reject { |fact| fact[:is_pull_request] }
         @manifest_associations_by_path = load_manifest_associations
+        @exact_backlinks_by_path = load_exact_backlinks
       end
 
       def for(artifact)
@@ -178,7 +179,8 @@ module FeatureIntents
       private
 
       attr_reader :project, :artifacts, :relationship_text, :projects_by_repository, :projects_by_id, :facts_by_issue_id,
-        :facts, :manifest_associations_by_path, :manifest_issue_links
+        :facts, :manifest_facts_by_issue_id, :manifest_associations_by_path, :manifest_issue_links,
+        :exact_backlinks_by_path
 
       def authorized_projects
         repositories = (referenced_repositories + associated_repositories + manifest_repositories).uniq - [ project.full_name ]
@@ -204,15 +206,18 @@ module FeatureIntents
       end
 
       def load_facts
-        Issue.where(project_id: projects_by_repository.values.map(&:id)).where.not(github_number: nil).select(*ISSUE_FIELDS).find_each.each_with_object({}) do |issue, facts|
+        manifest_issue_ids = manifest_issue_links.map { |(_, issue_id, _, _)| issue_id }.to_set
+        Issue.where(project_id: projects_by_repository.values.map(&:id)).where.not(github_number: nil).select(*ISSUE_FIELDS).find_each.each_with_object([ {}, {} ]) do |issue, (facts, manifest_facts)|
           project_for_issue = projects_by_id[issue.project_id]
-          next unless project_for_issue && trusted?(issue, project_for_issue)
+          next unless project_for_issue
 
-          facts[issue.id] = {
+          fact = {
             id: issue.id, project_id: issue.project_id, repository: project_for_issue.full_name,
             number: issue.github_number, state: issue.github_state, title: issue.title, body: issue.body,
             revision: issue.github_updated_at&.iso8601, is_pull_request: issue.is_pull_request
           }
+          facts[issue.id] = fact if trusted?(issue, project_for_issue)
+          manifest_facts[issue.id] = fact if manifest_issue_ids.include?(issue.id)
         end
       end
 
@@ -231,21 +236,28 @@ module FeatureIntents
 
       def load_manifest_associations
         manifest_issue_links.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |(paths, issue_id, _, _), associations|
-          fact = facts_by_issue_id[issue_id]
-          next unless fact && !fact[:is_pull_request]
+          fact = manifest_facts_by_issue_id[issue_id]
+          next unless fact
 
           Array(paths).each { |path| associations[path] << association_for(fact, "canonical issue-tree manifest") }
         end
       end
 
-      def exact_backlinks(artifact)
-        facts.filter_map do |fact|
-          next unless fact[:project_id] == project.id
-          next unless relationship_text.call(fact[:body]).match?(artifact_path_pattern(artifact.fetch(:path)))
+      def load_exact_backlinks
+        patterns = artifacts.map { |artifact| [ artifact.fetch(:path), artifact_path_pattern(artifact.fetch(:path)) ] }.to_h
+        local_facts.each_with_object(Hash.new { |hash, key| hash[key] = [] }) do |fact, backlinks|
+          text = relationship_text.call(fact[:body])
+          patterns.each do |path, pattern|
+            next unless text.match?(pattern)
 
-          association_for(fact, "exact artifact backlink")
+            backlinks[path] << association_for(fact, "exact artifact backlink")
+          end
         end
       end
+
+      def local_facts = facts.select { |fact| fact[:project_id] == project.id }
+
+      def exact_backlinks(artifact) = exact_backlinks_by_path.fetch(artifact[:path], [])
 
       def manifest_associations(artifact) = manifest_associations_by_path.fetch(artifact[:path], [])
 
