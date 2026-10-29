@@ -65,7 +65,7 @@ RSpec.describe Runners::FreeModelExecutionPlan do
 
       result = described_class.call(runner: runner, model_id: "deepseek/deepseek-v4-flash:free", project: project)
 
-      expect(result.config.fetch(:provider_routing)).to eq(data_collection: "allow", zdr: true)
+      expect(result.config.fetch(:provider_routing)).to eq(data_collection: "deny", zdr: true)
     end
 
     it "raises a service-type error (not an API key error) when the runner is not OpenRouter-backed" do

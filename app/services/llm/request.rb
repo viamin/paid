@@ -30,6 +30,12 @@ module Llm
       end
       raise AgentHarness::ConfigurationError, "No eligible configured runner for this LLM request" if runners.empty?
 
+      @required_zdr = @project&.restricted? || runners.any?(&:zero_data_retention?)
+      runners = runners.select do |runner|
+        runner.effective_privacy_policy(project: @project, required_zdr: @required_zdr).eligible
+      end
+      raise AgentHarness::ConfigurationError, "No eligible configured runner can satisfy the required zero data retention policy" if runners.empty?
+
       deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + @timeout
       response = error = nil
       runners.each do |runner|

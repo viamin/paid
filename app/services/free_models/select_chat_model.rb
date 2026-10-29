@@ -9,10 +9,14 @@ module FreeModels
     # @spec CHAT-API-019
     def self.for_session(runner:, chat_session:, transport: :api)
       projects = chat_session.llm_policy_projects
+      policy_project = projects.max_by { |project| project.restricted? ? 1 : 0 }
+      policy = runner.effective_privacy_policy(project: policy_project)
+      unsupported_transport = transport == :api && runner.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER
       sensitive = projects.any? { |project| project.confidential? || project.restricted? }
-      if sensitive && (transport == :api || %w[pi omp].include?(runner.runner_key))
+      unsupported_free_container = sensitive && %w[pi omp].include?(runner.runner_key)
+      if (policy.zdr_required && (!policy.eligible || unsupported_transport)) || unsupported_free_container
         raise ChatSessions::LlmClientConfigurationError,
-          "This free chat runner cannot enforce the required OpenRouter privacy routing for confidential or restricted project context. Choose a chat provider approved for the project's privacy requirements."
+          "This free chat runner cannot enforce the required OpenRouter privacy routing. Choose a chat provider approved for the project's privacy requirements."
       end
 
       call(runner: runner, projects: projects, preferred_model_id: chat_session.model)

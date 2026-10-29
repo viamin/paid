@@ -392,6 +392,11 @@ class Runner < ApplicationRecord
     zero_data_retention? && openrouter_zdr_request_routing_supported?
   end
 
+  # @spec MODEL-POLICY-018
+  def effective_privacy_policy(project:, required_zdr: nil)
+    Runners::EffectivePrivacyPolicy.call(project:, runner: self, required_zdr:)
+  end
+
   def opencode_preflight_timeout_seconds
     return nil unless runner_key == "opencode"
 
@@ -620,6 +625,7 @@ class Runner < ApplicationRecord
   end
 
   def agent_harness_runner_runtime(project: nil)
+    ensure_effective_privacy_policy_supported!(project)
     return free_model_policy_runner_runtime(project: project, model_id: free_policy_default_model_id) if direct_outbound_free_policy?
     return opencode_runner_runtime(project: project) if opencode_direct_outbound?
     return pi_runner_runtime if pi_agent_harness_runtime?
@@ -1748,6 +1754,7 @@ class Runner < ApplicationRecord
 
     opencode_direct_outbound? || opencode_free_model_policy_runtime? || kilocode_free_model_policy_runtime?
   end
+  public :openrouter_zdr_request_routing_supported?
 
   def opencode_free_model_policy_runtime?
     runner_key == "opencode" && direct_outbound_free_policy? && opencode_api_provider == OPENROUTER_FREE_MODEL_PROVIDER
@@ -2027,6 +2034,15 @@ class Runner < ApplicationRecord
       openrouter_provider_runtime(config)
     end
   end
+
+  def ensure_effective_privacy_policy_supported!(project)
+    policy = effective_privacy_policy(project: project)
+    return if policy.eligible
+
+    raise AgentHarness::ConfigurationError,
+      "The selected runner cannot enforce the required zero data retention policy. Choose an OpenRouter route with request routing support or a runner with an explicit ZDR declaration."
+  end
+  private :ensure_effective_privacy_policy_supported!
 
   def pi_free_policy_runtime(config)
     AgentHarness::ProviderRuntime.new(

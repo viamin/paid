@@ -39,7 +39,8 @@ module ChatSessions
 
       (current_candidates + configured_candidates + automatic_candidates).uniq.select do |runner|
         free_pool_available?(runner, chat_session: chat_session) &&
-          curated_low_available?(runner, chat_session: chat_session)
+          curated_low_available?(runner, chat_session: chat_session) &&
+          privacy_eligible?(runner, chat_session: chat_session)
       end
     end
 
@@ -78,6 +79,15 @@ module ChatSessions
       return true if runner.free_model_policy?
 
       CuratedModelOptions.resolve(runner:, projects: chat_session.llm_policy_projects).present?
+    end
+
+    # @spec MODEL-POLICY-020
+    def privacy_eligible?(runner, chat_session:)
+      project = chat_session.llm_policy_projects.find(&:restricted?)
+      policy = runner.effective_privacy_policy(project: project)
+      return true unless policy.zdr_required
+
+      runner.required_api_service_type != Runner::OPENROUTER_FREE_MODEL_PROVIDER && policy.eligible
     end
 
     def notice_for(error:, runner:)

@@ -28,7 +28,7 @@ module AgentRuns
     # nil; in that case the tenant-preference branch is skipped because no
     # runner_key has been chosen yet.
     def initialize(project:, goal:, requested_agent_type: nil, requested_runner_id: nil, respect_requested: true,
-                   exclude_runner_ids: [], disabled_runner_ids: nil, effective_runner: nil, logger: nil)
+                   exclude_runner_ids: [], disabled_runner_ids: nil, effective_runner: nil, required_zdr: nil, logger: nil)
       @project = project
       @goal = goal
       @requested_agent_type = requested_agent_type
@@ -37,6 +37,7 @@ module AgentRuns
       @exclude_runner_ids = Array(exclude_runner_ids)
       @disabled_runner_ids = disabled_runner_ids
       @effective_runner = effective_runner
+      @required_zdr = required_zdr
       @logger = logger
     end
 
@@ -56,7 +57,7 @@ module AgentRuns
     private
 
     attr_reader :project, :goal, :requested_agent_type, :requested_runner_id, :respect_requested, :exclude_runner_ids,
-                :disabled_runner_ids, :effective_runner, :logger
+                :disabled_runner_ids, :effective_runner, :required_zdr, :logger
 
     # True when this runner instance already failed preflight during the
     # current dequeue pass and must not be re-selected.
@@ -66,7 +67,7 @@ module AgentRuns
 
     # Returns the first non-excluded candidate from the given runners.
     def first_allowed(*candidates)
-      candidates.find { |runner| runner.present? && exclude_runner_ids.exclude?(runner.id) }
+      candidates.find { |runner| runner.present? && !excluded?(runner) && runner_runnable?(runner) }
     end
 
     def requested_selection
@@ -92,8 +93,10 @@ module AgentRuns
       # Preferred runner failed preflight earlier this dequeue pass: fall
       # through to default/fallback selection so a healthy alternative can
       # serve the run instead of being pinned back to the unhealthy one.
-      return nil if runner && excluded?(runner)
-      runner ? [ runner.id, agent_type ] : [ nil, agent_type ]
+      return [ runner.id, agent_type ] if runner && runner_runnable?(runner) && !excluded?(runner)
+      return nil if runner
+
+      [ nil, agent_type ]
     end
 
     def default_runner
@@ -334,6 +337,7 @@ module AgentRuns
     def runner_runnable?(runner)
       return false if runner.blocked_by_time_window?
       return false unless runner.execution_enabled_for_agent_runs?(disabled_runner_ids: disabled_runner_ids)
+      return false unless runner.effective_privacy_policy(project:, required_zdr:).eligible
       container_executable_runner_key?(runner.runner_key)
     end
 
@@ -356,6 +360,8 @@ module AgentRuns
     def fallback_from_settings
       enabled = first_enabled_for_owner(project.effective_owner)
       return [ enabled.id, agent_type_for_runner_key(enabled.runner_key) ] if enabled
+
+      return [ nil, nil ] if required_zdr || project.restricted?
 
       first_key = container_executable_runner_keys.first
       agent_type = first_key ? agent_type_for_runner_key(first_key) : "claude_code"
@@ -387,7 +393,7 @@ module AgentRuns
 
       scope = owner.runners.kept_only.for_agent_runs.where(runner_key: container_executable_runner_keys).ordered
       scope = scope.where.not(id: exclude_runner_ids) if exclude_runner_ids.any?
-      scope.first
+      scope.find { |runner| runner.effective_privacy_policy(project:, required_zdr:).eligible }
     end
 
     def ensure_default_for(owner)

@@ -27,6 +27,12 @@ module Runners
           "(got #{@runner.required_api_service_type.inspect})"
       end
 
+      privacy_policy = @runner.effective_privacy_policy(project: @project)
+      unless privacy_policy.eligible
+        raise AgentHarness::ConfigurationError,
+          "The selected runner cannot enforce the required zero data retention policy before sending an OpenRouter request"
+      end
+
       Result.new(
         config: {
           model: @model_id,
@@ -34,7 +40,7 @@ module Runners
           api_key_env: "OPENROUTER_API_KEY",
           provider_routing: build_provider_routing(
             @project,
-            zero_data_retention: @runner.zero_data_retention_enforced?
+            zero_data_retention: privacy_policy.zdr_required
           )
         }
       )
