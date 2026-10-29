@@ -68,6 +68,21 @@ RSpec.describe Inbox::ManualReviewRecovery do
   end
 
   # @spec OPERATOR-INBOX-002L
+  it "does not treat stale clarifying questions as provenance for a newer hold" do
+    issue = create(:issue, project:, paid_state: "manual_review", manual_review_reason: "scanner evidence is incomplete",
+      needs_input_questions: [ "What should this enhancement do?" ])
+
+    expect(described_class.call(issue:).kind).to eq(:unknown)
+  end
+
+  # @spec OPERATOR-INBOX-002L
+  it "recognizes persisted questions when the current hold has no producer reason" do
+    issue = create(:issue, project:, paid_state: "manual_review", needs_input_questions: [ "What should this enhancement do?" ])
+
+    expect(described_class.call(issue:).kind).to eq(:enhancement)
+  end
+
+  # @spec OPERATOR-INBOX-002L
   it "does not treat a historical enhancement run as provenance for a newer hold" do
     issue = create(:issue, project:)
     create(:agent_run, :completed, project:, issue:, goal: "enhance_issue", created_at: 1.day.ago)

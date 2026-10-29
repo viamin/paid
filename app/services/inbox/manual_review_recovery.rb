@@ -55,8 +55,15 @@ module Inbox
     end
 
     def enhancement_hold?
-      issue.needs_input_questions.present? ||
+      question_driven_hold? ||
         legacy_enhancement_stop?
+    end
+
+    # Questions are stored on the issue and outlive a manual-review episode.
+    # They identify the current producer only when that producer supplied no
+    # reason; a nonblank reason must match the durable legacy enhancement set.
+    def question_driven_hold?
+      issue.manual_review_reason.blank? && issue.needs_input_questions.present?
     end
 
     # Old stops predate a machine-readable producer field. These are the
