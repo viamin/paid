@@ -209,7 +209,7 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     expect(status.blockers.first.evidence.fetch("children")).to include(hash_including("id" => child.id))
   end
 
-  it "names the external prerequisite, synced state, owner, and retry path" do # @spec PARTIAL-CLOSEOUT-037
+  it "names the external prerequisite, synced state, owner, and retry path" do # @spec PARTIAL-CLOSEOUT-038
     merged_partial_pr(number: 12)
     target_project = create(:project, account:, owner: "viamin", repo: "agent-harness", name: "agent-harness")
     create(:issue, project: target_project, github_number: 517, github_state: "open", paid_state: "in_progress",

@@ -60,6 +60,7 @@ RSpec.describe ApplicationJob, :no_db do
         LegacyPartialCloseoutReconciliationSweepJob
         ModelHealthCheckJob
         OrphanBranchReaperJob
+        PartialCloseoutAcceptanceAuditSweepJob
         PollWorkflowHealthCheckJob
         PoolReplenishmentJob
         ProjectDashboardMetricsSweepJob

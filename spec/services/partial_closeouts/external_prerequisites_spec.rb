@@ -23,7 +23,7 @@ RSpec.describe PartialCloseouts::ExternalPrerequisites do
       } ] })
   end
 
-  it "releases an external wait after its tracked target closes" do # @spec PARTIAL-CLOSEOUT-037
+  it "releases an external wait after its tracked target closes" do # @spec PARTIAL-CLOSEOUT-038
     target_project = create(:project, account:, owner: "viamin", repo: "agent-harness", name: "Agent Harness")
     target = create(:issue, project: target_project, github_number: 517, github_state: "open", paid_state: "in_progress")
     dependency = { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 }
@@ -39,7 +39,7 @@ RSpec.describe PartialCloseouts::ExternalPrerequisites do
     expect(notification.metadata).to include("released_by" => "external_prerequisite")
   end
 
-  it "releases an unavailable wait when its target is first synced as resolved" do # @spec PARTIAL-CLOSEOUT-037
+  it "releases an unavailable wait when its target is first synced as resolved" do # @spec PARTIAL-CLOSEOUT-038
     target_project = create(:project, account:, owner: "viamin", repo: "agent-harness", name: "Agent Harness")
     dependency = { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 }
     create(:issue_dependency, issue:, depends_on_issue: nil, **dependency_attributes(dependency))
@@ -53,7 +53,7 @@ RSpec.describe PartialCloseouts::ExternalPrerequisites do
     expect(notification.metadata).to include("released_by" => "external_prerequisite")
   end
 
-  it "keeps stale external state held with a recheck path" do # @spec PARTIAL-CLOSEOUT-037
+  it "keeps stale external state held with a recheck path" do # @spec PARTIAL-CLOSEOUT-038
     dependency = { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 }
     notification = notification_for(dependency)
 
@@ -64,7 +64,7 @@ RSpec.describe PartialCloseouts::ExternalPrerequisites do
     expect(notification).to be_active
   end
 
-  it "upgrades the legacy #4726-style wait only when it has no human evidence contract" do # @spec PARTIAL-CLOSEOUT-037
+  it "upgrades the legacy #4726-style wait only when it has no human evidence contract" do # @spec PARTIAL-CLOSEOUT-038
     target_project = create(:project, account:, owner: "viamin", repo: "agent-harness", name: "agent-harness")
     target = create(:issue, project: target_project, github_number: 517, github_state: "open", paid_state: "in_progress")
     dependency = { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 }
@@ -80,7 +80,7 @@ RSpec.describe PartialCloseouts::ExternalPrerequisites do
     expect(notification.metadata.fetch("prerequisites").sole).to include("kind" => "external")
   end
 
-  it "does not convert a human policy hold when its dependency changes" do # @spec PARTIAL-CLOSEOUT-037
+  it "does not convert a human policy hold when its dependency changes" do # @spec PARTIAL-CLOSEOUT-038
     target_project = create(:project, account:, owner: "viamin", repo: "agent-harness", name: "agent-harness")
     target = create(:issue, project: target_project, github_number: 517, github_state: "open", paid_state: "in_progress")
     dependency = { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 }
@@ -97,7 +97,7 @@ RSpec.describe PartialCloseouts::ExternalPrerequisites do
     expect(notification.metadata.fetch("prerequisites").sole).to include("kind" => "human")
   end
 
-  it "does not release a different account's prerequisite" do # @spec PARTIAL-CLOSEOUT-037
+  it "does not release a different account's prerequisite" do # @spec PARTIAL-CLOSEOUT-038
     other_account = create(:account)
     target_project = create(:project, account: other_account, owner: "viamin", repo: "agent-harness", name: "agent-harness")
     target = create(:issue, project: target_project, github_number: 517, github_state: "closed")

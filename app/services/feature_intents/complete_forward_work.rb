@@ -199,7 +199,9 @@ module FeatureIntents
     end
 
     def persist_dependency!(issue)
-      IssueDependency.create_or_find_by!(issue: completion_issue, depends_on_issue: issue)
+      IssueDependency.create_or_find_by!(issue: completion_issue, depends_on_issue: issue) do |dependency|
+        dependency.cycle_provenance = "feature_intent_completion"
+      end
     rescue ActiveRecord::RecordInvalid => error
       raise unless duplicate_dependency?(error)
 

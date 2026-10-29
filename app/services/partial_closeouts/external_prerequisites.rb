@@ -40,7 +40,7 @@ module PartialCloseouts
       @target = target
     end
 
-    def call # @spec PARTIAL-CLOSEOUT-037
+    def call # @spec PARTIAL-CLOSEOUT-038
       return [] unless target.project
 
       matching_notifications.filter_map { |notification| refresh(notification) }

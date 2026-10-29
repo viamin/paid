@@ -351,6 +351,19 @@ Bounded legacy reconciliation already operates on terminal runs. The advancement
 records the normal continuation evidence and audit event, and is idempotent through
 the existing open request and active-run constraints.
 
+The source run can finish before its pull request merges. At that point the
+merged-PR evidence required for continuation admission does not yet exist, so
+an advance attempt may correctly report `not_stalled`. A bounded periodic
+acceptance-audit sweep revisits open partial closeouts after merge. For active
+auto-pick projects, it queues a report-only `analyze_issue` acceptance audit
+when the current assessment is missing or stale and ordinary continuation
+guards permit it. It records at most one automatic audit attempt per issue and
+closeout-evidence digest, including terminal attempts, so a failed audit does
+not loop. A later merged PR or no-code outcome creates a new evidence digest
+and can earn one new audit. The existing auto-pick control governs this work;
+there is no separate audit setting. Operator-requested audits use the same
+durable request and count toward the one-attempt limit for that generation.
+
 It only operates while `Issues::AutoPickProjectGate` is open and delegates all
 remaining admission to `Issues::RequestContinuation` / `CloseoutStatus`; explicit
 holds, trust, budgets, dependencies, scanner verification, and human prerequisites
