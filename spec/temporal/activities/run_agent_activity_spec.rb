@@ -1126,7 +1126,7 @@ RSpec.describe Activities::RunAgentActivity do
       )
     end
 
-    # @spec MODEL-POLICY-020
+    # @spec MODEL-POLICY-024
     it "preserves a snapshotted ZDR requirement in a fallback OpenRouter runtime" do
       opencode_context = build_opencode_context(user)
       agent_run.update!(external_metadata: agent_run.external_metadata.merge("zdr_required" => true))

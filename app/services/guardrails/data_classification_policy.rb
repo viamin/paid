@@ -53,7 +53,7 @@ module Guardrails
 
     attr_reader :agent_run, :selection
 
-    # @spec FREE-MODEL-002, FREE-MODEL-003, MODEL-POLICY-021
+    # @spec FREE-MODEL-002, FREE-MODEL-003, MODEL-POLICY-025
     def build_result
       data_collection = routing_params[:data_collection]
       zdr = routing_params[:zdr]

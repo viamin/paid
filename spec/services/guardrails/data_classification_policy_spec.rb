@@ -195,7 +195,7 @@ RSpec.describe Guardrails::DataClassificationPolicy do
         expect(result.provider_zdr).to be_nil
       end
 
-      # @spec MODEL-POLICY-020, MODEL-POLICY-021
+      # @spec MODEL-POLICY-024, MODEL-POLICY-025
       it "preserves a snapshotted ZDR requirement in routing and audit metadata" do
         project.update!(data_classification: "internal")
         agent_run.update!(external_metadata: { "zdr_required" => true })

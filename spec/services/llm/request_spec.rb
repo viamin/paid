@@ -50,7 +50,7 @@ RSpec.describe Llm::Request do
     expect(AgentHarness.conductor).to have_received(:execute_direct).with("Assess", hash_including(provider: :gemini, model: "gemini-mid"))
   end
 
-  # @spec LLM-ROUTING-001 MODEL-POLICY-020
+  # @spec LLM-ROUTING-001 MODEL-POLICY-024
   it "does not let a ZDR fallback disqualify the non-ZDR primary" do
     fallback = create(:runner, user: owner, runner_key: "gemini", zero_data_retention: true,
       tier_models: { "mid" => { "model_id" => "gemini-mid", "provider_id" => 17 } })
@@ -65,7 +65,7 @@ RSpec.describe Llm::Request do
     ).once
   end
 
-  # @spec MODEL-POLICY-020
+  # @spec MODEL-POLICY-024
   it "preserves a snapshotted ZDR requirement after the runner declaration is disabled" do
     run.update!(external_metadata: run.external_metadata.merge("zdr_required" => true))
 

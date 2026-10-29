@@ -32,7 +32,7 @@ RSpec.describe Runners::OpenRouterDataRouting do
     expect(host.build_provider_routing(project_with("restricted"))).to eq(data_collection: "deny", zdr: true)
   end
 
-  # @spec MODEL-POLICY-018
+  # @spec MODEL-POLICY-022
   it "enables zdr for a runner declaration without weakening restricted projects" do
     expect(host.build_provider_routing(project_with("internal"), zero_data_retention: true)).to eq(data_collection: "deny", zdr: true)
     expect(host.build_provider_routing(project_with("restricted"), zero_data_retention: false)).to eq(data_collection: "deny", zdr: true)

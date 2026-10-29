@@ -41,10 +41,9 @@ module ChatSessions
       end
     end
 
-    # @spec MODEL-POLICY-020
+    # @spec MODEL-POLICY-024
     def originating_zdr_required?
-      project = chat_session.llm_policy_projects.find(&:restricted?)
-      chat_session.runner&.effective_privacy_policy(project: project)&.zdr_required == true
+      chat_session.runner&.effective_privacy_policy(project: chat_session.llm_policy_project)&.zdr_required == true
     end
 
     def fallback_loop_kwargs

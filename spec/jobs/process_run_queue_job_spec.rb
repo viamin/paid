@@ -2098,7 +2098,7 @@ RSpec.describe ProcessRunQueueJob do
         expect(AgentRun.where(runner_id: codex_runner.id).count).to eq(3)
       end
 
-      # @spec MODEL-POLICY-020
+      # @spec MODEL-POLICY-024
       it "snapshots ZDR before applying a cached reroute" do
         stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 5)
 

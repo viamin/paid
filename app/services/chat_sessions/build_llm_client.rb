@@ -138,10 +138,9 @@ module ChatSessions
     # agent-harness 0.44.22's API ChatTransport has no provider-routing
     # candidate contract. Block an OpenRouter ZDR request rather than sending
     # a prompt with metadata the transport cannot consume.
-    # @spec MODEL-POLICY-019
+    # @spec MODEL-POLICY-023
     def ensure_api_chat_privacy_supported!(provider)
-      project = chat_session.llm_policy_projects.find(&:restricted?)
-      policy = provider.effective_privacy_policy(project: project)
+      policy = provider.effective_privacy_policy(project: chat_session.llm_policy_project)
       return unless policy.zdr_required
 
       if provider.required_api_service_type == Runner::OPENROUTER_FREE_MODEL_PROVIDER

@@ -69,25 +69,25 @@
   and provenance. The edit form SHALL permit the declaration for every runner
   and show: “You are responsible for verifying this provider's zero data
   retention agreement and configuration.” for user-declared provenance.
-- [x] **MODEL-POLICY-018** — Before selecting an execution route, the system
+- [x] **MODEL-POLICY-022** — Before selecting an execution route, the system
   SHALL resolve the effective ZDR requirement as the union of a restricted
   project's requirement and the selected runner's declaration. For an
   OpenRouter request that requires ZDR, the provider routing SHALL include
   `zdr: true` and `data_collection: "deny"`; a route whose runtime cannot
   consume that routing SHALL fail before sending the prompt.
-- [x] **MODEL-POLICY-019** — An API chat request requiring OpenRouter ZDR
+- [x] **MODEL-POLICY-023** — An API chat request requiring OpenRouter ZDR
   SHALL be blocked before provider execution until agent-harness exposes a
   request-routing transport contract. Container chat and smoke execution
   SHALL pass the effective routing through their provider runtime where
   supported; Pi and OMP OpenRouter paths SHALL remain visibly unsupported.
-- [x] **MODEL-POLICY-020** — Runner fallbacks and retries SHALL preserve a
+- [x] **MODEL-POLICY-024** — Runner fallbacks and retries SHALL preserve a
   previously required ZDR policy. A fallback's declaration SHALL become
   required when that fallback becomes the active route, without disqualifying
   candidates ahead of it. An OpenRouter fallback qualifies only with
   request-routing enforcement; a non-OpenRouter fallback qualifies only with
   an explicit user ZDR declaration. If no qualifying route exists, selection
   SHALL stop without sending the prompt.
-- [x] **MODEL-POLICY-021** — Execution audit context SHALL distinguish the
+- [x] **MODEL-POLICY-025** — Execution audit context SHALL distinguish the
   runner's requested ZDR declaration, the effective requirement, and whether
   the selected route is OpenRouter-enforced, user-declared, disabled, or
   unavailable; configuration intent SHALL NOT be represented as enforcement.

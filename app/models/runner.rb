@@ -392,7 +392,7 @@ class Runner < ApplicationRecord
     zero_data_retention? && openrouter_zdr_request_routing_supported?
   end
 
-  # @spec MODEL-POLICY-018
+  # @spec MODEL-POLICY-022
   def effective_privacy_policy(project:, required_zdr: nil)
     Runners::EffectivePrivacyPolicy.call(project:, runner: self, required_zdr:)
   end

@@ -852,7 +852,7 @@ RSpec.describe Runner do
         expect(runtime.metadata.fetch(:config).dig("provider", "openrouter")).to eq(data_collection: "deny", zdr: true)
       end
 
-      # @spec MODEL-POLICY-018
+      # @spec MODEL-POLICY-022
       it "adds ZDR routing when a restricted project requires it and the runner declaration is off" do
         api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
         runner.assign_attributes(

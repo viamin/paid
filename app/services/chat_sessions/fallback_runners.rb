@@ -81,10 +81,9 @@ module ChatSessions
       CuratedModelOptions.resolve(runner:, projects: chat_session.llm_policy_projects).present?
     end
 
-    # @spec MODEL-POLICY-020
+    # @spec MODEL-POLICY-024
     def privacy_eligible?(runner, chat_session:, required_zdr:)
-      project = chat_session.llm_policy_projects.find(&:restricted?)
-      policy = runner.effective_privacy_policy(project: project, required_zdr: required_zdr)
+      policy = runner.effective_privacy_policy(project: chat_session.llm_policy_project, required_zdr: required_zdr)
       return true unless policy.zdr_required
 
       runner.required_api_service_type != Runner::OPENROUTER_FREE_MODEL_PROVIDER && policy.eligible

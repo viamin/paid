@@ -37,7 +37,7 @@ RSpec.describe ChatSessions::FallbackRunners do
       expect(chat_session.reload.runner).to eq(primary_runner)
     end
 
-    # @spec MODEL-POLICY-020
+    # @spec MODEL-POLICY-024
     it "preserves the originating runner's ZDR requirement for fallback eligibility" do
       primary_runner.update!(zero_data_retention: true)
       fallback_runner = create(:runner, :api_key, user: user, runner_key: "claude",

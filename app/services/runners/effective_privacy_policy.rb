@@ -19,7 +19,7 @@ module Runners
       @required_zdr = required_zdr
     end
 
-    # @spec MODEL-POLICY-018
+    # @spec MODEL-POLICY-022
     def call
       required = project_requires_zdr || runner_requires_zdr || @required_zdr == true
       return Result.new(project_requires_zdr:, runner_requires_zdr:, zdr_required: false, provenance: "disabled", eligible: true) unless required

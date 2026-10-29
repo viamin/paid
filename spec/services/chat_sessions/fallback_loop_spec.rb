@@ -37,7 +37,7 @@ RSpec.describe ChatSessions::FallbackLoop, type: :service do
     expect(chat_session.messages.where(id: partial_message.id)).not_to exist
   end
 
-  # @spec MODEL-POLICY-020
+  # @spec MODEL-POLICY-024
   it "does not weaken the originating runner's ZDR requirement after a provider error" do
     configure_minimax_runner_with_429_response
     original_runner = chat_session.reload.runner
@@ -51,7 +51,7 @@ RSpec.describe ChatSessions::FallbackLoop, type: :service do
     expect(chat_session.reload.runner).to eq(original_runner)
   end
 
-  # @spec MODEL-POLICY-020
+  # @spec MODEL-POLICY-024
   it "preserves ZDR after a ZDR fallback becomes the active route" do
     configure_minimax_runner_with_429_response
     zdr_fallback = create(:runner, :api_key, user: user, runner_key: "claude", zero_data_retention: true,

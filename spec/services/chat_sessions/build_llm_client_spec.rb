@@ -119,7 +119,7 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
   end
 
   describe ".call" do
-    # @spec MODEL-POLICY-019 MODEL-POLICY-020
+    # @spec MODEL-POLICY-023
     it "blocks OpenRouter API chat for a reference-only restricted project" do
       api_key = create(:provider_api_key, user: user, api_key: "sk-or-test-key", api_service_type: "openrouter")
       runner = build_openai_runner(
@@ -136,7 +136,7 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         .to raise_error(ChatSessions::LlmClientConfigurationError, /cannot enforce the required OpenRouter/)
     end
 
-    # @spec MODEL-POLICY-020
+    # @spec MODEL-POLICY-022
     it "blocks an undeclared non-OpenRouter API runner for restricted chat" do
       api_key = create(:provider_api_key, user: user, api_key: "sk-openai-test-key", api_service_type: "openai")
       runner = build_openai_runner(
@@ -152,7 +152,7 @@ RSpec.describe ChatSessions::BuildLlmClient, type: :service do
         .to raise_error(ChatSessions::LlmClientConfigurationError, /explicit ZDR declaration/)
     end
 
-    # @spec MODEL-POLICY-020
+    # @spec MODEL-POLICY-022
     it "blocks an undeclared Anthropic API runner for restricted chat" do
       api_key = create(:provider_api_key, user: user, api_key: "sk-ant-test-key", api_service_type: "anthropic")
       runner = create(:runner, :api_key, user: user, runner_key: "claude", provider_api_key: api_key)
