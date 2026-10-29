@@ -209,6 +209,28 @@ RSpec.describe Issues::CloseoutStatus do # @spec PARTIAL-CLOSEOUT-002
     expect(status.blockers.first.evidence.fetch("children")).to include(hash_including("id" => child.id))
   end
 
+  it "names the external prerequisite, synced state, owner, and retry path" do # @spec PARTIAL-CLOSEOUT-037
+    merged_partial_pr(number: 12)
+    target_project = create(:project, account:, owner: "viamin", repo: "agent-harness", name: "agent-harness")
+    create(:issue, project: target_project, github_number: 517, github_state: "open", paid_state: "in_progress",
+      github_creator_login: "dependency-owner")
+    create(:issue_dependency, issue:, depends_on_issue: nil,
+      depends_on_owner: "viamin", depends_on_repo: "agent-harness", depends_on_number: 517)
+    create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "External work is pending", description: "Wait for viamin/agent-harness#517.",
+      metadata: { "prerequisites" => [ {
+        "identity" => "agent-harness-517", "criterion" => "Agent harness support", "kind" => "external",
+        "external_dependency" => { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 }
+      } ] })
+
+    blocker = described_class.call(issue).blockers.find { |candidate| candidate.code == :prerequisite_notification }
+
+    expect(blocker.message).to include("viamin/agent-harness#517", "open", "@dependency-owner")
+    expect(blocker.evidence.fetch("links")).to include(hash_including("label" => "viamin/agent-harness#517"))
+    expect(blocker.recovery).to include("rechecks")
+  end
+
   it "does not cross-pair batched child and notification blockers across tenants" do # @spec PARTIAL-CLOSEOUT-030
     other_account = create(:account)
     other_project = create(:project, account: other_account)

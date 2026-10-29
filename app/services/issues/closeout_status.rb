@@ -395,18 +395,49 @@ module Issues
       return [] if notifications.empty?
 
       ids = notifications.map { |notification| "##{notification.id}" }
+      external = notifications.flat_map { |notification| external_prerequisite_states(notification) }
       [ Blocker.new(
-        code: :human_prerequisite_notification,
-        message: "Active partial-closeout human prerequisite notification#{'s' if notifications.many?} (#{ids.join(', ')}) requires unresolved human evidence or a human decision before continuation.",
-        evidence: { "notifications" => notifications.map { |notification| notification_evidence(notification) }, "links" => notifications.filter_map { |notification| evidence_link("Notification ##{notification.id}", notification.action_url) } },
-        recovery: prerequisite_notification_recovery(notifications)
+        code: external.any? ? :prerequisite_notification : :human_prerequisite_notification,
+        message: prerequisite_notification_message(notifications, ids, external),
+        evidence: { "notifications" => notifications.map { |notification| notification_evidence(notification) },
+          "external_prerequisites" => external,
+          "links" => notifications.filter_map { |notification| evidence_link("Notification ##{notification.id}", notification.action_url) } +
+            external.filter_map { |state| evidence_link(state.fetch("reference"), state["url"]) } },
+        recovery: prerequisite_notification_recovery(notifications, external)
       ) ]
     end
 
-    def self.prerequisite_notification_recovery(notifications)
+    def self.external_prerequisite_states(notification)
+      PartialCloseouts::ExternalPrerequisites.states_for(notification)
+    end
+    private_class_method :external_prerequisite_states
+
+    def self.prerequisite_notification_message(notifications, ids, external)
+      human = notifications.any? do |notification|
+        PartialCloseouts::ExternalPrerequisites.human_evidence_required?(notification)
+      end
+      external_message = external.map do |state|
+        owner = state["owner"].present? ? " owned by @#{state["owner"]}" : ""
+        "External prerequisite #{state.fetch("reference")} is #{state.fetch("state")}#{owner}."
+      end.join(" ")
+      return external_message unless human
+
+      "#{external_message} Active partial-closeout human prerequisite notification#{'s' if notifications.many?} " \
+        "(#{ids.join(', ')}) requires unresolved human evidence or a human decision before continuation."
+    end
+    private_class_method :prerequisite_notification_message
+
+    def self.prerequisite_notification_recovery(notifications, external = [])
       policy_steps = notifications.filter_map { |notification| notification.metadata.dig("policy_selection", "next_step") }
       guidance = "Supply and record the requested human decision or evidence at the listed notification route."
       guidance += " Replacement policy action: #{policy_steps.join(' ')}" if policy_steps.any?
+      external_guidance = external.map { |state| state.fetch("recovery") }.uniq.join(" ")
+      only_external = notifications.all? do |notification|
+        !PartialCloseouts::ExternalPrerequisites.human_evidence_required?(notification)
+      end
+      return "#{external_guidance} Do not resolve it manually while the external state is unavailable." if policy_steps.empty? && only_external
+
+      guidance += " #{external_guidance}" if external_guidance.present?
       "#{guidance} Dismiss or resolve it only after that prerequisite is genuinely satisfied; never replace a team policy with solo review silently."
     end
     private_class_method :prerequisite_notification_recovery

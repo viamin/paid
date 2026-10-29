@@ -684,3 +684,21 @@
   *Test:* `spec/services/partial_closeouts/fetch_evidence_artifact_spec.rb`,
   `spec/services/partial_closeouts/validate_submitted_evidence_spec.rb`,
   `spec/services/partial_closeouts/submit_evidence_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-037** — When a partial-closeout prerequisite is
+  external work, Paid SHALL persist its owner/repository/issue identity
+  separately from human evidence or policy occurrences and SHALL render the
+  concrete target, current synced state, owner when known, safe target link,
+  and an explicit wait or recheck path. When that authoritative target changes
+  state, Paid SHALL re-evaluate the matching account-scoped notification and
+  release it only if every external occurrence is resolved and every human
+  occurrence has current sufficient evidence. Unknown or stale target state
+  SHALL remain held with a sync/recheck path; cycles SHALL remain held by their
+  existing cycle Inbox occurrence. A target in another account SHALL never
+  affect the notification.
+  *Code:* `app/services/partial_closeouts/external_prerequisites.rb`,
+  `app/services/partial_closeouts/reconcile.rb`, `app/models/issue.rb`,
+  `app/services/issues/closeout_status.rb`.
+  *Test:* `spec/services/partial_closeouts/external_prerequisites_spec.rb`,
+  `spec/services/partial_closeouts/reconcile_spec.rb`,
+  `spec/services/issues/closeout_status_spec.rb`.

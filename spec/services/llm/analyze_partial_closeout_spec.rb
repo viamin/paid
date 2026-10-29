@@ -257,6 +257,16 @@ RSpec.describe Llm::AnalyzePartialCloseout do
       expect(result.dig("gaps", 0, "next_step")).to eq("Run the approved macOS pilot.")
     end
 
+    it "accepts external work only with its concrete dependency identity" do # @spec PARTIAL-CLOSEOUT-037
+      gap = { criterion: "Agent harness support", kind: "external", next_step: "Wait for #517.",
+        external_dependency: { owner: "viamin", repo: "agent-harness", number: 517 } }
+      allow(llm_response).to receive(:output).and_return({ gaps: [ gap ] }.to_json)
+
+      result = described_class.call(agent_run: agent_run)
+
+      expect(result.dig("gaps", 0, "external_dependency")).to include("number" => 517)
+    end
+
     it "accepts durable policy references and an explicit replacement-policy action" do # @spec PARTIAL-CLOSEOUT-031
       stub_const("ENV", ENV.to_hash.except("ANTHROPIC_API_KEY"))
       gap = {
