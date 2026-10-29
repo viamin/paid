@@ -69,6 +69,14 @@ arrows:
     status: OK
     audited: 2026-10-24
     next: "Keep Auto-Pick persistence and Auto-Merge live extraction on the shared structural declaration contract."
+  dependency-cycle-recovery:
+    title: Dependency Cycle Recovery
+    path: docs/intent/dependency-cycle-recovery/dependency-cycle-recovery-design.md
+    specs: docs/intent/dependency-cycle-recovery/dependency-cycle-recovery-specs.md
+    parent: PAID
+    taxonomy: automation
+    status: OK
+    audited: 2026-10-29
   docker-disk-cleanup:
     title: Docker Disk Cleanup
     path: docs/intent/docker-disk-cleanup/docker-disk-cleanup-design.md

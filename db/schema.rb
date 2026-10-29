@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_28_220000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_29_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -1339,6 +1339,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_220000) do
     t.index ["project_id", "coverage_state"], name: "idx_on_project_id_coverage_state_9626caa4b8"
     t.index ["project_id", "dependency_ecosystem", "dependency_name", "advisory_ghsa_id", "manifest_path"], name: "index_dependabot_coverages_on_dependency_advisory_identity", unique: true
     t.index ["project_id"], name: "index_dependabot_alert_coverages_on_project_id"
+  end
+
+  create_table "dependency_cycle_occurrences", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.boolean "active", default: true, null: false
+    t.datetime "created_at", null: false
+    t.string "cycle_key", null: false
+    t.jsonb "details", default: {}, null: false
+    t.datetime "last_detected_at", null: false
+    t.datetime "resolved_at"
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "active"], name: "index_dependency_cycle_occurrences_on_account_id_and_active"
+    t.index ["account_id", "cycle_key"], name: "index_dependency_cycle_occurrences_on_account_id_and_cycle_key", unique: true
+    t.index ["account_id"], name: "index_dependency_cycle_occurrences_on_account_id"
   end
 
   create_table "design_amendment_follow_ups", comment: "Follow-up human decisions for already-merged work affected by a design revision; never auto-rolled back.", force: :cascade do |t|
@@ -4751,6 +4765,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_220000) do
   add_foreign_key "dependabot_alert_coverages", "accounts"
   add_foreign_key "dependabot_alert_coverages", "projects"
   add_foreign_key "dependabot_alert_coverages", "users", column: "accepted_by_id"
+  add_foreign_key "dependency_cycle_occurrences", "accounts"
   add_foreign_key "design_amendment_follow_ups", "design_amendments"
   add_foreign_key "design_amendment_follow_ups", "issues"
   add_foreign_key "design_amendment_follow_ups", "users", column: "decided_by_id"

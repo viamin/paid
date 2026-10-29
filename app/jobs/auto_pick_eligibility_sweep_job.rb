@@ -47,6 +47,12 @@ class AutoPickEligibilitySweepJob < ApplicationJob
       )
     end
 
+    Account.find_each do |account|
+      Issues::DependencyCycles::Reconcile.call(account: account)
+    rescue => e
+      Rails.logger.error(message: "dependency_cycles.reconcile_failed", account_id: account.id, error: e.message)
+    end
+
     Rails.logger.info(
       message: "auto_pick_eligibility_sweep.completed",
       processed_projects: processed,

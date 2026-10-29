@@ -6,7 +6,7 @@ module Dashboard
     ProjectBreakdown = Struct.new(
       :project, :total_open, :eligible, :needs_input,
       :skip_label, :completed, :in_progress, :manual_review, :other_excluded,
-      :queued, :active, :paused, :unseeded, :held_issues, :diagnostic_state,
+      :queued, :active, :paused, :unseeded, :held_issues, :dependency_cycles, :diagnostic_state,
       keyword_init: true
     )
 
@@ -39,12 +39,14 @@ module Dashboard
       inputs = projects.to_h { |project| [ project.id, breakdown_inputs(project, tier_feasibility) ] }
       excluded = inputs.values.map { |input| input.fetch(:excluded) }.reduce(&:or)
       held_issues = HeldWorkDetails.call(excluded:, projects:)
+      dependency_cycles = dependency_cycles_by_project(projects)
       projects.map do |project|
         breakdown_for(
           project,
           input: inputs.fetch(project.id),
           handoff_counts: handoff_counts,
-          held_issues: held_issues.fetch(project.id, [])
+          held_issues: held_issues.fetch(project.id, []),
+          dependency_cycles: dependency_cycles.fetch(project.id, [])
         )
       end
     end
@@ -85,7 +87,7 @@ module Dashboard
     end
 
     # @spec OPERATOR-INBOX-002D QUEUE-HANDOFF-001 QUEUE-HANDOFF-002 QUEUE-HANDOFF-003
-    def breakdown_for(project, input:, handoff_counts:, held_issues:)
+    def breakdown_for(project, input:, handoff_counts:, held_issues:, dependency_cycles:)
       eligible_count = input.fetch(:eligible_count)
       excluded = input.fetch(:excluded)
       excluded_total, in_progress, completed, analyzable = input.fetch(:row)
@@ -109,10 +111,23 @@ module Dashboard
         paused: paused,
         unseeded: unseeded,
         held_issues: held_issues,
+        dependency_cycles: dependency_cycles,
         diagnostic_state: diagnostic_state(
           project:, unseeded:, queued:, active:, paused:, total_open: eligible_count + excluded_total
         )
       )
+    end
+
+    def dependency_cycles_by_project(projects)
+      result = projects.index_with { [] }
+      projects_by_id = projects.index_by(&:id)
+      DependencyCycleOccurrence.active.where(account: user.account).find_each do |occurrence|
+        Array(occurrence.details["project_ids"]).each do |project_id|
+          project = projects_by_id[project_id]
+          result.fetch(project) << occurrence if project
+        end
+      end
+      result.transform_keys(&:id)
     end
 
     # Candidate eligibility is specific to open issues. Scheduler facts are

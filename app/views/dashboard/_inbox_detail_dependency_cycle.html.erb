@@ -1,0 +1,13 @@
+<% details = entry.record.details %>
+<p class="text-sm text-gray-700">This persisted effective dependency cycle holds <%= details.fetch("downstream_count", 0) %> downstream issues. Paid will keep the work held until a later synchronization observes an acyclic graph.</p>
+<p class="mt-3 text-sm text-gray-700">Review the declarations on GitHub and remove or correct the specific declaration that is wrong. Paid does not choose an edge to delete.</p>
+<ol class="mt-4 list-decimal space-y-2 pl-5 text-sm text-gray-700">
+  <% details.fetch("cycle_path", []).each do |edge| %>
+    <li>
+      <%= link_to edge.fetch("from_label"), edge.fetch("from"), target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-500" %>
+      depends on
+      <%= link_to edge.fetch("to_label"), edge.fetch("to"), target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-500" %>
+      <span class="text-gray-500">(<%= edge.fetch("provenance") %>)</span>
+    </li>
+  <% end %>
+</ol>

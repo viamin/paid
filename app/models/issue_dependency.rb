@@ -17,6 +17,7 @@ class IssueDependency < ApplicationRecord
   validate :local_dep_within_same_account
 
   before_validation :normalize_external_ref
+  after_commit :reconcile_dependency_cycles, on: %i[create update destroy]
 
   # A dependency edge pointing at the dependent's own umbrella (parent
   # issue) is a contextual parent reference, not a prerequisite: the
@@ -166,5 +167,12 @@ class IssueDependency < ApplicationRecord
     self.depends_on_owner = depends_on_owner.presence&.downcase
     self.depends_on_repo = depends_on_repo.presence&.downcase
     self.depends_on_number = depends_on_number.presence if depends_on_number.is_a?(String)
+  end
+
+  # @spec DEPENDENCY-CYCLES-001 DEPENDENCY-CYCLES-004
+  def reconcile_dependency_cycles
+    Issues::DependencyCycles::Reconcile.call(account: issue.project.account)
+  rescue ActiveRecord::RecordNotFound
+    # A cascading issue deletion can remove the owning row before this callback.
   end
 end

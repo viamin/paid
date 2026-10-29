@@ -17,6 +17,7 @@ module Inbox
     PROJECT_SETUP_PENDING_KIND = "project_setup_pending"
     TRACEABILITY_GAP_KIND = "traceability_gap"
     LAYERED_VERIFICATION_FINDING_KIND = "layered_verification_finding"
+    DEPENDENCY_CYCLE_KIND = "dependency_cycle"
     DEFAULT_SORT = "oldest"
     # RDR-077 §5 scopes: the default actionable list, the requests held back by
     # a disabled phase, and the requests this user personally removed.
@@ -43,7 +44,8 @@ module Inbox
       TEST_REVIEW_PENDING_KIND,
       PROJECT_SETUP_PENDING_KIND,
       TRACEABILITY_GAP_KIND,
-      LAYERED_VERIFICATION_FINDING_KIND
+      LAYERED_VERIFICATION_FINDING_KIND,
+      DEPENDENCY_CYCLE_KIND
     ].freeze
     KIND_LABELS = KINDS.to_h { |kind| [ kind, kind.titleize ] }.merge(
       ESCALATED_PR_KIND => "Blocked PRs",
@@ -158,6 +160,10 @@ module Inbox
         kind == LAYERED_VERIFICATION_FINDING_KIND
       end
 
+      def dependency_cycle?
+        kind == DEPENDENCY_CYCLE_KIND
+      end
+
       # Lane chips default to the kind name, but an unverifiable finding is an
       # access/coverage problem and must not wear the traceability-gap label.
       # @spec OPERATOR-INBOX-020
@@ -225,7 +231,8 @@ module Inbox
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
           intent_conformance? || feature_decision? || retry_limited? || change_intent_draft? || partial_closeout? ||
-          test_review_pending? || project_setup_pending? || traceability_gap? || layered_verification_finding?
+          test_review_pending? || project_setup_pending? || traceability_gap? || layered_verification_finding? ||
+          dependency_cycle?
 
         "#{tasks.size} proposed tasks"
       end
@@ -419,6 +426,7 @@ module Inbox
         entries.concat(project_setup_pending_entries) if include_kind?(PROJECT_SETUP_PENDING_KIND)
         entries.concat(traceability_gap_entries) if include_kind?(TRACEABILITY_GAP_KIND)
         entries.concat(layered_verification_finding_entries) if include_kind?(LAYERED_VERIFICATION_FINDING_KIND)
+        entries.concat(dependency_cycle_entries) if include_kind?(DEPENDENCY_CYCLE_KIND)
         entries_by_id = entries.index_by(&:id)
         Inbox::PhaseOwnership.for_entries(entries).each do |entry_id, ownership|
           entries_by_id.fetch(entry_id).instance_variable_set(:@phase_ownership, ownership)
@@ -836,6 +844,32 @@ module Inbox
       only_record(scope).includes(:project, :issue).order(:created_at, :id).map do |change_intent|
         change_intent_draft_entry(change_intent)
       end
+    end
+
+    # @spec DEPENDENCY-CYCLES-003
+    def dependency_cycle_entries
+      scope = DependencyCycleOccurrence.active.where(account: user.account)
+      scope = scope.where("details ->> 'project_id' = ?", project.id.to_s) if project
+
+      only_record(scope).order(:created_at, :id).map do |occurrence|
+        details = occurrence.details
+        project_record = Project.find_by(id: details["project_id"])
+        next unless project_record && scoped_projects.include?(project_record)
+
+        Entry.new(
+          id: "#{DEPENDENCY_CYCLE_KIND}:#{occurrence.id}",
+          kind: DEPENDENCY_CYCLE_KIND,
+          project: project_record,
+          issue: nil,
+          record: occurrence,
+          waiting_since: occurrence.created_at,
+          questions: [],
+          tasks: [],
+          summary_text: "#{details.fetch('members', []).size} issues form a dependency cycle; #{details.fetch('downstream_count', 0)} downstream issues are held.",
+          title_text: "Dependency cycle requires review",
+          action_url: nil
+        )
+      end.compact
     end
 
     def change_intent_draft_entry(change_intent)
