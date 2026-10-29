@@ -120,6 +120,17 @@ RSpec.describe "Mobile inbox API" do
     expect(first_page.fetch("history").pluck("id") & second_page.fetch("history").pluck("id")).to be_empty
   end
 
+  # @spec OPERATOR-INBOX-022 MOBILE-API-008
+  it "treats a run cursor as invalid for a feature entry" do
+    feature_intent = create(:feature_intent, :ready_for_approval, project:)
+
+    get "/api/v1/inbox/entries/feature_decision:#{feature_intent.id}",
+      params: { history_cursor: "run-start:1" }, headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("entry")).to include("history" => [], "history_incomplete" => false)
+  end
+
   it "returns not found instead of opening a chat for an unavailable entry" do # @spec MOBILE-API-009
     post "/api/v1/inbox/entries/clarifying_questions:999999/chat", headers: headers
 

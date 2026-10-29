@@ -44,11 +44,6 @@ module Inbox
 
     def subject_key = self.class.subject_key_for(entry)
 
-    def runs
-      entry.project.agent_runs.where(issue: entry.issue)
-        .or(entry.project.agent_runs.where(source_pull_request_number: entry.issue.github_number))
-    end
-
     def capture_return!
       return unless user && entry.issue
 

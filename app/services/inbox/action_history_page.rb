@@ -72,7 +72,7 @@ module Inbox
     end
 
     def run_cursor(type, id)
-      return unless %w[run-start run-finish].include?(type)
+      return unless entry.issue && %w[run-start run-finish].include?(type)
 
       run = runs.find_by(id:)
       occurred_at = type == "run-start" ? run&.started_at || run&.created_at : run&.completed_at
