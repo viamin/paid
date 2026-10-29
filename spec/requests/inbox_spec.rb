@@ -1097,12 +1097,12 @@ RSpec.describe "Inbox" do
     )
   end
 
-  # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
+  # @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002L @spec ISSUE-ENHANCEMENT-011
   it "renders the clarifying-questions answer form for a manual_review issue with preserved terminal-round questions" do
     parked = create_manual_review_issue(
       title: "Parked with questions",
       github_number: 510,
-      reason: "Paid has reached the configured limit of 3 enhancement re-evaluation rounds for this issue.",
+      reason: "Paid reached the configured limit of 3 enhancement re-evaluation rounds for this issue.",
       needs_input_questions: [ "Which events should be recorded?" ]
     )
 

@@ -5,6 +5,15 @@ module Inbox
   # is presentation context, not an authority to select a recovery path.
   # @spec OPERATOR-INBOX-002L
   class ManualReviewRecovery
+    ENHANCEMENT_STOP_REASONS = [
+      "Paid could not validate the enhancement agent's structured output.",
+      "Paid reached the configured enhancement-round limit.",
+      "Paid reached the configured limit of enhancement re-evaluation rounds.",
+      "Round limit reached.",
+      "Structured output failed validation."
+    ].freeze
+    ENHANCEMENT_ROUND_LIMIT_REASON = /\APaid reached the configured limit of \d+ enhancement re-evaluation rounds for this issue\.\z/
+
     Recovery = Data.define(:kind, :dependency, :scanner_attempt) do
       def enhancement? = kind == :enhancement
       def reopen_review? = kind == :reopen_review
@@ -66,16 +75,13 @@ module Inbox
       issue.manual_review_reason.blank? && issue.needs_input_questions.present?
     end
 
-    # Old stops predate a machine-readable producer field. These are the
-    # exact stable messages emitted by the enhancement stop paths, retained as
-    # compatibility provenance rather than treating arbitrary prose as intent.
+    # Old stops predate a machine-readable producer field. These are the stable
+    # messages and bounded dynamic template emitted by the enhancement stop
+    # paths, retained as compatibility provenance rather than treating arbitrary
+    # prose as intent.
     def legacy_enhancement_stop?
-      issue.manual_review_reason.to_s.in?([
-        "Paid could not validate the enhancement agent's structured output.",
-        "Paid reached the configured limit of enhancement re-evaluation rounds.",
-        "Round limit reached.",
-        "Structured output failed validation."
-      ])
+      reason = issue.manual_review_reason.to_s
+      reason.in?(ENHANCEMENT_STOP_REASONS) || reason.match?(ENHANCEMENT_ROUND_LIMIT_REASON)
     end
   end
 end

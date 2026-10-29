@@ -83,6 +83,22 @@ RSpec.describe Inbox::ManualReviewRecovery do
   end
 
   # @spec OPERATOR-INBOX-002L
+  it "recognizes the queue-time enhancement round-limit reason" do
+    issue = create(:issue, project:, paid_state: "manual_review",
+      manual_review_reason: "Paid reached the configured enhancement-round limit.")
+
+    expect(described_class.call(issue:).kind).to eq(:enhancement)
+  end
+
+  # @spec OPERATOR-INBOX-002L
+  it "recognizes the enhancement activity's configured round-limit reason" do
+    issue = create(:issue, project:, paid_state: "manual_review",
+      manual_review_reason: "Paid reached the configured limit of 7 enhancement re-evaluation rounds for this issue.")
+
+    expect(described_class.call(issue:).kind).to eq(:enhancement)
+  end
+
+  # @spec OPERATOR-INBOX-002L
   it "does not treat a historical enhancement run as provenance for a newer hold" do
     issue = create(:issue, project:)
     create(:agent_run, :completed, project:, issue:, goal: "enhance_issue", created_at: 1.day.ago)
