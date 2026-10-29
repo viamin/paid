@@ -70,9 +70,11 @@ module Issues
     def path_from(start_id, target_id, adjacency)
       queue = [ [ start_id, [ start_id ] ] ]
       visited = Set.new
+      queue_index = 0
 
-      until queue.empty?
-        current_id, path = queue.shift
+      while queue_index < queue.length
+        current_id, path = queue[queue_index]
+        queue_index += 1
         next unless visited.add?(current_id)
 
         return [ dependency.issue_id ] + path if current_id == target_id
