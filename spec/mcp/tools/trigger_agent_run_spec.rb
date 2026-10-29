@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe Tools::TriggerAgentRun do
   let(:account) { create(:account) }
-  let(:user) { create(:user, :member, account: account) }
+  let(:user) { create(:user, :owner, account: account) }
   let(:session) { create(:chat_session, account: account, created_by: user) }
   let(:tool) { described_class.new(user: user, session: session) }
 
@@ -29,6 +29,12 @@ RSpec.describe Tools::TriggerAgentRun do
 
       expect(goals).not_to include(*AgentRun::LAYERED_VERIFICATION_GOALS)
     end
+
+    it "offers the shared continuation authorization contract" do # @spec AUTOMATION-PHASES-010
+      properties = described_class.input_schema.fetch(:properties)
+
+      expect(properties).to include(:continuation_authorized, :continuation_endpoint, :continuation_notice_signature)
+    end
   end
 
   describe "#call" do
@@ -44,6 +50,107 @@ RSpec.describe Tools::TriggerAgentRun do
 
       run = AgentRun.find(result[:id])
       expect(run.agent_type).to be_present
+    end
+
+    it "creates a scoped continuation grant and returns the effective-policy notice" do # @spec AUTOMATION-PHASES-005 @spec AUTOMATION-PHASES-010
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => false, "merge" => true },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      })
+      plan = Automation::ManualStart::Plan.call(project:, user:, phase: "coding")
+
+      result = tool.call(
+        project_id: project.id, issue_id: issue.id, confirmed: true,
+        continuation_authorized: true, continuation_endpoint: "coding",
+        continuation_notice_signature: plan.signature
+      )
+
+      expect(WorkItemContinuationGrant.last).to have_attributes(issue:, start_phase: "coding", endpoint: "coding", created_by: user)
+      expect(result.fetch(:effective_policy_notice)).to include("Merge phase setting")
+    end
+
+    it "names the selected endpoint even when no later phase is project-enabled" do # @spec AUTOMATION-PHASES-010
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => true, "merge" => false },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      })
+      plan = Automation::ManualStart::Plan.call(project:, user:, phase: "coding")
+
+      result = tool.call(
+        project_id: project.id, issue_id: issue.id, confirmed: true,
+        continuation_authorized: true, continuation_endpoint: "coding",
+        continuation_notice_signature: plan.signature
+      )
+
+      notice = result.fetch(:effective_policy_notice)
+      expect(notice).to include("You selected automation through Coding.")
+      expect(notice).to include("Paid stops after the action you selected")
+    end
+
+    it "names the selected endpoint in the review payload when policy changed since the notice" do # @spec AUTOMATION-PHASES-010 @spec AUTOMATION-PHASES-011
+      FeatureFlags.enable!(:automation_phases, project:)
+      project.update!(Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => true, "merge" => false },
+        Automation::PhaseSettings::RELEASE_KEY => false,
+        Automation::PhaseSettings::DEPLOYMENT_KEY => false
+      })
+
+      result = tool.call(
+        project_id: project.id, issue_id: issue.id, confirmed: true,
+        continuation_authorized: true, continuation_endpoint: "coding",
+        continuation_notice_signature: "stale-signature"
+      )
+
+      expect(result).to include(review_required: true)
+      notice = result.fetch(:effective_policy_notice)
+      expect(notice).to include("You selected automation through Coding.")
+      expect(notice).to include("Paid stops after the action you selected")
+    end
+
+    it "returns an actionable error when the caller cannot delegate merge" do # @spec AUTOMATION-PHASES-009
+      FeatureFlags.enable!(:automation_phases, project:)
+      member = create(:user, :member, account:)
+      member_tool = described_class.new(user: member, session:)
+      plan = Automation::ManualStart::Plan.call(project:, user: member, phase: "coding", endpoint: "merge")
+
+      expect {
+        member_tool.call(
+          project_id: project.id, issue_id: issue.id, confirmed: true,
+          continuation_authorized: true, continuation_endpoint: "merge",
+          continuation_notice_signature: plan.signature
+        )
+      }.to raise_error(ArgumentError, "You do not have permission to delegate merging for this project.")
+    end
+
+    it "returns an actionable error for an endpoint unavailable to the selected goal" do # @spec AUTOMATION-PHASES-010
+      FeatureFlags.enable!(:automation_phases, project:)
+      plan = Automation::ManualStart::Plan.call(project:, user:, phase: "coding")
+
+      expect {
+        tool.call(
+          project_id: project.id, issue_id: issue.id, confirmed: true,
+          continuation_endpoint: "issue_preparation", continuation_notice_signature: plan.signature
+        )
+      }.to raise_error(ArgumentError, "Choose a continuation endpoint offered for this action.")
+    end
+
+    it "returns an actionable error and creates no run when a grant has no work item" do # @spec AUTOMATION-PHASES-005
+      FeatureFlags.enable!(:automation_phases, project:)
+      plan = Automation::ManualStart::Plan.call(project:, user:, phase: "coding")
+
+      expect {
+        expect {
+          tool.call(
+            project_id: project.id, goal: "create_issue", custom_prompt: "Investigate flaky builds.", confirmed: true,
+            continuation_authorized: true, continuation_endpoint: "coding",
+            continuation_notice_signature: plan.signature
+          )
+        }.to raise_error(ArgumentError, "Select an issue or pull request to authorize automatic continuation.")
+      }.not_to change(AgentRun, :count)
     end
 
     it "enqueues ProcessRunQueueJob" do

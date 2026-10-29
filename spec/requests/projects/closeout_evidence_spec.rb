@@ -33,6 +33,50 @@ RSpec.describe "Project closeout evidence" do
     )
   end
 
+  it "validates submitted evidence and releases the blocker through the production route" do # @spec PARTIAL-CLOSEOUT-033
+    configure_llm_routing(project:)
+    fetched = AgentRuns::Research::HttpClient::Result.new(
+      uri: URI("https://evidence.example.test/report"), status: 200, content_type: "text/plain",
+      body: "The required pilot completed successfully for all acceptance criteria.", redirect_chain: []
+    )
+    allow(AgentRuns::Research::HttpClient).to receive(:fetch).and_return(fetched)
+    response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"outcome":"sufficient","reason":"The current pilot report satisfies the prerequisite."}')
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
+
+    perform_enqueued_jobs do
+      post project_closeout_evidence_index_path(project), params: evidence_params
+    end
+
+    expect(notification.reload).not_to be_active
+    expect(notification.metadata.fetch("evidence_submissions").sole).to include(
+      "outcome" => "sufficient", "reason" => "The current pilot report satisfies the prerequisite."
+    )
+    expect(AgentHarness.conductor).to have_received(:execute_direct) do |prompt, **|
+      expect(prompt).to include("The required pilot completed successfully for all acceptance criteria.")
+    end
+  end
+
+  it "records unavailable when trusted validation returns malformed output" do # @spec PARTIAL-CLOSEOUT-033
+    configure_llm_routing(project:)
+    fetched = AgentRuns::Research::HttpClient::Result.new(
+      uri: URI("https://evidence.example.test/report"), status: 200, content_type: "text/plain",
+      body: "Pilot report", redirect_chain: []
+    )
+    allow(AgentRuns::Research::HttpClient).to receive(:fetch).and_return(fetched)
+    response = instance_double(AgentHarness::Response, success?: true, output: "not json")
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
+
+    perform_enqueued_jobs do
+      post project_closeout_evidence_index_path(project), params: evidence_params
+    end
+
+    expect(notification.reload).to be_active
+    expect(notification.metadata.fetch("evidence_submissions").sole).to include(
+      "outcome" => "unavailable", "reason" => "Semantic validation returned an invalid result."
+    )
+  end
+
   it "rejects an account viewer without agent-run authorization" do # @spec PARTIAL-CLOSEOUT-033
     viewer = create(:user, :viewer, account:)
     sign_out user

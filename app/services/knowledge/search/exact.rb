@@ -36,12 +36,16 @@ module Knowledge
             :id
           )
 
-        results = exact_matches
+        KnowledgeChunk
+          .active
+          .for_project(project)
+          .joins(:knowledge_artifact)
+          .merge(exact_matches)
+          .order(Arel.sql("knowledge_chunks.sequence ASC, knowledge_chunks.id ASC"))
+          .with_link_count
+          .includes(knowledge_artifact: { collector_run: :project_version })
           .limit(limit)
-          .includes(active_ordered_chunks: [ :outgoing_links, :incoming_links ], collector_run: :project_version)
-          .flat_map { |artifact| format_artifact_results(artifact) }
-
-        results.first(limit)
+          .map { |chunk| build_result(chunk) }
       end
 
       private
@@ -55,15 +59,10 @@ module Knowledge
         ])
       end
 
-      def format_artifact_results(artifact)
+      def build_result(chunk)
+        artifact = chunk.knowledge_artifact
         version = artifact.collector_run&.project_version
 
-        artifact.active_ordered_chunks.map do |chunk|
-          build_result(chunk, artifact, version)
-        end
-      end
-
-      def build_result(chunk, artifact, version)
         {
           chunk_id: chunk.id,
           artifact_id: artifact.id,
@@ -81,7 +80,7 @@ module Knowledge
           end_line: end_line_for(artifact),
           collector_run_id: artifact.collector_run_id,
           status: artifact.status,
-          link_count: chunk.outgoing_links.size + chunk.incoming_links.size,
+          link_count: chunk.link_count.to_i,
           created_at: chunk.created_at
         }
       end

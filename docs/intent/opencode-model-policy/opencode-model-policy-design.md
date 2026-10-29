@@ -73,10 +73,40 @@ so no historical verification claim survives a routing change. Pi and OMP
 retain `user_declared` until their upstream execution integration consumes
 OpenRouter routing metadata.
 
+When setup selects an OpenRouter key and the declaration is on, the model
+control uses the advertised ZDR endpoint catalog. It accepts paid and free
+catalog rows that satisfy the runner compatibility contract, but it does not
+offer the Free policy or a custom model id because neither proves an endpoint
+selection. The control remains non-selectable while that catalog is loading,
+unavailable, stale, or empty, and server validation repeats the same ready
+catalog membership check. The UI labels endpoint eligibility separately from
+derived runtime provenance: it never labels Pi/OMP or an unsupported runtime
+as OpenRouter-enforced.
+
 Runner edit/details surfaces, MCP runner serialization, and runner creation /
 update audit metadata include the declaration and current provenance. They use
 the existing runner policy scope and ownership authorization; no cross-tenant
 lookup is introduced.
+
+### Effective ZDR policy and route eligibility
+
+Each execution resolves one effective privacy policy before a prompt leaves
+Paid. A restricted project requires ZDR even when its selected runner does
+not declare it; a runner declaration requires ZDR even for an internal
+project. ZDR also requires OpenRouter `data_collection: "deny"`, so neither
+input can lower the other. OpenRouter qualifies only when its active runtime
+consumes request-routing metadata; other providers qualify only through the
+runner's explicit user declaration, whose provenance remains `user_declared`.
+
+Agent reroutes snapshot an existing ZDR requirement before unbinding their
+runner and admit only eligible fallbacks. A fallback's declaration does not
+change the requirement for candidates ahead of it; it joins the effective
+requirement when that fallback becomes the active route and is preserved for
+later attempts. API chat is visibly blocked for an
+effective OpenRouter ZDR requirement because the current agent-harness chat
+transport cannot consume provider-routing metadata. Container execution and
+container smoke tests use the runtime metadata where supported; Pi and OMP
+OpenRouter paths are blocked until their upstream support consumes it.
 
 ## Design
 

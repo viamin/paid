@@ -24,6 +24,7 @@ module ChatSessions
     def run_fallback_loop
       # @spec CHAT-API-006
       attempted_runners = [ chat_session.runner ].compact
+      required_zdr = originating_zdr_required?
 
       loop do
         @llm_client ||= ChatSessions::BuildLlmClient.call(
@@ -34,10 +35,15 @@ module ChatSessions
         agent_loop = ChatSessions::AgentLoop.new(**fallback_loop_kwargs)
         return agent_loop.run
       rescue AgentHarness::Error => e
-        fallback_runner = ChatSessions::FallbackRunners.for(chat_session: chat_session, excluding: attempted_runners).first
+        fallback_runner = ChatSessions::FallbackRunners.for(
+          chat_session: chat_session,
+          excluding: attempted_runners,
+          required_zdr: required_zdr
+        ).first
         raise unless fallback_runner
 
         attempted_runners << fallback_runner
+        required_zdr ||= fallback_runner.zero_data_retention?
         discard_partial_attempt(agent_loop&.created_message_ids)
         switch_to_fallback_runner(fallback_runner, e)
       end
@@ -72,6 +78,11 @@ module ChatSessions
           end
         end
       end
+    end
+
+    # @spec MODEL-POLICY-024
+    def originating_zdr_required?
+      chat_session.runner&.effective_privacy_policy(project: chat_session.llm_policy_project)&.zdr_required == true
     end
 
     def fallback_loop_kwargs

@@ -22,6 +22,7 @@ module ClarifyingQuestions
     end
 
     def call
+      ensure_manual_review_accepts_answers!
       validate_answers!
       result = if quiet_mode?
         submit_via_description!
@@ -35,6 +36,20 @@ module ClarifyingQuestions
     private
 
     attr_reader :project, :issue, :questions_and_answers, :freeform_note
+
+    # A hidden or stale form must not turn retained questions into authority to
+    # clear a newer hold. This guard runs before posting to GitHub so every
+    # shared submission entry point follows the Inbox recovery classification.
+    # @spec OPERATOR-INBOX-002L
+    def ensure_manual_review_accepts_answers!
+      return unless issue.respond_to?(:paid_state) && issue.paid_state == "manual_review"
+
+      recovery = Inbox::ManualReviewRecovery.call(issue: issue)
+      return if recovery.enhancement?
+
+      raise ArgumentError,
+        "This manual-review hold requires #{recovery.kind.to_s.humanize.downcase} recovery before clarifying-question answers can be submitted."
+    end
 
     def validate_answers!
       raise ArgumentError, "No clarifying questions found for this issue." if questions_and_answers.empty?

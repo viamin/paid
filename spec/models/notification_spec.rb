@@ -212,15 +212,12 @@ RSpec.describe Notification do
       owner.update!(github_state: "closed", github_updated_at: Time.current)
     end
 
-    it "eagerly enqueues the subject issue when the operator dismisses a partial-closeout prerequisite notification" do # @spec NO-OUTPUT-ISSUE-007
+    it "does not release the subject issue when the operator dismisses a partial-closeout prerequisite notification" do # @spec PARTIAL-CLOSEOUT-033
       create(:notification, :error, account: account, subject: parent,
         source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
 
       expect(continuation_run).to be_present
-      # The dismissal callback mirrors the dependency-resolved eager re-enqueue
-      # (EAGER-QUEUE-004) — the continuation run is still +queued+; the gate
-      # that blocked its auto-pick release is the prerequisite notification,
-      # and dismissing it lifts that block.
+      # Dismissal is a presentation action, not prerequisite reconciliation.
       expect(Automation::Strategies::AutoPick::DefaultCandidateSource
         .eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(false)
 
@@ -229,10 +226,10 @@ RSpec.describe Notification do
         .update!(dismissed_at: Time.current)
 
       expect(Automation::Strategies::AutoPick::DefaultCandidateSource
-        .eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(true)
+        .eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(false)
     end
 
-    it "eagerly enqueues the subject issue when the system resolves the notification" do # @spec NO-OUTPUT-ISSUE-007
+    it "does not release the subject issue through generic notification resolution" do # @spec PARTIAL-CLOSEOUT-033
       create(:notification, :error, account: account, subject: parent,
         source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
 
@@ -247,7 +244,7 @@ RSpec.describe Notification do
       )
 
       expect(Automation::Strategies::AutoPick::DefaultCandidateSource
-        .eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(true)
+        .eligible_for_dequeue?(project, parent.id, excluding_run_id: continuation_run.id)).to be(false)
     end
 
     it "ignores dismissals of unrelated notification sources" do # @spec NO-OUTPUT-ISSUE-007

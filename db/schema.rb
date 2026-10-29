@@ -3203,6 +3203,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
     t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
   end
 
+  create_table "openrouter_zdr_catalogs", force: :cascade do |t|
+    t.string "catalog_key", null: false
+    t.datetime "created_at", null: false
+    t.datetime "last_attempted_at"
+    t.datetime "last_successful_at"
+    t.string "unavailability_reason"
+    t.datetime "unavailable_at"
+    t.datetime "updated_at", null: false
+    t.index ["catalog_key"], name: "index_openrouter_zdr_catalogs_on_catalog_key", unique: true
+  end
+
+  create_table "openrouter_zdr_models", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "endpoint_count", default: 0, null: false
+    t.jsonb "endpoint_payloads", default: [], null: false
+    t.datetime "last_seen_at", null: false
+    t.string "model_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["model_id"], name: "index_openrouter_zdr_models_on_model_id", unique: true
+  end
+
   create_table "orchestration_decisions", comment: "Structured log of orchestration decisions for later workflow analysis and learning.", force: :cascade do |t|
     t.string "actor", limit: 100, null: false, comment: "Component or role that made the decision, such as workflow, planner, scheduler, or human."
     t.bigint "agent_run_id", comment: "Agent run whose workflow emitted the decision when a specific run exists."

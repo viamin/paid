@@ -96,6 +96,13 @@
                   method: :delete,
                   class: "rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50",
                   form: { data: { turbo_confirm: "Revoke this continuation grant? Project settings may still permit this work." } } %>
+            <% endpoints = Automation::Phases.endpoints_for(grant.start_phase) - grant.covered_phases %>
+            <% if endpoints.any? %>
+              <%= form_with url: extend_continuation_grant_project_automation_phases_path(@project, grant), method: :patch, class: "flex items-center gap-2" do %>
+                <%= select_tag :endpoint, options_for_select(endpoints.map { |endpoint| [ Automation::Phases.label(endpoint), endpoint ] }), class: "rounded border-gray-300 px-2 py-1 text-xs" %>
+                <%= submit_tag "Extend", class: "rounded-md border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50" %>
+              <% end %>
+            <% end %>
           </li>
         <% end %>
       </ul>

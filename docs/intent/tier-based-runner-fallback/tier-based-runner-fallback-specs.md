@@ -133,3 +133,33 @@
   `AgentRuns::IssueDispatchFailureHistory`, `Issue`.
   *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`,
   `spec/services/agent_runs/issue_dispatch_failure_history_spec.rb`.
+
+- [ ] **RUNNER-FALLBACK-013** — When `agent-harness` reports a structured
+  provider subscription usage limit for a runner attempt, the system SHALL
+  record that public attempt as `rate_limited`, mark the corresponding
+  `RunnerState` unavailable until the provider-supplied reset time or a bounded
+  subscription-limit retry window, and continue to eligible fallback runners.
+  When every eligible runner is limited, the system SHALL park the run for
+  recovery rather than report a generic execution or preflight failure.
+  Diagnostics and notifications SHALL distinguish subscription usage limits
+  from metered credit exhaustion, SHALL NOT tell subscription users to top up a
+  metered balance, and SHALL NOT retain credentials or raw provider response
+  bodies. Paid SHALL consume the public `agent-harness` result and SHALL NOT
+  add provider-specific CLI parsing or direct provider calls.
+  *Dependency:* `viamin/agent-harness#517`.
+  *Target code:* `Activities::RunAgentActivity`, `RunnerState`.
+  *Target test:* `spec/temporal/activities/run_agent_activity_spec.rb`.
+
+- [x] **RUNNER-FALLBACK-014** — When a runner smoke preflight times out, the
+  system SHALL retry that smoke only after confirming that the run's persisted
+  reference still identifies its execution environment and it remains
+  available. If preparation cleanup invalidated or replaced the environment,
+  the system SHALL retain the original timeout and diagnostics as
+  the failed attempt's `preflight_timeout` outcome, SHALL NOT replace it with
+  `ContainerNotProvisioned`, and MAY reprovision only through the existing
+  fallback recovery policy before a later eligible runner executes. Eligibility
+  SHALL include the attempt-time tier-model resolution gate, except that
+  direct-outbound runners remain eligible when their tier resolution fails.
+  *Code:* `Activities::RunAgentActivity#run_runner_preflight!`,
+  `#eligible_fallback_candidates`.
+  *Test:* `spec/temporal/activities/run_agent_activity_spec.rb`.

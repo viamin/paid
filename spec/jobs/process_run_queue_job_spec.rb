@@ -560,6 +560,54 @@ RSpec.describe ProcessRunQueueJob do
       )
     end
 
+    # @spec AUTOMATION-PHASES-013
+    it "rechecks phase authorization after claiming an automatic run" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project:, github_state: "open")
+      queued_run = create(:agent_run, :queued, project:, issue:, goal: "create_pr", trigger_type: "automatic")
+      FeatureFlags.enable!(:automation_phases, project:)
+      allow(Automation::RolloutGuard).to receive(:enabled?).with(project).and_return(true)
+
+      allow(AgentRun).to receive(:claim_next_queued_run).and_wrap_original do |original, **kwargs|
+        claimed = original.call(**kwargs)
+        project.update!(Automation::PhaseSettings::SETTINGS_KEY => {
+          Automation::PhaseSettings::PHASES_KEY => { "coding" => false }
+        }) if claimed
+        claimed
+      end
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      job.perform
+
+      expect(queued_run.reload).to have_attributes(status: "cancelled", temporal_workflow_id: AgentRun::CLAIMED_SENTINEL)
+    end
+
+    # @spec AUTOMATION-PHASES-013
+    it "rechecks a revoked continuation grant after claiming an automatic run" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project:, github_state: "open")
+      queued_run = create(:agent_run, :queued, project:, issue:, goal: "create_pr", trigger_type: "automatic")
+      grant = create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
+      project.update!(Automation::PhaseSettings::SETTINGS_KEY => {
+        Automation::PhaseSettings::PHASES_KEY => { "coding" => false }
+      })
+      FeatureFlags.enable!(:automation_phases, project:)
+      allow(Automation::RolloutGuard).to receive(:enabled?).with(project).and_return(true)
+
+      allow(AgentRun).to receive(:claim_next_queued_run).and_wrap_original do |original, **kwargs|
+        claimed = original.call(**kwargs)
+        grant.revoke! if claimed
+        claimed
+      end
+
+      expect(temporal_client).not_to receive(:start_workflow)
+
+      job.perform
+
+      expect(queued_run.reload).to have_attributes(status: "cancelled", temporal_workflow_id: AgentRun::CLAIMED_SENTINEL)
+    end
+
     it "starts multiple queued runs up to user capacity" do
       project = create(:project)
       project.created_by.settings.update!(max_concurrent_runs: 2)
@@ -2048,6 +2096,30 @@ RSpec.describe ProcessRunQueueJob do
 
         expect(AgentRuns::BindRunner).to have_received(:call).once
         expect(AgentRun.where(runner_id: codex_runner.id).count).to eq(3)
+      end
+
+      # @spec MODEL-POLICY-024
+      it "snapshots ZDR before applying a cached reroute" do
+        stub_const("#{described_class}::MAX_ITERATIONS_PER_PERFORM", 5)
+
+        project = create(:project)
+        user = project.created_by
+        user.settings.update!(max_concurrent_runs: 10)
+        original_runner = user.runners.kept_only.find_by!(runner_key: "claude", auth_type: "subscription")
+        original_runner.update!(zero_data_retention: true)
+        create(:runner_state, :rate_limited, user: user, runner_name: original_runner.state_key)
+        fallback_runner = create(:runner, :api_key, user: user, runner_key: "opencode",
+          provider_api_key: create(:provider_api_key, user: user, api_service_type: "openrouter"),
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "openai/gpt-oss-20b" } })
+        runs = 2.times.map do |index|
+          create(:agent_run, :queued, project: project, runner: original_runner,
+            created_at: (2 - index).minutes.ago)
+        end
+
+        described_class.new.perform
+
+        expect(runs.map { |run| run.reload.runner_id }).to all(eq(fallback_runner.id))
+        expect(runs.map { |run| run.external_metadata["zdr_required"] }).to all(be(true))
       end
 
       it "does not reuse a cached reroute across projects with different resolver context" do

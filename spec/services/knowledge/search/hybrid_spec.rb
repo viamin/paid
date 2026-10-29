@@ -89,6 +89,15 @@ RSpec.describe Knowledge::Search::Hybrid do
       expect(output[:results].length).to be <= 1
     end
 
+    # @spec KNOWLEDGE-003
+    it "keeps a many-chunk matching artifact bounded across both retrieval paths" do
+      chunks = bounded_chunks_with_links
+      output = described_class.call(project: project, query: "bounded hybrid", limit: 5)
+
+      expect(output[:results].map { |result| result[:chunk_id] }).to eq(chunks.first(5).map(&:id))
+      expect(output[:results].map { |result| result[:link_count] }).to all(eq(2))
+    end
+
     it "passes search arguments through to Semantic" do
       allow(Knowledge::Search::Semantic).to receive(:call).and_return({ results: [], vector_search_status: "not_configured" })
 
@@ -106,5 +115,23 @@ RSpec.describe Knowledge::Search::Hybrid do
 
       expect(output[:vector_search_status]).to eq("no_embeddings")
     end
+  end
+
+  def bounded_chunks_with_links
+    artifact = create(:knowledge_artifact,
+      project: project, collector_run: collector_run, artifact_type: "route",
+      identifier: "bounded hybrid", content: "bounded hybrid route")
+    chunks = create_list(:knowledge_chunk, 10,
+      knowledge_artifact: artifact, project: project, chunk_type: "context", content: "bounded hybrid")
+    link_target = create(:knowledge_chunk,
+      knowledge_artifact: artifact, project: project, chunk_type: "evidence", content: "link target")
+    link_target.update!(sequence: 99)
+
+    chunks.each_with_index do |chunk, index|
+      chunk.update!(sequence: index)
+      create(:knowledge_link, source_chunk: chunk, target_chunk: link_target)
+      create(:knowledge_link, source_chunk: link_target, target_chunk: chunk)
+    end
+    chunks
   end
 end

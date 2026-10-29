@@ -45,6 +45,8 @@ export default class extends Controller {
     authType: String,
     modelPolicyFormEnabled: Boolean,
     modelOptions: String,
+    zdrModelOptions: String,
+    zdrCatalogSetupState: String,
     initialApiServiceType: String,
   }
 
@@ -66,10 +68,13 @@ export default class extends Controller {
     "tierSelect",
     "modelSettings",
     "modelSelect",
+    "modelSearch",
     "customModelField",
     "customModelInput",
     "configField",
     "kilocodePreflightField",
+    "zdrCheckbox",
+    "zdrStatus",
   ]
 
   connect() {
@@ -82,6 +87,11 @@ export default class extends Controller {
   get modelOptionsMap() {
     this._modelOptionsMap ||= parseJson(this.modelOptionsValue, {})
     return this._modelOptionsMap
+  }
+
+  get zdrModelOptionsMap() {
+    this._zdrModelOptionsMap ||= parseJson(this.zdrModelOptionsValue, {})
+    return this._zdrModelOptionsMap
   }
 
   // Runner keys with a model dropdown (Runner-side FORM_MODEL_RUNNER_KEYS),
@@ -131,6 +141,8 @@ export default class extends Controller {
     } else {
       this.refreshLegacySettings(runnerKey, isApiKey)
       this.refreshDynamicModelOptions(runnerKey)
+      const serviceType = this.selectedApiServiceType()
+      this.updateZdrStatus(serviceType, this.zdrOpenrouterSetup(serviceType))
     }
     this.refreshTierSettings(runnerKey)
   }
@@ -143,6 +155,16 @@ export default class extends Controller {
     this.refreshTierSettings(this.currentRunnerKey())
     if (this.hasModelSelectTarget) {
       this.modelSelectTarget.dataset.initialModelSelection = this.modelSelectTarget.value
+    }
+  }
+
+  refreshZdrState() {
+    if (this.modelPolicyFormEnabledValue) {
+      this.refreshFeatureFlaggedModelForm(this.currentRunnerKey(), this.runnerApiKeyMode())
+    } else {
+      this.refreshDynamicModelOptions(this.currentRunnerKey())
+      const serviceType = this.selectedApiServiceType()
+      this.updateZdrStatus(serviceType, this.zdrOpenrouterSetup(serviceType))
     }
   }
 
@@ -191,8 +213,10 @@ export default class extends Controller {
       return
     }
 
-    this.populateModelOptions(runnerKey, serviceType)
-    this.disableModelControls(!serviceType)
+    const zdrSetup = this.zdrOpenrouterSetup(serviceType)
+    this.populateModelOptions(runnerKey, serviceType, zdrSetup)
+    this.disableModelControls(!serviceType || (zdrSetup && !this.zdrCatalogReady()))
+    this.updateZdrStatus(serviceType, zdrSetup)
     this.syncModelConfig()
   }
 
@@ -253,8 +277,8 @@ export default class extends Controller {
     }
   }
 
-  populateModelOptions(runnerKey, serviceType) {
-    const options = this.modelOptionsMap[runnerKey]?.[serviceType] || []
+  populateModelOptions(runnerKey, serviceType, zdrSetup = this.zdrOpenrouterSetup(serviceType)) {
+    const options = this.modelOptionsFor(runnerKey, serviceType, zdrSetup)
     const currentValue = this.currentModelSelectionValue(options)
 
     this.modelSelectTarget.innerHTML = ""
@@ -285,6 +309,102 @@ export default class extends Controller {
 
     this.modelSelectTarget.value = currentValue
     this.toggleCustomModelField(currentValue === CUSTOM_OPTION)
+    if (this.hasModelSearchTarget) this.filterModelOptions()
+  }
+
+  // @spec RUNNER-MODEL-OPTIONS-009
+  filterModelOptions() {
+    if (!this.hasModelSelectTarget || !this.hasModelSearchTarget) return
+
+    const query = this.modelSearchTarget.value.trim().toLowerCase()
+    Array.from(this.modelSelectTarget.options).forEach((option) => {
+      if (!option.value) return
+      option.hidden = query !== "" && !option.textContent.toLowerCase().includes(query)
+    })
+    this.setActiveModelOption(null)
+    this.modelSearchTarget.setAttribute("aria-expanded", (this.visibleModelOptions().length > 0).toString())
+  }
+
+  navigateModelOptions(event) {
+    if (!this.hasModelSelectTarget || this.modelSelectTarget.disabled) return
+
+    const options = this.visibleModelOptions()
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault()
+      this.moveActiveModelOption(options, event.key === "ArrowDown" ? 1 : -1)
+    } else if (event.key === "Enter" && this.activeModelOption) {
+      event.preventDefault()
+      this.modelSelectTarget.value = this.activeModelOption.value
+      this.modelSelectTarget.dispatchEvent(new Event("change", { bubbles: true }))
+    }
+  }
+
+  visibleModelOptions() {
+    return Array.from(this.modelSelectTarget.options).filter((option) => option.value && !option.hidden && !option.disabled)
+  }
+
+  moveActiveModelOption(options, direction) {
+    if (options.length === 0) return
+
+    const currentIndex = options.indexOf(this.activeModelOption)
+    const nextIndex = currentIndex < 0 ? (direction > 0 ? 0 : options.length - 1) : (currentIndex + direction + options.length) % options.length
+    this.setActiveModelOption(options[nextIndex])
+  }
+
+  setActiveModelOption(option) {
+    this.activeModelOption = option
+    if (!option) {
+      this.modelSearchTarget.removeAttribute("aria-activedescendant")
+      return
+    }
+
+    option.id ||= `runner-model-option-${this.modelOptionId = (this.modelOptionId || 0) + 1}`
+    this.modelSearchTarget.setAttribute("aria-activedescendant", option.id)
+  }
+
+  modelOptionsFor(runnerKey, serviceType, zdrSetup) {
+    if (zdrSetup) return this.zdrModelOptionsMap[runnerKey] || []
+
+    return this.modelOptionsMap[runnerKey]?.[serviceType] || []
+  }
+
+  zdrOpenrouterSetup(serviceType) {
+    return this.hasZdrCheckboxTarget && this.zdrCheckboxTarget.checked && serviceType === "openrouter"
+  }
+
+  zdrCatalogReady() {
+    return this.zdrCatalogSetupStateValue === "ready"
+  }
+
+  updateZdrStatus(serviceType, zdrSetup) {
+    if (!this.hasZdrStatusTarget) return
+
+    if (!this.hasZdrCheckboxTarget || !this.zdrCheckboxTarget.checked) {
+      this.zdrStatusTarget.textContent = "ZDR is off."
+    } else if (!zdrSetup) {
+      this.zdrStatusTarget.textContent = "You are responsible for verifying this provider's zero data retention agreement and configuration."
+    } else if (!this.zdrCatalogReady()) {
+      this.zdrStatusTarget.textContent = this.zdrCatalogMessage()
+    } else if (this.openrouterRuntimeCanEnforce()) {
+      this.zdrStatusTarget.textContent = "OpenRouter endpoint eligibility is verified. Select a concrete ZDR model; OpenRouter enforcement applies after save."
+    } else {
+      this.zdrStatusTarget.textContent = "OpenRouter endpoint eligibility is verified, but this runtime is user-declared rather than OpenRouter-enforced."
+    }
+  }
+
+  zdrCatalogMessage() {
+    const state = this.zdrCatalogSetupStateValue
+    const messages = {
+      loading: "OpenRouter ZDR catalog is loading; model selection is unavailable.",
+      unavailable: "OpenRouter ZDR catalog is unavailable; model selection is unavailable.",
+      stale: "OpenRouter ZDR catalog is stale; refresh it before selecting a model.",
+      empty: "OpenRouter ZDR catalog has no eligible models."
+    }
+    return messages[state] || "OpenRouter ZDR catalog is unavailable; model selection is unavailable."
+  }
+
+  openrouterRuntimeCanEnforce() {
+    return this.currentRunnerKey() === "opencode"
   }
 
   currentModelSelectionValue(options) {
@@ -312,6 +432,10 @@ export default class extends Controller {
 
   disableModelControls(disabled) {
     if (this.hasModelSelectTarget) this.modelSelectTarget.disabled = disabled
+    if (this.hasModelSearchTarget) {
+      this.modelSearchTarget.disabled = disabled
+      this.modelSearchTarget.setAttribute("aria-expanded", (!disabled && this.visibleModelOptions().length > 0).toString())
+    }
 
     const showCustom = !disabled && this.hasModelSelectTarget && this.modelSelectTarget.value === CUSTOM_OPTION
     this.toggleCustomModelField(showCustom)
@@ -356,12 +480,14 @@ export default class extends Controller {
       const matches = currentRunnerKey === runnerKey && this.runnerApiKeyMode()
       const serviceType = this.requiredApiServiceTypeFor(currentRunnerKey)
       const optionsByServiceType = this.modelOptionsByServiceType(select)
-      const options = serviceType ? optionsByServiceType[serviceType] || [] : []
+      const zdrSetup = this.zdrOpenrouterSetup(serviceType)
+      const options = this.legacyModelOptions(currentRunnerKey, serviceType, optionsByServiceType, zdrSetup)
       const selectedValue = select.value
       const manualInput = this.manualModelInputFor(currentRunnerKey)
       const customValue = select.dataset.customModelValue || ""
 
-      this.replaceDynamicModelOptions(select, options, serviceType)
+      this.replaceDynamicModelOptions(select, options, serviceType, zdrSetup)
+      select.value = ""
 
       const values = options.map((option) => option[1])
       if (values.includes(selectedValue)) {
@@ -371,7 +497,7 @@ export default class extends Controller {
         select.value = customValue
       }
 
-      const manualEntry = matches && Boolean(serviceType) && select.value === customValue
+      const manualEntry = !zdrSetup && matches && Boolean(serviceType) && select.value === customValue
 
       select.hidden = manualEntry
       select.disabled = !matches || !serviceType || options.length === 0 || manualEntry
@@ -382,6 +508,14 @@ export default class extends Controller {
         manualInput.disabled = !manualEntry
       }
     })
+  }
+
+  legacyModelOptions(runnerKey, serviceType, optionsByServiceType, zdrSetup) {
+    if (!serviceType) return []
+    if (!zdrSetup) return optionsByServiceType[serviceType] || []
+    if (!this.zdrCatalogReady()) return []
+
+    return (this.zdrModelOptionsMap[runnerKey] || []).map((option) => [option.label, option.value, option.kind])
   }
 
   manualModelInputFor(runnerKey) {
@@ -455,9 +589,9 @@ export default class extends Controller {
     }
   }
 
-  replaceDynamicModelOptions(select, options, serviceType) {
+  replaceDynamicModelOptions(select, options, serviceType, zdrSetup = false) {
     const placeholder = !serviceType ? "Select an API key first" :
-      select.dataset.optionalModel === "true" ? "Use provider default" : "Select a model"
+      select.dataset.optionalModel === "true" && !zdrSetup ? "Use provider default" : "Select a model"
     select.options.length = 0
     select.add(new Option(placeholder, ""))
 

@@ -242,7 +242,11 @@ Exact retrieval uses PostgreSQL identifier matching with trigram fallback.
 Semantic retrieval combines PostgreSQL lexical chunk search with Qdrant vector
 search when an embedding provider and healthy Qdrant collection are available.
 Hybrid search merges both result sets and reranks them with version, activity,
-and link signals.
+and link signals. Each retrieval path applies its requested limit to a
+deterministically ordered chunk relation before loading chunk content or its
+artifact/version metadata. Link signals come from SQL counts, never from
+materializing a chunk's incoming or outgoing link records, so a matching
+artifact with many chunks or links cannot expand a bounded search response.
 
 When the vector half of semantic/hybrid search doesn't run to completion —
 Qdrant unconfigured or unhealthy, the project has no chunks with an

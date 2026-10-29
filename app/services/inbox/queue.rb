@@ -251,6 +251,11 @@ module Inbox
         @manual_review_comment_url = manual_review? ? manual_review_comment_link : nil
       end
 
+      # @spec OPERATOR-INBOX-002L
+      def manual_review_recovery
+        @manual_review_recovery ||= Inbox::ManualReviewRecovery.call(issue:) if manual_review?
+      end
+
       private
 
       def context_loader
@@ -579,12 +584,14 @@ module Inbox
       end
     end
 
-    # @spec OPERATOR-INBOX-002B
+    # @spec OPERATOR-INBOX-002B FACET-CONFIDENCE-022
     def action_required_entries
       visible_blocking_notifications.filter_map do |notification|
         project, issue = notification_context(notification)
         next unless project
         next if project_filter_excludes?(project)
+
+        escalation = FacetConfidence::CloseoutEvaluation::InboxEscalation.for(notification)
 
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
@@ -595,8 +602,8 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
+          summary_text: escalation&.explanation || notification.metadata["recommended_action"].presence || notification.description,
+          title_text: escalation&.title || notification.title,
           action_url: notification.action_url
         )
       end

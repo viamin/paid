@@ -19,7 +19,17 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     expect(result.outcome).to eq("pending_validation")
     expect(notification.reload).to be_active
     expect(notification.metadata.fetch("evidence_submissions").last).to include("actor_id" => actor.id,
-      "prerequisite_identity" => identity, "outcome" => "pending_validation")
+      "prerequisite_identity" => identity, "outcome" => "pending_validation", "submission_id" => be_present)
+  end
+
+  it "queues semantic validation after recording the pending submission" do # @spec PARTIAL-CLOSEOUT-036
+    described_class.call(notification:, actor:, prerequisite_identity: identity,
+      evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached.")
+    submission_id = notification.reload.metadata.fetch("evidence_submissions").sole.fetch("submission_id")
+
+    expect(PartialCloseouts::ValidateSubmittedEvidenceJob).to have_been_enqueued.with(
+      notification.id, identity, submission_id
+    )
   end
 
   it "upgrades a legacy prerequisite notification before recording its evidence" do # @spec PARTIAL-CLOSEOUT-033
@@ -94,15 +104,172 @@ RSpec.describe PartialCloseouts::SubmitEvidence do
     expect(result.outcome).to eq("pending_validation")
   end
 
-  it "updates an identical submission instead of recording a retry twice" do # @spec PARTIAL-CLOSEOUT-033
+  it "does not enqueue duplicate validation for an identical submission retry" do # @spec PARTIAL-CLOSEOUT-033
     attributes = { notification:, actor:, prerequisite_identity: identity,
                    evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
 
-    described_class.call(**attributes)
-    described_class.call(**attributes)
+    expect {
+      described_class.call(**attributes)
+      described_class.call(**attributes)
+    }.to have_enqueued_job(PartialCloseouts::ValidateSubmittedEvidenceJob).exactly(1).times
 
     expect(notification.reload.metadata.fetch("evidence_submissions")).to contain_exactly(
       include("prerequisite_identity" => identity, "evidence_url" => attributes[:evidence_url])
     )
+  end
+
+  it "assigns an immutable ID before validating a matching legacy pending submission" do # @spec PARTIAL-CLOSEOUT-036
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+    notification.update!(metadata: notification.metadata.merge("evidence_submissions" => [ {
+      "prerequisite_identity" => identity, "evidence_url" => attributes[:evidence_url],
+      "explanation" => attributes[:explanation], "outcome" => "pending_validation", "reason" => "Awaiting validation."
+    } ]))
+
+    result = nil
+    expect { result = described_class.call(**attributes) }
+      .to have_enqueued_job(PartialCloseouts::ValidateSubmittedEvidenceJob)
+
+    expect(result.submission_id).to be_present
+    expect(notification.reload.metadata.fetch("evidence_submissions").sole.fetch("submission_id")).to eq(result.submission_id)
+  end
+
+  it "preserves an identical submission when another occurrence is submitted between retries" do # @spec PARTIAL-CLOSEOUT-033
+    other_identity = "occurrence-2"
+    notification.update!(metadata: { "prerequisites" => [ { "identity" => identity }, { "identity" => other_identity } ] })
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+
+    described_class.call(**attributes)
+    described_class.call(notification:, actor:, prerequisite_identity: other_identity,
+      evidence_url: "https://evidence.example.test/other", explanation: "Other report attached.")
+    result = described_class.call(**attributes)
+
+    submissions = notification.reload.metadata.fetch("evidence_submissions")
+    expect(submissions).to contain_exactly(
+      include("prerequisite_identity" => identity, "submission_id" => result.submission_id),
+      include("prerequisite_identity" => other_identity)
+    )
+  end
+
+  it "preserves an identical insufficient submission without revalidating it" do # @spec PARTIAL-CLOSEOUT-033
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+    described_class.call(**attributes)
+    PartialCloseouts::ReconcileEvidence.call(**attributes.except(:actor), outcome: "insufficient", validator: actor)
+
+    result = nil
+    expect { result = described_class.call(**attributes) }
+      .not_to have_enqueued_job(PartialCloseouts::ValidateSubmittedEvidenceJob)
+
+    expect(result.outcome).to eq("insufficient")
+    expect(notification.reload.metadata.fetch("evidence_submissions").sole).to include("outcome" => "insufficient")
+  end
+
+  it "reconciles validated sufficient evidence and releases a completed blocker" do # @spec PARTIAL-CLOSEOUT-033
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+    described_class.call(**attributes)
+
+    result = PartialCloseouts::ReconcileEvidence.call(**attributes.except(:actor), outcome: "sufficient", validator: actor)
+
+    expect(result).to be_sufficient
+    expect(notification.reload).not_to be_active
+    expect(notification.metadata.fetch("evidence_submissions").sole).to include(
+      "outcome" => "sufficient", "validator_id" => actor.id
+    )
+  end
+
+  it "treats a duplicate validator completion after resolution as a no-op" do # @spec PARTIAL-CLOSEOUT-033
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+    described_class.call(**attributes)
+
+    PartialCloseouts::ReconcileEvidence.call(**attributes.except(:actor), outcome: "sufficient", validator: actor)
+    result = PartialCloseouts::ReconcileEvidence.call(**attributes.except(:actor), outcome: "sufficient", validator: actor)
+
+    expect(result).to be_nil
+    expect(notification.reload).not_to be_active
+  end
+
+  it "keeps the blocker active when validation is insufficient" do # @spec PARTIAL-CLOSEOUT-033
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+    described_class.call(**attributes)
+
+    result = PartialCloseouts::ReconcileEvidence.call(**attributes.except(:actor), outcome: "insufficient", validator: actor)
+
+    expect(result.outcome).to eq("insufficient")
+    expect(notification.reload).to be_active
+  end
+
+  it "keeps the blocker active and records stale when validation races a new source revision" do # @spec PARTIAL-CLOSEOUT-033
+    source_revision = PartialCloseouts::Assessment.source_revision_for(issue)
+    notification.update!(metadata: { "prerequisites" => [ { "identity" => identity, "source_revision" => source_revision } ] })
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+    described_class.call(**attributes)
+    create(:issue, :pull_request, project: issue.project, parent_issue: issue, github_state: "closed", pr_review_phase: "merged")
+
+    result = PartialCloseouts::ReconcileEvidence.call(**attributes.except(:actor), outcome: "sufficient", validator: actor)
+
+    expect(result.outcome).to eq("stale")
+    expect(notification.reload).to be_active
+  end
+
+  it "records stale when reconciliation replaces the submitted occurrence" do # @spec PARTIAL-CLOSEOUT-033
+    attributes = { notification:, actor:, prerequisite_identity: identity,
+                   evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached." }
+    described_class.call(**attributes)
+    notification.update!(metadata: notification.metadata.merge(
+      "prerequisites" => [ { "identity" => "replacement", "source_revision" => "new-revision" } ]
+    ))
+
+    result = PartialCloseouts::ReconcileEvidence.call(**attributes.except(:actor), outcome: "sufficient", validator: actor)
+
+    expect(result.outcome).to eq("stale")
+    expect(notification.reload).to be_active
+  end
+
+  it "releases the guard only after every current occurrence is sufficient" do # @spec PARTIAL-CLOSEOUT-033
+    second_identity = "occurrence-2"
+    notification.update!(metadata: { "prerequisites" => [ { "identity" => identity }, { "identity" => second_identity } ] })
+    attributes = { notification:, actor:, evidence_url: "https://evidence.example.test/report", explanation: "Validated report." }
+    described_class.call(prerequisite_identity: identity, **attributes)
+    described_class.call(prerequisite_identity: second_identity, **attributes)
+
+    PartialCloseouts::ReconcileEvidence.call(prerequisite_identity: identity,
+      **attributes.except(:actor), outcome: "sufficient", validator: actor)
+    expect(notification.reload).to be_active
+
+    PartialCloseouts::ReconcileEvidence.call(prerequisite_identity: second_identity,
+      **attributes.except(:actor), outcome: "sufficient", validator: actor)
+
+    expect(notification.reload.resolved_at).to be_present
+    expect(notification.metadata.fetch("released_by")).to eq("reconciled_evidence")
+  end
+
+  it "does not release while newer evidence for a current occurrence is pending" do # @spec PARTIAL-CLOSEOUT-033
+    second_identity = "occurrence-2"
+    notification.update!(metadata: { "prerequisites" => [ { "identity" => identity }, { "identity" => second_identity } ] })
+    attributes = { notification:, actor:, evidence_url: "https://evidence.example.test/report", explanation: "Validated report." }
+    described_class.call(prerequisite_identity: identity, **attributes)
+    PartialCloseouts::ReconcileEvidence.call(prerequisite_identity: identity,
+      **attributes.except(:actor), outcome: "sufficient", validator: actor)
+    described_class.call(prerequisite_identity: identity, **attributes.merge(explanation: "Updated report."))
+    described_class.call(prerequisite_identity: second_identity, **attributes)
+
+    PartialCloseouts::ReconcileEvidence.call(prerequisite_identity: second_identity,
+      **attributes.except(:actor), outcome: "sufficient", validator: actor)
+
+    expect(notification.reload).to be_active
+  end
+
+  it "rejects reconciliation without a matching pending submission" do # @spec PARTIAL-CLOSEOUT-033
+    expect {
+      PartialCloseouts::ReconcileEvidence.call(notification:, prerequisite_identity: identity,
+        evidence_url: "https://evidence.example.test/report", explanation: "Pilot report attached.", outcome: "sufficient")
+    }.to raise_error(ArgumentError, "pending submitted evidence was not found")
+    expect(notification.reload).to be_active
   end
 end

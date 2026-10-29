@@ -176,6 +176,39 @@
   `spec/requests/inbox_spec.rb`, `spec/requests/agent_runs_spec.rb`,
   `spec/requests/projects/clarifying_questions_spec.rb`.
 
+- [x] **OPERATOR-INBOX-002L** — When an open issue is in `manual_review`, the
+  Inbox SHALL classify its recovery from durable producer provenance rather
+  than from the rendered reason: the dedicated reopen-review gate, unresolved
+  dependency records, scanner remediation-attempt status, and enhancement
+  provenance each select their existing recovery path. Clarifying-question
+  answers and enhancement retries SHALL be available only when enhancement
+  provenance selects that recovery path; retained questions SHALL NOT clear a
+  newer non-enhancement hold. Unknown provenance
+  SHALL remain visible and offer no speculative retry. Reopen review SHALL
+  show the current GitHub revision and require an authorized, non-blank
+  revision-bound validation reason before recording the decision and returning
+  the issue to normal admission; it SHALL not create an enhancement run.
+  Dependency holds SHALL link to their owner/reference and remain held until
+  that dependency resolves. Scanner recurrence SHALL retain scanner evidence
+  and its verification recovery: a `verification_failed` attempt (the scanner
+  reconfirmed the finding in a matching post-merge analysis) SHALL expose an
+  "Authorize new remediation" action that queues one new create_pr run and
+  returns the issue to normal admission; a `verification_blocked` attempt
+  (pending or insufficient evidence) SHALL NOT offer that action, since
+  `SecurityAlerts::VerifyMergedRemediationAttempts` already revisits it on the
+  next scan and a competing manually-triggered fix PR would race that
+  verifier. Only enhancement holds retain the existing question form and
+  enhancement retry. Before any enhancement retry, scanner remediation
+  authorization, or reopen decision clears a hold, the service SHALL refuse
+  when queued or running work for the issue still needs reconciliation.
+  *Code:* `app/services/inbox/manual_review_recovery.rb`,
+  `app/services/issues/resolve_reopen_review.rb`,
+  `app/controllers/projects/agent_runs_controller.rb`,
+  `app/views/dashboard/_inbox_detail_manual_review.html.erb`.
+  *Test:* `spec/services/inbox/manual_review_recovery_spec.rb`,
+  `spec/services/issues/resolve_reopen_review_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`, `spec/requests/inbox_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002E** — When an open issue or pull request has
   `runner_retry_abandoned_at` set (parked by
   `Issue#abandon_due_to_runner_retry_cap!` after every available runner hit

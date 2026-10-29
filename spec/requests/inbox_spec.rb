@@ -247,6 +247,17 @@ RSpec.describe "Inbox" do
     expect(response.body).not_to include("A human action is required before work can continue.")
   end
 
+  it "keeps an unmarked closeout notification on the generic Action Required presentation" do # @spec FACET-CONFIDENCE-022
+    notification = create(:notification, :error, account: account, subject: project,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      title: "Human evidence required", description: "Attach the measured result.", metadata: {})
+
+    get inbox_entry_path(entry_id(Inbox::Queue::ACTION_REQUIRED_KIND, notification), kind: Inbox::Queue::ACTION_REQUIRED_KIND)
+
+    expect(response.body).to include("Attach the measured result.")
+    expect(response.body).not_to include("Independent evaluation needed")
+  end
+
   # @spec OPERATOR-INBOX-002B
   # Regression for #4501: internal GET links inside the inbox-detail frame
   # navigate the frame unless they opt out, and no target page carries a
@@ -1086,12 +1097,12 @@ RSpec.describe "Inbox" do
     )
   end
 
-  # @spec OPERATOR-INBOX-002D @spec ISSUE-ENHANCEMENT-011
+  # @spec OPERATOR-INBOX-002D @spec OPERATOR-INBOX-002L @spec ISSUE-ENHANCEMENT-011
   it "renders the clarifying-questions answer form for a manual_review issue with preserved terminal-round questions" do
     parked = create_manual_review_issue(
       title: "Parked with questions",
       github_number: 510,
-      reason: "Paid has reached the configured limit of 3 enhancement re-evaluation rounds for this issue.",
+      reason: "Paid reached the configured limit of 3 enhancement re-evaluation rounds for this issue.",
       needs_input_questions: [ "Which events should be recorded?" ]
     )
 
@@ -1590,6 +1601,31 @@ RSpec.describe "Inbox" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("scanner-confirmed recurrence", "Next step:", "Evidence:")
+  end
+
+  # @spec OPERATOR-INBOX-002L @spec ISSUE-REOPEN-REVIEW-005
+  it "renders a revision-bound reopen decision instead of an enhancement retry" do
+    reopened = create(:issue, project: project, github_number: 4604, paid_state: "manual_review",
+      manual_review_reason: Issue::REOPEN_REVIEW_REQUIRED_REASON,
+      github_updated_at: Time.current.change(usec: 0))
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, reopened), kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response.body).to include("Validate reopened intent", "Record intent validation")
+    expect(response.body).not_to include("Start enhancement run")
+    expect(response.body).to include(reopened.github_updated_at.iso8601)
+  end
+
+  # @spec OPERATOR-INBOX-002L @spec GITHUB-SYNC-016
+  it "keeps a dependency hold actionable without offering an enhancement retry" do
+    blocker = create(:issue, project: project, github_number: 4321, github_state: "open")
+    issue = create(:issue, project: project, paid_state: "manual_review", manual_review_reason: "legacy parked hold")
+    issue.issue_dependencies.create!(depends_on_issue: blocker)
+
+    get inbox_entry_path(entry_id(Inbox::Queue::MANUAL_REVIEW_KIND, issue), kind: Inbox::Queue::MANUAL_REVIEW_KIND)
+
+    expect(response.body).to include("Waiting on dependency", "Open dependency #4321")
+    expect(response.body).not_to include("Start enhancement run")
   end
 
   # @spec OPERATOR-INBOX-006

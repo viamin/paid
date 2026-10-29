@@ -238,6 +238,9 @@ RSpec.describe ProjectWorkflowManager do
     end
 
     it "skips inactive projects" do
+      workflow_handle = double("workflow_handle") # rubocop:disable RSpec/VerifiedDoubles
+      allow(temporal_client).to receive(:workflow_handle).and_return(workflow_handle)
+      allow(workflow_handle).to receive(:cancel)
       create(:project, :inactive)
 
       described_class.restart_all_polling(reason: "deploy")

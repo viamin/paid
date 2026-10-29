@@ -128,5 +128,39 @@ RSpec.describe Knowledge::Search::Exact do
 
       expect(results).to be_empty
     end
+
+    # @spec KNOWLEDGE-003
+    it "limits ordered chunks before aggregating their link counts" do
+      chunks = bounded_chunks_with_links
+      results, queries = capture_sql { described_class.call(project: project, query: "GET /bounded", limit: 5) }
+
+      expect(results.map { |result| result[:chunk_id] }).to eq(chunks.first(5).map(&:id))
+      expect(results.map { |result| result[:link_count] }).to all(eq(2))
+      expect(queries.grep(/\ASELECT "knowledge_links"\.\*/i)).to be_empty
+      expect(queries.join(" ")).to include("COUNT(*)")
+    end
+  end
+
+  def capture_sql
+    queries = []
+    subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+    result = ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") { yield }
+    [ result, queries ]
+  end
+
+  def bounded_chunks_with_links
+    artifact = create(:knowledge_artifact,
+      project: project, collector_run: collector_run, artifact_type: "route",
+      identifier: "GET /bounded", content: "bounded route")
+    chunks = create_list(:knowledge_chunk, 10,
+      knowledge_artifact: artifact, project: project, chunk_type: "context", content: "bounded route context")
+
+    chunks.each_with_index do |chunk, index|
+      chunk.update!(sequence: index)
+      create(:knowledge_link, source_chunk: chunk, target_chunk: route_chunk)
+      create(:knowledge_link, source_chunk: route_chunk, target_chunk: chunk)
+    end
+    chunks
   end
 end

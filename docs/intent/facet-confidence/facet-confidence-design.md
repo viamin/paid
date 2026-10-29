@@ -174,3 +174,13 @@ name required or forbidden evidence. The report is retained on the evaluation
 and reachable from the originating Inbox item. Judgments and the report are
 evidence only: they never close the source issue, enable delivery, or change
 the 80/80 defaults.
+
+When a partial-closeout escalation specifically requires this evaluation, its
+durable workflow marker gives the Action Required list and detail shared
+plain-language copy, current-generation judgment progress, and a state-specific
+action. The action starts, resumes, continues, freezes, or opens the evaluation
+through the existing authorized project route while preserving the validated
+Inbox context. An operator other than the evaluation's sole judge gets a
+view-only action and no judgment controls. Other Action Required notifications
+retain their generic remediation presentation; presentation selection never
+infers a workflow from free-form notification text.

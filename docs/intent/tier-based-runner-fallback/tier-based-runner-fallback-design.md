@@ -82,6 +82,19 @@ Subscription runner health tests use the explicit mid-tier model when configured
 with the same compatibility resolution and credential isolation. Invalid model
 configuration is surfaced instead of falling back to a different CLI default.
 
+Smoke retries are bounded to the execution environment that produced the
+timeout. Before retrying a timed-out smoke, the activity confirms that the
+persisted environment reference still identifies that environment and the
+connected environment is running. Cleanup may have removed or replaced the
+environment while handling the first
+timeout; that path records the original preflight timeout and diagnostics and
+does not issue a second smoke against an invalidated container. Normal fallback
+recovery may provision fresh infrastructure only for a later eligible runner.
+That eligibility mirrors the loop's deleted/disabled/availability and
+tier-model-resolution gates, while retaining the direct-outbound exception for
+tier-resolution failures, so recovery never creates an environment that no
+remaining runner can use.
+
 ## Durable Model Compatibility Recovery
 
 An explicit provider rejection of a model for the configured authentication
@@ -127,6 +140,24 @@ Each attempt can capture:
 
 This keeps fallback honest: analytics can see what actually ran, not only what
 the primary selection preferred.
+
+## Provider Subscription Usage Limits
+
+Provider-state classification is owned by `agent-harness`. When it reports a
+structured subscription usage limit, `Activities::RunAgentActivity` records
+the attempt as `rate_limited`, marks the affected `RunnerState` unavailable,
+and continues through eligible fallback runners. A provider-supplied reset time
+is used when present; otherwise the runner uses a bounded subscription-limit
+retry window. If every eligible runner is limited, the run is parked for that
+recovery time rather than failed as an execution or preflight timeout.
+
+Subscription usage limits and metered credit exhaustion are distinct outcomes.
+The durable attempt diagnostics and user-facing explanation identify a
+subscription usage limit without retaining credentials or raw provider bodies,
+and subscription-limit notifications never instruct a user to top up a
+metered balance. This contract depends on the public structured rate-limit
+result from `agent-harness`; Paid does not parse provider CLI output or call a
+provider endpoint directly.
 
 ## Accepted Divergence
 

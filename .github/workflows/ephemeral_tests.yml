@@ -7,8 +7,8 @@ name: Ephemeral PR Tests
 #   - Only runs for same-repo PRs (trusted collaborators).
 #   - Fork PRs are explicitly excluded — no secret access, no execution.
 #   - GITHUB_TOKEN is scoped to contents:read at the workflow level; only the
-#     comment-results job additionally needs issues:write (for posting result
-#     comments via the Issues API, which PR conversation comments use).
+#     comment-results job additionally needs pull-requests:write (for posting
+#     result comments in the PR conversation).
 #   - Tests run through standard RSpec / Capybara / Playwright — no raw
 #     shell execution from PR content.
 #   - Hard 20-minute timeout prevents runaway tests.
@@ -208,11 +208,11 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      issues: write
+      pull-requests: write
     steps:
       - name: Update PR comment
         env:
-          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
           HAS_TESTS: ${{ needs.detect.outputs.has_tests }}
           RUN_TESTS_RESULT: ${{ needs.run-tests.result }}
           BASE_REF: ${{ github.base_ref }}

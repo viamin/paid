@@ -213,7 +213,9 @@
 - [x] **MOBILE-API-018** — CI SHALL run Schemathesis fuzzing against the
   running app from `openapi.yaml`: full property-based fuzzing on read
   endpoints and request-conformance checks on mutation endpoints without
-  executing real chat sends.
+  executing real chat sends. The pipx dependency constraints SHALL select the
+  Hypothesis version validated with the pinned Schemathesis release, so every
+  selected operation reaches test-case generation.
   *Tests:* `spec/config/ci_workflow_file_spec.rb` (CI Schemathesis job).
   *Code:* `.github/workflows` Schemathesis job.
 

@@ -182,6 +182,24 @@ RSpec.describe "Project agent run continuation" do
     expect(flash[:alert]).to include("automation settings changed")
   end
 
+  it "routes an issue quick start through the reviewed continuation form" do # @spec AUTOMATION-PHASES-010
+    expect {
+      post quick_create_project_agent_runs_path(project), params: { issue_id: issue.id }
+    }.not_to change(AgentRun, :count)
+
+    expect(response).to redirect_to(new_project_agent_run_path(project, goal: "create_pr", issue_id: issue.id))
+  end
+
+  it "shows effective authority and the active grant on work details" do # @spec AUTOMATION-PHASES-008 @spec AUTOMATION-PHASES-010
+    run = create(:agent_run, project:, issue:, goal: "create_pr")
+    create(:work_item_continuation_grant, project:, issue:, start_phase: "coding", endpoint: "merge")
+
+    get project_agent_run_path(project, run)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Automation authority", "Continuation grant:", "project defaults may independently permit this work.")
+  end
+
   def rendered_signature
     Nokogiri::HTML(response.body)
       .at_css("input[name='continuation_notice_signature']")["value"]
