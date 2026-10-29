@@ -83,7 +83,8 @@ joining full project rows into the issue result. Project audit history must not
 be repeated for every issue: PostgreSQL results and their Ruby string copies
 would otherwise multiply that history by the synchronized issue count. One
 reconciliation sweep builds a bounded, job-scoped plain issue-fact snapshot for
-each authorized project and reuses it for every artifact at that sweep's pinned
+each authorized project selected by its exact owner/repository pair and reuses
+it for every artifact at that sweep's pinned
 revisions. A sweep with no artifacts does not construct issue coverage. Each
 artifact receives only facts from its own referenced or
 associated projects, even when another artifact expands the sweep's authorized

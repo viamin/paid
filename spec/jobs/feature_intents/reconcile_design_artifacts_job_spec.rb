@@ -16,6 +16,14 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     )
   end
 
+  def capture_query_events
+    events = []
+    subscriber = ->(event) { events << event.payload }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") { yield }
+    events
+  end
+
   let(:project) { create(:project, owner: "acme", repo: "widget") }
   let(:feature_intent) { create(:feature_intent, project:) }
   let(:design_pr) { create(:feature_intent_design_pr, feature_intent:, pull_request_number: 100, draft: false) }
@@ -273,6 +281,28 @@ response = instance_double(AgentHarness::Response, success?: false, output: nil)
     expect(DesignArtifactFinding.sole).to have_attributes(artifact_path: linkless.path, state: "missing_tree")
     expect(DesignArtifactAssociation.where(artifact_path: linkless.path)).to be_empty
     expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+  end
+
+  # @spec DESIGN-RECONCILIATION-003
+  it "does not load a crossed owner and repository pair into a sweep snapshot" do
+    first_referenced_project = create(:project, account: project.account, owner: "acme", repo: "one")
+    second_referenced_project = create(:project, account: project.account, owner: "other", repo: "two")
+    crossed_project = create(:project, account: project.account, owner: "acme", repo: "two")
+    [ first_referenced_project, second_referenced_project, crossed_project ].each do |referenced_project|
+      create(:issue, project: referenced_project, github_number: 101)
+    end
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-102-external.md", revision: "a" * 40,
+      body: "## Related Issues\n- acme/one#101\n- other/two#101\n"
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    query_events = capture_query_events { described_class.perform_now(project.id) }
+
+    issue_query = query_events.find { |event| event[:sql].include?("FROM \"issues\"") }
+    loaded_project_ids = issue_query.fetch(:sql)
+      .match(/"issues"\."project_id" IN \(([^)]+)\)/).captures.first.split(", ").map(&:to_i)
+    expect(loaded_project_ids).to contain_exactly(project.id, first_referenced_project.id, second_referenced_project.id)
+    expect(loaded_project_ids).not_to include(crossed_project.id)
   end
 
   # @spec DESIGN-RECONCILIATION-003

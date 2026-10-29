@@ -298,7 +298,9 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   one or more design artifacts, the system SHALL construct and reuse one
   job-scoped, minimal issue-fact snapshot per account-authorized project for
   that sweep while exposing to each artifact only facts from that artifact's
-  referenced or associated projects. It SHALL batch exact-backlink and
+  referenced or associated projects. Account authorization SHALL preserve each
+  referenced owner/repository pair and SHALL NOT combine independently matched
+  owners and repositories. It SHALL batch exact-backlink and
   canonical-manifest evidence, select only fields needed for reconciliation,
   and seed account-authorized coverage from persisted direct associations even
   when their repository is not named in the artifact body. It SHALL discard

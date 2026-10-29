@@ -185,10 +185,22 @@ module FeatureIntents
         :exact_backlinks_by_path
 
       def authorized_projects
-        repositories = (referenced_repositories + associated_repositories + manifest_repositories).uniq - [ project.full_name ]
-        external = Project.where(account_id: project.account_id, owner: repositories.map { |name| name.split("/").first },
-          repo: repositories.map { |name| name.split("/").last }).select(*PROJECT_FIELDS).to_a
+        external = external_project_scope.select(*PROJECT_FIELDS).to_a
         external.append(project).index_by(&:full_name)
+      end
+
+      def external_project_scope
+        external_repository_pairs.reduce(Project.none) do |scope, (owner, repo)|
+          scope.or(Project.where(account_id: project.account_id, owner:, repo:))
+        end
+      end
+
+      def external_repository_pairs
+        (referenced_repositories + associated_repositories + manifest_repositories).uniq
+          .excluding(project.full_name).filter_map do |repository|
+            owner, repo = repository.split("/", 2)
+            [ owner, repo ] if owner.present? && repo.present?
+          end
       end
 
       def referenced_repositories
