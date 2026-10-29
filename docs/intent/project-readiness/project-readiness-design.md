@@ -94,6 +94,9 @@ explicit trigger. A failed attempt leaves the
 readiness entry and its run failure visible. Successful bootstrap PRs use the
 ordinary draft/ready review flow and are separate from the later TDD
 test-review PR.
+The Inbox bootstrap action opens the newly queued run's detail page so the
+operator can see that work started and follow its progress or failure. A
+refused request returns to the Inbox with its admission reason.
 
 Actions in the Inbox detail frame that leave the Inbox — starting a bootstrap
 run, opening project settings, and opening a failed run — explicitly target

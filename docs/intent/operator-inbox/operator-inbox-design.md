@@ -193,6 +193,11 @@ Red or pending CI, merge conflicts, unresolved review threads, dependencies,
 or policy checks remain machine/blocker state rather than Inbox noise. The
 detail pane reuses the standard PR badge and GitHub-link conventions and
 directs the operator to GitHub for the supported human action.
+The stalled-execution explanation applies only while the PR is still a draft:
+an older failed run cannot override a later ready PR and its current policy
+assessment. For manual-merge projects, the guidance states explicitly that
+an approval does not clear the Inbox item; the operator must merge or close
+the PR on GitHub after review.
 Candidate PRs preload their parent issue alongside their project, so building
 the lane stays constant in database queries as its entry count grows.
 
