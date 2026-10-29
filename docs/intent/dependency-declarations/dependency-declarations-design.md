@@ -45,6 +45,16 @@ Auto-Pick edges when an issue is synchronized and is also called directly by
 comment bodies. This prevents a stale association from bypassing an unresolved
 live declaration.
 
+## Blocking graph invariant
+
+Every `IssueDependency` local-edge write validates the proposed account-scoped
+blocking graph. The validation derives and reports the exact cycle path, so it
+also covers direct writers and a qualified external declaration when a later
+sync resolves it to a tracked issue. A child-to-parent reference remains a
+contextual relationship and is excluded from that graph. Parser batches update
+their shared adjacency after each accepted edge, so a later item in the same
+batch is evaluated against earlier additions.
+
 ## Decisions & Alternatives
 
 | Decision | Chosen | Alternatives Considered | Rationale |

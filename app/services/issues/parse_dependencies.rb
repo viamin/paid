@@ -145,6 +145,12 @@ module Issues
     def call
       raise ArgumentError, "issue is required" if issue.nil?
 
+      IssueDependency.transaction { synchronize_dependencies }
+    end
+
+    private
+
+    def synchronize_dependencies
       local_deps, cross_deps = extract
 
       current_deps = issue.issue_dependencies.to_a
@@ -170,8 +176,6 @@ module Issues
 
       [ local_deps, cross_deps ]
     end
-
-    private
 
     # Processes body then comments in the order given. Within a single comment,
     # removals take precedence over additions. Across comments, a later
@@ -399,8 +403,10 @@ module Issues
 
         new_local_deps[dep_issue.id] = issue.issue_dependencies.create!(
           depends_on_issue: dep_issue,
-          requires_deployment: requires_deployment
+          requires_deployment: requires_deployment,
+          cycle_provenance: "github_sync"
         )
+        (adj[issue.id] ||= []) << dep_issue.id
       end
 
       new_local_deps
@@ -453,8 +459,10 @@ module Issues
 
             issue.issue_dependencies.create!(
               depends_on_issue: dep_issue,
-              requires_deployment: requires_deployment
+              requires_deployment: requires_deployment,
+              cycle_provenance: "github_sync"
             )
+            (adj[issue.id] ||= []) << dep_issue.id
             next
           end
         end
@@ -624,7 +632,20 @@ module Issues
     end
 
     def would_create_cycle?(dep_issue, adjacency)
-      Issues::DetectCycle.call(from_issue: dep_issue, target_issue_id: issue.id, adjacency: adjacency)
+      return false unless Issues::DetectCycle.call(from_issue: dep_issue, target_issue_id: issue.id, adjacency: adjacency)
+
+      cycle = Issues::DependencyCycle.call(
+        IssueDependency.new(issue: issue, depends_on_issue: dep_issue, cycle_provenance: "github_sync")
+      )
+      Rails.logger.warn(
+        message: "dependency_graph.cycle_rejected",
+        account_id: issue.project.account_id,
+        issue_id: issue.id,
+        depends_on_issue_id: dep_issue.id,
+        cycle_path: cycle.path,
+        source: "github_sync"
+      )
+      true
     end
   end
 end
