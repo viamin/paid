@@ -368,6 +368,17 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
+        # The first policy check protects the queue. Recheck immediately after
+        # this scheduler owns the claim so a phase disablement or grant
+        # revocation racing the claim cannot start a newly unauthorized run.
+        # A claimed sentinel is not an executing workflow; running work remains
+        # intentionally unaffected by later policy changes.
+        # @spec AUTOMATION-PHASES-013
+        if AgentRuns::RecheckIssueEligibility.call(agent_run, after_claim: true)
+          skipped_ids.add(agent_run.id)
+          next
+        end
+
         # RDR-048 (#2947): do not persist container_host here. The planned
         # placement is forwarded into the workflow input and then into
         # Provision/ProvisionContainerActivity as a separate kwarg so the
