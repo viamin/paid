@@ -27,6 +27,9 @@ authorized decision is bound to the GitHub revision displayed in the Inbox and
 records its reason in the account audit trail; a changed revision requires a
 fresh decision. This clears only the reopen-review hold and returns the issue
 to normal admission — it does not create a generic enhancement retry.
+The dashboard, bearer Inbox API, and confirmed MCP/chat tool expose the same
+resolution operation and authorization, so an operator can record that decision
+without changing surfaces.
 Automated completion activities re-check this gate immediately before changing
 an issue to `completed`, so an in-flight run cannot overwrite it after sync.
 

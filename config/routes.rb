@@ -444,6 +444,7 @@ Rails.application.routes.draw do
       get "inbox/count", to: "inbox#count"
       get "inbox/entries/:entry_id", to: "inbox#show"
       post "inbox/entries/:entry_id/chat", to: "inbox#chat"
+      post "inbox/entries/:entry_id/resolve_reopen_review", to: "inbox#resolve_reopen_review"
       # RDR-077: the same personal removal surface as the web Inbox.
       post "inbox/entries/:entry_id/remove", to: "inbox#remove_entry"
       post "inbox/entries/:entry_id/restore", to: "inbox#restore_entry"
