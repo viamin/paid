@@ -167,7 +167,14 @@ module Inbox
       when Inbox::Queue::PROJECT_SETUP_PENDING_KIND then project_setup_pending_by_project
       when Inbox::Queue::TRACEABILITY_GAP_KIND then traceability_gap_by_project
       when Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND then layered_verification_finding_by_project
+      when Inbox::Queue::DEPENDENCY_CYCLE_KIND then dependency_cycle_by_project
       end
+    end
+
+    def dependency_cycle_by_project
+      Inbox::Queue.call(user:, kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND)
+        .group_by { |entry| entry.project.id }
+        .transform_values(&:size)
     end
 
     def needs_input_by_project

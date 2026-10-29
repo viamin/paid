@@ -1,0 +1,27 @@
+<%# @spec AUTO-PICK-QUEUE-015 %>
+<% cycle = entry.record %>
+<div class="space-y-6">
+  <div class="rounded-xl border border-red-200 bg-red-50 p-4">
+    <h3 class="text-sm font-semibold text-red-900">Dependency cycle blocks automatic work</h3>
+    <p class="mt-1 text-sm text-red-800">Paid will keep this work held. Review the declared dependencies on GitHub and remove or correct the specific declaration that is wrong; Paid does not choose an edge to delete.</p>
+  </div>
+
+  <div>
+    <h3 class="text-sm font-semibold text-gray-900">Cycle path</h3>
+    <p class="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
+      <% cycle.path.each_with_index do |issue, index| %>
+        <%= " → " if index.positive? %>
+        <%= link_to "#{issue.project.full_name}##{issue.github_number}", issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+      <% end %>
+    </p>
+  </div>
+
+  <div>
+    <h3 class="text-sm font-semibold text-gray-900">Affected work</h3>
+    <p class="mt-1 text-sm text-gray-600"><%= cycle.downstream_issues.size %> downstream open issue(s) are held by this cycle.</p>
+  </div>
+
+  <div class="text-sm text-gray-700">
+    Open the linked issues’ <strong>Dependencies</strong> declarations on GitHub, confirm intent with the owners, then edit the declaration(s) that should not block. This occurrence clears only after a later synchronization persists an acyclic effective graph.
+  </div>
+</div>

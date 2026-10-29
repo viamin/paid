@@ -17,6 +17,7 @@ module Inbox
     PROJECT_SETUP_PENDING_KIND = "project_setup_pending"
     TRACEABILITY_GAP_KIND = "traceability_gap"
     LAYERED_VERIFICATION_FINDING_KIND = "layered_verification_finding"
+    DEPENDENCY_CYCLE_KIND = "dependency_cycle"
     DEFAULT_SORT = "oldest"
     # RDR-077 §5 scopes: the default actionable list, the requests held back by
     # a disabled phase, and the requests this user personally removed.
@@ -43,7 +44,8 @@ module Inbox
       TEST_REVIEW_PENDING_KIND,
       PROJECT_SETUP_PENDING_KIND,
       TRACEABILITY_GAP_KIND,
-      LAYERED_VERIFICATION_FINDING_KIND
+      LAYERED_VERIFICATION_FINDING_KIND,
+      DEPENDENCY_CYCLE_KIND
     ].freeze
     KIND_LABELS = KINDS.to_h { |kind| [ kind, kind.titleize ] }.merge(
       ESCALATED_PR_KIND => "Blocked PRs",
@@ -158,6 +160,10 @@ module Inbox
         kind == LAYERED_VERIFICATION_FINDING_KIND
       end
 
+      def dependency_cycle?
+        kind == DEPENDENCY_CYCLE_KIND
+      end
+
       # Lane chips default to the kind name, but an unverifiable finding is an
       # access/coverage problem and must not wear the traceability-gap label.
       # @spec OPERATOR-INBOX-020
@@ -225,7 +231,8 @@ module Inbox
         return questions.first(2).join(" ").truncate(220) if clarifying_questions?
         return summary_text if merge_approval? || action_required? || escalated_pr? || manual_review? ||
           intent_conformance? || feature_decision? || retry_limited? || change_intent_draft? || partial_closeout? ||
-          test_review_pending? || project_setup_pending? || traceability_gap? || layered_verification_finding?
+          test_review_pending? || project_setup_pending? || traceability_gap? || layered_verification_finding? ||
+          dependency_cycle?
 
         "#{tasks.size} proposed tasks"
       end
@@ -419,6 +426,7 @@ module Inbox
         entries.concat(project_setup_pending_entries) if include_kind?(PROJECT_SETUP_PENDING_KIND)
         entries.concat(traceability_gap_entries) if include_kind?(TRACEABILITY_GAP_KIND)
         entries.concat(layered_verification_finding_entries) if include_kind?(LAYERED_VERIFICATION_FINDING_KIND)
+        entries.concat(dependency_cycle_entries) if include_kind?(DEPENDENCY_CYCLE_KIND)
         entries_by_id = entries.index_by(&:id)
         Inbox::PhaseOwnership.for_entries(entries).each do |entry_id, ownership|
           entries_by_id.fetch(entry_id).instance_variable_set(:@phase_ownership, ownership)
@@ -993,6 +1001,33 @@ module Inbox
           questions: [], tasks: [], title_text: "Verification finding: #{finding.obligation.scope_description}",
           summary_text: finding.decision["question"].presence || "Verification evidence needs a decision.", action_url: nil
         )
+      end
+    end
+
+    # A cycle is a property of the persisted account graph, not an issue state:
+    # represent it once under a deterministic component fingerprint so a user
+    # dismissal cannot hide an unrelated issue's ordinary Inbox entry.
+    # @spec AUTO-PICK-QUEUE-015
+    def dependency_cycle_entries
+      scoped_projects.group_by(&:account).flat_map do |account, visible_projects|
+        Issues::DependencyCycles.call(account:).filter_map do |cycle|
+          next unless cycle.issues.any? { |issue| visible_projects.include?(issue.project) }
+          next if @record_id && cycle.fingerprint != @record_id.to_s
+
+          Entry.new(
+            id: cycle.id,
+            kind: DEPENDENCY_CYCLE_KIND,
+            project: cycle.project,
+            issue: nil,
+            record: cycle,
+            waiting_since: cycle.detected_at,
+            questions: [],
+            tasks: [],
+            summary_text: cycle.summary,
+            title_text: cycle.title,
+            action_url: nil
+          )
+        end
       end
     end
 

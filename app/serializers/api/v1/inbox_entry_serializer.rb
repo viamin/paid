@@ -72,9 +72,18 @@ module Api
         when Inbox::Queue::PROJECT_SETUP_PENDING_KIND then { tasks: entry.tasks }
         when Inbox::Queue::TRACEABILITY_GAP_KIND then traceability_gap_payload
         when Inbox::Queue::LAYERED_VERIFICATION_FINDING_KIND then {}
+        when Inbox::Queue::DEPENDENCY_CYCLE_KIND then dependency_cycle_payload
         else
           raise ArgumentError, "Unknown inbox entry kind: #{entry.kind}"
         end
+      end
+
+      def dependency_cycle_payload
+        cycle = entry.record
+        {
+          cycle_path: cycle.path.map { |issue| { project: issue.project.full_name, number: issue.github_number, url: issue.github_url } },
+          downstream_issues_held: cycle.downstream_issues.size
+        }
       end
 
       def list_kind_payload

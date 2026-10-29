@@ -91,6 +91,31 @@
   `spec/services/automation/strategies/auto_pick/default_candidate_source_spec.rb`.
   *Code:* `app/services/automation/strategies/auto_pick/default_candidate_source.rb`.
 
+## Existing dependency cycles
+
+- [x] **AUTO-PICK-QUEUE-014** — When an account-scoped effective blocking
+  dependency graph contains a strongly connected group, Paid SHALL reconcile
+  it after dependency changes and through a bounded periodic backstop. The
+  graph SHALL include resolved cross-project references and apply the existing
+  open-state and contextual parent-reference exclusions. A reconciliation
+  failure SHALL be reported as unavailable rather than as zero cycles.
+  *Tests:* `spec/services/issues/dependency_cycles_spec.rb`.
+  *Code:* `Issues::DependencyCycles`, `DependencyCycleReconciliationJob`.
+
+- [x] **AUTO-PICK-QUEUE-015** — When reconciliation finds an effective cycle,
+  Paid SHALL present one stable Inbox occurrence for the strongly connected
+  group with a concrete linked cycle path, downstream-held-work count, and
+  instructions to review and correct the declared GitHub dependency. The
+  dashboard SHALL surface this cycle independently of its bounded held-issue
+  detail list. Paid SHALL keep work held and SHALL NOT choose a declaration to
+  remove; the occurrence clears only after a later synchronization observes an
+  acyclic persisted graph. Personal Inbox removal SHALL affect only that
+  occurrence for that operator.
+  *Tests:* `spec/services/inbox/dependency_cycle_spec.rb`,
+  `spec/services/issues/dependency_cycles_spec.rb`.
+  *Code:* `Inbox::Queue`, `Dashboard::HeldWorkDetails`,
+  `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`.
+
 ## Epic umbrella audits
 
 - [x] **AUTO-PICK-QUEUE-009** — When an open issue carries the `epic` label

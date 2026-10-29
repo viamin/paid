@@ -163,6 +163,7 @@ module Issues
       kept_local_ids = new_local_deps.keys.to_set | new_cross_refs[:resolved_ids]
       remove_stale_local_deps(current_local_by_id.keys.to_set, kept_local_ids)
       remove_stale_external_deps(current_external_by_key.keys.to_set, new_cross_refs[:external_keys])
+      reconcile_dependency_cycles
     end
 
     def extract
@@ -172,6 +173,13 @@ module Issues
     end
 
     private
+
+    # Reconciliation reads the same persisted effective graph as admission.
+    # It never edits a declaration: repair remains an explicit GitHub action.
+    def reconcile_dependency_cycles
+      Issues::DependencyCycles.call(account: issue.project.account)
+      Dashboard::CacheVersion.bump(issue.project.account, scope: Dashboard::CacheVersion::LISTS_SCOPE)
+    end
 
     # Processes body then comments in the order given. Within a single comment,
     # removals take precedence over additions. Across comments, a later

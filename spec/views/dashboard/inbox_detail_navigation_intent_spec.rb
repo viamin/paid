@@ -644,6 +644,22 @@ RSpec.describe "dashboard inbox detail navigation intent", type: :view do
     end
   end
 
+  # @spec AUTO-PICK-QUEUE-015
+  describe "dependency_cycle" do
+    INBOX_DETAIL_GUARDED_KINDS << Inbox::Queue::DEPENDENCY_CYCLE_KIND
+
+    let(:cycle) { Struct.new(:path, :downstream_issues).new([ entry_issue, entry_issue ], []) }
+    let(:entry) do
+      build_entry.call(Inbox::Queue::DEPENDENCY_CYCLE_KIND,
+        record: cycle, issue: nil, title_text: "Dependency cycle", summary_text: "0 downstream issues remain held.")
+    end
+
+    it "every <a> and <form> in the detail pane declares explicit Turbo navigation intent" do
+      fragment = render_detail_partial(entry)
+      assert_navigation_intent!(fragment, kind: "dependency_cycle")
+    end
+  end
+
   # @spec INBOX-NAV-INTENT-002
   # The negative test: render an inbox detail partial with an additional
   # nonconforming element and run the guard against the augmented fragment —
