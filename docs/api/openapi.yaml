@@ -140,6 +140,47 @@ paths:
                     type: integer
         default:
           $ref: '#/components/responses/Error'
+  /inbox/entries/{entry_id}/resolve_reopen_review:
+    parameters:
+      - $ref: '#/components/parameters/EntryId'
+    post:
+      operationId: resolveInboxReopenReview
+      description: >-
+        Records an authorized, revision-bound reopen-review decision. The
+        decision returns the issue to normal admission and does not queue an
+        enhancement run.
+      security:
+        - bearerAuth: []
+      x-required-pat-scopes: [inbox]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason, revision]
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                revision:
+                  type: string
+                  minLength: 1
+      responses:
+        '200':
+          description: The reopen-review decision was recorded.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [issue_id, status]
+                properties:
+                  issue_id:
+                    type: integer
+                  status:
+                    type: string
+        default:
+          $ref: '#/components/responses/Error'
   /inbox/entries/{entry_id}/remove:
     parameters:
       - $ref: '#/components/parameters/EntryId'

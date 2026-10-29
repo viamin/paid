@@ -25,8 +25,8 @@ module Runners
     FREE_POLICY_RUNNER_KEYS = Runner::DIRECT_OUTBOUND_FREE_POLICY_RUNNER_KEYS
     FREE_POLICY_API_PROVIDER = "openrouter"
 
-    def self.call(runner_key:, api_provider:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE)
-      new(runner_key: runner_key, api_provider: api_provider, auth_type: auth_type).call
+    def self.call(runner_key:, api_provider:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE, zdr_eligible: false)
+      new(runner_key: runner_key, api_provider: api_provider, auth_type: auth_type, zdr_eligible: zdr_eligible).call
     end
 
     # Batched sibling of .call for rendering every service type's dropdown for
@@ -44,7 +44,7 @@ module Runners
     end
 
     def self.catalog_rows_by_provider(api_providers) # @spec RUNNER-MODEL-OPTIONS-006
-      relation = LlmModel.active.where(provider: api_providers)
+      relation = LlmModel.active.excluding_openrouter_zdr_synced.where(provider: api_providers)
       relation = relation.or(LlmModel.active.openrouter_synced) if api_providers.include?(FREE_POLICY_API_PROVIDER)
       rows = relation.order(Arel.sql("family ASC NULLS LAST")).by_capability.to_a
 
@@ -59,14 +59,17 @@ module Runners
     end
     private_class_method :rows_for_provider
 
-    def initialize(runner_key:, api_provider:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE, catalog_rows: nil)
+    def initialize(runner_key:, api_provider:, auth_type: DefaultTierModelIds::DEFAULT_AUTH_TYPE, catalog_rows: nil, zdr_eligible: false)
       @runner_key = runner_key.to_s
       @api_provider = api_provider.to_s
       @auth_type = auth_type.to_s.presence || DefaultTierModelIds::DEFAULT_AUTH_TYPE
       @preloaded_catalog_rows = catalog_rows
+      @zdr_eligible = zdr_eligible
     end
 
     def call
+      return model_entries if zdr_eligible?
+
       [ free_policy_entry, *model_entries, custom_entry ].compact
     end
 
@@ -98,15 +101,22 @@ module Runners
       Entry.new(value: LlmModel::CUSTOM_MODEL_OPTION, label: CUSTOM_MODEL_LABEL, kind: :custom)
     end
 
-    def catalog_rows # @spec RUNNER-MODEL-OPTIONS-003
+    # @spec RUNNER-MODEL-OPTIONS-003
+    # @spec RUNNER-MODEL-OPTIONS-007
+    def catalog_rows
       return @preloaded_catalog_rows if @preloaded_catalog_rows
+      return OpenrouterZdr::EligibleModels.call.models if zdr_eligible?
 
       # Synced free models carry the upstream vendor slug in `provider` but
       # are OpenRouter-reachable model ids, so they belong in the OpenRouter
       # dropdown alongside provider-scoped rows (e.g. the Pareto row).
-      relation = LlmModel.active.by_provider(api_provider)
+      relation = LlmModel.active.excluding_openrouter_zdr_synced.by_provider(api_provider)
       relation = relation.or(LlmModel.active.openrouter_synced) if api_provider == FREE_POLICY_API_PROVIDER
       relation.order(Arel.sql("family ASC NULLS LAST")).by_capability
+    end
+
+    def zdr_eligible?
+      @zdr_eligible && api_provider == FREE_POLICY_API_PROVIDER
     end
 
     def runner_model_compatible?(model) # @spec RUNNER-MODEL-OPTIONS-002 @spec MODEL-SELECTION-005

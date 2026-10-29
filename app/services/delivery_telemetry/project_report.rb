@@ -72,7 +72,7 @@ module DeliveryTelemetry
       evaluated = features.select { |feature| feature.criteria_clarity_evaluated_at.present? }
       vague = evaluated.count { |feature| feature.criteria_clarity_state == "vague" }
       {
-        reviewer_model: FeatureIntents::CriteriaClarityReview::DEFAULT_MODEL,
+        reviewer_model: nil,
         prompt: "feature_intents.criteria_clarity_review",
         evaluated_count: evaluated.size,
         vague_count: vague,

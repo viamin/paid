@@ -32,6 +32,16 @@ RSpec.describe Inbox::Queue do
   # without hitting the network; tests that exercise context loading override
   # this to return real comment fixtures.
   let(:github_client) { instance_double(GithubClient, issue_comments: []) }
+  let(:issue_lane_kinds) do
+    [
+      described_class::CLARIFYING_QUESTIONS_KIND,
+      described_class::MANUAL_REVIEW_KIND,
+      described_class::RETRY_LIMITED_KIND,
+      described_class::TEST_REVIEW_PENDING_KIND,
+      described_class::MERGE_APPROVAL_KIND,
+      described_class::INTENT_CONFORMANCE_KIND
+    ]
+  end
 
   before do
     allow(GithubClient).to receive(:new).and_return(github_client)
@@ -166,6 +176,48 @@ RSpec.describe Inbox::Queue do
         summary_text: "Human review requested before merging",
         waiting_since: pr.github_updated_at
       )
+    end
+
+    # @spec INBOX-FOUNDATION-008
+    it "surfaces an explicit review hold when the synced PR phase is still draft" do
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        pr_review_phase: "draft",
+        labels: [ Automation::Strategies::AutoMerge::HOLD_FOR_REVIEW_LABEL ],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry).to have_attributes(
+        issue: pr,
+        summary_text: "Human review requested before merging",
+        waiting_since: pr.github_updated_at
+      )
+      expect(pr.reload.pr_review_phase).to eq("draft")
+    end
+
+    # @spec INBOX-FOUNDATION-008 LABEL-CONTROL-004
+    it "surfaces the local review hold when label integration is ignored" do
+      project.update!(label_integration_mode: "ignored")
+      pr = create(
+        :issue,
+        :pull_request,
+        project: project,
+        pr_review_phase: "draft",
+        hold_for_review: true,
+        labels: [],
+        auto_merge_evaluated_at: nil,
+        auto_merge_blockers: nil
+      )
+
+      entry = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND).sole
+
+      expect(entry).to have_attributes(issue: pr, summary_text: "Human review requested before merging")
+      expect(pr.reload.pr_review_phase).to eq("draft")
     end
 
     # @spec INBOX-PHASE-RELEVANCE-003
@@ -351,6 +403,22 @@ RSpec.describe Inbox::Queue do
       entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
 
       expect(entries.map(&:issue)).not_to include(pr)
+    end
+
+    it "surfaces a stale draft PR after its creating run terminates without finalization" do # @spec INBOX-FOUNDATION-008
+      stalled_pr = create_stalled_draft_pr(github_number: 44)
+      expired_pr = create_stalled_draft_pr(github_number: 45, completed_at: 31.days.ago)
+
+      entries = described_class.call(user: user, kind: described_class::MERGE_APPROVAL_KIND)
+
+      expect(entries.map(&:issue)).to include(stalled_pr)
+      expect(entries.map(&:issue)).not_to include(expired_pr)
+      entry = entries.find { |candidate| candidate.issue == stalled_pr }
+      expect(entry).to have_attributes(
+        summary_text: "Automation stopped before review readiness"
+      )
+      expect(entry.guidance.fetch(:instruction)).to include("has not confirmed this pull request is merge-ready")
+      expect(stalled_pr.reload.pr_review_phase).to eq("draft")
     end
 
     # @spec OPERATOR-INBOX-002B @spec NOTIFICATION-SEVERITY-008
@@ -1263,6 +1331,25 @@ RSpec.describe Inbox::Queue do
       expect(multi_row_queries).to eq(single_row_queries)
     end
 
+    # @spec OPERATOR-INBOX-022
+    it "preloads project audit data separately from issue lane rows" do
+      project.update!(log_data: { "audit_history" => "x" * 100_000 })
+      create_needs_input(body: questions_body)
+      create_manual_review_issue(github_number: 221)
+      create_retry_limited_issue(github_number: 222)
+      create_tdd_test_review_pr(github_number: 223)
+      create_merge_approval_pr(github_number: 224)
+      create_intent_conformance_pr(github_number: 225)
+
+      issue_lane_kinds.each do |kind|
+        issue_query = capture_queries { described_class.call(user:, kind:) }
+          .find { |sql| sql.match?(/\ASELECT "issues"\.\*(?:,| FROM)/) }
+
+        expect(issue_query).to be_present
+        expect(issue_query).not_to include("\"projects\".\"log_data\"")
+      end
+    end
+
     # @spec FEATURE-APPROVAL-013 @spec CONFIDENCE-DELIVERY-016
     it "batch-preloads feature-decision readiness inputs instead of querying per row" do
       create(:feature_intent, :approved_waiting_for_merge, project: project)
@@ -1641,6 +1728,14 @@ RSpec.describe Inbox::Queue do
         not_evaluated: []
       )
     )
+  end
+
+  def create_stalled_draft_pr(github_number:, completed_at: Time.current)
+    pr = create(:issue, :pull_request, project: project, github_number: github_number,
+      pr_review_phase: "draft", labels: [], auto_merge_evaluated_at: nil, auto_merge_blockers: nil)
+    create(:agent_run, :timeout, project: project, pull_request_number: pr.github_number,
+      goal: "create_pr", completed_at: completed_at)
+    pr
   end
 
   def create_intent_conformance_pr(github_number: 50)

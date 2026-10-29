@@ -333,6 +333,7 @@ module Activities
 
       comparison = client.compare_summary(project.full_name, summary_base_sha, agent_run.result_commit_sha)
       result = Llm::GenerateAgentUpdateSummary.call(
+        agent_run: agent_run,
         repository: project.full_name,
         pr_number: pr_number,
         base_sha: summary_base_sha,

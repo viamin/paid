@@ -10,7 +10,6 @@ module FeatureIntents
   # Unavailable or malformed responses are deliberately retried on the next sweep.
   # @spec DESIGN-RECONCILIATION-001
   class AssessDesignArtifactCandidates
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 45
     CANDIDATES_PER_ASSESSMENT = 50
     Result = Data.define(:identity, :evidence) do
@@ -76,7 +75,7 @@ module FeatureIntents
     end
 
     def assess_candidates(candidates)
-      response = AgentHarness.send_message(prompt(candidates), provider: :claude, model: DEFAULT_MODEL, timeout: TIMEOUT, tools: :none, **Llm::TextMode.options)
+      response = Llm::Request.call(prompt: prompt(candidates), project: project, timeout: TIMEOUT)
       return [ no_match("Semantic assessment did not complete"), false ] unless response.success?
 
       payload = response_payload(response.output)

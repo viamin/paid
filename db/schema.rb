@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -337,6 +337,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.float "peak_cpu_percent"
     t.bigint "peak_memory_bytes"
     t.string "plan_doc_source", limit: 1000, comment: "User-named plan document (RDR/ADR/design doc path or URL) the lid_planning run treats as authored intent. Only set for lid_planning runs."
+    t.datetime "pr_identity_recovery_attempted_at", comment: "Last successful GitHub lookup that found zero or ambiguous open PRs for the run branch."
     t.string "priority_tier", limit: 10
     t.bigint "project_id", null: false
     t.bigint "prompt_version_id"
@@ -382,6 +383,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.datetime "updated_at", null: false
     t.jsonb "verification_result", default: {}, null: false, comment: "Persisted interactive self-verification outcome and related artifacts for verification-enabled agent runs."
     t.string "worktree_path", limit: 500
+    t.index "status, COALESCE(completed_at, updated_at)", name: "index_agent_runs_on_status_terminal_timestamp"
     t.index ["approved_design_revision"], name: "index_agent_runs_on_approved_design_revision"
     t.index ["configuration_bundle_id"], name: "index_agent_runs_on_configuration_bundle_id"
     t.index ["continuation_request_id"], name: "index_agent_runs_on_continuation_request_id", where: "(continuation_request_id IS NOT NULL)"
@@ -884,6 +886,42 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["rate_limited_until"], name: "index_chat_sessions_on_rate_limited_until"
     t.index ["runner_id"], name: "index_chat_sessions_on_runner_id"
     t.index ["status"], name: "index_chat_sessions_on_status"
+  end
+
+  create_table "chat_turn_lifecycle_events", comment: "Append-only audit trail of stall classification, recovery attempts, and outcomes for a chat turn (#4680). Rows are never updated after insert.", force: :cascade do |t|
+    t.bigint "actor_id", comment: "The user who triggered the event, when it was human-initiated (e.g. a manual Resume click)."
+    t.bigint "chat_session_id", null: false
+    t.bigint "chat_turn_id", null: false
+    t.datetime "created_at", null: false
+    t.string "event_name", null: false, comment: "Dotted event name, e.g. chat_turn.stall_detected, chat_turn.recovery_attempted."
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "occurred_at", null: false
+    t.index ["actor_id"], name: "index_chat_turn_lifecycle_events_on_actor_id"
+    t.index ["chat_session_id"], name: "index_chat_turn_lifecycle_events_on_chat_session_id"
+    t.index ["chat_turn_id", "occurred_at"], name: "idx_on_chat_turn_id_occurred_at_87ddf0bbe7"
+    t.index ["chat_turn_id"], name: "index_chat_turn_lifecycle_events_on_chat_turn_id"
+    t.index ["event_name"], name: "index_chat_turn_lifecycle_events_on_event_name"
+  end
+
+  create_table "chat_turns", comment: "Durable lifecycle tracking for one chat turn (#4680), from the triggering user message to a terminal outcome or stall.", force: :cascade do |t|
+    t.datetime "attempt_heartbeat_at", comment: "Throttled durable liveness lease for the currently executing provider loop."
+    t.bigint "chat_session_id", null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.string "failure_classification", comment: "Set when status is failed: rate_limited, provider_error, budget_exhausted, validation_error, unsupported_configuration, or unexpected_error."
+    t.datetime "last_activity_at", null: false, comment: "Last durable checkpoint (a persisted message), not raw streaming chunks."
+    t.jsonb "metadata", default: {}, null: false
+    t.integer "recovery_attempts", default: 0, null: false
+    t.datetime "recovery_locked_at"
+    t.datetime "stall_detected_at"
+    t.datetime "started_at", null: false
+    t.string "status", default: "pending", null: false, comment: "pending, streaming, completed, failed, stalled, or abandoned."
+    t.datetime "updated_at", null: false
+    t.bigint "user_message_id", null: false
+    t.boolean "write_tool_dispatched", default: false, null: false, comment: "True once any write tool call has been persisted for this turn; gates eligibility for automatic (unconfirmed) recovery."
+    t.index ["chat_session_id"], name: "index_chat_turns_on_chat_session_id"
+    t.index ["status", "last_activity_at"], name: "index_chat_turns_on_status_and_last_activity_at"
+    t.index ["user_message_id"], name: "index_chat_turns_on_user_message_id", unique: true
   end
 
   create_table "clarifying_question_progresses", comment: "Durable per-question exploration progress and attributable answer evidence.", force: :cascade do |t|
@@ -3165,6 +3203,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.index ["account_id"], name: "index_onboarding_steps_on_account_id"
   end
 
+  create_table "openrouter_zdr_catalogs", force: :cascade do |t|
+    t.string "catalog_key", null: false
+    t.datetime "created_at", null: false
+    t.datetime "last_attempted_at"
+    t.datetime "last_successful_at"
+    t.string "unavailability_reason"
+    t.datetime "unavailable_at"
+    t.datetime "updated_at", null: false
+    t.index ["catalog_key"], name: "index_openrouter_zdr_catalogs_on_catalog_key", unique: true
+  end
+
+  create_table "openrouter_zdr_models", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.integer "endpoint_count", default: 0, null: false
+    t.jsonb "endpoint_payloads", default: [], null: false
+    t.datetime "last_seen_at", null: false
+    t.string "model_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["model_id"], name: "index_openrouter_zdr_models_on_model_id", unique: true
+  end
+
   create_table "orchestration_decisions", comment: "Structured log of orchestration decisions for later workflow analysis and learning.", force: :cascade do |t|
     t.string "actor", limit: 100, null: false, comment: "Component or role that made the decision, such as workflow, planner, scheduler, or human."
     t.bigint "agent_run_id", comment: "Agent run whose workflow emitted the decision when a specific run exists."
@@ -4000,6 +4059,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.integer "weight", default: 1, null: false
+    t.boolean "zero_data_retention", default: false, null: false, comment: "User-selected zero data retention requirement; enforcement provenance is derived from the active runner provider and runtime."
     t.index ["auth_type"], name: "index_runners_on_auth_type"
     t.index ["discarded_at"], name: "index_runners_on_discarded_at"
     t.index ["integration_credential_id"], name: "index_runners_on_integration_credential_id"
@@ -4679,6 +4739,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_27_090004) do
   add_foreign_key "chat_sessions", "projects"
   add_foreign_key "chat_sessions", "runners", name: "fk_chat_sessions_runner_id"
   add_foreign_key "chat_sessions", "users", column: "created_by_id"
+  add_foreign_key "chat_turn_lifecycle_events", "chat_sessions"
+  add_foreign_key "chat_turn_lifecycle_events", "chat_turns"
+  add_foreign_key "chat_turn_lifecycle_events", "users", column: "actor_id"
+  add_foreign_key "chat_turns", "chat_messages", column: "user_message_id"
+  add_foreign_key "chat_turns", "chat_sessions"
   add_foreign_key "clarifying_question_progresses", "accounts"
   add_foreign_key "clarifying_question_progresses", "chat_sessions"
   add_foreign_key "clarifying_question_progresses", "issues"

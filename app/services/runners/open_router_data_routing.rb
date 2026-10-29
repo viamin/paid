@@ -10,8 +10,8 @@ module Runners
   module OpenRouterDataRouting
     DEFAULT_DATA_CLASSIFICATION = "internal"
 
-    def build_provider_routing(project)
-      case data_classification_for(project)
+    def build_provider_routing(project, zero_data_retention: false)
+      routing = case data_classification_for(project)
       when "open", "internal"
         { data_collection: "allow" }
       when "confidential"
@@ -21,6 +21,13 @@ module Runners
       else
         { data_collection: "allow" }
       end
+
+      # OpenRouter treats ZDR as an inference-routing requirement. A request
+      # asking for it must also deny provider data collection; allowing that
+      # flag to remain "allow" would let a runner declaration weaken privacy.
+      routing[:data_collection] = "deny" if zero_data_retention
+      routing[:zdr] = true if zero_data_retention
+      routing
     end
 
     def data_classification_for(project)

@@ -251,6 +251,11 @@ module Inbox
         @manual_review_comment_url = manual_review? ? manual_review_comment_link : nil
       end
 
+      # @spec OPERATOR-INBOX-002L
+      def manual_review_recovery
+        @manual_review_recovery ||= Inbox::ManualReviewRecovery.call(issue:) if manual_review?
+      end
+
       private
 
       def context_loader
@@ -484,7 +489,7 @@ module Inbox
 
         Issue
           .joins(:project)
-          .includes(:project)
+          .preload(:project)
           .where(project_id: ids, paid_state: "needs_input", github_state: "open")
           .then { |scope| only_record(scope) }
           .order(Arel.sql("issues.needs_input_since ASC NULLS LAST"))
@@ -579,12 +584,14 @@ module Inbox
       end
     end
 
-    # @spec OPERATOR-INBOX-002B
+    # @spec OPERATOR-INBOX-002B FACET-CONFIDENCE-022
     def action_required_entries
       visible_blocking_notifications.filter_map do |notification|
         project, issue = notification_context(notification)
         next unless project
         next if project_filter_excludes?(project)
+
+        escalation = FacetConfidence::CloseoutEvaluation::InboxEscalation.for(notification)
 
         Entry.new(
           id: "#{ACTION_REQUIRED_KIND}:#{notification.id}",
@@ -595,8 +602,8 @@ module Inbox
           waiting_since: notification.created_at,
           questions: [],
           tasks: remediation_steps_for(notification),
-          summary_text: notification.metadata["recommended_action"].presence || notification.description,
-          title_text: notification.title,
+          summary_text: escalation&.explanation || notification.metadata["recommended_action"].presence || notification.description,
+          title_text: escalation&.title || notification.title,
           action_url: notification.action_url
         )
       end
@@ -713,7 +720,7 @@ module Inbox
 
       Issue
         .joins(:project)
-        .includes(:project)
+        .preload(:project)
         .where(project_id: ids, paid_state: "manual_review", github_state: "open")
         .then { |scope| only_record(scope) }
         .order(Arel.sql("issues.manual_review_started_at ASC NULLS LAST"))
@@ -810,7 +817,7 @@ module Inbox
 
       Issue
         .joins(:project)
-        .includes(:project)
+        .preload(:project)
         .where(project_id: ids, github_state: "open")
         .where.not(runner_retry_abandoned_at: nil)
         .then { |scope| only_record(scope) }
@@ -921,7 +928,7 @@ module Inbox
         self.class.test_review_pending_issues(ids)
           .then { |scope| only_record(scope) }
           .joins(:project)
-          .includes(:project)
+          .preload(:project)
           .order("issues.github_updated_at ASC")
           .order("projects.owner ASC", "projects.repo ASC", "issues.github_number ASC", "issues.id ASC")
       end

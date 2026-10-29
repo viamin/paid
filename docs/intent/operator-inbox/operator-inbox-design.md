@@ -74,6 +74,13 @@ GitHub-only context and enhancement-comment links load in a separate lazy
 Turbo Frame after the local detail and its actions have rendered. That request
 rechecks current queue membership and returns an empty frame for stale entries.
 
+Issue-backed lanes retain their project joins when project predicates or
+ordering require them, but preload projects separately. This keeps one shared
+project object per project while preventing a project audit-history payload
+from being selected into every issue row. The optimization is representation
+only: lane membership, ordering, phase relevance, and personal-removal
+semantics remain unchanged.
+
 ## Entry Kinds
 
 ### `traceability_gap`
@@ -306,22 +313,12 @@ The entry payload carries the issue's `manual_review_reason` (the message
 round-limit copy when `EnhanceIssueActivity` sets the state directly without
 going through that service) as its summary, and `manual_review_started_at`
 (falling back to `updated_at` for legacy rows predating the column —
-`ISSUE-ENHANCEMENT-012`) as its waiting-since timestamp. The detail pane
-offers a "Start enhancement run" action that queues a manual `enhance_issue`
-run for the issue: per `ISSUE-ENHANCEMENT-011`, automatic picking excludes
-`manual_review` and only an explicit operator-triggered run resumes work —
-the queueing is the resume, so (unlike `unblock_escalation`, which clears
-state directly) this action still creates a run rather than just flipping
-state. The same request also transitions the issue out of `manual_review`
-(`paid_state: "in_progress"`, the state `CreateAgentRunActivity` sets when
-the run starts), inside the same transaction that creates the run, so the
-entry leaves the queue and the nav badge at queue time (#3853) instead of
-surviving the whole queue wait — the operator-inbox invariant "acting on an
-item removes it now" that every other lane already satisfies. The existing
-`sync_manual_review_started_at` callback clears the lane columns on exit and
-bumps the badge cache version; no inbox-side cache work is needed. A stale
-or double click degrades to "This issue is no longer waiting for manual
-review." instead of an active-run error.
+`ISSUE-ENHANCEMENT-012`) as its waiting-since timestamp. When durable
+enhancement provenance selects it, the detail pane offers a "Start enhancement
+run" action that queues a manual `enhance_issue` run. The queueing transitions
+the issue out of `manual_review` in the same transaction, so the entry leaves
+the queue and badge at queue time. The existing `sync_manual_review_started_at`
+callback clears the lane columns on exit and bumps the badge cache version.
 
 When the parked state still has clarifying questions stored — preserved by
 `EnhanceIssueActivity` when the terminal round's comment has a parseable
@@ -334,7 +331,10 @@ listing). The detail pane then renders the same answer form
 `clarifying_questions` entries use (shared partial, sans the agent-context
 sidebar, which is scoped to the `clarifying_questions` kind), plus the "Start
 enhancement run" action, so answering the questions the agent asked on its
-final round is itself an operator-triggered manual review. Submitting posts
+final round is itself an operator-triggered manual review. Both affordances are
+available only when enhancement provenance selects that recovery; questions
+retained from an earlier enhancement round must not clear a newer dependency,
+scanner, reopen-review, or unknown hold. Submitting posts
 the standard answer-marker comment and calls
 `ClarifyingQuestions::ClearNeedsInput`, which now also treats
 `paid_state == "manual_review"` as a clearable source state: it resets
@@ -369,6 +369,22 @@ Scoping follows `INBOX-FOUNDATION-006` like every other kind (account+owner
 visibility, independent of auto-pick eligibility), not the dashboard's
 broader account-wide scope — the same divergence-recording rationale as
 `escalated_pr` (`OPERATOR-INBOX-002C`).
+
+Manual review is a state shared by several producers, so recovery is classified
+from durable evidence, not by interpreting its displayed reason. The dedicated
+reopen-review reason selects a revision-bound, authorized intent-validation
+decision: the Inbox shows the current revision, records actor, reason,
+decision and revision in account history, and returns the issue to normal
+admission without creating an enhancement run. Current local, deployment, or
+external dependency records select a dependency wait with a link to its owner
+or reference; acknowledgement cannot clear that hold. Current scanner
+remediation-attempt state selects scanner evidence and its existing
+verification recovery. Current enhancement questions or a legacy exact
+enhancement stop message select the existing answer form and enhancement retry;
+a historical enhancement run alone is not provenance for the current hold. An
+unprovenanced hold remains visibly unknown and offers no speculative action.
+Each recovery checks unfinished work before clearing a hold so it cannot overlap
+queued or running work.
 
 `Dashboard::EligibilityBreakdown` names `manual_review` as its own bucket
 (previously it fell into the unnamed `other_excluded` remainder), so the

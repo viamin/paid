@@ -4,6 +4,23 @@ require "rails_helper"
 require "ostruct"
 
 RSpec.describe Reviews::Verification::Pipeline do
+  before { configure_llm_routing(project: project)
+allow(project).to receive(:client).and_return(client)
+    stub_pull_request_heads([ head_sha ])
+    allow(client).to receive_messages(detailed_pull_request_files: files, file_content: file_content)
+    allow(poster).to receive(:call).and_return(
+      { review_id: 555, review_url: "https://github.com/o/r/pull/42#pullrequestreview-555", already_posted: false }
+    )
+    allow(TokenUsageTracker).to receive(:track)
+    stub_llm_sequence(
+      find_output: llm_double({ candidates: [ candidate_payload ] }),
+      verify_outputs: [ llm_double(confirmed_verdict) ],
+      synthesize_output: llm_double(synthesized_comment)
+    )
+   }
+
+  after { Current.user = nil }
+
   let(:project) { create(:project) }
   let(:agent_run) do
     create(:agent_run, project: project, goal: "review",
@@ -31,14 +48,14 @@ RSpec.describe Reviews::Verification::Pipeline do
   def llm_double(output_hash, input_tokens: 100, output_tokens: 40)
     instance_double(AgentHarness::Response, success?: true,
       output: output_hash.to_json, input_tokens: input_tokens,
-      output_tokens: output_tokens, model: "claude-sonnet-4-6")
+      output_tokens: output_tokens, model: "configured-mid")
   end
 
   # Dispatches consecutive AgentHarness calls in pipeline order:
   # find, then one verify per candidate, then synthesize.
   def stub_llm_sequence(find_output:, verify_outputs:, synthesize_output:)
     responses = [ find_output ] + Array(verify_outputs) + [ synthesize_output ]
-    allow(AgentHarness).to receive(:send_message) { responses.shift }
+    allow(AgentHarness.conductor).to receive(:execute_direct) { responses.shift }
   end
 
   # Files for two attempts: the first hunk adds line 3, the second adds line 7
@@ -74,7 +91,7 @@ RSpec.describe Reviews::Verification::Pipeline do
       llm_double(confirmed_verdict),                                     # verify (attempt 2)
       llm_double(synthesized_comment(line: 7, body: "Fresh anchor."))    # synthesize (attempt 2)
     ]
-    allow(AgentHarness).to receive(:send_message) { responses.shift }
+    allow(AgentHarness.conductor).to receive(:execute_direct) { responses.shift }
   end
 
   def stub_pull_request_heads(heads)
@@ -104,23 +121,9 @@ RSpec.describe Reviews::Verification::Pipeline do
     }
   end
 
-  before do
-    allow(project).to receive(:client).and_return(client)
-    stub_pull_request_heads([ head_sha ])
-    allow(client).to receive_messages(detailed_pull_request_files: files, file_content: file_content)
-    allow(poster).to receive(:call).and_return(
-      { review_id: 555, review_url: "https://github.com/o/r/pull/42#pullrequestreview-555", already_posted: false }
-    )
-    allow(TokenUsageTracker).to receive(:track)
-    stub_llm_sequence(
-      find_output: llm_double({ candidates: [ candidate_payload ] }),
-      verify_outputs: [ llm_double(confirmed_verdict) ],
-      synthesize_output: llm_double(synthesized_comment)
-    )
-  end
 
-  def run_pipeline
-    described_class.call(agent_run: agent_run, github_client: client, poster: poster)
+  def run_pipeline(**options)
+    described_class.call(agent_run: agent_run, github_client: client, poster: poster, **options)
   end
 
   describe ".call happy path" do
@@ -159,7 +162,7 @@ RSpec.describe Reviews::Verification::Pipeline do
         confirmed_groups: 1,
         comments_posted: 1,
         llm_calls: { find: 1, verify: 1, synthesize: 1 },
-        models: [ "claude-sonnet-4-6" ],
+        models: [ "configured-mid" ],
         tokens_input: 300,
         tokens_output: 120
       )
@@ -285,7 +288,7 @@ RSpec.describe Reviews::Verification::Pipeline do
         find_output: llm_double({ candidates: [ candidate_payload ] }),
         verify_outputs: [
           instance_double(AgentHarness::Response, success?: false, output: "", error: "provider down",
-            input_tokens: 0, output_tokens: 0, model: "claude-sonnet-4-6")
+            input_tokens: 0, output_tokens: 0, model: "configured-mid")
         ],
         synthesize_output: llm_double({ body: "unused", comments: [] })
       )
@@ -320,21 +323,11 @@ RSpec.describe Reviews::Verification::Pipeline do
       stub_files_for_retry
       stub_retry_llm_sequence
 
-      # 1ms per clock tick: each `timed(:stage)` measures the difference
-      # between two consecutive ticks, so a fresh attempt adds exactly one
-      # tick to its stage's counter. After two attempts the find/verify/
-      # synthesize counters each carry the discarded attempt's contribution
-      # plus the second attempt's, while `post` is still a single tick.
-      # Stub the underlying Process.clock_gettime so `@started_at` (set in
-      # initialize) and the `timed` calls share a single deterministic clock.
+      # Only the pipeline's injected clock advances stage timing; routing
+      # and harness instrumentation use their own clocks.
       monotonic_ticks = 0
-      allow(Process).to receive(:clock_gettime).and_call_original
-      allow(Process).to receive(:clock_gettime).with(Process::CLOCK_MONOTONIC) do
-        monotonic_ticks += 1
-        monotonic_ticks.to_f / 1000.0
-      end
-
-      result = run_pipeline
+      clock = ->(*) { monotonic_ticks += 1; monotonic_ticks.to_f / 1000.0 }
+      result = run_pipeline(clock: clock)
 
       latency = result[:metrics][:latency_ms]
       expect(result[:metrics][:attempts]).to eq(2)
@@ -363,7 +356,7 @@ RSpec.describe Reviews::Verification::Pipeline do
         llm_double(confirmed_verdict),                      # verify (attempt 2)
         llm_double(synthesized_comment)                     # synthesize (attempt 2)
       ]
-      allow(AgentHarness).to receive(:send_message) { responses.shift }
+      allow(AgentHarness.conductor).to receive(:execute_direct) { responses.shift }
 
       expect { run_pipeline }.to raise_error(described_class::HeadMovedError)
       expect(poster).not_to have_received(:call)

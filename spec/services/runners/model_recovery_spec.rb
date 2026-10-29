@@ -112,7 +112,7 @@ RSpec.describe Runners::ModelRecovery do
 
   # @spec RUNNER-FALLBACK-007, RUNNER-FALLBACK-009
   it "bounds repeated model rejections across calls on the same recovery session" do
-    allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::Error, "selector unavailable")
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(AgentHarness::Error, "selector unavailable")
     discovered.replace([ replacement.model_id, "alternative-2", "alternative-3", "alternative-4" ].map { |id| { id: id } })
     allow(executor).to receive(:execute).with(array_including("exec"), any_args) do |command, **|
       model = command[command.index("--model") + 1]

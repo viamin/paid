@@ -85,10 +85,17 @@ Today three kinds exist:
   not create a human-action row; their snapshot remains available as machine
   work/blocker context. The inbox entry uses the PR's approval-wait/head-
   activity timestamp instead of `needs_input_since`, so PRs do not need to
-  enter `paid_state: "needs_input"` just to become visible. An open ready PR
-  with `paid-hold-review` is also a `:merge_approval` entry, irrespective of
-  its ordinary blocker snapshot, because the label is an explicit request for
-  human action.
+  enter `paid_state: "needs_input"` just to become visible. An open PR with
+  `paid-hold-review` is also a `:merge_approval` entry, irrespective of its
+  ordinary blocker snapshot or local review phase, because the label is an
+  explicit request for human action. In ignored label-integration mode, the
+  local `hold_for_review` equivalent carries the same meaning. An open PR
+  still in the `draft` phase is also a `:merge_approval` entry when an exact
+  project-and-PR-number match finds a terminally unsuccessful `create_pr` run
+  in the last 30 days. This bounded recovery case makes interrupted
+  finalization visible with its own reason, without treating the stale phase as
+  merge readiness. These are visibility exceptions only: neither declares the
+  PR merge-ready nor advances its review phase.
 
 Future kinds (`:paused_run_decision`)
 plug in by registering an entry-finder that contributes rows to the same

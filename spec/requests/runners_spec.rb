@@ -944,6 +944,39 @@ RSpec.describe "Runners" do
       expect(runner.opencode_model_id).to eq("moonshotai/kimi-k2-0905")
     end
 
+    it "rejects a crafted OpenRouter ZDR selection outside the verified catalog" do # @spec RUNNER-MODEL-OPTIONS-008 @spec MODEL-POLICY-018
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+      OpenrouterZdrCatalog.current.update!(last_successful_at: Time.current)
+
+      post runners_path, params: {
+        runner: flagged_model_form_runner_params(
+          api_key_id: api_key.id,
+          model_selection_choice: "moonshotai/kimi-k2-0905"
+        ).merge(zero_data_retention: true)
+      }
+
+      expect(response).to have_http_status(:unprocessable_content)
+      expect(user.runners.where(runner_key: "opencode", auth_type: "api_key")).to be_empty
+    end
+
+    it "accepts a verified concrete OpenRouter ZDR selection" do # @spec RUNNER-MODEL-OPTIONS-008
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+      create(:openrouter_zdr_model, model_id: "moonshotai/kimi-k2-0905")
+      OpenrouterZdrCatalog.current.update!(last_successful_at: Time.current)
+
+      post runners_path, params: {
+        runner: flagged_model_form_runner_params(
+          api_key_id: api_key.id,
+          model_selection_choice: "moonshotai/kimi-k2-0905"
+        ).merge(zero_data_retention: true)
+      }
+
+      expect(response).to redirect_to(runners_path)
+      expect(user.runners.find_by!(runner_key: "opencode", auth_type: "api_key")).to be_zero_data_retention
+    end
+
     it "rejects hidden pseudo-runners when the runner model policy form flag is enabled" do
       api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
       enable_runner_model_policy_form_for(user)
@@ -1544,6 +1577,27 @@ RSpec.describe "Runners" do
       expect(runner.reload.enabled_for_chat).to be(false)
     end
 
+    # @spec MODEL-POLICY-017
+    it "persists the ZDR declaration through the authorized runner update" do
+      runner = user.runners.create!(runner_key: "cursor")
+
+      patch runner_path(runner), params: { runner: { zero_data_retention: true } }
+
+      expect(response).to redirect_to(runners_path)
+      expect(runner.reload).to be_zero_data_retention
+      expect(runner.zero_data_retention_provenance).to eq("user_declared")
+    end
+
+    # @spec MODEL-POLICY-017
+    it "does not let another user change a runner ZDR declaration" do
+      other_runner = create(:runner, user: create(:user), runner_key: "cursor")
+
+      patch runner_path(other_runner), params: { runner: { zero_data_retention: true } }
+
+      expect(response).to have_http_status(:not_found)
+      expect(other_runner.reload).not_to be_zero_data_retention
+    end
+
     it "persists the agent_co_author_trailer on update" do
       runner = user.runners.create!(runner_key: "cursor")
       trailer = "Co-Authored-By: Cursor <noreply@cursor.sh>"
@@ -1716,6 +1770,58 @@ RSpec.describe "Runners" do
       expect(response.body).to include("OpenRouter Free (curated, tiered)")
       expect(response.body).to include("Custom model ID")
       expect(response.body).not_to include('id="runner_config_opencode_api_provider"')
+      expect(response.body).to include('id="runner_model_search"')
+      expect(response.body).to include('aria-controls="runner_model_selection_choice"')
+    end
+
+    it "renders a non-selectable ZDR loading state instead of an unverified model list" do # @spec RUNNER-MODEL-OPTIONS-009
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      enable_runner_model_policy_form_for(user)
+      runner = user.runners.create!(
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+      runner.update_column(:zero_data_retention, true)
+
+      get edit_runner_path(runner)
+
+      doc = Nokogiri::HTML(response.body)
+      model_search = doc.at_css("#runner_model_search")
+      model_select = doc.at_css("#runner_model_selection_choice")
+      custom_model_field = doc.at_css("[data-runner-form-target='customModelField']")
+
+      expect(response.body).to include('data-runner-form-zdr-catalog-setup-state-value="loading"')
+      expect(model_search["disabled"]).to eq("disabled")
+      expect(model_select["disabled"]).to eq("disabled")
+      expect(model_select.css("option").map { |option| option["value"] }).to eq([ "" ])
+      expect(custom_model_field.key?("hidden")).to be(true)
+      expect(custom_model_field.at_css("input")["disabled"]).to eq("disabled")
+    end
+
+    it "renders only verified ZDR models in the default legacy form" do # @spec RUNNER-MODEL-OPTIONS-008 @spec RUNNER-MODEL-OPTIONS-009
+      api_key = create(:provider_api_key, user: user, api_service_type: "openrouter")
+      create(:openrouter_zdr_model, model_id: "anthropic/claude-sonnet-4")
+      KnownDirectOutboundModels.seed_model(model_id: "anthropic/claude-sonnet-4", provider: "anthropic")
+      OpenrouterZdrCatalog.current.update!(last_successful_at: Time.current)
+      runner = user.runners.create!(
+        runner_key: "opencode",
+        auth_type: "api_key",
+        provider_api_key: api_key,
+        config: { "opencode" => { "api_provider" => "openrouter", "model" => "moonshotai/kimi-k2-0905" } }
+      )
+      runner.update_column(:zero_data_retention, true)
+
+      get edit_runner_path(runner)
+
+      doc = Nokogiri::HTML(response.body)
+      model_select = doc.at_css("#runner_config_opencode_model")
+
+      expect(response).to have_http_status(:ok)
+      expect(model_select.css("option").map { |option| option["value"] }).to eq([ "", "anthropic/claude-sonnet-4" ])
+      expect(model_select["disabled"]).to be_nil
+      expect(response.body).not_to include("moonshotai/kimi-k2-0905</option>")
     end
 
     # @spec MODEL-POLICY-005

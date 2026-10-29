@@ -34,8 +34,9 @@ module AgentRuns
       new(...).call
     end
 
-    def initialize(agent_run)
+    def initialize(agent_run, after_claim: false)
       @agent_run = agent_run
+      @after_claim = after_claim
     end
 
     # Returns true when the run was cancelled because its issue is no
@@ -55,6 +56,10 @@ module AgentRuns
 
     attr_reader :agent_run
 
+    def after_claim?
+      @after_claim
+    end
+
     # Authorization is rechecked before queued work starts. Disabling a phase
     # or revoking a grant prevents the queued run from starting; it never
     # terminates a run that already started, and manual runs keep the
@@ -68,7 +73,7 @@ module AgentRuns
       return false if capability.nil?
 
       policy = Automation::EffectivePolicy.call(
-        project: agent_run.project,
+        project: agent_run.project.reload,
         phase: Automation::Phases.for_capability(capability),
         work_item: agent_run,
         trigger: :automatic
@@ -156,17 +161,16 @@ module AgentRuns
 
     def issue = agent_run.issue
 
-    # Cancel only unclaimed queued runs — a claimed/running run is
-    # mid-flight and owned by the normal lifecycle. Re-check under the row
-    # lock (mirrors Issue#cancel_orphaned_queued_runs) so a run claimed by
-    # ProcessRunQueueJob between the eligibility check and here is not
-    # marked cancelled while its workflow starts.
+    # Cancel only queued runs. The scheduler may opt into the narrow
+    # post-claim recheck while the run has its private claim sentinel, closing
+    # the policy-change race between peek and claim. A workflow ID or running
+    # status is already executing and remains owned by the normal lifecycle.
     def cancel_run(reason: nil)
       reason ||= "Issue no longer eligible at dequeue (RDR-032 recheck); " \
                  "it will be re-seeded when eligible again"
 
       cancelled = agent_run.with_lock do
-        next false unless agent_run.status == "queued" && agent_run.temporal_workflow_id.nil?
+        next false unless cancellable_before_execution?
 
         agent_run.cancel!(error: reason)
       end
@@ -176,6 +180,13 @@ module AgentRuns
     rescue => e
       log_failure(e)
       false
+    end
+
+    def cancellable_before_execution?
+      return false unless agent_run.status == "queued"
+      return true if agent_run.temporal_workflow_id.nil?
+
+      after_claim? && agent_run.temporal_workflow_id == AgentRun::CLAIMED_SENTINEL
     end
 
     def log_cancelled

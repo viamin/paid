@@ -20,7 +20,6 @@ module IntentConformance
   class ReviewerLlm
     include Llm::OutputNormalizer
 
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     PROMPT_VERSION = "review-run-v1"
     TIMEOUT = 60
     LLM_OUTCOMES = %w[within_scope material_drift uncertain].freeze
@@ -83,11 +82,12 @@ module IntentConformance
     # @return [Result] status :ok with validated payload, or the structural
     #   failure reason (:unsuccessful_response, :invalid_json,
     #   :invalid_structured_output). Never raises on LLM failures.
-    def self.call(repository:, revision:, design_docs:, base_sha:, head_sha:, diff:, verification:, model: DEFAULT_MODEL)
-      new(repository:, revision:, design_docs:, base_sha:, head_sha:, diff:, verification:, model:).call
+    def self.call(repository:, revision:, design_docs:, base_sha:, head_sha:, diff:, verification:, model: nil, project: nil)
+      new(repository:, revision:, design_docs:, base_sha:, head_sha:, diff:, verification:, model:, project:).call
     end
 
-    def initialize(repository:, revision:, design_docs:, base_sha:, head_sha:, diff:, verification:, model: DEFAULT_MODEL)
+    def initialize(repository:, revision:, design_docs:, base_sha:, head_sha:, diff:, verification:, model: nil, project: nil)
+      @project = project
       @repository = repository
       @revision = revision
       @design_docs = design_docs
@@ -116,14 +116,7 @@ module IntentConformance
     attr_reader :repository, :revision, :design_docs, :base_sha, :head_sha, :diff, :verification, :model
 
     def request_review
-      AgentHarness.send_message(
-        prompt,
-        provider: :claude,
-        model: model,
-        timeout: TIMEOUT,
-        tools: :none,
-        **Llm::TextMode.options
-      )
+      Llm::Request.call(prompt: prompt, project: @project, model: model, timeout: TIMEOUT)
     rescue AgentHarness::Error => e
       Rails.logger.warn(
         message: "intent_conformance.review_llm_failed",

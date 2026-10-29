@@ -91,11 +91,21 @@ RSpec.describe Inbox::PhaseOwnership do
       expect(described_class.for_entry(entry_for(issue)).responsible_phase).to eq("issue_preparation")
     end
 
-    it "classifies a coding blocker as coding" do
+    it "classifies a coding blocker from its latest run" do
       issue = create(:issue, project:, github_state: "open", paid_state: "manual_review",
         manual_review_reason: "CI repair required")
+      create(:agent_run, project:, issue:, goal: "create_pr", status: "completed")
 
       expect(described_class.for_entry(entry_for(issue)).responsible_phase).to eq("coding")
+    end
+
+    it "keeps a reasonless manual review without run provenance unclassified" do
+      issue = create(:issue, project:, github_state: "open", paid_state: "manual_review")
+
+      ownership = described_class.for_entry(entry_for(issue))
+
+      expect(ownership).to be_unknown
+      expect(ownership).not_to be_phase_owned
     end
 
     it "classifies an enhancement-exhausted manual review as issue preparation" do

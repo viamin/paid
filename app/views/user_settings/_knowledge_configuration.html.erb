@@ -1,11 +1,12 @@
 <div class="space-y-6">
   <p class="text-sm text-gray-500 dark:text-gray-400">
-    Knowledge settings apply to each project through its effective owner, including that owner's fallback runners and API keys.
-    <%= link_to "Manage API keys", provider_api_keys_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+    These settings apply to each project through its effective owner. Application text operations use the selected chat runner; run-specific operations reuse the run's runner.
+    <%= link_to "Manage runners", runners_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>,
+    <%= link_to "manage API keys", provider_api_keys_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>
     or <%= link_to "add an API key", new_provider_api_key_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>.
   </p>
 
-  <% { embedding: "Embedding Configuration", chat: "Decision Drafting Configuration" }.each do |operation, title| %>
+  <% { embedding: "Embedding Configuration", chat: "Application Text and Decision Drafting Configuration" }.each do |operation, title| %>
     <section class="space-y-4 rounded-md border border-gray-200 p-4 dark:border-gray-600">
       <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-300"><%= title %></h4>
       <% primary_attribute = operation == :embedding ? :kb_embedding_runner : :kb_chat_runner %>
@@ -24,7 +25,7 @@
         <div class="mt-2">
           <%= form.text_field fallback_attribute, class: "block w-full rounded-md border-0 px-3 py-1.5 text-gray-900 dark:text-gray-100 dark:bg-gray-700 shadow-sm ring-1 ring-inset ring-gray-300 dark:ring-gray-600 placeholder:text-gray-400 focus:ring-2 focus:ring-inset focus:ring-indigo-600 sm:text-sm sm:leading-6", placeholder: "openrouter, deepseek" %>
         </div>
-        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Comma-separated. Fallback runners are tried in the listed order after the primary runner.</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Comma-separated runner keys or configured runner identifiers. When fallback is enabled, eligible fallback runners are tried in the listed order after the primary runner. For application text, other runners enabled for fallback follow afterward.</p>
       </div>
       <dl class="space-y-2 rounded bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-700 dark:text-gray-200">
         <% knowledge_readiness.fetch(operation).each do |entry| %>
@@ -38,6 +39,8 @@
                 Missing <%= RunnerSupport.api_service_type_label(readiness.credential_service) %> API key — <%= link_to "add one", new_provider_api_key_path, class: "font-medium text-indigo-600 hover:text-indigo-500" %>
               <% elsif readiness.status == "invalid_credential" %>
                 The selected API key is incompatible with this runner. Choose a matching API key or Automatic credential selection.
+              <% elsif readiness.status == "isolation_required" %>
+                This subscription requires isolated execution. For standalone application text, select an API-key runner or a native subscription runner that supports disabling tools.
               <% else %>
                 Unsupported runner/transport for this operation.
               <% end %>
@@ -45,8 +48,11 @@
           </div>
         <% end %>
       </dl>
+      <% if knowledge_readiness.fetch(operation).empty? %>
+        <p class="text-sm text-gray-500">No eligible configured runner. Add a runner with chat enabled or update the selected runner.</p>
+      <% end %>
     </section>
   <% end %>
 
-  <p class="text-xs text-gray-500 dark:text-gray-400">Readiness is local configuration only; it does not validate credentials with a provider. A platform credential is used only when the host has configured the documented fallback, and its usage is billed to the platform. CLI subscription authentication is for agent runners and does not supply these knowledge API calls; API-key usage is billed by its provider.</p>
+  <p class="text-xs text-gray-500 dark:text-gray-400">Readiness is local configuration only; it does not validate credentials with a provider. Application text operations accept configured runners with chat enabled. Host CLIs must support disabling tools; other drivers need API text transport or isolated execution. Managed subscription credentials require isolation. Embeddings need an embedding API; interactive chat currently needs an API-key runner. API usage is billed by its provider.</p>
 </div>

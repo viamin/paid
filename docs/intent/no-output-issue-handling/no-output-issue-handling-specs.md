@@ -78,7 +78,14 @@
   that states the gap's exact next step; an assessment whose human gap omits
   a nonblank next step SHALL be rejected before reconciliation persists it,
   so a retry regenerates the assessment instead of publishing a generic
-  prerequisite. A closed historical issue SHALL NOT satisfy ownership.
+  prerequisite. Both API and CLI requests SHALL explicitly supply the JSON
+  response contract. Assessments SHALL allow 60 seconds for runner startup and
+  generation within the enclosing activity's 120-second budget, leaving time
+  for timeout cleanup and reconciliation.
+  Malformed JSON SHALL fail closed without logging response excerpts.
+  Unsuccessful transport responses SHALL surface a bounded, secret-redacted
+  transport diagnostic distinct from invalid assessment data.
+  A closed historical issue SHALL NOT satisfy ownership.
   GitHub failures SHALL retain durable retry state on the run. The
   reconciliation SHALL run before the parent issue is completed; while any
   gap remains outstanding, the parent SHALL stay incomplete and

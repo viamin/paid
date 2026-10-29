@@ -45,6 +45,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
   end
 
   before do
+    configure_llm_routing(project: project)
     allow(project).to receive(:broadcast_agent_run_detail_update)
     allow(GithubClient).to receive(:new).and_return(client)
     allow(client).to receive(:issue_comments).with(project.full_name, issue.github_number).and_return(comments)
@@ -59,7 +60,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       sections: [ :symbols ],
       total_tokens: 10
     )
-    allow(AgentHarness).to receive(:send_message).and_return(llm_response)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response)
     allow(ProcessRunQueueJob).to receive(:perform_later)
   end
 
@@ -255,7 +256,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       result = activity.execute(agent_run_id: agent_run.id)
 
       expect(result[:sufficient_context]).to be true
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("No retrieval results.", "No context bundle entries were available."),
         hash_including(provider: :claude)
       )
@@ -269,7 +270,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
     it "filters untrusted issue comments out of the LLM prompt" do
       captured_prompt = nil
-      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |prompt, **|
         captured_prompt = prompt
         llm_response
       end
@@ -307,7 +308,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         activity.execute(agent_run_id: agent_run.id)
       }.to raise_error(GithubClient::Error, "GitHub unavailable")
 
-      expect(AgentHarness).not_to have_received(:send_message)
+      expect(AgentHarness.conductor).not_to have_received(:execute_direct)
     end
 
     it "rejects untrusted issues before loading GitHub comments" do
@@ -321,7 +322,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       }
 
       expect(client).not_to have_received(:issue_comments)
-      expect(AgentHarness).not_to have_received(:send_message)
+      expect(AgentHarness.conductor).not_to have_received(:execute_direct)
     end
 
     it "defaults missing_context_areas to an empty array when not in response" do
@@ -347,7 +348,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
       it "includes a body integrity warning in the prompt" do
         captured_prompt = nil
-        allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        allow(AgentHarness.conductor).to receive(:execute_direct) do |prompt, **|
           captured_prompt = prompt
           llm_response
         end
@@ -403,7 +404,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     context "when the issue body is well-formed" do
       it "does not include a body integrity warning in the prompt" do
         captured_prompt = nil
-        allow(AgentHarness).to receive(:send_message) do |prompt, **|
+        allow(AgentHarness.conductor).to receive(:execute_direct) do |prompt, **|
           captured_prompt = prompt
           llm_response
         end
@@ -428,7 +429,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     it "admits the app bot's enhancement marker comments into the prompt" do
       configure_app_backed_project
       captured_prompt = nil
-      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |prompt, **|
         captured_prompt = prompt
         llm_response
       end
@@ -456,7 +457,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     it "rejects spoofed enhancement marker comments from untrusted users in cycle state" do
       configure_app_backed_project
       captured_prompt = nil
-      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |prompt, **|
         captured_prompt = prompt
         llm_response
       end
@@ -481,7 +482,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     it "still rejects the app bot's non-marker comments from the prompt" do
       configure_app_backed_project
       captured_prompt = nil
-      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |prompt, **|
         captured_prompt = prompt
         llm_response
       end
@@ -507,7 +508,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     it "collapses every admissible enhancement comment into cycle state, oldest first" do
       configure_app_backed_project
       captured_prompt = nil
-      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |prompt, **|
         captured_prompt = prompt
         llm_response
       end
@@ -534,7 +535,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     it "keeps the implementation-context section of a long enhancement comment" do
       configure_app_backed_project
       captured_prompt = nil
-      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |prompt, **|
         captured_prompt = prompt
         llm_response
       end
@@ -559,7 +560,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     # recent human answers (#3850).
     it "bounds the conversation section and prefers the newest comments" do
       captured_prompt = nil
-      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |prompt, **|
         captured_prompt = prompt
         llm_response
       end
@@ -588,7 +589,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     # rather than a repeat of the baseline (#3842).
     it "threads prior cycle state (rounds, prior verdict, prior areas) into the prompt" do
       captured_prompt = nil
-      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |prompt, **|
         captured_prompt = prompt
         llm_response
       end
@@ -633,7 +634,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     # remains (#3842).
     it "includes calibration guidance that codebase-resolvable ambiguity is not a blocker" do
       captured_prompt = nil
-      allow(AgentHarness).to receive(:send_message) do |prompt, **|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |prompt, **|
         captured_prompt = prompt
         llm_response
       end
@@ -962,17 +963,17 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     let(:project) { create(:project, account: account, created_by: owner) }
 
     before do
-      create(:user_setting, user: owner, kb_chat_runner: "claude", kb_chat_fallback_runners: [])
+      owner.settings.update!(kb_chat_runner: "claude", kb_chat_fallback_runners: [])
       # Claude is rate-limited -> Knowledge::ProviderSelector.for_chat returns []
       create(:runner_state, :rate_limited, user: owner, runner_name: "claude")
       # An available alternative the owner actually has configured
-      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true)
+      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
     end
 
     # @spec ISSUE-ANALYSIS-002
     it "selects an available chat runner instead of forcing the rate-limited default" do
       selected_provider = nil
-      allow(AgentHarness).to receive(:send_message) do |_, **opts|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |_, **opts|
         selected_provider = opts[:provider]
         llm_response
       end
@@ -1093,7 +1094,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     # @spec ISSUE-ANALYSIS-006
     it "parks the run as rate_limited instead of failing permanently when every provider is rate limited" do
       reset_at = 5.minutes.from_now.change(usec: 0)
-      allow(AgentHarness).to receive(:send_message).and_raise(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(
         AgentHarness::RateLimitError.new("rate limited", reset_time: reset_at, provider: "claude")
       )
 
@@ -1111,7 +1112,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
     # @spec ISSUE-ANALYSIS-006
     it "keeps the non-retryable failure when providers fail for reasons other than rate limiting" do
-      allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::ProviderUnavailableError.new("boom"))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(AgentHarness::ProviderUnavailableError.new("boom"))
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
@@ -1126,7 +1127,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     # @spec ISSUE-ANALYSIS-007
     it "records a circuit-breaker rate limit for the provider so it is available for recovery checks" do
       reset_at = 5.minutes.from_now.change(usec: 0)
-      allow(AgentHarness).to receive(:send_message).and_raise(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(
         AgentHarness::RateLimitError.new("rate limited", reset_time: reset_at, provider: "claude")
       )
 
@@ -1142,7 +1143,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
     # @spec ISSUE-ANALYSIS-007
     it "records a circuit-breaker failure for a non-rate-limit provider error" do
-      allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::ProviderUnavailableError.new("boom"))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(AgentHarness::ProviderUnavailableError.new("boom"))
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
@@ -1155,7 +1156,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
     # @spec ISSUE-ANALYSIS-007
     it "skips a provider on a later run after it was circuit-broken by a previous rate-limit exhaustion" do
-      allow(AgentHarness).to receive(:send_message).and_raise(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(
         AgentHarness::RateLimitError.new("rate limited", reset_time: 5.minutes.from_now)
       )
 
@@ -1165,7 +1166,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
         project: project, github_number: 43, title: "Second issue", body: "More context needed")
       second_run = create(:agent_run, project: project, issue: second_issue, goal: "analyze_issue")
       allow(client).to receive(:issue_comments).with(project.full_name, second_issue.github_number).and_return([])
-      allow(AgentHarness).to receive(:send_message)
+      allow(AgentHarness.conductor).to receive(:execute_direct)
 
       expect {
         activity.execute(agent_run_id: second_run.id)
@@ -1174,14 +1175,14 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       # Only the first run's attempt should have called send_message — the
       # second run's candidate list is empty because "claude" is still
       # circuit-broken, so it never reaches AgentHarness at all.
-      expect(AgentHarness).to have_received(:send_message).once
+      expect(AgentHarness.conductor).to have_received(:execute_direct).once
     end
   end
 
   describe "unsuccessful provider responses" do
     # @spec ISSUE-ANALYSIS-007
     it "records a circuit-breaker failure for a nonzero-exit unsuccessful response" do
-      allow(AgentHarness).to receive(:send_message).and_return(failed_response(error: "unexpected internal error"))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(failed_response(error: "unexpected internal error"))
 
       expect {
         activity.execute(agent_run_id: agent_run.id)
@@ -1197,7 +1198,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     it "opens the circuit once repeated unsuccessful responses reach the configured threshold" do
       user_setting = project.effective_owner.settings
       user_setting.update!(circuit_breaker_failure_threshold: 2)
-      allow(AgentHarness).to receive(:send_message).and_return(failed_response(error: "unexpected internal error"))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(failed_response(error: "unexpected internal error"))
 
       expect { activity.execute(agent_run_id: agent_run.id) }.to raise_error(Temporalio::Error::ApplicationError)
 
@@ -1218,7 +1219,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     # @spec ISSUE-ANALYSIS-006 ISSUE-ANALYSIS-007
     it "parks the run as rate_limited when an unsuccessful response is rate-limit-shaped" do
       reset_at = 5.minutes.from_now.change(usec: 0)
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         failed_response(error: "429 Too Many Requests")
       )
       allow(RunnerSupport).to receive(:rate_limit_reset_at).and_return(reset_at)
@@ -1240,7 +1241,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
     # @spec ISSUE-ANALYSIS-009
     it "opens the circuit immediately for an unsuccessful response classified as an authentication failure" do
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         failed_response(error: "401 Unauthorized: invalid API key")
       )
 
@@ -1255,7 +1256,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
     # @spec ISSUE-ANALYSIS-009
     it "opens the circuit immediately for a raised AgentHarness::AuthenticationError" do
-      allow(AgentHarness).to receive(:send_message).and_raise(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(
         AgentHarness::AuthenticationError.new("invalid credentials", provider: "claude")
       )
 
@@ -1270,7 +1271,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
     # @spec ISSUE-ANALYSIS-013
     it "persists a structured AgentRunLog entry for the failed provider attempt" do
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         failed_response(error: "401 Unauthorized: invalid API key", exit_code: 7)
       )
 
@@ -1293,7 +1294,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
     # @spec ISSUE-ANALYSIS-013
     it "redacts and truncates secrets out of the persisted provider-failure message" do
       secret = "sk-#{'a' * 20}"
-      allow(AgentHarness).to receive(:send_message).and_raise(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(
         AgentHarness::ProviderUnavailableError.new("boom while using key #{secret} and #{'x' * 600}")
       )
 
@@ -1327,17 +1328,17 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       allow(client).to receive(:issue_comments).with(project.full_name, issue.github_number).and_return(comments)
       allow(Knowledge::Search).to receive(:call).and_return(results: [], meta: {})
       allow(Knowledge::ContextBundle::Build).to receive(:call).and_return(content: "", sections: [], total_tokens: 0)
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response)
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response)
       allow(ProcessRunQueueJob).to receive(:perform_later)
     end
 
     # @spec ISSUE-ANALYSIS-001
     it "uses the configured issue_analysis_runner as the primary provider" do
-      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true)
+      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
       owner.settings.update!(issue_analysis_runner: "codex", issue_analysis_fallback_runners: [])
 
       selected_provider = nil
-      allow(AgentHarness).to receive(:send_message) do |_, **opts|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |_, **opts|
         selected_provider = opts[:provider]
         llm_response
       end
@@ -1349,13 +1350,13 @@ RSpec.describe Activities::AnalyzeIssueActivity do
 
     # @spec ISSUE-ANALYSIS-001
     it "tries issue_analysis_fallback_runners before broadening to all chat runners" do
-      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true)
-      create(:runner, user: owner, runner_key: "gemini", enabled_for_chat: true)
+      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
+      create(:runner, user: owner, runner_key: "gemini", enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
       owner.settings.update!(issue_analysis_runner: "codex", issue_analysis_fallback_runners: [ "gemini" ])
       create(:runner_state, :rate_limited, user: owner, runner_name: "codex")
 
       selected_provider = nil
-      allow(AgentHarness).to receive(:send_message) do |_, **opts|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |_, **opts|
         selected_provider = opts[:provider]
         llm_response
       end
@@ -1379,11 +1380,11 @@ RSpec.describe Activities::AnalyzeIssueActivity do
       # No explicit issue_analysis_runner configured, so chat_providers falls
       # back to all available chat runners. The lean runner (codex) should be
       # tried before the heavy-exploration runner (claude).
-      owner.runners.find_by!(runner_key: "claude").update!(enabled_for_chat: true)
-      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true)
+      owner.runners.find_by!(runner_key: "claude").update!(enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
+      create(:runner, user: owner, runner_key: "codex", enabled_for_chat: true, tier_models: { "mid" => { "model_id" => "configured-mid", "provider_id" => 17 } })
 
       selected_provider = nil
-      allow(AgentHarness).to receive(:send_message) do |_, **opts|
+      allow(AgentHarness.conductor).to receive(:execute_direct) do |_, **opts|
         selected_provider = opts[:provider]
         llm_response
       end
@@ -1466,7 +1467,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
   # were attempted so the caller can assert the failover loop iterated.
   def stub_not_logged_in_failover!
     attempted = []
-    allow(AgentHarness).to receive(:send_message) do |_, **opts|
+    allow(AgentHarness.conductor).to receive(:execute_direct) do |_, **opts|
       attempted << opts[:provider]
       case opts[:provider]
       when :claude
@@ -1551,7 +1552,7 @@ RSpec.describe Activities::AnalyzeIssueActivity do
   # the caller can assert the failover loop iterated.
   def stub_failed_response_then_success_failover!
     attempted = []
-    allow(AgentHarness).to receive(:send_message) do |_, **opts|
+    allow(AgentHarness.conductor).to receive(:execute_direct) do |_, **opts|
       attempted << opts[:provider]
       case opts[:provider]
       when :claude

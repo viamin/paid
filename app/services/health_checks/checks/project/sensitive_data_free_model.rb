@@ -142,7 +142,7 @@ module HealthChecks
 
         def compatible_runner_runtime(runner)
           runner.agent_harness_runner_runtime(project: subject)
-        rescue ArgumentError
+        rescue AgentHarness::ConfigurationError, ArgumentError
           nil
         end
       end

@@ -737,6 +737,17 @@ export default class extends Controller {
     this.subscription.perform("resolve_tool_call", { message_id: messageId, decision })
   }
 
+  // @spec CHAT-TURN-RECOVERY-005
+  resumeStalledTurn(event) {
+    const chatTurnId = event.target.closest("[data-chat-turn-id]")?.dataset.chatTurnId
+    if (!chatTurnId) return
+
+    event.target.disabled = true
+    this.setBusy(true)
+    this.setStatus("Resuming…")
+    this.subscription.perform("recover_stalled_turn", { chat_turn_id: chatTurnId })
+  }
+
   handleMessageCreated(data) {
     if (!data.html) return
 

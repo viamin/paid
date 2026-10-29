@@ -79,6 +79,7 @@ RSpec.describe AddRunnerHandleToExecutionTables, :aggregate_failures do
     connection.execute("DELETE FROM project_service_containers")
     connection.execute("DELETE FROM service_container_metrics")
     connection.execute("DELETE FROM service_containers")
+    connection.execute("DELETE FROM feature_intents")
     connection.execute("DELETE FROM issues")
     connection.execute("DELETE FROM projects")
     connection.execute("DELETE FROM runners")

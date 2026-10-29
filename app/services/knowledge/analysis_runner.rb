@@ -8,13 +8,14 @@ module Knowledge
   # to the secrets proxy via a KnowledgeRun proxy token. No API keys are
   # exposed inside the container — the proxy injects them server-side.
   #
-  # Used by Knowledge::Decisions::Draft to containerize decision drafting.
+  # Available for explicitly isolated knowledge analysis. Application decision
+  # drafting uses Llm::Request and the owner's configured runner.
   # @spec KNOWLEDGE-CREDENTIAL-001
   #
   # @example
   #   runner = Knowledge::AnalysisRunner.new(project: project, knowledge_run: knowledge_run)
   #   runner.with_container do |r|
-  #     output = r.call_llm(prompt, provider: "claude", model: "claude-sonnet-4-6")
+  #     output = r.call_llm(prompt, provider: configured_runner_key, model: configured_model_id)
   #   end
   class AnalysisRunner
     class Error < StandardError; end
@@ -33,12 +34,6 @@ module Knowledge
       # the restricted paid_agent network (docker-compose.yml); Docker's
       # literal default "bridge" network has no route to it (RDR-054).
       network_mode: NetworkPolicy::NETWORK_NAME
-    }.freeze
-
-    # Default models per API service type, used when caller does not specify one.
-    DEFAULT_MODELS = {
-      "anthropic" => "claude-sonnet-4-6",
-      "openai" => "gpt-4o"
     }.freeze
 
     # API service types supported for containerized LLM calls.
@@ -91,7 +86,10 @@ module Knowledge
       api_type = RunnerSupport.api_service_type_for(provider.to_s)
       raise ContainerError, "Unsupported API type for provider: #{provider}" unless SUPPORTED_API_TYPES.include?(api_type)
 
-      effective_model = model || DEFAULT_MODELS.fetch(api_type)
+      runner = Runner.for_identifier(project.effective_owner, provider)
+      resolved = Runners::ResolveTierModel.call(runner: runner, tier: "mid", user: runner.user, project: project) if runner
+      effective_model = model.presence || resolved&.model_id
+      raise ContainerError, "No configured model for the selected runner" if effective_model.blank?
       env = llm_env(api_type: api_type, model: effective_model, prompt: prompt, provider: provider, timeout: timeout)
       script = llm_script(api_type: api_type)
 

@@ -3,6 +3,12 @@
 require "rails_helper"
 
 RSpec.describe StyleGuideEvolution::Mutate do
+  before { configure_llm_routing(project: style_guide.project, account: style_guide.account)
+allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
+   }
+
+  after { Current.user = nil }
+
   let(:style_guide) { create(:style_guide, :global, raw_content: source_content) }
   let(:source_content) { "# Style Guide\n\nUse descriptive names." }
   let(:response_body) do
@@ -19,10 +25,6 @@ RSpec.describe StyleGuideEvolution::Mutate do
   end
   let(:response) { instance_double(AgentHarness::Response, success?: true, output: response_body) }
 
-  before do
-    allow(AgentHarness).to receive(:send_message).and_return(response)
-    allow(Llm::TextMode).to receive(:options).and_return({})
-  end
 
   it "returns mutations from the LLM response" do
     mutations = described_class.call(style_guide: style_guide)
@@ -42,9 +44,9 @@ RSpec.describe StyleGuideEvolution::Mutate do
     allow(Knowledge::Redaction::Redactor).to receive(:call)
       .with(text: source_content)
       .and_return(double(clean_text: "[REDACTED]"))
-    allow(AgentHarness).to receive(:send_message) do |prompt, **options|
+    allow(AgentHarness.conductor).to receive(:execute_direct) do |prompt, **options|
       sent_prompt = prompt
-      expect(options).to include(provider: :claude, model: "claude-sonnet-4-6", timeout: 60, tools: :none)
+      expect(options).to include(provider: :claude, model: "configured-mid", timeout: 60, tools: :none)
       response
     end
 

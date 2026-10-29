@@ -4,10 +4,22 @@ require "rails_helper"
 
 RSpec.describe AgentRuns::Execute do
   let(:project) { create(:project) }
-  let(:agent_run) { create(:agent_run, project: project, agent_type: "claude_code") }
+  let(:agent_run) { create(:agent_run, project: project, agent_type: "claude_code", container_id: "isolated-test-container") }
   let(:prompt) { "Fix the authentication bug" }
 
   describe ".call" do
+    # @spec LLM-ROUTING-005
+    it "refuses to execute an agent on the application host" do
+      agent_run.update!(container_id: nil, runner_handle: nil)
+      allow(AgentHarness.conductor).to receive(:execute_direct)
+
+      result = described_class.call(agent_run: agent_run, prompt: prompt)
+
+      expect(result).to be_failure
+      expect(result.error).to be_a(AgentHarness::ConfigurationError)
+      expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+    end
+
     context "when agent execution succeeds" do
       let(:response) do
         AgentHarness::Response.new(
@@ -21,7 +33,7 @@ RSpec.describe AgentRuns::Execute do
       end
 
       before do
-        allow(AgentHarness).to receive(:send_message).and_return(response)
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
       end
 
       it "returns a successful result" do
@@ -118,11 +130,9 @@ RSpec.describe AgentRuns::Execute do
       end
 
       it "calls AgentHarness.send_message with correct parameters" do
-        expect(AgentHarness).to receive(:send_message).with(
-          prompt,
-          runner: "claude",
-          dangerous_mode: true
-        ).and_return(response)
+        expect(AgentHarness.conductor).to receive(:execute_direct).with(
+          prompt, hash_including(provider: :claude,
+          dangerous_mode: true)).and_return(response)
 
         described_class.call(agent_run: agent_run, prompt: prompt)
       end
@@ -140,7 +150,7 @@ RSpec.describe AgentRuns::Execute do
       end
 
       before do
-        allow(AgentHarness).to receive(:send_message).and_return(response)
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
       end
 
       it "marks the agent run as failed" do
@@ -169,7 +179,7 @@ RSpec.describe AgentRuns::Execute do
 
     context "when agent times out" do
       before do
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_raise(AgentHarness::TimeoutError.new("Timed out after 600s"))
       end
 
@@ -197,7 +207,7 @@ RSpec.describe AgentRuns::Execute do
 
       it "does not overwrite a cleanup timeout when another process finished the run first" do
         sentinel = "#{AgentRun::STALE_DETECTOR_ERROR_PREFIX}: stuck in 'running' beyond timeout threshold"
-        allow(AgentHarness).to receive(:send_message) do
+        allow(AgentHarness.conductor).to receive(:execute_direct) do
           agent_run.update!(
             status: "timeout",
             completed_at: Time.current,
@@ -215,7 +225,7 @@ RSpec.describe AgentRuns::Execute do
 
     context "when agent times out with nil timeout" do
       before do
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_raise(AgentHarness::TimeoutError.new("Timed out"))
         allow(AgentHarness.configuration).to receive(:default_timeout).and_return(601)
       end
@@ -230,7 +240,7 @@ RSpec.describe AgentRuns::Execute do
 
     context "when agent times out with explicit timeout of 0" do
       before do
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_raise(AgentHarness::TimeoutError.new("Timed out"))
       end
 
@@ -245,7 +255,7 @@ RSpec.describe AgentRuns::Execute do
 
     context "when agent-harness raises an error" do
       before do
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_raise(AgentHarness::ProviderError.new("Provider unavailable"))
       end
 
@@ -277,7 +287,7 @@ RSpec.describe AgentRuns::Execute do
 
     context "when agent-harness raises an authentication error" do
       before do
-        allow(AgentHarness).to receive(:send_message)
+        allow(AgentHarness.conductor).to receive(:execute_direct)
           .and_raise(AgentHarness::AuthenticationError.new("OAuth session expired"))
       end
 
@@ -326,16 +336,14 @@ RSpec.describe AgentRuns::Execute do
       end
 
       before do
-        allow(AgentHarness).to receive(:send_message).and_return(response)
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
       end
 
       it "passes custom timeout to agent-harness" do
-        expect(AgentHarness).to receive(:send_message).with(
-          prompt,
-          runner: "claude",
+        expect(AgentHarness.conductor).to receive(:execute_direct).with(
+          prompt, hash_including(provider: :claude,
           timeout: 1200,
-          dangerous_mode: true
-        ).and_return(response)
+          dangerous_mode: true)).and_return(response)
 
         described_class.call(agent_run: agent_run, prompt: prompt, timeout: 1200)
       end
@@ -352,7 +360,7 @@ RSpec.describe AgentRuns::Execute do
       end
 
       before do
-        allow(AgentHarness).to receive(:send_message).and_return(response)
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
       end
 
       it "skips token tracking" do
@@ -363,7 +371,7 @@ RSpec.describe AgentRuns::Execute do
     end
 
     context "when kilocode returns token totals" do
-      let(:agent_run) { create(:agent_run, :kilocode, project: project) }
+      let(:agent_run) { create(:agent_run, :kilocode, project: project, container_id: "isolated-test-container") }
       let(:kilocode_model) { "anthropic/claude-sonnet-4.5" }
       let(:delta) { agent_run.token_usages.find_by!(request_type: "run_delta") }
       let(:aggregate) { TokenUsages::Aggregate.call }
@@ -379,7 +387,7 @@ RSpec.describe AgentRuns::Execute do
       end
 
       before do
-        allow(AgentHarness).to receive(:send_message).and_return(response)
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
       end
 
       it "depends on agent-harness versions that parse kilocode token totals" do
@@ -431,7 +439,7 @@ RSpec.describe AgentRuns::Execute do
     end
 
     context "when a codex run returns token usage" do
-      let(:agent_run) { create(:agent_run, :codex, project: project) }
+      let(:agent_run) { create(:agent_run, :codex, project: project, container_id: "isolated-test-container") }
       let(:codex_model) { "o3" }
       let(:delta) { agent_run.token_usages.find_by!(request_type: "run_delta") }
       let(:aggregate) { TokenUsages::Aggregate.call }
@@ -447,7 +455,7 @@ RSpec.describe AgentRuns::Execute do
       end
 
       before do
-        allow(AgentHarness).to receive(:send_message).and_return(response)
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
       end
 
       it "depends on agent-harness versions that parse codex token totals" do
@@ -521,7 +529,7 @@ RSpec.describe AgentRuns::Execute do
     end
 
     context "when a copilot run returns token usage" do
-      let(:agent_run) { create(:agent_run, :copilot, project: project) }
+      let(:agent_run) { create(:agent_run, :copilot, project: project, container_id: "isolated-test-container") }
       let(:response) do
         AgentHarness::Response.new(
           output: "Done",
@@ -534,7 +542,7 @@ RSpec.describe AgentRuns::Execute do
       end
 
       before do
-        allow(AgentHarness).to receive(:send_message).and_return(response)
+        allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
       end
 
       it "tracks run summary and delta using the reported model" do
@@ -563,7 +571,7 @@ RSpec.describe AgentRuns::Execute do
     end
 
     before do
-      allow(AgentHarness).to receive(:send_message).and_return(response)
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
     end
 
     {
@@ -576,11 +584,11 @@ RSpec.describe AgentRuns::Execute do
       "kilocode" => :kilocode
     }.each do |agent_type, expected_runner|
       it "maps #{agent_type} to #{expected_runner.inspect}" do
-        run = create(:agent_run, project: project, agent_type: agent_type)
+        run = create(:agent_run, project: project, agent_type: agent_type, container_id: "isolated-test-container")
 
-        expect(AgentHarness).to receive(:send_message).with(
+        expect(AgentHarness.conductor).to receive(:execute_direct).with(
           prompt,
-          hash_including(runner: expected_runner.to_s, dangerous_mode: true)
+          hash_including(provider: expected_runner.to_sym, dangerous_mode: true)
         ).and_return(response)
 
         described_class.call(agent_run: run, prompt: prompt)

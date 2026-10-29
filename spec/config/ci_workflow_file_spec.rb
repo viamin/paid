@@ -165,7 +165,7 @@ RSpec.describe CiWorkflowFile, :no_db do
       "--exclude-operation-id resolveChatToolCall"
     )
     expect(fuzz_command).not_to include("--include-method GET")
-    expect(Rails.root.join(".github/schemathesis-constraints.txt").read).to eq("hypothesis==6.169.4\n")
+    expect(Rails.root.join(".github/schemathesis-constraints.txt").read).to eq("hypothesis==6.168.3\n")
   end
 
   # @spec MOBILE-API-006 MOBILE-API-018

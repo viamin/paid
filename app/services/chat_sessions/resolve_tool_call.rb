@@ -22,7 +22,7 @@ module ChatSessions
     DENIED_RESULT = { status: "denied", message: "The requested action was not approved" }.freeze
 
     attr_reader :chat_session, :actor, :tool_call_message, :decision, :llm_client,
-      :on_chunk, :on_message_persisted, :on_tool_call_resolved, :stream_message_id,
+      :on_tool_call_resolved, :stream_message_id,
       :transport_attempt_message
 
     def initialize(chat_session:, actor: chat_session.created_by, tool_call_message:, decision:, llm_client: nil, on_chunk: nil,
@@ -33,7 +33,7 @@ module ChatSessions
       @decision = decision.to_sym
       @llm_client = llm_client
       @on_chunk = on_chunk
-      @on_message_persisted = on_message_persisted
+      @on_message_persisted_callback = on_message_persisted
       @on_tool_call_resolved = on_tool_call_resolved
       @stream_message_id = stream_message_id
       @transport_attempt_message = originating_user_message
@@ -50,15 +50,41 @@ module ChatSessions
       prepare_resolution!
       on_tool_call_resolved&.call(tool_call_message)
 
-      if post_dispatch_confirmation?
+      result = if post_dispatch_confirmation?
         resolve_post_dispatch_confirmation!
       else
         resolve_pending_tool_call!
         resume_loop_unless_other_pending
       end
+      chat_turn&.complete!(result) if result
+      result
+    rescue StandardError, NotImplementedError => e
+      chat_turn&.fail!(error: e)
+      raise
+    end
+
+    # See ChatSessions::SendMessage#on_message_persisted: same checkpoint
+    # tracking, keyed off the turn that originally paused for this
+    # confirmation (#4680).
+    def on_message_persisted
+      @turn_tracking_callback ||= lambda do |message, **kwargs|
+        chat_turn&.record_activity!(message)
+        @on_message_persisted_callback&.call(message, **kwargs)
+      end
+    end
+
+    # @spec CHAT-TURN-RECOVERY-002
+    def on_chunk
+      @heartbeat_callback ||= chat_turn&.heartbeat_callback(@on_chunk)
     end
 
     private
+
+    def chat_turn
+      return nil unless transport_attempt_message
+
+      @chat_turn ||= ChatTurn.find_by(user_message_id: transport_attempt_message.id)
+    end
 
     # Keep the initial turn's user row for transport attempt accounting. A
     # confirmation can be resolved while a newer turn is being sent, so using

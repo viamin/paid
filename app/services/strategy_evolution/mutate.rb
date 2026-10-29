@@ -4,7 +4,6 @@ module StrategyEvolution
   class Mutate
     include Llm::OutputNormalizer
 
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 60
     MAX_MUTATION_COUNT = 5
     MIN_MUTATION_COUNT = 1
@@ -26,6 +25,8 @@ module StrategyEvolution
     end
 
     def initialize(strategy:, analysis:, options: {})
+      @routing_project = options[:project]
+      @routing_account = options[:account]
       @strategy = strategy.deep_symbolize_keys
       @analysis = analysis.deep_symbolize_keys
       raw_count = options.fetch(:mutation_count, options.fetch("mutation_count", 2))
@@ -97,14 +98,7 @@ module StrategyEvolution
     end
 
     def request_mutations
-      response = AgentHarness.send_message(
-        build_prompt,
-        provider: :claude,
-        model: DEFAULT_MODEL,
-        timeout: TIMEOUT,
-        tools: :none,
-        **Llm::TextMode.options
-      )
+      response = Llm::Request.call(prompt: build_prompt, project: @routing_project, account: @routing_account, timeout: TIMEOUT)
       unless response.success?
         Rails.logger.warn(
           message: "strategy_evolution.mutate_unsuccessful_response",

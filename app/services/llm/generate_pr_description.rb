@@ -21,7 +21,6 @@ module Llm
   class GeneratePrDescription
     include OutputNormalizer
 
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     MAX_DESCRIPTION_LENGTH = 50_000
     MAX_SUMMARY_INPUT = 20_000
     MAX_ISSUE_BODY_INPUT = 4_000
@@ -66,16 +65,18 @@ module Llm
     PROMPT
 
     class << self
-      def call(agent_summary:, issue_title: nil, issue_body: nil)
+      def call(agent_summary:, issue_title: nil, issue_body: nil, agent_run: nil)
         new(
           agent_summary: agent_summary,
+          agent_run: agent_run,
           issue_title: issue_title,
           issue_body: issue_body
         ).generate
       end
     end
 
-    def initialize(agent_summary:, issue_title: nil, issue_body: nil)
+    def initialize(agent_summary:, issue_title: nil, issue_body: nil, agent_run: nil)
+      @agent_run = agent_run
       @agent_summary = agent_summary
       @issue_title = issue_title
       @issue_body = issue_body
@@ -105,14 +106,7 @@ module Llm
     end
 
     def attempt_single_request
-      response = AgentHarness.send_message(
-        prompt,
-        provider: :claude,
-        model: DEFAULT_MODEL,
-        timeout: TIMEOUT,
-        tools: :none,
-        **TextMode.options
-      )
+      response = Request.call(prompt: prompt, agent_run: @agent_run, timeout: TIMEOUT)
 
       if response.success?
         normalize_output(response.output).presence

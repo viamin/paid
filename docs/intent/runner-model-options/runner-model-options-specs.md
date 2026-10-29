@@ -22,6 +22,21 @@
   `catalog_source == "openrouter_sync"` rows (synced free models), so the
   dropdown offers the Pareto row and synced free models alongside other
   OpenRouter rows.
+- [x] **RUNNER-MODEL-OPTIONS-007** — When an OpenRouter caller explicitly
+  requests `zdr_eligible: true`, the system SHALL use only active advertised
+  ZDR candidate models and SHALL still apply the existing runner compatibility
+  filter; default model options and request-time routing SHALL remain unchanged.
+- [x] **RUNNER-MODEL-OPTIONS-008** — When a runner declares ZDR and its
+  selected API key is OpenRouter, the setup form SHALL offer only concrete
+  advertised-ZDR models that remain runner-compatible. It SHALL require an
+  explicit selection, preserve no free-policy or custom-model escape hatch,
+  and reject a crafted save unless the current catalog is ready and includes
+  the submitted model.
+- [x] **RUNNER-MODEL-OPTIONS-009** — The setup form SHALL distinguish a ZDR
+  catalog that is loading, unavailable, stale, empty, or ready. A state other
+  than ready SHALL not expose an unverified selectable model list; changing
+  the provider or ZDR declaration SHALL recompute choices and clear an
+  incompatible selection rather than substituting one.
 
 ## Free Policy Entry
 

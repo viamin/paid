@@ -820,6 +820,87 @@ RSpec.describe Runner do
 
     # @spec MODEL-POLICY-001 MODEL-POLICY-002 MODEL-POLICY-003 MODEL-POLICY-004 MODEL-POLICY-006 MODEL-POLICY-007 MODEL-POLICY-009 MODEL-POLICY-011
     describe "opencode model_policy" do
+      # @spec MODEL-POLICY-015 MODEL-POLICY-016
+      it "defaults ZDR off and derives OpenRouter enforcement from the active provider runtime" do
+        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+        runner.assign_attributes(
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          zero_data_retention: true,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "meta-llama/llama-4-maverick" } }
+        )
+
+        expect(build(:runner).zero_data_retention).to be(false)
+        expect(runner.zero_data_retention_provenance).to eq("openrouter_enforced")
+        expect(runner).to be_zero_data_retention_enforced
+      end
+
+      # @spec MODEL-POLICY-015 MODEL-POLICY-016
+      it "adds ZDR routing for a specific-model OpenRouter runner" do
+        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+        runner.assign_attributes(
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          zero_data_retention: true,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "meta-llama/llama-4-maverick" } }
+        )
+
+        runtime = runner.agent_harness_runner_runtime(project: Struct.new(:data_classification).new("internal"))
+
+        expect(runtime.metadata.fetch(:config).dig("provider", "openrouter")).to eq(data_collection: "deny", zdr: true)
+      end
+
+      # @spec MODEL-POLICY-022
+      it "adds ZDR routing when a restricted project requires it and the runner declaration is off" do
+        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+        runner.assign_attributes(
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          zero_data_retention: false,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "meta-llama/llama-4-maverick" } }
+        )
+        project = build(:project, data_classification: "restricted")
+
+        runtime = runner.agent_harness_runner_runtime(project: project)
+
+        expect(runtime.metadata.fetch(:config).dig("provider", "openrouter")).to eq(data_collection: "deny", zdr: true)
+      end
+
+      # @spec MODEL-POLICY-016
+      it "downgrades ZDR provenance to a user declaration when its provider changes" do
+        openrouter_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+        minimax_key = create(:provider_api_key, user: runner.user, api_service_type: "minimax")
+        runner.assign_attributes(
+          runner_key: "opencode",
+          auth_type: "api_key",
+          provider_api_key: openrouter_key,
+          zero_data_retention: true,
+          config: { "opencode" => { "api_provider" => "openrouter", "model" => "meta-llama/llama-4-maverick" } }
+        )
+
+        runner.provider_api_key = minimax_key
+
+        expect(runner.zero_data_retention_provenance).to eq("user_declared")
+        expect(runner).not_to be_zero_data_retention_enforced
+      end
+
+      # @spec MODEL-POLICY-016
+      it "does not claim runtime enforcement for an OpenRouter Pi runner" do
+        api_key = create(:provider_api_key, user: runner.user, api_service_type: "openrouter")
+        runner.assign_attributes(
+          runner_key: "pi",
+          auth_type: "api_key",
+          provider_api_key: api_key,
+          zero_data_retention: true,
+          config: { "pi" => { "api_provider" => "openrouter", "model" => "meta-llama/llama-4-maverick" } }
+        )
+
+        expect(runner.zero_data_retention_provenance).to eq("user_declared")
+      end
+
       it "defaults to specific when unset" do
         runner.runner_key = "opencode"
 

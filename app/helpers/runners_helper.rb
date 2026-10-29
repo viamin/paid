@@ -48,19 +48,32 @@ module RunnersHelper
     base_options_by_service_type.merge(service_type => effective_options)
   end
 
-  def runner_model_options_by_service_type(runner_key:, service_types:, auth_type:, current_model_id:, free_model_policy:)
+  def runner_model_options_by_service_type(runner_key:, service_types:, auth_type:, current_model_id:, free_model_policy:,
+    openrouter_zdr: false, zdr_catalog_ready: false)
     option_rows_by_service_type = Runners::ModelOptions.call_by_provider(
       runner_key: runner_key,
       api_providers: service_types,
       auth_type: auth_type
     ).transform_values { |entries| entries.map { |entry| [ entry.label, entry.value, entry.kind.to_s ] } }
+    if openrouter_zdr
+      option_rows_by_service_type["openrouter"] = zdr_catalog_ready ? openrouter_zdr_option_rows(runner_key, auth_type) : []
+    end
 
     service_types.index_with do |service_type|
       option_rows = option_rows_by_service_type.fetch(service_type, [])
-      next option_rows if free_model_policy
+      next option_rows if free_model_policy || (openrouter_zdr && service_type == "openrouter")
 
       model_options_preserving_current(option_rows, current_model_id)
     end
+  end
+
+  def openrouter_zdr_option_rows(runner_key, auth_type)
+    Runners::ModelOptions.call(
+      runner_key: runner_key,
+      api_provider: "openrouter",
+      auth_type: auth_type,
+      zdr_eligible: true
+    ).map { |entry| [ entry.label, entry.value, entry.kind.to_s ] }
   end
 
   def runner_model_select_value(current_model_id:, free_model_policy:)

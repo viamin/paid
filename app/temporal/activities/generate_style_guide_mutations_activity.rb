@@ -11,6 +11,7 @@ module Activities
         quality_metrics: input.fetch(:quality_metrics, []),
         sample_outputs: {},
         options: {
+          project: Project.find_by(id: input[:project_id]),
           mutation_count: input.fetch(:mutation_count, 3),
           strategies: input[:strategies]
         }

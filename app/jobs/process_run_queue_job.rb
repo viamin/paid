@@ -368,6 +368,17 @@ class ProcessRunQueueJob < ApplicationJob
           next
         end
 
+        # The first policy check protects the queue. Recheck immediately after
+        # this scheduler owns the claim so a phase disablement or grant
+        # revocation racing the claim cannot start a newly unauthorized run.
+        # A claimed sentinel is not an executing workflow; running work remains
+        # intentionally unaffected by later policy changes.
+        # @spec AUTOMATION-PHASES-013
+        if AgentRuns::RecheckIssueEligibility.call(agent_run, after_claim: true)
+          skipped_ids.add(agent_run.id)
+          next
+        end
+
         # RDR-048 (#2947): do not persist container_host here. The planned
         # placement is forwarded into the workflow input and then into
         # Provision/ProvisionContainerActivity as a separate kwarg so the
@@ -481,6 +492,7 @@ class ProcessRunQueueJob < ApplicationJob
     available_at: nil, park_reason: nil)
     original_id = agent_run.runner_id
     cache_key = reroute_cache_key(agent_run, original_id)
+    snapshot_zdr_requirement!(agent_run)
 
     if reroute_cache.key?(cache_key)
       cached = reroute_cache[cache_key]
@@ -523,6 +535,14 @@ class ProcessRunQueueJob < ApplicationJob
         skipped_ids.add(agent_run.id)
       end
     end
+  end
+
+  def snapshot_zdr_requirement!(agent_run)
+    policy = agent_run.runner&.effective_privacy_policy(project: agent_run.project)
+    return unless policy&.zdr_required
+    return if agent_run.external_metadata.to_h["zdr_required"] == true
+
+    agent_run.update_columns(external_metadata: agent_run.external_metadata.to_h.merge("zdr_required" => true))
   end
 
   def apply_cached_reroute(agent_run, cached)

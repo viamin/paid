@@ -3,6 +3,12 @@
 require "rails_helper"
 
 RSpec.describe PromptEvolution::Mutate do
+  before { configure_llm_routing(project: prompt.project, account: prompt.account)
+allow(AgentHarness.conductor).to receive(:execute_direct).and_return(harness_response)
+   }
+
+  after { Current.user = nil }
+
   let(:prompt) { create(:prompt, :global, :with_version) }
   let(:current_version) { prompt.current_version }
 
@@ -46,12 +52,6 @@ RSpec.describe PromptEvolution::Mutate do
 
   let(:harness_response) { instance_double(AgentHarness::Response, success?: true, output: valid_llm_response) }
 
-  before do
-    allow(AgentHarness).to receive(:send_message).and_return(harness_response)
-    # Default: preserve CLI transport so existing exact-match expectations
-    # pass. Individual specs flip this on to prove text-mode routing.
-    allow(Llm::TextMode).to receive(:options).and_return({})
-  end
 
   describe ".call" do
     it "returns mutations from the LLM" do
@@ -69,13 +69,11 @@ RSpec.describe PromptEvolution::Mutate do
     it "sends the current template to the LLM" do
       described_class.call(prompt: prompt)
 
-      expect(AgentHarness).to have_received(:send_message).with(
-        a_string_including(current_version.template),
-        provider: :claude,
-        model: "claude-sonnet-4-6",
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+        a_string_including(current_version.template), hash_including(provider: :claude,
+        model: "configured-mid",
         timeout: 60,
-        tools: :none
-      )
+        tools: :none))
     end
 
     it "generates the requested number of mutations" do
@@ -89,19 +87,10 @@ RSpec.describe PromptEvolution::Mutate do
     it "includes mutation strategies in the prompt" do
       described_class.call(prompt: prompt, options: { strategies: %w[refinement simplification] })
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("Refinement", "Simplification"),
         hash_including(provider: :claude)
       )
-    end
-
-    it "routes through agent-harness text mode when an API key is configured" do
-      allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
-
-      described_class.call(prompt: prompt)
-
-      expect(AgentHarness).to have_received(:send_message)
-        .with(anything, hash_including(mode: :text))
     end
   end
 
@@ -125,7 +114,7 @@ RSpec.describe PromptEvolution::Mutate do
     it "clamps mutation_count to minimum of 1" do
       described_class.call(prompt: prompt, options: { mutation_count: 0 })
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("1 improved variant"),
         hash_including(provider: :claude)
       )
@@ -134,7 +123,7 @@ RSpec.describe PromptEvolution::Mutate do
     it "clamps mutation_count to maximum of 5" do
       described_class.call(prompt: prompt, options: { mutation_count: 10 })
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("5 improved variant"),
         hash_including(provider: :claude)
       )
@@ -142,7 +131,7 @@ RSpec.describe PromptEvolution::Mutate do
   end
 
   describe "quality metrics integration" do
-    let(:agent_run) { create(:agent_run, prompt_version: current_version) }
+    let(:agent_run) { create(:agent_run, prompt_version: current_version, project: create(:project, account: Current.user.account, created_by: Current.user)) }
 
     it "includes performance data when metrics are provided" do
       metric = create(:quality_metric, agent_run: agent_run, prompt_version: current_version,
@@ -150,7 +139,7 @@ RSpec.describe PromptEvolution::Mutate do
 
       described_class.call(prompt: prompt, quality_metrics: [ metric ])
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("Average quality score: 0.75"),
         hash_including(provider: :claude)
       )
@@ -162,7 +151,7 @@ RSpec.describe PromptEvolution::Mutate do
 
       described_class.call(prompt: prompt, quality_metrics: [ metric ])
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("Low ci passed"),
         hash_including(provider: :claude)
       )
@@ -174,7 +163,7 @@ RSpec.describe PromptEvolution::Mutate do
 
       mutations = described_class.call(prompt: prompt, quality_metrics: [ metric ])
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("No composite scores available"),
         hash_including(provider: :claude)
       )
@@ -191,7 +180,7 @@ RSpec.describe PromptEvolution::Mutate do
 
       described_class.call(prompt: prompt, sample_outputs: samples)
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("### Successful Runs", "Good output", "### Failed Runs", "Bad output"),
         hash_including(provider: :claude)
       )
@@ -202,7 +191,7 @@ RSpec.describe PromptEvolution::Mutate do
 
       described_class.call(prompt: prompt, sample_outputs: samples)
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("String-keyed output", "String-keyed failure"),
         hash_including(provider: :claude)
       )
@@ -213,7 +202,7 @@ RSpec.describe PromptEvolution::Mutate do
 
       described_class.call(prompt: prompt, sample_outputs: samples)
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("[truncated]"),
         hash_including(provider: :claude)
       )
@@ -224,7 +213,7 @@ RSpec.describe PromptEvolution::Mutate do
 
       described_class.call(prompt: prompt, sample_outputs: samples)
 
-      expect(AgentHarness).to have_received(:send_message) do |prompt_text, **_opts|
+      expect(AgentHarness.conductor).to have_received(:execute_direct) do |prompt_text, **_opts|
         expect(prompt_text).to include("Unique sample output 1")
         expect(prompt_text).to include("Unique sample output 3")
         expect(prompt_text).not_to include("Unique sample output 4")
@@ -244,7 +233,7 @@ RSpec.describe PromptEvolution::Mutate do
     it "truncates and redacts error output in log messages" do
       long_error = "x" * 1000
       failed_response = instance_double(AgentHarness::Response, success?: false, exit_code: 1, error: long_error)
-      allow(AgentHarness).to receive(:send_message).and_return(failed_response)
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(failed_response)
 
       allow(Rails.logger).to receive(:warn).with(hash_including(message: "prompts.render_fallback"))
       expect(Rails.logger).to receive(:warn).with(hash_including(
@@ -256,7 +245,7 @@ RSpec.describe PromptEvolution::Mutate do
     end
 
     it "returns empty array when AgentHarness raises" do
-      allow(AgentHarness).to receive(:send_message).and_raise(AgentHarness::Error, "timeout")
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_raise(AgentHarness::Error, "timeout")
 
       mutations = described_class.call(prompt: prompt)
 
@@ -492,7 +481,7 @@ RSpec.describe PromptEvolution::Mutate do
     it "only includes valid strategies" do
       described_class.call(prompt: prompt, options: { strategies: %w[refinement invalid expansion] })
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_matching(/refinement.*expansion/m),
         hash_including(provider: :claude)
       )
@@ -523,7 +512,7 @@ RSpec.describe PromptEvolution::Mutate do
 
       described_class.call(prompt: prompt_without_vars)
 
-      expect(AgentHarness).to have_received(:send_message) do |prompt_text, **_opts|
+      expect(AgentHarness.conductor).to have_received(:execute_direct) do |prompt_text, **_opts|
         expect(prompt_text).not_to include("Preserve all template variables")
       end
     end
@@ -534,7 +523,7 @@ RSpec.describe PromptEvolution::Mutate do
 
       described_class.call(prompt: prompt_with_vars)
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("Preserve all template variables (task, repo)"),
         hash_including(provider: :claude)
       )
@@ -546,7 +535,7 @@ RSpec.describe PromptEvolution::Mutate do
 
       described_class.call(prompt: prompt_no_vars_metadata)
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("Preserve all template variables (task, repo)", "## Template Variables\ntask, repo"),
         hash_including(provider: :claude)
       )
@@ -558,7 +547,7 @@ RSpec.describe PromptEvolution::Mutate do
 
       described_class.call(prompt: prompt_with_partial_metadata)
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("Preserve all template variables (task, repo)", "## Template Variables\ntask, repo"),
         hash_including(provider: :claude)
       )
@@ -572,7 +561,7 @@ RSpec.describe PromptEvolution::Mutate do
 
       described_class.call(prompt: prompt_with_system)
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("System Prompt", "You are a coding assistant"),
         hash_including(provider: :claude)
       )
@@ -583,7 +572,7 @@ RSpec.describe PromptEvolution::Mutate do
     it "coerces string mutation_count to integer" do
       described_class.call(prompt: prompt, options: { mutation_count: "2" })
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("2 improved variant"),
         hash_including(provider: :claude)
       )
@@ -592,7 +581,7 @@ RSpec.describe PromptEvolution::Mutate do
     it "wraps a single strategy string in an array" do
       described_class.call(prompt: prompt, options: { strategies: "refinement" })
 
-      expect(AgentHarness).to have_received(:send_message).with(
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
         a_string_including("Refinement"),
         hash_including(provider: :claude)
       )

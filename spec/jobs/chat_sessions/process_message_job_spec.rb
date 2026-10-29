@@ -16,6 +16,45 @@ RSpec.describe ChatSessions::ProcessMessageJob, type: :job do
     allow(ChatSessions::BuildLlmClient).to receive(:call).and_return(llm_client)
   end
 
+  # @spec CHAT-TURN-RECOVERY-004
+  it "classifies an unfinished turn when the same job is executed again" do
+    user_message = create(:chat_message, chat_session: chat_session, role: "user",
+      metadata: { "stream_message_id" => stream_message_id })
+    turn = create(:chat_turn, status: "streaming", chat_session: chat_session, user_message: user_message)
+    job = described_class.new(chat_session_id: chat_session.id, content: "Hello",
+      stream_message_id: stream_message_id)
+    job.executions = 1
+
+    job.perform_now
+
+    expect(turn.reload.metadata).to include("recovery_classification" => "infrastructure_failure")
+  end
+
+  it "does not classify an overlapping first execution as an infrastructure failure" do
+    user_message = create(:chat_message, chat_session: chat_session, role: "user",
+      metadata: { "stream_message_id" => stream_message_id })
+    turn = create(:chat_turn, status: "streaming", chat_session: chat_session, user_message: user_message)
+
+    described_class.perform_now(chat_session_id: chat_session.id, content: "Hello",
+      stream_message_id: stream_message_id)
+
+    expect(turn.reload.metadata).not_to include("recovery_classification")
+  end
+
+  it "does not classify a completed turn when an old job is executed again" do
+    user_message = create(:chat_message, chat_session: chat_session, role: "user",
+      metadata: { "stream_message_id" => stream_message_id })
+    turn = create(:chat_turn, status: "completed", chat_session: chat_session,
+      user_message: user_message, completed_at: Time.current)
+    job = described_class.new(chat_session_id: chat_session.id, content: "Hello",
+      stream_message_id: stream_message_id)
+    job.executions = 1
+
+    job.perform_now
+
+    expect(turn.reload.metadata).not_to include("recovery_classification")
+  end
+
   it "does not rebroadcast message_start while processing the turn" do
     assistant_msg = create(:chat_message, :assistant, chat_session: chat_session,
       tokens_input: 20, tokens_output: 10)

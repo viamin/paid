@@ -4,6 +4,42 @@
 > recoverable (#4120). Status markers: `[x]` implemented · `[ ]` active gap ·
 > `[D]` deferred. Each ID is a grep target (`grep -r PARTIAL-CLOSEOUT-001`).
 
+- [x] **PARTIAL-CLOSEOUT-031** — When Paid assesses closeout for an agent
+  run, it SHALL use that run's effective configured runner, policy-permitted
+  tier model, and configured credentials through `agent_harness`,
+  without requiring a particular provider or consulting unrelated host API
+  keys. It SHALL reuse an existing isolated environment; report-only host
+  calls SHALL use the runner's explicit API credential or native subscription
+  with conflicting API variables unset. Managed subscription credentials
+  without an isolated environment and missing or disabled configuration SHALL
+  fail explicitly rather than select an implicit provider.
+  *Code:* `app/services/llm/request.rb`,
+  `app/services/llm/analyze_partial_closeout.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/services/llm/request_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-030** — When Paid requests a partial-closeout
+  assessment, it SHALL supply the JSON response contract to CLI subscription
+  callers, identify unsuccessful transport responses using safe
+  status metadata without provider payloads or credentials, and classify
+  harness authentication exceptions into bounded retry diagnostics. Transport
+  failure SHALL remain a failure rather than acceptance evidence.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-034** — When a partial-closeout request cannot obtain
+  a valid assessment from the run's configured runner, it SHALL remain
+  fail-closed and persist a bounded failure category, actual provider/model
+  provenance when available, request and attempt identities, and structural
+  invalid-field paths/types where applicable; it SHALL not persist response
+  content or credentials. Authentication failures SHALL state the configured
+  credential recovery action rather than being reported as a generic malformed
+  assessment.
+  *Code:* `app/services/llm/analyze_partial_closeout.rb`,
+  `app/temporal/activities/reconcile_partial_closeout_activity.rb`.
+  *Test:* `spec/services/llm/analyze_partial_closeout_spec.rb`,
+  `spec/temporal/activities/reconcile_partial_closeout_activity_spec.rb`.
+
 - [x] **PARTIAL-CLOSEOUT-032** — When an authorized technical-prerequisite
       validation is prepared from a partial-closeout item, the system SHALL
       inspect compatible execution hosts through the existing backend scheduler
@@ -128,6 +164,16 @@
   *Test:* `spec/services/issues/request_acceptance_audit_spec.rb`,
   `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`,
   `spec/temporal/workflows/agent_execution_workflow_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-035** — When a report-only acceptance audit completes,
+  the system SHALL pass its persisted criterion assessment through the
+  deterministic partial-closeout reconciler before completing the audit run.
+  The reconciliation SHALL persist its terminal status and any follow-up owner
+  or operator prerequisite evidence, while the audit SHALL leave the source
+  issue state unchanged and SHALL not perform a second semantic assessment.
+  *Code:* `app/temporal/activities/run_acceptance_audit_activity.rb`,
+  `app/services/partial_closeouts/reconcile.rb`.
+  *Test:* `spec/temporal/activities/run_acceptance_audit_activity_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-028** — When a trusted, open non-PR issue has merged
   closeout evidence and is held in `manual_review`, the bounded legacy
@@ -628,12 +674,28 @@
   actor, timestamp, and explicit disposition. A URL, comment, upload, green
   run, or dismissed notification SHALL start as `pending_validation`, not as
   acceptance satisfaction; evidence for an obsolete source revision SHALL be
-  `stale`. An active legacy prerequisite notification without a
+  `stale`. A trusted validation result SHALL reconcile the matching submission
+  to `sufficient`, `insufficient`, or `unavailable`; stale evidence SHALL remain
+  `stale`. Validation SHALL retrieve the artifact through the bounded,
+  public-address-only transport and perform the semantic sufficiency judgment
+  through `agent_harness`; retrieval, execution, and structured-output failures
+  SHALL reconcile to `unavailable`. An identical retry SHALL preserve its
+  recorded disposition and SHALL NOT schedule another validation. Only current
+  sufficient results for every occurrence may resolve the blocking notification;
+  insufficient, unavailable, or stale results SHALL keep the blocker active. An
+  active legacy prerequisite notification without a
   `prerequisites` array SHALL expose its one persisted prerequisite identity as
   a compatible occurrence and atomically upgrade it with the current source
   revision before recording the submission. The unresolved notification remains
-  active until a current, sufficient assessment resolves that occurrence.
+  active until a current, sufficient assessment resolves that occurrence; the
+  occurrence-only release path SHALL require a matching pending submission and
+  SHALL release the parent scheduling guard only after every current occurrence
+  is reconciled as sufficient. Dismissal and generic notification resolution
+  SHALL not release that guard.
   *Code:* `app/services/partial_closeouts/submit_evidence.rb`,
+  `app/services/partial_closeouts/assess_evidence.rb`,
+  `app/services/partial_closeouts/reconcile_evidence.rb`,
+  `app/jobs/partial_closeouts/validate_evidence_job.rb`,
   `app/services/partial_closeouts/prerequisite_occurrences.rb`,
   `app/services/partial_closeouts/reconcile.rb`,
   `app/controllers/projects/closeout_evidence_controller.rb`,
@@ -641,3 +703,22 @@
   *Test:* `spec/services/partial_closeouts/submit_evidence_spec.rb`,
   `spec/requests/projects/closeout_evidence_spec.rb`,
   `spec/requests/inbox_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-036** — When a current prerequisite evidence
+  submission is recorded, Paid SHALL asynchronously assess the submitted
+  artifact reference and explanation through `agent_harness`, treating both as
+  untrusted claims and never as instructions or acceptance authority. The
+  submission SHALL remain `pending_validation` until the assessor returns an
+  exact, structurally valid disposition; only `sufficient` or `insufficient`
+  may be produced by a valid response, while transport, parsing, or stale
+  revision failures SHALL persist `unavailable` or `stale` and SHALL never
+  satisfy the prerequisite. The persisted outcome SHALL be applied only to the
+  matching current submission and SHALL include a bounded human-readable
+  reason without persisting raw model output.
+  *Code:* `app/jobs/partial_closeouts/validate_submitted_evidence_job.rb`,
+  `app/services/partial_closeouts/fetch_evidence_artifact.rb`,
+  `app/services/partial_closeouts/validate_submitted_evidence.rb`,
+  `app/services/partial_closeouts/submit_evidence.rb`.
+  *Test:* `spec/services/partial_closeouts/fetch_evidence_artifact_spec.rb`,
+  `spec/services/partial_closeouts/validate_submitted_evidence_spec.rb`,
+  `spec/services/partial_closeouts/submit_evidence_spec.rb`.

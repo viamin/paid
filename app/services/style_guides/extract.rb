@@ -10,7 +10,6 @@ module StyleGuides
   #   result.style_guides  # => [#<StyleGuide>, ...]
   #   result.languages     # => ["ruby", "typescript"]
   class Extract
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     TIMEOUT = 120
 
     # Proper display names for languages to avoid inconsistencies like
@@ -101,15 +100,7 @@ module StyleGuides
     end
 
     def send_to_llm(prompt)
-      AgentHarness.send_message(
-        prompt,
-        provider: :claude,
-        model: DEFAULT_MODEL,
-        timeout: TIMEOUT,
-        dangerous_mode: false,
-        tools: :none,
-        **Llm::TextMode.options
-      )
+      Llm::Request.call(prompt: prompt, project: project, timeout: TIMEOUT)
     end
 
     def validate_response!(response)

@@ -3,6 +3,9 @@
 require "rails_helper"
 
 RSpec.describe Reviews::Verification::LlmSession do
+  before { configure_llm_routing() }
+  after { Current.user = nil }
+
   let(:operation) { "verified_review.find" }
   let(:error_class) { Class.new(StandardError) }
   let(:invalid_output_error) { Class.new(StandardError) }
@@ -16,7 +19,7 @@ RSpec.describe Reviews::Verification::LlmSession do
       error: error,
       input_tokens: input_tokens,
       output_tokens: output_tokens,
-      model: "claude-sonnet-4-6"
+      model: "configured-mid"
     )
   end
 
@@ -27,7 +30,7 @@ RSpec.describe Reviews::Verification::LlmSession do
         invalid_output_error: invalid_output_error,
         on_usage: ->(**usage) { usages << usage }
       )
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         harness_response({ candidates: [ "ok" ] }.to_json)
       )
 
@@ -36,7 +39,7 @@ RSpec.describe Reviews::Verification::LlmSession do
       expect(result).to eq("candidates" => [ "ok" ])
       expect(usages.first).to include(
         tokens_input: 50, tokens_output: 25,
-        llm_model: "claude-sonnet-4-6", operation: operation
+        llm_model: "configured-mid", operation: operation
       )
     end
 
@@ -45,7 +48,7 @@ RSpec.describe Reviews::Verification::LlmSession do
         operation: operation, error_class: error_class,
         invalid_output_error: invalid_output_error
       )
-      allow(AgentHarness).to receive(:send_message).and_return(
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(
         harness_response("", success: false, error: "provider down")
       )
 
@@ -57,7 +60,7 @@ RSpec.describe Reviews::Verification::LlmSession do
         operation: operation, error_class: error_class,
         invalid_output_error: invalid_output_error
       )
-      allow(AgentHarness).to receive(:send_message).and_return(harness_response("[1,2,3]"))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(harness_response("[1,2,3]"))
 
       expect { session.request_json("prompt") }.to raise_error(invalid_output_error, /not a JSON object/)
     end
@@ -74,7 +77,7 @@ RSpec.describe Reviews::Verification::LlmSession do
       # `agent_run_phases.metadata.error_message` — repository content in
       # the database, which violates REVIEW-VERIFY-009.
       offending = "I think app/services/foo.rb has a bug on line 7"
-      allow(AgentHarness).to receive(:send_message).and_return(harness_response(offending))
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(harness_response(offending))
 
       expect { session.request_json("prompt") }.to raise_error(invalid_output_error) do |error|
         expect(error.message).to eq("#{operation} output is not valid JSON")

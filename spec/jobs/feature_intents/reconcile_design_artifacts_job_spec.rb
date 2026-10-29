@@ -4,6 +4,11 @@ require "rails_helper"
 
 # @spec DESIGN-RECONCILIATION-001
 RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
+  before { configure_llm_routing(project: project)
+response = instance_double(AgentHarness::Response, success?: false, output: nil)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
+   }
+
   def discovery(artifacts, complete: true)
     FeatureIntents::DiscoverRdrArtifacts::Discovery.new(
       artifacts:, revision: "a" * 40, coverage_complete: complete,
@@ -11,14 +16,18 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     )
   end
 
+  def capture_query_events
+    events = []
+    subscriber = ->(event) { events << event.payload }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") { yield }
+    events
+  end
+
   let(:project) { create(:project, owner: "acme", repo: "widget") }
   let(:feature_intent) { create(:feature_intent, project:) }
   let(:design_pr) { create(:feature_intent_design_pr, feature_intent:, pull_request_number: 100, draft: false) }
 
-  before do
-    response = instance_double(AgentHarness::Response, success?: false, output: nil)
-    allow(AgentHarness).to receive(:send_message).and_return(response)
-  end
 
   # @spec DESIGN-RECONCILIATION-002
   describe "coalescing", :good_job do
@@ -214,6 +223,104 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     expect(DesignArtifactFinding.count).to eq(0)
   end
 
+  # @spec DESIGN-RECONCILIATION-003
+  it "reuses one bounded issue snapshot across every RDR in a project sweep" do
+    artifacts = [ 101, 102 ].map do |number|
+      FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+        path: "docs/rdrs/RDR-#{number}.md", revision: "a" * 40, body: "## Related Issues\n- ##{number}\n"
+      )
+    end
+    artifacts.each { |artifact| create(:issue, project:, github_number: artifact.path[/\d+/].to_i) }
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery(artifacts))
+    queries = []
+    subscriber = ->(event) { queries << event.payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.perform_now(project.id)
+    end
+
+    issue_queries = queries.grep(/SELECT .* FROM "issues"/)
+    expect(issue_queries.size).to eq(1)
+    expect(DesignArtifactFinding.count).to eq(0)
+  end
+
+  # @spec DESIGN-RECONCILIATION-003
+  it "does not load issue coverage when a project sweep has no design artifacts" do
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([]))
+    create(:issue, project:, github_number: 101, body: "Large synchronized issue body")
+    queries = []
+    subscriber = ->(event) { queries << event.payload[:sql] }
+
+    ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+      described_class.perform_now(project.id)
+    end
+
+    expect(queries.grep(/SELECT .* FROM "issues"/)).to be_empty
+    expect(DesignArtifactFinding.count).to eq(0)
+  end
+
+  # @spec DESIGN-RECONCILIATION-003
+  it "scopes reused issue facts to each artifact's own projects" do
+    external_project = create(:project, account: project.account, owner: "acme", repo: "external")
+    create(:issue, project: external_project, github_number: 201, title: "Implement linkless design")
+    linkless = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-101-linkless.md", revision: "a" * 40, body: "# Linkless design"
+    )
+    external = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-102-external.md", revision: "b" * 40,
+      body: "## Related Issues\n- acme/external#201\n"
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ linkless, external ]))
+    allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
+    response = instance_double(AgentHarness::Response, success?: true,
+      output: '{"issue_identity":"acme/external#201","explanation":"It implements this design."}')
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(artifact_path: linkless.path, state: "missing_tree")
+    expect(DesignArtifactAssociation.where(artifact_path: linkless.path)).to be_empty
+    expect(AgentHarness.conductor).not_to have_received(:execute_direct)
+  end
+
+  # @spec DESIGN-RECONCILIATION-003
+  it "does not load a crossed owner and repository pair into a sweep snapshot" do
+    first_referenced_project = create(:project, account: project.account, owner: "acme", repo: "one")
+    second_referenced_project = create(:project, account: project.account, owner: "other", repo: "two")
+    crossed_project = create(:project, account: project.account, owner: "acme", repo: "two")
+    [ first_referenced_project, second_referenced_project, crossed_project ].each do |referenced_project|
+      create(:issue, project: referenced_project, github_number: 101)
+    end
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-102-external.md", revision: "a" * 40,
+      body: "## Related Issues\n- acme/one#101\n- other/two#101\n"
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+    query_events = capture_query_events { described_class.perform_now(project.id) }
+
+    issue_query = query_events.find { |event| event[:sql].include?("FROM \"issues\"") }
+    loaded_project_ids = issue_query.fetch(:sql)
+      .match(/"issues"\."project_id" IN \(([^)]+)\)/).captures.first.split(", ").map(&:to_i)
+    expect(loaded_project_ids).to contain_exactly(project.id, first_referenced_project.id, second_referenced_project.id)
+    expect(loaded_project_ids).not_to include(crossed_project.id)
+  end
+
+  # @spec DESIGN-RECONCILIATION-003
+  it "reconciles trusted issues from an account-authorized upstream project" do
+    external_project = create(:project, :upstream_pr_target, account: project.account,
+      owner: "acme", repo: "external")
+    create(:issue, project: external_project, github_number: 201, github_creator_login: "acme")
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-102-external.md", revision: "a" * 40,
+      body: "## Related Issues\n- acme/external#201\n"
+    )
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    expect { described_class.perform_now(project.id) }.not_to raise_error
+
+    expect(DesignArtifactFinding.count).to eq(0)
+  end
+
   it "uses a stored Paid feature-intent link without requiring a document repair" do
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
     linked_issue = create(:issue, project:, github_number: 101)
@@ -225,11 +332,61 @@ RSpec.describe FeatureIntents::ReconcileDesignArtifactsJob do
     expect(DesignArtifactAssociation.sole.provenance).to eq("Paid feature intent linkage")
   end
 
+  # @spec DESIGN-RECONCILIATION-003
+  it "uses an account-authorized cross-project stored link during a project sweep" do
+    external_project = create(:project, account: project.account, owner: "acme", repo: "external")
+    create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
+    linked_issue = create(:issue, project: external_project, github_number: 101)
+    create(:feature_intent_issue, feature_intent:, issue: linked_issue)
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.sole).to have_attributes(
+      issue_identity: "acme/external#101", provenance: "Paid feature intent linkage"
+    )
+  end
+
+  # @spec DESIGN-RECONCILIATION-003
+  it "authorizes a manifest-linked issue's project even when the RDR body does not name it" do
+    external_project = create(:project, account: project.account, owner: "acme", repo: "external")
+    linked_issue = create(:issue, project: external_project, github_number: 101)
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-102-external.md", revision: "a" * 40, body: "Status: Accepted"
+    )
+    feature_intent.update!(design_document_paths: [ artifact.path ])
+    create(:feature_intent_issue, feature_intent:, issue: linked_issue)
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.count).to eq(0)
+    expect(DesignArtifactAssociation.sole).to have_attributes(
+      issue_identity: "acme/external#101", provenance: "canonical issue-tree manifest"
+    )
+  end
+
+  # @spec DESIGN-RECONCILIATION-003
+  it "uses an untrusted manifest-linked issue as Paid structural evidence" do
+    artifact = FeatureIntents::DiscoverRdrArtifacts::Artifact.new(
+      path: "docs/rdrs/RDR-102-manifest.md", revision: "a" * 40, body: "Status: Accepted"
+    )
+    feature_intent.update!(design_document_paths: [ artifact.path ])
+    linked_issue = create(:issue, project:, github_number: 101, github_creator_login: "untrusted-author")
+    create(:feature_intent_issue, feature_intent:, issue: linked_issue)
+    allow(FeatureIntents::DiscoverRdrArtifacts).to receive(:call).with(project:).and_return(discovery([ artifact ]))
+
+    described_class.perform_now(project.id)
+
+    expect(DesignArtifactFinding.sole).to have_attributes(state: "partial_tree", status: "open")
+  end
+
   it "assesses synchronized open issue candidates before creating a missing-tree finding" do
     allow(Rails).to receive(:cache).and_return(ActiveSupport::Cache::MemoryStore.new)
     response = instance_double(AgentHarness::Response, success?: true,
       output: '{"issue_identity":"acme/widget#101","explanation":"It implements this design."}')
-    allow(AgentHarness).to receive(:send_message).and_return(response)
+    allow(AgentHarness.conductor).to receive(:execute_direct).and_return(response)
     create(:issue, :pull_request, project:, github_number: design_pr.pull_request_number, body: "No issue tree yet")
     create(:issue, project:, github_number: 101, title: "Implement design", body: "Implementation work")
 

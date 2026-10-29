@@ -13,9 +13,18 @@ module ChatSessions
   module FallbackLoop
     private
 
+    # @spec CHAT-TURN-RECOVERY-001 @spec CHAT-TURN-RECOVERY-002
     def run_with_fallbacks
+      turn = chat_turn if respond_to?(:chat_turn, true)
+      return run_fallback_loop unless turn
+
+      with_attempt_heartbeat(turn) { run_fallback_loop }
+    end
+
+    def run_fallback_loop
       # @spec CHAT-API-006
       attempted_runners = [ chat_session.runner ].compact
+      required_zdr = originating_zdr_required?
 
       loop do
         @llm_client ||= ChatSessions::BuildLlmClient.call(
@@ -26,13 +35,54 @@ module ChatSessions
         agent_loop = ChatSessions::AgentLoop.new(**fallback_loop_kwargs)
         return agent_loop.run
       rescue AgentHarness::Error => e
-        fallback_runner = ChatSessions::FallbackRunners.for(chat_session: chat_session, excluding: attempted_runners).first
+        fallback_runner = ChatSessions::FallbackRunners.for(
+          chat_session: chat_session,
+          excluding: attempted_runners,
+          required_zdr: required_zdr
+        ).first
         raise unless fallback_runner
 
         attempted_runners << fallback_runner
+        required_zdr ||= fallback_runner.zero_data_retention?
         discard_partial_attempt(agent_loop&.created_message_ids)
         switch_to_fallback_runner(fallback_runner, e)
       end
+    end
+
+    def with_attempt_heartbeat(turn)
+      stopped = false
+      mutex = Mutex.new
+      wakeup = ConditionVariable.new
+      heartbeat_thread = start_heartbeat_thread(turn, mutex, wakeup, -> { stopped })
+      yield
+    ensure
+      mutex&.synchronize do
+        stopped = true
+        wakeup.signal
+      end
+      heartbeat_thread&.join
+      heartbeat_thread&.value unless $!
+    end
+
+    def start_heartbeat_thread(turn, mutex, wakeup, stopped)
+      Thread.new do
+        loop do
+          should_stop = mutex.synchronize do
+            wakeup.wait(mutex, ChatTurn::HEARTBEAT_INTERVAL)
+            stopped.call
+          end
+          break if should_stop
+
+          ActiveRecord::Base.connection_pool.with_connection do
+            TenantContext.with(chat_session.account) { turn.heartbeat! }
+          end
+        end
+      end
+    end
+
+    # @spec MODEL-POLICY-024
+    def originating_zdr_required?
+      chat_session.runner&.effective_privacy_policy(project: chat_session.llm_policy_project)&.zdr_required == true
     end
 
     def fallback_loop_kwargs

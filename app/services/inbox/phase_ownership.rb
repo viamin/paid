@@ -32,8 +32,9 @@ module Inbox
       Inbox::Queue::PROJECT_SETUP_PENDING_KIND => Automation::Phases::DISCOVERY
     }.freeze
 
-    # manual_review has several causes; the stop reason and the latest run goal
-    # say which phase owns the stop.
+    # manual_review has several causes; durable enhancement-stop evidence and
+    # the latest run goal say which phase owns the stop. A generic review state
+    # without either remains unknown rather than assuming coding ownership.
     ENHANCEMENT_REASONS = /enhance|clarif|question/i
 
     Ownership = Struct.new(:request_key, :entry_kind, :record_id, :project, :responsible_phase,
@@ -200,9 +201,9 @@ module Inbox
       return Automation::Phases::ISSUE_PREPARATION if issue.manual_review_reason.to_s.match?(ENHANCEMENT_REASONS)
 
       latest_run = latest_runs ? latest_runs[issue.id] : issue.agent_runs.order(created_at: :desc, id: :desc).first
-      return Automation::Phases::ISSUE_PREPARATION if latest_run&.enhance_issue_goal?
+      return unless latest_run
 
-      Automation::Phases::CODING
+      Automation::ManualStart::Plan.phase_for_goal(latest_run.goal)
     end
 
     def phase_for_issue_kind(kind, issue)

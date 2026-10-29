@@ -104,6 +104,11 @@ RSpec.describe AgentImageBuildScript, :no_db do
       expect(workflow_source).to include("env:\n      PAID_SKIP_DATABASE_RUNTIME_ROLE_GUARD: \"true\"")
     end
 
+    # @spec CONTAINER-RUNTIME-031
+    it "allows enough time for a cold contract-owned CLI rebuild and both smoke suites" do
+      expect(workflow.dig("jobs", "agent-image", "timeout-minutes")).to eq(90)
+    end
+
     # The action ref is asserted as an opaque 40-character SHA instead of a
     # hardcoded pin: Dependabot owns the GitHub Action bump, so naming the exact
     # commit here would turn every bump into a spec edit while asserting nothing
@@ -191,7 +196,11 @@ RSpec.describe AgentImageBuildScript, :no_db do
 
     # @spec CONTAINER-RUNTIME-029
     it "verifies the current Kilocode SQLite seed after warming the CLI" do
-      expect(dockerfile_source).to include("test -f /home/agent/.local/share/kilo/kilo.db")
+      expect(dockerfile_source).to include('timeout -k 10s 120s kilo session list')
+      expect(dockerfile_source).to include(
+        "find /home/agent/.local/share/kilo -maxdepth 1 -name '*.db' -print -quit"
+      )
+      expect(dockerfile_source).not_to include("test -f /home/agent/.local/share/kilo/kilo.db")
       expect(dockerfile_source).not_to include("test -f /home/agent/.local/share/kilo/kilo-rc.db")
     end
 

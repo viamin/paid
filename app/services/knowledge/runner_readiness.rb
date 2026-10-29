@@ -20,6 +20,7 @@ module Knowledge
     end
 
     def call
+      return text_runner_readiness if operation == :chat
       return unsupported unless supported?
 
       credential
@@ -28,6 +29,24 @@ module Knowledge
     private
 
     attr_reader :account, :owner, :operation, :runner
+
+    def text_runner_readiness
+      selected = Runner.for_identifier(owner, runner)
+      return unsupported unless selected&.enabled_for_chat? && !selected.discarded?
+
+      if selected.subscription?
+        key = RunnerSupport.harness_runner_key_for(selected.runner_key).to_sym
+        driver = AgentHarness.provider_class(key).new(config: AgentHarness.build_config(key))
+        managed = owner.account.runner_credentials.for_runner(selected.runner_key).where(revoked_at: nil).exists?
+        status = managed || !driver.supports_tool_control? ? "isolation_required" : "ready"
+        return Result.new(status: status, credential_source: "subscription", credential_service: "subscription",
+          credential_name: "Configured subscription", validated_with_provider: false)
+      end
+      return missing_credential(selected.required_api_service_type) unless selected.provider_api_key || selected.active_integration_credential?
+
+      Result.new(status: "ready", credential_source: "runner_credential", credential_service: selected.required_api_service_type,
+        credential_name: selected.provider_api_key&.name || "Configured integration credential", validated_with_provider: false)
+    end
 
     def supported?
       supported_runners.include?(runner) && (operation == :embedding || AnalysisRunner.supported_provider?(runner))

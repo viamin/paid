@@ -3,7 +3,10 @@
 require "rails_helper"
 
 RSpec.describe Knowledge::AnalysisRunner, :no_db do # @spec KNOWLEDGE-CREDENTIAL-001
-  let(:project) { Struct.new(:id).new(42) }
+  let(:owner) { instance_double(User) }
+  let(:project) { Struct.new(:id, :effective_owner).new(42, owner) }
+  let(:configured_runner) { instance_double(Runner, user: owner) }
+  let(:resolved_model) { instance_double(Runners::ResolveTierModel::Result, model_id: "claude-sonnet-4-6") }
   let(:knowledge_run) do
     Struct.new(:id, :proxy_token, :persisted?, :active?, :status) do
       def ensure_proxy_token!
@@ -39,6 +42,8 @@ RSpec.describe Knowledge::AnalysisRunner, :no_db do # @spec KNOWLEDGE-CREDENTIAL
 
   before do
     allow(Containers).to receive(:backend).and_return(backend)
+    allow(Runner).to receive(:for_identifier).and_return(configured_runner)
+    allow(Runners::ResolveTierModel).to receive(:call).and_return(resolved_model)
   end
 
   describe ".available?" do

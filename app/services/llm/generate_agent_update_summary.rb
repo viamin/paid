@@ -6,7 +6,6 @@ module Llm
   class GenerateAgentUpdateSummary
     include OutputNormalizer
 
-    DEFAULT_MODEL = "claude-sonnet-4-6"
     MAX_OUTPUT_LENGTH = 3_000
     MAX_COMMIT_MESSAGE_LENGTH = 1_000
     MAX_FILES = 40
@@ -23,7 +22,8 @@ module Llm
       end
     end
 
-    def initialize(repository:, pr_number:, base_sha:, head_sha:, comparison:)
+    def initialize(repository:, pr_number:, base_sha:, head_sha:, comparison:, agent_run: nil)
+      @agent_run = agent_run
       @repository = repository
       @pr_number = pr_number
       @base_sha = base_sha
@@ -51,14 +51,7 @@ module Llm
     end
 
     def request_summary
-      AgentHarness.send_message(
-        prompt,
-        provider: :claude,
-        model: DEFAULT_MODEL,
-        timeout: TIMEOUT,
-        tools: :none,
-        **TextMode.options
-      )
+      Request.call(prompt: prompt, agent_run: @agent_run, timeout: TIMEOUT)
     end
 
     def normalize_output(text)

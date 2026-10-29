@@ -47,6 +47,19 @@ generation.
 
 ### Source-closure publication
 
+Closeout assessment uses the run's effective configured runner through
+`Llm::Request` and `agent_harness`, with its tier model resolved through
+the existing runner model policy and its credentials in the isolated execution
+environment when present. Report-only host calls use the same runner's
+explicit API credential or native subscription authentication; managed
+subscription credentials require an isolated environment. It supplies the
+JSON schema in the prompt and validates the
+response locally. Unrelated host API keys never select a provider or change
+billing mode. Missing or disabled runners and unavailable managed credentials fail
+explicitly. Failed responses identify the runner and safe status metadata
+without provider payloads or credentials. Harness authentication exceptions
+retain their type. Assessment failures never become acceptance evidence.
+
 The existing criterion-level partial-closeout assessment is the sole authority
 for publishing a source issue's closing reference. Before a new source PR is
 published, Paid obtains the assessment through `agent_harness`, snapshots the
@@ -188,9 +201,25 @@ explanation against that exact identity. The durable submission records actor,
 timestamp, identity, and a disposition (`pending_validation`, `sufficient`,
 `insufficient`, `stale`, or `unavailable`). A submission begins pending: a
 URL, comment, upload, green run, or dismissed alert is never acceptance proof.
+A background validator retrieves the artifact through the public-address-only,
+size-bounded research transport and delegates its semantic sufficiency judgment
+to `agent_harness`; unavailable retrieval, execution, or structured output is
+persisted as unavailable rather than leaving the submission pending forever.
 A changed source revision makes the submission stale. Only a current,
 explicitly sufficient assessment may release that occurrence; personal
 dismissal remains a distinct scheduling action, never evidence satisfaction.
+After recording a pending submission, a low-priority background validation job
+passes the prerequisite criterion, durable references, artifact URL, and
+explanation to the configured `agent_harness` runner. These fields are
+untrusted claims and are fenced in the prompt as data, never treated as
+instructions. The validator accepts only the exact `sufficient` or
+`insufficient` dispositions and a bounded reason; transport, parsing, and
+concurrency failures fail closed as `unavailable`, and a changed source
+revision remains `stale`. The job applies its result only to the matching
+current submission and never stores raw model output.
+An identical retry preserves the recorded disposition and does not schedule a
+second validation; an operator submits changed evidence to request a new
+assessment.
 Active notifications created before occurrence-level metadata are represented as
 one compatible occurrence using their persisted aggregate identity, references,
 and operator guidance. A valid submission atomically upgrades that occurrence
@@ -264,6 +293,19 @@ recording completion, so a continuation cannot dispatch after the attestation.
   by the existing sync parser).
 
 ### Legacy reconciliation: `PartialCloseouts::ReconcileLegacy`
+
+### Assessment transport diagnostics
+
+Closeout assessment is a fail-closed request through the run's effective
+configured runner. It reuses the run's isolated environment when available;
+report-only host calls use only the selected runner's explicit API credential or
+native subscription materialization and clear conflicting API variables. The
+request never silently changes provider, credential, model, or billing path.
+Failed attempts persist only a bounded category, actual provider/model
+provenance when available, request and attempt identities, and invalid-field
+paths/types for structural failures. They retain no raw provider response
+content or credential material, and an authentication failure names reconnecting
+the configured runner credential as the recovery action.
 
 The `partial-closeout-reconciliation-v1` Temporal patch only intercepts new
 workflows. Pre-patch runs — including the 2026-09-17 / 2026-09-22 /
@@ -482,8 +524,11 @@ acceptance audit** action. It uses the existing scoped-continuation admission
 transaction, but records `acceptance_audit` in the request evidence and queues
 an `analyze_issue` run rather than a `create_pr` run. The workflow recognizes
 that persisted mode and invokes a dedicated audit activity which refreshes the
-criterion assessment on the run; it does not create a follow-up run, change the
-issue state, create a pull request, or authorize implementation. The normal
+criterion assessment on the run and passes that snapshot through the
+deterministic partial-closeout reconciler before completing the audit. The
+reconciler records any follow-up owner or operator prerequisite as durable
+evidence; the audit still does not create a follow-up run, change the issue
+state, create a pull request, or authorize implementation. The normal
 request/run lifecycle remains the durable progress, cancellation, failure, and
 retry surface, and the existing one-open-request and active-run constraints
 deduplicate audit requests for an evidence generation. Deduplication only

@@ -227,6 +227,10 @@ The operating principles that tie the approaches above to day-to-day work:
 
 - **Data over configuration.** When a behavior could be a rule or a record,
   store the record.
+- **Provider independence.** Application LLM operations use explicitly
+  configured runners and compatible models through `agent_harness`. No
+  lifecycle step requires a particular vendor, and host credentials never
+  silently override the selected runner's authentication or billing mode.
 - **Human final say.** The authority over whether a change lands rests with a
   human — exercised per-PR by default, or through explicit, revocable
   auto-merge configuration that delegates the per-merge decision under rules
@@ -238,6 +242,9 @@ The operating principles that tie the approaches above to day-to-day work:
 - **No silent stops.** When automation stops acting on a work item, the system
   surfaces that it stopped, why it stopped, and what clears it. A blocked state
   legible only in the database is a defect, not a quiet success.
+- **Bounded operational observation.** System-level delivery-health observation
+  may analyze only sanitized operational facts and must remain advisory unless
+  an independently reviewed, authorized, reversible action boundary exists.
 - **One LLM interface.** All application-level LLM calls flow through
   `agent_harness`; fail loudly rather than papering over provider differences
   in the control plane.
@@ -336,6 +343,16 @@ evidence-backed reports — without requiring a feature issue or PR first.
 It consumes the marketplace tool-attachment and sidecar lifecycle rather than
 building a second provisioning path, and keeps investigation separate from
 any repair: a scan never mutates source code or opens a PR on its own.
+A planned optimization recipe family extends that capability with
+non-functional audits selected from a code-defined catalog and scoped by a
+free-form natural-language target as readily as paths or symbols. Semantic
+repair eligibility belongs to an `agent_harness` assessment; authorization,
+budgets, idempotency, and revalidation remain deterministic code gates.
+Automatic repair is a draft, per-run, off-by-default election, bounded to the
+approved finding and unavailable to security hardening. See
+`docs/intent/optimization-recipes/`; its #4495 owner-decision provenance is
+recorded there, while #4636 remains the explicit acceptance decision. The
+family remains unaccepted and does not enable implementation or rollout.
 **Draft, not yet accepted**: see RDR-075 (merged to
 `docs/rdrs/RDR-075-general-maintenance-runs.md`, still Status: Draft) and
 `docs/intent/maintenance-runs/` for the reviewable LLD/EARS contract pending

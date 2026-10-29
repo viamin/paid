@@ -22,7 +22,7 @@ RSpec.describe Knowledge::DashboardStats do
       before { project } # ensure project exists
 
       # @spec KNOWLEDGE-DASHBOARD-001
-      it "reports missing credentials rather than ready when no runner state exists" do
+      it "reports partial readiness when the default chat subscription is available" do
         expect(stats).to include(
           projects_indexed: 0,
           projects_total: 1,
@@ -32,9 +32,9 @@ RSpec.describe Knowledge::DashboardStats do
           artifacts_by_type: [],
           last_collection_at: nil
         )
-        expect(stats[:operational_status]).to eq("unavailable")
+        expect(stats[:operational_status]).to eq("degraded")
         expect(stats[:provider_health][:embedding_available]).to be false
-        expect(stats[:provider_health][:chat_available]).to be false
+        expect(stats[:provider_health][:chat_available]).to be true
         expect(stats[:provider_health][:embedding].first).to include(
           configuration_status: "missing_credential",
           operational_status: "healthy",
@@ -104,15 +104,15 @@ RSpec.describe Knowledge::DashboardStats do
       before { project }
 
       # @spec KNOWLEDGE-DASHBOARD-002
-      it "does not report chat ready when the account adds an unusable managed credential" do
-        expect(stats[:provider_health][:chat].first[:configuration_status]).to eq("missing_credential")
+      it "reports that managed credentials require isolated execution" do
+        expect(stats[:provider_health][:chat].first[:configuration_status]).to eq("ready")
 
         create(:runner_credential, account: account, created_by: owner, runner_key: owner.settings.kb_chat_runner)
 
         refreshed = described_class.call(account: account)
         expect(refreshed[:provider_health][:chat].first).to include(
-          configuration_status: "missing_credential",
-          credential_source: nil,
+          configuration_status: "isolation_required",
+          credential_source: "subscription",
           available: false
         )
       end
@@ -127,13 +127,13 @@ RSpec.describe Knowledge::DashboardStats do
       end
 
       # @spec KNOWLEDGE-DASHBOARD-001
-      it "reports chat ready because drafting materializes the owner API key" do
+      it "reports the configured chat subscription instead of an unrelated API key" do
         chat = stats[:provider_health][:chat].first
 
         expect(chat).to include(
           configuration_status: "ready",
-          credential_source: "owner_api_key",
-          credential_service: "anthropic",
+          credential_source: "subscription",
+          credential_service: "subscription",
           available: true
         )
       end
@@ -148,29 +148,29 @@ RSpec.describe Knowledge::DashboardStats do
       end
 
       # @spec KNOWLEDGE-DASHBOARD-001
-      it "reports the OpenAI credential materialized by the Codex execution path" do
+      it "reports that a host Codex subscription requires an explicit supported transport" do
         create(:provider_api_key, user: owner, api_service_type: "openai", api_key: "sk-openai")
 
         chat = stats[:provider_health][:chat].first
 
         expect(chat).to include(
-          configuration_status: "ready",
-          credential_source: "owner_api_key",
-          credential_service: "openai",
-          available: true
+          configuration_status: "unsupported_transport",
+          credential_source: nil,
+          credential_service: nil,
+          available: false
         )
       end
 
       # @spec KNOWLEDGE-DASHBOARD-001
-      it "does not report an Anthropic key as usable by Codex" do
+      it "does not use an unrelated Anthropic key for Codex" do
         create(:provider_api_key, user: owner, api_service_type: "anthropic", api_key: "sk-anthropic")
 
         chat = stats[:provider_health][:chat].first
 
         expect(chat).to include(
-          configuration_status: "missing_credential",
+          configuration_status: "unsupported_transport",
           credential_source: nil,
-          credential_service: "openai",
+          credential_service: nil,
           available: false
         )
       end
@@ -268,9 +268,9 @@ RSpec.describe Knowledge::DashboardStats do
           validated_with_provider: false
         )
         expect(chat).to include(
-          configuration_status: "ready",
-          credential_source: "owner_api_key",
-          credential_service: "anthropic",
+          configuration_status: "isolation_required",
+          credential_source: "subscription",
+          credential_service: "subscription",
           validated_with_provider: false
         )
       end
@@ -311,13 +311,13 @@ RSpec.describe Knowledge::DashboardStats do
       end
 
       # @spec KNOWLEDGE-DASHBOARD-001
-      it "reports the credential source without exposing its value" do
+      it "does not use a platform fallback for the configured subscription" do
         chat = stats[:provider_health][:chat].first
 
         expect(chat).to include(
           configuration_status: "ready",
-          credential_source: "platform_fallback",
-          credential_service: "anthropic"
+          credential_source: "subscription",
+          credential_service: "subscription"
         )
         expect(chat.values).not_to include("platform-key")
       end
@@ -336,13 +336,13 @@ RSpec.describe Knowledge::DashboardStats do
       end
 
       # @spec KNOWLEDGE-DASHBOARD-001
-      it "reports the credential fallback accepted by the decision-drafting proxy" do
+      it "does not use Rails credentials for the configured subscription" do
         chat = stats[:provider_health][:chat].first
 
         expect(chat).to include(
           configuration_status: "ready",
-          credential_source: "platform_fallback",
-          credential_service: "anthropic"
+          credential_source: "subscription",
+          credential_service: "subscription"
         )
         expect(chat.values).not_to include("platform-key")
       end

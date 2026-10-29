@@ -6,7 +6,7 @@ module Api
       DEFAULT_LIMIT = 50
       MAX_LIMIT = 100
 
-      before_action -> { require_scope!(:inbox) }, only: %i[index count show remove_entry restore_entry]
+      before_action -> { require_scope!(:inbox) }, only: %i[index count show resolve_reopen_review remove_entry restore_entry]
       before_action -> { require_scope!(:chat) }, only: :chat
 
       # @spec MOBILE-API-006 MOBILE-API-010
@@ -63,6 +63,24 @@ module Api
         render json: { chat_session_id: chat_session.id }, status: :created
       rescue GithubClient::Error => e
         render_error(:bad_gateway, :github_error, "Failed to load clarifying questions: #{e.message}")
+      end
+
+      # @spec ISSUE-REOPEN-REVIEW-005
+      def resolve_reopen_review
+        authorize :inbox, policy_class: InboxPolicy
+        entry = entry_for_mutation
+        return render_entry_not_found unless entry
+
+        issue = entry.issue
+        return render_reopen_review_error("This Inbox entry cannot resolve reopen review.") unless issue
+
+        authorize issue.project, :run_agent?, policy_class: ProjectPolicy
+        result = Issues::ResolveReopenReview.call(
+          issue:, actor: current_user, reason: params[:reason], revision: params[:revision]
+        )
+        return render_reopen_review_error(result.message) unless result.success?
+
+        render json: { issue_id: issue.id, status: issue.reload.paid_state }
       end
 
       # RDR-077: removal hides the request for this user only; the request,
@@ -169,6 +187,10 @@ module Api
 
       def render_entry_not_found
         render_error(:not_found, :not_found, "Entry is not in the inbox.")
+      end
+
+      def render_reopen_review_error(message)
+        render_error(:unprocessable_entity, :invalid_request, message)
       end
     end
   end

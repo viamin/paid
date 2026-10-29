@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-24
+last_updated: 2026-10-29
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,14 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  llm-routing:
+    title: Application LLM Routing
+    path: docs/intent/llm-routing/llm-routing-design.md
+    specs: docs/intent/llm-routing/llm-routing-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: OK
+    audited: 2026-10-26
   dependency-declarations:
     title: Dependency Declarations
     path: docs/intent/dependency-declarations/dependency-declarations-design.md
@@ -97,6 +105,15 @@ arrows:
     status: OK
     audited: 2026-10-23
     next: "Extend normalized pipeline-event ingestion when a CI provider exposes more detailed timing data."
+  operational-supervisor:
+    title: Operational Supervisor
+    path: docs/intent/operational-supervisor/operational-supervisor-design.md
+    specs: docs/intent/operational-supervisor/operational-supervisor-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: MAPPED
+    sampled: 2026-10-29
+    next: "Planning held: implement the default-off shadow-observation tree (#4708-#4714); do not enable runtime mitigation."
   agent-instruction-navigation:
     title: Agent Instruction Navigation
     path: docs/intent/agent-instruction-navigation/agent-instruction-navigation-design.md
@@ -306,6 +323,15 @@ arrows:
     taxonomy: chat
     status: OK
     audited: 2026-08-03
+  chat-turn-stall-recovery:
+    title: Chat Turn Stall Detection and Recovery
+    path: docs/intent/chat-turn-stall-recovery/chat-turn-stall-recovery-design.md
+    specs: docs/intent/chat-turn-stall-recovery/chat-turn-stall-recovery-specs.md
+    parent: PAID
+    taxonomy: chat
+    status: OK
+    audited: 2026-10-28
+    next: "Keep automatic recovery limited to explicitly classified infrastructure failures with a durable replay-safety contract."
   issue-reopen-review:
     title: Issue Reopen Review
     path: docs/intent/issue-reopen-review/issue-reopen-review-design.md
@@ -743,8 +769,17 @@ arrows:
     parent: PAID
     taxonomy: runtime
     status: MAPPED
-    sampled: 2026-10-24
-    next: "Draft LLD/EARS only; RDR-075 remains Status: Draft (merged to main via #4308) and no implementation exists. #4604 revalidated its tool-handoff evidence environment on 2026-10-24: no Docker client, socket, or alternate local engine was available, so critical assumption 2's native-analyzer and sidecar artifacts remain uncollected. Move both validations to a Docker-capable environment; do not release #4328-#4333 before design acceptance and that evidence."
+    sampled: 2026-10-29
+    next: "Draft LLD/EARS only; RDR-075 remains Status: Draft (merged to main via #4308) and no implementation exists. #4604 revalidated its tool-handoff evidence environment on 2026-10-29: no Docker client, socket, configured remote endpoint, or alternate local engine was available, so critical assumption 2's native-analyzer and sidecar artifacts remain uncollected. Move both validations to an authorized Docker-capable environment through Paid's supported lifecycle; do not release #4328-#4333 before design acceptance and that evidence."
+  optimization-recipes:
+    title: Optimization Recipes
+    path: docs/intent/optimization-recipes/optimization-recipes-design.md
+    specs: docs/intent/optimization-recipes/optimization-recipes-specs.md
+    parent: PAID
+    taxonomy: runtime
+    status: MAPPED
+    sampled: 2026-10-28
+    next: "Draft LLD/EARS only; #4636 owner acceptance of the catalog, standing-based assessment, and bounded-repair policy gates #4493-#4496. #4492 is tracking only. Do not release the children before that acceptance, base maintenance acceptance (#4635), M01-M04 contracts, and #4604 live tool-handoff evidence."
   marketplace-tool-sidecars:
     title: Marketplace Tool Sidecars
     path: docs/intent/marketplace-tool-sidecars/marketplace-tool-sidecars-design.md

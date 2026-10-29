@@ -455,6 +455,30 @@ RSpec.describe ChatSessions::ResolveToolCall do
     end
   end
 
+  # @spec CHAT-TURN-RECOVERY-001
+  describe "chat turn tracking" do
+    let!(:originating_message) { create(:chat_message, chat_session: chat_session, role: "user", content: "Original request") }
+
+    before do
+      tool_call_message
+      allow(Tools::Registry).to receive(:dispatch).and_return(dispatch_result)
+    end
+
+    it "bumps the originating turn's checkpoint and completes it when the resumed loop finishes" do
+      turn = ChatTurn.start!(chat_session: chat_session, user_message: originating_message)
+      turn.update!(last_activity_at: 1.hour.ago)
+
+      described_class.call(
+        chat_session: chat_session, tool_call_message: tool_call_message,
+        decision: :approve, llm_client: llm_client
+      )
+
+      turn.reload
+      expect(turn.last_activity_at).to be_within(5.seconds).of(Time.current)
+      expect(turn.status).to eq("completed")
+    end
+  end
+
   def rate_limited_llm_client
     Class.new do
       def call(*)

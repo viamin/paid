@@ -73,6 +73,7 @@ module Workflows
         Activities::GenerateMutationsActivity,
         {
           prompt_id: prompt_id,
+          project_id: project_id,
           quality_metrics: sample_result[:quality_metrics],
           sample_outputs: sample_result[:sample_outputs],
           mutation_count: input.fetch(:mutation_count, 3),

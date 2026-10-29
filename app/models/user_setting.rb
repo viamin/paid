@@ -450,6 +450,20 @@ class UserSetting < ApplicationRecord
   end
 
   def knowledge_runner_options(operation:)
+    if operation.to_sym == :chat
+      owned = user.runners.kept_only.for_chat.ordered.includes(:provider_api_key)
+      options = owned.map do |runner|
+        label = runner.name.presence || "#{runner.display_name} — #{runner.provider_api_key&.name || runner.auth_type.humanize}"
+        [ label, runner.routing_key ]
+      end
+      if KB_CHAT_RUNNERS.include?(kb_chat_runner)
+        label = owned.any? { |runner| runner.runner_key == kb_chat_runner } ? "#{Runner.display_name_for(kb_chat_runner)} (match configured runner)" : "Automatic (use configured runners)"
+        options.unshift([ label, kb_chat_runner ])
+      elsif options.none? { |_, identifier| identifier == kb_chat_runner }
+        options.unshift([ "Unavailable selected runner", kb_chat_runner ])
+      end
+      return options
+    end
     supported = operation.to_sym == :embedding ? KB_EMBEDDING_RUNNERS : KB_CHAT_RUNNERS
     supported.map { |key| [ Runner.display_name_for(key), key ] }
   end
@@ -857,17 +871,28 @@ class UserSetting < ApplicationRecord
 
   def validate_kb_chat_runner
     self.kb_chat_runner = normalize_kb_runner(kb_chat_runner, default: KB_CHAT_RUNNER_DEFAULT)
-    return if KB_CHAT_RUNNERS.include?(kb_chat_runner)
+    return if (KB_CHAT_RUNNERS + configured_chat_runner_identifiers).include?(kb_chat_runner)
+    if !will_save_change_to_kb_chat_runner? && Runner.for_identifier(user, kb_chat_runner, include_discarded: true)
+      return
+    end
 
     errors.add(:kb_chat_runner, "is not a supported knowledge chat runner")
   end
 
   def validate_kb_chat_fallback_runners
+    supported = KB_CHAT_RUNNERS + configured_chat_runner_identifiers
+    unless will_save_change_to_kb_chat_fallback_runners?
+      supported += user.runners.with_discarded.where(id: Array(kb_chat_fallback_runners).filter_map { |id| Runner.id_from_routing_key(id) }).map(&:routing_key) if user
+    end
     self.kb_chat_fallback_runners = normalize_kb_runner_list(
       kb_chat_fallback_runners,
       attribute: :kb_chat_fallback_runners,
-      supported_runners: KB_CHAT_RUNNERS
+      supported_runners: supported
     )
+  end
+
+  def configured_chat_runner_identifiers
+    user ? user.runners.kept_only.for_chat.map(&:routing_key) : []
   end
 
   def validate_issue_analysis_runner

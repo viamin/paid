@@ -3,6 +3,9 @@
 require "rails_helper"
 
 RSpec.describe Activities::DecomposeFeatureActivity do
+  before { configure_llm_routing(project: project) }
+  after { Current.user = nil }
+
   let(:activity) { described_class.new }
   let(:project) { create(:project) }
   let(:issue) { create(:issue, project: project, title: "Add OAuth", body: "Implement OAuth 2.0 login") }
@@ -168,12 +171,9 @@ RSpec.describe Activities::DecomposeFeatureActivity do
     end
 
     before do
-      allow(AgentHarness).to receive(:send_message).and_return(llm_response)
+      allow(AgentHarness.conductor).to receive(:execute_direct).and_return(llm_response)
       allow(Orchestration::DecompositionDecisions::Log).to receive(:call).and_return(logged_decision)
       allow(Prompt).to receive(:resolve).and_return(nil)
-      # Default: preserve CLI transport so existing exact-match expectations
-      # pass. Individual specs flip this on to prove text-mode routing.
-      allow(Llm::TextMode).to receive(:options).and_return({})
     end
 
     def execute_with_workflow_context(workflow_name:, workflow_id:)
@@ -236,7 +236,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
       expect(result[:tasks]).to eq([])
       expect(result[:skip_reason]).to eq("decomposition_disabled_by_policy")
       expect(result[:policy_metadata]).to include(policy_source: "feature_orchestration")
-      expect(AgentHarness).not_to have_received(:send_message)
+      expect(AgentHarness.conductor).not_to have_received(:execute_direct)
       expect(Orchestration::DecompositionDecisions::Log).to have_received(:call).with(
         hash_including(
           outcome: "policy_skipped",
@@ -289,7 +289,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
         expect(result[:prompt_source]).to eq(described_class::POLICY_PROMPT_SOURCE)
         expect(result[:tasks]).to all(include(:dependencies, :parallel_group, :scope))
         expect(result[:policy_metadata]).to include(policy_source: "defaults")
-        expect(AgentHarness).not_to have_received(:send_message)
+        expect(AgentHarness.conductor).not_to have_received(:execute_direct)
         expect_policy_decomposition_logged(
           workflow_name: "Workflows::FeatureOrchestrationWorkflow",
           workflow_id: "orchestration-wf-1",
@@ -316,7 +316,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
         )
 
         expect(result[:prompt_source]).to eq("fallback_prompt")
-        expect(AgentHarness).to have_received(:send_message)
+        expect(AgentHarness.conductor).to have_received(:execute_direct)
       end
     end
 
@@ -393,7 +393,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
           policy_source: "coordination_policy",
           policy_key: DecompositionService::POLICY_KEY
         )
-        expect(AgentHarness).not_to have_received(:send_message)
+        expect(AgentHarness.conductor).not_to have_received(:execute_direct)
         expect_policy_decomposition_logged(
           workflow_name: "Workflows::FeatureOrchestrationWorkflow",
           workflow_id: "orchestration-wf-3",
@@ -420,7 +420,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
         expect(result[:prompt_source]).to eq("fallback_prompt")
         expect(result[:tasks]).not_to be_empty
-        expect(AgentHarness).to have_received(:send_message)
+        expect(AgentHarness.conductor).to have_received(:execute_direct)
       end
     end
 
@@ -442,7 +442,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
         expect(result[:prompt_source]).to eq("fallback_prompt")
         expect(result[:tasks]).not_to be_empty
-        expect(AgentHarness).to have_received(:send_message)
+        expect(AgentHarness.conductor).to have_received(:execute_direct)
         expect(logger).to have_received(:warn).with(
           message: "planning.policy_decomposition_failed",
           error_class: "StandardError",
@@ -476,7 +476,7 @@ RSpec.describe Activities::DecomposeFeatureActivity do
 
         expect(result[:prompt_source]).to eq("fallback_prompt")
         expect(result[:tasks]).not_to be_empty
-        expect(AgentHarness).to have_received(:send_message)
+        expect(AgentHarness.conductor).to have_received(:execute_direct)
         expect(logger).to have_received(:warn).with(
           message: "planning.policy_decomposition_failed",
           error_class: "StandardError",
@@ -498,27 +498,13 @@ RSpec.describe Activities::DecomposeFeatureActivity do
         knowledge_context: knowledge_context
       )
 
-      expect(AgentHarness).to have_received(:send_message).with(
-        a_string_including("Add OAuth"),
-        provider: :claude,
-        model: described_class::DEFAULT_MODEL,
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+        a_string_including("Add OAuth"), hash_including(provider: :claude,
+        model: "configured-mid",
         timeout: described_class::TIMEOUT,
-        tools: :none
-      )
+        tools: :none))
     end
 
-    it "routes through agent-harness text mode when an API key is configured" do
-      allow(Llm::TextMode).to receive(:options).and_return(mode: :text)
-
-      activity.execute(
-        project_id: project.id,
-        issue_id: issue.id,
-        knowledge_context: knowledge_context
-      )
-
-      expect(AgentHarness).to have_received(:send_message)
-        .with(anything, hash_including(mode: :text))
-    end
 
     it "includes knowledge context in the prompt when available" do
       context_with_knowledge = knowledge_context.merge(
@@ -531,13 +517,11 @@ RSpec.describe Activities::DecomposeFeatureActivity do
         knowledge_context: context_with_knowledge
       )
 
-      expect(AgentHarness).to have_received(:send_message).with(
-        a_string_including("Auth docs"),
-        provider: :claude,
-        model: described_class::DEFAULT_MODEL,
+      expect(AgentHarness.conductor).to have_received(:execute_direct).with(
+        a_string_including("Auth docs"), hash_including(provider: :claude,
+        model: "configured-mid",
         timeout: described_class::TIMEOUT,
-        tools: :none
-      )
+        tools: :none))
     end
 
     it "returns active_prompt when a seeded prompt version is available" do

@@ -64,6 +64,7 @@ class ChatSession < ApplicationRecord
   belongs_to :provider, -> { with_discarded }, class_name: "Provider", foreign_key: :runner_id, optional: true
   belongs_to :created_by, class_name: "User", optional: true
 
+  has_many :chat_turns, dependent: :destroy
   has_many :messages, class_name: "ChatMessage", dependent: :destroy
   has_many :token_usages, dependent: :destroy
   has_many :api_usage_attempts, dependent: :destroy
@@ -187,6 +188,12 @@ class ChatSession < ApplicationRecord
   # @spec CHAT-API-019
   def llm_policy_projects
     Project.where(id: project_id).or(Project.where(id: chat_session_projects.select(:project_id))).to_a
+  end
+
+  # @spec CHAT-API-019, MODEL-POLICY-023
+  def llm_policy_project
+    classification_order = %w[open internal confidential restricted]
+    llm_policy_projects.max_by { |project| classification_order.index(project.data_classification) || 0 }
   end
 
   def inline_only?

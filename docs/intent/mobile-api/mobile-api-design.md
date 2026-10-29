@@ -360,6 +360,9 @@ migrated — their ad-hoc `{ error: "…" }` shapes remain web concerns.
   checks on mutation endpoints without executing real chat sends (state
   mutation fuzzing would otherwise spend provider tokens); negative-path
   coverage for mutations comes from committee validation and request specs.
+  Its pipx invocation constrains Hypothesis to the version validated with the
+  pinned Schemathesis release, so dependency resolution cannot select a
+  generator runtime that aborts before exercising the selected operations.
 - No rswag: the schema is hand-maintained YAML, not generated from specs —
   the contract leads, the implementation follows.
 
