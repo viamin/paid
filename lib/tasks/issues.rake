@@ -146,4 +146,49 @@ namespace :issues do
       puts "  More candidates may remain — re-run with AFTER_ID=#{result.next_cursor} to continue."
     end
   end
+
+  desc "Idempotently reverts open issues that fetch_issues_activity's completed-open repair " \
+    "mislabeled paid-recommend-close from PR bookkeeping alone, before #4772's acceptance-audit " \
+    "evidence gate existed. Reverts only candidates whose non-closing create_pr PR still lacks " \
+    "fresh acceptance-audit evidence that the issue is actually closeable; the next sync then " \
+    "re-derives the correct state (manual_review park, or a fresh audit). Use DRY_RUN=false to apply."
+  task repair_premature_recommend_close: :environment do # @spec GITHUB-SYNC-016 PARTIAL-CLOSEOUT-038
+    dry_run = ENV.fetch("DRY_RUN", "true") != "false"
+    candidates = []
+
+    TenantContext.with_system_access do
+      Issue.where(paid_state: "recommend_close", is_pull_request: false, github_state: "open").find_each do |issue|
+        run = issue.agent_runs.where(goal: "create_pr", status: "completed").where.not(pull_request_number: nil)
+          .order(completed_at: :desc).first
+        next unless run
+
+        pull_request = issue.project.issues.pull_requests_only.find_by(github_number: run.pull_request_number)
+        next unless pull_request
+        next if pull_request.closing_referenced_issue_numbers.include?(issue.github_number)
+        next if PartialCloseouts::SourceClosureEvidence.current_close?(issue)
+
+        candidates << [ issue, run, pull_request ]
+      end
+
+      puts "Found #{candidates.size} issue(s) marked recommend_close from PR bookkeeping without " \
+        "current acceptance-audit evidence (DRY_RUN=#{dry_run})"
+      candidates.each do |issue, run, pull_request|
+        puts "  ##{issue.github_number} project=#{issue.project.full_name} run=#{run.id} pr=##{pull_request.github_number}"
+        next if dry_run
+
+        issue.update!(paid_state: "completed")
+        label = issue.project.label_for_stage("recommend_close") ||
+          Activities::HandleNoOutputIssueRunActivity::PAID_RECOMMEND_CLOSE_LABEL
+        next unless issue.has_label?(label)
+
+        begin
+          issue.project.client.remove_label_from_issue(issue.project.full_name, issue.github_number, label)
+        rescue GithubClient::Error => e
+          puts "    label removal failed for ##{issue.github_number}: #{e.message}"
+        end
+      end
+
+      puts dry_run ? "Dry run only. Re-run with DRY_RUN=false to apply." : "Done."
+    end
+  end
 end

@@ -252,4 +252,99 @@ RSpec.describe "issues:reconcile_legacy_partial_closeouts" do
   end
 end
 
+# @spec GITHUB-SYNC-016 PARTIAL-CLOSEOUT-038
+RSpec.describe "issues:repair_premature_recommend_close" do
+  let(:task) { Rake::Task["issues:repair_premature_recommend_close"] }
+  let(:project) { create(:project, label_mappings: {}) }
+  let(:client) { instance_double(GithubClient) }
+
+  before do
+    Rails.application.load_tasks unless Rake::Task.task_defined?("issues:repair_premature_recommend_close")
+    task.reenable
+    allow(GithubClient).to receive(:new).and_return(client)
+    allow(client).to receive(:remove_label_from_issue)
+  end
+
+  after { ENV.delete("DRY_RUN") }
+
+  def create_mislabeled_issue(number:)
+    issue = create(:issue, project: project, github_number: number, github_state: "open",
+      paid_state: "recommend_close", labels: [ "paid-recommend-close" ])
+    run = create(:agent_run, :completed, project: project, issue: issue,
+      goal: "create_pr", pull_request_number: number + 1000)
+    create(:issue, :pull_request, :closed, project: project, github_number: number + 1000,
+      body: "Tracks ##{number}", pr_review_phase: "merged")
+    [ issue, run ]
+  end
+
+  it "reports a candidate without writing changes in DRY_RUN (default)" do
+    issue, run = create_mislabeled_issue(number: 3441)
+
+    expect { task.invoke }.to output(/##{issue.github_number}.*run=#{run.id}/).to_stdout
+
+    expect(issue.reload.paid_state).to eq("recommend_close")
+    expect(client).not_to have_received(:remove_label_from_issue)
+  end
+
+  it "skips an issue with a current, fresh close disposition from an acceptance audit" do
+    issue, = create_mislabeled_issue(number: 3441)
+    request = create(:issue_continuation_request, issue: issue, project: project,
+      evidence: { "continuation_mode" => "acceptance_audit" })
+    create(:agent_run, :completed, project: project, issue: issue, goal: "analyze_issue",
+      continuation_request: request,
+      reconciliation: { "assessment" => {
+                           "criteria" => [ { "criterion" => "live validation", "state" => "satisfied" } ],
+                           "gaps" => [],
+                           "source_revision" => Issues::CloseoutEvidence.call(issue).digest,
+                           "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
+                           "assessed_at" => Time.current.iso8601
+                         },
+                         "source_closure" => { "disposition" => "close" } })
+
+    expect { task.invoke }.to output(/Found 0 issue/).to_stdout
+  end
+
+  it "leaves a recommend_close issue alone when its PR actually carries a closing reference" do
+    issue = create(:issue, project: project, github_state: "open", github_number: 20,
+      paid_state: "recommend_close", labels: [ "paid-recommend-close" ])
+    create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 1020)
+    create(:issue, :pull_request, :closed, project: project, github_number: 1020,
+      body: "Closes #20", pr_review_phase: "merged")
+
+    expect { task.invoke }.to output(/Found 0 issue/).to_stdout
+    expect(issue.reload.paid_state).to eq("recommend_close")
+  end
+
+  context "with DRY_RUN=false" do
+    before { ENV["DRY_RUN"] = "false" }
+
+    it "reverts the issue to completed and removes the GitHub label" do
+      issue, = create_mislabeled_issue(number: 3441)
+
+      task.invoke
+
+      expect(issue.reload.paid_state).to eq("completed")
+      expect(client).to have_received(:remove_label_from_issue).with(project.full_name, issue.github_number, "paid-recommend-close")
+    end
+
+    it "logs and continues when the GitHub label removal fails" do
+      issue, = create_mislabeled_issue(number: 3441)
+      allow(client).to receive(:remove_label_from_issue).and_raise(GithubClient::Error.new("temporary failure"))
+
+      expect { task.invoke }.to output(/label removal failed for ##{issue.github_number}/).to_stdout
+
+      expect(issue.reload.paid_state).to eq("completed")
+    end
+
+    it "is idempotent on a repeated invocation" do
+      issue, = create_mislabeled_issue(number: 3441)
+      task.invoke
+      task.reenable
+
+      expect { task.invoke }.to output(/Found 0 issue/).to_stdout
+      expect(issue.reload.paid_state).to eq("completed")
+    end
+  end
+end
+
 # rubocop:enable RSpec/DescribeClass, RSpec/MultipleDescribes

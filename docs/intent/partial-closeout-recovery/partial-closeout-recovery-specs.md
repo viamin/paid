@@ -699,3 +699,21 @@
   `app/services/issues/request_acceptance_audit.rb`.
   *Test:* `spec/services/partial_closeouts/auto_audit_spec.rb`,
   `spec/jobs/partial_closeout_acceptance_audit_sweep_job_spec.rb`.
+
+- [x] **PARTIAL-CLOSEOUT-038** — When a caller outside the acceptance-audit
+  workflow (GitHub-sync's completed-open-issue repair, or a one-off
+  reconciliation) needs to know whether an issue is genuinely closeable, it
+  SHALL consult only the latest completed report-only acceptance-audit run
+  for that issue (`PARTIAL-CLOSEOUT-027`) and reuse its persisted
+  `source_closure` disposition (`PARTIAL-CLOSEOUT-029`), re-validated against
+  current evidence via `SourceClosureDisposition.for` so a disposition
+  recorded against now-superseded evidence reads as `track`, never `close`.
+  It SHALL NOT invoke `agent_harness` itself and SHALL NOT treat the absence
+  of any audit, or an audit with a non-`close` disposition, as a completion
+  verdict either way.
+  *Code:* `app/services/partial_closeouts/source_closure_evidence.rb`,
+  `app/temporal/activities/fetch_issues_activity.rb`,
+  `lib/tasks/issues.rake`.
+  *Test:* `spec/services/partial_closeouts/source_closure_evidence_spec.rb`,
+  `spec/temporal/activities/fetch_issues_activity_spec.rb`,
+  `spec/tasks/issues_rake_spec.rb`.

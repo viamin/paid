@@ -1200,10 +1200,24 @@ module Activities
         "the dependency resolves or a human intervenes."
     end
 
+    # A non-closing pull request (open, draft, or merged) is never itself a
+    # completion verdict (#4772): it only means GitHub has no closing
+    # reference to auto-close this issue. Closure is recommended here only
+    # once a current report-only acceptance audit (#4759) has recorded a
+    # fresh `close` disposition against this issue's present evidence —
+    # reusing that persisted, already-computed evidence rather than making a
+    # new semantic judgment inside this 60s sync. An issue with no such audit
+    # yet (PR still open, or the audit sweep hasn't run), or whose latest
+    # audit recorded `track`, unmet, unknown, or stale evidence, is left
+    # untouched; the existing stalled-closeout detection and acceptance-audit
+    # sweep own routing it to a concrete Inbox audit, prerequisite, or
+    # follow-up.
+    # @spec GITHUB-SYNC-016 @spec PARTIAL-CLOSEOUT-038
     def recommend_close_issues(client, project, issues)
-      return false if issues.empty?
+      closeable = issues.select { |issue| PartialCloseouts::SourceClosureEvidence.current_close?(issue) }
+      return false if closeable.empty?
 
-      visible = issues.select { |issue| add_recommend_close_label(client, project, issue) }
+      visible = closeable.select { |issue| add_recommend_close_label(client, project, issue) }
       return false if visible.empty?
 
       project.issues.where(id: visible.map(&:id)).update_all(paid_state: "recommend_close", updated_at: Time.current)

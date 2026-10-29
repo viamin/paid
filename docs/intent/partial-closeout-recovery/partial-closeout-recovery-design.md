@@ -514,6 +514,33 @@ continues to bind its criterion evidence to the current closeout digest and
 issue-intent revision; a later explicit acceptance audit is required when
 those revisions change.
 
+### Evidence-bound closure recommendation outside the audit (#4772)
+
+`RunAcceptanceAuditActivity` deliberately never mutates the source issue's
+`paid_state` (`PARTIAL-CLOSEOUT-035`): it only refreshes and persists the
+assessment, the `source_closure` disposition, and any reconciled gaps. A
+human-facing closure recommendation is a separate, deterministic read of
+that persisted evidence, not a second semantic judgment — so it lives
+outside the audit, in whichever caller needs it.
+
+`PartialCloseouts::SourceClosureEvidence.current_close?(issue)` is that read:
+it finds the issue's latest completed acceptance-audit run and calls
+`SourceClosureDisposition.for(run)`, which recomputes the disposition against
+the issue's *current* closeout-evidence digest and intent revision. A `close`
+disposition recorded against evidence that has since changed — a newer
+merged PR, a revised design intent — reads back as `track`, never `close`.
+No issue has any such run until a PR produced by its `create_pr` work
+actually merges and the stalled-closeout sweep (`PARTIAL-CLOSEOUT-037`)
+schedules one; until then this always reads `false`.
+
+GitHub-sync's completed-open-issue repair (`GITHUB-SYNC-016`) is the first
+consumer: it recommends closure only when this read returns `true`, never
+from a non-closing PR's bookkeeping alone. The same read backs the one-off
+`issues:repair_premature_recommend_close` rake task, which reverts issues
+that an earlier version of that repair mislabeled before this evidence gate
+existed, so a stale `recommend_close` does not survive indefinitely once its
+only basis was PR bookkeeping rather than audited evidence.
+
 ## Alternatives considered
 
 - *Lift the merged-PR guard via paid_state*: explicitly rejected — the guard is

@@ -359,11 +359,64 @@ RSpec.describe Activities::FetchIssuesActivity do
   end
 
   describe "#repair_completed_open_issues" do
-    it "parks completed open issues for human closeout when no open PR visibly closes them" do
+    # Builds the exact persisted evidence `RunAcceptanceAuditActivity` would
+    # leave behind (@spec PARTIAL-CLOSEOUT-035 PARTIAL-CLOSEOUT-038): a
+    # completed `analyze_issue` run requested in `acceptance_audit` mode,
+    # carrying a criterion assessment bound to the issue's *current*
+    # closeout-evidence digest and intent revision, plus the resulting
+    # `source_closure` disposition.
+    def create_acceptance_audit_run(issue, criteria_satisfied:)
+      request = create(:issue_continuation_request, issue: issue, project: issue.project,
+        evidence: { "continuation_mode" => "acceptance_audit" })
+      criteria = [ { "criterion" => "live validation", "state" => criteria_satisfied ? "satisfied" : "unknown" } ]
+      gaps = criteria_satisfied ? [] : [ { "criterion" => "live validation", "kind" => "human", "next_step" => "Confirm live validation." } ]
+      assessment = {
+        "criteria" => criteria,
+        "gaps" => gaps,
+        "source_revision" => Issues::CloseoutEvidence.call(issue).digest,
+        "intent_revision" => PartialCloseouts::Assessment.intent_revision_for(issue),
+        "assessed_at" => Time.current.iso8601
+      }
+      create(:agent_run, :completed, project: issue.project, issue: issue, goal: "analyze_issue",
+        continuation_request: request,
+        reconciliation: { "assessment" => assessment,
+                           "source_closure" => { "disposition" => criteria_satisfied ? "close" : "track" } })
+    end
+
+    # @spec GITHUB-SYNC-016 PARTIAL-CLOSEOUT-038
+    it "leaves a completed open issue untouched when its non-closing PR has merged but no acceptance audit has run" do
       issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
       create(:issue, :pull_request, :closed, project: project, github_number: 3583,
         body: "Tracks #3441", pr_review_phase: "merged")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be false
+      expect(issue.reload.paid_state).to eq("completed")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
+    # @spec GITHUB-SYNC-016
+    it "leaves a completed open issue untouched while its create_pr PR is still open, draft, or ready" do
+      issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, project: project, github_number: 3583, body: "Tracks #3441", pr_review_phase: "draft")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be false
+      expect(issue.reload.paid_state).to eq("completed")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
+    # @spec GITHUB-SYNC-016 PARTIAL-CLOSEOUT-038
+    it "recommends closure once a current acceptance audit has recorded a fresh close disposition" do
+      issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, :closed, project: project, github_number: 3583,
+        body: "Tracks #3441", pr_review_phase: "merged")
+      create_acceptance_audit_run(issue, criteria_satisfied: true)
 
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
@@ -372,6 +425,41 @@ RSpec.describe Activities::FetchIssuesActivity do
       expect(github_client).to have_received(:add_labels_to_issue).with(
         project.full_name, issue.github_number, [ "paid-recommend-close" ]
       )
+    end
+
+    # @spec GITHUB-SYNC-016 PARTIAL-CLOSEOUT-038
+    it "does not recommend closure when the latest acceptance audit recorded track/unmet evidence" do
+      issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, :closed, project: project, github_number: 3583,
+        body: "Tracks #3441", pr_review_phase: "merged")
+      create_acceptance_audit_run(issue, criteria_satisfied: false)
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be false
+      expect(issue.reload.paid_state).to eq("completed")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
+    end
+
+    # @spec GITHUB-SYNC-016 PARTIAL-CLOSEOUT-038
+    it "does not recommend closure when the recorded close disposition is stale against newer evidence" do
+      issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, :closed, project: project, github_number: 3583,
+        body: "Tracks #3441", pr_review_phase: "merged")
+      create_acceptance_audit_run(issue, criteria_satisfied: true)
+      # A second, directly linked merged PR changes the closeout-evidence
+      # digest after the audit ran.
+      create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3584)
+      create(:issue, :pull_request, :closed, project: project, github_number: 3584, parent_issue_id: issue.id,
+        body: "Tracks #3441", pr_review_phase: "merged")
+
+      changed = activity.send(:repair_completed_open_issues, project, github_client)
+
+      expect(changed).to be false
+      expect(issue.reload.paid_state).to eq("completed")
+      expect(github_client).not_to have_received(:add_labels_to_issue)
     end
 
     it "keeps completed open issues when an open PR visibly closes them" do
@@ -385,10 +473,13 @@ RSpec.describe Activities::FetchIssuesActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
-    it "ignores unrelated open PRs that close the same issue number" do
+    it "ignores unrelated open PRs that close the same issue number when recommending closure" do
       issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, :closed, project: project, github_number: 3583,
+        body: "Tracks #3441", pr_review_phase: "merged")
       create(:issue, :pull_request, project: project, github_number: 3581, body: "Closes #3441")
+      create_acceptance_audit_run(issue, criteria_satisfied: true)
 
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
@@ -396,12 +487,14 @@ RSpec.describe Activities::FetchIssuesActivity do
       expect(issue.reload.paid_state).to eq("recommend_close")
     end
 
-    it "does not let another issue's produced PR keep this issue completed" do
+    it "does not let another issue's produced PR or audit evidence keep this issue completed" do
       issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
       other_issue = create(:issue, :completed, project: project, github_number: 3442, github_state: "open")
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
       create(:agent_run, :completed, project: project, issue: other_issue, goal: "create_pr", pull_request_number: 3584)
-      create(:issue, :pull_request, project: project, github_number: 3584, body: "Closes #3441\nCloses #3442")
+      create(:issue, :pull_request, :closed, project: project, github_number: 3583, body: "Tracks #3441", pr_review_phase: "merged")
+      create(:issue, :pull_request, :closed, project: project, github_number: 3584, body: "Tracks #3442", pr_review_phase: "merged")
+      create_acceptance_audit_run(issue, criteria_satisfied: true)
 
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 
@@ -419,9 +512,12 @@ RSpec.describe Activities::FetchIssuesActivity do
       expect(issue.reload.paid_state).to eq("completed")
     end
 
-    it "keeps completed state when the visible review label cannot be added" do
+    it "keeps completed state when the visible review label cannot be added despite a fresh close disposition" do
       issue = create(:issue, :completed, project: project, github_number: 3441, github_state: "open")
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
+      create(:issue, :pull_request, :closed, project: project, github_number: 3583,
+        body: "Tracks #3441", pr_review_phase: "merged")
+      create_acceptance_audit_run(issue, criteria_satisfied: true)
       allow(github_client).to receive(:add_labels_to_issue).and_raise(GithubClient::Error.new("temporary failure"))
 
       changed = activity.send(:repair_completed_open_issues, project, github_client)
@@ -435,6 +531,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       create(:agent_run, :completed, project: project, issue: issue, goal: "create_pr", pull_request_number: 3583)
       create(:issue, :pull_request, :closed, project: project, github_number: 3583,
         body: "Tracks #3441", pr_review_phase: "merged")
+      create_acceptance_audit_run(issue, criteria_satisfied: true)
       allow(project).to receive(:client).and_return(nil)
 
       changed = activity.send(:repair_completed_open_issues, project, github_client)
@@ -533,6 +630,7 @@ RSpec.describe Activities::FetchIssuesActivity do
       create(:agent_run, :completed, project: project, issue: closeable_issue, goal: "create_pr", pull_request_number: 3583)
       create(:issue, :pull_request, :closed, project: project, github_number: 3583,
         body: "Tracks #3441", pr_review_phase: "merged")
+      create_acceptance_audit_run(closeable_issue, criteria_satisfied: true)
 
       changed = activity.send(:repair_completed_open_issues, project, github_client)
 

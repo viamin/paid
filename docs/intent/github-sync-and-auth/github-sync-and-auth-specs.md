@@ -318,18 +318,32 @@
 
 - [x] **GITHUB-SYNC-016** — When sync repairs an open issue whose
   `paid_state` is stale `completed` because its most recent `create_pr` run's
-  pull request does not carry a GitHub closing reference to the issue, and
-  that issue still has an unresolved blocking dependency (a local blocking
-  issue, a deployment-pending dependency, or an unresolved external
-  dependency per `Issue#ready_to_work?`), the system SHALL NOT apply the
-  recommend-close label and SHALL NOT set `paid_state` to `recommend_close`.
-  It SHALL instead set `paid_state: "manual_review"` with a
+  pull request does not carry a GitHub closing reference to the issue, the
+  absence of that closing reference SHALL NOT itself be treated as a
+  completion verdict, whether the pull request is still open, draft, or has
+  since merged. If that issue still has an unresolved blocking dependency (a
+  local blocking issue, a deployment-pending dependency, or an unresolved
+  external dependency per `Issue#ready_to_work?`), the system SHALL NOT apply
+  the recommend-close label and SHALL NOT set `paid_state` to
+  `recommend_close`. It SHALL instead set `paid_state: "manual_review"` with a
   `manual_review_reason` naming the unresolved dependency reference(s), so the
   remaining work stays visible without being recommended for closure or
   re-executed on the next sync. This repair SHALL apply identically whether
   the non-closing pull request is still open or has since merged, and SHALL
-  be a no-op on a repeated sync once the issue is parked. An issue with no
-  unresolved dependency keeps the existing `recommend_close` repair behavior
-  unchanged.
-  *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`.
-  *Code:* `app/temporal/activities/fetch_issues_activity.rb`.
+  be a no-op on a repeated sync once the issue is parked.
+  An issue with no unresolved dependency SHALL NOT be recommended for closure
+  merely because its create_pr run's PR is open, draft, or a non-closing
+  merge: that PR's own review/merge path, or (once merged) the stalled-closeout
+  detection and report-only acceptance-audit sweep (`PARTIAL-CLOSEOUT-037`),
+  remain the issue's visible next action. The system SHALL set
+  `paid_state: "recommend_close"` and apply the recommend-close label from this
+  repair only when a current, completed acceptance-audit run
+  (`PARTIAL-CLOSEOUT-038`) has recorded a fresh `close` source-closure
+  disposition for the issue's present evidence; it SHALL NOT perform its own
+  semantic assessment to reach that verdict. `track`, unknown, stale, or unmet
+  audit results leave the issue untouched here, routed instead through the
+  audit's existing gap reconciliation (`PARTIAL-CLOSEOUT-035`).
+  *Test:* `spec/temporal/activities/fetch_issues_activity_spec.rb`,
+  `spec/services/partial_closeouts/source_closure_evidence_spec.rb`.
+  *Code:* `app/temporal/activities/fetch_issues_activity.rb`,
+  `app/services/partial_closeouts/source_closure_evidence.rb`.

@@ -221,12 +221,32 @@ lane the rest of the system uses for other automation stops (see
 unblocks the issue for Auto-Pick through the existing dependency-state
 checks; nothing about this repair path re-polls on a timer.
 
-A partial implementation with no outstanding dependency keeps the existing
-behavior: it is recommended for closure (`paid_state: "recommend_close"`,
-mirrored to GitHub's `paid-recommend-close` label) because there is no
-further deterministic signal to wait on, so a human is asked to confirm. The
-repair reuses the sync's already-resolved `GithubClient` rather than opening
-a second credential for the cycle.
+A partial implementation with no outstanding dependency is **not**
+recommended for closure merely because its PR lacks a closing reference
+(#4772): an open, draft, or non-closing-merged pull request is not a
+completion verdict, it is only the absence of GitHub's own auto-close
+signal. Recommending closure from that absence alone previously asked a
+human to park unaccepted work, and once the PR later merged without a
+closing reference, the issue stayed mislabeled indefinitely because
+`recommend_close` is outside the states the stalled-closeout audit path
+treats as schedulable.
+
+Instead, this repair recommends closure only when a current, completed
+report-only acceptance audit (`PARTIAL-CLOSEOUT-037`) has already recorded a
+fresh `close` source-closure disposition for the issue's present evidence
+(`PartialCloseouts::SourceClosureEvidence`, `PARTIAL-CLOSEOUT-038`). That
+disposition is read, not recomputed: the repair makes no `agent_harness`
+call of its own, and reuses `PartialCloseouts::SourceClosureDisposition.for`
+so a disposition recorded against now-superseded evidence (a newer merged PR,
+a design-intent revision) is treated as stale and ignored. Until such a fresh
+`close` disposition exists — because the PR is still open, the audit sweep
+has not yet run, or the audit recorded `track`/unmet/unknown/stale evidence —
+the issue is left at its existing `paid_state` and GitHub label; the merged
+PR's own closeout evidence makes it a stalled-closeout candidate, and
+`PartialCloseoutAcceptanceAuditSweepJob` schedules the one bounded audit that
+produces (or defers) the eventual disposition. The repair reuses the sync's
+already-resolved `GithubClient` rather than opening a second credential for
+the cycle.
 
 ## Projects V2 abandonment
 
