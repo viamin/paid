@@ -82,10 +82,19 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
     # which now preserves needs_input_questions instead of wiping them when
     # the terminal round still has parseable clarifying questions.
     context "when the issue is parked in manual_review with preserved questions" do
+      let(:latest_scanner_attempts) { double(first: nil) }
+      let(:scanner_attempts) { double(latest_per_issue: latest_scanner_attempts) }
       let(:issue) do
         double(
           github_number: 1964,
           paid_state: "manual_review",
+          reopen_review_pending?: false,
+          blocking_issues: [],
+          blocking_deployment_dependencies: [],
+          blocking_external_dependencies: [],
+          code_scanning_remediation_attempts: scanner_attempts,
+          manual_review_reason: nil,
+          needs_input_questions: [ "What is the desired behavior?" ],
           needs_input?: false,
           has_label?: false,
           labels: [ "P2" ],
@@ -258,7 +267,7 @@ RSpec.describe ClarifyingQuestions::ClearNeedsInput do
         create(:issue, project: project,
                title: "[Feature] Add dark mode", body: "Users want dark mode",
                paid_state: "manual_review",
-               manual_review_reason: "Paid reached the configured limit of 3 enhancement re-evaluation rounds.",
+               manual_review_reason: "Paid reached the configured limit of 3 enhancement re-evaluation rounds for this issue.",
                manual_review_started_at: 1.hour.ago,
                needs_input_questions: [ "What is the desired behavior?" ],
                enhance_issue_rounds: 3)
