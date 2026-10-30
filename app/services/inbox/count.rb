@@ -32,12 +32,11 @@ module Inbox
     attr_reader :user
 
     # @spec INBOX-PHASE-RELEVANCE-005 @spec INBOX-PHASE-RELEVANCE-009
-    # When any visible project runs the phase model, the count comes from the
-    # same scope-filtered queue the list renders, so the badge can never
-    # disagree with the list about phase relevance. Personal removal is
-    # rollout-independent, but only requires resolving each removed request;
-    # rebuilding every Inbox entry on a cache miss is unnecessary. Otherwise
-    # the cheap SQL approximation is unchanged.
+    # When any visible project runs the phase model, the count applies that
+    # policy to Availability's count-oriented per-project projection. Personal
+    # removal is rollout-independent, but only requires resolving each removed
+    # request; rebuilding every Inbox entry on a cache miss is unnecessary.
+    # Otherwise the cheap SQL approximation is unchanged.
     def compute_count
       return governed_count if phase_model_governed?
 
@@ -52,10 +51,22 @@ module Inbox
     end
 
     def governed_count
-      # Availability owns the shared per-user matrix for filters. Reusing it
-      # lets a badge cache miss use that already-warm representation instead
-      # of independently rebuilding every Queue lane under phase governance.
-      [ Inbox::Availability.call(user: user).total_count, DISPLAY_CAP ].min
+      count = Inbox::Availability.call(user: user).count_matrix.sum do |entry_kind, counts|
+        counts.sum { |project_id, value| phase_relevant?(entry_kind, project_id) ? value : 0 }
+      end
+      count -= suppressed_removal_count if personal_removals?
+      count.clamp(0, DISPLAY_CAP)
+    end
+
+    def phase_relevant?(entry_kind, project_id)
+      return true unless governed_project_ids.include?(project_id)
+
+      phase = Inbox::PhaseOwnership::KIND_PHASES[entry_kind]
+      phase.blank? || Automation::PhaseSettings.phase_enabled?(projects_by_id.fetch(project_id), phase)
+    end
+
+    def projects_by_id
+      @projects_by_id ||= Project.where(id: visible_project_ids).index_by(&:id)
     end
 
     def phase_model_governed?

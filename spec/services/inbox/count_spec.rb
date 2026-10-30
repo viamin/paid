@@ -794,6 +794,14 @@ RSpec.describe Inbox::Count do
       expect(Inbox::Queue.call(user: user, scope: Inbox::Queue::DISABLED_PHASES_SCOPE).size).to eq(2)
     end
 
+    it "uses count projections when the governed badge cache is cold" do
+      Rails.cache.clear
+      allow(Inbox::Queue).to receive(:call).and_call_original
+
+      expect(described_class.call(user: user)).to eq(0)
+      expect(Inbox::Queue).not_to have_received(:call).with(user: user)
+    end
+
     it "agrees with the list about personally removed requests" do
       configure_issue_preparation
       entry = Inbox::Queue.call(user: user).first

@@ -71,6 +71,12 @@ module Inbox
       @total_count ||= matrix.sum { |_kind, per_project| per_project.values.sum }
     end
 
+    # Count-oriented projection for readers that do not need rendered entries.
+    # Unlike #total_count, this never selects the governed queue-backed matrix.
+    def count_matrix
+      @count_matrix ||= Inbox::Queue::KINDS.index_with { |entry_kind| count_by_project(entry_kind) }
+    end
+
     # Project ids with >=1 item of `entry_kind`, regardless of the active
     # filters — embedded in the view for client-side narrowing.
     def project_ids_for(entry_kind)

@@ -65,12 +65,12 @@ Hiding never resolves, clears, comments, or changes readiness.
 
 `Inbox::Queue` accepts `scope:` (`actionable` default, `disabled_phases`,
 `removed`). When phase relevance governs visible projects, `Inbox::Count`
-reuses `Inbox::Availability`'s versioned per-user matrix so lists, counts,
-badges, and indicators cannot disagree without independently rebuilding every
-queue lane on a badge cache miss. With rollout disabled, the badge keeps its bounded
-SQL approximation and applies personal suppression by resolving only active
-removal keys through their targeted queue lanes; it never rebuilds all entry
-payloads merely because a user has a removal.
+applies the shared kind-to-phase policy to `Inbox::Availability`'s
+count-oriented per-project projection. A cold badge read therefore keeps the
+bounded SQL approximation instead of rebuilding every queue lane. It applies
+personal suppression by resolving only active removal keys through their
+targeted queue lanes; it never rebuilds all entry payloads merely because a
+user has a removal.
 
 ## Personal removal
 
