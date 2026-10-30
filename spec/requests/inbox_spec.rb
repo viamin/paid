@@ -461,6 +461,17 @@ RSpec.describe "Inbox" do
       expect(response).to have_http_status(:ok)
     end
 
+    def record_closeout_assessment(issue, criteria:)
+      run = create(:agent_run, :completed, project:, issue:)
+      assessment = PartialCloseouts::Assessment.snapshot(run, {
+        "classification" => "complete",
+        "criteria" => criteria,
+        "gaps" => [],
+        "next_action" => { "kind" => "close_on_github", "explanation" => "Close the accepted issue." }
+      })
+      run.update!(reconciliation: { "assessment" => assessment })
+    end
+
     it "lists the decision paths and links the operator guide" do
       render_guided_pane
 
@@ -469,19 +480,73 @@ RSpec.describe "Inbox" do
       expect(response.body).to include("Continue agent-actionable work")
       expect(response.body).to include("Link prerequisite work")
       expect(response.body).to include("Supply human evidence")
-      expect(response.body).to include("attest completion")
+      expect(response.body).to include("Close on GitHub only when a current acceptance audit")
       expect(response.body).to include(partial_closeout_guide_path)
     end
 
-    it "collects an editable rationale and separates the three completions" do
+    it "hides the GitHub closure action while an acceptance audit is pending" do
       render_guided_pane
 
-      expect(response.body).to include("Completion rationale")
+      expect(response.body).to include("Audit pending")
+      expect(response.body).not_to include("Completion rationale", resolve_closeout_project_agent_runs_path(project))
+    end
+
+    it "hides the GitHub closure action when acceptance criteria remain unmet" do
+      record_closeout_assessment(guided_issue, criteria: [ { "criterion" => "Pilot p95", "state" => "unmet" } ])
+
+      render_guided_pane
+
+      expect(response.body).to include("Unmet criteria")
+      expect(response.body).not_to include("Completion rationale", resolve_closeout_project_agent_runs_path(project))
+    end
+
+    it "collects an editable rationale and explains the evidence-gated close action for an accepted issue" do
+      record_closeout_assessment(guided_issue, criteria: [ { "criterion" => "Pilot p95", "state" => "satisfied" } ])
+
+      render_guided_pane
+
+      expect(response.body).to include("Accepted awaiting github closure", "Completion rationale")
       expect(response.body).to include("Completing a run")
-      expect(response.body).to include("Resolving this Inbox item")
-      expect(response.body).to include("Closing the GitHub issue")
-      expect(response.body).to include("The GitHub issue stays open")
+      expect(response.body).to include("Closing this issue")
+      expect(response.body).to include("current criterion assessment")
+      expect(response.body).to include("this item remains visible with this exact retry path")
       expect(response.body).not_to match(/type="hidden"[^>]*name="reason"/)
+    end
+
+    it "routes upstream issues to GitHub without rendering the fork-close action" do # @spec PARTIAL-CLOSEOUT-006 UPSTREAM-ISSUE-008
+      project.update!(pr_target: "upstream", upstream_full_name: "upstream/alpha")
+      upstream_issue = create(:issue, project: project, github_number: 512, paid_state: "in_progress")
+      create(:issue, :pull_request, project: project, github_number: 513, github_state: "closed",
+        pr_review_phase: "merged", parent_issue: upstream_issue, created_at: 2.days.ago)
+      record_closeout_assessment(upstream_issue, criteria: [ { "criterion" => "Upstream acceptance", "state" => "satisfied" } ])
+
+      get inbox_entry_path(
+        entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, upstream_issue),
+        project_id: project.id,
+        kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND
+      )
+
+      expect(response).to have_http_status(:ok)
+
+      expect(response.body).to include("Close on upstream GitHub", "Paid does not mutate upstream issues")
+      expect(response.body).not_to include(resolve_closeout_project_agent_runs_path(project))
+    end
+
+    it "hides upstream closure guidance until the issue is accepted" do
+      project.update!(pr_target: "upstream", upstream_full_name: "upstream/alpha")
+      upstream_issue = create(:issue, project: project, github_number: 514, paid_state: "in_progress")
+      create(:issue, :pull_request, project: project, github_number: 515, github_state: "closed",
+        pr_review_phase: "merged", parent_issue: upstream_issue, created_at: 2.days.ago)
+
+      get inbox_entry_path(
+        entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, upstream_issue),
+        project_id: project.id,
+        kind: Inbox::Queue::PARTIAL_CLOSEOUT_KIND
+      )
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Audit pending")
+      expect(response.body).not_to include("Close on upstream GitHub")
     end
 
     it "explains the continuation authorization semantics with examples" do

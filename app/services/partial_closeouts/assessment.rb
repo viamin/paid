@@ -11,6 +11,13 @@ module PartialCloseouts
   class Assessment
     Result = Data.define(:assessment, :criteria, :source_revision, :intent_revision, :assessed_at, :stale, :next_action) do
       def stale? = stale
+
+      def closeout_state
+        return "audit_pending" if stale?
+        return "accepted_awaiting_github_closure" if criteria.present? && criteria.all? { |criterion| criterion["state"] == "satisfied" } && Array(assessment["gaps"]).empty?
+
+        "unmet_criteria"
+      end
     end
 
     def self.call(...) = new(...).call
@@ -135,6 +142,10 @@ module PartialCloseouts
     end
 
     def inferred_next_action
+      if criteria.present? && criteria.all? { |criterion| criterion["state"] == "satisfied" } && Array(assessment["gaps"]).empty?
+        return { "kind" => "close_on_github", "explanation" => "Every current criterion is satisfied; an authorized operator may close the GitHub issue." }
+      end
+
       if criteria.any? { |criterion| criterion["prerequisite_kind"].in?(%w[human external]) }
         { "kind" => "supply_evidence", "explanation" => "Human or external evidence is required before another agent run can help." }
       elsif criteria.any? { |criterion| criterion.dig("owner", "open") }

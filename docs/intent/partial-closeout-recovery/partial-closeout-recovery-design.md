@@ -212,19 +212,43 @@ admission under the scoped lift, or the project is explicitly paused.
 `ProcessRunQueueJob` already rechecks every candidate before claim, keeps the
 budget check (`CostBudgets::Check`) and feature-intent admission at run start.
 
-### Resolve-complete (evidence-gated dismissal)
+### GitHub closure (evidence-gated operator action)
 
-`Issues::ResolveCloseout` records the operator's attestation that the recorded
-evidence completes the issue: stamps `closeout_resolved_at`,
-`closeout_resolution_digest` (the generation it resolves), and the actor, sets
-`paid_state = completed`, and leaves the GitHub issue open. The lane item is
-suppressed while the digest matches; new terminal evidence is a new
-generation and re-creates the item. Repeated sync cannot recreate a
-dismissed/resolved item without new evidence because nothing is persisted by
-sync for this lane — it is derived from evidence, and the dismissal is
-digest-scoped. Resolution takes the issue lock shared by continuation creation,
-supersedes any open authorization, and cancels its unclaimed queued run before
-recording completion, so a continuation cannot dispatch after the attestation.
+`Issues::ResolveCloseout` keeps every open source issue visible in the
+partial-closeout lane. The pane distinguishes `audit pending`, `accepted and
+awaiting GitHub closure`, and `unmet criteria`. An authorized operator may use
+the close action only for an accepted assessment. At the action boundary Paid
+rechecks source and intent revisions, criterion satisfaction, dependencies and
+human prerequisites, scanner verification, and GitHub's open state before it
+requests GitHub closure. Before releasing the issue lock for that request, Paid
+persists a closing-in-progress marker that revokes new continuation admission
+and cancels a queued continuation at its dequeue recheck. GitHub reads and
+mutations run without a database row lock or open transaction. A failed remote
+request clears only the marker owned by that attempt so a newer replacement
+lease remains serialized and the close action remains retryable. After GitHub
+confirms closure, Paid reacquires the issue lock, verifies that the attempt
+still owns the closing marker, and revalidates the evidence and every local
+prerequisite before it records the actor, rationale, and evidence digest and
+marks the local issue closed, clearing the derived Inbox item. An attempt that
+lost its expired lease leaves the replacement marker and local resolution
+untouched so the owning attempt can reconcile the observed closure. If evidence
+or a prerequisite changes during the remote write, Paid still
+reconciles the confirmed GitHub closure locally and records the actor,
+rationale, evidence digest, and newly observed blocker in an audit event. The
+blocker remains available as follow-up work instead of presenting an impossible
+close retry for an already-closed source. A GitHub API failure retains the item
+and its exact **Close on GitHub** retry route.
+Synthetic code-scanning records have no corresponding GitHub Issue, so this
+action refuses them with scanner-reconciliation guidance; their source closure
+is observed from an authoritative code-scanning snapshot by
+`SecurityAlerts::ReconcileResolved`.
+Upstream-target projects read their source issues from another repository, which
+Paid does not mutate. The Inbox therefore replaces the close action with a
+direct upstream-GitHub route, and the shared controller and MCP service refuse
+the action before reading or writing through the fork client.
+
+Reopening or new terminal evidence follows
+the normal current-assessment path.
 
 ### Surfaces
 
@@ -379,21 +403,22 @@ closed owner, dismisses a scanner finding, or treats a merge as verification.
 The lane's recovery actions assume the operator already knows which action
 fits. The pane therefore carries task-oriented decision guidance (five paths:
 review the recorded criteria/evidence; continue agent-actionable work;
-create/link prerequisite work; supply human evidence; attest completion only
-when justified) and links to an in-app operator guide
+create/link prerequisite work; supply human evidence; close on GitHub only
+after a current audit accepts every criterion) and links to an in-app operator guide
 (`InboxController#partial_closeout_guide`) that explains, separately, what
-completes a run, what resolves an Inbox item internally, and what closes a
-GitHub issue or epic through a final PR — including that internal resolution
-leaves GitHub open and that new terminal evidence can resurface the item, and
+completes a run, what clears an Inbox item, and how the evidence-gated GitHub
+close action works — including that an open issue remains visible despite an
+internal attestation and that a failed close retains the same retry path, and
 that audit completion, gap transfer, and epic acceptance are distinct
 outcomes (a follow-up owner is not completed acceptance evidence; an explicit
 scope revision preserves ownership of the outstanding requirement).
 
-The resolve-complete attestation is editable: the pane collects a specific
+The close action's rationale is editable: the pane collects a specific
 completion rationale referencing evidence instead of posting a hidden canned
 reason, and `Issues::ResolveCloseout` refuses the legacy canned sentence
-structurally (no semantic approval heuristic). Actor and evidence-generation
-digest recording is unchanged.
+structurally (no semantic approval heuristic). The successful action records
+the actor and evidence-generation digest before the resulting GitHub closure
+clears the item.
 
 The continuation offer explains its authorization semantics: one run, other
 holds still apply, and the reason should describe remaining work plus the

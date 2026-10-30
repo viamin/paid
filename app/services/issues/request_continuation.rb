@@ -16,7 +16,7 @@ module Issues
   # skip labels, and active-run uniqueness all still apply, with the blocker
   # explained to the user.
   # @spec PARTIAL-CLOSEOUT-003 @spec PARTIAL-CLOSEOUT-004 @spec PARTIAL-CLOSEOUT-008
-  # @spec PARTIAL-CLOSEOUT-027
+  # @spec PARTIAL-CLOSEOUT-006 @spec PARTIAL-CLOSEOUT-027 @spec PARTIAL-CLOSEOUT-037
   class RequestContinuation
     Result = Struct.new(:request, :agent_run, :code, :message, keyword_init: true) do
       def success? = code.nil?
@@ -43,9 +43,14 @@ module Issues
       return failure(:automation_disabled, "Automatic continuation is disabled for this project.") if automatic? && !auto_pick_project_open?
 
       issue.with_lock do
+        if issue.closeout_closing?
+          return failure(:closeout_closing, "GitHub closure is in progress; retry continuation only if the close action fails.")
+        end
+
         existing = IssueContinuationRequest.open_for_issue(issue)
         return dedupe_or_refuse(existing) if existing
 
+        clear_unaccepted_legacy_resolution!
         status = CloseoutStatus.call(issue)
         refusal = refusal_for(status)
         return refusal if refusal
@@ -126,6 +131,18 @@ module Issues
       end
 
       nil
+    end
+
+    # Any assessment state other than current acceptance supersedes the legacy
+    # internal completion attestation. Clear it before canonical admission is
+    # calculated so the request-time decision and dequeue recheck agree.
+    def clear_unaccepted_legacy_resolution!
+      return unless issue.closeout_resolved?
+
+      assessment = PartialCloseouts::Assessment.call(issue)
+      return if assessment.closeout_state == "accepted_awaiting_github_closure"
+
+      issue.update!(closeout_resolved_at: nil, closeout_resolution_digest: nil, closeout_resolved_by: nil)
     end
 
     def create_request_and_run(status)
