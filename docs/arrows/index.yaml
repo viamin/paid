@@ -691,6 +691,14 @@ arrows:
     taxonomy: operations
     status: OK
     audited: 2026-08-04
+  scaling-experiments:
+    title: Scaling Experiment Reporting
+    path: docs/intent/scaling-experiments/scaling-experiments-design.md
+    specs: docs/intent/scaling-experiments/scaling-experiments-specs.md
+    parent: PAID
+    taxonomy: operations
+    status: OK
+    audited: 2026-10-30
   style-guide-evolution:
     title: Style Guide Evolution
     path: docs/intent/style-guide-evolution/style-guide-evolution-design.md

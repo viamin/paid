@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module ScalingExperiments
-  class AnalyzeScalingLaw
+  class AnalyzeScalingLaw # @spec SCALING-EXPERIMENTS-002
     Result = Struct.new(
       :status,
       :dimension,
@@ -422,8 +422,8 @@ module ScalingExperiments
         "actionable_interval_width_ratio" => MAX_ACTIONABLE_INTERVAL_WIDTH_RATIO,
         "power_law_fit_method" => "log_log_linear_fit",
         "simplifications" => [
-          "Uses descriptive confidence intervals rather than the full comparative regression suite proposed in the RDR.",
-          "Treats configured experiment sample floors below 30 as intentional simplifications and flags them in reporting.",
+          "Uses descriptive confidence intervals rather than comparing power-law, logarithmic, and linear regression models.",
+          "Treats experiments configured below 30 samples per value as limited evidence and flags them in reporting.",
           "Recommendation confidence is based on sample size and interval width, not a full hypothesis-testing pipeline."
         ]
       }
