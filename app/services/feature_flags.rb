@@ -7,11 +7,12 @@ class FeatureFlags
   InvalidActorError = Class.new(ArgumentError)
   InvalidPercentageError = Class.new(ArgumentError)
 
+  # @spec SETTINGS-COPY-001
   DEFINITIONS = {
     question_exploration: Definition.new(
       name: :question_exploration,
       owner: "question-exploration",
-      intent: "Gate the question-centered chat exploration surfaces required by RDR-069.",
+      intent: "Gate the question-centered chat exploration surfaces.",
       rollout_plan: "Default-off; enable selected projects only after linked-chat, authorization, and durable-progress behavior are verified.",
       cleanup_criteria: "Remove only after question exploration is the default for every project."
     ),
@@ -20,7 +21,7 @@ class FeatureFlags
       owner: "confidence-driven-delivery",
       intent: "Gate confidence-driven feature enrollment until the P10 admission, P11 policy-specific review, and P12 completion path are integrated and verified together.",
       rollout_plan: "Default-off. Enable for an authorized pilot project only after the P10–P12 integration checks pass and the project enforces the policy-specific conformance review (approved_intent_amendments plus intent_conformance_enforcement, so every confidence-driven PR is reviewed against its admitted baseline; shadow review alone never enables enrollment); project enrollment remains an independent, auditable choice. Disabling the flag preserves existing policy snapshots, held work, evidence, and active runs.",
-      cleanup_criteria: "Remove only after the RDR-071 final acceptance audit verifies the integrated delivery path as the default for every project."
+      cleanup_criteria: "Remove only after the final acceptance audit verifies the integrated delivery path as the default for every project."
     ),
     context_intake_agent_questions: Definition.new(
       name: :context_intake_agent_questions,
@@ -32,14 +33,14 @@ class FeatureFlags
     managed_subscription_runner_auth: Definition.new(
       name: :managed_subscription_runner_auth,
       owner: "runner-auth",
-      intent: "Gate the rollout of managed RunnerCredential auth for subscription runners (Claude, Codex, Gemini, Copilot) ahead of remote cutover (RDR-041 / #2959 / #2960).",
+      intent: "Gate managed RunnerCredential authentication for subscription runners until remote cutover.",
       rollout_plan: "Shadow read-only by default; opt-in per tenant via tenant_settings.features; default-on after telemetry proves reliability versus legacy host-mounted auth.",
       cleanup_criteria: "Remove once managed auth is the default for all subscription runners and legacy host-mounted paths are documented as local-only escape hatches."
     ),
     execution_runner_enabled: Definition.new(
       name: :execution_runner_enabled,
       owner: "container-runtime",
-      intent: "Route AgentRun container operations through ExecutionRunners::LocalDockerRunner instead of direct Containers::Provision calls (RDR-054).",
+      intent: "Route agent-run container operations through the execution runner instead of direct container provisioning.",
       rollout_plan: "Opt-in per tenant via tenant_settings.features; default-off until Phase A–C migration is complete.",
       cleanup_criteria: "Remove once all orchestration callers use the runner interface and direct Containers::Provision calls are retired."
     ),
@@ -60,58 +61,58 @@ class FeatureFlags
     runner_model_policy_form: Definition.new(
       name: :runner_model_policy_form,
       owner: "runner-config",
-      intent: "Gate the runner form rework that derives provider choice from API keys and uses catalog-backed model selection for direct-outbound runners (RDR-065).",
+      intent: "Gate the runner form that derives provider choice from API keys and uses catalog-backed model selection for direct-outbound runners.",
       rollout_plan: "Default-off; opt in per tenant via tenant_settings.features, then expand after form parity metrics match or beat the legacy flow.",
       cleanup_criteria: "Remove once the catalog-backed runner model form is the default and the legacy direct-outbound form path is retired."
     ),
     intent_conformance_enforcement: Definition.new(
       name: :intent_conformance_enforcement,
       owner: "intent-conformance",
-      intent: "Gate the RDR-067 intent-conformance auto-merge signal and Inbox decision lane behind a per-project rollout, standing in for the RDR-066 named feature operating mode until that mode exists.",
-      rollout_plan: "Default-off; normal review scheduling requires this flag together with approved_intent_amendments, while read-only shadow evaluation requires intent_conformance_shadow_review alone. Expand per tenant or project via tenant_settings.features only after #3870 records verdict accuracy against representative accepted and intentionally drifted PRs, and only for features with populated approved design-document paths.",
-      cleanup_criteria: "Remove once RDR-066's named feature operating mode ships and conformance enforcement is wired to a project's operating mode instead of this standalone flag."
+      intent: "Gate the intent-conformance auto-merge signal and Inbox decision lane behind a per-project rollout until the feature operating mode owns the policy.",
+      rollout_plan: "Default-off; normal review scheduling requires this flag together with approved_intent_amendments, while read-only shadow evaluation requires intent_conformance_shadow_review alone. Expand per tenant or project via tenant_settings.features only after verdict accuracy is measured against representative accepted and intentionally drifted pull requests, and only for features with populated approved design-document paths.",
+      cleanup_criteria: "Remove once the feature operating mode owns conformance enforcement instead of this standalone flag."
     ),
     intent_conformance_shadow_review: Definition.new(
       name: :intent_conformance_shadow_review,
       owner: "intent-conformance",
-      intent: "Run RDR-067's independent reviewer and retain its verdicts for evaluation without enabling the auto-merge signal, final merge guard, or design-amendment flow.",
+      intent: "Run the independent reviewer and retain its verdicts for evaluation without enabling the auto-merge signal, final merge guard, or design-amendment flow.",
       rollout_plan: "Default-off; enable only for a named project after the representative corpus is adjudicated. Keep intent_conformance_enforcement and approved_intent_amendments disabled throughout shadow evaluation.",
-      cleanup_criteria: "Remove after RDR-067 promotion criteria are met, enforcement is enabled with its merge guard, and temporary shadow-only scheduling is no longer needed."
+      cleanup_criteria: "Remove after promotion criteria are met, enforcement is enabled with its merge guard, and temporary shadow-only scheduling is no longer needed."
     ),
     approved_intent_amendments: Definition.new(
       name: :approved_intent_amendments,
       owner: "approved-intent-conformance",
-      intent: "Gate the RDR-067 design-amendment flow (#3869): product-level drift routes through amended RDR/LID PRs, human approval, and merge, with revision-impact pause of affected feature work.",
-      rollout_plan: "Default-off; this flag and intent_conformance_enforcement together enable normal review scheduling and the final merge guard. Read-only shadow evaluation instead requires intent_conformance_shadow_review alone. Expand per tenant via tenant_settings.features only after #3870 records verdict accuracy and only for features with populated approved design-document paths. Folds into the RDR-066 named feature operating mode gate when #3862 lands.",
-      cleanup_criteria: "Remove once the RDR-066 operating mode setting owns the gate and every amendment-capable project is enrolled through that mode."
+      intent: "Gate the design-amendment flow: product-level drift routes through amended design PRs, human approval, and merge, pausing affected feature work when its approved revision changes.",
+      rollout_plan: "Default-off; this flag and intent_conformance_enforcement together enable normal review scheduling and the final merge guard. Read-only shadow evaluation instead requires intent_conformance_shadow_review alone. Expand per tenant only after verdict accuracy is measured against representative accepted and intentionally drifted pull requests, and only for features with approved design-document paths. Fold this into the feature operating mode when it owns the policy.",
+      cleanup_criteria: "Remove once the operating mode setting owns the gate and every amendment-capable project is enrolled through that mode."
     ),
     apple_verification_workers: Definition.new(
       name: :apple_verification_workers,
       owner: "apple-verification",
-      intent: "Gate RDR-068 macOS guest verification until immutable images and the Paid-controlled network boundary pass pilot isolation checks.",
+      intent: "Gate macOS guest verification until immutable images and the Paid-controlled network boundary pass pilot isolation checks.",
       rollout_plan: "Default-off; operators opt in selected pilot projects only after the approved worker profile, proxy, DNS, and isolation smoke tests pass.",
-      cleanup_criteria: "Remove only after the RDR-068 closeout audit approves broad Apple-worker enablement."
+      cleanup_criteria: "Remove only after the closeout audit approves broad Apple-worker enablement."
     ),
     marketplace_tool_sidecars: Definition.new(
       name: :marketplace_tool_sidecars,
       owner: "marketplace-runtime",
-      intent: "Gate the RDR-073 third install arm on Containers::McpProvisioner so per-run hardened tool sidecars only provision behind per-tenant opt-in.",
+      intent: "Gate hardened per-run tool sidecars so they provision only behind per-tenant opt-in.",
       rollout_plan: "Default-off; opt in per tenant via tenant_settings.features; expand after the hardened HostConfig, image gate, and PAID_SERVICE_HARDENING override path are exercised end-to-end.",
-      cleanup_criteria: "Remove once the RDR-073 closeout audit verifies the hardened provisioning path is complete, image gating is enforced, and pilot tenants have run tool-attached runs without incident."
+      cleanup_criteria: "Remove once the closeout audit verifies the hardened provisioning path is complete, image gating is enforced, and pilot tenants have run tool-attached runs without incident."
     ),
     automation_phases: Definition.new(
       name: :automation_phases,
       owner: "automation-phases",
-      intent: "Gate the RDR-077 phase model: phase project defaults, explicit continuation grants, execution enforcement, and Inbox phase relevance plus personal removal.",
+      intent: "Gate phase project defaults, explicit continuation grants, execution enforcement, and Inbox phase relevance plus personal removal.",
       rollout_plan: "Default-off; enable a pilot project only after phase mappings, capability configuration, grant storage, and Inbox classification are validated together. Block rollback for a project with active grants until they finish or are revoked and its queued work is reconciled.",
-      cleanup_criteria: "Remove after the RDR-077 closeout verifies migration and complete execution-path coverage."
+      cleanup_criteria: "Remove after closeout verifies migration and complete execution-path coverage."
     ),
     layered_verification_add_on: Definition.new(
       name: :layered_verification_add_on,
       owner: "layered-verification",
-      intent: "Gate RDR-076's audit-only layered-verification add-on while its authority, evidence, and operation boundaries are validated.",
+      intent: "Gate the audit-only layered-verification add-on while its authority, evidence, and operation boundaries are validated.",
       rollout_plan: "Default-off; enable selected tenant projects only after shared UI, chat, MCP, authorization, and host-check paths are verified together.",
-      cleanup_criteria: "Remove only after RDR-076 closeout establishes a safe default and migrates any remaining tenant configuration."
+      cleanup_criteria: "Remove only after closeout establishes a safe default and migrates any remaining tenant configuration."
     )
   }.freeze
 
