@@ -45,7 +45,8 @@
   *Code:* `app/services/inbox/history_recorder.rb`,
   `app/services/inbox/removals.rb`.
   *Test:* `spec/models/inbox_history_event_spec.rb`,
-  `spec/services/inbox/action_history_spec.rb`.
+  `spec/services/inbox/action_history_spec.rb`,
+  `spec/services/inbox/removals_spec.rb`.
 
 - [x] **OPERATOR-INBOX-002** — When a planning workflow records an open
   `plan_pending_review` decomposition decision and the user can manage the
