@@ -1153,7 +1153,7 @@ module Activities
       if issue.local_control_state?
         return issue.approve_tdd_tests!(head_sha:) if verdict_label == TDD_TESTS_APPROVED_LABEL
 
-        return issue.update!(tdd_review_state: tdd_review_state_for(verdict_label), tdd_review_head_sha: head_sha)
+        return issue.request_tdd_test_changes!(head_sha:)
       end
 
       labels_to_remove = [
@@ -1168,12 +1168,6 @@ module Activities
       client.add_labels_to_issue(project.full_name, issue.github_number, [ verdict_label ]) unless issue.has_label?(verdict_label)
 
       issue.update!(labels: (issue.labels - labels_to_remove + [ verdict_label ]).uniq, tdd_review_head_sha: head_sha)
-    end
-
-    def tdd_review_state_for(label)
-      return "approved" if label == TDD_TESTS_APPROVED_LABEL
-
-      "changes_requested"
     end
 
     # Returns the paid_agent_review_pending trigger when present, or nil.
@@ -4045,6 +4039,7 @@ module Activities
       )
     end
 
+    # @spec INBOX-PROGRESS-002
     def persist_scan_metadata(issue, scanned_at)
       # `scan_merge_conflict_only` calls this for a PR that was eligible for a
       # rescan but never reached `stage_auto_merge_snapshot`. Without this
@@ -4054,14 +4049,18 @@ module Activities
       # approval) had just been recorded (#3653).
       staged_this_pass = auto_merge_snapshots.key?(issue.id)
       snapshot = auto_merge_snapshots.delete(issue.id)
-      head_sha = auto_merge_head_shas.delete(issue.id)
+      snapshot_head_sha = auto_merge_head_shas.delete(issue.id)
+      current_head_sha = live_pr_states.dig(issue.id, :head_sha)
 
       attributes = { last_pr_scan_at: scanned_at }
       if staged_this_pass
         attributes[:auto_merge_blockers] = snapshot
         attributes[:auto_merge_evaluated_at] = snapshot.present? ? scanned_at : nil
-        attributes[:last_scanned_head_sha] = head_sha if head_sha.present?
+        current_head_sha ||= snapshot_head_sha
       end
+      # Draft scans do not stage an auto-merge assessment, but their observed
+      # head is still the authoritative revision for a local TDD verdict.
+      attributes[:last_scanned_head_sha] = current_head_sha if current_head_sha.present?
       issue.update_columns(attributes)
       Dashboard::CacheVersion.bump(issue.project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE) if staged_this_pass
     end

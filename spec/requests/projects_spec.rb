@@ -421,10 +421,28 @@ RSpec.describe "Projects" do
     end
 
     it "records when an operator approves tests" do # @spec LABEL-CONTROL-005
+      pull_request.update!(last_scanned_head_sha: "draft-sha")
+
       post update_issue_control_state_project_path(project),
         params: { issue_id: pull_request.id, control_action: "approve_tests" }
 
-      expect(pull_request.reload).to have_attributes(tdd_review_state: "approved", tdd_review_approved_at: be_present)
+      expect(pull_request.reload).to have_attributes(
+        tdd_review_state: "approved",
+        tdd_review_approved_at: be_present,
+        tdd_review_head_sha: "draft-sha"
+      )
+    end
+
+    it "binds requested test changes to the scanned revision" do # @spec LABEL-CONTROL-005
+      pull_request.update!(last_scanned_head_sha: "draft-sha")
+
+      post update_issue_control_state_project_path(project),
+        params: { issue_id: pull_request.id, control_action: "request_test_changes" }
+
+      expect(pull_request.reload).to have_attributes(
+        tdd_review_state: "changes_requested",
+        tdd_review_head_sha: "draft-sha"
+      )
     end
 
     it "clears a submitted local priority when the select is blank" do # @spec LABEL-CONTROL-002

@@ -36,7 +36,7 @@ module Issues
       when "hold_for_review" then issue.update!(hold_for_review: true)
       when "release_review_hold" then issue.update!(hold_for_review: false)
       when "approve_tests" then issue.approve_tdd_tests!
-      when "request_test_changes" then issue.update!(tdd_review_state: "changes_requested")
+      when "request_test_changes" then issue.request_tdd_test_changes!
       when "set_priority" then issue.update!(control_priority: priority.presence)
       when "exclude_from_auto_pick" then exclude_from_auto_pick!
       when "clear_auto_pick_exclusion" then issue.update!(auto_pick_excluded_reason: nil)

@@ -11984,6 +11984,16 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(decision_types_for(result)).to eq([])
     end
 
+    it "records the current draft head for a later local test approval" do # @spec INBOX-PROGRESS-002
+      project.update!(tdd_mode: "strict", label_integration_mode: "ignored")
+      pull_request.paid_activate!
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ], head_sha: "draft-sha")
+
+      activity.execute(project_id: project.id)
+
+      expect(pull_request.reload.last_scanned_head_sha).to eq("draft-sha")
+    end
+
     it "starts implementation in strict mode after paid-tests-approved is present" do
       project.update!(tdd_mode: "strict")
       pull_request.update!(labels: [ "paid-generated", "paid-automation", "paid-tests-approved" ])

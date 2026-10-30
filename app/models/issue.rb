@@ -578,6 +578,11 @@ class Issue < ApplicationRecord
     update!(tdd_review_state: "approved", tdd_review_approved_at: Time.current, tdd_review_head_sha: head_sha)
   end
 
+  # @spec LABEL-CONTROL-005
+  def request_tdd_test_changes!(head_sha: last_scanned_head_sha)
+    update!(tdd_review_state: "changes_requested", tdd_review_head_sha: head_sha)
+  end
+
   # Releases the escalation hold and returns the PR to an automation-managed
   # phase. Owner-initiated clearings also restart the attempt counters: they
   # measure attempts since the owner last looked, and escalation is the moment
