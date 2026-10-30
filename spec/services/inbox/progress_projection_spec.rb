@@ -164,6 +164,20 @@ RSpec.describe Inbox::ProgressProjection do
     expect(milestone(projection, "merge")).to include(state: "blocked")
   end
 
+  it "serializes a single merge assessment as one evidence record" do # @spec INBOX-PROGRESS-001
+    project = create(:project)
+    pull_request = create(:issue, :pull_request, project:, last_scanned_head_sha: "a" * 40,
+      auto_merge_head_sha: "a" * 40, auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
+
+    projection = described_class.call(issue: pull_request).to_h
+
+    expect(milestone(projection, "code_review").fetch(:evidence)).to eq([
+      { source: "merge_assessment", revision: "a" * 40, url: pull_request.github_url,
+        assessed_at: pull_request.auto_merge_evaluated_at.iso8601 }
+    ])
+  end
+
   it "does not carry a merge assessment across a changed head" do # @spec INBOX-PROGRESS-002
     project = create(:project)
     pull_request = create(:issue, :pull_request, project:, last_scanned_head_sha: "b" * 40,

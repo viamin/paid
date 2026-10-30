@@ -220,7 +220,11 @@ module Inbox
     def milestone(id, label, state, evidence: [], next_action: nil)
       raise ArgumentError, "unknown progress state: #{state}" unless STATES.include?(state)
 
-      Milestone.new(id:, label:, state:, evidence: Array(evidence), next_action:)
+      Milestone.new(id:, label:, state:, evidence: normalized_evidence(evidence), next_action:)
+    end
+
+    def normalized_evidence(evidence)
+      evidence.is_a?(Hash) ? [ evidence ] : Array(evidence)
     end
   end
 end
