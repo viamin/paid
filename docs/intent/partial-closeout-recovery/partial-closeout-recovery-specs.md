@@ -349,9 +349,11 @@
   attestation SHALL NOT suppress an open issue; only observed GitHub closure
   clears it. The Inbox, controller, and MCP close action SHALL use the same
   current-assessment and retry semantics.
-  *Code:* `app/services/issues/resolve_closeout.rb`, `app/models/issue.rb`.
+  *Code:* `app/services/issues/resolve_closeout.rb`, `app/models/issue.rb`,
+  `app/services/issues/stalled_closeouts.rb`.
   *Test:* `spec/services/issues/resolve_closeout_spec.rb`,
-  `spec/services/inbox/queue_spec.rb`.
+  `spec/services/inbox/queue_spec.rb`, `spec/models/issue_spec.rb`,
+  `spec/services/issues/stalled_closeouts_spec.rb`.
 
 - [x] **PARTIAL-CLOSEOUT-007** — When an authorized agent acts through the
   MCP/API surface, the system SHALL offer `request_issue_continuation` and

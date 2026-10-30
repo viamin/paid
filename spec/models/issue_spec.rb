@@ -1812,6 +1812,18 @@ RSpec.describe Issue do
       expect(Dashboard::CacheVersion).not_to have_received(:bump)
     end
 
+    it "does not inspect partial-closeout candidates when a pull request closes" do # @spec PARTIAL-CLOSEOUT-037
+      pull_request = create(:issue, :pull_request, project: project, github_state: "open")
+      queries = []
+      subscriber = ->(*args) { queries << ActiveSupport::Notifications::Event.new(*args).payload[:sql] }
+
+      ActiveSupport::Notifications.subscribed(subscriber, "sql.active_record") do
+        pull_request.update!(github_state: "closed")
+      end
+
+      expect(queries).not_to include(a_string_including("merged_prs"))
+    end
+
     # @spec PARTIAL-CLOSEOUT-037
     it "bumps the inbox cache when a partial-closeout candidate closes on GitHub" do
       issue = create(:issue, project: project, github_state: "open", paid_state: "in_progress")
