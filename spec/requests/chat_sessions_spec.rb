@@ -389,6 +389,49 @@ RSpec.describe "ChatSessions" do
     context "when authenticated" do
       before { sign_in user }
 
+      # @spec CHAT-API-028
+      it "returns to chat with a notice when an old HTML link points to a removed session" do
+        removed_id = chat_session.id
+        chat_session.destroy!
+
+        get chat_session_path(removed_id), headers: { "Accept" => "text/html" }
+
+        expect(response).to redirect_to(chat_sessions_path)
+        expect(flash[:alert]).to eq("That chat is no longer available.")
+      end
+
+      # @spec CHAT-API-028
+      it "keeps the JSON not-found response for a removed session" do
+        removed_id = chat_session.id
+        chat_session.destroy!
+
+        get chat_session_path(removed_id, format: :json)
+
+        expect(response).to have_http_status(:not_found)
+      end
+
+      # @spec CHAT-API-028
+      it "keeps the not-found response for a removed embedded chat" do
+        removed_id = chat_session.id
+        chat_session.destroy!
+
+        get chat_session_path(removed_id),
+          headers: { "Accept" => "text/html", "Turbo-Frame" => "chat-detail-frame" }
+
+        expect(response).to have_http_status(:not_found)
+      end
+
+      # @spec CHAT-API-028
+      it "uses the same HTML fallback for a chat outside the current account" do
+        other_account = create(:account)
+        other_session = create(:chat_session, account: other_account)
+
+        get chat_session_path(other_session), headers: { "Accept" => "text/html" }
+
+        expect(response).to redirect_to(chat_sessions_path)
+        expect(flash[:alert]).to eq("That chat is no longer available.")
+      end
+
       it "returns session detail with messages" do
         # @spec CHAT-API-001
         create(:chat_message, chat_session: chat_session, role: "user", content: "Hello")

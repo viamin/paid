@@ -100,6 +100,29 @@ messages and reconnect recovery remain their existing demand-driven paths.
 
 ## Current State
 
+### Chat sidebar updates
+
+The chat sidebar paginates the non-archived sessions visible to the user,
+including sessions whose runtime status is idle or closed. Selecting a
+different conversation changes only the selected row; it does not remove the
+previous conversation. Session
+updates publish one prepend stream event to the active or archived list. Turbo
+uses the card ID to replace an existing direct child, so an update cannot leave
+the row absent between separate remove and prepend events during navigation.
+The sidebar controller removes older copies from nested lazy pagination frames
+after a prepend or frame render, since Turbo only deduplicates direct children
+of the prepend target. The newest card remains in the first page.
+Moving a session between the active and archived lists also removes its card
+from the old list and restores that list's empty state when appropriate.
+
+An expired inline chat with no user message remains in history as a closed,
+resumable session. Automatic expiry does not treat a blank conversation as an
+explicit request to discard it. The idle reaper checks the session again under
+a row lock before closing it. Explicit Close still removes a blank chat. If a
+browser follows a stale full-page chat link to a missing or inaccessible
+session, the page returns to chat with a generic notice; JSON and embedded
+requests retain their not-found response.
+
 ### Managed free-model chat pool
 
 `FreeModels::SelectChatModel` selects concrete OpenRouter models for runners

@@ -448,12 +448,56 @@ class ChatSessionListControllerNodeHarness
       }
     }
 
+    // @spec CHAT-API-029
+    // Turbo only deduplicates direct children of a prepend target. A live
+    // update must also discard an older copy in a nested pagination frame.
+    function runPaginatedCardDeduplicationCase() {
+      const buildCard = (id) => ({
+        dataset: { sessionId: String(id) },
+        removed: false,
+        remove() { this.removed = true; }
+      });
+      const refreshedCard = buildCard(42);
+      const olderPaginatedCard = buildCard(42);
+      const unrelatedCard = buildCard(7);
+      const controller = Object.create(ChatSessionListController.prototype);
+      controller.cardTargets = [refreshedCard, unrelatedCard, olderPaginatedCard];
+      controller.filter = () => {};
+      controller.updateActiveCard = () => {};
+      controller.enableNewChatButtons = () => {};
+
+      controller.handleFrameRender({ target: { id: "sidebar_page_21" } });
+
+      if (refreshedCard.removed || unrelatedCard.removed || !olderPaginatedCard.removed) {
+        throw new Error("Expected only the older paginated copy to be removed");
+      }
+
+      const olderCard = buildCard(99);
+      const newCard = buildCard(99);
+      controller.cardTargets = [newCard, olderCard];
+      controller.listTarget = {};
+      controller.hasListTarget = true;
+      let mutationCallback;
+      window.MutationObserver = class {
+        constructor(callback) { mutationCallback = callback; }
+        observe() {}
+        disconnect() {}
+      };
+      controller.setupObserver();
+      mutationCallback();
+
+      if (newCard.removed || !olderCard.removed) {
+        throw new Error("Expected a live prepend to discard the older paginated copy");
+      }
+    }
+
     runModernListenerCase();
     runDesktopSidebarFrameCase();
     runLegacyListenerCase();
     runMissingMatchMediaCase();
     runUpdateActiveCardCase();
     runLazySidebarFrameRenderCase();
+    runPaginatedCardDeduplicationCase();
   JAVASCRIPT
 
   def self.run
@@ -462,7 +506,7 @@ class ChatSessionListControllerNodeHarness
 end
 
 RSpec.describe ChatSessionListControllerNodeHarness, :no_db do
-  # @spec LIST-DETAIL-003, CHAT-API-027
+  # @spec LIST-DETAIL-003 CHAT-API-027 CHAT-API-029
   it "preserves sidebar controls when the lazy history frame arrives" do
     stdout, stderr, status = described_class.run
 

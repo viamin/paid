@@ -291,6 +291,12 @@ class ChatSessionsController < ApplicationController
 
   def set_chat_session
     @chat_session = member_scope.find(params[:id])
+  rescue ActiveRecord::RecordNotFound
+    raise unless action_name == "show" && request.format.html? && requested_frame.blank? && !popup_request?
+
+    # @spec CHAT-API-028
+    skip_authorization
+    redirect_to chat_sessions_path, alert: "That chat is no longer available."
   end
 
   def reject_archived_chat_session

@@ -417,14 +417,16 @@ class ChatSession < ApplicationRecord
     )
   end
 
+  # @spec CHAT-API-029
   def broadcast_sidebar_refresh
-    previous_status = saved_change_to_status&.first || status
+    if saved_change_to_status? && (status_before_last_save == "archived") != archived?
+      Turbo::StreamsChannel.broadcast_remove_to(
+        sidebar_broadcast_stream,
+        target: ActionView::RecordIdentifier.dom_id(self)
+      )
+      broadcast_sidebar_append_empty_state(status: status_before_last_save)
+    end
 
-    Turbo::StreamsChannel.broadcast_remove_to(
-      sidebar_broadcast_stream,
-      target: ActionView::RecordIdentifier.dom_id(self)
-    )
-    broadcast_sidebar_append_empty_state(status: previous_status) if previous_status != status
     broadcast_sidebar_prepend
   end
 
