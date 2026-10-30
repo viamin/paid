@@ -226,10 +226,13 @@ and cancels a queued continuation at its dequeue recheck. GitHub reads and
 mutations run without a database row lock or open transaction. A failed remote
 request clears only the marker owned by that attempt so a newer replacement
 lease remains serialized and the close action remains retryable. After GitHub
-confirms closure, Paid reacquires the issue lock and revalidates the evidence
-and every local prerequisite before it records the actor, rationale, and
-evidence digest and marks the local issue closed, clearing the derived Inbox
-item. If evidence or a prerequisite changes during the remote write, Paid still
+confirms closure, Paid reacquires the issue lock, verifies that the attempt
+still owns the closing marker, and revalidates the evidence and every local
+prerequisite before it records the actor, rationale, and evidence digest and
+marks the local issue closed, clearing the derived Inbox item. An attempt that
+lost its expired lease leaves the replacement marker and local resolution
+untouched so the owning attempt can reconcile the observed closure. If evidence
+or a prerequisite changes during the remote write, Paid still
 reconciles the confirmed GitHub closure locally and records the actor,
 rationale, evidence digest, and newly observed blocker in an audit event. The
 blocker remains available as follow-up work instead of presenting an impossible

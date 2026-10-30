@@ -96,6 +96,8 @@ module Issues
     end
 
     def resolve_locally
+      return failure(:closeout_closing, "Another GitHub closure attempt is in progress; retry after it finishes.") unless owns_closing_marker?
+
       validation = validate_closeout(allow_observed_closure: true)
       unless validation.success?
         reconcile_confirmed_closure(validation)
@@ -108,6 +110,10 @@ module Issues
       issue.resolve_closeout!(actor:, evidence_digest: evidence.digest)
       @closing_marker = nil
       Result.new(issue:)
+    end
+
+    def owns_closing_marker?
+      @closing_marker.present? && issue.closeout_closing_at == @closing_marker
     end
 
     def reconcile_confirmed_closure(validation)

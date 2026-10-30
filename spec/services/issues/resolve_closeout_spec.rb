@@ -122,6 +122,24 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     expect(issue.reload.closeout_closing_at).to eq(replacement_marker)
   end
 
+  it "does not resolve locally when a successful expired attempt lost its closing marker" do # @spec PARTIAL-CLOSEOUT-006
+    merged_partial_pr(number: 12)
+    accepted_audit
+    replacement_marker = nil
+    allow(github_client).to receive(:update_issue) do
+      replacement_marker = issue.reload.closeout_closing_at + 1.second
+      issue.update!(closeout_closing_at: replacement_marker)
+      Struct.new(:state).new("closed")
+    end
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result.code).to eq(:closeout_closing)
+    expect(issue.reload.closeout_closing_at).to eq(replacement_marker)
+    expect(issue.closeout_resolved_at).to be_nil
+    expect(issue.github_state).to eq("open")
+  end
+
   it "refuses closure while an agent run is already active" do # @spec PARTIAL-CLOSEOUT-006
     merged_partial_pr(number: 12)
     accepted_audit

@@ -343,9 +343,12 @@
   SHALL persist a closing-in-progress marker that refuses new continuation
   authorization and cancels continuation runs at dequeue; a failed remote close
   SHALL clear only its own marker for retry and SHALL preserve a newer marker
-  that replaced its expired lease. The marker SHALL expire after a bounded
-  interval so process termination cannot permanently revoke closeout retries or
-  continuation admission. No continuation can dispatch while closure is in
+  that replaced its expired lease. After a successful remote close, an attempt
+  SHALL record local resolution only if it still owns the persisted marker; an
+  attempt that lost its expired lease SHALL preserve the replacement marker and
+  leave local resolution to its owner. The marker SHALL expire after a bounded
+  interval so process termination cannot permanently revoke closeout retries
+  or continuation admission. No continuation can dispatch while closure is in
   flight or after the issue is declared complete.
 
 - [x] **PARTIAL-CLOSEOUT-037** — When an open issue has a current acceptance
