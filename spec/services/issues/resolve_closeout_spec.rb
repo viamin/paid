@@ -344,6 +344,31 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     expect(issue.closeout_closing_at).to be_nil
   end
 
+  it "keeps the actionable item retryable when GitHub transport fails during the pre-close read" do # @spec PARTIAL-CLOSEOUT-037
+    merged_partial_pr(number: 12)
+    accepted_audit
+    allow(github_client).to receive(:issue).and_raise(Faraday::TimeoutError, "timeout")
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result.code).to eq(:github_failed)
+    expect(result.message).to include("retry Close on GitHub")
+    expect(issue.reload).to have_attributes(github_state: "open", closeout_closing_at: nil)
+    expect(github_client).not_to have_received(:update_issue)
+  end
+
+  it "keeps the actionable item retryable when GitHub transport fails during closure" do # @spec PARTIAL-CLOSEOUT-037
+    merged_partial_pr(number: 12)
+    accepted_audit
+    allow(github_client).to receive(:update_issue).and_raise(Faraday::TimeoutError, "timeout")
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result.code).to eq(:github_failed)
+    expect(result.message).to include("retry Close on GitHub")
+    expect(issue.reload).to have_attributes(github_state: "open", closeout_closing_at: nil)
+  end
+
   it "preserves an open continuation when GitHub rejects closure" do # @spec PARTIAL-CLOSEOUT-006
     merged_partial_pr(number: 12)
     accepted_audit

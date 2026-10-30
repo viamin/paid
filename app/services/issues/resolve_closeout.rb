@@ -91,7 +91,7 @@ module Issues
       end
 
       Result.new(issue:)
-    rescue GithubClient::Error
+    rescue GithubClient::Error, Faraday::Error
       failure(:github_failed, "GitHub closure failed; retry Close on GitHub from this Inbox item.")
     end
 
