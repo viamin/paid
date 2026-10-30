@@ -29,11 +29,21 @@ module Inbox
     attr_reader :approval_evidence, :head_sha, :issue, :scanned_at, :snapshot
 
     def record_invalidation
-      evidence = stale_blocker.fetch("approval_evidence", {})
-      stale = Array(evidence["stale_approvals"]).first || evidence
+      stale_approval_entries.each { |stale| record_invalidation_for(stale) }
+    end
+
+    def record_invalidation_for(stale)
       revision = stale["current_revision"] || head_sha
-      record("invalidation", "Approval invalidated by newer revision", stale["approver_login"] || "GitHub",
+      actor = stale["approver_login"] || "GitHub"
+      identity = [ actor, stale["approved_revision"] ].compact.join(":")
+      record("invalidation:#{identity}", "Approval invalidated by newer revision", actor,
         "github", "failed", revision)
+    end
+
+    def stale_approval_entries
+      evidence = stale_blocker.fetch("approval_evidence", {}).deep_stringify_keys
+      entries = Array(evidence["stale_approvals"])
+      entries.presence || [ evidence ]
     end
 
     def record_approval
@@ -75,7 +85,10 @@ module Inbox
     end
 
     def manual_merge?
-      issue.project.auto_merge_mode == "off"
+      issue.project.auto_merge_mode == "off" &&
+        !Automation::FeatureActivation.human_pull_request_auto_merge_enabled?(
+          project: issue.project, pull_request: issue
+        )
     end
 
     def snapshot_digest

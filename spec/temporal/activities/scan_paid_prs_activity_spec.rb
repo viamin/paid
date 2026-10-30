@@ -674,8 +674,8 @@ RSpec.describe Activities::ScanPaidPrsActivity do
             "current_revision" => "current-revision"
           )
         )
-        expect(InboxHistoryEvent.find_by!(project:, event_key: "merge-assessment:invalidation:current-revision").result)
-          .to eq("failed")
+        expect(InboxHistoryEvent.find_by!(project:,
+          event_key: "merge-assessment:invalidation:viamin:approved-revision:current-revision").result).to eq("failed")
       end
 
       # @spec INBOX-FOUNDATION-011 OPERATOR-INBOX-002K
