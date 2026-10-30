@@ -4054,9 +4054,11 @@ module Activities
 
       attributes = { last_pr_scan_at: scanned_at }
       if staged_this_pass
+        assessment_head_sha = snapshot_head_sha || current_head_sha
         attributes[:auto_merge_blockers] = snapshot
         attributes[:auto_merge_evaluated_at] = snapshot.present? ? scanned_at : nil
-        current_head_sha ||= snapshot_head_sha
+        attributes[:auto_merge_head_sha] = snapshot.present? ? assessment_head_sha : nil
+        current_head_sha ||= assessment_head_sha
       end
       # Draft scans do not stage an auto-merge assessment, but their observed
       # head is still the authoritative revision for a local TDD verdict.

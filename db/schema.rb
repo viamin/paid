@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_30_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_30_013007) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2601,6 +2601,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_000000) do
     t.boolean "auto_continue_paused", default: false, null: false
     t.jsonb "auto_merge_blockers", comment: "Latest authoritative auto-merge blocker snapshot from the PR scanner. Stores failed blockers separately from checks that were not evaluated because an earlier gate already failed."
     t.datetime "auto_merge_evaluated_at", comment: "When the latest authoritative auto-merge blocker snapshot was recorded by the PR scanner."
+    t.string "auto_merge_head_sha", limit: 40, comment: "PR HEAD commit SHA for the persisted auto-merge blocker assessment."
     t.text "auto_pick_excluded_reason", comment: "Human-provided reason this issue is excluded from automatic selection in ignored label mode."
     t.datetime "awaiting_approval_since", comment: "When the scan first observed this PR green and blocked only on owner approval; cleared whenever a non-approval blocker appears. Drives the awaiting_approval escalation ceiling."
     t.text "body"

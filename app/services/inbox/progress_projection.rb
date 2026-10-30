@@ -156,7 +156,10 @@ module Inbox
 
     def current_head = issue.last_scanned_head_sha
 
-    def current_assessment? = current_head.present? && issue.auto_merge_evaluated_at.present? && issue.auto_merge_blockers.is_a?(Hash)
+    def current_assessment?
+      current_head.present? && issue.auto_merge_head_sha == current_head &&
+        issue.auto_merge_evaluated_at.present? && issue.auto_merge_blockers.is_a?(Hash)
+    end
 
     def blockers = (issue.auto_merge_blockers || {}).deep_stringify_keys
 
@@ -191,7 +194,7 @@ module Inbox
     end
 
     def assessment_evidence
-      { source: "merge_assessment", revision: current_head, url: issue.github_url,
+      { source: "merge_assessment", revision: issue.auto_merge_head_sha, url: issue.github_url,
         assessed_at: issue.auto_merge_evaluated_at&.iso8601 }.compact
     end
 

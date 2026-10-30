@@ -634,6 +634,7 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         activity.execute(project_id: project.id)
 
         expect(pr_issue.reload.auto_merge_blockers).to be_present
+        expect(pr_issue.auto_merge_head_sha).to eq("abc123")
         expect(pr_issue.last_scanned_head_sha).to eq("abc123")
       end
 
@@ -727,6 +728,26 @@ RSpec.describe Activities::ScanPaidPrsActivity do
         activity.execute(project_id: project.id)
 
         expect(pr_issue.reload.last_scanned_head_sha).to eq("def456")
+      end
+
+      # @spec INBOX-PROGRESS-002
+      it "retains the assessed head when a later draft scan observes a new head" do
+        project.update!(auto_merge_mode: "all", owner_reviewer_login: "viamin")
+        pr_issue.update!(pr_review_phase: "ready")
+        stub_owner_approval_ready_signals(head_sha: "assessed-head")
+
+        activity.execute(project_id: project.id)
+        assessed_at = pr_issue.reload.auto_merge_evaluated_at
+
+        pr_issue.update_columns(github_updated_at: Time.current)
+        stub_github_for_pr(draft: true, head_sha: "draft-head", reviews: [], review_threads: [], checks: [])
+        activity.execute(project_id: project.id)
+
+        expect(pr_issue.reload).to have_attributes(
+          auto_merge_head_sha: "assessed-head",
+          auto_merge_evaluated_at: assessed_at,
+          last_scanned_head_sha: "draft-head"
+        )
       end
 
       # @spec INTENT-CONFORMANCE-010

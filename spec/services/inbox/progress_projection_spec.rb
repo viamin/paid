@@ -10,6 +10,7 @@ RSpec.describe Inbox::ProgressProjection do
   it "keeps an owner-approved docs PR at the manual merge gate" do # @spec INBOX-PROGRESS-001 INBOX-PROGRESS-002
     project = create(:project, auto_merge_mode: "off", tdd_mode: "off")
     pull_request = create(:issue, :pull_request, project:, last_scanned_head_sha: "a" * 40,
+      auto_merge_head_sha: "a" * 40,
       auto_merge_evaluated_at: Time.current,
       auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
     intent = create(:feature_intent, project:)
@@ -36,7 +37,7 @@ RSpec.describe Inbox::ProgressProjection do
     intent.record_approval!(by: project.created_by, pr_heads: { design_pr.pull_request_number.to_s => design_pr.head_sha })
     pull_request = create(:issue, :pull_request, project:, parent_issue: source_issue,
       labels: [ "paid-tests-approved" ], last_scanned_head_sha: "a" * 40,
-      tdd_review_head_sha: "a" * 40, auto_merge_evaluated_at: Time.current,
+      tdd_review_head_sha: "a" * 40, auto_merge_head_sha: "a" * 40, auto_merge_evaluated_at: Time.current,
       auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
 
     projection = described_class.call(issue: pull_request).to_h
@@ -87,7 +88,7 @@ RSpec.describe Inbox::ProgressProjection do
     project = create(:project, operating_mode: "human_led_feature_factory", tdd_mode: "strict", auto_merge_mode: "off")
     intent = create(:feature_intent, project:)
     pull_request = create(:issue, :pull_request, project:, github_number: 20, pr_review_phase: "ready",
-      last_scanned_head_sha: "a" * 40, auto_merge_evaluated_at: Time.current,
+      last_scanned_head_sha: "a" * 40, auto_merge_head_sha: "a" * 40, auto_merge_evaluated_at: Time.current,
       auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
     create(:feature_intent_design_pr, feature_intent: intent, pull_request_number: pull_request.github_number,
       head_sha: "a" * 40)
@@ -114,12 +115,25 @@ RSpec.describe Inbox::ProgressProjection do
   it "blocks code review when the current merge assessment has a non-approval blocker" do # @spec INBOX-PROGRESS-001
     project = create(:project)
     pull_request = create(:issue, :pull_request, project:, last_scanned_head_sha: "a" * 40,
+      auto_merge_head_sha: "a" * 40,
       auto_merge_evaluated_at: Time.current,
       auto_merge_blockers: { "failed" => [ { "signal" => "ci", "reason" => "Checks failed" } ], "not_evaluated" => [] })
 
     projection = described_class.call(issue: pull_request).to_h
 
     expect(milestone(projection, "code_review")).to include(label: "Code review", state: "blocked")
+  end
+
+  it "does not carry a merge assessment across a changed head" do # @spec INBOX-PROGRESS-002
+    project = create(:project)
+    pull_request = create(:issue, :pull_request, project:, last_scanned_head_sha: "b" * 40,
+      auto_merge_head_sha: "a" * 40, auto_merge_evaluated_at: Time.current,
+      auto_merge_blockers: { "failed" => [], "not_evaluated" => [] })
+
+    projection = described_class.call(issue: pull_request).to_h
+
+    expect(milestone(projection, "code_review")).to include(state: "unknown")
+    expect(milestone(projection, "owner_approval")).to include(state: "unknown")
   end
 
   it "does not report a closed unmerged pull request as merged" do # @spec INBOX-PROGRESS-002
