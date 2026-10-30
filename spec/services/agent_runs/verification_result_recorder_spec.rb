@@ -46,6 +46,32 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
       }
     }
   end
+  let(:criterion_report) do
+    [
+      {
+        id: "AC-1", status: "passed", assertions: [ "Settings were saved" ],
+        verification: {
+          kind: "permanent_system_test",
+          references: [ { locator: "spec/system/settings_spec.rb:42", result: "passed" } ]
+        }
+      },
+      {
+        id: "AC-2", status: "skipped",
+        verification: {
+          kind: "ephemeral_system_test",
+          references: [ { locator: ".ephemeral-tests/settings_spec.rb:18", result: "skipped", reason: "ephemeral_job_skipped" } ]
+        }
+      },
+      { id: "AC-3", status: "not_run", verification: { kind: "browser_flow" } },
+      {
+        id: "AC-4", status: "failed",
+        verification: {
+          kind: "unit_or_service_test",
+          references: [ { locator: "spec/services/models_spec.rb:27", result: "failed" } ]
+        }
+      }
+    ]
+  end
 
   before do
     allow(ArtifactStorage).to receive(:configured?).and_return(false)
@@ -54,6 +80,18 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
 
   after do
     FileUtils.rm_rf(repo_path)
+  end
+
+  def expect_criterion_coverage(result)
+    expect(result.dig("evidence", "coverage")).to include(
+      hash_including(
+        "id" => "AC-1", "reported_status" => "passed", "state" => "unverified",
+        "reported_verification" => hash_including("kind" => "permanent_system_test")
+      ),
+      hash_including("id" => "AC-2", "reported_status" => "skipped", "state" => "skipped", "reason" => "reported_skipped"),
+      hash_including("id" => "AC-3", "reported_status" => "not_run", "state" => "not_run"),
+      hash_including("id" => "AC-4", "reported_status" => "failed", "state" => "contradicted", "reason" => "reported_failure")
+    )
   end
 
   it "persists the recorded verification result and app log tail onto the run" do
@@ -108,17 +146,14 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     expect(agent_run.reload.verification_result["artifacts"]).to eq([ normalized_report_artifact ])
   end
 
-  # @spec LIVE-PREVIEW-010
+  # @spec LIVE-PREVIEW-010 LIVE-PREVIEW-011
   it "keeps agent-reported passes separate from recorder-owned commit and coverage evidence" do
     allow(ArtifactStorage).to receive(:configured?).and_return(false)
     File.write(result_path, JSON.generate(
       status: "passed",
       used_browser_tools: true,
       browser_steps: [ "Clicked save" ],
-      acceptance_criteria: [
-        { id: "AC-1", status: "passed", assertions: [ "Settings were saved" ] },
-        { id: "AC-2", status: "not_run" }
-      ]
+      acceptance_criteria: criterion_report
     ))
 
     described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
@@ -126,11 +161,41 @@ RSpec.describe AgentRuns::VerificationResultRecorder do
     result = agent_run.reload.verification_result
     expect(result).to include("status" => "passed", "reported_status" => "passed")
     expect(result.dig("evidence", "tested_commit")).to eq("a" * 40)
-    expect(result.dig("evidence", "coverage")).to include(
-      hash_including("id" => "AC-1", "reported_status" => "passed", "state" => "unverified"),
-      hash_including("id" => "AC-2", "reported_status" => "not_run", "state" => "not_run")
-    )
+    expect_criterion_coverage(result)
     expect(result.dig("evidence", "limitations")).to include("agent_reported_browser_steps_are_not_observed_evidence")
+  end
+
+  # @spec LIVE-PREVIEW-011
+  it "persists criterion evidence without browser evidence when interactive verification is disabled" do
+    project.update!(screenshot_settings: { "verification_enabled" => false })
+    File.write(result_path, JSON.generate(
+      status: "passed",
+      app_url: "http://localhost:3000/settings",
+      used_browser_tools: true,
+      browser_steps: [ "Clicked save" ],
+      acceptance_criteria: criterion_report
+    ))
+
+    described_class.call(agent_run:, repo_path:, result_commit: "a" * 40)
+
+    result = agent_run.reload.verification_result
+    expect(result).to include("status" => "passed", "reported_status" => "passed")
+    expect_criterion_coverage(result)
+    expect(result).not_to include("app_url", "used_browser_tools", "browser_steps")
+    expect(result.dig("evidence", "runtime_configuration")).to be_nil
+    expect(result.dig("evidence", "observed_artifacts")).to be_nil
+  end
+
+  # @spec LIVE-PREVIEW-011
+  it "records missing criterion evidence when interactive verification is disabled" do
+    project.update!(screenshot_settings: { "verification_enabled" => false })
+
+    described_class.call(agent_run:, repo_path:)
+
+    expect(agent_run.reload.verification_result).to include(
+      "status" => "not_run",
+      "reason" => "verification_result_missing"
+    )
   end
 
   # @spec LIVE-PREVIEW-010
