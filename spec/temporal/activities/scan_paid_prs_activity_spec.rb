@@ -12015,13 +12015,14 @@ RSpec.describe Activities::ScanPaidPrsActivity do
       expect(pull_request.reload.last_scanned_head_sha).to eq("draft-sha")
     end
 
-    it "starts implementation in strict mode after paid-tests-approved is present" do
+    it "records the observed head before starting implementation from a strict label approval" do # @spec INBOX-PROGRESS-002
       project.update!(tdd_mode: "strict")
       pull_request.update!(labels: [ "paid-generated", "paid-automation", "paid-tests-approved" ])
-      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ])
+      stub_github_for_pr(draft: true, reviews: [], checks: [ { name: "rspec", conclusion: "failure" } ], head_sha: "approved-head")
 
       result = activity.execute(project_id: project.id)
 
+      expect(pull_request.reload.tdd_review_head_sha).to eq("approved-head")
       expect(automation_scan_results(result).first[:triggers]).to contain_exactly(
         hash_including(type: "tdd_tests_approved")
       )

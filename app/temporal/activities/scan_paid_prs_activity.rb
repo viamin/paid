@@ -864,6 +864,7 @@ module Activities
       return :not_applicable unless tdd_mode.in?(%w[strict non_strict])
       return :not_applicable unless tdd_test_review_pr?(issue)
 
+      record_strict_tdd_label_verdict_head!(issue, pr_head_sha(pr_data)) if tdd_mode == "strict"
       review_state = effective_tdd_review_state_for_current_revision(project, issue)
 
       if review_state == "approved" &&
@@ -880,6 +881,17 @@ module Activities
       return nil if tdd_mode == "strict"
 
       scan_non_strict_tdd_draft_pr(project, client, issue, pr_data: pr_data)
+    end
+
+    # Strict TDD receives its verdict through the human-applied label workflow.
+    # Bind that observed label verdict to this scan's PR head so Inbox can
+    # distinguish it from historical verdict evidence.
+    # @spec INBOX-PROGRESS-002
+    def record_strict_tdd_label_verdict_head!(issue, head_sha)
+      return if issue.local_control_state? || head_sha.blank?
+      return unless issue.effective_tdd_review_state.in?(%w[approved changes_requested])
+
+      issue.update!(tdd_review_head_sha: head_sha) unless issue.tdd_review_head_sha == head_sha
     end
 
     def scan_non_strict_tdd_draft_pr(project, client, issue, pr_data: nil) # @spec TDD-PR-006

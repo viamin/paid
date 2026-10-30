@@ -3,13 +3,30 @@
   <h3 class="text-sm font-semibold text-gray-900">Delivery progress</h3>
   <ol class="mt-3 space-y-2">
     <% projection.milestones.each do |milestone| %>
-      <li class="flex items-start justify-between gap-3 text-sm">
-        <span class="font-medium text-gray-800"><%= milestone.label %></span>
-        <span class="text-right text-gray-600" data-progress-state="<%= milestone.state %>"><%= milestone.state.humanize %></span>
+      <li class="text-sm">
+        <div class="flex items-start justify-between gap-3">
+          <span class="font-medium text-gray-800"><%= milestone.label %></span>
+          <span class="text-right text-gray-600" data-progress-state="<%= milestone.state %>"><%= milestone.state.humanize %></span>
+        </div>
+        <% if milestone.evidence.present? %>
+          <ul class="mt-1 space-y-1 text-xs text-gray-500">
+            <% milestone.evidence.each do |evidence| %>
+              <li>
+                <span><%= evidence[:source].to_s.humanize %></span>
+                <% if evidence[:revision].present? %>
+                  <code class="break-all"><%= evidence[:revision] %></code>
+                <% end %>
+                <% if safe_github_url?(evidence[:url]) %>
+                  <%= link_to "View evidence", evidence[:url], target: "_blank", rel: "noopener noreferrer", class: "text-indigo-600 hover:text-indigo-500" %>
+                <% end %>
+              </li>
+            <% end %>
+          </ul>
+        <% end %>
+        <% if milestone.next_action.present? %>
+          <p class="mt-1 text-gray-500"><%= milestone.next_action %></p>
+        <% end %>
       </li>
-      <% if milestone.next_action.present? %>
-        <li class="-mt-1 text-sm text-gray-500"><%= milestone.next_action %></li>
-      <% end %>
     <% end %>
   </ol>
 </section>
