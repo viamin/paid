@@ -162,6 +162,15 @@ cannot be interpreted as a passing result, and projection failures must be
 visible in Inbox/GitHub context. Do not let a ready-looking issue remain
 silently blocked by a second, unexplained feature gate.
 
+Direct agent label writes use a stricter ownership boundary because GitHub's
+add-label endpoint is idempotent. The proxy reads the issue before adding
+`planning`; only an observed absence plus a complete durable contract grants
+Paid removal authority. A pre-existing label remains operator-owned or unknown
+even when the authenticated run supplies a complete contract. If persistence
+fails after GitHub accepts the write, the proxy surfaces a retryable failure;
+the retry observes the existing label and records review work rather than
+claiming it.
+
 ## Baseline and review dispatch
 
 Confidence-driven runs and PRs use their admitted scope/design baseline.

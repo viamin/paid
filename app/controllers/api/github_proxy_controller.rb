@@ -13,6 +13,7 @@ module Api
     PENDING_REVIEW_ERROR_PATTERN = /one pending review per pull request/i
     GITHUB_ERROR_BODY_LOG_LIMIT = 2_000
     REVIEW_RECOVERY_WINDOW = 30.minutes
+    PlanningHoldCaptureError = Class.new(StandardError)
 
     # Allowlisted GitHub API endpoints (regex with named captures for owner/repo).
     ALLOWED_ENDPOINTS = [
@@ -70,6 +71,7 @@ module Api
 
       forwarded_body = maybe_prepend_review_header(path, request.raw_post)
       authorization_token = github_authorization_token(path)
+      planning_label_preexisting = planning_label_preexisting?(path, authorization_token)
       response = forward_with_idempotent_recovery(path, authorization_token, forwarded_body, match: match)
 
       if review_creation_request?(path) && pending_review_conflict?(response)
@@ -81,7 +83,7 @@ module Api
 
       if response.status >= 200 && response.status < 300
         track_issue_creation(path, response)
-        track_agent_planning_hold(path)
+        track_agent_planning_hold(path, label_preexisting: planning_label_preexisting)
         track_review_creation(path, response)
         track_tdd_return_to_test_review(path, response)
       elsif response.status >= 400
@@ -105,6 +107,9 @@ module Api
     rescue Faraday::Error => e
       log_error("github_proxy.forward_failed", e.message)
       render json: { error: "Upstream request failed" }, status: :bad_gateway
+    rescue PlanningHoldCaptureError => e
+      log_error("github_proxy.track_agent_planning_hold_failed", e.message)
+      render json: { error: "Planning hold tracking failed; retry the request" }, status: :service_unavailable
     end
 
     private
@@ -347,7 +352,7 @@ module Api
     # optional structured header supplies the release contract.  Without it we
     # intentionally create review work instead of treating the bot as owner.
     # @spec CONFIDENCE-DELIVERY-018
-    def track_agent_planning_hold(path)
+    def track_agent_planning_hold(path, label_preexisting:)
       return unless @agent_run
       return unless request.method == "POST"
 
@@ -359,10 +364,49 @@ module Api
         project: authenticated_project,
         agent_run: @agent_run,
         issue_number: match[:number].to_i,
-        contract: planning_hold_contract
+        contract: planning_hold_contract,
+        label_preexisting:
       )
-    rescue => e
-      log_error("github_proxy.track_agent_planning_hold_failed", e.message)
+    rescue ActiveRecord::ActiveRecordError, ActiveModel::RangeError => e
+      raise PlanningHoldCaptureError, e.message
+    end
+
+    def planning_label_preexisting?(path, authorization_token)
+      return false unless agent_planning_label_request?(path)
+
+      issue_path = path.delete_suffix("/labels")
+      response = github_get(issue_path, authorization_token)
+      raise Faraday::Error, "Unable to verify planning label ownership" unless response.success?
+
+      body = parse_response_body(response.body)
+      raise Faraday::Error, "Invalid issue response while verifying planning label ownership" unless body.is_a?(Hash)
+
+      labels = body.fetch("labels", [])
+      raise Faraday::Error, "Invalid labels while verifying planning label ownership" unless labels.is_a?(Array)
+
+      labels.any? { |label| label_name(label) == "planning" }
+    end
+
+    def agent_planning_label_request?(path)
+      @agent_run && request.post? &&
+        %r{\Arepos/[^/]+/[^/]+/issues/\d+/labels\z}.match?(path) &&
+        parse_request_body(request.raw_post).fetch("labels", []).map(&:to_s).include?("planning")
+    end
+
+    def github_get(path, authorization_token)
+      build_connection.run_request(
+        :get,
+        "https://api.github.com/#{path}",
+        nil,
+        forwarded_headers.merge(
+          "Authorization" => "Bearer #{authorization_token}",
+          "Accept" => "application/vnd.github+json"
+        )
+      )
+    end
+
+    def label_name(label)
+      label.is_a?(Hash) ? label["name"] : label.to_s
     end
 
     def planning_hold_contract

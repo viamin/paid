@@ -223,8 +223,13 @@ RSpec.describe "Api::GithubProxy" do
 
   describe "POST /api/proxy/github/repos/:owner/:repo/issues/:number/labels" do
     let(:target_url) { "https://api.github.com/repos/testowner/testrepo/issues/42/labels" }
+    let(:issue_url) { "https://api.github.com/repos/testowner/testrepo/issues/42" }
+    let(:remote_labels) { [] }
 
     before do
+      stub_request(:get, issue_url)
+        .to_return(status: 200, body: { labels: remote_labels }.to_json,
+                   headers: { "Content-Type" => "application/json" })
       stub_request(:post, target_url)
         .to_return(status: 200, body: [ { name: "bug" } ].to_json,
                    headers: { "Content-Type" => "application/json" })
@@ -250,6 +255,62 @@ RSpec.describe "Api::GithubProxy" do
       hold = AgentPlanningHold.last
       expect(hold).to have_attributes(agent_run:, status: "needs_review", task_kind: nil)
       expect(Notification.where(source: "agent_planning_hold_reconciliation", subject: hold.issue).blocking).to exist
+    end
+
+    it "does not claim a pre-existing planning label with a complete contract" do # @spec CONFIDENCE-DELIVERY-018
+      create(:issue, project:, github_number: 42, labels: [ "planning" ])
+      stub_request(:get, issue_url)
+        .to_return(status: 200, body: { labels: [ { name: "planning" } ] }.to_json,
+                   headers: { "Content-Type" => "application/json" })
+      contract = {
+        task_kind: "implementation",
+        reason: "Waiting for dependencies.",
+        release_condition: { kind: "dependencies_resolved" },
+        evidence: { scope_revision: "issue-42@v1" }
+      }
+
+      post "/api/proxy/github/repos/testowner/testrepo/issues/42/labels",
+        params: { labels: [ "planning" ] }.to_json,
+        headers: valid_headers.merge("X-Paid-Planning-Hold" => contract.to_json)
+
+      expect(response).to have_http_status(:ok)
+      expect(AgentPlanningHold.last).to have_attributes(status: "needs_review", task_kind: nil)
+    end
+
+    it "claims a newly created planning label with a complete contract" do # @spec CONFIDENCE-DELIVERY-018
+      contract = {
+        task_kind: "implementation",
+        reason: "Waiting for dependencies.",
+        release_condition: { kind: "dependencies_resolved" },
+        evidence: { scope_revision: "issue-42@v1" }
+      }
+
+      post "/api/proxy/github/repos/testowner/testrepo/issues/42/labels",
+        params: { labels: [ "planning" ] }.to_json,
+        headers: valid_headers.merge("X-Paid-Planning-Hold" => contract.to_json)
+
+      expect(response).to have_http_status(:ok)
+      expect(AgentPlanningHold.last).to have_attributes(status: "held", task_kind: "implementation")
+    end
+
+    it "surfaces persistence failures for retry after GitHub accepts the label" do # @spec CONFIDENCE-DELIVERY-018
+      issue_number = 2_147_483_648
+      oversized_issue_url = "https://api.github.com/repos/testowner/testrepo/issues/#{issue_number}"
+      oversized_labels_url = "#{oversized_issue_url}/labels"
+      stub_request(:get, oversized_issue_url)
+        .to_return(status: 200, body: { labels: [] }.to_json,
+                   headers: { "Content-Type" => "application/json" })
+      stub_request(:post, oversized_labels_url)
+        .to_return(status: 200, body: [ { name: "planning" } ].to_json,
+                   headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/github/repos/testowner/testrepo/issues/#{issue_number}/labels",
+        params: { labels: [ "planning" ] }.to_json,
+        headers: valid_headers
+
+      expect(response).to have_http_status(:service_unavailable)
+      expect(response.parsed_body).to eq("error" => "Planning hold tracking failed; retry the request")
+      expect(WebMock).to have_requested(:post, oversized_labels_url)
     end
   end
 

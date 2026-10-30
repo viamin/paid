@@ -17,7 +17,7 @@ RSpec.describe AgentPlanningHolds::Capture do
     }
 
     2.times do
-      described_class.call(project:, agent_run: run, issue_number: issue.github_number, contract:)
+      described_class.call(project:, agent_run: run, issue_number: issue.github_number, contract:, label_preexisting: false)
     end
 
     hold = AgentPlanningHold.find_by!(issue:, label: "planning")
@@ -31,7 +31,8 @@ RSpec.describe AgentPlanningHolds::Capture do
     other_run = create(:agent_run, :failed, project: other_project)
 
     expect {
-      described_class.call(project: other_project, agent_run: other_run, issue_number: issue.github_number)
+      described_class.call(project: other_project, agent_run: other_run, issue_number: issue.github_number,
+        label_preexisting: false)
     }.to change(AgentPlanningHold, :count).by(1)
 
     expect(AgentPlanningHold.last).to have_attributes(project: other_project, issue: nil)
@@ -41,7 +42,36 @@ RSpec.describe AgentPlanningHolds::Capture do
     other_project = create(:project)
 
     expect {
-      described_class.call(project: other_project, agent_run: run, issue_number: issue.github_number)
+      described_class.call(project: other_project, agent_run: run, issue_number: issue.github_number,
+        label_preexisting: false)
     }.not_to change(AgentPlanningHold, :count)
+  end
+
+  it "preserves a pre-existing label for operator review despite a complete contract" do
+    contract = {
+      task_kind: "implementation",
+      reason: "Awaiting dependencies.",
+      release_condition: { kind: "dependencies_resolved" },
+      evidence: { scope_revision: "issue@v1" }
+    }
+
+    hold = described_class.call(project:, agent_run: run, issue_number: issue.github_number, contract:,
+      label_preexisting: true)
+
+    expect(hold).to have_attributes(status: "needs_review", task_kind: nil)
+  end
+
+  it "records a structurally invalid contract for operator review" do
+    contract = {
+      task_kind: "implementation",
+      reason: "Awaiting dependencies.",
+      release_condition: "dependencies_resolved",
+      evidence: { scope_revision: "issue@v1" }
+    }
+
+    hold = described_class.call(project:, agent_run: run, issue_number: issue.github_number, contract:,
+      label_preexisting: false)
+
+    expect(hold).to have_attributes(status: "needs_review", release_condition: {})
   end
 end

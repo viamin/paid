@@ -10,10 +10,11 @@ module AgentPlanningHolds
 
     def self.call(...) = new(...).call
 
-    def initialize(project:, agent_run:, issue_number:, contract: {})
+    def initialize(project:, agent_run:, issue_number:, label_preexisting:, contract: {})
       @project = project
       @agent_run = agent_run
       @issue_number = issue_number
+      @label_preexisting = label_preexisting
       @contract = contract.to_h.deep_stringify_keys
     end
 
@@ -35,17 +36,17 @@ module AgentPlanningHolds
 
     private
 
-    attr_reader :project, :agent_run, :issue_number, :contract
+    attr_reader :project, :agent_run, :issue_number, :contract, :label_preexisting
 
     def apply_contract(hold)
-      return hold.update!(agent_run: agent_run) if hold.paid_owned? || contract.empty?
+      return hold.update!(agent_run: agent_run) if hold.paid_owned? || label_preexisting || contract.empty?
 
       hold.update!(
         agent_run: agent_run,
         task_kind: contract["task_kind"],
         reason: contract["reason"],
-        release_condition: contract["release_condition"].to_h,
-        evidence: contract["evidence"].to_h,
+        release_condition: contract_hash("release_condition"),
+        evidence: contract_hash("evidence"),
         operator_override: ActiveModel::Type::Boolean.new.cast(contract["operator_override"]) == true,
         status: complete_contract? ? "held" : "needs_review"
       )
@@ -57,6 +58,10 @@ module AgentPlanningHolds
         contract.dig("evidence", "scope_revision").present?
     end
 
+    def contract_hash(key)
+      contract[key].is_a?(Hash) ? contract[key] : {}
+    end
+
     def notify(hold)
       Notification.create_or_find_by!(
         account: project.account, source: "agent_planning_hold_reconciliation", subject: hold.issue || agent_run
@@ -65,7 +70,7 @@ module AgentPlanningHolds
         notification.blocking = true
         notification.nav_section = "projects"
         notification.title = "Planning hold needs reconciliation"
-        notification.description = "Agent run ##{agent_run.id} added planning to issue ##{hold.remote_issue_number} without a release contract."
+        notification.description = "Paid ownership of planning on issue ##{hold.remote_issue_number} could not be established."
         notification.metadata = { "issue_number" => hold.remote_issue_number, "agent_run_id" => agent_run.id, "hold_id" => hold.id,
                                   "recommended_action" => "Review the hold owner and release condition before removing the label." }
       end
