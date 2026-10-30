@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_29_231830) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -2354,6 +2354,26 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
     t.index ["scheduled_at"], name: "index_good_jobs_on_scheduled_at", where: "(finished_at IS NULL)"
   end
 
+  create_table "inbox_history_events", force: :cascade do |t|
+    t.bigint "account_id", null: false
+    t.string "actor_label", null: false
+    t.datetime "created_at", null: false
+    t.string "event_key", null: false
+    t.string "evidence_url"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "occurred_at", null: false
+    t.bigint "project_id", null: false
+    t.string "result", null: false
+    t.string "revision"
+    t.string "source", null: false
+    t.string "subject_key", null: false
+    t.datetime "updated_at", null: false
+    t.index ["account_id", "subject_key", "event_key"], name: "index_inbox_history_events_dedup", unique: true
+    t.index ["account_id", "subject_key", "occurred_at"], name: "index_inbox_history_events_subject_time"
+    t.index ["account_id"], name: "index_inbox_history_events_on_account_id"
+    t.index ["project_id"], name: "index_inbox_history_events_on_project_id"
+  end
+
   create_table "inbox_removals", force: :cascade do |t|
     t.datetime "cleared_at", comment: "When a qualifying return event restored the request."
     t.datetime "created_at", null: false
@@ -2598,6 +2618,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
   end
 
   create_table "issues", force: :cascade do |t|
+    t.datetime "action_history_started_at", comment: "Earliest point from which Paid has durable action-history coverage for this subject."
     t.boolean "auto_continue_paused", default: false, null: false
     t.jsonb "auto_merge_blockers", comment: "Latest authoritative auto-merge blocker snapshot from the PR scanner. Stores failed blockers separately from checks that were not evaluated because an earlier gate already failed."
     t.datetime "auto_merge_evaluated_at", comment: "When the latest authoritative auto-merge blocker snapshot was recorded by the PR scanner."
@@ -4898,6 +4919,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_28_221148) do
   add_foreign_key "github_installations", "accounts"
   add_foreign_key "github_tokens", "accounts"
   add_foreign_key "github_tokens", "users", column: "created_by_id"
+  add_foreign_key "inbox_history_events", "accounts"
+  add_foreign_key "inbox_history_events", "projects"
   add_foreign_key "inbox_removals", "projects"
   add_foreign_key "inbox_removals", "users"
   add_foreign_key "inbox_request_ownerships", "projects"

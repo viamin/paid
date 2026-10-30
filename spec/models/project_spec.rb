@@ -4,6 +4,22 @@ require "rails_helper"
 require "temporalio/client"
 
 RSpec.describe Project do
+  describe "Inbox cache invalidation" do
+    # @spec INBOX-PHASE-RELEVANCE-005
+    it "invalidates cached Inbox membership when phase settings change" do
+      project = create(:project)
+
+      expect(Dashboard::CacheVersion).to receive(:bump)
+        .with(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE)
+
+      project.update!(
+        Automation::PhaseSettings::SETTINGS_KEY => {
+          Automation::PhaseSettings::PHASES_KEY => { Automation::Phases::CODING => false }
+        }
+      )
+    end
+  end
+
   describe "#code_scanning_coverage_status" do
     # @spec GITHUB-SYNC-018
     it "reports disabled coverage when security scanning is disabled" do

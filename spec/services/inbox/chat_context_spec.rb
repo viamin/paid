@@ -95,6 +95,21 @@ RSpec.describe Inbox::ChatContext do
     expect(context.fetch("agent_run_output")).to include(hash_including(id: run.id, output: [ "runner exhausted" ]))
   end
 
+  # @spec OPERATOR-INBOX-022
+  it "includes run outcomes in action history when no durable transition events exist" do
+    failed_run = create(:agent_run, project:, issue:, status: "failed",
+      started_at: 2.hours.ago, completed_at: 90.minutes.ago)
+    completed_run = create(:agent_run, project:, issue:, status: "completed",
+      started_at: 1.hour.ago, completed_at: 30.minutes.ago)
+
+    context = described_class.call(chat_session:, user:, sections: [ :action_history ])
+
+    expect(context.fetch("action_history")).to include(
+      hash_including(id: "run-finish:#{failed_run.id}", result: "failed"),
+      hash_including(id: "run-finish:#{completed_run.id}", result: "completed")
+    )
+  end
+
   it "retrieves a record-backed change-intent item on demand" do
     # @spec OPERATOR-INBOX-002I
     change_intent = create(:change_intent, :draft, :without_context_links, project:, title: "Audit closeout", intent: "Explain evidence")
@@ -108,7 +123,7 @@ RSpec.describe Inbox::ChatContext do
     expect(context.fetch("record")).to include("id" => change_intent.id, "title" => "Audit closeout", "intent" => "Explain evidence")
   end
 
-  it "uses the Inbox workflow projection for pull-request context" do # @spec OPERATOR-INBOX-023
+  it "uses the Inbox workflow projection for pull-request context" do # @spec OPERATOR-INBOX-024
     issue.update!(is_pull_request: true, github_state: "open", pr_review_phase: "ready")
     chat_session.update!(inbox_item_key: "merge_approval:#{issue.id}", inbox_item_metadata: { "kind" => "merge_approval", "issue_id" => issue.id })
 
@@ -119,7 +134,7 @@ RSpec.describe Inbox::ChatContext do
     )
   end
 
-  it "uses the Inbox workflow projection for test-review context" do # @spec OPERATOR-INBOX-023
+  it "uses the Inbox workflow projection for test-review context" do # @spec OPERATOR-INBOX-024
     project.update!(tdd_mode: "strict")
     issue.update!(is_pull_request: true, github_state: "open", pr_review_phase: "draft")
     chat_session.update!(
@@ -134,7 +149,7 @@ RSpec.describe Inbox::ChatContext do
     )
   end
 
-  it "preserves the escalation recovery action in pull-request context" do # @spec OPERATOR-INBOX-023
+  it "preserves the escalation recovery action in pull-request context" do # @spec OPERATOR-INBOX-024
     issue.update!(
       is_pull_request: true,
       github_state: "open",

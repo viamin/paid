@@ -138,6 +138,7 @@ class Issue < ApplicationRecord
   validates :github_updated_at, presence: true
   validates :paid_state, presence: true, inclusion: { in: PAID_STATES }
   before_validation { self.source ||= GITHUB_SOURCE }
+  before_create { self.action_history_started_at ||= Time.current }
   before_create :stamp_parent_issue_linked_at, if: :parent_issue_id?
   before_update :sync_parent_issue_linked_at, if: :will_save_change_to_parent_issue_id?
   before_save :sync_closed_at, if: :will_save_change_to_github_state?

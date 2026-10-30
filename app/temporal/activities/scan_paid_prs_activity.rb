@@ -3920,7 +3920,7 @@ module Activities
       AutoMergeSignalBuild.new(
         signals:,
         review_freshness:,
-        approval_evidence: approval_evidence_for(project, pr_data, stale_approvals: stale_approvals)
+        approval_evidence: approval_evidence_for(project, reviews, pr_data, stale_approvals: stale_approvals)
       )
     end
 
@@ -4053,14 +4053,23 @@ module Activities
       staged_this_pass = auto_merge_snapshots.key?(issue.id)
       snapshot = auto_merge_snapshots.delete(issue.id)
       head_sha = auto_merge_head_shas.delete(issue.id)
+      approval_evidence = auto_merge_approval_evidences.delete(issue.id) || {}
 
       attributes = { last_pr_scan_at: scanned_at }
       if staged_this_pass
+        previous_snapshot = issue.auto_merge_blockers
         attributes[:auto_merge_blockers] = snapshot
         attributes[:auto_merge_evaluated_at] = snapshot.present? ? scanned_at : nil
         attributes[:last_scanned_head_sha] = head_sha if head_sha.present?
       end
-      issue.update_columns(attributes)
+      Issue.transaction do
+        issue.update_columns(attributes)
+        if staged_this_pass
+          Inbox::MergeAssessmentHistoryRecorder.call(
+            issue:, previous_snapshot:, snapshot:, scanned_at:, head_sha:, approval_evidence:
+          )
+        end
+      end
       Dashboard::CacheVersion.bump(issue.project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE) if staged_this_pass
     end
 
@@ -4072,6 +4081,10 @@ module Activities
       @auto_merge_head_shas ||= {}
     end
 
+    def auto_merge_approval_evidences
+      @auto_merge_approval_evidences ||= {}
+    end
+
     def stage_auto_merge_snapshot(issue, analysis, review_freshness: :fresh, approval_evidence: {}, head_sha: nil)
       snapshot = {
         "failed" => analysis.failed_blockers.map(&:to_h).map(&:stringify_keys),
@@ -4079,10 +4092,11 @@ module Activities
       }
 
       remap_review_freshness_failure!(snapshot) if review_freshness == :not_evaluated
-      attach_approval_evidence!(snapshot, approval_evidence) if review_freshness == :stale
+      attach_stale_approval_evidence!(snapshot, approval_evidence) if approval_evidence.present?
 
       auto_merge_snapshots[issue.id] = snapshot
       auto_merge_head_shas[issue.id] = head_sha if head_sha.present?
+      auto_merge_approval_evidences[issue.id] = approval_evidence.fetch("owner_approval", {})
     end
 
     # Persist revision evidence for each blocking approval that actually
@@ -4094,7 +4108,7 @@ module Activities
     # approval, and showing only the owner's SHA/time would mis-attribute
     # the staleness (#4519).
     # @spec OPERATOR-INBOX-002K
-    def approval_evidence_for(project, pr_data, stale_approvals: [])
+    def approval_evidence_for(project, reviews, pr_data, stale_approvals: [])
       current_revision = pr_head_sha(pr_data)
       entries = stale_approvals.map do |approval|
         {
@@ -4104,14 +4118,26 @@ module Activities
           "current_revision" => current_revision
         }.compact
       end
-      return {} if entries.empty?
-
-      { "stale_approvals" => entries }
+      evidence = { "owner_approval" => owner_approval_evidence(project, reviews, current_revision) }.compact
+      evidence["stale_approvals"] = entries if entries.any?
+      evidence
     end
 
-    def attach_approval_evidence!(snapshot, approval_evidence)
+    def owner_approval_evidence(project, reviews, current_revision)
+      approval = Reviews::OwnerApproval.latest_approval(project:, reviews:)
+      return unless approval
+
+      {
+        "approver_login" => approval[:user_login],
+        "approved_revision" => approval[:commit_id],
+        "approved_at" => approval[:submitted_at]&.iso8601
+      }.compact
+    end
+
+    def attach_stale_approval_evidence!(snapshot, approval_evidence)
       blocker = Array(snapshot["failed"]).find { |candidate| candidate["signal"] == "reviews_fresh" }
-      blocker["approval_evidence"] = approval_evidence if blocker && approval_evidence.present?
+      stale_evidence = approval_evidence.slice("stale_approvals")
+      blocker["approval_evidence"] = stale_evidence if blocker && stale_evidence.present?
     end
 
     def remap_review_freshness_failure!(snapshot)

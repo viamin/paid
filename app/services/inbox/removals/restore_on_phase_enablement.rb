@@ -10,7 +10,7 @@ module Inbox
     # Restoration still runs through the same relevance policy, so a request
     # that is no longer actionable does not return.
     #
-    # @spec INBOX-PHASE-RELEVANCE-007 @spec INBOX-PHASE-RELEVANCE-010
+    # @spec INBOX-PHASE-RELEVANCE-007 @spec INBOX-PHASE-RELEVANCE-010 @spec OPERATOR-INBOX-023
     class RestoreOnPhaseEnablement
       def self.call(...)
         new(...).call
@@ -30,9 +30,10 @@ module Inbox
 
         entries = reconciled_entries
         restored_count = removals.count do |removal|
-          next false unless still_actionable?(removal, entries[removal.request_key])
+          entry = entries[removal.request_key]
+          next false unless still_actionable?(removal, entry)
 
-          removal.clear!
+          restore(removal, entry)
         end
         Dashboard::CacheVersion.bump(project.account, scope: Dashboard::CacheVersion::INBOX_SCOPE) if restored_count.positive?
         restored_count
@@ -48,6 +49,14 @@ module Inbox
 
       def reconciled_entries
         Inbox::Queue.new(user: project.created_by || queue_user, project:).entries.index_by(&:id)
+      end
+
+      def restore(removal, entry)
+        return false unless removal.clear!
+
+        HistoryRecorder.call(entry:, event_key: "inbox-restored:#{removal.id}:#{removal.cleared_at.to_f}",
+          action: "Restored to Inbox", actor: "Paid", result: "completed", occurred_at: removal.cleared_at)
+        true
       end
 
       def still_actionable?(removal, entry)

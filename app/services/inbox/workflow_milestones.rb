@@ -4,7 +4,7 @@ module Inbox
   # A typed, local projection for the selected Inbox entry. It deliberately
   # reads persisted scan and feature evidence; building an Inbox list never
   # invokes it, so list/count requests remain free of per-row remote calls.
-  # @spec OPERATOR-INBOX-023
+  # @spec OPERATOR-INBOX-024
   class WorkflowMilestones
     SUPPORTED_KINDS = [
       Queue::MERGE_APPROVAL_KIND,
