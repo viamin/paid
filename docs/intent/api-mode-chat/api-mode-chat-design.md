@@ -79,7 +79,9 @@ does not cache authorization decisions.
 New-chat controls remain visible before the lazy frame finishes, but are
 disabled with a loading indicator until that frame supplies their dialog. This
 keeps the chat-first response bounded without presenting an enabled control
-whose action has no modal target.
+whose action has no modal target. Because the mobile drawer starts hidden, its
+controller requests the scoped sidebar frame when the page becomes usable;
+desktop retains Turbo's visibility-based lazy loading.
 
 Sidebar cards receive the first non-system message through a correlated lookup
 that projects only the display-sized prefix. The lookup remains live rather

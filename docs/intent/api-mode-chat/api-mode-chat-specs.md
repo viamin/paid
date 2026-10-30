@@ -597,7 +597,9 @@
   existing mobile and desktop sidebar controls. Until the lazy frame has
   supplied the new-session dialog, each visible New Chat control SHALL be
   disabled with a loading affordance; it SHALL become actionable after that
-  dialog arrives. Sidebar preview lookup SHALL
+  dialog arrives. When the mobile drawer begins hidden, the client SHALL
+  request the sidebar frame without waiting for that drawer to open; a visible
+  desktop sidebar SHALL retain visibility-based lazy loading. Sidebar preview lookup SHALL
   project at most the display-sized prefix of the first non-system message,
   ordered by creation time, and SHALL not cache a mutable transcript or an
   authorization decision; a created or changed message SHALL therefore be

@@ -55,6 +55,7 @@ class ChatSessionListControllerNodeHarness
       const openLabelClassList = buildClassList();
       const closeLabelClassList = buildClassList(["hidden"]);
       const listeners = {};
+      let sidebarContentFrameReloads = 0;
       let observerDisconnected = false;
 
       global.window = {
@@ -113,12 +114,18 @@ class ChatSessionListControllerNodeHarness
       controller.hasMobileMenuTarget = true;
       controller.hasMobileOpenLabelTarget = true;
       controller.hasSearchInputTarget = false;
+      controller.hasSidebarContentFrameTarget = true;
       controller.listTarget = {};
       controller.hasListTarget = true;
       controller.mobileButtonTarget = button;
       controller.mobileCloseLabelTarget = { classList: closeLabelClassList };
       controller.mobileMenuTarget = menu;
       controller.mobileOpenLabelTarget = { classList: openLabelClassList };
+      controller.sidebarContentFrameTarget = {
+        reload() {
+          sidebarContentFrameReloads += 1;
+        }
+      };
 
       return {
         bodyClassList,
@@ -131,7 +138,8 @@ class ChatSessionListControllerNodeHarness
         listeners,
         menu,
         observerDisconnected: () => observerDisconnected,
-        openLabelClassList
+        openLabelClassList,
+        sidebarContentFrameReloads: () => sidebarContentFrameReloads
       };
     }
 
@@ -151,6 +159,10 @@ class ChatSessionListControllerNodeHarness
 
       const harness = buildController(mediaQuery);
       harness.connect();
+
+      if (harness.sidebarContentFrameReloads() !== 1) {
+        throw new Error("Expected the hidden mobile sidebar frame to load during connect()");
+      }
 
       if (harness.menu.attributes["aria-hidden"] !== "true") {
         throw new Error(`Expected closed menu aria-hidden=true, saw ${harness.menu.attributes["aria-hidden"]}`);
@@ -201,6 +213,24 @@ class ChatSessionListControllerNodeHarness
 
       if (!harness.observerDisconnected()) {
         throw new Error("Expected disconnect() to stop the mutation observer");
+      }
+    }
+
+    // @spec CHAT-API-027
+    // Desktop already exposes the lazy frame, so it must retain Turbo's
+    // visibility-based loading rather than making another request.
+    function runDesktopSidebarFrameCase() {
+      const mediaQuery = {
+        addEventListener() {},
+        matches: true,
+        removeEventListener() {}
+      };
+
+      const harness = buildController(mediaQuery);
+      harness.connect();
+
+      if (harness.sidebarContentFrameReloads() !== 0) {
+        throw new Error("Expected the visible desktop sidebar frame to retain lazy loading");
       }
     }
 
@@ -419,6 +449,7 @@ class ChatSessionListControllerNodeHarness
     }
 
     runModernListenerCase();
+    runDesktopSidebarFrameCase();
     runLegacyListenerCase();
     runMissingMatchMediaCase();
     runUpdateActiveCardCase();

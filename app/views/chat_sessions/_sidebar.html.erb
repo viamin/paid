@@ -94,7 +94,8 @@
             independent from history and new-session setup. %>
         <%= turbo_frame_tag "chat_sessions_sidebar_content",
                             src: sidebar_page_chat_sessions_path(content: "true", active_session_id: active_session&.id),
-                            loading: :lazy do %>
+                            loading: :lazy,
+                            data: { chat_session_list_target: "sidebarContentFrame" } do %>
           <p class="p-4 text-sm text-gray-500">Loading chat history...</p>
         <% end %>
       </aside>

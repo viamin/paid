@@ -8,7 +8,7 @@ import { Controller } from "@hotwired/stimulus"
 // change to the active-row treatment lives in
 // `MasterDetailLayoutHelper#master_detail_active_row_classes`, not here.
 export default class extends Controller {
-  static targets = ["list", "searchInput", "card", "modal", "mobileMenu", "mobileButton", "mobileOpenLabel", "mobileCloseLabel", "newChatButton", "newChatLoadingIndicator"]
+  static targets = ["list", "searchInput", "card", "modal", "mobileMenu", "mobileButton", "mobileOpenLabel", "mobileCloseLabel", "newChatButton", "newChatLoadingIndicator", "sidebarContentFrame"]
   static values = { activeSessionId: Number }
 
   connect() {
@@ -26,6 +26,7 @@ export default class extends Controller {
     this.updateActiveCard()
     this.enableNewChatButtons()
     this.updateMobileSidebarState()
+    this.loadSidebarContentOnMobile()
   }
 
   disconnect() {
@@ -68,6 +69,15 @@ export default class extends Controller {
       button.classList.add("hover:bg-indigo-500")
     })
     this.newChatLoadingIndicatorTargets.forEach((indicator) => indicator.classList.add("hidden"))
+  }
+
+  // @spec CHAT-API-027
+  // The mobile drawer starts hidden, which prevents Turbo's lazy observer
+  // from requesting the frame that supplies the New Chat dialog.
+  loadSidebarContentOnMobile() {
+    if (this.mediaQuery?.matches || !this.hasSidebarContentFrameTarget) return
+
+    this.sidebarContentFrameTarget.reload()
   }
 
   filter() {
