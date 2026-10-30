@@ -52,7 +52,10 @@ module Inbox
     end
 
     def governed_count
-      [ Inbox::Queue.call(user: user).size, DISPLAY_CAP ].min
+      # Availability owns the shared per-user matrix for filters. Reusing it
+      # lets a badge cache miss use that already-warm representation instead
+      # of independently rebuilding every Queue lane under phase governance.
+      [ Inbox::Availability.call(user: user).total_count, DISPLAY_CAP ].min
     end
 
     def phase_model_governed?

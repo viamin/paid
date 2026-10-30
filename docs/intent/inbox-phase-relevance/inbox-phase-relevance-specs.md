@@ -38,10 +38,12 @@
 - [x] **INBOX-PHASE-RELEVANCE-005** — Inbox lists, counts, navigation badges,
   availability indicators, search filters, chat admission, and direct-link
   access SHALL share one phase-relevance policy, preserve account isolation,
-  and preserve existing authorization checks.
-  *Tests:* `spec/services/inbox/count_spec.rb`,
+  and preserve existing authorization checks. Any project setting that changes
+  phase relevance SHALL invalidate the Inbox cache version before a subsequent
+  list, badge, or availability read.
+  *Tests:* `spec/services/inbox/count_spec.rb`, `spec/models/project_spec.rb`,
   `spec/requests/api/v1/inbox_spec.rb`
-  *Code:* `Inbox::Count`, `Inbox::Availability`, `Inbox::Queue`
+  *Code:* `Inbox::Count`, `Inbox::Availability`, `Inbox::Queue`, `Project`
 
 - [x] **INBOX-PHASE-RELEVANCE-006** — Every Inbox item SHALL offer **Remove
   from Inbox**, which SHALL hide that request for the acting user only, SHALL
