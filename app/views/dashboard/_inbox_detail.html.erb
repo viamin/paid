@@ -36,6 +36,7 @@
 </div>
 
 <div class="px-4 py-5 sm:px-6">
+  <%= render "dashboard/inbox_workflow_milestones", entry: entry if entry.issue %>
   <% if entry.clarifying_questions? %>
     <%= render "dashboard/inbox_detail_clarifying_questions",
           entry: entry,

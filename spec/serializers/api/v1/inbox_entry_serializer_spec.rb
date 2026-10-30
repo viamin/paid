@@ -51,6 +51,10 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       payload = described_class.render(entry)
 
       expect(payload).to include(blockers: guidance.fetch(:blockers), guidance: guidance)
+      expect(payload.fetch(:workflow)).to include(
+        current_action: "Make the manual decision.",
+        milestones: include(a_hash_including(name: "Merge", state: "current", label: "Your next step"))
+      )
     end
 
     it "serializes action_required with its remediation steps" do

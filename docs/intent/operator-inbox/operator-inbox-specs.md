@@ -68,6 +68,25 @@
   `spec/services/inbox/availability_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
 
+- [x] **OPERATOR-INBOX-022** — When an operator selects an issue-backed Inbox
+  entry, the system SHALL expose one typed workflow-milestone projection to the
+  detail pane, API, and contextual chat. Each milestone SHALL provide a short
+  textual state (`completed`, `current`, `waiting`, `blocked`, `stale`,
+  `not_applicable`, or `unknown`) and expandable reason, evidence revision,
+  actor when known, exact action, and relevant GitHub link. The current action
+  SHALL be announced in the detail pane and use `aria-current`; manual-merge
+  projects SHALL state that approval and merge are separate actions. Strict TDD
+  SHALL show test review before implementation, and linked approval-gated
+  feature designs SHALL appear only when applicable. The projection SHALL use
+  persisted local evidence and SHALL NOT add remote calls to Inbox list/count
+  rendering.
+  *Code:* `app/services/inbox/workflow_milestones.rb`,
+  `app/views/dashboard/_inbox_workflow_milestones.html.erb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb`,
+  `app/services/inbox/chat_context.rb`.
+  *Test:* `spec/services/inbox/workflow_milestones_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002B** — When a visible notification is active and
   `blocking: true`, the system SHALL expose it as an `action_required` inbox
   entry until the notification resolves or is dismissed, reusing notification

@@ -210,6 +210,10 @@ module Inbox
         review_phase: issue.pr_review_phase,
         blockers: merge_approval ? merge_approval.guidance.fetch(:blockers) : issue.auto_merge_blockers,
         merge_approval_guidance: merge_approval&.guidance,
+        workflow: Inbox::WorkflowMilestones.call(Inbox::Queue::Entry.new(
+          id: "#{inbox_kind}:#{issue.id}", kind: inbox_kind, project: chat_session.project,
+          issue:, guidance: merge_approval&.guidance
+        )),
         agent_runs: agent_run_output
       }
     end

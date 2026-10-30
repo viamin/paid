@@ -74,6 +74,19 @@ GitHub-only context and enhancement-comment links load in a separate lazy
 Turbo Frame after the local detail and its actions have rendered. That request
 rechecks current queue membership and returns an empty frame for stale entries.
 
+## Workflow milestones
+
+Selected issue-backed Inbox entries project persisted workflow evidence into a
+typed milestone contract shared by the detail pane, API, and contextual chat.
+The compact strip names each stage and its textual state; expandable milestones
+carry reason, revision, actor, exact action, and the relevant GitHub surface.
+The projection is selected-entry work only, so Inbox rows and counts retain
+their bounded local queries and make no remote calls. It explicitly represents
+manual merge as a current human action after approval rather than treating an
+approval as a merge. Strict TDD shows its test-review gate before implementation;
+projects outside that mode show the stage as not applicable. Linked
+approval-gated feature designs appear only when applicable.
+
 Issue-backed lanes retain their project joins when project predicates or
 ordering require them, but preload projects separately. This keeps one shared
 project object per project while preventing a project audit-history payload

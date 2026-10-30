@@ -21,7 +21,7 @@ module Api
       end
 
       def render
-        common_fields.merge(kind_payload)
+        common_fields.merge(kind_payload).merge(workflow_payload)
       end
 
       def render_list
@@ -48,6 +48,13 @@ module Api
         return unless entry.project
 
         { id: entry.project.id, owner: entry.project.owner, repo: entry.project.repo, name: entry.project.full_name }
+      end
+
+      # @spec OPERATOR-INBOX-022
+      def workflow_payload
+        return {} unless entry.issue
+
+        { workflow: entry.workflow_milestones }
       end
 
       # One branch per Inbox::Queue::KINDS kind, keyed on each entry's actual

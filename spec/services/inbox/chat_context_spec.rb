@@ -108,6 +108,17 @@ RSpec.describe Inbox::ChatContext do
     expect(context.fetch("record")).to include("id" => change_intent.id, "title" => "Audit closeout", "intent" => "Explain evidence")
   end
 
+  it "uses the Inbox workflow projection for pull-request context" do # @spec OPERATOR-INBOX-022
+    issue.update!(is_pull_request: true, github_state: "open", pr_review_phase: "ready")
+    chat_session.update!(inbox_item_key: "merge_approval:#{issue.id}", inbox_item_metadata: { "kind" => "merge_approval", "issue_id" => issue.id })
+
+    context = described_class.call(chat_session:, user:, sections: [ :record ])
+
+    expect(context.fetch("record").fetch(:workflow).fetch(:milestones)).to include(
+      a_hash_including(name: "Merge", state: "current", label: "Your next step")
+    )
+  end
+
   it "retrieves partial-closeout evidence and recovery state on demand" do
     # @spec PARTIAL-CLOSEOUT-010
     pull_request = create(:issue, :pull_request, project:, github_state: "closed", pr_review_phase: "merged", parent_issue: issue)
