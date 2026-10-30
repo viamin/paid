@@ -115,7 +115,8 @@ module AgentRuns
     end
 
     def cancel_feature_held_run
-      cancel_run(reason: "Feature intent is held at dequeue (RDR-066 release gate).")
+      cancel_run(reason: "Feature implementation is on hold until the feature design is approved and released. " \
+                         "Review the feature design, then try again.")
     end
 
     def issue_still_eligible?
@@ -170,8 +171,8 @@ module AgentRuns
     # the policy-change race between peek and claim. A workflow ID or running
     # status is already executing and remains owned by the normal lifecycle.
     def cancel_run(reason: nil)
-      reason ||= "Issue no longer eligible at dequeue (RDR-032 recheck); " \
-                 "it will be re-seeded when eligible again"
+      reason ||= "Issue is no longer eligible to run. Update the issue to make it eligible; " \
+                 "it will be re-seeded automatically."
 
       cancelled = agent_run.with_lock do
         next false unless cancellable_before_execution?

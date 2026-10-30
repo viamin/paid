@@ -831,6 +831,16 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(agent_run.error_message)
       end
 
+      it "renders the actionable feature-hold cancellation reason without an internal design ID" do # @spec FEATURE-APPROVAL-023
+        reason = "Feature implementation is on hold until the feature design is approved and released. Review the feature design, then try again."
+        agent_run = create(:agent_run, :cancelled, project: project, error_message: reason)
+
+        get project_agent_run_path(project, agent_run)
+
+        expect(response.body).to include(reason)
+        expect(response.body).not_to match(/RDR-\d+/)
+      end
+
       it "shows the egress policy snapshot recorded for the run" do
         agent_run = create(:agent_run, project: project, external_metadata: {
           "egress_policy" => {

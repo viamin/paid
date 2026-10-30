@@ -356,6 +356,16 @@ RSpec.describe "Dashboard" do
         expect(response.body).to include("42s")
       end
 
+      it "renders the actionable dequeue cancellation reason without an internal design ID" do # @spec EAGER-QUEUE-005
+        reason = "Issue is no longer eligible to run. Update the issue to make it eligible; it will be re-seeded automatically."
+        create(:agent_run, :cancelled, project: project, error_message: reason, completed_at: 1.minute.ago)
+
+        get dashboard_recent_activity_path
+
+        expect(response.body).to include(reason)
+        expect(response.body).not_to match(/RDR-\d+/)
+      end
+
       it "wires the deferred github credential health turbo frame" do
         get dashboard_path
 

@@ -32,7 +32,7 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
     expect(run.temporal_workflow_id).to be_nil
   end
 
-  it "cancels the run when the issue carries an auto-pick skip label" do
+  it "cancels the run with an actionable eligibility recovery message when the issue carries an auto-pick skip label" do
     issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])
     run = queued_auto_pick_run(issue: issue)
 
@@ -40,11 +40,14 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
 
     run.reload
     expect(run.status).to eq("cancelled")
-    expect(run.error_message).to include("no longer eligible")
+    expect(run.error_message).to eq(
+      "Issue is no longer eligible to run. Update the issue to make it eligible; it will be re-seeded automatically."
+    )
+    expect(run.error_message).not_to match(/RDR-\d+/)
   end
 
   # @spec FEATURE-APPROVAL-023
-  it "cancels a previously queued manual implementation run when its feature is held" do
+  it "cancels a previously queued manual implementation run with an actionable feature-hold message" do
     issue = create(:issue, project: project, github_state: "open")
     feature = create(:feature_intent, project: project, status: "approved_waiting_for_merge")
     create(:feature_intent_issue, feature_intent: feature, issue: issue)
@@ -55,7 +58,10 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
 
     expect(described_class.call(run)).to be true
     expect(run.reload.status).to eq("cancelled")
-    expect(run.error_message).to include("Feature intent is held")
+    expect(run.error_message).to eq(
+      "Feature implementation is on hold until the feature design is approved and released. Review the feature design, then try again."
+    )
+    expect(run.error_message).not_to match(/RDR-\d+/)
   end
 
   it "keeps the run queued when only its internal Paid state changed" do # @spec AUTO-PICK-QUEUE-008
