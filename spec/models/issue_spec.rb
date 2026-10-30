@@ -375,6 +375,86 @@ RSpec.describe Issue do
       expect(notification.reload.resolved_at).to be_nil
     end
 
+    # @spec CONFIDENCE-DELIVERY-019
+    it "resolves a stale planning-hold notification without releasing the label when the issue closes" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])
+      hold = AgentPlanningHold.create!(account: project.account, project: project, issue: issue,
+        label: "planning", status: "needs_review")
+      notification = create(:notification, :error, account: project.account, subject: issue,
+        source: AgentPlanningHolds::RequestReview::SOURCE, blocking: true)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      issue.update!(github_state: "closed")
+
+      expect(notification.reload.resolved_at).to be_present
+      expect(hold.reload.status).to eq("needs_review")
+      expect(issue.reload.labels).to include("planning")
+    end
+
+    # @spec CONFIDENCE-DELIVERY-019
+    it "does not fail the close transaction when planning-hold reconciliation raises" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])
+      AgentPlanningHold.create!(account: project.account, project: project, issue: issue,
+        label: "planning", status: "needs_review")
+      allow(Issues::EnqueueEligible).to receive(:call)
+      allow(AgentPlanningHolds::Reconcile).to receive(:call).and_raise(StandardError, "github sync unavailable")
+
+      expect { issue.update!(github_state: "closed") }.not_to raise_error
+
+      expect(issue.reload.github_state).to eq("closed")
+    end
+
+    # @spec CONFIDENCE-DELIVERY-019
+    it "surfaces a fresh actionable request when the issue reopens with the planning label still present" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, github_state: "closed", labels: [ "planning" ])
+      AgentPlanningHold.create!(account: project.account, project: project, issue: issue,
+        label: "planning", status: "needs_review")
+      notification = create(:notification, :error, :resolved, account: project.account, subject: issue,
+        source: AgentPlanningHolds::RequestReview::SOURCE, blocking: true)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      issue.update!(github_state: "open")
+
+      expect(notification.reload.resolved_at).to be_nil
+    end
+
+    # @spec CONFIDENCE-DELIVERY-019
+    it "does not surface a request on reopen when the planning label was removed while closed" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, github_state: "closed", labels: [])
+      AgentPlanningHold.create!(account: project.account, project: project, issue: issue,
+        label: "planning", status: "needs_review")
+      notification = create(:notification, :error, :resolved, account: project.account, subject: issue,
+        source: AgentPlanningHolds::RequestReview::SOURCE, blocking: true)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      issue.update!(github_state: "open")
+
+      expect(notification.reload.resolved_at).to be_present
+    end
+
+    # @spec CONFIDENCE-DELIVERY-019
+    it "does not duplicate a notification across a close/reopen race within the same update" do
+      project = create(:project, auto_pick_enabled: true)
+      issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])
+      AgentPlanningHold.create!(account: project.account, project: project, issue: issue,
+        label: "planning", status: "needs_review")
+      create(:notification, :error, account: project.account, subject: issue,
+        source: AgentPlanningHolds::RequestReview::SOURCE, blocking: true)
+      allow(Issues::EnqueueEligible).to receive(:call)
+
+      issue.update!(github_state: "closed")
+      issue.update!(github_state: "open")
+
+      notifications = Notification.where(account: project.account,
+        source: AgentPlanningHolds::RequestReview::SOURCE, subject: issue)
+      expect(notifications.count).to eq(1)
+      expect(notifications.sole.resolved_at).to be_nil
+    end
+
     it "enqueues dependents transitively as blockers close in sequence" do
       project = create(:project, auto_pick_enabled: true)
       issue_a = create(:issue, project: project, github_state: "open")

@@ -198,6 +198,12 @@ Rails.application.configure do
       class: "DependencyCycleReconciliationJob",
       description: "Reconcile persisted effective dependency cycles"
     },
+    agent_planning_hold_closed_issue_sweep: {
+      cron: "21-59/30 * * * *",
+      class: "AgentPlanningHoldClosedIssueSweepJob",
+      queue: "maintenance",
+      description: "Bounded sweep resolving stale planning-hold Inbox notifications for closed issues"
+    },
     partial_closeout_acceptance_audit_sweep: {
       cron: "11-59/15 * * * *",
       class: "PartialCloseoutAcceptanceAuditSweepJob",

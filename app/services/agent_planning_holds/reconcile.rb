@@ -4,7 +4,16 @@ module AgentPlanningHolds
   # Releases only direct agent holds whose recorded, mechanical condition is
   # satisfied. Conditions that need design judgment remain actionable Inbox
   # work; neither a closed parent issue nor the bot identity authorizes them.
+  #
+  # A closed issue never needs release into auto-pick, so once the hold's own
+  # issue is closed this short-circuits to {close_without_release}: the stale
+  # Inbox notification is resolved, but the hold's status, the GitHub label,
+  # and any operator/design judgment it still requires are left untouched for
+  # audit. Reopening re-runs this same call (see Issue's reopen hook) so a
+  # still-unresolved hold surfaces a fresh request rather than staying
+  # permanently suppressed.
   # @spec CONFIDENCE-DELIVERY-018
+  # @spec CONFIDENCE-DELIVERY-019
   class Reconcile
     Result = Data.define(:released, :reason) do
       def released? = released
@@ -19,6 +28,7 @@ module AgentPlanningHolds
     def call
       attach_synced_issue!
       return Result.new(released: false, reason: "Planning hold issue has not synchronized yet.") unless hold.issue
+      return close_without_release if hold.issue.github_state == "closed" && hold.status != "released"
       return request_operator_review unless hold.supported_release_condition?
       return Result.new(released: false, reason: "Planning hold needs operator reconciliation.") unless hold.releasable?
       return Result.new(released: false, reason: "Planning hold release condition is not satisfied.") unless condition_satisfied?
@@ -81,9 +91,26 @@ module AgentPlanningHolds
       Result.new(released: false, reason: "Planning hold release condition requires operator review.")
     end
 
+    # Retires the stale Inbox entry without claiming a release: the status,
+    # evidence, and GitHub label stay exactly as an operator left them so a
+    # later reopen (CONFIDENCE-DELIVERY-019) can recompute the real blocker.
+    def close_without_release
+      resolve_notification
+      Result.new(released: false, reason: "Planning hold issue is closed; retired without release.")
+    end
+
+    # A notification published before the hold's issue synchronized locally
+    # is keyed on the agent run instead (see RequestReview); check both so a
+    # closure doesn't leave that earlier notification stale.
     def resolve_notification
-      Notification.where(account: project.account, source: "agent_planning_hold_reconciliation", subject: hold.issue)
-        .update_all(resolved_at: Time.current, updated_at: Time.current)
+      subjects = [ hold.issue, hold.agent_run ].compact
+      return if subjects.empty?
+
+      Notification.where(account: project.account, source: RequestReview::SOURCE, subject: subjects, resolved_at: nil)
+        .find_each do |notification|
+          Notifications::Resolve.call(account: notification.account, source: notification.source,
+            subject: notification.subject, user: notification.user)
+        end
     end
 
     def client = project.client

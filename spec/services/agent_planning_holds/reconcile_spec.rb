@@ -75,6 +75,74 @@ RSpec.describe AgentPlanningHolds::Reconcile do
     expect(Notification.where(source: "agent_planning_hold_reconciliation", subject: issue).blocking).to exist
   end
 
+  # @spec CONFIDENCE-DELIVERY-019
+  describe "when the hold's own issue is already closed" do
+    let(:closed_issue) { create(:issue, :closed, project:, labels: [ "planning" ]) }
+
+    it "resolves the stale notification without releasing the label or claiming approval" do
+      hold = AgentPlanningHold.create!(
+        account: project.account, project:, issue: closed_issue, agent_run: run, label: "planning", status: "needs_review"
+      )
+      notification = create(:notification, :error, account: project.account, subject: closed_issue,
+        source: AgentPlanningHolds::RequestReview::SOURCE, blocking: true)
+      expect(project.client).not_to receive(:remove_label_from_issue)
+
+      result = described_class.call(hold:)
+
+      expect(result).not_to be_released
+      expect(notification.reload.resolved_at).to be_present
+      expect(hold.reload.status).to eq("needs_review")
+      expect(closed_issue.reload.labels).to include("planning")
+    end
+
+    it "resolves a notification keyed on the agent run before the issue had synchronized locally" do
+      hold = AgentPlanningHold.create!(
+        account: project.account, project:, agent_run: run, remote_issue_number: closed_issue.github_number,
+        label: "planning", status: "needs_review"
+      )
+      notification = create(:notification, :error, account: project.account, subject: run,
+        source: AgentPlanningHolds::RequestReview::SOURCE, blocking: true)
+
+      result = described_class.call(hold:)
+
+      expect(result).not_to be_released
+      expect(notification.reload.resolved_at).to be_present
+      expect(hold.reload.issue).to eq(closed_issue)
+    end
+
+    it "does not attempt a mechanical release even when the recorded condition would otherwise be satisfied" do
+      hold = AgentPlanningHold.create!(
+        account: project.account, project:, issue: closed_issue, agent_run: run, label: "planning", status: "held",
+        task_kind: "implementation", reason: "Awaiting dependency resolution.",
+        release_condition: { "kind" => "dependencies_resolved" }, evidence: { "scope_revision" => "v1" }
+      )
+      expect(project.client).not_to receive(:remove_label_from_issue)
+
+      result = described_class.call(hold:)
+
+      expect(result).not_to be_released
+      expect(hold.reload.status).to eq("held")
+    end
+
+    it "does not auto-approve an operator-override hold just because the issue closed" do
+      hold = AgentPlanningHold.create!(
+        account: project.account, project:, issue: closed_issue, agent_run: run, label: "planning", status: "held",
+        task_kind: "planning", reason: "Awaiting design approval.", operator_override: true,
+        release_condition: { "kind" => "dependencies_resolved" }, evidence: { "scope_revision" => "v1" }
+      )
+      notification = create(:notification, :error, account: project.account, subject: closed_issue,
+        source: AgentPlanningHolds::RequestReview::SOURCE, blocking: true)
+      expect(project.client).not_to receive(:remove_label_from_issue)
+
+      result = described_class.call(hold:)
+
+      expect(result).not_to be_released
+      expect(hold.reload).to have_attributes(status: "held", operator_override: true)
+      expect(notification.reload.resolved_at).to be_present
+      expect(closed_issue.reload.labels).to include("planning")
+    end
+  end
+
   it "attaches a receipt to the issue after a later GitHub synchronization" do
     delayed_hold = AgentPlanningHold.create!(
       account: project.account,

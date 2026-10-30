@@ -167,6 +167,14 @@ class Issue < ApplicationRecord
   # eager re-enqueue path so stale notifications do not keep the dismissal
   # state out of date when the parent is later reopened.
   after_update_commit :resolve_partial_closeout_prerequisite_notifications, if: :github_just_closed?
+  # A direct agent planning hold's Inbox notification is equally stale once
+  # its own issue closes: the hold no longer blocks anything, so present it
+  # without requiring an operator to remove the (possibly human-owned) GitHub
+  # label first. Reopening with the label still present recomputes the real
+  # blocker instead of leaving the retired notification permanently
+  # suppressed. @spec CONFIDENCE-DELIVERY-019
+  after_update_commit :reconcile_agent_planning_holds_on_close, if: :github_just_closed?
+  after_update_commit :reconcile_agent_planning_holds_on_reopen, if: :github_just_reopened?
   after_update_commit :enqueue_self_if_became_auto_pick_eligible, if: :auto_pick_recheck_needed?
   after_update_commit :cancel_orphaned_queued_runs, if: :work_no_longer_needed?
   after_update_commit :complete_continuation_grants, if: :continuation_endpoint_reached?
@@ -1252,6 +1260,10 @@ class Issue < ApplicationRecord
     saved_change_to_github_state? && github_state == "closed"
   end
 
+  def github_just_reopened?
+    saved_change_to_github_state? && github_state == "open"
+  end
+
   # @spec AUTOMATION-PHASES-008
   def continuation_endpoint_reached?
     is_pull_request? && saved_change_to_pr_review_phase? && pr_review_phase.in?(%w[ready merged])
@@ -1387,6 +1399,29 @@ class Issue < ApplicationRecord
       issue_id: id,
       error: e.message
     )
+  end
+
+  # @spec CONFIDENCE-DELIVERY-019
+  def reconcile_agent_planning_holds_on_close
+    agent_planning_holds.where(status: AgentPlanningHold::PENDING_STATUSES).find_each do |hold|
+      AgentPlanningHolds::Reconcile.call(hold:)
+    end
+  rescue => e
+    Rails.logger.error(message: "agent_planning_holds.close_reconcile_failed", issue_id: id, error: e.message)
+  end
+
+  # The label is the actual GitHub-visible blocker; a hold whose label was
+  # already removed while the issue sat closed has nothing left to
+  # recompute. @spec CONFIDENCE-DELIVERY-019
+  def reconcile_agent_planning_holds_on_reopen
+    held_labels = Array(labels)
+    agent_planning_holds.where(status: AgentPlanningHold::PENDING_STATUSES).find_each do |hold|
+      next unless held_labels.include?(hold.label)
+
+      AgentPlanningHolds::Reconcile.call(hold:)
+    end
+  rescue => e
+    Rails.logger.error(message: "agent_planning_holds.reopen_reconcile_failed", issue_id: id, error: e.message)
   end
 
   # @spec PARTIAL-CLOSEOUT-037

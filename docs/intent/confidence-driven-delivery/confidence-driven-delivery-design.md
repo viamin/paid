@@ -140,7 +140,28 @@ and scope revision, and is idempotent by issue and label so failed runs and
 retries retain one receipt. The bounded eligibility sweep may release only
 explicit mechanical conditions, reads GitHub back after removal, and
 synchronizes local labels. Conditions that require design judgment remain held
-for an operator, even when a related issue closes.
+for an operator, even when a related issue referenced by an explicit
+`issue_closed` condition closes.
+
+A closed issue never needs release into auto-pick, so a hold's own issue
+closing is a separate, simpler case from the mechanical release above: Paid
+retires the hold's "Planning hold needs reconciliation" Inbox notification as
+obsolete — on the close itself and via a bounded backfill sweep for the
+pre-existing backlog — without attempting the normal mechanical release.
+Retiring the notification never removes the GitHub label, changes the hold's
+status, or grants the design judgment an unknown or operator-override hold
+still requires; the hold's status, evidence, and prior decisions stay exactly
+as recorded, so an operator reconciling it later sees the same history that
+was waiting before the issue closed. A notification published before the
+issue had synchronized locally is keyed on the authenticated run instead of
+the issue; retiring on closure resolves either subject so that race cannot
+leave a stale entry behind. Reopening an issue with the planning label still
+present re-evaluates the hold's current release condition the same way the
+bounded sweep does: a now-satisfied mechanical condition releases normally,
+and an unsupported or still-unowned hold republishes the same notification
+(not a duplicate) as a fresh actionable request. A reopen with the label
+already removed leaves the retired notification retired — there is nothing
+left to recompute.
 
 Confidence-driven PRs receive an independent conformance review against that
 issue link's immutable release snapshot: its merged baseline, mapped design
