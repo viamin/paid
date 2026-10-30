@@ -102,10 +102,13 @@ module Api
         end
       end
 
+      # @spec AUTO-PICK-QUEUE-016
+      # Umbrella parents are validated onto the path issue's own project, so
+      # this context stays inside the project visibility the queue enforced.
       def dependency_cycle_payload
         cycle = entry.record
         {
-          cycle_path: cycle.path.map { |issue| { project: issue.project.full_name, number: issue.github_number, url: issue.github_url } },
+          cycle_path: cycle.path.map { |issue| dependency_cycle_issue_payload(issue) },
           cycle_edges: cycle.path_edges.each_with_index.map do |edge, index|
             dependency_cycle_edge_payload(edge, cycle.path[index], cycle.path[index + 1])
           end,
@@ -113,10 +116,28 @@ module Api
         }
       end
 
+      def dependency_cycle_issue_payload(issue)
+        {
+          project: issue.project.full_name,
+          number: issue.github_number,
+          url: issue.github_url,
+          title: issue.title,
+          labels: issue.labels,
+          umbrella: dependency_cycle_umbrella_payload(issue)
+        }
+      end
+
+      def dependency_cycle_umbrella_payload(issue)
+        parent = issue.parent_issue
+        return unless parent
+
+        { project: parent.project.full_name, number: parent.github_number, url: parent.github_url, title: parent.title }
+      end
+
       def dependency_cycle_edge_payload(edge, from, to)
         {
-          from: { project: from.project.full_name, number: from.github_number, url: from.github_url },
-          to: { project: to.project.full_name, number: to.github_number, url: to.github_url },
+          from: dependency_cycle_issue_payload(from),
+          to: dependency_cycle_issue_payload(to),
           declaration_source: edge.declaration_source,
           declaration_url: edge.declaration_url
         }

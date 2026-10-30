@@ -25,6 +25,26 @@ RSpec.describe Api::V1::InboxEntrySerializer do
     )
   end
 
+  def dependency_cycle_issues
+    @dependency_cycle_issues ||= begin
+      umbrella = create(:issue, project:, github_state: "open", github_number: 9, title: "Migration umbrella")
+      first = create(:issue, project:, github_state: "open", github_number: 41,
+        title: "Migrate the widget factory", labels: [ "P1", "epic" ], parent_issue: umbrella)
+      second = create(:issue, project:, github_state: "open", github_number: 42, title: "Remove the gauge")
+      create(:issue_dependency, issue: first, depends_on_issue: second,
+        declaration_source: "issue_comment",
+        declaration_url: "https://github.com/#{project.full_name}/issues/41#issuecomment-7")
+      create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+      [ first, second ]
+    end
+  end
+
+  def dependency_cycle_entry
+    dependency_cycle_issues
+    cycle = Issues::DependencyCycles.call(account: account).sole
+    build_entry(Inbox::Queue::DEPENDENCY_CYCLE_KIND, record: cycle, project: cycle.project)
+  end
+
   describe "#render" do
     it "serializes clarifying_questions with its questions" do
       issue = create(:issue, project: project)
@@ -265,6 +285,25 @@ RSpec.describe Api::V1::InboxEntrySerializer do
       expect(payload[:recommended_action]).to eq("Restore coverage access and recheck.")
       expect(payload[:title]).to eq("Coverage unavailable: docs/rdrs/RDR-124.md")
       expect(payload[:summary]).not_to include("Traceability gap")
+    end
+
+    it "serializes dependency_cycle with per-issue title, labels, umbrella, and edge provenance" do
+      payload = described_class.render(dependency_cycle_entry)
+
+      first_node = payload.fetch(:cycle_path).find { |node| node.fetch(:number) == dependency_cycle_issues.first.github_number }
+      expect(first_node).to include(project: project.full_name, title: "Migrate the widget factory", labels: [ "P1", "epic" ])
+      expect(first_node.fetch(:umbrella)).to include(
+        project: project.full_name, number: 9, title: "Migration umbrella",
+        url: "https://github.com/#{project.full_name}/issues/9"
+      )
+      second = dependency_cycle_issues.second
+      second_node = payload.fetch(:cycle_path).find { |node| node.fetch(:number) == second.github_number }
+      expect(second_node).to include(title: "Remove the gauge", labels: [])
+      expect(second_node.fetch(:umbrella)).to be_nil
+      provenance_edge = payload.fetch(:cycle_edges).find { |edge| edge[:declaration_url].present? }
+      expect(provenance_edge.fetch(:from)).to include(title: "Migrate the widget factory", labels: [ "P1", "epic" ])
+      legacy_edge = payload.fetch(:cycle_edges).find { |edge| edge[:declaration_url].blank? }
+      expect(legacy_edge).to include(declaration_source: nil, declaration_url: nil)
     end
 
     it "raises for an unrecognized kind rather than silently returning an empty payload" do

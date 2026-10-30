@@ -1,4 +1,4 @@
-<%# @spec AUTO-PICK-QUEUE-015 %>
+<%# @spec AUTO-PICK-QUEUE-015 AUTO-PICK-QUEUE-016 %>
 <% cycle = entry.record %>
 <div class="space-y-6">
   <div class="rounded-xl border border-red-200 bg-red-50 p-4">
@@ -12,8 +12,9 @@
       <% cycle.path_edges.each_with_index do |edge, index| %>
         <% from = cycle.path[index] %>
         <% to = cycle.path[index + 1] %>
-        <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
-          <%= from.project.full_name %>#<%= from.github_number %> declares <%= to.project.full_name %>#<%= to.github_number %> as a dependency
+        <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3" data-testid="dependency-cycle-declaration">
+          <span class="font-medium"><%= from.project.full_name %>#<%= from.github_number %></span> declares
+          <span class="font-medium"><%= to.project.full_name %>#<%= to.github_number %></span> as a dependency
           <% if edge.declaration_url.present? %>
             — <%= link_to edge.declaration_source == "issue_comment" ? "view declaring comment" : "view issue declaration", edge.declaration_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-500" %>
           <% else %>
@@ -26,17 +27,52 @@
 
   <div>
     <h3 class="text-sm font-semibold text-gray-900">Cycle path</h3>
-    <p class="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700">
-      <% cycle.path.each_with_index do |issue, index| %>
-        <%= " → " if index.positive? %>
-        <%= link_to "#{issue.project.full_name}##{issue.github_number}", issue.github_url, target: "_blank", rel: "noopener noreferrer", class: "font-medium text-indigo-600 hover:text-indigo-500" %>
+    <%# The service closes the loop by repeating the start node at the end of
+        `path`; each distinct issue renders once here, and the closing edge
+        stays visible in the declarations list above. %>
+    <% path_nodes = cycle.path.first == cycle.path.last ? cycle.path[0...-1] : cycle.path %>
+    <ol class="mt-2 space-y-2 text-sm text-gray-700" data-testid="dependency-cycle-path">
+      <% path_nodes.each_with_index do |issue, index| %>
+        <li class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3" data-testid="dependency-cycle-node">
+          <div class="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+            <% if index.positive? %><span class="text-gray-400" aria-hidden="true">&rarr;</span><% end %>
+            <%# The reference link is the focusable element and carries the full
+                title in its title attribute, so hover and keyboard focus both
+                reveal it while the visible text truncates on narrow screens. %>
+            <%= link_to "#{issue.project.full_name}##{issue.github_number}", issue.github_url,
+                  target: "_blank", rel: "noopener noreferrer",
+                  title: "#{issue.project.full_name}##{issue.github_number} — #{issue.title}",
+                  class: "flex-shrink-0 font-medium text-indigo-600 hover:text-indigo-500",
+                  data: { testid: "dependency-cycle-node-ref" } %>
+            <span class="min-w-0 flex-1 truncate text-gray-900" title="<%= issue.title %>" data-testid="dependency-cycle-node-title"><%= issue.title %></span>
+          </div>
+          <% if issue.labels.any? %>
+            <div class="mt-1 flex max-w-full flex-wrap gap-1" data-testid="dependency-cycle-labels">
+              <% issue.labels.each do |label| %>
+                <span class="max-w-[16rem] <%= issue_label_badge_classes(issue.project, label) %>" title="<%= label %>" data-testid="dependency-cycle-label">
+                  <span class="truncate"><%= label %></span>
+                </span>
+              <% end %>
+            </div>
+          <% end %>
+          <% if issue.parent_issue %>
+            <div class="mt-1 flex min-w-0 flex-wrap items-baseline gap-x-1 text-xs text-gray-600" data-testid="dependency-cycle-umbrella">
+              <span class="flex-shrink-0">Umbrella</span>
+              <%= link_to "#{issue.parent_issue.project.full_name}##{issue.parent_issue.github_number}", issue.parent_issue.github_url,
+                    target: "_blank", rel: "noopener noreferrer",
+                    title: "#{issue.parent_issue.project.full_name}##{issue.parent_issue.github_number} — #{issue.parent_issue.title}",
+                    class: "flex-shrink-0 font-medium text-indigo-600 hover:text-indigo-500" %>
+              <span class="min-w-0 flex-1 truncate" title="<%= issue.parent_issue.title %>"><%= issue.parent_issue.title %></span>
+            </div>
+          <% end %>
+        </li>
       <% end %>
-    </p>
+    </ol>
   </div>
 
   <div>
     <h3 class="text-sm font-semibold text-gray-900">Affected work</h3>
-    <p class="mt-1 text-sm text-gray-600"><%= cycle.downstream_issues.size %> downstream open issue(s) are held by this cycle.</p>
+    <p class="mt-1 text-sm text-gray-600" data-testid="dependency-cycle-downstream"><%= cycle.downstream_issues.size %> downstream open issue(s) are held by this cycle.</p>
   </div>
 
   <div class="text-sm text-gray-700">

@@ -118,6 +118,24 @@
   *Code:* `Inbox::Queue`, `Dashboard::HeldWorkDetails`,
   `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`.
 
+- [x] **AUTO-PICK-QUEUE-016** — When the Inbox presents a dependency-cycle
+  occurrence, each path issue SHALL show its locally synced title beside its
+  linked repository and number, with the full title available on hover and
+  keyboard focus, its locally synced labels, and — when a parent issue exists —
+  the linked umbrella number and title. Long titles and label lists SHALL
+  remain readable on narrow screens, and declaration provenance SHALL remain
+  adjacent to each dependent → prerequisite edge, including the fallback
+  inspection guidance when source provenance is unavailable. The authorized
+  Inbox API cycle payload SHALL carry equivalent per-issue context (title,
+  labels, umbrella when present), and all shown context SHALL derive only from
+  locally synced data inside the viewer's project visibility.
+  *Tests:* `spec/views/dashboard/inbox_detail_dependency_cycle_spec.rb`,
+  `spec/serializers/api/v1/inbox_entry_serializer_spec.rb`,
+  `spec/requests/api/v1/inbox_spec.rb`.
+  *Code:* `Issues::DependencyCycles`,
+  `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`,
+  `Api::V1::InboxEntrySerializer`.
+
 ## Epic umbrella audits
 
 - [x] **AUTO-PICK-QUEUE-009** — When an open issue carries the `epic` label

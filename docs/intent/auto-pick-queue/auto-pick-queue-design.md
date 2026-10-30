@@ -81,6 +81,20 @@ The occurrence remains until a subsequent
 synchronization observes an acyclic persisted graph. A failed reconciliation is
 logged as unavailable; it is not treated as proof that no cycles exist.
 
+The path presentation carries enough locally synced issue context to judge
+which declaration is wrong without opening GitHub: every path issue shows its
+synced title beside its linked repository reference, its synced labels, and —
+when a parent issue exists — the linked umbrella reference and title. The full
+title stays available on hover and keyboard focus while the visible text
+truncates, and label lists wrap, so long metadata remains readable on narrow
+screens. Declaration provenance stays adjacent to its dependent → prerequisite
+edge. All of this context is projection over synced `Issue` rows (titles,
+labels, same-project umbrella parents), never a live GitHub read, and the
+authorized Inbox API cycle payload carries the same per-issue context so API
+and agent clients can inspect the cycle without re-fetching each issue.
+Because umbrella parents are validated to the path issue's own project, the
+project visibility the queue already enforced covers the added context.
+
 ## Tier-infeasibility gating
 
 Issues whose most recent model selection pins a tier no enabled runner can

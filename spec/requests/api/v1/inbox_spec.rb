@@ -87,6 +87,29 @@ RSpec.describe "Mobile inbox API" do
     expect(response.parsed_body.dig("entry", "id")).to eq(entry.fetch("id"))
   end
 
+  # @spec AUTO-PICK-QUEUE-016 MOBILE-API-006
+  it "serializes locally synced issue context for an authorized cross-project cycle" do
+    other_project = create(:project, account:, created_by: user, owner: "acme", repo: "widgets")
+    umbrella = create(:issue, project:, github_state: "open", github_number: 7, title: "Mobile umbrella")
+    local = create(:issue, project:, github_state: "open", github_number: 3, title: "Ship the shared mobile shell",
+      labels: [ "P1", "needs-design" ], parent_issue: umbrella)
+    remote = create(:issue, project: other_project, github_state: "open", github_number: 4,
+      title: "Align the widget shell", labels: [ "blocked" ])
+    create(:issue_dependency, issue: local, depends_on_issue: remote)
+    create_legacy_issue_dependency(issue: remote, depends_on_issue: local)
+
+    get "/api/v1/inbox", params: { kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND }, headers: headers
+
+    cycle_path = response.parsed_body.fetch("entries").sole.fetch("cycle_path")
+    local_node = cycle_path.find { |node| node.fetch("project") == "acme/mobile" }
+    expect(local_node).to include("number" => local.github_number, "title" => "Ship the shared mobile shell",
+      "labels" => [ "P1", "needs-design" ],
+      "umbrella" => a_hash_including("project" => "acme/mobile", "number" => 7, "title" => "Mobile umbrella"))
+    remote_node = cycle_path.find { |node| node.fetch("project") == "acme/widgets" }
+    expect(remote_node).to include("title" => "Align the widget shell", "labels" => [ "blocked" ])
+    expect(remote_node.fetch("umbrella")).to be_nil
+  end
+
   # @spec MOBILE-API-006 MOBILE-API-010
   it "paginates the inbox before serializing entries" do
     issues = create_list(:issue, 3, :needs_input, project:, needs_input_questions: [ "What should happen?" ])

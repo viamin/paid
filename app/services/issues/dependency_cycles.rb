@@ -52,7 +52,8 @@ module Issues
 
     def nodes
       @nodes ||= Issue.joins(:project).where(projects: { account_id: account.id }, github_state: "open")
-        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES).includes(:project).index_by(&:id)
+        .where.not(paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES)
+        .includes(:project, parent_issue: :project).index_by(&:id)
     end
 
     def edges
