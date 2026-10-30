@@ -322,4 +322,19 @@ RSpec.describe "Projects::ShadowEvaluations" do
     expect(response.body).to include("Review conformance decisions")
     expect(response.body).not_to include(evaluation.purpose)
   end
+
+  # @spec INTENT-CONFORMANCE-ROLLOUT-009
+  it "hides the internal identifier in a persisted report from before the copy change" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    freeze!(evaluation)
+    evaluation.update!(
+      report_markdown: "# RDR-067 Solo-Maintainer Shadow Evaluation Report\n\nRecorded evidence.")
+
+    get project_shadow_evaluation_path(project, evaluation)
+
+    expect(response.body).to include("Conformance Review Evaluation Report")
+    expect(response.body).not_to include("RDR-067")
+    expect(evaluation.reload.report_markdown).to include("RDR-067")
+  end
 end

@@ -329,6 +329,20 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
   end
 
   # @spec FACET-CONFIDENCE-020
+  it "hides the internal identifier in a persisted report from before the copy change" do
+    evaluation = start_evaluation!
+    label_all!(evaluation)
+    post freeze_project_facet_confidence_evaluation_path(project, evaluation)
+    evaluation.update!(report_markdown: "# RDR-070 Facet-Confidence Closeout Evaluation Report\n\nRecorded evidence.")
+
+    get project_facet_confidence_evaluation_path(project, evaluation)
+
+    expect(response.body).to include("Facet-Confidence Closeout Evaluation Report")
+    expect(response.body).not_to include("RDR-070")
+    expect(evaluation.reload.report_markdown).to include("RDR-070")
+  end
+
+  # @spec FACET-CONFIDENCE-020
   it "resumes the persisted evaluation from the partial-closeout Inbox item" do
     evaluation = start_evaluation!
     get inbox_entry_path(entry_id(Inbox::Queue::PARTIAL_CLOSEOUT_KIND, issue),
