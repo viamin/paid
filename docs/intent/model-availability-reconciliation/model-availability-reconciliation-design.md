@@ -57,6 +57,11 @@ static compatibility check cannot erase runner-local verification. Live recovery
 does not promote one account's availability to the global catalog and always
 honors `operator_active_override: false`.
 
+For an API-key runner, eligibility consumes unavailable evidence only when it
+is scoped to the runner's account. Global availability rows are periodic
+runner-contract diagnostics and cannot establish that a newly supplied key is
+unusable; `Runners::ModelCompatibility` owns that global runner/auth gate.
+
 ## Non-goals
 
 - Wiring a preflight retry into the live run/container execution path.

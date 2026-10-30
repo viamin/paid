@@ -35,6 +35,64 @@ RSpec.describe ChatSessions::CuratedModelOptions do
     expect(resolution.option).to have_attributes(model_id: model.model_id, tier: "low")
   end
 
+  # @spec ONBOARD-CHAT-015 MODEL-AVAILABILITY-009
+  it "does not let global unavailable evidence suppress a new API-key runner" do
+    model = create(:llm_model, :openai, tier: "low", supports_tools: true)
+    create(
+      :model_availability_check,
+      llm_model: model,
+      runner_key: "codex",
+      auth_type: "api_key",
+      status: "unavailable",
+      account: nil,
+      checked_at: Time.current,
+      expires_at: ModelAvailabilityCheck::DEFAULT_TTL.from_now
+    )
+
+    resolution = described_class.resolve_with_diagnostics(runner:)
+
+    expect(resolution.option).to have_attributes(model_id: model.model_id, tier: "low")
+  end
+
+  # @spec ONBOARD-CHAT-015 MODEL-AVAILABILITY-009
+  it "does not consume unavailable evidence from the subscription auth context" do
+    model = create(:llm_model, :openai, tier: "low", supports_tools: true)
+    create(
+      :model_availability_check,
+      llm_model: model,
+      runner_key: "codex",
+      auth_type: "subscription",
+      status: "unavailable",
+      account: nil,
+      checked_at: Time.current,
+      expires_at: ModelAvailabilityCheck::DEFAULT_TTL.from_now
+    )
+
+    resolution = described_class.resolve_with_diagnostics(runner:)
+
+    expect(resolution.option).to have_attributes(model_id: model.model_id, tier: "low")
+  end
+
+  # @spec ONBOARD-CHAT-015 MODEL-AVAILABILITY-009
+  it "uses fresh unavailable evidence scoped to the API-key runner account" do
+    model = create(:llm_model, :openai, tier: "low", supports_tools: true)
+    create(
+      :model_availability_check,
+      llm_model: model,
+      runner_key: "codex",
+      auth_type: "api_key",
+      status: "unavailable",
+      account: user.account,
+      checked_at: Time.current,
+      expires_at: ModelAvailabilityCheck::DEFAULT_TTL.from_now
+    )
+
+    resolution = described_class.resolve_with_diagnostics(runner:)
+
+    expect(resolution.option).to be_nil
+    expect(resolution.rejection_reasons).to eq([ :unavailable ])
+  end
+
   # @spec ONBOARD-CHAT-014
   it "reports runner incompatibility separately from missing chat-tool support" do
     incompatible_runner = create(:runner, user:, runner_key: "codex", auth_type: "subscription")
