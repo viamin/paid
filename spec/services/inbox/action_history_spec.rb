@@ -25,6 +25,24 @@ RSpec.describe Inbox::ActionHistory do
     expect(history.events.first.action).to eq("Agent run completed")
   end
 
+  # @spec OPERATOR-INBOX-022
+  it "exposes only safe GitHub evidence URLs" do
+    run = create(:agent_run, :completed, project:, issue:, pull_request_url: "javascript:alert(1)",
+      review_url: "https://attacker.example/review")
+    fallback_run = create(:agent_run, :completed, project:, issue:, pull_request_url: "javascript:alert(2)",
+      review_url: "https://github.com/acme/widgets/pull/12")
+    history_event = create(:inbox_history_event, account: project.account, project:,
+      subject_key: "issue:#{project.id}:#{issue.github_number}", evidence_url: "javascript:alert(3)")
+
+    events = described_class.call(entry:).events.index_by(&:id)
+
+    expect(events.fetch("run-start:#{run.id}").evidence_url).to be_nil
+    expect(events.fetch("run-finish:#{run.id}").evidence_url).to be_nil
+    expect(events.fetch("run-start:#{fallback_run.id}").evidence_url).to be_nil
+    expect(events.fetch("run-finish:#{fallback_run.id}").evidence_url).to eq("https://github.com/acme/widgets/pull/12")
+    expect(events.fetch("history:#{history_event.id}").evidence_url).to be_nil
+  end
+
   # @spec OPERATOR-INBOX-023
   it "marks a subject with no local evidence as legacy-incomplete" do
     expect(described_class.call(entry:).incomplete).to be(true)

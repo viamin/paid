@@ -28,7 +28,7 @@ module Inbox
       bounded(history_scope, "occurred_at", "'history:' || id::text").map do |event|
         ActionHistory::Event.new(id: "history:#{event.id}", action: event.metadata.fetch("action", event.event_key),
           actor: event.actor_label, source: event.source, result: event.result, occurred_at: event.occurred_at,
-          revision: event.revision, evidence_url: event.evidence_url)
+          revision: event.revision, evidence_url: safe_evidence_url(event.evidence_url))
       end
     end
 
@@ -38,7 +38,7 @@ module Inbox
       bounded(runs, "COALESCE(started_at, created_at)", "'run-start:' || id::text").map do |run|
         ActionHistory::Event.new(id: "run-start:#{run.id}", action: "Agent run started", actor: "Paid", source: "paid",
           result: "attempted", occurred_at: run.started_at || run.created_at, revision: run.base_commit_sha,
-          evidence_url: run.pull_request_url)
+          evidence_url: safe_evidence_url(run.pull_request_url))
       end
     end
 
@@ -49,7 +49,7 @@ module Inbox
         result = run.status == "completed" ? "completed" : "failed"
         ActionHistory::Event.new(id: "run-finish:#{run.id}", action: "Agent run #{result}", actor: "Paid", source: "paid",
           result:, occurred_at: run.completed_at, revision: run.result_commit_sha,
-          evidence_url: run.pull_request_url || run.review_url)
+          evidence_url: safe_evidence_url(run.pull_request_url) || safe_evidence_url(run.review_url))
       end
     end
 
@@ -81,6 +81,10 @@ module Inbox
 
     def history_scope
       InboxHistoryEvent.for_subject(account: entry.project.account, subject_key:)
+    end
+
+    def safe_evidence_url(url)
+      url if ApplicationController.helpers.safe_github_url?(url)
     end
 
     def runs
