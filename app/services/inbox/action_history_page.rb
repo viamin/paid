@@ -92,9 +92,16 @@ module Inbox
     end
 
     def bounded(relation, time_sql, id_sql)
-      relation = relation.where("#{time_sql} < :time OR (#{time_sql} = :time AND #{id_sql} > :id)",
-        time: cursor.occurred_at, id: cursor.id) if cursor
-      relation.order(Arel.sql("#{time_sql} DESC, #{id_sql} ASC")).limit(limit + 1)
+      time_expression = Arel.sql(time_sql)
+      id_expression = Arel.sql(id_sql)
+      relation = relation.where(cursor_predicate(time_expression, id_expression)) if cursor
+      relation.order(time_expression.desc, id_expression.asc).limit(limit + 1)
+    end
+
+    def cursor_predicate(time_expression, id_expression)
+      time_expression.lt(cursor.occurred_at).or(
+        time_expression.eq(cursor.occurred_at).and(id_expression.gt(cursor.id))
+      )
     end
 
     def cursor
