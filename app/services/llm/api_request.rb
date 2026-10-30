@@ -12,12 +12,13 @@ module Llm
     def call # @spec LLM-ROUTING-003
       started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       deadline = started + @timeout
-      result = AgentHarness::Api::ChatTransport.new.call(
+      request = {
         request_id: SecureRandom.uuid, operation: :chat, candidates: [ candidate ],
         messages: [ { role: :user, content: @prompt } ], tools: [],
         timeout: { read_seconds: @timeout }, retry: { max_attempts: 1 },
         cancellation: -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline }
-      )
+      }
+      result = AgentHarness::Api::ChatTransport.new.call(request)
       if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
         raise AgentHarness::TimeoutError, "Configured API text request timed out"
       end
