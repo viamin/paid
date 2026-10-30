@@ -16,6 +16,7 @@ module Issues
       return [] unless skip_project_gate || Issues::AutoPickProjectGate.call(project)
 
       release_confidence_delivery_holds
+      discover_agent_planning_holds
       reconcile_agent_planning_holds
       counts = { created: 0, existing: 0, skipped: 0 }
       runs = []
@@ -70,6 +71,14 @@ module Issues
     def release_confidence_delivery_holds
       issue_ids = unreleased_confidence_issue_ids | stale_planning_label_issue_ids
       Issue.where(id: issue_ids).find_each { |issue| FeatureIntents::ReleaseIssue.call(issue: issue) }
+    end
+
+    # Labels that predate the proxy receipt have no trustworthy provenance.
+    # Record them as operator review work before selecting durable contracts,
+    # rather than allowing label-based auto-pick exclusion to hide them forever.
+    # @spec CONFIDENCE-DELIVERY-018
+    def discover_agent_planning_holds
+      AgentPlanningHolds::Discover.call(project:)
     end
 
     # Direct agent GitHub writes are not FeatureIntent publications. Sweep the

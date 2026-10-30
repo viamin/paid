@@ -15,6 +15,7 @@ RSpec.describe Issues::BulkEnqueueEligible do
 
   before do
     allow(service).to receive(:release_confidence_delivery_holds)
+    allow(AgentPlanningHolds::Discover).to receive(:call)
     allow(service).to receive(:reconcile_agent_planning_holds)
     allow(Issues::AutoPickProjectGate).to receive(:call).with(project).and_return(true)
     allow(Automation::Strategies::AutoPick::DefaultCandidateSource).to receive(:eligible_scope)
@@ -250,6 +251,40 @@ RSpec.describe Issues::BulkEnqueueEligible do
         release_condition: { "kind" => "issue_closed", "issue_number" => issue.github_number },
         evidence: { "scope_revision" => "rdr-063@draft" }
       )
+    end
+  end
+
+  describe "#discover_agent_planning_holds" do
+    let(:project) { create(:project) }
+    let(:service) { described_class.new(project: project) }
+
+    before do
+      allow(AgentPlanningHolds::Discover).to receive(:call).and_call_original
+    end
+
+    # @spec CONFIDENCE-DELIVERY-018
+    it "creates one operator-review hold for each existing project planning label" do
+      legacy_issue = create(:issue, project: project, labels: [ "planning" ])
+      other_project = create(:project)
+      other_issue = create(:issue, project: other_project, labels: [ "planning" ])
+
+      expect {
+        service.send(:discover_agent_planning_holds)
+      }.to change(AgentPlanningHold, :count).by(1)
+        .and change(Notification, :count).by(1)
+
+      hold = AgentPlanningHold.find_by!(project: project, issue: legacy_issue, label: "planning")
+      expect(hold).to have_attributes(status: "needs_review", agent_run: nil, task_kind: nil)
+      expect(Notification.find_by!(account: project.account, source: "agent_planning_hold_reconciliation", subject: legacy_issue))
+        .to have_attributes(blocking: true, severity: "error")
+      expect(AgentPlanningHold.where(project: other_project, issue: other_issue)).to be_empty
+
+      expect {
+        service.send(:discover_agent_planning_holds)
+      }.not_to change(AgentPlanningHold, :count)
+      expect {
+        service.send(:discover_agent_planning_holds)
+      }.not_to change(Notification, :count)
     end
   end
 end
