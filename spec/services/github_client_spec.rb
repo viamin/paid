@@ -950,6 +950,24 @@ RSpec.describe GithubClient do
       expect(result.size).to eq(1)
       expect(result.first.name).to eq("urgent")
     end
+
+    it "normalizes an absent label to NotFoundError" do
+      stub_request(:delete, "#{api_base}/repos/#{repo}/issues/#{issue_number}/labels/bug")
+        .to_return(status: 404, body: { message: "Not Found" }.to_json)
+
+      expect {
+        client.remove_label_from_issue(repo, issue_number, "bug")
+      }.to raise_error(GithubClient::NotFoundError)
+    end
+
+    it "records an absent label when removing several labels" do
+      stub_request(:delete, "#{api_base}/repos/#{repo}/issues/#{issue_number}/labels/bug")
+        .to_return(status: 404, body: { message: "Not Found" }.to_json)
+
+      result = client.remove_labels_from_issue(repo, issue_number, [ "bug" ])
+
+      expect(result).to include(removed: [], failed: [ { label: "bug", error: "Not Found" } ])
+    end
   end
 
   describe "#check_runs_for_ref" do
