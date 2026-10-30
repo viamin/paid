@@ -113,12 +113,16 @@ module Api
 
       def dependency_cycle_payload
         cycle = entry.record
+        analysis_run = AgentRun.where("external_metadata -> 'cycle_analysis' ->> 'occurrence' = ?", cycle.occurrence).order(created_at: :desc).first
         {
           cycle_path: cycle.path.map { |issue| { project: issue.project.full_name, number: issue.github_number, url: issue.github_url } },
           cycle_edges: cycle.path_edges.each_with_index.map do |edge, index|
             dependency_cycle_edge_payload(edge, cycle.path[index], cycle.path[index + 1])
           end,
-          downstream_issues_held: cycle.downstream_issues.size
+          downstream_issues_held: cycle.downstream_issues.size,
+          cycle_analysis: analysis_run && { agent_run_id: analysis_run.id, status: analysis_run.status,
+            graph_revision: analysis_run.external_metadata.dig("cycle_analysis", "graph_revision"),
+            stale: analysis_run.external_metadata.dig("cycle_analysis", "graph_revision") != cycle.graph_revision }
         }
       end
 

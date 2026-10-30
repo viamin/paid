@@ -13,9 +13,9 @@ module Issues
   class DependencyCycles
     class CoverageUnavailable < StandardError; end
 
-    Edge = Data.define(:id, :from_id, :to_id, :declaration_source, :declaration_url)
+    Edge = Data.define(:id, :from_id, :to_id, :declaration_source, :declaration_url, :updated_at)
 
-    Cycle = Data.define(:account, :issues, :path, :path_edges, :downstream_issues, :detected_at, :occurrence) do
+    Cycle = Data.define(:account, :issues, :path, :path_edges, :component_edges, :downstream_issues, :detected_at, :occurrence) do
       def fingerprint
         Digest::SHA256.hexdigest(issues.map(&:id).sort.join(":"))[0, 20]
       end
@@ -28,6 +28,9 @@ module Issues
         "#{count} downstream open issue#{'s' unless count == 1} remain#{'s' if count == 1} held."
       end
       def project_ids = issues.map(&:project_id).uniq
+      def graph_revision
+        Digest::SHA256.hexdigest(component_edges.map { |edge| [ edge.id, edge.updated_at&.iso8601 ] }.sort.join(":"))[0, 20]
+      end
       def visible_within?(visible_project_ids) = project_ids.all? { |project_id| visible_project_ids.include?(project_id) }
       def touches?(visible_project_ids) = project_ids.any? { |project_id| visible_project_ids.include?(project_id) }
     end
@@ -61,9 +64,9 @@ module Issues
         .where(depends_on_issue: { github_state: "open" })
         .where.not(depends_on_issue: { paid_state: Issue::NON_BLOCKING_OPEN_DEPENDENCY_STATES })
         .excluding_parent_references
-        .pluck(:id, :issue_id, :depends_on_issue_id, :declaration_source, :declaration_url)
-        .filter_map do |id, from, to, source, url|
-          Edge.new(id:, from_id: from, to_id: to, declaration_source: source, declaration_url: url) if nodes.key?(from) && nodes.key?(to)
+        .pluck(:id, :issue_id, :depends_on_issue_id, :declaration_source, :declaration_url, :updated_at)
+        .filter_map do |id, from, to, source, url, updated_at|
+          Edge.new(id:, from_id: from, to_id: to, declaration_source: source, declaration_url: url, updated_at:) if nodes.key?(from) && nodes.key?(to)
         end
     end
 
@@ -124,6 +127,7 @@ module Issues
       Cycle.new(account:, issues: component.map { |id| nodes.fetch(id) }.sort_by(&:id),
         path: path_ids.map { |id| nodes.fetch(id) },
         path_edges: path_ids.each_cons(2).map { |from, to| edge_between(from, to) },
+        component_edges: edges.select { |edge| ids.include?(edge.from_id) && ids.include?(edge.to_id) },
         downstream_issues: downstream_for(ids), detected_at: component.map { |id| nodes.fetch(id).updated_at }.min,
         occurrence: cycle_occurrence(ids))
     end

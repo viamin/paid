@@ -2,7 +2,7 @@
 
 class InboxController < ApplicationController
   before_action :authenticate_user!
-  before_action :load_inbox, only: %i[index show supplement]
+  before_action :load_inbox, only: %i[index show supplement start_cycle_analysis]
 
   # @spec OPERATOR-INBOX-001 @spec OPERATOR-INBOX-003
   def index
@@ -77,6 +77,19 @@ class InboxController < ApplicationController
 
     Inbox::Removals::Restore.call(entry:, user: current_user)
     redirect_back_to_inbox(notice: "Restored to your inbox.")
+  end
+
+  # @spec AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-018
+  def start_cycle_analysis
+    entry = Inbox::Queue.find_entry(user: current_user, entry_id: params[:entry_id])
+    return redirect_back_to_inbox(alert: "That dependency-cycle occurrence is no longer available.") unless entry&.dependency_cycle?
+
+    entry.record.project_ids.each { |project_id| authorize Project.find(project_id), :run_agent? }
+    run = DependencyCycles::StartAnalysis.call(cycle: entry.record, user: current_user)
+    ProcessRunQueueJob.perform_later
+    redirect_to inbox_entry_path(entry.id), notice: "Cycle analysis ##{run.id} queued. It cannot edit GitHub declarations."
+  rescue DependencyCycles::StartAnalysis::ActiveRunExists
+    redirect_to inbox_entry_path(params[:entry_id]), alert: "A cycle analysis is already queued or running for this occurrence."
   end
 
   # @spec LAYERED-VERIFY-015 LAYERED-VERIFY-016 LAYERED-VERIFY-018

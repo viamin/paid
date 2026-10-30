@@ -60,6 +60,24 @@ child relationships.
 
 ## Existing dependency cycles
 
+### Reviewable cycle analysis
+
+A dependency-cycle Inbox occurrence may start one read-only, operator-authorized
+analysis run. The run snapshots the complete strongly connected component,
+every effective internal edge, and the effective graph revision. It is admitted
+only when the initiating operator can run an agent for every represented
+project; active runs for the same occurrence are deduplicated. The analysis is
+an aid, not a mutation authority: it may recommend one or more declaration
+changes and simulate their resulting graph, but it never edits GitHub content,
+labels, or dependency records. Its prompt contains issue titles, labels,
+parent/umbrella context, declaration URLs, bodies, and only trusted comments.
+Unavailable comment/provenance coverage is retained as explicit evidence.
+
+The Inbox detail and API expose the linked run, its status, its captured graph
+revision, and whether that revision is stale. A later explicit retry is allowed
+only after failure or a graph revision change. GitHub-source correction and a
+later synchronized acyclic graph remain separate operator-visible facts.
+
 Newly parsed dependencies are guarded against cycles, but a previously
 persisted graph can still contain one after an older import, incomplete sync,
 or a formerly unresolved cross-project reference becomes observable. Paid

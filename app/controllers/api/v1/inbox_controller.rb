@@ -6,7 +6,7 @@ module Api
       DEFAULT_LIMIT = 50
       MAX_LIMIT = 100
 
-      before_action -> { require_scope!(:inbox) }, only: %i[index count show resolve_reopen_review remove_entry restore_entry]
+      before_action -> { require_scope!(:inbox) }, only: %i[index count show resolve_reopen_review remove_entry restore_entry start_cycle_analysis]
       before_action -> { require_scope!(:chat) }, only: :chat
 
       # @spec MOBILE-API-006 MOBILE-API-010
@@ -104,6 +104,20 @@ module Api
 
         Inbox::Removals::Restore.call(entry:, user: current_user)
         render json: { restored: true, entry_id: entry.id }
+      end
+
+      # @spec AUTO-PICK-QUEUE-016 AUTO-PICK-QUEUE-018
+      def start_cycle_analysis
+        authorize :inbox, policy_class: InboxPolicy
+        entry = entry_for_mutation
+        return render_entry_not_found unless entry&.dependency_cycle?
+
+        entry.record.project_ids.each { |project_id| authorize Project.find(project_id), :run_agent?, policy_class: ProjectPolicy }
+        run = DependencyCycles::StartAnalysis.call(cycle: entry.record, user: current_user)
+        ProcessRunQueueJob.perform_later
+        render json: { agent_run_id: run.id, status: run.status, graph_revision: entry.record.graph_revision }, status: :created
+      rescue DependencyCycles::StartAnalysis::ActiveRunExists
+        render_error(:conflict, :active_cycle_analysis, "A cycle analysis is already queued or running for this occurrence.")
       end
 
       private

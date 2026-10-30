@@ -93,6 +93,34 @@
 
 ## Existing dependency cycles
 
+- [x] **AUTO-PICK-QUEUE-016** — When an operator authorized to run agents for
+  every project in a dependency-cycle occurrence explicitly starts cycle
+  analysis, Paid SHALL create one read-only authorized agent run that snapshots
+  the complete strongly connected component and effective graph revision. Paid
+  SHALL reject duplicate active runs for that occurrence and permit a later
+  explicit retry only after failure or graph revision change.
+  *Tests:* `spec/services/dependency_cycles/start_analysis_spec.rb`.
+  *Code:* `DependencyCycles::StartAnalysis`.
+
+- [x] **AUTO-PICK-QUEUE-017** — The cycle-analysis input SHALL contain every
+  member and effective edge, source URLs, issue title/labels/parent context,
+  issue bodies, and only trusted comments. The recommendation SHALL require
+  evidence and tradeoffs for proposed declaration changes, identify missing or
+  conflicting intent, and state whether each proposed resulting graph is
+  acyclic; it SHALL not mutate GitHub declarations, labels, issue content, or
+  persisted dependency records.
+  *Tests:* `spec/services/dependency_cycles/start_analysis_spec.rb`.
+  *Code:* `DependencyCycles::AnalysisContext`.
+
+- [x] **AUTO-PICK-QUEUE-018** — The cycle Inbox detail and authorized API/MCP
+  operation SHALL expose cycle-analysis status and captured revision, including
+  stale and unavailable-source coverage, while keeping the occurrence held
+  until a later synchronization observes an acyclic graph.
+  *Tests:* `spec/requests/inbox_spec.rb`,
+  `spec/requests/api/v1/inbox_spec.rb`.
+  *Code:* `InboxController`, `Api::V1::InboxController`,
+  `Tools::StartCycleAnalysis`.
+
 - [x] **AUTO-PICK-QUEUE-014** — When an account-scoped effective blocking
   dependency graph contains a strongly connected group, Paid SHALL reconcile
   it after dependency changes and through a bounded periodic backstop. The

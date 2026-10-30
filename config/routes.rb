@@ -72,6 +72,7 @@ Rails.application.routes.draw do
   # RDR-077: personal removal is presentation-only and per user.
   post "inbox/:entry_id/remove", to: "inbox#remove_entry", as: :inbox_entry_remove
   post "inbox/:entry_id/restore", to: "inbox#restore_entry", as: :inbox_entry_restore
+  post "inbox/:entry_id/start-cycle-analysis", to: "inbox#start_cycle_analysis", as: :start_cycle_analysis_inbox_entry
   post "inbox/:entry_id/layered-verification-decision", to: "inbox#decide_layered_verification_finding",
     as: :inbox_layered_verification_finding_decision
   get "inbox/:entry_id/supplement", to: "inbox#supplement", as: :inbox_entry_supplement
@@ -445,6 +446,7 @@ Rails.application.routes.draw do
       get "inbox/count", to: "inbox#count"
       get "inbox/entries/:entry_id", to: "inbox#show"
       post "inbox/entries/:entry_id/chat", to: "inbox#chat"
+      post "inbox/entries/:entry_id/start_cycle_analysis", to: "inbox#start_cycle_analysis"
       post "inbox/entries/:entry_id/resolve_reopen_review", to: "inbox#resolve_reopen_review"
       # RDR-077: the same personal removal surface as the web Inbox.
       post "inbox/entries/:entry_id/remove", to: "inbox#remove_entry"
