@@ -69,6 +69,7 @@ module Api
       end
 
       forwarded_body = maybe_prepend_review_header(path, request.raw_post)
+      reserve_agent_authored_planning_hold(path, forwarded_body)
       authorization_token = github_authorization_token(path)
       response = forward_with_idempotent_recovery(path, authorization_token, forwarded_body, match: match)
 
@@ -81,6 +82,7 @@ module Api
 
       if response.status >= 200 && response.status < 300
         track_issue_creation(path, response)
+        track_agent_authored_planning_hold(path, forwarded_body, response)
         track_review_creation(path, response)
         track_tdd_return_to_test_review(path, response)
       elsif response.status >= 400
@@ -392,6 +394,87 @@ module Api
       log_info("github_proxy.tdd_return_to_test_review_recorded", pr_number: match[:number].to_i)
     rescue => e
       log_error("github_proxy.track_tdd_return_to_test_review_failed", e.message)
+    end
+
+    # A GitHub label has no author or release semantics of its own.  Agents use
+    # this proxy, however, so it is the only trustworthy boundary at which we
+    # can distinguish their successful write from an identical human action.
+    # Store the receipt on the durable run rather than inferring ownership from
+    # the GitHub bot account during a later sync.  A bare agent write has no
+    # machine-readable release condition, therefore it is explicitly routed to
+    # operator reconciliation instead of being eligible for automatic removal.
+    # @spec CONFIDENCE-DELIVERY-018
+    def track_agent_authored_planning_hold(path, forwarded_body, response)
+      return unless @agent_run
+      return unless planning_label_requested?(forwarded_body)
+
+      issue_number = planning_hold_issue_number(path, response)
+      return unless issue_number
+
+      @agent_run.with_lock do
+        metadata = @agent_run.external_metadata.deep_dup
+        holds = metadata.fetch("agent_authored_planning_holds", {}).to_h
+        holds[issue_number.to_s] = holds.fetch(issue_number.to_s, planning_hold_receipt(issue_number))
+          .merge("remote_write_status" => "accepted")
+        @agent_run.update!(external_metadata: metadata.merge("agent_authored_planning_holds" => holds))
+      end
+
+      log_info("github_proxy.agent_authored_planning_hold_recorded", issue_number: issue_number)
+    rescue => e
+      log_error("github_proxy.track_agent_authored_planning_hold_failed", e.message)
+    end
+
+    def planning_label_requested?(body)
+      labels = parse_request_body(body)["labels"]
+      Array(labels).any? { |label| label_name(label) == "planning" }
+    end
+
+    # Reserve direct label writes before forwarding them so a process failure
+    # after GitHub receives the request still leaves a recoverable record. The
+    # later success hook turns this pending receipt into accepted evidence.
+    def reserve_agent_authored_planning_hold(path, forwarded_body)
+      return unless @agent_run
+      return unless planning_label_requested?(forwarded_body)
+
+      issue_number = planning_hold_issue_number(path)
+      return unless issue_number
+
+      @agent_run.with_lock do
+        metadata = @agent_run.external_metadata.deep_dup
+        holds = metadata.fetch("agent_authored_planning_holds", {}).to_h
+        holds[issue_number.to_s] ||= planning_hold_receipt(issue_number).merge("remote_write_status" => "pending")
+        @agent_run.update!(external_metadata: metadata.merge("agent_authored_planning_holds" => holds))
+      end
+    end
+
+    def planning_hold_issue_number(path, response = nil)
+      match = %r{\Arepos/[^/]+/[^/]+/issues/(?<number>\d+)(?:/labels)?\z}.match(path)
+      return match[:number].to_i if match
+
+      return unless response
+
+      parse_response_body(response.body).to_h["number"].presence&.to_i
+    end
+
+    def planning_hold_receipt(issue_number)
+      {
+        "issue_number" => issue_number,
+        "owner" => "paid_agent",
+        "provenance" => { "source" => "github_proxy", "agent_run_id" => @agent_run.id },
+        "task_kind" => "agent_authored",
+        "reason" => "Agent added the planning label through the Paid GitHub proxy.",
+        "release_condition" => "operator_reconciliation_required",
+        "relevant_revisions" => {},
+        "operator_override" => true,
+        "remote_write_status" => "pending",
+        "recorded_at" => Time.current.iso8601
+      }
+    end
+
+    def label_name(label)
+      return label["name"].to_s if label.is_a?(Hash)
+
+      label.to_s
     end
 
     def extract_issue_labels(body)

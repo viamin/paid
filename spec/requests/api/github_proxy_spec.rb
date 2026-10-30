@@ -237,6 +237,38 @@ RSpec.describe "Api::GithubProxy" do
 
       expect(response).to have_http_status(:ok)
     end
+
+    # @spec CONFIDENCE-DELIVERY-018
+    it "records an agent-authored planning hold after GitHub accepts it" do
+      stub_request(:post, target_url)
+        .to_return(status: 200, body: [ { name: "planning" } ].to_json,
+                   headers: { "Content-Type" => "application/json" })
+
+      post "/api/proxy/github/repos/testowner/testrepo/issues/42/labels",
+        params: { labels: [ "planning" ] }.to_json,
+        headers: valid_headers
+
+      hold = agent_run.reload.external_metadata.fetch("agent_authored_planning_holds").fetch("42")
+      expect(hold).to include(
+        "owner" => "paid_agent",
+        "issue_number" => 42,
+        "task_kind" => "agent_authored",
+        "release_condition" => "operator_reconciliation_required",
+        "operator_override" => true,
+        "remote_write_status" => "accepted"
+      )
+    end
+
+    # @spec CONFIDENCE-DELIVERY-018
+    it "does not duplicate a planning-hold receipt when the agent retries the label write" do
+      2.times do
+        post "/api/proxy/github/repos/testowner/testrepo/issues/42/labels",
+          params: { labels: [ "planning" ] }.to_json,
+          headers: valid_headers
+      end
+
+      expect(agent_run.reload.external_metadata.fetch("agent_authored_planning_holds").keys).to eq([ "42" ])
+    end
   end
 
   describe "POST /api/proxy/github/repos/:owner/:repo/pulls/:number/reviews" do

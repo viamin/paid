@@ -127,6 +127,16 @@ work only to canonical queue admission. Task kind is immutable for the
 marker-identified publication, so a retry with a conflicting kind is rejected
 rather than changing its admission semantics.
 
+Agent-authored GitHub writes use a separate provenance boundary. When a
+container-authenticated agent adds `planning` through the Paid GitHub proxy,
+the proxy records a stable receipt on the originating run keyed by repository
+issue number. The receipt identifies the Paid agent/run, task kind, reason,
+release condition, relevant revisions and operator override. A raw GitHub
+label request cannot express a structured release condition, so its receipt is
+an explicit `operator_reconciliation_required` hold. It is never treated as
+workflow ownership merely because the GitHub actor is a bot, and retries reuse
+the same issue-number receipt. The issue body is not parsed as authority.
+
 Confidence-driven PRs receive an independent conformance review against that
 issue link's immutable release snapshot: its merged baseline, mapped design
 documents, and admitted scope. Detected drift is recorded as tracked forward
