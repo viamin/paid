@@ -14,7 +14,7 @@ module CycleAnalyses
     def call
       response = llm.call(prompt: prompt, agent_run:, timeout: 5.minutes)
       validate_response!(response)
-      { "recommendation" => response.output, "coverage" => coverage,
+      { "recommendation" => Response.parse(response.output), "coverage" => coverage,
         "graph_revision" => snapshot.fetch("graph_revision") }
     end
 
@@ -32,6 +32,21 @@ module CycleAnalyses
         Review the complete strongly connected group and every effective edge below, not only a witness path.
         For each candidate declaration change, state exact evidence, tradeoffs, missing/conflicting intent,
         the resulting graph, and whether it is acyclic. Removing one edge is not presumed sufficient.
+        Return exactly one JSON object with this structure and no Markdown fencing:
+        {
+          "summary": "...",
+          "candidates": [{
+            "declaration_changes": [{ "edge_id": 123, "action": "remove or correct", "replacement": "optional" }],
+            "evidence": ["..."],
+            "tradeoffs": ["..."],
+            "missing_or_conflicting_intent": ["..."],
+            "resulting_graph": {
+              "issue_ids": [1, 2],
+              "edges": [{ "from_issue_id": 1, "to_issue_id": 2 }]
+            },
+            "acyclic": true
+          }]
+        }
         #{JSON.pretty_generate(graph_payload)}
       PROMPT
     end

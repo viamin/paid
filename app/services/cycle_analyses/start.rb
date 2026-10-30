@@ -17,7 +17,10 @@ module CycleAnalyses
     def call
       AgentRun.transaction do
         lock_occurrence!
-        return Result.new(status: :active, agent_run: active_run, message: "Cycle analysis is already active.") if active_run
+        if duplicate_run
+          return Result.new(status: :duplicate, agent_run: duplicate_run,
+            message: "Cycle analysis already exists for this occurrence.")
+        end
 
         run = create_run!
         CycleAnalysisJob.perform_later(run.id)
@@ -35,9 +38,9 @@ module CycleAnalyses
       ]))
     end
 
-    def active_run
-      @active_run ||= cycle.project.agent_runs.where(goal: AgentRun::CYCLE_ANALYSIS_GOAL, status: %w[queued running])
-        .detect { |run| run.external_metadata.dig(METADATA_KEY, "occurrence") == cycle.occurrence }
+    def duplicate_run
+      @duplicate_run ||= cycle.project.agent_runs.where(goal: AgentRun::CYCLE_ANALYSIS_GOAL, status: %w[queued running completed])
+        .find_by("external_metadata -> ? ->> ? = ?", METADATA_KEY, "occurrence", cycle.occurrence)
     end
 
     def create_run!

@@ -6,4 +6,6 @@
 module CycleAnalyses
   METADATA_KEY = "cycle_analysis"
   RESULT_KEY = "cycle_analysis"
+
+  class InvalidResponse < AgentHarness::CommandExecutionError; end
 end

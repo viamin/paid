@@ -76,6 +76,7 @@ RSpec.describe "Mobile inbox API" do
     get "/api/v1/inbox", params: { kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND }, headers: headers
 
     entry = response.parsed_body.fetch("entries").sole
+    expect(entry).not_to have_key("analysis_run")
     expect(entry.fetch("cycle_path").map { |node| node.fetch("number") }).to include(first.github_number, second.github_number)
     expect(entry.fetch("cycle_edges")).to include(
       a_hash_including("declaration_source" => "issue_comment", "declaration_url" => declaration_url)

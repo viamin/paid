@@ -3,7 +3,21 @@
 require "rails_helper"
 
 RSpec.describe CycleAnalyses::Analyze do
-  def harness_response(output: "recommendation", exit_code: 0, error: nil)
+  def analysis_output
+    {
+      "summary" => "Review both declarations before changing either one.",
+      "candidates" => [ {
+        "declaration_changes" => [ { "edge_id" => 1, "action" => "remove" } ],
+        "evidence" => [ "Issue intent makes the declaration obsolete." ],
+        "tradeoffs" => [ "Work may become eligible sooner." ],
+        "missing_or_conflicting_intent" => [],
+        "resulting_graph" => { "issue_ids" => [ 1, 2 ], "edges" => [] },
+        "acyclic" => true
+      } ]
+    }
+  end
+
+  def harness_response(output: analysis_output.to_json, exit_code: 0, error: nil)
     AgentHarness::Response.new(output:, exit_code:, error:, duration: 1.0, provider: :codex)
   end
 
@@ -28,13 +42,13 @@ RSpec.describe CycleAnalyses::Analyze do
     run = create(:agent_run, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
       external_metadata: { CycleAnalyses::METADATA_KEY => snapshot_for(cycle) })
     llm = class_double(Llm::Request)
-    allow(llm).to receive(:call).and_return(harness_response(output: "reviewable recommendation"))
+    allow(llm).to receive(:call).and_return(harness_response)
     stub_comments([])
 
     result = described_class.call(agent_run: run, llm:)
 
     expect(llm).to have_received(:call) { |prompt:, **| expect(prompt).to include("effective_edges", "Implementation phase", "unavailable_provenance_edge_ids") }
-    expect(result).to include("recommendation" => "reviewable recommendation", "graph_revision" => cycle.graph_revision)
+    expect(result).to include("recommendation" => analysis_output, "graph_revision" => cycle.graph_revision)
   end
 
   it "caps issue and trusted-comment content in the prompt" do
@@ -99,6 +113,24 @@ RSpec.describe CycleAnalyses::Analyze do
     result = described_class.call(agent_run: run, llm:)
 
     expect(result.dig("coverage", "unavailable_content_issue_ids")).to contain_exactly(first.id, second.id)
+  end
+
+  # @spec AUTO-PICK-QUEUE-018
+  it "rejects a successful harness response without the required recommendation structure" do
+    user = create(:user)
+    project = create(:project, account: user.account, created_by: user)
+    first = create(:issue, project:, github_state: "open")
+    second = create(:issue, project:, github_state: "open")
+    create_legacy_issue_dependency(issue: first, depends_on_issue: second)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+    cycle = Issues::DependencyCycles.call(account: user.account).sole
+    run = create(:agent_run, project:, initiating_user: user, goal: AgentRun::CYCLE_ANALYSIS_GOAL,
+      external_metadata: { CycleAnalyses::METADATA_KEY => snapshot_for(cycle) })
+    stub_comments([])
+    llm = class_double(Llm::Request, call: harness_response(output: "recommendation"))
+
+    expect { described_class.call(agent_run: run, llm:) }
+      .to raise_error(CycleAnalyses::InvalidResponse, /valid JSON/)
   end
 
   # @spec AUTO-PICK-QUEUE-018

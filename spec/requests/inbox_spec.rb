@@ -98,6 +98,16 @@ RSpec.describe "Inbox" do
 
     expect(response).to have_http_status(:ok)
     expect(response.body).to include("Remove the obsolete declaration.", "stale")
+    expect(response.body).to include("Start cycle analysis")
+
+    run.update!(external_metadata: { CycleAnalyses::METADATA_KEY => {
+      "fingerprint" => current_cycle.fingerprint, "occurrence" => current_cycle.occurrence,
+      "graph_revision" => current_cycle.graph_revision
+    } })
+    get inbox_entry_path(current_cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).not_to include("Start cycle analysis")
 
     run.update!(status: "failed")
     get inbox_entry_path(current_cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }

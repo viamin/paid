@@ -112,6 +112,10 @@ module Api
       end
 
       def dependency_cycle_payload
+        dependency_cycle_list_payload.merge(analysis_run: cycle_analysis_run_payload(entry.record))
+      end
+
+      def dependency_cycle_list_payload
         cycle = entry.record
         {
           cycle_path: cycle.path.map { |issue| { project: issue.project.full_name, number: issue.github_number, url: issue.github_url } },
@@ -119,15 +123,14 @@ module Api
             dependency_cycle_edge_payload(edge, cycle.path[index], cycle.path[index + 1])
           end,
           downstream_issues_held: cycle.downstream_issues.size,
-          graph_revision: cycle.graph_revision,
-          analysis_run: cycle_analysis_run_payload(cycle)
+          graph_revision: cycle.graph_revision
         }
       end
 
       def cycle_analysis_run_payload(cycle)
-        run = cycle.project.agent_runs.where(goal: AgentRun::CYCLE_ANALYSIS_GOAL).order(created_at: :desc).detect do |candidate|
-          candidate.external_metadata.dig(CycleAnalyses::METADATA_KEY, "fingerprint") == cycle.fingerprint
-        end
+        run = cycle.project.agent_runs.where(goal: AgentRun::CYCLE_ANALYSIS_GOAL)
+          .where("external_metadata -> ? ->> ? = ?", CycleAnalyses::METADATA_KEY, "fingerprint", cycle.fingerprint)
+          .order(created_at: :desc).first
         return unless run
 
         { id: run.id, status: run.status, graph_revision: run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "graph_revision"),
@@ -146,6 +149,7 @@ module Api
 
       def list_kind_payload
         return manual_review_list_payload if entry.manual_review?
+        return dependency_cycle_list_payload if entry.kind == Inbox::Queue::DEPENDENCY_CYCLE_KIND
 
         kind_payload
       end
