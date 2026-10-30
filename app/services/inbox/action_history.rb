@@ -52,7 +52,7 @@ module Inbox
 
       occurrence = Digest::SHA256.hexdigest(Inbox::RequestIdentity.occurrence_for(entry))
       HistoryRecorder.call(entry:, event_key: "inbox-returned:#{removal.id}:#{occurrence}",
-        action: "Returned to Inbox", actor: user, result: "completed")
+        action: "Returned to Inbox", actor: "Paid", result: "completed")
       @events = nil
     end
 

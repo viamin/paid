@@ -16,12 +16,14 @@ module Inbox
       return unless subject_key && entry.project
 
       InboxHistoryEvent.find_or_create_by!(account: entry.project.account, project: entry.project, subject_key:, event_key:) do |event|
-        event.assign_attributes(actor_label: actor.email, source: "paid", result:, occurred_at:, revision:, evidence_url:, metadata: { action: })
+        event.assign_attributes(actor_label:, source: "paid", result:, occurred_at:, revision:, evidence_url:, metadata: { action: })
       end
     end
 
     private
 
     attr_reader :action, :actor, :entry, :event_key, :evidence_url, :occurred_at, :result, :revision
+
+    def actor_label = actor.respond_to?(:email) ? actor.email : actor
   end
 end
