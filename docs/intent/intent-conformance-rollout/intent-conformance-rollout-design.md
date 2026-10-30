@@ -114,7 +114,10 @@ Paid's project authorization and presentation patterns:
    supersedes prior completion rather than mutating it. Before creation, the
    manifest's repository-relative path and local bytes are verified against
    its resolved Git commit; the recorded provenance therefore identifies an
-   exact recoverable corpus.
+   exact recoverable corpus. Operator-facing headings, explanations, and
+   report titles describe the conformance review action; internal design-record
+   identifiers and purpose keys remain routing, persistence, and repository
+   traceability only.
 2. **Label.** Each case presents a one-case-at-a-time evidence surface. The
    diff and approved-design links are resolved only from repository and
    revision identities stored in the frozen corpus; a case without declared

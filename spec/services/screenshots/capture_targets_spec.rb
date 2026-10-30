@@ -290,6 +290,14 @@ RSpec.describe Screenshots::CaptureTargets, :no_db do
       expect(show_view_targets.map(&:slug)).to eq([ "project_facet_confidence_evaluation_show" ])
     end
 
+    it "maps the operator report helper to both evaluation report screens" do
+      targets = described_class.call(changed_files: [ "app/helpers/operator_report_markdown_helper.rb" ])
+
+      expect(targets.map(&:slug)).to eq(
+        [ "project_shadow_evaluation_show", "project_facet_confidence_evaluation_show" ]
+      )
+    end
+
     it "maps the automation phases controller and show view to the automation phases target" do
       controller_targets = described_class.call(changed_files: [ "app/controllers/projects/automation_phases_controller.rb" ])
       view_targets = described_class.call(changed_files: [ "app/views/projects/automation_phases/show.html.erb" ])
