@@ -24,7 +24,7 @@
           <% if milestone[:revision].present? %><p class="mt-1 text-xs text-gray-500">Revision: <code><%= milestone[:revision] %></code></p><% end %>
           <% if milestone[:actor].present? %><p class="mt-1 text-xs text-gray-500">Actor: <%= milestone[:actor] %></p><% end %>
           <% if milestone[:action].present? %><p class="mt-1 text-sm font-medium text-gray-900">Action: <%= milestone[:action] %></p><% end %>
-          <% if milestone[:url].present? %><p class="mt-2"><%= link_to "Open on GitHub", milestone[:url], target: "_blank", rel: "noopener noreferrer", class: "text-sm font-semibold underline" %></p><% end %>
+          <% if milestone[:url].present? %><p class="mt-2"><%= link_to "View on GitHub", milestone[:url], target: "_blank", rel: "noopener noreferrer", class: "text-sm font-semibold underline" %></p><% end %>
         </details>
       <% end %>
     </div>
