@@ -61,6 +61,7 @@
     <% end %>
 
     <% if @agent_run.layered_verification_audit_goal? && @agent_run.external_metadata.dig("layered_verification", "coverage").present? %>
+      <%= render "agent_runs/layered_verification_business_intent", agent_run: @agent_run %>
       <%= render "agent_runs/layered_verification_coverage", agent_run: @agent_run %>
     <% end %>
 
