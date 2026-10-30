@@ -162,8 +162,9 @@
                 <%= form_with url: start_lid_project_path(@project), method: :post, local: true, class: "space-y-3", data: { testid: "lid-planning-form", turbo_confirm: "Paid will analyze the repository and open a docs-only Planning PR. This won't change any code. Continue?" } do |f| %>
                   <div>
                     <%= f.label :plan_doc_source, "Existing design doc (optional)", class: "block text-sm font-medium text-gray-700" %>
-                    <p class="mt-1 text-xs text-gray-500">Point Paid at an RDR, ADR, or design doc to treat as authored intent (e.g. <code>docs/rdrs/RDR-051.md</code>). Leave blank for repo-only inference.</p>
-                    <%= f.text_field :plan_doc_source, placeholder: "docs/rdrs/RDR-051.md", maxlength: 1000,
+                    <%# @spec SETTINGS-COPY-001 %>
+                    <p class="mt-1 text-xs text-gray-500">Point Paid at a design document to treat as authored intent (e.g. <code>docs/design.md</code>). Leave blank for repo-only inference.</p>
+                    <%= f.text_field :plan_doc_source, placeholder: "docs/design.md", maxlength: 1000,
                           class: "mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-amber-500 focus:ring-amber-500 sm:text-sm",
                           data: { testid: "plan_doc_source" } %>
                   </div>

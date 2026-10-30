@@ -11,7 +11,7 @@
 # areas may remain unmapped until they are converted. See docs/intent/README.md.
 
 schema_version: 2
-last_updated: 2026-10-29
+last_updated: 2026-10-30
 
 # Taxonomy groups mapped segments by domain cluster. Purely organizational.
 taxonomy:
@@ -52,6 +52,14 @@ taxonomy:
 # The design tree of nodes. Leaf nodes are arrow segments (own EARS + an arrow
 # doc); intermediate nodes (sub-HLDs) group children.
 arrows:
+  settings-visible-copy:
+    title: Settings Visible Copy
+    path: docs/intent/settings-visible-copy/settings-visible-copy-design.md
+    specs: docs/intent/settings-visible-copy/settings-visible-copy-specs.md
+    parent: PAID
+    taxonomy: configuration
+    status: OK
+    audited: 2026-10-30
   llm-routing:
     title: Application LLM Routing
     path: docs/intent/llm-routing/llm-routing-design.md
