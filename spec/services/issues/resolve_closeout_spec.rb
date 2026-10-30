@@ -37,6 +37,14 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     }) })
   end
 
+  def expect_revalidation_event(blocker:, evidence_digest:)
+    event = account.account_activity_events.find_by!(action: "issue.closeout_revalidation_failed")
+    expect(event).to have_attributes(actor: user, subject: issue)
+    expect(event.metadata).to include(
+      "reason" => "Merged PR #12 covers the remainder.", "evidence_digest" => evidence_digest, "blocker" => blocker
+    )
+  end
+
   it "records the actor, reason, and evidence generation and completes the issue" do
     merged_partial_pr(number: 12)
     accepted_audit
@@ -129,6 +137,7 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
   it "revalidates prerequisites after GitHub confirms closure" do # @spec PARTIAL-CLOSEOUT-006
     merged_partial_pr(number: 12)
     accepted_audit
+    attempted_digest = Issues::CloseoutEvidence.call(issue).digest
     allow(github_client).to receive(:update_issue) do
       create(:notification, :error, account:, subject: issue,
         source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true)
@@ -138,8 +147,29 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
 
     expect(result.code).to eq(:open_prerequisites)
+    expect(result.message).to include("GitHub confirmed closure", "follow-up")
     expect(issue.reload.paid_state).to eq("in_progress")
     expect(issue.closeout_resolved_at).to be_nil
+    expect(issue.github_state).to eq("closed")
+    expect(issue.closed_at).to be_present
+    expect_revalidation_event(blocker: "open_prerequisites", evidence_digest: attempted_digest)
+  end
+
+  it "reconciles GitHub closure when acceptance evidence changes during the remote write" do # @spec PARTIAL-CLOSEOUT-006
+    merged_partial_pr(number: 12)
+    accepted_audit
+    attempted_digest = Issues::CloseoutEvidence.call(issue).digest
+    allow(github_client).to receive(:update_issue) do
+      issue.update!(body: "Changed acceptance criteria")
+      Struct.new(:state).new("closed")
+    end
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result.code).to eq(:audit_pending)
+    expect(result.message).to include("GitHub confirmed closure", "follow-up")
+    expect(issue.reload).to have_attributes(github_state: "closed", paid_state: "in_progress")
+    expect_revalidation_event(blocker: "audit_pending", evidence_digest: attempted_digest)
   end
 
   it "requires closeout evidence" do

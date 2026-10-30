@@ -71,6 +71,7 @@ module Issues
       validation = validate_closeout
       return validation unless validation.success?
 
+      @attempted_evidence_digest = CloseoutEvidence.call(issue).digest
       issue.update!(closeout_closing_at: Time.current)
       @closing_marker = issue.reload.closeout_closing_at
       Result.new(issue:)
@@ -96,13 +97,27 @@ module Issues
 
     def resolve_locally
       validation = validate_closeout(allow_observed_closure: true)
-      return validation unless validation.success?
+      unless validation.success?
+        reconcile_confirmed_closure(validation)
+        return failure(validation.code, "GitHub confirmed closure, but closeout evidence changed or became blocked. " \
+          "Paid recorded the current blocker for follow-up.")
+      end
 
       evidence = CloseoutEvidence.call(issue)
       supersede_open_continuation
       issue.resolve_closeout!(actor:, evidence_digest: evidence.digest)
       @closing_marker = nil
       Result.new(issue:)
+    end
+
+    def reconcile_confirmed_closure(validation)
+      issue.update!(github_state: "closed", closed_at: Time.current, closeout_closing_at: nil)
+      issue.project.account.account_activity_events.create!(
+        action: "issue.closeout_revalidation_failed", actor:, subject: issue,
+        metadata: { "reason" => reason, "evidence_digest" => @attempted_evidence_digest,
+                    "blocker" => validation.code.to_s }
+      )
+      @closing_marker = nil
     end
 
     def clear_closing_marker

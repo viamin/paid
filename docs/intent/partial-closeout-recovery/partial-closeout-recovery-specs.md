@@ -324,7 +324,12 @@
   closing on GitHub. An open issue SHALL remain actionable until GitHub confirms
   closure; stale, unmet, unknown, blocked, and API-failed closure requests SHALL
   retain an actionable item with the exact fresh-audit, prerequisite, work, or
-  retry route. Synthetic code-scanning records SHALL refuse the GitHub Issue
+  retry route. When GitHub confirms closure but evidence or a prerequisite
+  changes during the remote write, the system SHALL reconcile the confirmed
+  source closure locally and SHALL preserve the actor, rationale, attempted
+  evidence digest, and newly observed blocker in an auditable follow-up event;
+  it SHALL NOT retain a retry route for an already-closed source. Synthetic
+  code-scanning records SHALL refuse the GitHub Issue
   close action with guidance to wait for or repair authoritative scanner
   reconciliation; source closure for those records SHALL be observed from an
   authoritative code-scanning snapshot rather than the GitHub Issues API.
