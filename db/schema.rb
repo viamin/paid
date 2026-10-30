@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_10_30_034605) do
+ActiveRecord::Schema[8.1].define(version: 2026_10_30_052057) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "hstore"
   enable_extension "pg_catalog.plpgsql"
@@ -872,6 +872,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_10_30_034605) do
     t.string "title"
     t.datetime "updated_at", null: false
     t.string "workspace_volume"
+    t.index ["account_id", "updated_at", "id"], name: "index_chat_sessions_visible_sidebar", order: { updated_at: :desc, id: :desc }, where: "((status)::text <> 'archived'::text)"
     t.index ["account_id"], name: "index_chat_sessions_on_account_id"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_on_clarifying_question_issue_id"
     t.index ["clarifying_question_issue_id"], name: "index_chat_sessions_one_open_clarifying_question_chat", unique: true, where: "((clarifying_question_issue_id IS NOT NULL) AND ((status)::text <> 'archived'::text))"
