@@ -76,7 +76,7 @@ module Issues
 
     def closure_blocked?
       status = CloseoutStatus.call(issue)
-      status.blockers.any? { |blocker| blocker.code.in?(%i[unmet_prerequisites scanner_verification_pending scanner_verification_retryable scanner_verification_failed open_native_children human_prerequisite_notification]) }
+      status.blockers.any? { |blocker| blocker.code.in?(%i[unmet_prerequisites scanner_verification_pending scanner_verification_retryable scanner_verification_failed open_native_children human_prerequisite_notification prerequisite_notification]) }
     end
 
     def remote_github_state

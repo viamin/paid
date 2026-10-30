@@ -147,6 +147,25 @@ RSpec.describe Issues::ResolveCloseout do # @spec PARTIAL-CLOSEOUT-006
     expect(github_client).not_to have_received(:update_issue)
   end
 
+  it "refuses closure while an external prerequisite notification remains open" do # @spec PARTIAL-CLOSEOUT-006
+    merged_partial_pr(number: 12)
+    accepted_audit
+    dependency_project = create(:project, account:, owner: "viamin", repo: "agent-harness")
+    create(:issue, project: dependency_project, github_number: 517, github_state: "open")
+    create(:notification, :error, account:, subject: issue,
+      source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
+      metadata: { "prerequisites" => [ {
+        "identity" => "agent-harness-517", "kind" => "external",
+        "external_dependency" => { "owner" => "viamin", "repo" => "agent-harness", "number" => 517 }
+      } ] })
+
+    result = described_class.call(issue:, actor: user, reason: "Merged PR #12 covers the remainder.", client: github_client)
+
+    expect(result.code).to eq(:open_prerequisites)
+    expect(github_client).not_to have_received(:update_issue)
+    expect(issue.reload.github_state).to eq("open")
+  end
+
   it "routes synthetic scanner records to authoritative alert reconciliation" do # @spec PARTIAL-CLOSEOUT-006
     issue.update!(source: Issue::SYNTHETIC_CODE_SCANNING_SOURCE)
     merged_partial_pr(number: 12)
