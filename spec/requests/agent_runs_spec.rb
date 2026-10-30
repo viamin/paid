@@ -726,12 +726,12 @@ RSpec.describe "AgentRuns" do
       end
 
       # @spec LAYERED-VERIFY-015 LAYERED-VERIFY-024
-      it "shows a layered-verification audit coverage report" do
+      it "shows separate business-intent validation and verification-coverage audit reports" do
         obligation = create(:layered_verification_obligation, project:, external_identity: "PAYMENTS-017")
         agent_run = create(:agent_run, :completed, project:, goal: "layered_verification_audit",
           external_metadata: { "layered_verification" => { "coverage" => {} } })
         result = create(:layered_verification_check_result, obligation:, agent_run:,
-          execution_state: "completed", obligation_coverage: "supported")
+          producer: "business_formalization", execution_state: "completed", obligation_coverage: "supported")
         agent_run.update!(external_metadata: { "layered_verification" => {
             "coverage" => { obligation.id.to_s => {
               "obligation_coverage" => "supported", "check_result_ids" => [ result.id ]
@@ -740,7 +740,9 @@ RSpec.describe "AgentRuns" do
 
         get project_agent_run_path(project, agent_run)
 
-        expect(response.body).to include("Verification coverage", "PAYMENTS-017", "Supported")
+        expect(response.body).to include(
+          "Business-intent validation", "Business formalization", "Verification coverage", "PAYMENTS-017", "Supported"
+        )
         expect(response.body).to include("Check result ##{result.id}", "Completed")
       end
 
