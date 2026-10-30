@@ -110,12 +110,20 @@ module AgentRuns
     end
 
     def feature_held?
-      agent_run.create_pr_goal? && agent_run.issue_id.present? &&
-        !FeatureIntents::RunAdmission.call(issue: agent_run.issue).allowed?
+      return false unless agent_run.create_pr_goal? && agent_run.issue_id.present?
+
+      @feature_admission = FeatureIntents::RunAdmission.call(issue: agent_run.issue)
+      !@feature_admission.allowed?
     end
 
+    # User-facing copy names the actual hold reason surfaced by
+    # FeatureIntents::RunAdmission (RDR-066 release gate) instead of the
+    # internal design ID, so run detail and the dashboard activity stream
+    # show something a viewer can act on.
+    # @spec FEATURE-APPROVAL-026
     def cancel_feature_held_run
-      cancel_run(reason: "Feature intent is held at dequeue (RDR-066 release gate).")
+      cancel_run(reason: "#{@feature_admission.reason} The run will be re-seeded automatically " \
+                         "once this is resolved.")
     end
 
     def issue_still_eligible?
@@ -169,9 +177,14 @@ module AgentRuns
     # post-claim recheck while the run has its private claim sentinel, closing
     # the policy-change race between peek and claim. A workflow ID or running
     # status is already executing and remains owned by the normal lifecycle.
+    # User-facing copy (RDR-032 dequeue recheck) names the plausible causes
+    # instead of the internal design ID, so run detail and the dashboard
+    # activity stream show something a viewer can act on.
+    # @spec EAGER-QUEUE-017
     def cancel_run(reason: nil)
-      reason ||= "Issue no longer eligible at dequeue (RDR-032 recheck); " \
-                 "it will be re-seeded when eligible again"
+      reason ||= "Issue is no longer eligible for automatic pickup (skip label, new blocking " \
+                 "dependency, closure, or pause); it will be re-seeded automatically when it " \
+                 "becomes eligible again."
 
       cancelled = agent_run.with_lock do
         next false unless cancellable_before_execution?

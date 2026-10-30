@@ -525,3 +525,15 @@ its policy-specific Inbox projection in `CONFIDENCE-DELIVERY-016`.
   `app/services/feature_intents/release.rb`, `app/services/issues/upsert_from_github.rb`,
   `app/temporal/activities/fetch_issues_activity.rb`,
   `app/models/feature_intent.rb`.
+
+- [x] **FEATURE-APPROVAL-026** — When the dequeue recheck cancels a queued
+  run because `FeatureIntents::RunAdmission` denies it, the persisted
+  cancellation reason SHALL be the admission denial's own plain-language
+  `reason` (e.g. "Feature intent is not released.") plus a stated recovery
+  action, so the run detail page and dashboard activity stream — which
+  render the reason verbatim — show a viewer something actionable. The
+  reason SHALL NOT contain an internal Paid RDR identifier (RDR-066 stays
+  in source comments and internal traceability only).
+  *Tests:* `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
+  *Code:* `app/services/agent_runs/recheck_issue_eligibility.rb`.

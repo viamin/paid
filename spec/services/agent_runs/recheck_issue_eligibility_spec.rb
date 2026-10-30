@@ -32,6 +32,7 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
     expect(run.temporal_workflow_id).to be_nil
   end
 
+  # @spec EAGER-QUEUE-017
   it "cancels the run when the issue carries an auto-pick skip label" do
     issue = create(:issue, project: project, github_state: "open", labels: [ "planning" ])
     run = queued_auto_pick_run(issue: issue)
@@ -41,9 +42,10 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
     run.reload
     expect(run.status).to eq("cancelled")
     expect(run.error_message).to include("no longer eligible")
+    expect(run.error_message).not_to match(/RDR-\d+/)
   end
 
-  # @spec FEATURE-APPROVAL-023
+  # @spec FEATURE-APPROVAL-023 @spec FEATURE-APPROVAL-026
   it "cancels a previously queued manual implementation run when its feature is held" do
     issue = create(:issue, project: project, github_state: "open")
     feature = create(:feature_intent, project: project, status: "approved_waiting_for_merge")
@@ -55,7 +57,9 @@ RSpec.describe AgentRuns::RecheckIssueEligibility do # @spec EAGER-QUEUE-005 @sp
 
     expect(described_class.call(run)).to be true
     expect(run.reload.status).to eq("cancelled")
-    expect(run.error_message).to include("Feature intent is held")
+    expect(run.error_message).to include("Feature intent is not released")
+    expect(run.error_message).to include("re-seeded automatically")
+    expect(run.error_message).not_to match(/RDR-\d+/)
   end
 
   it "keeps the run queued when only its internal Paid state changed" do # @spec AUTO-PICK-QUEUE-008

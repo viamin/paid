@@ -68,6 +68,17 @@
   *Code:* `AgentRuns::RecheckIssueEligibility#recheck_applicable?`.
   *Test:* `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`.
 
+- [x] **EAGER-QUEUE-017** — The default dequeue-recheck cancellation reason
+  (no more specific reason supplied) SHALL be plain-language user-facing
+  copy that names the class of cause (skip label, new blocking dependency,
+  closure, or pause) and states the recovery action (automatic re-seeding
+  once eligible again), and SHALL NOT contain an internal Paid RDR
+  identifier — run detail and the dashboard activity stream render
+  `agent_run.error_message` verbatim to end users.
+  *Code:* `AgentRuns::RecheckIssueEligibility#cancel_run`.
+  *Test:* `spec/services/agent_runs/recheck_issue_eligibility_spec.rb`,
+  `spec/requests/agent_runs_spec.rb`.
+
 ## Failed-run re-enqueue backoff
 
 - [x] **EAGER-QUEUE-007** — When a failed run makes an issue re-enter the

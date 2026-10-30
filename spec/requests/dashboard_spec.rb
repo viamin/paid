@@ -809,6 +809,19 @@ RSpec.describe "Dashboard" do
         expect(response.body).not_to include(other_project.name)
       end
 
+      # @spec EAGER-QUEUE-017 @spec FEATURE-APPROVAL-026
+      it "shows a plain-language dequeue cancellation reason with no internal RDR id" do
+        create(:agent_run, :cancelled, project: project,
+          error_message: "Issue is no longer eligible for automatic pickup (skip label, new " \
+                         "blocking dependency, closure, or pause); it will be re-seeded " \
+                         "automatically when it becomes eligible again.")
+
+        get dashboard_recent_activity_path
+
+        expect(response.body).to include("no longer eligible for automatic pickup")
+        expect(response.body).not_to match(/RDR-\d+/)
+      end
+
       it "includes merged pull requests in the recent activity stream" do
         merged_pr = create(:issue, :pull_request, project: project,
           pr_review_phase: "merged",

@@ -831,6 +831,16 @@ RSpec.describe "AgentRuns" do
         expect(response.body).to include(agent_run.error_message)
       end
 
+      # @spec EAGER-QUEUE-017 @spec FEATURE-APPROVAL-026
+      it "shows a plain-language dequeue cancellation reason with no internal RDR id" do
+        agent_run = create(:agent_run, :cancelled, project: project,
+          error_message: "Feature intent is not released. The run will be re-seeded " \
+                         "automatically once this is resolved.")
+        get project_agent_run_path(project, agent_run)
+        expect(response.body).to include(agent_run.error_message)
+        expect(response.body).not_to match(/RDR-\d+/)
+      end
+
       it "shows the egress policy snapshot recorded for the run" do
         agent_run = create(:agent_run, project: project, external_metadata: {
           "egress_policy" => {
