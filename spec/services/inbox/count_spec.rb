@@ -794,12 +794,37 @@ RSpec.describe Inbox::Count do
       expect(Inbox::Queue.call(user: user, scope: Inbox::Queue::DISABLED_PHASES_SCOPE).size).to eq(2)
     end
 
-    it "uses count projections when the governed badge cache is cold" do
-      Rails.cache.clear
-      allow(Inbox::Queue).to receive(:call).and_call_original
+    it "agrees with the list when a continuation grant covers a disabled phase" do
+      create(:work_item_continuation_grant, project:, issue: issues.first,
+        start_phase: "issue_preparation", endpoint: "coding")
 
-      expect(described_class.call(user: user)).to eq(0)
-      expect(Inbox::Queue).not_to have_received(:call).with(user: user)
+      expect(described_class.call(user: user)).to eq(Inbox::Queue.call(user: user).size).and eq(1)
+    end
+
+    it "agrees with the list while an explicitly started manual action is outstanding" do
+      create(:agent_run, project:, issue: issues.first, goal: "create_pr", trigger_type: "manual", status: "queued")
+
+      expect(described_class.call(user: user)).to eq(Inbox::Queue.call(user: user).size).and eq(1)
+    end
+
+    it "agrees with the list about evidence-derived manual review ownership" do
+      create(:issue, project:, paid_state: "manual_review", github_state: "open",
+        manual_review_reason: "Enhancement needs clarification.")
+
+      expect(described_class.call(user: user)).to eq(Inbox::Queue.call(user: user).size).and eq(0)
+    end
+
+    it "agrees with the list about platform-owned traceability findings" do
+      project.update!(
+        Automation::PhaseSettings::SETTINGS_KEY => {
+          Automation::PhaseSettings::PHASES_KEY => { "issue_preparation" => false, "coding" => false },
+          Automation::PhaseSettings::RELEASE_KEY => false,
+          Automation::PhaseSettings::DEPLOYMENT_KEY => false
+        }
+      )
+      create(:design_artifact_finding, project:, account:, state: "unverifiable")
+
+      expect(described_class.call(user: user)).to eq(Inbox::Queue.call(user: user).size).and eq(1)
     end
 
     it "agrees with the list about personally removed requests" do
