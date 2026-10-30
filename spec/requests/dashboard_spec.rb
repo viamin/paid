@@ -1001,6 +1001,21 @@ RSpec.describe "Dashboard" do
       expect(response.body).to include(project.full_name)
     end
 
+    # @spec AUTO-PICK-QUEUE-015
+    it "analyzes dependency cycles once for all visible projects" do
+      second_project = create(:project, account: account, created_by: user, auto_pick_enabled: true, active: true)
+      create(:issue, project: project, github_state: "open", paid_state: "new")
+      create(:issue, project: second_project, github_state: "open", paid_state: "new")
+
+      queries = capture_queries { get dashboard_eligibility_breakdown_path }
+
+      cycle_edge_queries = queries.count do |sql|
+        sql.include?('SELECT "issue_dependencies"."id", "issue_dependencies"."issue_id", ' \
+          '"issue_dependencies"."depends_on_issue_id"')
+      end
+      expect(cycle_edge_queries).to eq(1)
+    end
+
     it "links the needs-input count to the dashboard queue" do
       create(:issue, :needs_input, project: project, needs_input_questions: [ "What should happen?" ])
 

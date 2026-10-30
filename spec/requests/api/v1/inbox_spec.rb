@@ -49,6 +49,44 @@ RSpec.describe "Mobile inbox API" do
     end
   end
 
+  # @spec AUTO-PICK-QUEUE-015 MOBILE-API-006
+  it "does not serialize dependency cycles that cross another owner's project" do
+    other_user = create(:user, account:)
+    hidden_project = create(:project, account:, created_by: other_user)
+    visible_issue = create(:issue, project:, github_state: "open")
+    hidden_issue = create(:issue, project: hidden_project, github_state: "open")
+    create(:issue_dependency, issue: visible_issue, depends_on_issue: hidden_issue)
+    create_legacy_issue_dependency(issue: hidden_issue, depends_on_issue: visible_issue)
+
+    get "/api/v1/inbox", params: { kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND }, headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.fetch("entries")).to be_empty
+  end
+
+  # @spec AUTO-PICK-QUEUE-015 MOBILE-API-006
+  it "serializes an authorized dependency cycle and resolves its fingerprint entry ID" do
+    first = create(:issue, project:, github_state: "open")
+    second = create(:issue, project:, github_state: "open")
+    declaration_url = "https://github.com/acme/mobile/issues/1#issuecomment-9"
+    create(:issue_dependency, issue: first, depends_on_issue: second,
+      declaration_source: "issue_comment", declaration_url: declaration_url)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+
+    get "/api/v1/inbox", params: { kind: Inbox::Queue::DEPENDENCY_CYCLE_KIND }, headers: headers
+
+    entry = response.parsed_body.fetch("entries").sole
+    expect(entry.fetch("cycle_path").map { |node| node.fetch("number") }).to include(first.github_number, second.github_number)
+    expect(entry.fetch("cycle_edges")).to include(
+      a_hash_including("declaration_source" => "issue_comment", "declaration_url" => declaration_url)
+    )
+
+    get "/api/v1/inbox/entries/#{entry.fetch("id")}", headers: headers
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig("entry", "id")).to eq(entry.fetch("id"))
+  end
+
   # @spec MOBILE-API-006 MOBILE-API-010
   it "paginates the inbox before serializing entries" do
     issues = create_list(:issue, 3, :needs_input, project:, needs_input_questions: [ "What should happen?" ])

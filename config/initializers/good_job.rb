@@ -193,6 +193,11 @@ Rails.application.configure do
       class: "AutoPickEligibilitySweepJob",
       description: "Periodic re-evaluation of all open issues for auto-pick eligibility"
     },
+    dependency_cycle_reconciliation: {
+      cron: "11-59/30 * * * *",
+      class: "DependencyCycleReconciliationJob",
+      description: "Reconcile persisted effective dependency cycles"
+    },
     partial_closeout_acceptance_audit_sweep: {
       cron: "11-59/15 * * * *",
       class: "PartialCloseoutAcceptanceAuditSweepJob",

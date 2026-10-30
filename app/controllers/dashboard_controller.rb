@@ -40,10 +40,11 @@ class DashboardController < ApplicationController
 
   # @spec QUEUE-HANDOFF-001 QUEUE-HANDOFF-003
   def eligibility_breakdown
-    breakdowns = load_eligibility_breakdown
-    return render partial: "dashboard/eligibility_breakdown", locals: { breakdowns: [], unavailable: true } if breakdowns.nil?
+    diagnosis = load_eligibility_diagnosis
+    return render partial: "dashboard/eligibility_breakdown", locals: { breakdowns: [], unavailable: true } if diagnosis.nil?
 
-    render partial: "dashboard/eligibility_breakdown", locals: { breakdowns: breakdowns }
+    breakdowns, dependency_cycle_counts = diagnosis
+    render partial: "dashboard/eligibility_breakdown", locals: { breakdowns:, dependency_cycle_counts: }
   end
 
   def queue_preview
@@ -156,11 +157,25 @@ class DashboardController < ApplicationController
 
   private
 
-  def load_eligibility_breakdown
-    Dashboard::EligibilityBreakdown.call(user: current_user)
-  rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::ConnectionFailed, ActiveRecord::StatementInvalid => e
+  def load_eligibility_diagnosis
+    breakdowns = Dashboard::EligibilityBreakdown.call(user: current_user)
+    [ breakdowns, dependency_cycle_counts(breakdowns) ]
+  rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::ConnectionFailed, ActiveRecord::StatementInvalid,
+    Issues::DependencyCycles::CoverageUnavailable => e
     Rails.logger.warn(message: "dashboard.queue_diagnosis_unavailable", error_class: e.class.name)
     nil
+  end
+
+  def dependency_cycle_counts(breakdowns)
+    projects = breakdowns.map(&:project)
+    return {} if projects.empty?
+
+    project_ids = projects.map(&:id).to_set
+    Issues::DependencyCycles.call(account: current_account).each_with_object(Hash.new(0)) do |cycle, counts|
+      next unless cycle.visible_within?(project_ids)
+
+      cycle.project_ids.each { |project_id| counts[project_id] += 1 }
+    end
   end
 
   def live_agent_runs

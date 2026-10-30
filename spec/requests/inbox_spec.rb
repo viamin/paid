@@ -62,6 +62,24 @@ RSpec.describe "Inbox" do
     "#{entry_kind}:#{record.id}"
   end
 
+  # @spec AUTO-PICK-QUEUE-015
+  it "links each cycle edge to its persisted GitHub declaration provenance" do
+    first = create(:issue, project:, github_state: "open")
+    second = create(:issue, project:, github_state: "open")
+    declaration_url = "https://github.com/acme/alpha/issues/1#issuecomment-42"
+    create(:issue_dependency, issue: first, depends_on_issue: second,
+      declaration_source: "issue_comment", declaration_url:)
+    create_legacy_issue_dependency(issue: second, depends_on_issue: first)
+    cycle = Issues::DependencyCycles.call(account:).sole
+
+    get inbox_entry_path(cycle.id), headers: { "Turbo-Frame" => "inbox-detail" }
+
+    expect(response).to have_http_status(:ok)
+    document = Nokogiri::HTML(response.body)
+    expect(document.at_css("a[href='#{declaration_url}']").text).to include("view declaring comment")
+    expect(response.body).to include("declaration source unavailable")
+  end
+
   # @spec OPERATOR-INBOX-017
   it "renders selected context in the detail response without a nested Turbo request" do
     issue = create(:issue, :needs_input, project: project, body: questions_body)
