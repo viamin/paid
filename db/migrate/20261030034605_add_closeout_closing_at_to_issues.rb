@@ -1,3 +1,5 @@
+# frozen_string_literal: true
+
 class AddCloseoutClosingAtToIssues < ActiveRecord::Migration[8.1]
   def change
     add_column :issues, :closeout_closing_at, :datetime,
