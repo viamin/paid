@@ -63,3 +63,10 @@
   refreshed provider catalog or be blocked by an upstream registry fetch.
   *Code:* `Models::CatalogSnapshot`, `ModelsSyncJob`,
   `ChatSessions::CuratedModelOptions`.
+
+- [x] **MODEL-AVAILABILITY-009** — When model eligibility is resolved for a
+  runner with API-key authentication, a fresh global unavailable availability
+  check SHALL NOT suppress a candidate for that runner's account. Only fresh
+  unavailable evidence with the same runner key, authentication type, and
+  account may suppress it; static runner/auth incompatibility remains owned by
+  `Runners::ModelCompatibility`.
