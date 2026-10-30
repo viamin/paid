@@ -21,6 +21,7 @@ require Rails.root.join("db/migrate/20260508064240_tighten_orchestration_decisio
 require Rails.root.join("db/migrate/20260509083302_ensure_strategy_version_id_on_orchestration_decisions")
 require Rails.root.join("db/migrate/20260511040425_fix_strategies_rls_infinite_recursion")
 require Rails.root.join("db/migrate/20260730190357_make_projects_github_token_optional_in_rls")
+require Rails.root.join("db/migrate/20261029221250_create_inbox_history_events")
 
 RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENCE-001
   around do |example|
@@ -174,6 +175,18 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
     end
   end
 
+  # @spec POSTGRESQL-PERSISTENCE-002 OPERATOR-INBOX-022
+  it "rejects Inbox history rows that attach another account's project" do
+    account = described_class.with_system_access { account_a }
+    project_b = described_class.with_system_access { create(:project, account: account_b) }
+
+    as_restricted_role do
+      described_class.with(account) do
+        expect_rls_rejection { insert_inbox_history_event(account, project_b) }
+      end
+    end
+  end
+
   it "allows tenant reads but blocks tenant writes for global prompts and style guides" do
     global_prompt = described_class.with_system_access { create(:prompt, :global, :with_version) }
     tenant_prompt = described_class.with_system_access { create(:prompt, :for_account, account: account_a) }
@@ -255,6 +268,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       EnableRlsOnIssueMergeSubscriptions.new.down if issue_merge_subscriptions_has_rls?
       EnableRlsOnAutoMergeAttempts.new.down if auto_merge_attempts_have_rls?
       CreateFailureClassifications.new.down if failure_classifications_table_exists?
+      CreateInboxHistoryEvents.new.down if inbox_history_events_table_exists?
       EnableTenantRowLevelSecurity.new.down
       EnableTenantRowLevelSecurity.new.up
       EnableRlsOnNotificationRuleStates.new.up
@@ -267,6 +281,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       CreateExceptionIncidents.new.up unless exception_incidents_table_exists?
       restore_exception_incidents_logidze!
       CreateFailureClassifications.new.up unless failure_classifications_table_exists?
+      CreateInboxHistoryEvents.new.up unless inbox_history_events_table_exists?
       CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
       AddStrategyVersionToOrchestrationDecisions.new.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
       ensure_strategy_version_id_on_orchestration_decisions unless orchestration_decisions_have_strategy_version_reference?
@@ -305,6 +320,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       EnableRlsOnIssueMergeSubscriptions.new.down if issue_merge_subscriptions_has_rls?
       EnableRlsOnAutoMergeAttempts.new.down if auto_merge_attempts_have_rls?
       CreateFailureClassifications.new.down if failure_classifications_table_exists?
+      CreateInboxHistoryEvents.new.down if inbox_history_events_table_exists?
       EnableTenantRowLevelSecurity.new.down
 
       EnableTenantRowLevelSecurity.new.up
@@ -318,6 +334,7 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
       CreateExceptionIncidents.new.up unless exception_incidents_table_exists?
       restore_exception_incidents_logidze!
       CreateFailureClassifications.new.up unless failure_classifications_table_exists?
+      CreateInboxHistoryEvents.new.up unless inbox_history_events_table_exists?
       CreateOrchestrationDecisions.new.up unless orchestration_decisions_table_exists?
       AddStrategyVersionToOrchestrationDecisions.new.migrate(:up) unless orchestration_decisions_have_strategy_version_reference?
       ensure_strategy_version_id_on_orchestration_decisions unless orchestration_decisions_have_strategy_version_reference?
@@ -385,6 +402,10 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
 
   def failure_classifications_table_exists?
     ActiveRecord::Base.connection.table_exists?(:failure_classifications)
+  end
+
+  def inbox_history_events_table_exists?
+    ActiveRecord::Base.connection.table_exists?(:inbox_history_events)
   end
 
   def decomposition_decisions_have_rls?
@@ -493,6 +514,18 @@ RSpec.describe TenantContext, :tenant_isolation do # @spec POSTGRESQL-PERSISTENC
     ActiveRecord::Base.connection.execute(<<~SQL.squish)
       INSERT INTO project_memberships (project_id, user_id, role, created_at, updated_at)
       VALUES (#{project.id}, #{user.id}, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    SQL
+  end
+
+  def insert_inbox_history_event(account, project)
+    ActiveRecord::Base.connection.execute(<<~SQL.squish)
+      INSERT INTO inbox_history_events (
+        account_id, project_id, subject_key, event_key, occurred_at,
+        actor_label, source, result, metadata, created_at, updated_at
+      ) VALUES (
+        #{account.id}, #{project.id}, 'issue:#{project.id}:1', 'test', CURRENT_TIMESTAMP,
+        'Paid', 'paid', 'completed', '{}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
     SQL
   end
 

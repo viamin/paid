@@ -12,6 +12,41 @@
   *Code:* `app/services/inbox/queue.rb`, `app/controllers/inbox_controller.rb`.
   *Test:* `spec/services/inbox/queue_spec.rb`, `spec/requests/inbox_spec.rb`.
 
+- [x] **OPERATOR-INBOX-022** — When an operator opens a selected issue, pull
+  request, or feature Inbox detail, the system SHALL load a bounded,
+  reverse-chronological action timeline keyed by stable subject identity rather
+  than Inbox entry identity. Each event SHALL expose its action, actor/source,
+  attempted or completed/failed result, time, relevant revision, and safe
+  evidence link; a prior failed run SHALL remain visible without replacing a
+  later completed result or current progress. Scanner-observed owner approval,
+  pending manual merge, approval invalidation by a newer revision, and later
+  reapproval SHALL be separate, replay-safe events derived from explicit
+  scanner approval evidence rather than blocker exhaustion. Selected web
+  details SHALL offer a cursor-backed continuation when older events exist,
+  and API detail clients SHALL be able to advance the bounded timeline with a
+  dedicated history cursor and limit. Inbox list and count queries SHALL NOT
+  load per-row history or make live GitHub calls.
+  *Code:* `app/services/inbox/action_history.rb`,
+  `app/services/inbox/action_history_page.rb`,
+  `app/services/inbox/chat_context.rb`,
+  `app/services/inbox/merge_assessment_history_recorder.rb`,
+  `app/serializers/api/v1/inbox_entry_serializer.rb`,
+  `app/views/dashboard/_inbox_detail.html.erb`.
+  *Test:* `spec/services/inbox/action_history_spec.rb`,
+  `spec/services/inbox/chat_context_spec.rb`, `spec/requests/inbox_spec.rb`.
+
+- [x] **OPERATOR-INBOX-023** — When Paid records an Inbox removal or restore,
+  it SHALL append a deduplicated, subject-keyed Paid event without changing the
+  underlying work. When a subject's persisted coverage boundary starts after
+  its GitHub lifetime, the detail and API SHALL continue to identify the prior
+  interval as incomplete after newer events arrive rather than treating any
+  event as proof of complete coverage or fabricating GitHub history from
+  current state.
+  *Code:* `app/services/inbox/history_recorder.rb`,
+  `app/services/inbox/removals.rb`.
+  *Test:* `spec/models/inbox_history_event_spec.rb`,
+  `spec/services/inbox/action_history_spec.rb`.
+
 - [x] **OPERATOR-INBOX-002** — When a planning workflow records an open
   `plan_pending_review` decomposition decision and the user can manage the
   project, the system SHALL expose that pending review as a `plan_review`
