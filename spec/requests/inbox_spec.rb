@@ -484,6 +484,13 @@ RSpec.describe "Inbox" do
       expect(response.body).to include(partial_closeout_guide_path)
     end
 
+    it "uses action-oriented evaluation headings" do
+      render_guided_pane
+
+      expect(response.body).to include("Review conformance results", "Review confidence judgments")
+      expect(response.body).not_to include("RDR-067", "RDR-070")
+    end
+
     it "hides the GitHub closure action while an acceptance audit is pending" do
       render_guided_pane
 

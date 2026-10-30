@@ -309,6 +309,17 @@ RSpec.describe "Projects::ShadowEvaluations" do
     get new_project_shadow_evaluation_path(project, purpose: "rdr-067-measured-rollout")
 
     expect(response).to have_http_status(:ok)
-    expect(response.body).to include("Start evaluation")
+    expect(response.body).to include("Conformance review evaluation", "Compare reviewer findings with frozen reference labels", "Start evaluation")
+    expect(Nokogiri::HTML(response.body).text).not_to include("RDR-067", "rdr-067-measured-rollout")
+  end
+
+  it "uses an action-oriented evaluation goal instead of displaying the persisted purpose" do
+    evaluation = start_evaluation!
+
+    get project_shadow_evaluation_path(project, evaluation)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Evaluation goal", "Compare reviewer findings with frozen reference labels")
+    expect(response.body).not_to include("rdr-067-measured-rollout", "RDR-067")
   end
 end

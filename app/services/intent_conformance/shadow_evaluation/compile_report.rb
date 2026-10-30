@@ -153,7 +153,7 @@ module IntentConformance
 
       def render_markdown(report)
         lines = []
-        lines << "# RDR-067 Solo-Maintainer Shadow Evaluation Report"
+        lines << "# Solo-Maintainer Conformance Evaluation Report"
         lines << ""
         lines << "Policy: **#{report.fetch('policy')}** — maintainer #{report.fetch('solo_maintainer')}."
         lines << "Assurance limits: #{report.fetch('assurance_limits')}."

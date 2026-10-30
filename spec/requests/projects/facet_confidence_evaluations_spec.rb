@@ -147,6 +147,14 @@ RSpec.describe "Projects::FacetConfidenceEvaluations" do
     expect(response).to redirect_to(project_facet_confidence_evaluation_path(project, current))
   end
 
+  it "explains the closeout readiness evaluation without internal design-record copy" do
+    get new_project_facet_confidence_evaluation_path(project, issue_id: issue.id)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.body).to include("Closeout readiness evaluation", "blinded human reference judgments")
+    expect(response.body).not_to include("RDR-070")
+  end
+
   it "offers a view-only evaluation to an operator who is not its judge" do
     notification = create(:notification, :error, account:, subject: issue,
       source: PartialCloseouts::PREREQUISITE_NOTIFICATION_SOURCE, blocking: true,
