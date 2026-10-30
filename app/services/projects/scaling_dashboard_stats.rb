@@ -3,6 +3,16 @@
 module Projects
   class ScalingDashboardStats
     RECENT_OBSERVATION_LIMIT = 15
+    REPORT_NOTE_REPLACEMENTS = {
+      "Scaling exponent confidence uses a log-log linear fit instead of the full regression suite proposed in the RDR." =>
+        "Scaling exponent confidence uses a log-log linear fit instead of comparing power-law, logarithmic, and linear models.",
+      "The dashboard flags experiments configured below the 30-sample RDR target instead of enforcing that threshold retroactively." =>
+        "The dashboard flags experiments configured below the 30-sample target instead of enforcing that threshold retroactively.",
+      "Uses descriptive confidence intervals rather than the full comparative regression suite proposed in the RDR." =>
+        "Uses descriptive confidence intervals rather than comparing power-law, logarithmic, and linear regression models.",
+      "Treats configured experiment sample floors below 30 as intentional simplifications and flags them in reporting." =>
+        "Treats experiments configured below 30 samples per value as limited evidence and flags them in reporting."
+    }.freeze
 
     attr_reader :project
 
@@ -74,7 +84,7 @@ module Projects
           primary_metric: summary["primary_metric"],
           sample_threshold_review: summary["sample_threshold_review"] || scaling_law["sample_threshold_review"] || {},
           statistical_rigor: scaling_law["statistical_rigor"] || {},
-          simplifications: Array(summary["simplifications"]).presence || Array(scaling_law.dig("statistical_rigor", "simplifications")),
+          simplifications: user_facing_simplifications(summary:, scaling_law:),
           leading_value: summary["leading_value"],
           recommendation_ready: recommendation.present?,
           actionable: recommendation&.fetch("actionable", false)
@@ -106,6 +116,11 @@ module Projects
 
     def recommendation_for(summary:, scaling_law:)
       summary["allocator_decision"] || scaling_law["allocator_decision"]
+    end
+
+    def user_facing_simplifications(summary:, scaling_law:) # @spec SCALING-EXPERIMENTS-002
+      notes = Array(summary["simplifications"]).presence || Array(scaling_law.dig("statistical_rigor", "simplifications"))
+      notes.map { |note| REPORT_NOTE_REPLACEMENTS.fetch(note, note) }
     end
   end
 end

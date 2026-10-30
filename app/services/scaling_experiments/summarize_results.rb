@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module ScalingExperiments
-  class SummarizeResults
+  class SummarizeResults # @spec SCALING-EXPERIMENTS-002
     CONFIDENCE_LEVEL = 0.95
 
     def self.call(...)
@@ -127,8 +127,8 @@ module ScalingExperiments
     def simplifications
       [
         "Confidence intervals use Wilson intervals for rates and normal-approximation intervals for means.",
-        "Scaling exponent confidence uses a log-log linear fit instead of the full regression suite proposed in the RDR.",
-        "The dashboard flags experiments configured below the 30-sample RDR target instead of enforcing that threshold retroactively."
+        "Scaling exponent confidence uses a log-log linear fit instead of comparing power-law, logarithmic, and linear models.",
+        "The dashboard flags experiments configured below the 30-sample target instead of enforcing that threshold retroactively."
       ]
     end
 
