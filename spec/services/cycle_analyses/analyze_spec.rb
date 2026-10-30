@@ -37,7 +37,7 @@ RSpec.describe CycleAnalyses::Analyze do
     expect(result).to include("recommendation" => "reviewable recommendation", "graph_revision" => cycle.graph_revision)
   end
 
-  it "caps untrusted issue and trusted-comment content in the prompt" do
+  it "caps issue and trusted-comment content in the prompt" do
     user = create(:user)
     project = create(:project, account: user.account, created_by: user)
     limit = Prompts::BuildForIssue::DEFAULT_MAX_COMMENT_LENGTH

@@ -130,9 +130,10 @@
 - [x] **AUTO-PICK-QUEUE-017** — A cycle-analysis prompt SHALL contain every
   member and effective internal edge of the strongly connected group, including
   issue title, labels, parent context, source URL, and declaration provenance.
-  It SHALL include issue content and only comments admitted by
-  `Prompts::BuildForIssue.fetch_trusted_comments`; unavailable provenance or
-  content SHALL be recorded as unavailable coverage.
+  It SHALL include issue bodies only when the issue creator is trusted by the
+  owning project and comments only when admitted by
+  `Prompts::BuildForIssue.fetch_trusted_comments`; untrusted or unavailable
+  content and unavailable provenance SHALL be recorded as unavailable coverage.
 
 - [x] **AUTO-PICK-QUEUE-018** — A completed cycle analysis SHALL publish a
   reviewable recommendation containing candidate declaration changes, evidence,

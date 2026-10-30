@@ -34,7 +34,7 @@ module CycleAnalyses
         "labels" => issue.labels,
         "parent" => parent_payload(issue.parent_issue),
         "url" => issue.github_url,
-        "body" => issue.body
+        "body" => issue.trusted? ? issue.body : nil
       }
     end
 

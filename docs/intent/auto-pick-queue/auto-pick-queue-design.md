@@ -91,7 +91,8 @@ revision change, permits an explicit fresh retry.
 
 The analysis uses Paid's synthetic agent-run record and `agent_harness` route.
 It supplies issue titles, labels, parent context, URLs, declaration provenance,
-and issue bodies plus only trusted comments. Its recommendation records candidate
+and only issue bodies and comments admitted by the project's existing trust
+boundary. Its recommendation records candidate
 declaration changes, supporting and conflicting evidence, resulting graphs, and
 an acyclicity determination for each candidate. Missing provenance or content is
 reported as unavailable coverage, never silently assumed. The result is rendered

@@ -12,7 +12,10 @@ class CycleAnalysisJob < ApplicationJob
     agent_run.update!(status: "completed", completed_at: Time.current,
       verification_result: agent_run.verification_result.merge(CycleAnalyses::RESULT_KEY => result))
   rescue StandardError => error
-    agent_run&.update!(status: "failed", completed_at: Time.current, error_message: error.message) unless agent_run&.finished?
+    unless agent_run&.finished?
+      message = AgentRun::ErrorMessageSanitizer.call(text: error.message)
+      agent_run&.update!(status: "failed", completed_at: Time.current, error_message: message)
+    end
     raise
   end
 
