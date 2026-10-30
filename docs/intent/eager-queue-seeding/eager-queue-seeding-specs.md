@@ -55,7 +55,9 @@
   eligible — skip label, new blocking dependency, closed issue, or paused —
   so the re-enqueue hooks can recreate it if the issue becomes eligible
   again. An open issue's internal `paid_state` SHALL NOT by itself cancel
-  the run.
+  the run. The persisted cancellation reason SHALL explain that the issue is
+  no longer eligible for automatic work and that it will be queued again when
+  it becomes eligible; it SHALL NOT expose an internal RDR identifier.
   *Code:* `AgentRuns::RecheckIssueEligibility#call`,
   `AgentRuns::RecheckIssueEligibility#cancel_run`,
   `ProcessRunQueueJob` recheck invocation.
