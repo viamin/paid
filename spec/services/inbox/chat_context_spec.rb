@@ -108,7 +108,7 @@ RSpec.describe Inbox::ChatContext do
     expect(context.fetch("record")).to include("id" => change_intent.id, "title" => "Audit closeout", "intent" => "Explain evidence")
   end
 
-  it "uses the Inbox workflow projection for pull-request context" do # @spec OPERATOR-INBOX-022
+  it "uses the Inbox workflow projection for pull-request context" do # @spec OPERATOR-INBOX-023
     issue.update!(is_pull_request: true, github_state: "open", pr_review_phase: "ready")
     chat_session.update!(inbox_item_key: "merge_approval:#{issue.id}", inbox_item_metadata: { "kind" => "merge_approval", "issue_id" => issue.id })
 
@@ -119,7 +119,7 @@ RSpec.describe Inbox::ChatContext do
     )
   end
 
-  it "uses the Inbox workflow projection for test-review context" do # @spec OPERATOR-INBOX-022
+  it "uses the Inbox workflow projection for test-review context" do # @spec OPERATOR-INBOX-023
     project.update!(tdd_mode: "strict")
     issue.update!(is_pull_request: true, github_state: "open", pr_review_phase: "draft")
     chat_session.update!(
@@ -134,7 +134,7 @@ RSpec.describe Inbox::ChatContext do
     )
   end
 
-  it "preserves the escalation recovery action in pull-request context" do # @spec OPERATOR-INBOX-022
+  it "preserves the escalation recovery action in pull-request context" do # @spec OPERATOR-INBOX-023
     issue.update!(
       is_pull_request: true,
       github_state: "open",

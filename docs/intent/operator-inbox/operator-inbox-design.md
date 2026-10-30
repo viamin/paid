@@ -86,8 +86,9 @@ carry reason, revision, actor, exact action, and the relevant GitHub surface.
 The projection is selected-entry work only, so Inbox rows and counts retain
 their bounded local queries and make no remote calls. It explicitly represents
 manual merge as a current human action after approval rather than treating an
-approval as a merge. Strict TDD shows its test-review gate before implementation;
-projects outside that mode show the stage as not applicable. Linked
+approval as a merge. A pending test-review lane shows its gate before
+implementation in either TDD mode; otherwise projects outside strict mode show
+the stage as not applicable. Linked
 approval-gated feature designs appear only when applicable.
 
 Issue-backed lanes retain their project joins when project predicates or

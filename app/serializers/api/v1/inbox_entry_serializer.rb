@@ -50,7 +50,7 @@ module Api
         { id: entry.project.id, owner: entry.project.owner, repo: entry.project.repo, name: entry.project.full_name }
       end
 
-      # @spec OPERATOR-INBOX-022
+      # @spec OPERATOR-INBOX-023
       def workflow_payload
         return {} unless entry.workflow_milestones?
 

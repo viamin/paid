@@ -4,7 +4,7 @@ module Inbox
   # A typed, local projection for the selected Inbox entry. It deliberately
   # reads persisted scan and feature evidence; building an Inbox list never
   # invokes it, so list/count requests remain free of per-row remote calls.
-  # @spec OPERATOR-INBOX-022
+  # @spec OPERATOR-INBOX-023
   class WorkflowMilestones
     SUPPORTED_KINDS = [
       Queue::MERGE_APPROVAL_KIND,
@@ -56,9 +56,9 @@ module Inbox
     end
 
     def test_milestone
-      return milestone("Tests", "not_applicable", "Not applicable", "This project does not use strict TDD.") unless entry.project.tdd_mode == "strict"
       return milestone("Tests", "current", "Review tests", "The proposed tests need a human verdict before implementation can begin.",
         action: "Review the proposed tests and add paid-tests-approved or paid-test-changes-requested.", url: entry.issue.github_url) if entry.test_review_pending?
+      return milestone("Tests", "not_applicable", "Not applicable", "This project does not use strict TDD.") unless entry.project.tdd_mode == "strict"
 
       milestone("Tests", "completed", "Approved", "Strict-TDD test review cleared before this implementation phase.", url: entry.issue.github_url)
     end

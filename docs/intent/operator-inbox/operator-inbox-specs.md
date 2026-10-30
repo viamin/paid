@@ -68,7 +68,7 @@
   `spec/services/inbox/availability_spec.rb`, `spec/requests/inbox_spec.rb`,
   `spec/temporal/activities/scan_paid_prs_activity_spec.rb`.
 
-- [x] **OPERATOR-INBOX-022** — When an operator selects a supported pull-request
+- [x] **OPERATOR-INBOX-023** — When an operator selects a supported pull-request
   Inbox entry (`merge_approval`, `escalated_pr`, or `test_review_pending`), the
   system SHALL expose one typed workflow-milestone projection to the detail
   pane, API, and contextual chat. Issue-backed lanes that do not represent this
@@ -81,7 +81,9 @@
   SHALL show test review before implementation, and linked approval-gated
   feature designs SHALL appear only when applicable. The projection SHALL use
   persisted local evidence and SHALL NOT add remote calls to Inbox list/count
-  rendering.
+  rendering. A pending test-review lane SHALL show test review as the current
+  action regardless of whether the project uses strict or non-strict TDD;
+  outside that lane, non-strict projects SHALL show tests as not applicable.
   *Code:* `app/services/inbox/workflow_milestones.rb`,
   `app/views/dashboard/_inbox_workflow_milestones.html.erb`,
   `app/serializers/api/v1/inbox_entry_serializer.rb`,

@@ -21,7 +21,7 @@ RSpec.describe Inbox::WorkflowMilestones do
     )
   end
 
-  it "separates approved code review from the manual merge action" do # @spec OPERATOR-INBOX-022
+  it "separates approved code review from the manual merge action" do # @spec OPERATOR-INBOX-023
     projection = described_class.call(entry(kind: Inbox::Queue::MERGE_APPROVAL_KIND, guidance: {
       instruction: "Review the current changes and make the manual merge decision on GitHub.",
       automatic_merge_active: false, blockers: []
@@ -32,7 +32,7 @@ RSpec.describe Inbox::WorkflowMilestones do
     expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "current", label: "Your next step"))
   end
 
-  it "keeps manual merge waiting for required owner approval" do # @spec OPERATOR-INBOX-022
+  it "keeps manual merge waiting for required owner approval" do # @spec OPERATOR-INBOX-023
     instruction = "Approve the current revision on GitHub."
     projection = described_class.call(entry(kind: Inbox::Queue::MERGE_APPROVAL_KIND, guidance: {
       instruction:, automatic_merge_active: false, blockers: [ { "signal" => "owner_approved" } ]
@@ -43,14 +43,28 @@ RSpec.describe Inbox::WorkflowMilestones do
     expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "waiting"))
   end
 
-  it "shows the strict-TDD review gate before implementation" do # @spec OPERATOR-INBOX-022
+  it "shows the strict-TDD review gate before implementation" do # @spec OPERATOR-INBOX-023
     projection = described_class.call(entry(kind: Inbox::Queue::TEST_REVIEW_PENDING_KIND))
 
     expect(projection[:milestones]).to include(a_hash_including(name: "Tests", state: "current", label: "Review tests"))
     expect(projection[:milestones]).to include(a_hash_including(name: "Implementation", state: "waiting"))
   end
 
-  it "marks stale approval separately from the manual merge decision" do # @spec OPERATOR-INBOX-022
+  it "shows a pending non-strict test review as the current action" do # @spec OPERATOR-INBOX-023
+    project.update!(tdd_mode: "non_strict")
+
+    projection = described_class.call(entry(kind: Inbox::Queue::TEST_REVIEW_PENDING_KIND))
+
+    expect(projection[:current_action]).to eq(
+      "Review the proposed tests and add paid-tests-approved or paid-test-changes-requested."
+    )
+    expect(projection[:milestones]).to include(
+      a_hash_including(name: "Tests", state: "current", label: "Review tests")
+    )
+    expect(projection[:milestones]).to include(a_hash_including(name: "Implementation", state: "waiting"))
+  end
+
+  it "marks stale approval separately from the manual merge decision" do # @spec OPERATOR-INBOX-023
     projection = described_class.call(entry(kind: Inbox::Queue::MERGE_APPROVAL_KIND, guidance: {
       instruction: "Re-approve the current revision, then make the manual merge decision on GitHub.",
       stale_approval: true, automatic_merge_active: false,
@@ -64,7 +78,7 @@ RSpec.describe Inbox::WorkflowMilestones do
     expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "waiting"))
   end
 
-  it "keeps a stalled draft behind execution recovery" do # @spec OPERATOR-INBOX-022
+  it "keeps a stalled draft behind execution recovery" do # @spec OPERATOR-INBOX-023
     instruction = "Review the current changes on GitHub while Paid recovers execution."
     projection = described_class.call(entry(kind: Inbox::Queue::MERGE_APPROVAL_KIND, guidance: {
       instruction:, stalled_execution: true, automatic_merge_active: false, blockers: []
@@ -79,7 +93,7 @@ RSpec.describe Inbox::WorkflowMilestones do
     expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "waiting"))
   end
 
-  it "shows Unblock as the current action for a failure-streak escalation" do # @spec OPERATOR-INBOX-022
+  it "shows Unblock as the current action for a failure-streak escalation" do # @spec OPERATOR-INBOX-023
     projection = described_class.call(entry(
       kind: Inbox::Queue::ESCALATED_PR_KIND,
       record: escalation(Issue::PR_ESCALATION_REASON_FAILURE_STREAK)
@@ -93,7 +107,7 @@ RSpec.describe Inbox::WorkflowMilestones do
     expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "waiting"))
   end
 
-  it "shows re-approval as the current action for an awaiting-approval escalation" do # @spec OPERATOR-INBOX-022
+  it "shows re-approval as the current action for an awaiting-approval escalation" do # @spec OPERATOR-INBOX-023
     projection = described_class.call(entry(
       kind: Inbox::Queue::ESCALATED_PR_KIND,
       record: escalation(Issue::PR_ESCALATION_REASON_AWAITING_APPROVAL)
@@ -106,7 +120,7 @@ RSpec.describe Inbox::WorkflowMilestones do
     expect(projection[:milestones]).to include(a_hash_including(name: "Merge", state: "waiting"))
   end
 
-  it "omits the pull-request workflow for a non-PR issue-backed lane" do # @spec OPERATOR-INBOX-022
+  it "omits the pull-request workflow for a non-PR issue-backed lane" do # @spec OPERATOR-INBOX-023
     non_pr_issue = create(:issue, project: project)
     inbox_entry = Inbox::Queue::Entry.new(
       id: "clarifying_questions:#{non_pr_issue.id}",

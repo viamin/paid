@@ -144,12 +144,12 @@ module Inbox
         kind == TEST_REVIEW_PENDING_KIND
       end
 
-      # @spec OPERATOR-INBOX-022
+      # @spec OPERATOR-INBOX-023
       def workflow_milestones
         @workflow_milestones ||= Inbox::WorkflowMilestones.call(self)
       end
 
-      # @spec OPERATOR-INBOX-022
+      # @spec OPERATOR-INBOX-023
       def workflow_milestones?
         Inbox::WorkflowMilestones.supported?(self)
       end
