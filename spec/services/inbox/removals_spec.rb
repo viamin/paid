@@ -141,7 +141,7 @@ RSpec.describe Inbox::Removals do
   end
 
   describe "return events" do
-    # @spec INBOX-PHASE-RELEVANCE-009
+    # @spec INBOX-PHASE-RELEVANCE-009 @spec OPERATOR-INBOX-023
     it "restores when the responsible phase transitions from disabled to enabled" do
       configure_phases({ "issue_preparation" => false })
       remove!(target: entry(scope: Inbox::Queue::DISABLED_PHASES_SCOPE))
@@ -154,6 +154,9 @@ RSpec.describe Inbox::Removals do
       expect(entry(scope: Inbox::Queue::REMOVED_SCOPE)).to be_nil
       expect(Dashboard::CacheVersion.current(account, scope: Dashboard::CacheVersion::INBOX_SCOPE))
         .to be > previous_version
+      expect(InboxHistoryEvent.find_by!(metadata: { "action" => "Restored to Inbox" })).to have_attributes(
+        actor_label: "Paid", source: "paid", result: "completed"
+      )
     end
 
     it "does not restore when an already-enabled phase is saved unchanged" do
