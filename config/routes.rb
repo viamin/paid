@@ -79,6 +79,7 @@ Rails.application.routes.draw do
   get "dashboard/inbox", to: "legacy_inbox_redirects#index", as: :dashboard_inbox
   get "dashboard/inbox/entries/:entry_kind/:entry_id", to: "legacy_inbox_redirects#show", as: :dashboard_inbox_entry
   get "dashboard/needs_input", to: "dashboard#needs_input", as: :dashboard_needs_input
+post "dashboard/cycle_analyses", to: "dashboard#start_cycle_analysis", as: :dashboard_cycle_analyses
   post "dashboard/cancel_run/:id", to: "dashboard#cancel_run", as: :dashboard_cancel_run
 
   # Integrations hub

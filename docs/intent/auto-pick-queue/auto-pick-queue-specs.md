@@ -118,6 +118,34 @@
   *Code:* `Inbox::Queue`, `Dashboard::HeldWorkDetails`,
   `app/views/dashboard/_inbox_detail_dependency_cycle.html.erb`.
 
+- [x] **AUTO-PICK-QUEUE-016** — When an authorized operator starts cycle
+  analysis for a visible dependency-cycle Inbox occurrence, Paid SHALL require
+  run authority for every project represented by that occurrence, create one
+  read-only synthetic agent run with the occurrence and effective graph revision
+  snapshotted, and expose its queued, running, completed, or failed state on the
+  same Inbox detail and authorized API/MCP surface. Paid SHALL reject a duplicate
+  active analysis for the occurrence and SHALL permit an explicit new analysis
+  only after terminal failure or a changed graph revision.
+
+- [x] **AUTO-PICK-QUEUE-017** — A cycle-analysis prompt SHALL contain every
+  member and effective internal edge of the strongly connected group, including
+  issue title, labels, parent context, source URL, and declaration provenance.
+  It SHALL include issue content and only comments admitted by
+  `Prompts::BuildForIssue.fetch_trusted_comments`; unavailable provenance or
+  content SHALL be recorded as unavailable coverage.
+
+- [x] **AUTO-PICK-QUEUE-018** — A completed cycle analysis SHALL publish a
+  reviewable recommendation containing candidate declaration changes, evidence,
+  tradeoffs, missing or conflicting intent, each candidate resulting graph, and
+  whether that graph is acyclic. Paid SHALL NOT infer that removal of a single
+  edge breaks a multi-edge strongly connected group.
+
+- [x] **AUTO-PICK-QUEUE-019** — Cycle analysis SHALL remain read-only: it
+  SHALL NOT modify GitHub declarations, issue bodies, comments, labels, or local
+  dependency records. A result whose snapshotted revision differs from the
+  currently synchronized effective graph SHALL be identified as stale until a
+  later synchronization observes an acyclic graph.
+
 ## Epic umbrella audits
 
 - [x] **AUTO-PICK-QUEUE-009** — When an open issue carries the `epic` label

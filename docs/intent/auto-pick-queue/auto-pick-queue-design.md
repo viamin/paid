@@ -81,6 +81,25 @@ The occurrence remains until a subsequent
 synchronization observes an acyclic persisted graph. A failed reconciliation is
 logged as unavailable; it is not treated as proof that no cycles exist.
 
+An authorized operator may start a read-only cycle analysis from that Inbox
+occurrence. The analysis snapshots the occurrence and effective-graph revision,
+all members of the strongly connected group, and every effective internal edge;
+it never limits its evidence to the displayed witness path. Starting requires
+run authority on every represented project and serializes starts per occurrence
+so only one queued or running analysis exists. A failed analysis, or a graph
+revision change, permits an explicit fresh retry.
+
+The analysis uses Paid's synthetic agent-run record and `agent_harness` route.
+It supplies issue titles, labels, parent context, URLs, declaration provenance,
+and issue bodies plus only trusted comments. Its recommendation records candidate
+declaration changes, supporting and conflicting evidence, resulting graphs, and
+an acyclicity determination for each candidate. Missing provenance or content is
+reported as unavailable coverage, never silently assumed. The result is rendered
+on the same Inbox occurrence and remains marked stale when synchronization has
+changed the effective graph. It cannot mutate GitHub issues, comments, labels,
+or local dependency records; a human declaration change and later synchronization
+remain the only resolution path.
+
 ## Tier-infeasibility gating
 
 Issues whose most recent model selection pins a tier no enabled runner can

@@ -118,8 +118,21 @@ module Api
           cycle_edges: cycle.path_edges.each_with_index.map do |edge, index|
             dependency_cycle_edge_payload(edge, cycle.path[index], cycle.path[index + 1])
           end,
-          downstream_issues_held: cycle.downstream_issues.size
+          downstream_issues_held: cycle.downstream_issues.size,
+          graph_revision: cycle.graph_revision,
+          analysis_run: cycle_analysis_run_payload(cycle)
         }
+      end
+
+      def cycle_analysis_run_payload(cycle)
+        run = cycle.project.agent_runs.where(goal: AgentRun::CYCLE_ANALYSIS_GOAL).order(created_at: :desc).detect do |candidate|
+          candidate.external_metadata.dig(CycleAnalyses::METADATA_KEY, "occurrence") == cycle.occurrence
+        end
+        return unless run
+
+        { id: run.id, status: run.status, graph_revision: run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "graph_revision"),
+          stale: run.external_metadata.dig(CycleAnalyses::METADATA_KEY, "graph_revision") != cycle.graph_revision,
+          recommendation: run.verification_result.dig(CycleAnalyses::RESULT_KEY, "recommendation") }
       end
 
       def dependency_cycle_edge_payload(edge, from, to)
