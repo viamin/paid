@@ -15,8 +15,9 @@
   *Test:* `spec/services/inbox/progress_projection_spec.rb`.
 
 - [x] **INBOX-PROGRESS-002** — For a human-led feature, design approval SHALL
-  be current only when its immutable approval revision matches every linked
-  design PR head; changed heads SHALL be `stale`. Strict-TDD test verdicts and
+  be current only when every feature intent linked to the work item's source
+  issue has an immutable approval revision matching every linked design PR
+  head; changed heads SHALL be `stale`. Strict-TDD test verdicts and
   PR merge assessment evidence SHALL be bound to the current PR head, and
   missing current evidence SHALL be `unknown`, never `complete`.
   *Code:* `app/services/inbox/progress_projection.rb`,

@@ -62,6 +62,26 @@ RSpec.describe Inbox::ProgressProjection do
     expect(milestone(described_class.call(issue: pull_request).to_h, "design_approval")).to include(state: "stale")
   end
 
+  it "requires current approval evidence from every feature intent linked to the source issue" do # @spec INBOX-PROGRESS-002
+    project = create(:project, operating_mode: "human_led_feature_factory")
+    source_issue = create(:issue, project:)
+    released_intent = create(:feature_intent, project:)
+    stale_intent = create(:feature_intent, :approved_waiting_for_merge, project:)
+    create(:feature_intent_issue, feature_intent: released_intent, issue: source_issue)
+    create(:feature_intent_issue, feature_intent: stale_intent, issue: source_issue)
+    create(:feature_intent_design_pr, feature_intent: released_intent)
+    stale_design_pr = create(:feature_intent_design_pr, feature_intent: stale_intent,
+      head_sha: "b" * 40, reviewed_head_sha: "b" * 40)
+    stale_intent.record_approval!(by: project.created_by,
+      pr_heads: { stale_design_pr.pull_request_number.to_s => "a" * 40 })
+    pull_request = create(:issue, :pull_request, project:, parent_issue: source_issue)
+
+    projection = described_class.call(issue: pull_request).to_h
+
+    expect(milestone(projection, "design_approval")).to include(state: "stale")
+    expect(milestone(projection, "design_release")).to include(state: "blocked")
+  end
+
   it "reports a requested strict-TDD test revision as blocked and missing current assessment as unknown" do # @spec INBOX-PROGRESS-002
     project = create(:project, tdd_mode: "strict")
     pull_request = create(:issue, :pull_request, project:, labels: [ "paid-test-changes-requested" ],

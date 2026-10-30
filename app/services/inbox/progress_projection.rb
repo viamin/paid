@@ -41,10 +41,10 @@ module Inbox
 
     def design_approval
       return milestone("design_approval", "Design approval", "not_applicable") unless project.human_led_feature_factory?
-      return milestone("design_approval", "Design approval", "unknown", next_action: "Link the feature intent and its design evidence.") unless feature_intent
+      return milestone("design_approval", "Design approval", "unknown", next_action: "Link the feature intent and its design evidence.") if feature_intents.empty?
       return milestone("design_approval", "Design approval", "stale", evidence: feature_evidence,
         next_action: "Review and approve the current design revision.") if stale_design?
-      return milestone("design_approval", "Design approval", "complete", evidence: feature_evidence) if approved_design? || feature_intent.released?
+      return milestone("design_approval", "Design approval", "complete", evidence: feature_evidence) if all_designs_approved_or_released?
 
       milestone("design_approval", "Design approval", "waiting", evidence: feature_evidence,
         next_action: "Approve the feature design revision.")
@@ -52,10 +52,10 @@ module Inbox
 
     def design_release
       return milestone("design_release", "Design release", "not_applicable") unless project.human_led_feature_factory?
-      return milestone("design_release", "Design release", "unknown", next_action: "Link the feature intent and its design evidence.") unless feature_intent
-      return milestone("design_release", "Design release", "complete", evidence: feature_evidence) if feature_intent.released?
+      return milestone("design_release", "Design release", "unknown", next_action: "Link the feature intent and its design evidence.") if feature_intents.empty?
+      return milestone("design_release", "Design release", "complete", evidence: feature_evidence) if feature_intents.all?(&:released?)
       return milestone("design_release", "Design release", "blocked", evidence: feature_evidence,
-        next_action: "Approve the current design revision.") if stale_design? || !approved_design?
+        next_action: "Approve the current design revision.") if stale_design? || !all_designs_approved_or_released?
 
       milestone("design_release", "Design release", "current", evidence: feature_evidence,
         next_action: "Merge the approved design pull request.")
@@ -128,23 +128,32 @@ module Inbox
         next_action: "Paid will reevaluate the current revision for automatic merge.")
     end
 
-    def feature_intent
-      return @feature_intent if defined?(@feature_intent)
+    def feature_intents
+      return @feature_intents if defined?(@feature_intents)
 
       linked_issue = issue.parent_issue || issue
-      @feature_intent = FeatureIntent.linked_to_issue(linked_issue)
-        .includes(:feature_intent_design_prs, :feature_intent_approval_revisions).first
+      @feature_intents = FeatureIntent.linked_to_issue(linked_issue)
+        .includes(:feature_intent_design_prs, :feature_intent_approval_revisions).order(:id).to_a
     end
 
-    def design_prs = feature_intent&.feature_intent_design_prs || []
+    def design_prs = feature_intents.flat_map(&:feature_intent_design_prs)
 
-    def approved_design?
+    def approved_design?(feature_intent)
       approval = feature_intent.feature_intent_approval_revisions.max_by(&:revision_number)
-      approval.present? && design_prs.all? { |design_pr| approval.pr_heads[design_pr.pull_request_number.to_s] == design_pr.head_sha }
+      approval.present? && feature_intent.feature_intent_design_prs.all? { |design_pr| approval.pr_heads[design_pr.pull_request_number.to_s] == design_pr.head_sha }
+    end
+
+    def all_designs_approved_or_released?
+      feature_intents.all? { |feature_intent| feature_intent.released? || approved_design?(feature_intent) }
     end
 
     def stale_design?
-      design_prs.any?(&:stale?) || (feature_intent.approved_at.present? && !approved_design?)
+      feature_intents.any? { |feature_intent| stale_feature_intent?(feature_intent) }
+    end
+
+    def stale_feature_intent?(feature_intent)
+      feature_intent.feature_intent_design_prs.any?(&:stale?) ||
+        (feature_intent.approved_at.present? && !approved_design?(feature_intent))
     end
 
     def design_pull_request?
